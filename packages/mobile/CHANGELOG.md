@@ -1,5 +1,11 @@
 # @e2e-dev/mobile
 
+## 0.12.8
+
+### Patch Changes
+
+- [#1728](https://github.com/e2e-inc/e2e/pull/1728) [`e167149`](https://github.com/e2e-inc/e2e/commit/e167149af1d390492af09e5fe28bb64072e9df64) Thanks [@karolkulesza](https://github.com/karolkulesza)! - The `device` option's documentation now says a paired iPhone or iPad that is reachable counts as booted, and that a shut-down device boots in tiers: on iOS an iPhone, then an iPad, then an Apple TV; on Android a phone or tablet, then a TV.
+
 ## 0.12.7
 
 ### Patch Changes
