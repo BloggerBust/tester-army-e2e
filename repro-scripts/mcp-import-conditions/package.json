@@ -1,0 +1,17 @@
+{
+  "name": "mcp-import-conditions-repro",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Reproduces e2e mcp open_session loading the require entry of a dual-export engine package",
+  "engines": {
+    "node": "^22.22.3 || >=24.8.0"
+  },
+  "scripts": {
+    "reproduce": "node reproduce.mjs"
+  },
+  "dependencies": {
+    "e2e": "0.23.1",
+    "repro-import-conditions-engine": "file:./engine"
+  }
+}

@@ -1,0 +1,16 @@
+{
+  "name": "repro-import-conditions-engine",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": {
+      "import": "./index.js",
+      "require": "./index.cjs"
+    },
+    "./esm": "./index.js"
+  },
+  "peerDependencies": {
+    "e2e": ">=0.23.1 <1"
+  }
+}
