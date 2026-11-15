@@ -195,6 +195,10 @@
       {
         "id": "ci",
         "label": "CI"
+      },
+      {
+        "id": "drag-and-drop",
+        "label": "Drag and drop"
       }
     ],
     "platform": [
@@ -1815,6 +1819,32 @@
         ],
         "useCase": [
           "e-commerce"
+        ],
+        "platform": [
+          "web"
+        ]
+      }
+    },
+    {
+      "slug": "mytimetable",
+      "title": "Testing a drag-and-drop timetable planner with e2e",
+      "shortTitle": "MyTimetable",
+      "description": "Course search, enrolment numbers, and dragging classes between time slots in a Vite and React timetable planner, tested with locators and the agent.",
+      "source": "community",
+      "repository": "https://github.com/samanyudas/mytimetable/tree/12e115b673c4a964176288caae7b1f386f18c467/e2e",
+      "author": {
+        "name": "Samanyu Das",
+        "github": "samanyudas"
+      },
+      "license": "MIT",
+      "licenseUrl": "https://github.com/samanyudas/mytimetable/blob/12e115b673c4a964176288caae7b1f386f18c467/LICENSE",
+      "tags": {
+        "framework": [
+          "vite",
+          "react"
+        ],
+        "useCase": [
+          "drag-and-drop"
         ],
         "platform": [
           "web"

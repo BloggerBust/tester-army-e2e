@@ -1,14 +1,14 @@
 import { AsyncResource } from 'node:async_hooks';
 import path from 'node:path';
-import { packageVersion } from '../internal/package-version.ts';
+import { packageVersion } from '@e2e-dev/core/lib/internal/package-version';
 import { runsFromCheckout } from '../telemetry/checkout.ts';
 import { runCompletedEvent } from '../telemetry/events.ts';
 import { Telemetry } from '../telemetry/telemetry.ts';
-import type { Report } from '../types.ts';
+import type { Report } from '../run-types.ts';
 import type { RunEventSink, RunExitCode, RunStatus } from './events.ts';
 import { withProcessOutput, type RunnerOutput } from './process-output.ts';
 import { reserveSuiteRun } from './public-ownership.ts';
-import { processSecrets } from './secrecy.ts';
+import { processSecrets } from '@e2e-dev/core/lib/run/secrecy';
 import {
   run as execute,
   toSelectionRunOptions,

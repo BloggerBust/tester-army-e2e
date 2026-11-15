@@ -8,14 +8,14 @@
 import inspector from 'node:inspector';
 import type { ModuleRegistration } from '../../collect/registry.ts';
 import type { TestTargetPair } from '../../collect/select.ts';
-import type { ResolvedConfig, ResolvedTarget } from '../../config/resolve.ts';
-import { DebugTrace } from '../../internal/debug.ts';
-import { uuidv7 } from '../../internal/ids.ts';
-import { abortError, cancelledError } from '../../internal/time.ts';
+import type { ResolvedConfig, ResolvedTarget } from '@e2e-dev/core/lib/config/resolve';
+import { DebugTrace } from '@e2e-dev/core/lib/internal/debug';
+import { uuidv7 } from '@e2e-dev/core/lib/internal/ids';
+import { abortError, cancelledError } from '@e2e-dev/core/lib/internal/time';
 import { TargetExecutor, type InMemoryAttempts } from '../execute.ts';
-import { encodeResult, type RunError } from '../records.ts';
-import type { SessionStore } from '../sessions.ts';
-import type { HeldStep } from '../step-hold.ts';
+import { encodeResult, type RunError } from '@e2e-dev/core/lib/run/records';
+import type { SessionStore } from '@e2e-dev/core/lib/run/sessions';
+import type { HeldStep, StepHolding } from '../step-hold.ts';
 import { countsTowardFailureLimit, disappearedResult, failureLimitSkip } from '../units.ts';
 import type { FailureLimit, MainToWorker, RunUnitMessage, WirePair, WorkerToMain } from './protocol.ts';
 
@@ -58,8 +58,8 @@ export interface TargetWorkerDeps {
   readonly debug?: DebugTrace;
   /** See `TargetExecutorOptions.inMemory`; only an in-process worker has tests registered in memory. */
   readonly inMemory?: InMemoryAttempts | undefined;
-  /** Whether steps wait for the runner's `step-release` (`e2e run --step`). */
-  readonly step?: boolean | undefined;
+  /** How steps wait for the runner's `step-release` (`e2e run --step`); undefined when they never do. */
+  readonly step?: StepHolding | undefined;
 }
 
 /** Transport callbacks a target worker needs. */
@@ -120,7 +120,9 @@ export class TargetWorker {
         env: deps.env,
         isolated: deps.isolated,
         interruptSignal: this.interruptController.signal,
-        ...(deps.step === true ? { holdStep: (step: HeldStep, signal: AbortSignal) => this.holdStep(step, signal) } : {}),
+        ...(deps.step === undefined
+          ? {}
+          : { holdStep: (step: HeldStep, signal: AbortSignal) => this.holdStep(step, signal), heldScreens: deps.step === 'screen' }),
         ...(deps.debug !== undefined ? { debug: deps.debug } : {}),
         inMemory: deps.inMemory,
         events: {

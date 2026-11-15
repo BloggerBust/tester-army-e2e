@@ -27,7 +27,7 @@
 
 import { isAgentDeviceError, normalizeAgentDeviceError } from 'agent-device';
 import { defaultHintForCode } from 'agent-device/contracts';
-import { EngineError, ConfigurationError, InfrastructureError, TestError, raceAbort } from 'e2e/engine';
+import { EngineError, ConfigurationError, InfrastructureError, TestError, raceAbort } from '@e2e-dev/core/engine';
 import { cancelled } from './support.ts';
 
 /**

@@ -13,9 +13,9 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { resolveModuleURL } from 'exsolve';
-import { ENGINE_SPI_VERSION } from '../engine/contract.ts';
-import { isEngineHandle, type EngineHandle } from '../engine/index.ts';
-import { ConfigurationError, errorMessage, isE2EError } from '../internal/errors.ts';
+import { ENGINE_SPI_VERSION } from '@e2e-dev/core/lib/engine/contract';
+import { isEngineHandle, type EngineHandle } from '@e2e-dev/core/lib/engine/index';
+import { ConfigurationError, errorMessage, isE2EError } from '@e2e-dev/core/lib/internal/errors';
 
 const ENGINE_CONDITIONS = [
   'node',

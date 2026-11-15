@@ -2,7 +2,7 @@
  * The Playwright engine for e2e: a browser body built with the
  * public `defineEngine`, validated by the same rules and graded by the same
  * capabilities as any other engine. Core imports nothing from here; this
- * package imports the contract from `e2e/engine` and contributes the `browser`
+ * package imports the contract from `@e2e-dev/core/engine` and contributes the `browser`
  * fixture the way a device engine contributes `device`.
  */
 
@@ -17,7 +17,7 @@ import {
   type EngineAppCheckInfo,
   type EngineAppDeclaration,
   type EngineHandle,
-} from 'e2e/engine';
+} from '@e2e-dev/core/engine';
 import { createRequire } from 'node:module';
 import { asBrowserProvider } from './provider.ts';
 import { PlaywrightSurface, type WebOptions } from './surface.ts';
@@ -118,6 +118,7 @@ export function web(options: WebOptions = {}): EngineHandle {
     endAttempt: (context) => surface.endAttempt(context),
     dispose: (context) => surface.dispose(context),
     observe: (operation, observeOptions) => surface.observe(operation, observeOptions),
+    readStyle: (ref, properties, operation) => surface.readStyle(ref, properties, operation),
     locate: (expression, operation) => surface.locate(expression, operation),
     perform: (ref, action, operation) => surface.perform(ref, action, operation),
     // A browser honors every action kind of the contract; `actions.ts` dispatches each.

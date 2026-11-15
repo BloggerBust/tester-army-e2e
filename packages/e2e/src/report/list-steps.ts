@@ -5,10 +5,10 @@
  */
 
 import type { HeldStep, StepPrompt } from '../run/step-hold.ts';
-import type { StepRecord } from '../run/steps.ts';
-import { modelLabel } from '../config/agent.ts';
-import { sanitizeText, truncateUtf8 } from '../internal/errors.ts';
-import { collapseText } from '../internal/text.ts';
+import type { StepRecord } from '@e2e-dev/core/lib/run/steps';
+import { modelLabel } from '@e2e-dev/core/lib/config/agent';
+import { sanitizeText, truncateUtf8 } from '@e2e-dev/core/lib/internal/errors';
+import { collapseText } from '@e2e-dev/core/lib/internal/text';
 import {
   bounded,
   F_CHECK,
@@ -123,6 +123,26 @@ export function stepPromptLine(prompt: StepPrompt): string {
   const keys = [`enter to ${enterDoes(prompt)}`, ...STEP_KEYS.map(([key, does]) => `${key} to ${does}`)].join(', ');
   const at = prompt.steps.length === 1 ? 'step' : 'steps';
   return `paused at ${at} ${numbers} of ${bounded(first.step.title)} [${bounded(first.step.target)}]: ${steps.join('; ')} · press ${keys}`;
+}
+
+/**
+ * A held step's prompt as plain lines for a reader with no terminal
+ * (`e2e run --step` driven by later commands): the test, the steps waiting
+ * with their call sites, the screen they wait on, and the commands that go on.
+ */
+export function stepPromptText(prompt: StepPrompt): string {
+  const [first] = prompt.steps;
+  const numbers = prompt.steps.map(({ number }) => number).join(', ');
+  const lines = [`Paused before ${prompt.steps.length === 1 ? 'step' : 'steps'} ${numbers} of ${bounded(first.step.title)} [${bounded(first.step.target)}]:`];
+  for (const { step } of prompt.steps) {
+    const source = promptSource(step);
+    lines.push(`  ${step.api} ${quotedLabel(step.label)}${source === '' ? '' : ` (${source})`}`);
+  }
+  const { screen } = first.step;
+  if (screen === undefined) lines.push('Screen: could not be read.');
+  else lines.push('Screen:', ...screen.split('\n').map((line) => `  ${bounded(line)}`));
+  lines.push(`Next: e2e run --step next runs ${prompt.steps.length === 1 ? 'it' : 'them'}, e2e run --step rest runs the rest, e2e run --step stop ends the run.`);
+  return `${lines.join('\n')}\n`;
 }
 
 /** Recording mismatches under one test, deduplicated across its attempts. */

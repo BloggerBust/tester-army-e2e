@@ -7,12 +7,12 @@ import {
   type Engine,
   type EngineCleanupContext,
   type EngineSnapshot,
-} from '../../src/engine/index.ts';
-import { createEngineSession } from '../../src/engine/session.ts';
-import { resolveConfig } from '../../src/config/resolve.ts';
-import { secrets } from '../../src/secrets.ts';
+} from '@e2e-dev/core/lib/engine/index';
+import { createEngineSession } from '@e2e-dev/core/lib/engine/session';
+import { resolveConfig } from '../../src/config/resolve-run.ts';
+import { secrets } from '@e2e-dev/core/lib/secrets';
 import { snapshot } from '../helpers/snapshot.ts';
-import type { OperationContext, SemanticNode } from '../../src/engine/surface.ts';
+import type { OperationContext, SemanticNode } from '@e2e-dev/core/lib/engine/surface';
 
 const OP: OperationContext = {
   signal: new AbortController().signal,

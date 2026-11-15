@@ -18,7 +18,7 @@ import type {
   LocatorExpression,
   OperationContext,
   SemanticNode,
-} from 'e2e/engine';
+} from '@e2e-dev/core/engine';
 import { web, surfaceOf } from '../../src/index.ts';
 import { startFixtureApp, type FixtureApp } from '../helpers/fixture-app.ts';
 import { decodePng } from '../helpers/png.ts';
@@ -216,6 +216,7 @@ describe('web engine lifecycle', () => {
       'actions',
       'artifacts',
       'browser',
+      'computed-style',
       'keyboard',
       'location',
       'observation',

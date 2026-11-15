@@ -20,7 +20,7 @@ import {
   type EngineFinishInfo,
   type EnginePrepareInfo,
   type EnginePrepareResult,
-} from 'e2e/engine';
+} from '@e2e-dev/core/engine';
 import { bindingsVariable, decodeBindings, deviceLabel, encodeBindings, pinnedApp, type DeviceSource, type SlotBinding } from './bindings.ts';
 import { isRunnerFailure, message, runCommand } from './errors.ts';
 import type { AgentDeviceClient, MobileOptions, MobilePlatform, ClientFactory } from './options.ts';
@@ -148,7 +148,7 @@ class BootedDevices implements DeviceSource {
       );
     }
     if (chosen.length === 0) {
-      info.log(`no booted ${this.platform} device; agent-device boots a shut-down one (newest OS, then name)`);
+      info.log(`no booted ${this.platform} device; agent-device boots a shut-down one (iPhone over iPad over Apple TV on iOS, phone or tablet over TV on Android, then newest OS, then name)`);
       return [{}];
     }
     const skipped = held.length === 0 ? '' : `, skipping ${held.length} held by another agent-device session (${heldBy})`;

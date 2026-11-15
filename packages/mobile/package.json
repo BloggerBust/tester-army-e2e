@@ -68,8 +68,9 @@
     "zod": "4.6.7"
   },
   "peerDependencies": {
+    "@e2e-dev/core": ">=0.23.2 <1",
     "ai": "^7.0.0",
-    "e2e": ">=0.22.1 <1"
+    "e2e": ">=0.23.2 <1"
   },
   "peerDependenciesMeta": {
     "ai": {
@@ -77,8 +78,9 @@
     }
   },
   "devDependencies": {
+    "@e2e-dev/core": "workspace:*",
     "@types/node": "26.6.6",
-    "ai": "7.0.170",
+    "ai": "7.0.173",
     "e2e": "workspace:*",
     "typescript": "7.0.2",
     "vitest": "5.1.0"

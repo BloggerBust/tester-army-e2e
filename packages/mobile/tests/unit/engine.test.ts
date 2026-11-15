@@ -12,7 +12,7 @@ import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { AppError } from 'agent-device';
 import { decodePng, encodePng } from '../helpers/png.ts';
-import type { EngineFixtureContext, EngineSnapshot, FixtureOperations, LocatorExpression, OperationContext, SemanticNode } from 'e2e/engine';
+import type { EngineFixtureContext, EngineSnapshot, FixtureOperations, LocatorExpression, OperationContext, SemanticNode } from '@e2e-dev/core/engine';
 import type { Device } from '../../src/device.ts';
 import type { RawNode } from '../../src/nodes.ts';
 import { mobile } from '../../src/engine.ts';
@@ -109,7 +109,7 @@ describe('manifest', () => {
       expect.objectContaining({ code: 'INVALID_CONFIG', message: 'mobile() has unknown key "sesion"; did you mean "session"?' }),
     );
     // What `e2e mcp` passes when an agent names the package alone, or leaves the platform out.
-    for (const options of [undefined, {}, { platform: 'tvos' }]) {
+    for (const options of [undefined, {}, { platform: 'tvos' }, { platform: 'iOS' }, { platform: 'Android' }]) {
       expect(() => mobile(options as never)).toThrowError(expect.objectContaining({ code: 'INVALID_CONFIG', message: expect.stringContaining("mobile() needs platform: 'ios' or 'android'") }));
     }
     expect(() => mobile({ platform: 'ios', app: 'x' } as never)).toThrowError(
@@ -521,6 +521,23 @@ describe('lifecycle', () => {
   it('rejects a blank device name at config time', () => {
     expect(() => harness({ device: '' })).toThrow(/must not be blank/);
     expect(() => harness({ device: ['iPhone 17', ' '] })).toThrow(/must not be blank/);
+  });
+
+  it('refuses a snapshot or videoTouches value it would read as the default, and keeps the valid ones', () => {
+    for (const [snapshot, shown] of [['Interactive', '"Interactive"'], ['interactiv', '"interactiv"'], ['none', '"none"'], [true, 'true']] as const) {
+      expect(() => harness({ snapshot } as never)).toThrowError(
+        expect.objectContaining({ code: 'INVALID_CONFIG', message: `mobile: \`snapshot\` must be 'full' or 'interactive', got ${shown}` }),
+      );
+    }
+    for (const [videoTouches, shown] of [['false', '"false"'], [0, '0'], [1, '1'], [null, 'null']] as const) {
+      expect(() => harness({ videoTouches } as never)).toThrowError(
+        expect.objectContaining({ code: 'INVALID_CONFIG', message: `mobile: \`videoTouches\` must be true or false, got ${shown}` }),
+      );
+    }
+    for (const options of [{ snapshot: 'full' }, { snapshot: 'interactive' }, { snapshot: undefined }, { videoTouches: true }, { videoTouches: false }, { videoTouches: undefined }] as const) {
+      expect(() => harness(options)).not.toThrow();
+    }
+    expect(() => harness({ snapshot: 'Full' } as never)).toThrow('got "Full"');
   });
 
   it('rejects an empty pool at config time', () => {
@@ -2500,10 +2517,11 @@ describe('device fixture', () => {
 
   it('labels openApp and openLink steps without the link query and setClipboard by length, so a token never enters the report', () => {
     fixture(harness());
-    expect(declared?.openApp?.label?.('https://app.example.com/magic?token=s3cret#frag')).toBe('https://app.example.com/magic');
+    expect(declared?.openApp?.label?.('https://user:pw@app.example.com/magic?token=s3cret#frag')).toBe('<link>');
     expect(declared?.openApp?.label?.('com.apple.Preferences')).toBe('com.apple.Preferences');
     expect(declared?.openLink?.label?.('myapp://orders/42?ref=mail')).toBe('myapp://orders/42');
-    expect(declared?.openLink?.label?.('verify?token=s3cret')).toBe('verify');
+    expect(declared?.openLink?.label?.('https://user:pw@app.example.com/magic?token=s3cret#frag')).toBe('https://app.example.com/magic');
+    expect(declared?.openLink?.label?.('verify?token=s3cret')).toBe('<link>');
     // Clipboard text is often a code or token the test copied, never a configured secret the ledger would redact.
     expect(declared?.setClipboard?.label?.('482913')).toBe('6 chars');
   });

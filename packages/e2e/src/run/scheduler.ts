@@ -8,17 +8,19 @@
  * execution.
  */
 
-import type { SkipInfo, TestTargetPair } from '../collect/select.ts';
-import type { ResolvedTarget } from '../config/resolve.ts';
-import type { AiTraceSnapshot } from '../internal/ai-trace.ts';
-import type { DebugSnapshot } from '../internal/debug.ts';
-import { classifyError, InfrastructureError, type SerializedError, TestError, TestTimeoutError, serializeError } from '../internal/errors.ts';
-import { timestamp, uuidv7 } from '../internal/ids.ts';
-import type { AttemptRecord, ResultRecord, RunError, SerialGroupRecord } from './records.ts';
+import type { TestTargetPair } from '../collect/select.ts';
+import type { SkipInfo } from '@e2e-dev/core/lib/run/records';
+import type { ResolvedTarget } from '@e2e-dev/core/lib/config/resolve';
+import type { AiTraceSnapshot } from '@e2e-dev/core/lib/internal/ai-trace';
+import type { DebugSnapshot } from '@e2e-dev/core/lib/internal/debug';
+import { classifyError, InfrastructureError, type SerializedError, TestError, TestTimeoutError, serializeError } from '@e2e-dev/core/lib/internal/errors';
+import { timestamp, uuidv7 } from '@e2e-dev/core/lib/internal/ids';
+import { MAX_TIMER_MS } from '@e2e-dev/core/lib/internal/time';
+import type { AttemptRecord, ResultRecord, RunError, SerialGroupRecord } from '@e2e-dev/core/lib/run/records';
 import { retryVerdict } from './retry.ts';
 import { SerialGroupProgress, serialGroupId } from './serial.ts';
 import type { HeldStep } from './step-hold.ts';
-import type { StepProgress } from './steps.ts';
+import type { StepProgress } from '@e2e-dev/core/lib/run/steps';
 import type { SpawnUnitRunner, UnitRunner } from './unit-runner.ts';
 import {
   INTERRUPTED_BEFORE_START,
@@ -275,12 +277,17 @@ class SchedulerWorker {
     this.killAfter(graceMs);
   }
 
+  /**
+   * Kills the worker once `graceMs` has passed. Grace budgets are sums of
+   * configured timeouts, so the delay is capped at what a timer can wait:
+   * `setTimeout` fires a longer one at once.
+   */
   killAfter(graceMs: number): void {
     if (this.killTimer !== undefined || !this.runner.alive) return;
     this.killTimer = setTimeout(() => {
       this.killed = true;
       this.runner.kill();
-    }, graceMs);
+    }, Math.min(graceMs, MAX_TIMER_MS));
     this.killTimer.unref();
   }
 

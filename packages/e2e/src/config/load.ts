@@ -2,10 +2,10 @@
 
 import { existsSync } from 'node:fs';
 import path from 'node:path';
-import { ConfigurationError, InfrastructureError, isE2EError } from '../internal/errors.ts';
+import { ConfigurationError, InfrastructureError, isE2EError } from '@e2e-dev/core/lib/internal/errors';
 import { onBun } from '../internal/runtime.ts';
-import { withConfigSecretReferences } from '../secrets.ts';
-import type { E2EConfig } from '../types.ts';
+import { withConfigSecretReferences } from '@e2e-dev/core/lib/secrets';
+import type { E2EConfig } from '../run-types.ts';
 import { explainModuleError } from './diagnose.ts';
 import { freshModuleURL, registerLoader } from './esm-hooks.ts';
 import { CONFIG_NAMES, JS_CONFIG_NAMES, TS_CONFIG_NAMES } from './names.ts';

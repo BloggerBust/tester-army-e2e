@@ -4,19 +4,19 @@
  * without spawning processes or browsers.
  */
 
-import { protocolEngine } from '../../src/engine/protocol/client.ts';
+import { protocolEngine } from '@e2e-dev/core/lib/engine/protocol/client';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { CollectedFile, CollectedTest, Collection } from '../../src/collect/collect.ts';
 import type {
   ResolvedTestOptions,
   Selection,
-  SkipInfo,
   TestTargetPair,
 } from '../../src/collect/select.ts';
-import type { ResolvedTarget } from '../../src/config/resolve.ts';
-import { defineEngine, type EngineHandle } from '../../src/engine/index.ts';
-import { classifyError, serializeError } from '../../src/internal/errors.ts';
-import type { AttemptRecord, ResultRecord, RunError, SerialAttemptRecord, SerialGroupRecord, SerialMemberRecord } from '../../src/run/records.ts';
+import type { SkipInfo } from '@e2e-dev/core/lib/run/records';
+import type { ResolvedTarget } from '@e2e-dev/core/lib/config/resolve';
+import { defineEngine, type EngineHandle } from '@e2e-dev/core/lib/engine/index';
+import { classifyError, serializeError } from '@e2e-dev/core/lib/internal/errors';
+import type { AttemptRecord, ResultRecord, RunError, SerialAttemptRecord, SerialGroupRecord, SerialMemberRecord } from '@e2e-dev/core/lib/run/records';
 import { runUnits, type RunUnitsOptions, type TargetFailure } from '../../src/run/scheduler.ts';
 import { serialGroupId } from '../../src/run/serial.ts';
 import { buildWorkPlans, type TargetWorkPlan, type TimeLimit } from '../../src/run/units.ts';
@@ -876,6 +876,23 @@ describe('scheduler disposal', () => {
     expect(collected.results.map((result) => result.status)).toEqual(['passed']);
     expect(fleet.killed).toEqual([]);
     expect(fleet.completedDisposals).toEqual([0]);
+  });
+
+  it('lets a retired worker finish disposal when the force grace is longer than a timer can wait', async () => {
+    const target = makeTarget('web', 0);
+    const pair = makePair(makeTest('tests/a.e2e.ts', 'a'), target);
+    const fleet = new FakeFleet({ disposal: { delayMs: 12_000 } });
+
+    vi.useFakeTimers();
+    const running = run(makeSelection([{ target, pairs: [pair] }]), makeCollection([pair.test.file], [pair]), fleet, {
+      workers: 1, forceGraceMs: 2 ** 31,
+    });
+    await vi.advanceTimersByTimeAsync(13_000);
+    const collected = await running;
+
+    expect(fleet.killed).toEqual([]);
+    expect(fleet.completedDisposals).toEqual([0]);
+    expect(collected.results.map((result) => result.status)).toEqual(['passed']);
   });
 
   it('kills a worker whose disposal outlasts its configured shutdown budget', async () => {

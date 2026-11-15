@@ -14,8 +14,8 @@ import { dependencyRange } from '../../src/cli/init/versions.ts';
 // Use the built modules, just as config and test imports use the installed packages.
 const loaderModule = '../../dist/config/load.js';
 const { loadConfigModule } = await import(loaderModule) as typeof import('../../src/config/load.ts');
-const resolveModule = '../../dist/config/resolve.js';
-const { resolveConfig } = await import(resolveModule) as typeof import('../../src/config/resolve.ts');
+const resolveModule = '../../dist/config/resolve-run.js';
+const { resolveConfig } = await import(resolveModule) as typeof import('../../src/config/resolve-run.ts');
 const collectModule = '../../dist/collect/collect.js';
 const { collect } = await import(collectModule) as typeof import('../../src/collect/collect.ts');
 const scaffoldModule = '../../dist/cli/init/scaffold.js';
@@ -134,6 +134,7 @@ describe('initializing standalone projects', () => {
     const collection = await collect(config);
 
     expect(scaffold.dependencies).not.toHaveProperty('@e2e-dev/web');
+    expect(scaffold.dependencies).not.toHaveProperty('@e2e-dev/core');
     expect(scaffold.dependencies).toMatchObject({ ai: '^7.0.0', '@openrouter/ai-sdk-provider': '^3.0.0' });
     expect(config.agent.model).toMatchObject({ provider: expect.stringMatching(/^openrouter/), id: 'openai/gpt-6-luna-fast' });
     expect(config.targets[0]!.app.base).toBeUndefined();
@@ -221,8 +222,11 @@ describe('initializing standalone projects', () => {
       const manifest = JSON.parse(readFileSync(path.join(dir, 'package.json'), 'utf8'));
       const webVersion = (JSON.parse(readFileSync(path.resolve(PACKAGE_ROOT, '..', 'web', 'package.json'), 'utf8')) as { version: string }).version;
       expect(manifest.devDependencies['@e2e-dev/web']).toBe(dependencyRange(webVersion));
+      // The engine peers on core, and Yarn installs no peer the project does not list.
+      const coreVersion = (JSON.parse(readFileSync(path.resolve(PACKAGE_ROOT, '..', 'core', 'package.json'), 'utf8')) as { version: string }).version;
+      expect(manifest.devDependencies['@e2e-dev/core']).toBe(dependencyRange(coreVersion));
       const recorded = JSON.parse(readFileSync(path.join(PACKAGE_ROOT, 'dist', 'cli', 'init', 'sibling-versions.json'), 'utf8')) as Record<string, string>;
-      expect(Object.keys(recorded).toSorted()).toEqual(['@e2e-dev/mobile', '@e2e-dev/web']);
+      expect(Object.keys(recorded).toSorted()).toEqual(['@e2e-dev/core', '@e2e-dev/mobile', '@e2e-dev/web']);
       expect(manifest.devDependencies).not.toHaveProperty('playwright');
       expect(manifest.devDependencies.ai).toBe('^7.0.0');
       expect(manifest.scripts).toEqual({ 'test:e2e': 'e2e run' });

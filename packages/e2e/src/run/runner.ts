@@ -3,13 +3,8 @@
 import { rm } from 'node:fs/promises';
 import path from 'node:path';
 import { discoverConfig, loadConfigModule, missingConfigError } from '../config/load.ts';
-import {
-  isCiMode,
-  resolveConfig,
-  type CliOverrides,
-  type ResolvedConfig,
-  type ResolvedTarget,
-} from '../config/resolve.ts';
+import { isCiMode, type ResolvedTarget } from '@e2e-dev/core/lib/config/resolve';
+import { resolveConfig, type ResolvedRunConfig, type RunCliOverrides } from '../config/resolve-run.ts';
 import { collect, collectInMemory, collectSetups, type Collection } from '../collect/collect.ts';
 import type { ModuleRegistration } from '../collect/registry.ts';
 import {
@@ -32,15 +27,16 @@ import {
   exitCodeForCategory,
   serializeError,
   type ErrorPhase,
-} from '../internal/errors.ts';
-import { loadAiSdk } from '../agent/ai-sdk.ts';
-import { leaveWorkBehind } from '../internal/abandoned.ts';
-import { AiTraceCollector, AiTraceRecorder, registerAiTraceRecorder } from '../internal/ai-trace.ts';
-import { DebugTrace } from '../internal/debug.ts';
-import { printableUrl } from '../internal/urls.ts';
-import { resultId, timestamp, uuidv7 } from '../internal/ids.ts';
+} from '@e2e-dev/core/lib/internal/errors';
+import { loadAiSdk } from '@e2e-dev/core/lib/agent/ai-sdk';
+import { leaveWorkBehind } from '@e2e-dev/core/lib/internal/abandoned';
+import { AiTraceCollector, AiTraceRecorder, registerAiTraceRecorder } from '@e2e-dev/core/lib/internal/ai-trace';
+import { DebugTrace } from '@e2e-dev/core/lib/internal/debug';
+import { printableUrl } from '@e2e-dev/core/lib/internal/urls';
+import { resultId, timestamp, uuidv7 } from '@e2e-dev/core/lib/internal/ids';
 import type { ExploreProgress } from '../explore/progress.ts';
-import { buildReport, projectSource, type Report1Document, type ReportChanges, type ReportExplore, type ReportFilter, type TargetProvenance } from '../report/build.ts';
+import { buildReport, projectSource, type Report1Document, type ReportChanges, type ReportExplore, type ReportFilter } from '../report/build.ts';
+import type { TargetProvenance } from '@e2e-dev/core/lib/run/provision';
 import { agentStepTable } from '../report/debug-steps.ts';
 import { writeTracePages, type TracePages } from '../report/traces.ts';
 import { STATELESS_REPORTERS } from '../report/builtin.ts';
@@ -50,30 +46,31 @@ import { writeJsonReport } from '../report/write.ts';
 import { createRunEventEmitter, toEventResult, type RunEventSink, type RunExitCode, type RunStatus, type RunEventFact, type SetupOutcome, type SetupStep } from './events.ts';
 import { allocateAppPorts } from './app-ports.ts';
 import { inProcessSpawner } from './in-process.ts';
-import { cleanupErrorsOf, someSkippedAfterFailure, tracedResultIds, type ResultRecord, type RunError, type SerialGroupRecord } from './records.ts';
+import { cleanupErrorsOf, someSkippedAfterFailure, tracedResultIds, type ResultRecord, type RunError, type SerialGroupRecord } from '@e2e-dev/core/lib/run/records';
 import { runUnits, type TargetFailure } from './scheduler.ts';
-import type { BeforeStep, HeldStep, StepPrompt } from './step-hold.ts';
+import type { BeforeStep, HeldStep, StepHolding, StepPrompt } from './step-hold.ts';
 import { stepPromptLine } from '../report/list-steps.ts';
 import { buildWorkPlans, nonRunResult, orderWorkPlans, plannedSlots, type TargetWorkPlan, type TimeLimit } from './units.ts';
-import { SessionStore } from './sessions.ts';
-import { outputLayout } from './output.ts';
+import { SessionStore } from '@e2e-dev/core/lib/run/sessions';
+import { outputLayout } from '@e2e-dev/core/lib/run/output';
 import type { RunnerOutput } from './process-output.ts';
 import { refuseBun } from './public-ownership.ts';
-import { processSecrets, registerStaticSecrets, staticSecretLedger } from './secrecy.ts';
-import { nextRerunDir, pruneArtifacts } from './artifacts.ts';
+import { processSecrets, registerStaticSecrets, staticSecretLedger } from '@e2e-dev/core/lib/run/secrecy';
+import { nextRerunDir, pruneArtifacts } from '@e2e-dev/core/lib/run/artifacts';
 import { carryForward, fileDurationKey, lastFailedIds, readLastRun, reportArtifactPaths, type RerunCollection } from './last-run.ts';
 import { loadTimings, writeTimings } from './timings.ts';
 import { childProcessSpawner } from './worker/handle.ts';
-import { setSecretRegistry } from '../secrets.ts';
-import { budgetText, withAbort } from '../internal/time.ts';
-import type { BuiltinReporter, E2EConfig, FinishedRun, RecordingMode, Reporter, ReporterSummary } from '../types.ts';
-import { modelLabel } from '../config/agent.ts';
-import { boundedInt, describeValue, positiveInt, timerMs } from '../config/validate.ts';
+import { setSecretRegistry } from '@e2e-dev/core/lib/secrets';
+import { budgetText, withAbort } from '@e2e-dev/core/lib/internal/time';
+import type { RecordingMode } from '@e2e-dev/core/lib/types';
+import type { BuiltinReporter, E2EConfig, FinishedRun, Reporter, ReporterSummary } from '../run-types.ts';
+import { modelLabel } from '@e2e-dev/core/lib/config/agent';
+import { boundedInt, describeValue, positiveInt, timerMs } from '@e2e-dev/core/lib/config/validate';
 import { validateChangedSince } from './changes.ts';
 import { detectVcs, type VcsInfo } from '../internal/vcs.ts';
-import type { EnginePrepareResult } from '../engine/index.ts';
-import type { AppProcesses } from './managed-process.ts';
-import { PreparedEngines, recordingNotices, startDeclaredProcesses, validateEngine, type EngineGrade, type PrepareScope } from './provision.ts';
+import type { EnginePrepareResult } from '@e2e-dev/core/lib/engine/index';
+import type { AppProcesses } from '@e2e-dev/core/lib/run/managed-process';
+import { PreparedEngines, recordingNotices, startDeclaredProcesses, validateEngine, type EngineGrade, type PrepareScope } from '@e2e-dev/core/lib/run/provision';
 import { filterSelection, rankingNotice } from './test-filters.ts';
 
 export interface RunOptions {
@@ -233,6 +230,8 @@ export interface RunOptions {
    * whose stdout the prompt would break.
    */
   beforeStep?: BeforeStep | undefined;
+  /** Whether each step `beforeStep` holds carries the screen it is held on (`HeldStep.screen`); `e2e run --step` without a terminal. */
+  heldScreens?: boolean | undefined;
   /** A second sink on the run's event spine, beside the list reporter. */
   onEvent?: RunEventSink | undefined;
   /** Budget for each reporter's `onRunFinished`, in ms. Only the test harness sets it; there is no flag. */
@@ -262,7 +261,7 @@ export interface InMemoryTests {
    * explorer. Setup tests they need run as the config's own agents, with the
    * config's cache and retries; the in-memory tests run with the trace cache off.
    */
-  readonly agents?: ResolvedConfig['agents'] | undefined;
+  readonly agents?: ResolvedRunConfig['agents'] | undefined;
   /**
    * The exploration behind `e2e explore`: its progress becomes `explore` run
    * events, and its record is read once the run is over, as `run.explore`.
@@ -392,7 +391,7 @@ export async function listSelection(options: ListOptions, notice: (message: stri
   const cwd = options.cwd ?? process.cwd();
   const env = options.env ?? process.env;
   const runOptions = toSelectionRunOptions(options);
-  const loadConfig = async (): Promise<ResolvedConfig> => {
+  const loadConfig = async (): Promise<ResolvedRunConfig> => {
     const loaded = await loadRunConfig(runOptions, cwd, env, runOptions.output === undefined ? {} : { output: runOptions.output });
     registerStaticSecrets(loaded.allSecrets);
     return loaded;
@@ -423,7 +422,7 @@ export interface RunOutcome {
   aiTracePath: string | undefined;
   results: readonly ResultRecord[];
   /** The config the run resolved; undefined when it failed to load. */
-  config: ResolvedConfig | undefined;
+  config: ResolvedRunConfig | undefined;
 }
 
 /**
@@ -466,7 +465,7 @@ export async function run(options: RunOptions = {}): Promise<RunOutcome> {
 
   // Hoisted: workers re-resolve the same config file and need these overrides,
   // or a flag would apply in the runner and be dropped in every worker.
-  const cli: CliOverrides = {};
+  const cli: RunCliOverrides = {};
   if (options.retries !== undefined) cli.retries = options.retries;
   if (options.workers !== undefined) cli.workers = options.workers;
   if (options.actionTimeout !== undefined) cli.actionTimeout = options.actionTimeout;
@@ -498,7 +497,7 @@ export async function run(options: RunOptions = {}): Promise<RunOutcome> {
   const keepStdoutFor = (reporters: readonly BuiltinReporter[] | undefined): void => {
     if (reporters?.includes('json') === true) processOutput?.keepStdoutForReport();
   };
-  const loadConfig = async (): Promise<ResolvedConfig> => {
+  const loadConfig = async (): Promise<ResolvedRunConfig> => {
     const config = await loadRunConfig(options, cwd, env, cli, graph);
     registerStaticSecrets(config.allSecrets);
     keepStdoutFor(config.reporters);
@@ -649,7 +648,7 @@ export async function run(options: RunOptions = {}): Promise<RunOutcome> {
    * returned in-memory document becomes the only complete record. The file
    * is not retried — the destination just failed.
    */
-  const writeCanonicalReport = async (config: ResolvedConfig, document: Report1Document): Promise<string | undefined> => {
+  const writeCanonicalReport = async (config: ResolvedRunConfig, document: Report1Document): Promise<string | undefined> => {
     const target = outputLayout(config.output).report;
     try {
       await writeJsonReport(target, document);
@@ -670,7 +669,7 @@ export async function run(options: RunOptions = {}): Promise<RunOutcome> {
 
 
   /** The timings file: `--timings` against the project root, else the one in the output directory. */
-  const timingsPath = (config: ResolvedConfig): string =>
+  const timingsPath = (config: ResolvedRunConfig): string =>
     options.timings === undefined ? outputLayout(config.output).timings : path.resolve(config.projectRoot, options.timings);
 
   /**
@@ -679,7 +678,7 @@ export async function run(options: RunOptions = {}): Promise<RunOutcome> {
    * error. Runs before the report is written, because an absent timings file
    * falls back to the previous report as the history to merge into.
    */
-  const writeTimingsHistory = async (config: ResolvedConfig, document: Report1Document): Promise<void> => {
+  const writeTimingsHistory = async (config: ResolvedRunConfig, document: Report1Document): Promise<void> => {
     try {
       await writeTimings(document, {
         timingsPath: timingsPath(config),
@@ -698,7 +697,7 @@ export async function run(options: RunOptions = {}): Promise<RunOutcome> {
    * error. The in-process recorder is drained here; child-process workers
    * already shipped theirs over the worker channel.
    */
-  const writeAiTrace = async (config: ResolvedConfig): Promise<string | undefined> => {
+  const writeAiTrace = async (config: ResolvedRunConfig): Promise<string | undefined> => {
     if (aiTrace === undefined) return undefined;
     if (aiTraceRecorder !== undefined) {
       aiTrace.merge(aiTraceRecorder.drain({ all: true }));
@@ -729,7 +728,7 @@ export async function run(options: RunOptions = {}): Promise<RunOutcome> {
    * page that could not be written is a line on stderr, never a run error
    * that would disagree with the report already on disk.
    */
-  const writeTraces = async (config: ResolvedConfig, document: Report1Document): Promise<TracePages> => {
+  const writeTraces = async (config: ResolvedRunConfig, document: Report1Document): Promise<TracePages> => {
     try {
       return await writeTracePages(document, tracedResultIds(results, serialGroups), {
         projectRoot: config.projectRoot,
@@ -1086,6 +1085,7 @@ export async function run(options: RunOptions = {}): Promise<RunOutcome> {
       aiTraceRecorder = new AiTraceRecorder(processSecrets.redact);
       await registerAiTraceRecorder(aiTraceRecorder, loadAiSdk);
     }
+    const stepHolding: StepHolding | undefined = options.beforeStep === undefined ? undefined : options.heldScreens === true ? 'screen' : 'hold';
     const spawn =
       workerConfigPath === undefined
         ? inProcessSpawner({
@@ -1098,7 +1098,7 @@ export async function run(options: RunOptions = {}): Promise<RunOutcome> {
             sessionStore: store,
             headed: options.headed ?? false,
             debug,
-            step: options.beforeStep !== undefined,
+            step: stepHolding,
             envFor: workerEnvFor(plans, env),
           })
         : childProcessSpawner({
@@ -1115,7 +1115,7 @@ export async function run(options: RunOptions = {}): Promise<RunOutcome> {
             sessionKeyBase64: store.exportKeyForWorker(),
             debug: debug.enabled,
             aiTrace: aiTrace !== undefined,
-            step: options.beforeStep !== undefined,
+            step: stepHolding,
             envFor: workerEnvFor(plans, env),
           });
 
@@ -1378,7 +1378,7 @@ function toListedPair(projectRoot: string, pair: TestTargetPair): ListedPair {
  * report is a collection-phase failure like any other selection error; the
  * report itself reaches the reporters as `FinishedRun.lastRun`.
  */
-async function selectionInputs(options: SelectionRunOptions, config: ResolvedConfig): Promise<SelectionInputs> {
+async function selectionInputs(options: SelectionRunOptions, config: ResolvedRunConfig): Promise<SelectionInputs> {
   const lastRun =
     options.lastFailed === true ? await readLastRun(outputLayout(config.output).report) : undefined;
   const filters: SelectionFilters = {
@@ -1427,9 +1427,9 @@ async function loadRunConfig(
   options: SelectionRunOptions,
   cwd: string,
   env: NodeJS.ProcessEnv,
-  cli: CliOverrides,
+  cli: RunCliOverrides,
   graph?: string,
-): Promise<ResolvedConfig> {
+): Promise<ResolvedRunConfig> {
   validateRunOptions(options);
   if (options.rawConfig !== undefined) {
     return resolveConfig(options.rawConfig, { projectRoot: cwd, env, cli });
@@ -1525,7 +1525,7 @@ function verdictExitCodes(results: readonly ResultRecord[], serialGroups: readon
 class ReporterAbandoned extends Error {}
 
 /** `FinishedRun.redact`: the config's fixed secret values; a config that never loaded declared none. */
-function redactStaticSecrets(secrets: ResolvedConfig['allSecrets'] | undefined): (text: string) => string {
+function redactStaticSecrets(secrets: ResolvedRunConfig['allSecrets'] | undefined): (text: string) => string {
   if (secrets === undefined) return (text) => String(text);
   const { redactFragments } = staticSecretLedger(secrets);
   return (text) => redactFragments(String(text));

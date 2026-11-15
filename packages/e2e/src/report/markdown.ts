@@ -20,7 +20,7 @@
  */
 
 import path from 'node:path';
-import { collapseText } from '../internal/text.ts';
+import { collapseText } from '@e2e-dev/core/lib/internal/text';
 import type { Report1Document, ReportChanges, ReportError, ReportExplore, ReportExploreFinding, ReportFilter, ReportResult, ReportStep, ReportTarget } from './build.ts';
 import { ENDED_TEXT, orderFindings, SEVERITY_WORDS, stepCountParts } from './explore-text.ts';
 import { filterDecision, formatCost, formatTokens, repeatSuffix, shortCommit, statusBucket, tally, type Counters } from './format.ts';
@@ -45,7 +45,7 @@ import { cell, code, formatDuration, link, MAX_ID_CHARS, MAX_PATH_CHARS, MAX_TIT
 import { outcome, type Outcome } from './outcome.ts';
 import { isExploreVerdict } from './traces.ts';
 import { posixRelative, writeTextReport } from './write.ts';
-import type { Reporter, ReporterSummary } from '../types.ts';
+import type { Reporter, ReporterSummary } from '../run-types.ts';
 
 type ReportRun = Report1Document['run'];
 type ReportArtifact = ReportResult['attempts'][number]['artifacts'][number];

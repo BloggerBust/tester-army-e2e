@@ -1,14 +1,16 @@
 /** Hosted test runners keep a worker alive while opening isolated per-test attempts. */
 
 import { discoverConfig, loadConfigModule, missingConfigError } from '../config/load.ts';
-import { resolveConfig, type ResolvedConfig } from '../config/resolve.ts';
-import { classifyError, ConfigurationError, E2EError, serializeError, type SerializedError } from '../internal/errors.ts';
-import type { E2EConfig, Report, TestFixtures } from '../types.ts';
+import { type ResolvedConfig } from '@e2e-dev/core/lib/config/resolve';
+import { resolveConfig } from '../config/resolve-run.ts';
+import { classifyError, ConfigurationError, E2EError, serializeError, type SerializedError } from '@e2e-dev/core/lib/internal/errors';
+import type { TestFixtures } from '@e2e-dev/core/lib/types';
+import type { E2EConfig, Report } from '../run-types.ts';
 import { allocateTargetPorts } from './app-ports.ts';
-import { processSecrets, registerStaticSecrets } from './secrecy.ts';
+import { processSecrets, registerStaticSecrets } from '@e2e-dev/core/lib/run/secrecy';
 import { selectTarget } from './select-target.ts';
-import { openStandaloneHost } from './standalone.ts';
-import type { StepProgress, StepRecord } from './steps.ts';
+import { openStandaloneHost } from './standalone-kinds.ts';
+import type { StepProgress, StepRecord } from '@e2e-dev/core/lib/run/steps';
 import { reserveHostedRun } from './public-ownership.ts';
 
 export interface OpenHostOptions {
@@ -110,7 +112,7 @@ async function openHostWorker<Fixtures extends object>(options: OpenHostOptions)
           runId: attempt.runId, attemptId: attempt.attemptId, target: target.name,
           fixtures: attempt.fixtures as TestFixtures & Fixtures,
           artifactsDir: attempt.artifactsDir, tracePath: attempt.tracePath,
-          steps: () => attempt.steps.all(), report: attempt.report, close: attempt.close,
+          steps: () => attempt.steps.all(), report: () => attempt.extra.report && structuredClone(attempt.extra.report), close: attempt.close,
           [Symbol.asyncDispose]: () => dispose(attempt.close, 'session'),
         };
       }),

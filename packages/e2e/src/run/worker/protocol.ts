@@ -7,16 +7,16 @@
  * each identity with a locally resolved test function.
  */
 
-import type { TestIdentity } from '../../collect/collect.ts';
-import type { ResolvedTestOptions, SkipInfo } from '../../collect/select.ts';
-import type { CliOverrides, PortAssignments, ResolvedTarget } from '../../config/resolve.ts';
-import type { AiTraceSnapshot } from '../../internal/ai-trace.ts';
-import type { DebugSnapshot } from '../../internal/debug.ts';
-import type { SerializedError } from '../../internal/errors.ts';
-import type { AttemptRecord, ResultRecord, RunError, SerialAttemptRecord, SerialGroupRecord, SerialMemberRecord, WireResultRecord } from '../records.ts';
+import type { ResolvedTestOptions } from '../../collect/select.ts';
+import type { SkipInfo, TestIdentity } from '@e2e-dev/core/lib/run/records';
+import type { CliOverrides, PortAssignments, ResolvedTarget } from '@e2e-dev/core/lib/config/resolve';
+import type { AiTraceSnapshot } from '@e2e-dev/core/lib/internal/ai-trace';
+import type { DebugSnapshot } from '@e2e-dev/core/lib/internal/debug';
+import type { SerializedError } from '@e2e-dev/core/lib/internal/errors';
+import type { AttemptRecord, ResultRecord, RunError, SerialAttemptRecord, SerialGroupRecord, SerialMemberRecord, WireResultRecord } from '@e2e-dev/core/lib/run/records';
 import type { SerialAttemptStart } from '../serial.ts';
-import type { HeldStep } from '../step-hold.ts';
-import type { StepProgress } from '../steps.ts';
+import type { HeldStep, StepHolding } from '../step-hold.ts';
+import type { StepProgress } from '@e2e-dev/core/lib/run/steps';
 
 /** One runnable pair on the wire; the worker resolves the test function. */
 export interface WirePair {
@@ -73,8 +73,8 @@ export interface WorkerBootstrap {
   readonly debug: boolean;
   /** Whether the worker should record model calls for `--ai-trace`. */
   readonly aiTrace: boolean;
-  /** Whether each top-level step waits for the runner's `step-release` (`e2e run --step`). */
-  readonly step: boolean;
+  /** How each top-level step waits for the runner's `step-release` (`e2e run --step`); undefined when steps never wait. */
+  readonly step: StepHolding | undefined;
 }
 
 export interface RunUnitMessage {

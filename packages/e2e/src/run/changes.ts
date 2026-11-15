@@ -5,14 +5,14 @@
  * `INVALID_CHANGED_SINCE`.
  */
 
-import { describeValue } from '../config/validate.ts';
-import { ConfigurationError, E2EError } from '../internal/errors.ts';
+import { describeValue } from '@e2e-dev/core/lib/config/validate';
+import { ConfigurationError, E2EError } from '@e2e-dev/core/lib/internal/errors';
 import { COMMIT_HASH, GitFailure, runGit, type GitResult } from '../internal/git.ts';
-import { compareCodePoints } from '../internal/globs.ts';
-import { onDiskPath } from '../internal/paths.ts';
-import { budgetText } from '../internal/time.ts';
+import { compareCodePoints } from '@e2e-dev/core/lib/internal/globs';
+import { onDiskPath } from '@e2e-dev/core/lib/internal/paths';
+import { budgetText } from '@e2e-dev/core/lib/internal/time';
 import { ellipsize } from '../report/format.ts';
-import type { TestFilterChanges } from '../types.ts';
+import type { TestFilterChanges } from '../run-types.ts';
 
 /**
  * A `changedSince` that is not a string, is empty, or reads as a git option

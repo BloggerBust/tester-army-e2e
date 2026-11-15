@@ -11,13 +11,14 @@ import { createHash } from 'node:crypto';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it, vi } from 'vitest';
-import { AgentError } from '../../src/agent/error.ts';
+import { AgentError } from '@e2e-dev/core/lib/agent/error';
 import { collectFromRegistration, type Collection } from '../../src/collect/collect.ts';
 import { collectModule, test } from '../../src/collect/registry.ts';
 import { select } from '../../src/collect/select.ts';
-import { resolveConfig, type ResolvedConfig } from '../../src/config/resolve.ts';
-import { defineEngine } from '../../src/engine/index.ts';
-import { ConfigurationError, type E2EError } from '../../src/internal/errors.ts';
+import type { ResolvedRunConfig as ResolvedConfig } from '../../src/config/resolve-run.ts';
+import { resolveConfig } from '../../src/config/resolve-run.ts';
+import { defineEngine } from '@e2e-dev/core/lib/engine/index';
+import { ConfigurationError, type E2EError } from '@e2e-dev/core/lib/internal/errors';
 import {
   applyTestFilters,
   FILTER_TIMEOUT_MS,
@@ -29,13 +30,13 @@ import {
   type FilterSelectionOptions,
   type TestFilterScope,
 } from '../../src/run/test-filters.ts';
-import type { E2EConfig, TestFilter, TestFilterCandidate, TestFilterContext, TestFilterResult } from '../../src/types.ts';
+import type { E2EConfig, TestFilter, TestFilterCandidate, TestFilterContext, TestFilterResult } from '../../src/run-types.ts';
 import { invalid } from '../helpers/invalid.ts';
 
 /** What `leaveWorkBehind` was told: a timeout records the work it left behind, for the CLI to exit on. */
 const leaveWorkBehind = vi.hoisted(() => vi.fn());
-vi.mock('../../src/internal/abandoned.ts', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('../../src/internal/abandoned.ts')>()),
+vi.mock('@e2e-dev/core/lib/internal/abandoned', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@e2e-dev/core/lib/internal/abandoned')>()),
   leaveWorkBehind,
 }));
 

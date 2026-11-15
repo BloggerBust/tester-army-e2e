@@ -8,12 +8,13 @@
 
 import type { ModuleRegistration } from '../collect/registry.ts';
 import type { Selection, TestTargetPair } from '../collect/select.ts';
-import type { ResolvedConfig, ResolvedTarget } from '../config/resolve.ts';
-import { isAbandonedRejection } from '../internal/abandoned.ts';
-import { classifyError, ConfigurationError, serializeError } from '../internal/errors.ts';
-import type { DebugTrace } from '../internal/debug.ts';
+import type { ResolvedConfig, ResolvedTarget } from '@e2e-dev/core/lib/config/resolve';
+import { isAbandonedRejection } from '@e2e-dev/core/lib/internal/abandoned';
+import { classifyError, ConfigurationError, serializeError } from '@e2e-dev/core/lib/internal/errors';
+import type { DebugTrace } from '@e2e-dev/core/lib/internal/debug';
 import type { InMemoryAttempts } from './execute.ts';
-import type { SessionStore } from './sessions.ts';
+import type { SessionStore } from '@e2e-dev/core/lib/run/sessions';
+import type { StepHolding } from './step-hold.ts';
 import type { SpawnUnitRunner, UnitRunner, UnitRunnerEvents } from './unit-runner.ts';
 import { pairKey } from './units.ts';
 import type { MainToWorker, RunUnitMessage, WirePair } from './worker/protocol.ts';
@@ -39,7 +40,7 @@ export interface InProcessRunnerOptions {
   readonly headed: boolean;
   readonly debug: DebugTrace;
   /** See `TargetWorkerDeps.step`. */
-  readonly step: boolean;
+  readonly step: StepHolding | undefined;
   /** The environment each target's workers run with; see `EngineInitInfo.env`. */
   readonly envFor: (targetName: string) => Readonly<Record<string, string | undefined>>;
 }

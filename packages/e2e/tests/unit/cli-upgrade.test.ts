@@ -6,22 +6,36 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { upgrade, type UpgradeOptions } from '../../src/cli/upgrade.ts';
 import { parseUpgradeTarget, type UpgradeTarget } from '../../src/cli/upgrade-target.ts';
 
-type Releases = Record<string, Record<string, string> | { peers: Record<string, string>; deprecated: string }>;
+/** One release: its peer ranges, or those with what else the registry lists for it. */
+type Release = Record<string, string> | { peers: Record<string, string>; deprecated?: string; dependencies?: Record<string, string>; optionalPeers?: readonly string[] };
+type Releases = Record<string, Release>;
 
 /** A registry of `e2e` and a few siblings, each version with its peer ranges. */
 const REGISTRY: Record<string, { tags: Record<string, string>; versions: Releases }> = {
   e2e: {
-    tags: { latest: '0.21.2', nightly: '0.21.3-nightly-20261019081103' },
-    versions: { '0.15.0': {}, '0.18.0': {}, '0.20.0': {}, '0.21.2': {}, '0.21.3-nightly-20261019081103': {} },
+    tags: { latest: '0.21.2', nightly: '0.21.3-nightly-20261019081103', next: '0.23.2' },
+    versions: {
+      '0.15.0': {},
+      '0.18.0': {},
+      '0.20.0': {},
+      '0.21.2': {},
+      '0.21.3-nightly-20261019081103': {},
+      '0.23.2': { peers: {}, dependencies: { '@e2e-dev/core': '0.23.2' } },
+    },
+  },
+  '@e2e-dev/core': {
+    tags: { latest: '0.24.0', next: '0.24.0' },
+    versions: { '0.23.2': {}, '0.24.0': {} },
   },
   '@e2e-dev/web': {
-    tags: { latest: '0.15.2', nightly: '0.15.3-nightly-20261019081103' },
+    tags: { latest: '0.15.2', nightly: '0.15.3-nightly-20261019081103', next: '0.17.0' },
     versions: {
       '0.12.0': { e2e: '>=0.15.0 <1' },
       '0.14.0': { e2e: '>=0.18.0 <1' },
       '0.15.1': { peers: { e2e: '>=0.18.0 <1' }, deprecated: 'broken' },
       '0.15.2': { e2e: '>=0.18.0 <1' },
       '0.15.3-nightly-20261019081103': { e2e: '0.21.3-nightly-20261019081103' },
+      '0.17.0': { peers: { e2e: '>=0.23.2 <1', '@e2e-dev/core': '>=0.23.2 <1', '@e2e-dev/decision': '>=0.1.0 <1' }, optionalPeers: ['@e2e-dev/decision'] },
     },
   },
   '@e2e-dev/kernel': {
@@ -41,6 +55,21 @@ const spawnMock = vi.fn<NonNullable<UpgradeOptions['spawn']>>();
 
 function written(spy: ReturnType<typeof vi.spyOn>): string {
   return stripVTControlCharacters(spy.mock.calls.map((call: readonly unknown[]) => String(call[0])).join(''));
+}
+
+/** The fields the registry lists for one release. */
+function manifestOf(release: Release): Record<string, unknown> {
+  if (!isDetailed(release)) return { peerDependencies: release };
+  return {
+    peerDependencies: release.peers,
+    ...(release.deprecated === undefined ? {} : { deprecated: release.deprecated }),
+    ...(release.dependencies === undefined ? {} : { dependencies: release.dependencies }),
+    ...(release.optionalPeers === undefined ? {} : { peerDependenciesMeta: Object.fromEntries(release.optionalPeers.map((name) => [name, { optional: true }])) }),
+  };
+}
+
+function isDetailed(release: Release): release is Exclude<Release, Record<string, string>> {
+  return typeof release['peers'] === 'object';
 }
 
 /** Writes `package.json` into the project, and `node_modules/<name>` for each installed version. */
@@ -80,11 +109,7 @@ beforeEach(() => {
     const entry = REGISTRY[name];
     if (entry === undefined) return new Response('{"error":"Not found"}', { status: 404 });
     const versions = Object.fromEntries(
-      Object.entries(entry.versions).map(([version, release]) =>
-        'deprecated' in release
-          ? [version, { version, peerDependencies: release.peers, deprecated: release.deprecated }]
-          : [version, { version, peerDependencies: release }],
-      ),
+      Object.entries(entry.versions).map(([version, release]) => [version, { version, ...manifestOf(release) }]),
     );
     return Response.json({ name, 'dist-tags': entry.tags, versions });
   });
@@ -242,7 +267,7 @@ describe('e2e upgrade', () => {
 
   it.each([
     [{ kind: 'version', version: '9.9.9' }, 'e2e 9.9.9 was never published; the latest release is 0.21.2'],
-    [{ kind: 'tag', tag: 'beta' }, 'e2e has no "beta" release; its dist-tags are latest, nightly'],
+    [{ kind: 'tag', tag: 'beta' }, 'e2e has no "beta" release; its dist-tags are latest, nightly, next'],
   ] as const)('exits 2 for %j', async (target, message) => {
     project({ devDependencies: { e2e: '^0.20.0' } });
     expect((await run(target)).exitCode).toBe(2);
@@ -374,6 +399,35 @@ describe('e2e upgrade', () => {
     }
     expect(spawnMock).not.toHaveBeenCalled();
     expect(written(stderrSpy)).toBe('e2e upgrade: no @e2e-dev/left release fits the rest of the upgrade: @e2e-dev/left 1.0.0 needs @e2e-dev/right >=2.0.0 <3, and the upgrade picks @e2e-dev/right 1.0.0\n');
+  });
+
+  it('adds a required @e2e-dev peer the project does not declare, at the version e2e itself depends on', async () => {
+    project({ dependencies: { '@e2e-dev/web': '^0.15.2' }, devDependencies: { e2e: '^0.21.2' } }, { e2e: '0.21.2', '@e2e-dev/web': '0.15.2' });
+    expect(await run({ kind: 'tag', tag: 'next' })).toMatchObject({ exitCode: 0, result: 'upgraded', siblings: ['@e2e-dev/web', '@e2e-dev/core'], moved: 3 });
+    // Beside the engine that peers on it; the optional peer is left to the project.
+    expect(sections()).toEqual({
+      dependencies: { '@e2e-dev/web': '^0.17.0', '@e2e-dev/core': '^0.23.2' },
+      devDependencies: { e2e: '^0.23.2' },
+      optionalDependencies: undefined,
+    });
+    expect(written(stdoutSpy)).toContain('@e2e-dev/core  0.23.2 (added: @e2e-dev/web peers on it)');
+    expect(commands()).toEqual(['npm install']);
+  });
+
+  it('adds a missing peer when everything else is already at the target', async () => {
+    project({ devDependencies: { e2e: '0.23.2', '@e2e-dev/web': '0.17.0' } }, { e2e: '0.23.2', '@e2e-dev/web': '0.17.0' });
+    expect(await run({ kind: 'tag', tag: 'next' })).toMatchObject({ result: 'upgraded', moved: 1 });
+    expect(sections()['devDependencies']).toEqual({ e2e: '0.23.2', '@e2e-dev/web': '0.17.0', '@e2e-dev/core': '^0.23.2' });
+  });
+
+  it('keeps a declared package e2e depends on at the version e2e names, whatever its newest release', async () => {
+    project(
+      { devDependencies: { e2e: '^0.21.2', '@e2e-dev/web': '^0.15.2', '@e2e-dev/core': '^0.24.0' } },
+      { e2e: '0.21.2', '@e2e-dev/web': '0.15.2', '@e2e-dev/core': '0.24.0' },
+    );
+    expect((await run({ kind: 'tag', tag: 'next' })).result).toBe('upgraded');
+    expect(sections()['devDependencies']).toEqual({ e2e: '^0.23.2', '@e2e-dev/web': '^0.17.0', '@e2e-dev/core': '^0.23.2' });
+    expect(written(stdoutSpy)).toContain('(downgrade)');
   });
 
   it("compares specs where node_modules holds nothing, as under Yarn Plug'n'Play", async () => {

@@ -23,13 +23,13 @@ import {
   type EngineInitInfo,
   type OperationContext,
   type SemanticNode,
-} from '../../src/engine/index.ts';
-import { resolveConfig } from '../../src/config/resolve.ts';
-import { ConfigurationError, TestTimeoutError } from '../../src/internal/errors.ts';
-import { protocolEngine } from '../../src/engine/protocol/client.ts';
-import { Connection } from '../../src/engine/protocol/connection.ts';
-import type { EngineTransport } from '../../src/engine/protocol/transport.ts';
-import { secretHandle } from '../../src/secrets.ts';
+} from '@e2e-dev/core/lib/engine/index';
+import { resolveConfig } from '../../src/config/resolve-run.ts';
+import { ConfigurationError, TestTimeoutError } from '@e2e-dev/core/lib/internal/errors';
+import { protocolEngine } from '@e2e-dev/core/lib/engine/protocol/client';
+import { Connection } from '@e2e-dev/core/lib/engine/protocol/connection';
+import type { EngineTransport } from '@e2e-dev/core/lib/engine/protocol/transport';
+import { secretHandle } from '@e2e-dev/core/lib/secrets';
 
 const node = (id: string, name: string, role = 'button'): SemanticNode => ({ ref: { id, revision: '' }, role, name });
 
@@ -72,6 +72,17 @@ const toy = (extra: Partial<Engine> = {}): Engine => ({
 });
 
 describe('engine protocol', () => {
+  it('carries a read request and computed values through JSON-RPC', async () => {
+    const read = vi.fn(async () => ({ color: 'rgb(255, 0, 0)' }));
+    const { remote } = overLoopback(toy({ readStyle: read }));
+    expect(remote.capabilities.has('computed-style')).toBe(true);
+    await remote.init!(initInfo());
+    const ref = { id: 'n1', revision: '1' };
+    await expect(remote.readStyle!(ref, ['color'], operation())).resolves.toEqual({ color: 'rgb(255, 0, 0)' });
+    expect(read).toHaveBeenCalledExactlyOnceWith(ref, ['color'], expect.objectContaining({ origin: 'test' }));
+    await remote.dispose!(cleanup);
+    expect(() => defineEngine({ name: 'bad', version: '1', spiVersion: 1, readStyle: read })).toThrow(/readStyle without observe/);
+  });
   it('declares the same capabilities over the protocol as the engine itself', () => {
     const { local, remote } = overLoopback(
       toy({
@@ -522,6 +533,8 @@ describe('engine protocol', () => {
     expect(validate(describeEngine(local))).toBe(true);
     const base = { name: 'x', version: '1', spiVersion: 1 };
     for (const refused of [
+      { ...base, methods: ['engine/observe', 'engine/teleport'] },
+      { ...base, methods: ['engine/readStyle'] },
       { ...base, methods: ['engine/observe'], actions: ['tap'] },
       { ...base, methods: ['engine/observe'], tapModifiers: true },
       { ...base, methods: ['engine/observe'], pointerActions: ['tap'] },

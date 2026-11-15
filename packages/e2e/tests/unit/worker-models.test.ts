@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import type { SdkLanguageModel } from '../../src/agent/ai-sdk.ts';
-import { AgentError } from '../../src/agent/error.ts';
-import { resolveConfig } from '../../src/config/resolve.ts';
-import { WorkerModels } from '../../src/run/worker-models.ts';
+import type { SdkLanguageModel } from '@e2e-dev/core/lib/agent/ai-sdk';
+import { AgentError } from '@e2e-dev/core/lib/agent/error';
+import { resolveConfig } from '../../src/config/resolve-run.ts';
+import { WorkerModels } from '@e2e-dev/core/lib/run/worker-models';
 
 const ENV = { APP_URL: 'http://localhost:3000' } as NodeJS.ProcessEnv;
 

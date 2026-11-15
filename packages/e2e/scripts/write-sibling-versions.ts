@@ -1,6 +1,6 @@
 /**
- * Records the engine versions `e2e init` installs, read from
- * the sibling packages' manifests at build time.
+ * Records the engine versions `e2e init` installs, and the `@e2e-dev/core`
+ * they peer on, read from the sibling packages' manifests at build time.
  *
  * Usage: `node scripts/write-sibling-versions.ts`, from the package directory,
  * after `tsc` emitted `dist`.
@@ -13,6 +13,7 @@ type Manifest = { version: string };
 const read = (dir: string) => JSON.parse(readFileSync(`../${dir}/package.json`, 'utf8')) as Manifest;
 
 const versions = {
+  '@e2e-dev/core': read('core').version,
   '@e2e-dev/web': read('web').version,
   '@e2e-dev/mobile': read('mobile').version,
 };

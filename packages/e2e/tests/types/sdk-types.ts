@@ -64,6 +64,7 @@ import {
   createToolLoopExecutor,
   createVerdictTool,
   defineTool,
+  getToolContext,
   isRuntimeHardStop,
   VERDICT_RULES,
   type ScreenOutput,
@@ -135,6 +136,16 @@ declare const remoteStore: CacheStore;
 declare const renamedStore: import('../../src/index.ts').TraceCacheStore;
 renamedStore;
 declare const artifactStore: ArtifactStore;
+const toolContext = getToolContext({});
+void toolContext.read({ id: 'n1' }, { style: ['color', 'font-weight', 'visibility', 'opacity'] });
+// @ts-expect-error arbitrary CSS properties, URLs and generated content are not readable
+void toolContext.read({ id: 'n1' }, { style: ['content'] });
+// @ts-expect-error custom properties are not readable
+void toolContext.read({ id: 'n1' }, { style: ['--token'] });
+// @ts-expect-error reads address listed nodes, never selectors
+void toolContext.read('body', { style: ['color'] });
+// @ts-expect-error reads cannot evaluate code
+void toolContext.read({ id: 'n1' }, { style: ['color'], evaluate: 'document.cookie' });
 declare const asyncExpectation: AsyncExpectation;
 declare const screen: Screen;
 declare const engine: EngineHandle;
@@ -397,6 +408,7 @@ finishedRun.lastRun satisfies FinishedRun['report'] | undefined;
 // @ts-expect-error the exit codes are the closed set a run ends with
 5 satisfies RunExitCode;
 declare const executorContext: StepExecutorContext;
+void executorContext.read({ id: 'n1' }, { style: ['color'] });
 executorContext.target.verbs satisfies ReadonlySet<ExecutorVerb>;
 executorContext.attempt.titlePath satisfies readonly string[];
 'tapAt' satisfies ExecutorVerb;
@@ -553,7 +565,7 @@ void screen.getByLabel('Plan').selectOption({ value: 'pro', index: 1 });
 screen.getByRole('button', { hidden: true });
 
 // Coordinate input: a viewport point on screen, a node-relative one on a locator.
-declare const point: import('../../src/types.ts').Point;
+declare const point: import('../../src/index.ts').Point;
 void (executorContext.actions.tapAt(point) satisfies Promise<PointTapResult>);
 void (executorContext.actions.hitTest(point) satisfies Promise<PointHit>);
 void (executorContext.actions.dragAt(point, point) satisfies Promise<PointDragResult>);

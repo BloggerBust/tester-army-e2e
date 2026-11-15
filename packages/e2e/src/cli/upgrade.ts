@@ -2,9 +2,11 @@
  * `e2e upgrade` (alias `update`): moves the project's `e2e` to the latest
  * release, a dist-tag, or one version, and every `@e2e-dev/*` package the
  * project declares along with it, each to the newest release whose peer
- * ranges accept the new versions. The new specs go into package.json, each
- * in the section it was in, and one install with the project's package
- * manager resolves them, so its lockfile and its workspace stay its own.
+ * ranges accept the new versions. An `@e2e-dev/*` package those releases peer
+ * on and the project does not declare is added beside the one that needs it.
+ * The new specs go into package.json, each in the section it was in, and one
+ * install with the project's package manager resolves them, so its lockfile
+ * and its workspace stay its own.
  */
 
 import { spawnSync } from 'node:child_process';
@@ -13,7 +15,7 @@ import path from 'node:path';
 import picocolors from 'picocolors';
 import { z } from 'zod';
 import { detectWorkspacePackageManager, execCommand, LOCKFILE_NAMES, type PackageManager } from '../internal/package-manager.ts';
-import { insideProjectRoot, realpathOfExisting } from '../internal/paths.ts';
+import { insideProjectRoot, realpathOfExisting } from '@e2e-dev/core/lib/internal/paths';
 import { compareVersions, parseVersion, satisfies } from '../internal/semver.ts';
 import type { UpgradeOutcome, UpgradeResult } from '../telemetry/events.ts';
 import { describeLinks, describeObstacles, findInstalledSkillDirs, planSkillInstall } from './init/agent-skill.ts';
@@ -55,7 +57,9 @@ const packumentSchema = z.looseObject({
   versions: z.record(
     z.string(),
     z.looseObject({
+      dependencies: z.record(z.string(), z.string()).optional(),
       peerDependencies: z.record(z.string(), z.string()).optional(),
+      peerDependenciesMeta: z.record(z.string(), z.looseObject({ optional: z.boolean().optional() })).optional(),
       deprecated: z.string().optional(),
     }),
   ),
@@ -76,6 +80,8 @@ interface Planned extends Declared {
   readonly version: string;
   /** The spec written to package.json: the version, with the range operator the old spec had. */
   readonly request: string;
+  /** The declared package whose peer this is, for one the project did not declare and the upgrade adds. */
+  readonly peerOf?: string;
 }
 
 /** A failure that ends the command: what to print, how telemetry names it, and the exit code. */
@@ -147,10 +153,12 @@ async function upgradeOrThrow(options: UpgradeOptions, facts: UpgradeFacts): Pro
   const target = resolveRunner(options.target, packuments.get(RUNNER));
   facts.toVersion = target;
   const versions = resolveSiblings(options.target, target, declared, packuments, (name) => out(picocolors.dim(`Skipping ${name}: the registry has no such package`)));
-  const plan = declared.flatMap((entry): Planned[] => {
+  const listed = declared.flatMap((entry): Planned[] => {
     const version = versions.get(entry.name);
     return version === undefined ? [] : [{ ...entry, version, request: requestFor(entry.spec, version, options.target) }];
   });
+  const known = new Set([...declared, ...linked].map((entry) => entry.name));
+  const plan = [...listed, ...(await undeclaredPeers(options.target, listed, known, packuments, (name) => fetchPackument(registry, name, fetchImpl)))];
   facts.siblings = plan.filter((entry) => entry.name !== RUNNER).map((entry) => entry.name);
 
   const { manager, root } = detectWorkspacePackageManager(project.dir, env);
@@ -338,7 +346,8 @@ function resolveSiblings(
     // Peers that wait on each other: resolve them against what is chosen so far.
     const batch = ready.length > 0 ? ready : pending;
     for (const entry of batch) {
-      chosen.set(entry.name, pickSibling(entry.name, packuments.get(entry.name)!, target, chosen, allowPrerelease));
+      const packument = packuments.get(entry.name)!;
+      chosen.set(entry.name, runnerPin(entry.name, packument, packuments.get(RUNNER), runner) ?? pickSibling(entry.name, packument, target, chosen, allowPrerelease));
     }
     pending = pending.filter((entry) => !batch.includes(entry));
   }
@@ -350,6 +359,52 @@ function resolveSiblings(
     }
   }
   return chosen;
+}
+
+/**
+ * The version of a sibling the runner release itself depends on, when it
+ * names one release: the project then installs that one, and one copy serves
+ * the runner and whatever peers on it.
+ */
+function runnerPin(name: string, packument: Packument, runnerPackument: Packument | undefined, runner: string): string | undefined {
+  const pinned = runnerPackument?.versions[runner]?.dependencies?.[name];
+  return pinned !== undefined && packument.versions[pinned] !== undefined ? pinned : undefined;
+}
+
+/**
+ * The `@e2e-dev/*` packages the planned releases peer on that the project
+ * does not declare, each in the section of the first package that needs it.
+ * npm and pnpm install a missing peer themselves; Yarn does not, and under
+ * Plug'n'Play the package that peers on it then fails to load.
+ */
+async function undeclaredPeers(
+  target: UpgradeTarget,
+  plan: readonly Planned[],
+  known: Set<string>,
+  packuments: ReadonlyMap<string, Packument | undefined>,
+  fetchPeer: (name: string) => Promise<Packument | undefined>,
+): Promise<Planned[]> {
+  const chosen = new Map(plan.map((entry) => [entry.name, entry.version]));
+  const runner = chosen.get(RUNNER)!;
+  const allowPrerelease = (parseVersion(runner)?.prerelease.length ?? 0) > 0;
+  const added: Planned[] = [];
+  for (const entry of plan) {
+    const manifest = packuments.get(entry.name)?.versions[entry.version];
+    for (const [peer, range] of Object.entries(manifest?.peerDependencies ?? {})) {
+      if (!peer.startsWith(SCOPE) || known.has(peer) || manifest?.peerDependenciesMeta?.[peer]?.optional === true) continue;
+      known.add(peer);
+      const packument = await fetchPeer(peer);
+      if (packument === undefined) continue;
+      const version = runnerPin(peer, packument, packuments.get(RUNNER), runner) ?? pickSibling(peer, packument, target, chosen, allowPrerelease);
+      const parsed = parseVersion(version);
+      if (parsed === undefined || !satisfies(parsed, range)) {
+        throw new UpgradeError(`no ${peer} release fits the rest of the upgrade: ${entry.name} ${entry.version} needs ${peer} ${range}, and the upgrade picks ${peer} ${version}`, 'incompatible', 2);
+      }
+      chosen.set(peer, version);
+      added.push({ name: peer, section: entry.section, spec: '', installed: undefined, version, request: requestFor('', version, target), peerOf: entry.name });
+    }
+  }
+  return added;
 }
 
 /** The first peer range of `manifest` that a version in `chosen` misses; peers outside the plan are not checked. */
@@ -418,6 +473,7 @@ function moves(entry: Planned): boolean {
 }
 
 function describeChange(entry: Planned): string {
+  if (entry.peerOf !== undefined) return `${picocolors.bold(entry.version)} ${picocolors.dim(`(added: ${entry.peerOf} peers on it)`)}`;
   const from = entry.installed ?? entry.spec;
   if (!moves(entry)) return `${entry.version} ${picocolors.dim('(up to date)')}`;
   const before = entry.installed === undefined ? undefined : parseVersion(entry.installed);
@@ -429,13 +485,16 @@ function describeChange(entry: Planned): string {
 /**
  * The manifest with each moving package's spec set to its request in every
  * section that lists it: a package in both `dependencies` and
- * `optionalDependencies` is installed from the one its manager prefers.
+ * `optionalDependencies` is installed from the one its manager prefers. An
+ * added peer goes into the section of the package that needs it.
  */
 function withRequests(manifest: Manifest, entries: readonly Planned[]): Manifest {
   const sections = SECTIONS.flatMap((section) => {
     const block = manifest[section];
     if (block === undefined) return [];
-    const moved = entries.filter((entry) => block[entry.name] !== undefined).map((entry) => [entry.name, entry.request] as const);
+    const moved = entries
+      .filter((entry) => (entry.peerOf === undefined ? block[entry.name] !== undefined : entry.section === section))
+      .map((entry) => [entry.name, entry.request] as const);
     return [[section, { ...block, ...Object.fromEntries(moved) }] as const];
   });
   return { ...manifest, ...Object.fromEntries(sections) };
