@@ -69,6 +69,10 @@ describe('assertRoutePatternCanMatchUrl', () => {
     '../api/orders',
     '//host.test/api/orders',
     '\\/api/orders',
+    'api*',
+    '*',
+    '*/orders',
+    'api?*',
   ])('rejects path-only pattern %s', (value) => {
     expect(() => assertRoutePatternCanMatchUrl(toTextPattern(value))).toThrowError(
       expect.objectContaining({
@@ -81,6 +85,7 @@ describe('assertRoutePatternCanMatchUrl', () => {
   it.each([
     ['*://*/api/orders', 'https://x.test/api/orders'],
     ['http???x.test/api/orders', 'http://x.test/api/orders'],
+    ['http*//x.test/api/orders', 'http://x.test/api/orders'],
     ['http\\://x.test/a\\*b', 'http://x.test/a*b'],
   ])('accepts full-URL pattern %s', (value, url) => {
     const pattern = toTextPattern(value);

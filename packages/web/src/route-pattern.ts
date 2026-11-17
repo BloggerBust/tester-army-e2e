@@ -63,7 +63,10 @@ export function assertRoutePatternCanMatchUrl(pattern: TextPattern): void {
   const colon = literalPrefix.indexOf(':');
   const pathPrefix = slash !== -1 && (colon === -1 || slash < colon);
   const literalPath = literalPrefix.length === pattern.value.length && colon === -1;
-  if (pathPrefix || literalPath) {
+  const pathGlob = !pattern.value.includes(':')
+    && !pattern.value.includes('**')
+    && (pattern.value.match(/[/?]/g)?.length ?? 0) < 2;
+  if (pathPrefix || literalPath || pathGlob) {
     throw new TestError(
       'INVALID_ARGUMENT',
       `browser.route pattern ${JSON.stringify(pattern.value)} is path-only, but route patterns are matched against full URLs. Use a glob such as '**/api/orders' or a regular expression`,
