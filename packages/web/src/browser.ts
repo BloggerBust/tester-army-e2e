@@ -47,7 +47,7 @@ import { initScriptLabel, testInitScriptSource } from './init-scripts.ts';
 import { MEDIA_KEYS, mediaLabel, mediaProblem, type WebMedia } from './media.ts';
 import { lowercaseNames } from './protected-app.ts';
 import { parseContinue, parseFulfill, requireNoArguments } from './route-options.ts';
-import { assertRoutePatternCanMatchUrl, routePatternMatches, routePatternsEqual } from './route-pattern.ts';
+import { parseRoutePattern, routePatternMatches, routePatternsEqual } from './route-pattern.ts';
 import type { PlaywrightSurface } from './surface.ts';
 
 /**
@@ -646,9 +646,6 @@ export function createBrowserFixture(surface: PlaywrightSurface, context: Engine
       await surface.guard(context.operation(), 'addInitScript', () => surface.addInitScript(source));
     },
     route(pattern, handler) {
-      const wirePattern = toTextPattern(pattern);
-      assertRoutePatternCanMatchUrl(wirePattern);
-      const predicate = (url: URL) => routePatternMatches(wirePattern, url.href);
       // Playwright never surfaces a throwing route handler to the test, so a
       // contract violation (no decision, two decisions) or a failing handler
       // is latched on the surface and fails the next step with its real cause.
@@ -757,22 +754,25 @@ export function createBrowserFixture(surface: PlaywrightSurface, context: Engine
         return work;
       };
       return surface.guard(context.operation(), 'route', async () => {
+        const wirePattern = parseRoutePattern('route', pattern);
+        const predicate = (url: URL) => routePatternMatches(wirePattern, url.href);
         routes.push({ pattern: wirePattern, pwHandler, predicate });
         await surface.route(predicate, pwHandler);
       });
     },
     unroute(pattern) {
-      const wirePattern = toTextPattern(pattern);
-      return surface.guard(context.operation(), 'unroute', () =>
-        removeRoutes(stored => routePatternsEqual(stored.pattern, wirePattern)));
+      return surface.guard(context.operation(), 'unroute', () => {
+        const wirePattern = parseRoutePattern('unroute', pattern);
+        return removeRoutes(stored => routePatternsEqual(stored.pattern, wirePattern));
+      });
     },
     unrouteAll() {
       return surface.guard(context.operation(), 'unrouteAll', () => removeRoutes(() => true));
     },
     waitForResponse(pattern, options) {
-      const wirePattern = toTextPattern(pattern);
       const operation = context.operation(stepTimeout(options?.timeout, 'browser.waitForResponse'));
       return surface.guard(operation, 'waitForResponse', async (currentOperation) => {
+        const wirePattern = parseRoutePattern('waitForResponse', pattern);
         const page = await surface.ensurePage();
         const response = await page.waitForResponse(
           (candidate) => routePatternMatches(wirePattern, candidate.url()),

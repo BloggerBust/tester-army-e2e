@@ -371,10 +371,9 @@ describe('browser.route decisions', () => {
     try {
       await browser.route(`${origin}/api/quote`, route => route.fulfill({ body: 'absolute' }));
       expect(await fetchText(`${origin}/api/quote`)).toBe('absolute');
-      const attempt = async () => browser.route('/api/quote', route => route.fulfill({ body: 'never' }));
-      await expect(attempt()).rejects.toMatchObject({
+      await expect(browser.route('/api/quote', route => route.fulfill({ body: 'never' }))).rejects.toMatchObject({
         code: 'INVALID_ARGUMENT',
-        message: expect.stringMatching(/full URL.*\*\*\/api\/orders.*regular expression/),
+        message: expect.stringMatching(/^browser\.route pattern .*full URL.*"\*\*\/api\/quote".*regular expression/),
       });
       expect(registered).toHaveBeenCalledTimes(1);
       expect(await fetchText(`${origin}/api/quote`)).toBe('absolute');
@@ -387,6 +386,34 @@ describe('browser.route decisions', () => {
     } finally {
       registered.mockRestore();
       removed.mockRestore();
+    }
+  });
+
+  it('rejects a missing-scheme pattern from unroute and waitForResponse as a rejected promise', async () => {
+    const removed = vi.spyOn(surface, 'unroute');
+    const waited = vi.spyOn(page, 'waitForResponse');
+    try {
+      const unroute = browser.unroute('localhost:3000/api/quote');
+      await expect(unroute).rejects.toMatchObject({ code: 'INVALID_ARGUMENT', message: expect.stringContaining('browser.unroute pattern') });
+      const wait = browser.waitForResponse('/api/quote', { timeout: 30 });
+      await expect(wait).rejects.toMatchObject({ code: 'INVALID_ARGUMENT', message: expect.stringContaining('browser.waitForResponse pattern') });
+      expect(removed).not.toHaveBeenCalled();
+      expect(waited).not.toHaveBeenCalled();
+    } finally {
+      removed.mockRestore();
+      waited.mockRestore();
+    }
+  });
+
+  it('reports a pending route handler failure before a path-only route pattern', async () => {
+    const registered = vi.spyOn(surface, 'route');
+    const failure = new TestError('ASSERTION_FAILED', 'latched handler failure');
+    surface.latch.latch(failure);
+    try {
+      await expect(browser.route('/api/quote', route => route.fulfill({ body: 'never' }))).rejects.toBe(failure);
+      expect(registered).not.toHaveBeenCalled();
+    } finally {
+      registered.mockRestore();
     }
   });
 

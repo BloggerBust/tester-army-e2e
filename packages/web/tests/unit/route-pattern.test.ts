@@ -1,7 +1,7 @@
 import { toTextPattern } from '@e2e-dev/core/engine';
 import { describe, expect, it } from 'vitest';
 import {
-  assertRoutePatternCanMatchUrl,
+  parseRoutePattern,
   compileRoutePattern,
   routePatternMatches,
   routePatternsEqual,
@@ -59,8 +59,9 @@ describe('routePatternsEqual', () => {
   });
 });
 
-describe('assertRoutePatternCanMatchUrl', () => {
+describe('parseRoutePattern', () => {
   it.each([
+    '',
     '/api/orders',
     '/api/*',
     'api/orders',
@@ -69,31 +70,42 @@ describe('assertRoutePatternCanMatchUrl', () => {
     '../api/orders',
     '//host.test/api/orders',
     '\\/api/orders',
-    'api*',
-    '*',
-    '*/orders',
-    'api?*',
-  ])('rejects path-only pattern %s', (value) => {
-    expect(() => assertRoutePatternCanMatchUrl(toTextPattern(value))).toThrowError(
+    'localhost:3000/api/orders',
+    'x.test:3000/**',
+    '127.0.0.1:8080',
+    'LOCALHOST:3000/api/orders',
+    'http\\\\*://x.test/',
+  ])('rejects pattern %s, a common missing-scheme mistake', (value) => {
+    expect(() => parseRoutePattern('route', value)).toThrowError(
       expect.objectContaining({
         code: 'INVALID_ARGUMENT',
-        message: expect.stringContaining(JSON.stringify(value)),
+        message: expect.stringContaining(`browser.route pattern ${JSON.stringify(value)}`),
       }),
     );
   });
 
+  it('names the method and suggests the supplied path on any origin', () => {
+    expect(() => parseRoutePattern('unroute', '/api/quote')).toThrowError(
+      expect.objectContaining({ message: expect.stringMatching(/^browser\.unroute pattern .* "\*\*\/api\/quote" .*regular expression$/) }),
+    );
+    expect(() => parseRoutePattern('waitForResponse', 'localhost:3000/api/quote')).toThrowError(
+      expect.objectContaining({ message: expect.stringMatching(/^browser\.waitForResponse pattern .*full URL.*regular expression$/) }),
+    );
+  });
+
   it.each([
+    ['**', 'https://x.test/api/orders'],
     ['*://*/api/orders', 'https://x.test/api/orders'],
     ['http???x.test/api/orders', 'http://x.test/api/orders'],
     ['http*//x.test/api/orders', 'http://x.test/api/orders'],
+    ['http://localhost:3000/**', 'http://localhost:3000/api/orders'],
     ['http\\://x.test/a\\*b', 'http://x.test/a*b'],
-  ])('accepts full-URL pattern %s', (value, url) => {
-    const pattern = toTextPattern(value);
-    expect(() => assertRoutePatternCanMatchUrl(pattern)).not.toThrow();
-    expect(routePatternMatches(pattern, url)).toBe(true);
+    ['tel:123', 'tel:123'],
+  ])('accepts pattern %s and matches %s', (value, url) => {
+    expect(routePatternMatches(parseRoutePattern('route', value), url)).toBe(true);
   });
 
   it('accepts a path-shaped RegExp', () => {
-    expect(() => assertRoutePatternCanMatchUrl(toTextPattern(/^\/api\/orders$/))).not.toThrow();
+    expect(parseRoutePattern('route', /^\/api\/orders$/)).toEqual(toTextPattern(/^\/api\/orders$/));
   });
 });

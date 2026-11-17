@@ -1,6 +1,6 @@
 /** Route URL pattern grammar. */
 
-import { TestError, type TextPattern } from '@e2e-dev/core/engine';
+import { TestError, type TextPattern, toTextPattern } from '@e2e-dev/core/engine';
 
 /** Escapes one character for literal use inside a regexp source. */
 function escapeRegexpChar(ch: string): string {
@@ -55,21 +55,29 @@ export function routePatternsEqual(a: TextPattern, b: TextPattern): boolean {
   return false;
 }
 
-/** Rejects path-only strings while allowing wildcards to match the scheme and host. */
-export function assertRoutePatternCanMatchUrl(pattern: TextPattern): void {
-  if (pattern.kind !== 'string') return;
-  const literalPrefix = pattern.value.match(/^(?:\\[\s\S]?|[^\\*?])*/)?.[0] ?? '';
-  const slash = literalPrefix.indexOf('/');
-  const colon = literalPrefix.indexOf(':');
-  const pathPrefix = slash !== -1 && (colon === -1 || slash < colon);
-  const literalPath = literalPrefix.length === pattern.value.length && colon === -1;
-  const pathGlob = !pattern.value.includes(':')
-    && !pattern.value.includes('**')
-    && (pattern.value.match(/[/?]/g)?.length ?? 0) < 2;
-  if (pathPrefix || literalPath || pathGlob) {
-    throw new TestError(
-      'INVALID_ARGUMENT',
-      `browser.route pattern ${JSON.stringify(pattern.value)} is path-only, but route patterns are matched against full URLs. Use a glob such as '**/api/orders' or a regular expression`,
-    );
-  }
+const HOST_AND_PORT = /^(?:localhost|[a-z0-9-]+(?:\.[a-z0-9-]+)+):\d+(?=\/|$)/i;
+const SCHEME = /^[a-zA-Z][a-zA-Z0-9+.-]*:/;
+const PARTIAL_SCHEME = /^[a-zA-Z][a-zA-Z0-9+.-]*$/;
+
+/** Converts a route pattern and rejects common missing-scheme mistakes. */
+export function parseRoutePattern(
+  method: 'route' | 'unroute' | 'waitForResponse',
+  pattern: Parameters<typeof toTextPattern>[0],
+): TextPattern {
+  const wire = toTextPattern(pattern);
+  if (wire.kind !== 'string') return wire;
+  const raw = wire.value.match(/^(?:\\[\s\S]?|[^\\*?])*/)?.[0] ?? '';
+  const whole = raw.length === wire.value.length;
+  const text = raw.replace(/\\([\s\S]?)/g, '$1');
+  const accepted = SCHEME.test(text)
+    ? !HOST_AND_PORT.test(text)
+    : !whole && (text === '' || PARTIAL_SCHEME.test(text));
+  if (accepted) return wire;
+  const hint = wire.value.startsWith('/')
+    ? `Use ${JSON.stringify(`**${wire.value}`)} to match that path on any origin, or a regular expression`
+    : 'Use a glob on the full URL, such as "**/api/orders" or "http://localhost:3000/**", or a regular expression';
+  throw new TestError(
+    'INVALID_ARGUMENT',
+    `browser.${method} pattern ${JSON.stringify(wire.value)} must match the full URL, including its scheme. ${hint}`,
+  );
 }
