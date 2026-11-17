@@ -72,6 +72,7 @@ describe('parseRoutePattern', () => {
     '\\/api/orders',
     'localhost:3000/api/orders',
     'x.test:3000/**',
+    'x.test:*/api/**',
     '127.0.0.1:8080',
     'LOCALHOST:3000/api/orders',
     'http\\\\*://x.test/',
@@ -99,6 +100,7 @@ describe('parseRoutePattern', () => {
     ['http???x.test/api/orders', 'http://x.test/api/orders'],
     ['http*//x.test/api/orders', 'http://x.test/api/orders'],
     ['http://localhost:3000/**', 'http://localhost:3000/api/orders'],
+    ['http://x.test:*/api/**', 'http://x.test:3000/api/orders'],
     ['http\\://x.test/a\\*b', 'http://x.test/a*b'],
     ['tel:123', 'tel:123'],
   ])('accepts pattern %s and matches %s', (value, url) => {

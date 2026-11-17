@@ -55,7 +55,7 @@ export function routePatternsEqual(a: TextPattern, b: TextPattern): boolean {
   return false;
 }
 
-const HOST_AND_PORT = /^(?:localhost|[a-z0-9-]+(?:\.[a-z0-9-]+)+):\d+(?=\/|$)/i;
+const HOST_AND_PORT = /^(?:localhost|[a-z0-9-]+(?:\.[a-z0-9-]+)+):(?:\d+(?=\/|$)|$)/i;
 const SCHEME = /^[a-zA-Z][a-zA-Z0-9+.-]*:/;
 const PARTIAL_SCHEME = /^[a-zA-Z][a-zA-Z0-9+.-]*$/;
 
