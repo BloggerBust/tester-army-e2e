@@ -155,7 +155,7 @@ run only in a browser, so a test that uses it declares
 
 | Playwright | e2e |
 | --- | --- |
-| `page.route(pattern, handler)`, `unroute()`, `unrouteAll()` | the same on `browser`; a pattern is a `RegExp` or a glob on the full URL |
+| `page.route(pattern, handler)`, `unroute()`, `unrouteAll()` | the same on `browser`; a pattern is a `RegExp` or a glob on the full URL. `browser.route` rejects path-only strings such as `/api/orders`. |
 | `route.fulfill()`, `continue()`, `fallback()`, `abort()`, `fetch()` | the same, see [`route`](/reference/web#route) for the options each takes |
 | `page.waitForResponse(pattern)` | `browser.waitForResponse(pattern)`; `'**/api/orders'`, not `'/api/orders'` |
 | `page.on('dialog')`, `page.waitForEvent('download')` | `browser.onDialog('accept')` or a handler; `browser.waitForDownload(() => trigger)` |

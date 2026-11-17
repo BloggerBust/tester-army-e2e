@@ -614,7 +614,8 @@ the opener is gone. `tabs()`, `newTab()`, `tab.activate()`, and
 A `route`, `unroute`, or `waitForResponse` pattern is a glob string or
 `RegExp` matched against the full URL (`*` stays within one path segment,
 `**` crosses `/`, `?` is one character); a predicate function is
-`INVALID_ARGUMENT`.
+`INVALID_ARGUMENT`. For example, `browser.route` accepts `**/api/orders` but
+rejects `/api/orders`.
 
 ## Habits
 

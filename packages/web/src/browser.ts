@@ -47,7 +47,7 @@ import { initScriptLabel, testInitScriptSource } from './init-scripts.ts';
 import { MEDIA_KEYS, mediaLabel, mediaProblem, type WebMedia } from './media.ts';
 import { lowercaseNames } from './protected-app.ts';
 import { parseContinue, parseFulfill, requireNoArguments } from './route-options.ts';
-import { routePatternMatches, routePatternsEqual } from './route-pattern.ts';
+import { assertRoutePatternCanMatchUrl, routePatternMatches, routePatternsEqual } from './route-pattern.ts';
 import type { PlaywrightSurface } from './surface.ts';
 
 /**
@@ -647,6 +647,7 @@ export function createBrowserFixture(surface: PlaywrightSurface, context: Engine
     },
     route(pattern, handler) {
       const wirePattern = toTextPattern(pattern);
+      assertRoutePatternCanMatchUrl(wirePattern);
       const predicate = (url: URL) => routePatternMatches(wirePattern, url.href);
       // Playwright never surfaces a throwing route handler to the test, so a
       // contract violation (no decision, two decisions) or a failing handler

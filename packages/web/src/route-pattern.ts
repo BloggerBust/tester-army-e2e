@@ -1,6 +1,6 @@
 /** Route URL pattern grammar. */
 
-import type { TextPattern } from '@e2e-dev/core/engine';
+import { TestError, type TextPattern } from '@e2e-dev/core/engine';
 
 /** Escapes one character for literal use inside a regexp source. */
 function escapeRegexpChar(ch: string): string {
@@ -53,4 +53,20 @@ export function routePatternsEqual(a: TextPattern, b: TextPattern): boolean {
   if (a.kind === 'string' && b.kind === 'string') return a.value === b.value;
   if (a.kind === 'regexp' && b.kind === 'regexp') return a.source === b.source && a.flags === b.flags;
   return false;
+}
+
+/** Rejects path-only strings while allowing wildcards to match the scheme and host. */
+export function assertRoutePatternCanMatchUrl(pattern: TextPattern): void {
+  if (pattern.kind !== 'string') return;
+  const literalPrefix = pattern.value.match(/^(?:\\[\s\S]?|[^\\*?])*/)?.[0] ?? '';
+  const slash = literalPrefix.indexOf('/');
+  const colon = literalPrefix.indexOf(':');
+  const pathPrefix = slash !== -1 && (colon === -1 || slash < colon);
+  const literalPath = literalPrefix.length === pattern.value.length && colon === -1;
+  if (pathPrefix || literalPath) {
+    throw new TestError(
+      'INVALID_ARGUMENT',
+      `browser.route pattern ${JSON.stringify(pattern.value)} is path-only, but route patterns are matched against full URLs. Use a glob such as '**/api/orders' or a regular expression`,
+    );
+  }
 }

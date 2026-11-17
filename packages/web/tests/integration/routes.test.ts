@@ -365,6 +365,31 @@ describe('browser.route decisions', () => {
     expect(await fetchText(`${origin}/api/quote`)).toBe('network:/api/quote');
   });
 
+  it('rejects a path-only pattern without changing registered routes', async () => {
+    const registered = vi.spyOn(surface, 'route');
+    const removed = vi.spyOn(surface, 'unroute');
+    try {
+      await browser.route(`${origin}/api/quote`, route => route.fulfill({ body: 'absolute' }));
+      expect(await fetchText(`${origin}/api/quote`)).toBe('absolute');
+      const attempt = async () => browser.route('/api/quote', route => route.fulfill({ body: 'never' }));
+      await expect(attempt()).rejects.toMatchObject({
+        code: 'INVALID_ARGUMENT',
+        message: expect.stringMatching(/full URL.*\*\*\/api\/orders.*regular expression/),
+      });
+      expect(registered).toHaveBeenCalledTimes(1);
+      expect(await fetchText(`${origin}/api/quote`)).toBe('absolute');
+      await browser.route(/\/api\/quote$/, route => route.fulfill({ body: 'regexp' }));
+      expect(await fetchText(`${origin}/api/quote`)).toBe('regexp');
+      expect(registered).toHaveBeenCalledTimes(2);
+      await browser.unrouteAll();
+      expect(removed).toHaveBeenCalledTimes(2);
+      expect(await fetchText(`${origin}/api/quote`)).toBe('network:/api/quote');
+    } finally {
+      registered.mockRestore();
+      removed.mockRestore();
+    }
+  });
+
   it('routes real native dialogs by kind even when their messages are identical', async () => {
     const kinds: string[] = [];
     const off = await browser.onDialog(async dialog => {

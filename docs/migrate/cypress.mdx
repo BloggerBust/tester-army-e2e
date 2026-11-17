@@ -102,7 +102,7 @@ describe('todos', () => {
 | `.should('be.visible')`, `be.checked`, `be.disabled`, `be.focused`, `exist` | `await expect(locator).toBeVisible()`, `toBeChecked()`, `toBeDisabled()`, `toBeFocused()`, `toBeAttached()` |
 | `have.text`, `contain`, `have.value`, `have.attr`, `have.length`, `not.exist` | `toHaveText`, `toContainText`, `toHaveValue`, `toHaveAttribute`, `toHaveCount(n)`, `toHaveCount(0)` |
 | `cy.url().should('include', p)`, `cy.title()` | `expect(browser).toHaveURL(/p/)`, `expect(browser).toHaveTitle(t)` |
-| `cy.intercept('/api/users', body)` | `browser.route('**/api/users', route => route.fulfill({ json: body }))`, a glob on the full URL |
+| `cy.intercept('/api/users', body)` | `browser.route('**/api/users', route => route.fulfill({ json: body }))`, a glob on the full URL. Unlike Cypress, `browser.route` rejects path-only strings. |
 | `cy.on('window:confirm')`, `cy.on('window:alert')` | `await browser.onDialog('accept')` before the action, `'dismiss'` to cancel |
 | `cy.session` | `test.setup` and `{ session }` |
 | `cy.task`, `cy.exec`, `cy.request`, `cy.fixture` | Node code: `fetch`, `fs`, your database client, `import data from './fixture.json'` |
