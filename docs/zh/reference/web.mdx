@@ -531,6 +531,7 @@ await browser.route('**/api/quote', async (route) => {
 `route.fetch()` 在操作超时范围内返回上游的 `{ url, status, headers, body(), text(), json() }`，如果其源应接收配置的请求头，也会携带这些请求头，但不会决定路由的处理方式。它不会跟随重定向，因为重定向可能绕过导航规则。
 
 - 模式为字符串或 `RegExp`，均针对完整 URL 匹配。在字符串中，`*` 匹配路径段内的内容，`**` 可跨越 `/`，`?` 匹配任意单个字符，`\` 转义下一个字符。`unroute` 和 `waitForResponse` 接受相同模式。
+- `route`、`unroute` 和 `waitForResponse` 会拒绝常见的无法匹配 HTTP 或 HTTPS URL 的字符串模式，并抛出 `INVALID_ARGUMENT` 错误。使用 `**/api/orders` 匹配任意源上的该路径，或使用 `http://localhost:3000/api/orders` 匹配特定 URL。也支持正则表达式。
 - 路由在 `app.restart()`、`app.clearState()` 和会话恢复后仍然保留。
 - 路由按最新注册的优先运行。
 - 处理函数必须且只能作出一次决定，调用 `fulfill`、`continue`、`fallback` 或 `abort`，各方法见下方 `WebRoute`。
@@ -541,7 +542,7 @@ await browser.route('**/api/quote', async (route) => {
 
 | 抛出错误 | 触发条件 |
 | --- | --- |
-| `INVALID_ARGUMENT` | 使用谓词函数作为模式。也包括决定操作不接受的选项（Playwright 的 `abort(errorCode)`、拼错的键）：请求会被中止，下一个步骤失败。 |
+| `INVALID_ARGUMENT` | 字符串模式的 URL 前缀无效，或向 `route` 传入谓词函数作为模式。也包括决定操作不接受的选项（Playwright 的 `abort(errorCode)`、拼错的键）：请求会被中止，下一个步骤失败。 |
 | `ACTION_FAILED` | 处理函数作出两次决定或未作决定。 |
 | `POLICY_DENIED` | `continue` URL 使用被禁止的协议。 |
 | `CLEANUP_TIMEOUT` | 处理函数运行时间超过清理预算，导致尝试失败。 |
@@ -608,7 +609,7 @@ await browser.unroute('**/api/quote');
 
 | 抛出错误 | 触发条件 |
 | --- | --- |
-| `INVALID_ARGUMENT` | 使用谓词函数作为模式。 |
+| `INVALID_ARGUMENT` | 字符串模式的 URL 前缀无效，或使用谓词函数作为模式。 |
 
 #### `unrouteAll`
 
@@ -634,7 +635,7 @@ expect(response.status).toBe(201);
 
 | 抛出错误 | 触发条件 |
 | --- | --- |
-| `INVALID_ARGUMENT` | 使用谓词函数作为模式。 |
+| `INVALID_ARGUMENT` | 字符串模式的 URL 前缀无效，或使用谓词函数作为模式。 |
 | `ACTION_FAILED` | 截止时间内没有匹配项。对于 `body()`、`text()` 和 `json()`：预算耗尽时响应体仍在传输，或浏览器无法读取响应体（未达到声明的 `Content-Length` 就连接重置、请求被页面中止，或浏览器从不保留响应体的重定向），此时抛出错误，而不是返回空字符串。 |
 
 ```ts

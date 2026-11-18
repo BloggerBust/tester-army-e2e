@@ -531,6 +531,7 @@ await browser.route('**/api/quote', async (route) => {
 `route.fetch()` は、ルートの処理方法を決定せずに、転送先の `{ url, status, headers, body(), text(), json() }` を返します。対象オリジンが設定済みヘッダーの送信対象なら、そのヘッダーを使います。アクションのタイムアウトが適用されます。ページ遷移のルールを超える可能性があるため、リダイレクトには従いません。
 
 - パターンは文字列または `RegExp` で、どちらも URL 全体と照合します。文字列の `*` はパスの 1 セグメント内、`**` は `/` をまたいで一致し、`?` は任意の 1 文字、`\` は次の文字をエスケープします。`unroute` と `waitForResponse` も同じパターンを使います。
+- `route`、`unroute`、`waitForResponse` は、HTTP または HTTPS の URL に一致できない一般的な文字列パターンを `INVALID_ARGUMENT` エラーとして拒否します。任意のオリジンでパスに一致させるには `**/api/orders` を、特定の URL に一致させるには `http://localhost:3000/api/orders` を使います。正規表現も使えます。
 - ルートは `app.restart()`、`app.clearState()`、セッションの復元をまたいでも残ります。
 - 新しく登録したルートから順に実行します。
 - ハンドラーは `fulfill`、`continue`、`fallback`、`abort` のいずれかで、必ず 1 回だけ処理を決定します。それぞれの説明は下の `WebRoute` にあります。
@@ -541,7 +542,7 @@ await browser.route('**/api/quote', async (route) => {
 
 | エラー | 発生条件 |
 | --- | --- |
-| `INVALID_ARGUMENT` | パターンに述語関数を渡した場合。また、処理の決定で受け付けないオプション（Playwright の `abort(errorCode)`、誤記したキーなど）がある場合は、リクエストを中断して次のステップを失敗させます。 |
+| `INVALID_ARGUMENT` | 文字列パターンの URL プレフィックスが無効な場合、または `route` のパターンに述語関数を渡した場合。また、処理の決定で受け付けないオプション（Playwright の `abort(errorCode)`、誤記したキーなど）がある場合は、リクエストを中断して次のステップを失敗させます。 |
 | `ACTION_FAILED` | ハンドラーが処理を 2 回決定したか、決定しなかった場合。 |
 | `POLICY_DENIED` | `continue` の URL が禁止スキームを使う場合。 |
 | `CLEANUP_TIMEOUT` | ハンドラーがクリーンアップの時間を超えた場合。試行を失敗させます。 |
@@ -608,7 +609,7 @@ await browser.unroute('**/api/quote');
 
 | エラー | 発生条件 |
 | --- | --- |
-| `INVALID_ARGUMENT` | パターンに述語関数を渡した場合。 |
+| `INVALID_ARGUMENT` | 文字列パターンの URL プレフィックスが無効な場合、またはパターンに述語関数を渡した場合。 |
 
 #### `unrouteAll`
 
@@ -634,7 +635,7 @@ expect(response.status).toBe(201);
 
 | エラー | 発生条件 |
 | --- | --- |
-| `INVALID_ARGUMENT` | パターンに述語関数を渡した場合。 |
+| `INVALID_ARGUMENT` | 文字列パターンの URL プレフィックスが無効な場合、またはパターンに述語関数を渡した場合。 |
 | `ACTION_FAILED` | 期限内に一致するレスポンスがなかった場合。`body()`、`text()`、`json()` では、期限時点でも本文の受信が続いている場合や、ブラウザが本文を読めなかった場合も、空文字列の代わりにこのエラーになります。後者には、宣言された `Content-Length` に達する前の接続リセット、ページが中断したリクエスト、ブラウザが本文を保持しないリダイレクトが含まれます。 |
 
 ```ts
