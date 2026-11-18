@@ -2,7 +2,7 @@
  * `@e2e-dev/core`'s Ctrl-C: a program that holds a host and gets SIGINT or SIGHUP
  * closes the host, and the engine with it, then ends by the signal, whatever
  * the engine listens for; a close that fails says so on stderr before the
- * process goes.
+ * process goes, and a call the close cut is not such a failure.
  */
 
 import { spawn } from 'node:child_process';
@@ -13,8 +13,18 @@ import { describe, expect, it } from 'vitest';
 const PROJECTS = path.join(import.meta.dirname, '..', 'tmp-projects');
 const FAKE_ENGINE = path.join(import.meta.dirname, '..', 'helpers', 'fake-engine.ts');
 
+interface Interrupt {
+  /** The engine refuses to end the attempt. */
+  readonly failClose?: boolean;
+  readonly signal?: NodeJS.Signals;
+  /** Code the program runs before it is ready, such as its own signal listener. */
+  readonly listens?: string;
+  /** The program is ready once it is inside an `app.open()` that never returns, so the signal arrives mid-call. */
+  readonly opening?: boolean;
+}
+
 /** Runs a program that opens a host and a session, sends it `signal` once it is ready, and reports how it ended. */
-async function interrupt(failClose: boolean, signal: NodeJS.Signals = 'SIGINT', listens = ''): Promise<{ signal: NodeJS.Signals | null; code: number | null; stderr: string; disposed: boolean }> {
+async function interrupt({ failClose = false, signal = 'SIGINT', listens = '', opening = false }: Interrupt = {}): Promise<{ signal: NodeJS.Signals | null; code: number | null; stderr: string; disposed: boolean }> {
   mkdirSync(PROJECTS, { recursive: true });
   const dir = mkdtempSync(path.join(PROJECTS, 'core-signals-'));
   const marker = path.join(dir, 'disposed');
@@ -29,12 +39,13 @@ const fake = createFakeEngine({
   onInit: () => { process.on('SIGHUP', () => undefined); },
   onDispose: () => writeFileSync(${JSON.stringify(marker)}, 'disposed'),
   ${failClose ? "onEndAttempt: () => { throw new Error('the device would not let go'); }," : ''}
+  ${opening ? "onNavigate: () => { process.stdout.write('READY\\n'); return new Promise(() => undefined); }," : ''}
 });
 const host = await launch(fake.engine, { app: FAKE_APP, cwd: ${JSON.stringify(dir)}, env: {} });
-await host.newSession();
+const session = await host.newSession();
 ${listens}
-process.stdout.write('READY\\n');
 setInterval(() => undefined, 1_000);
+${opening ? "try { await session.app.open('/'); } finally { await host.close(); }" : "process.stdout.write('READY\\n');"}
 `);
   // Run from the package, so the program resolves @e2e-dev/core the way the tests do.
   const child = spawn(process.execPath, [program], { cwd: path.join(import.meta.dirname, '..', '..'), stdio: ['ignore', 'pipe', 'pipe'] });
@@ -54,18 +65,24 @@ setInterval(() => undefined, 1_000);
 
 describe('@e2e-dev/core on a signal', { timeout: 60_000 }, () => {
   it('closes the host, disposing its engine, then ends by the signal', async () => {
-    const ended = await interrupt(false);
+    const ended = await interrupt();
     expect(ended, ended.stderr).toMatchObject({ signal: 'SIGINT', disposed: true });
     expect(ended.stderr).not.toContain('failed');
   });
 
+  it('cuts a call a program awaits and closes its host after, without calling the close failed', async () => {
+    const ended = await interrupt({ opening: true });
+    expect(ended, ended.stderr).toMatchObject({ signal: 'SIGINT', disposed: true });
+    expect(ended.stderr).toBe('');
+  });
+
   it('ends by SIGHUP though the engine listens for it, and leaves a program that listens itself to decide', async () => {
-    expect(await interrupt(false, 'SIGHUP')).toMatchObject({ signal: 'SIGHUP', disposed: true });
-    expect(await interrupt(false, 'SIGHUP', "process.on('SIGHUP', () => undefined);")).toMatchObject({ signal: 'SIGKILL', disposed: true });
+    expect(await interrupt({ signal: 'SIGHUP' })).toMatchObject({ signal: 'SIGHUP', disposed: true });
+    expect(await interrupt({ signal: 'SIGHUP', listens: "process.on('SIGHUP', () => undefined);" })).toMatchObject({ signal: 'SIGKILL', disposed: true });
   });
 
   it('says on stderr that a close failed, and still ends by the signal', async () => {
-    const ended = await interrupt(true);
+    const ended = await interrupt({ failClose: true });
     expect(ended.signal).toBe('SIGINT');
     expect(ended.stderr).toContain('@e2e-dev/core: closing a host on SIGINT failed');
   });

@@ -20,6 +20,7 @@ import { cleanupErrorsOf, expectedFailureOf, failureBeforeSkip, type ArtifactRec
 import type { Reporter, ReporterSummary } from '../run-types.ts';
 import { projectSource } from './build.ts';
 import { codeFrame, userFrame } from './code-frame.ts';
+import type { DotProgress } from './dot.ts';
 import { appErrorsOf, type AppErrors } from './failure-text.ts';
 import {
   addCacheTally,
@@ -101,6 +102,8 @@ export interface ListReporterOptions {
   colors?: boolean;
   /** The run holds its steps (`e2e run --step`): the live window lists every finished step, not only agent ones. */
   stepping?: boolean;
+  /** Print compact dot progress in place of the live tree and per-test rows. */
+  dots?: DotProgress;
 }
 
 /**
@@ -292,7 +295,8 @@ const DEFAULT_OUTPUT: ListReporterOutput = {
  * what every other sink receives.
  */
 export class ListReporter implements Reporter {
-  readonly name = 'list';
+  readonly name: 'list' | 'dot';
+  private readonly dots: DotProgress | undefined;
   private readonly pc: Colors;
   private readonly window: LiveWindow;
   private readonly tree: RunningTree;
@@ -390,7 +394,9 @@ export class ListReporter implements Reporter {
     private readonly output: ListReporterOutput = DEFAULT_OUTPUT,
     options: ListReporterOptions = {},
   ) {
-    const live = (options.live ?? process.stdout.isTTY === true) && output.raw !== undefined;
+    this.dots = options.dots;
+    this.name = this.dots === undefined ? 'list' : 'dot';
+    const live = this.dots === undefined && (options.live ?? process.stdout.isTTY === true) && output.raw !== undefined;
     this.live = live;
     this.stepping = options.stepping ?? false;
     this.pc = picocolors.createColors(options.colors ?? (live || picocolors.isColorSupported));
@@ -433,6 +439,7 @@ export class ListReporter implements Reporter {
         break;
       case 'test-finished':
         this.testFinished(event.result);
+        if (event.result.selected) this.dots?.result(event.result.status);
         break;
       case 'serial-group':
         this.serialGroup(event.group);
@@ -476,6 +483,7 @@ export class ListReporter implements Reporter {
 
   /** Writes one permanent line without disturbing the live window. */
   private print(line: string): void {
+    this.dots?.end();
     this.lastOutput = undefined;
     this.window.erase();
     this.output.write(line);
@@ -492,6 +500,10 @@ export class ListReporter implements Reporter {
    * the test's result, or the end of the run.
    */
   private testOutput(event: RunEventOf<'output'>): void {
+    if (this.dots !== undefined) {
+      this.dots.show(event.stream, event.text);
+      return;
+    }
     const pair = event.pair === undefined ? undefined : pairKey(event.pair.testId, event.pair.agent, event.target, event.pair.repeat);
     const running = pair === undefined ? undefined : this.pairs.get(pair);
     const source = running === undefined ? this.badge(event.target) : `${this.badge(running.group.target)} ${bounded(running.group.file)}${this.separator}${running.title}`;
@@ -505,11 +517,16 @@ export class ListReporter implements Reporter {
    * here already redacted, only while this reporter shows the run.
    */
   processOutput(stream: 'stdout' | 'stderr', text: string): void {
+    if (this.dots !== undefined) {
+      this.dots.show(stream, text);
+      return;
+    }
     this.sourcedOutput(stream, this.pc.dim('runner'), undefined, text);
   }
 
   /** Prints what `processOutput` left unfinished: the runner hands nothing more once the run's events are all dispatched. */
   endProcessOutput(): void {
+    this.dots?.end();
     this.flushOutput();
   }
 
@@ -764,7 +781,7 @@ export class ListReporter implements Reporter {
         if (this.live) {
           running.steps.push(step);
           this.window.redraw();
-        } else {
+        } else if (this.dots === undefined) {
           const context = `${this.pc.dim(running.title)}${this.separator}`;
           this.print(`${TEST_INDENT}${stepLine(this.pc, step, { context })}`);
         }
@@ -842,7 +859,7 @@ export class ListReporter implements Reporter {
       replays,
     };
     group.lines.push(line);
-    if (!this.live) this.printTestRows(line, `${this.badge(group.target)} ${bounded(group.file)}${this.separator}`);
+    if (!this.live && this.dots === undefined) this.printTestRows(line, `${this.badge(group.target)} ${bounded(group.file)}${this.separator}`);
     this.runs.push({
       key: `${result.test.id}@${result.agent}@${result.target.name}`,
       label: `${this.badge(group.target)} ${bounded(group.file)}${this.separator}${this.titledAs(result.test.titlePath.join(' > '), result.agent, 0)}`,
@@ -889,6 +906,7 @@ export class ListReporter implements Reporter {
   private printGroup(group: FileGroup): void {
     if (group.printed) return;
     group.printed = true;
+    if (this.dots !== undefined) return;
     const { pc } = this;
     const counts = tally(group.lines);
     const outcome = fileOutcome(counts);
@@ -1132,7 +1150,7 @@ export class ListReporter implements Reporter {
   private exploreProgress(progress: RunEventOf<'explore'>['progress']): void {
     if (progress.phase === 'started') {
       this.explore = new ExploreView(this.pc, progress);
-      if (!this.live) {
+      if (!this.live && this.dots === undefined) {
         this.print(this.explore.header(this.exploreBadge(), 'Exploring'));
       }
       this.window.redraw();
@@ -1141,7 +1159,7 @@ export class ListReporter implements Reporter {
     const view = this.explore;
     if (view === undefined) return;
     view.progress(progress);
-    if (!this.live) {
+    if (!this.live && this.dots === undefined) {
       if (progress.phase === 'step-finished' && view.lastStep !== undefined) {
         for (const line of view.stepLines(view.lastStep)) this.print(line);
       } else if (progress.phase === 'finding') {
@@ -1159,7 +1177,7 @@ export class ListReporter implements Reporter {
   private printExplore(): void {
     const view = this.explore;
     if (view === undefined) return;
-    for (const line of view.record(this.exploreBadge(), this.live)) this.print(line);
+    for (const line of view.record(this.exploreBadge(), this.live || this.dots !== undefined)) this.print(line);
     for (const line of view.findingsSection((target) => this.displayPath(target), this.artifactsRoot)) this.print(line);
     for (const line of view.assessment()) this.print(line);
   }
@@ -1302,6 +1320,7 @@ export class ListReporter implements Reporter {
 
   private runFinished(event: RunEventOf<'run-finished'>): void {
     const { pc } = this;
+    this.dots?.end();
     if (event.status === 'interrupted') this.interrupted = true;
     this.window.stop();
     this.flushOutput();

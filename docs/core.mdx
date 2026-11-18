@@ -38,8 +38,8 @@ types need `e2e` unless `skipLibCheck` is on.
 ## Drive a browser
 
 `launch` prepares an engine and returns a host. A session is one isolated
-browser context on that host, and it holds `screen`, `app`, `platform`, and
-the engine's own fixture, here `browser`.
+browser context on that host, and it holds the built-in fixtures `screen`,
+`app`, and `platform`, and the one the engine contributes, here `browser`.
 
 ```ts title="prices.ts"
 import { launch } from '@e2e-dev/core';

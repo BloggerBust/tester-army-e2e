@@ -1,0 +1,180 @@
+---
+title: エラー
+description: 発生するすべてのエラーコード、その分類と終了コード。
+"og:image": "https://e2e.com/docs/images/og/reference/errors.png?v=b184354c61"
+"twitter:image": "https://e2e.com/docs/images/og/reference/errors.png?v=b184354c61"
+---
+
+ランナーのすべてのエラーには、分類とコードがあります。分類は終了コードを決め、コードは原因を表します。モデルがこれらを選ぶことはありません。`e2e login`、`e2e logout`、`e2e models` は例外です。[終了コード](#exit-codes)を参照してください。
+
+```ts title="tests/upgrade.e2e.ts"
+import { isAgentError, test } from 'e2e';
+
+test('upgrade to Pro', async ({ agent }) => {
+  try {
+    await agent.act('upgrade the workspace to Pro');
+  } catch (error) {
+    if (isAgentError(error) && error.code === 'STEP_TIMEOUT') {
+      // the step ran out of time; the message carries the last judgment
+      console.error(error.category, error.details);
+    }
+    throw error;
+  }
+});
+```
+
+## リファレンス
+
+### 終了コード
+
+| 分類 | 終了コード |
+| --- | ---: |
+| test | 1 |
+| configuration | 2 |
+| infrastructure | 3 |
+| internal | 4 |
+| interrupted | 130 |
+
+- 複数の種類の結果が混在する実行では、優先順位が最も高いコードを使います。優先順位は `130 > 4 > 3 > 2 > 1 > 0` です。レポートには個々の結果をすべて残します。
+- クリーンアップに失敗したテスト（必要な動画を確定できなかった、セッションを閉じられなかったなど）は、そのクリーンアップエラーのコードで終了します。通常は 3 です。
+- セットアップのアサーション失敗はテスト失敗となり、依存するテストをスキップします。セットアップに必要なインフラがない場合は、configuration または infrastructure の分類を維持します。
+- `internal` 分類と終了コード 4 は、ランナーの不変条件への違反のために予約されています。現時点で、公式コードがこの分類のエラーを発生させることはありません。
+- `e2e login`、`e2e logout`、`e2e models` は、失敗時にコードを付けずメッセージを表示し、1 で終了します。サインインや選択画面をキャンセルした場合は 130 です。
+
+| コード | 説明 |
+| --- | --- |
+| [エージェントのコード](#agent-codes) | `AgentError` の `code` |
+| [ランナーのコード](#runner-codes) | 出力とレポート内の文字列コード |
+| [テストコードのエラー](#test-code-errors) | テストコードから投げられるエラー |
+
+### AgentError
+
+`AgentError` はランナーが分類したエージェントの失敗を表し、`e2e` からエクスポートされます。
+
+```ts
+/** Runner-classified agent failure. */
+export class AgentError extends Error {
+  /** Closed union, assigned by the runner, never taken from model text. */
+  readonly code: AgentErrorCode;
+  /** The error class in the table above; it sets the exit code. */
+  readonly category: 'test' | 'configuration' | 'infrastructure' | 'internal' | 'interrupted';
+  readonly retryable: boolean;
+  /** Structured facts: locator, expected, observed, match count, wait time. */
+  readonly details: ErrorDetails | undefined;
+  /** Sanitized, bounded prose; the same value as `message`. */
+  readonly explanation: string;
+  /** Artifact path, present only when evidence was captured and permitted. */
+  readonly screenshot?: string;
+  /** True when this failure reports a blocked step, not a product failure. */
+  readonly blocked: boolean;
+}
+```
+
+<Note>
+テストファイルは独自のモジュール領域に読み込まれるため、`instanceof AgentError` が false になることがあります。このページ冒頭の例のように、`e2e` の `isAgentError` を使い、`code` で分岐してください。
+</Note>
+
+#### エージェントのコード
+
+拡張できない `AgentErrorCode` ユニオンのメンバーです。`blocked:` は、実行を妨げる要因として blocked 判定が報告するカテゴリを示します。
+
+| コード | 発生条件 | 分類 | 終了コード |
+| --- | --- | --- | ---: |
+| `AUTH_CREDENTIAL_UNAVAILABLE` | `Secret` または `credentials.user()` が `config.credentials` にない認証情報を指定した場合、実行中のランナーの外で呼び出した場合、またはパスワードのプロバイダーが 6 文字（コードポイント）以上の文字列を返さなかった場合 | configuration | 2 |
+| `AUTH_CREDENTIAL_INVALID` | アプリケーションが設定済みの認証情報を拒否した場合（blocked: credentials） | configuration | 2 |
+| `SECRET_UNAVAILABLE` | 実行中の `Secret` または `secrets.get()` が `config.secrets` にないシークレットを指定した場合、シークレットのプロバイダーが 6 文字（コードポイント）以上の文字列を返さなかった場合、またはエンジンが自身の `secrets` に宣言していないシークレットを解決した場合。`host.secret(name)`（`@e2e-dev/core`）が `launch` に渡していないシークレットを指定した場合も該当します | configuration | 2 |
+| `ENVIRONMENT_UNAVAILABLE` | アプリ自体の問題ではなく、テスト対象の環境が停止しているか到達できない場合（blocked: environment） | infrastructure | 3 |
+| `SEED_DATA_MISSING` | ステップが必要とするデータが環境に存在しない場合（blocked: seed_data） | configuration | 2 |
+| `TEST_SETUP_FAILED` | プロダクト外でテストの前提条件を整えられなかった場合（blocked: test_setup）。`test.extend()` のフィクスチャが契約に違反した場合も該当します。具体的には、`use()` を呼ばずに戻った、または 2 回呼んだ場合です | configuration | 2 |
+| `AUTOMATION_UNSUPPORTED` | デバイス上の右クリックなど、利用可能なツールでは実行できない操作がステップに必要な場合（blocked: automation） | test | 1 |
+| `MODEL_UNAVAILABLE` | モデルが設定されていない場合。組み込みエージェントの `agents.<name>.model` に AI SDK のモデルインスタンスがない場合（メッセージに選択されたエージェントを示します）、または GitHub Copilot がこのアカウントに設定済みモデルを提供していない場合（`model_not_supported`。メッセージにモデルを示します）です。実行全体のエラーとして 1 回記録し、実行を停止します。テスト実行では、モデルの未設定は `agent` フィクスチャを初めて取得するとき、利用できないモデルは最初の呼び出しで検出します。`e2e explore` は組み込みエージェントを実行するため、カスタムエグゼキューターのエントリも含め、何かを開始する前にモデルの未設定を確認します。モデルを持たないカスタムエグゼキューターは確認対象外です。`act` と `assert` のステップは実行でき、`waitFor` または `extract` の初回呼び出しでこのコードにより失敗します。[記録](/cache)は削除しません。 | configuration | 2 |
+| `POLICY_DENIED` | セキュリティポリシーが操作を拒否した場合。許可されていない宛先や入力、ピクセルなしの `vision: 'only'`、セキュアフィールドからの読み取りなどです。禁止されたスキームを持つ `app.open` のリンクも該当します。すべての条件は[ポリシーによる拒否](/reference/security#policy-denials)に記載しています。未知のツール、またはフィールドを宣言する組み込みツールに渡した未宣言のフィールドは、このコードではなく呼び出し結果としてモデルに返します | configuration | 2 |
+| `APP_UNREACHABLE` | アプリの URL に到達できなかった場合、またはアプリのコマンドが終了したか `startupTimeout` を超えた場合。`e2e run` 中に準備完了後のコマンドが終了すると、未完了の処理がある依存ターゲットだけで実行中のテストを中断し、待機中のテストをスキップします。診断については[アプリのコマンド](/reference/config#command)を参照してください。エージェントの実行中は、より具体的なコードがないエンジン障害も該当します。デバイスでは、使用中または応答しなくなった iOS 自動化ランナーと、その復旧方法をメッセージに示すことがあります。[モバイル](/mobile#troubleshooting)を参照してください。 | infrastructure | 3 |
+| `APP_ALREADY_RUNNING` | ターゲットの `app.command` を起動する前に `readyUrl` が応答し、`reuseExisting` が有効でなかった場合。そのプロセスを停止するか、ローカルで `reuseExisting: true` を設定してください | infrastructure | 3 |
+| `MODEL_PROVIDER_FAILED` | アダプターによる通信リトライ後もプロバイダーとの通信に失敗した場合（ネットワークエラー、5xx、レート制限、120 秒以内に応答がない場合）。リトライはモデル呼び出しごとに最大 5 回で、`retry-after` とステップの残り時間に従います。応答のないリクエストは 120 秒で中止して再送し、`agent.act` ステップの `--debug` ログに記録します。120 秒はリクエスト全体に適用されるため、1 回の回答にそれ以上かかるモデルもここで失敗します。プロバイダーパッケージが読み取れないエラーボディは、HTTP ステータスとボディを表示します。シークレットは秘匿し、1 KB で切り詰めます。プロバイダーが `error` の終了理由で終えた呼び出しも、付随するテキストにかかわらず該当します。`e2e doctor --check-model` の呼び出しが 1 分以内に応答しない場合も該当します。[記録](/cache)は削除しません | infrastructure | 3 |
+| `CANCELLED` | プロセスへのシグナルではなく、ランナーが操作をキャンセルした場合。`e2e mcp` の `open_session` がクライアントのキャンセル、接続の切断、サーバーの終了によって中断され、開始済みの処理を停止し終えた場合や、`run_tests` が開始前にキャンセルされたかサーバー終了中に呼び出された場合です。`@e2e-dev/core` では、`signal` で中止された操作、または閉じたセッションへの操作が該当します | infrastructure | 3 |
+| `MODEL_OUTPUT_INVALID` | 修復に使える回数を使い切っても、構造化出力が検証に通らなかった場合。[デシジョンモデル](/decision-models)では、有効な選択肢の確率分布がない回答、リクエストにない選択肢、またはプロバイダーが拒否した質問が該当します。デシジョンモデルの回答は修復しません | test | 1 |
+| `APP_NOT_OPEN` | 開いているアプリが操作に必要だった場合。`app.open()` が未実行か、エンジンが不正な状態を報告した場合です | test | 1 |
+| `LOCATOR_NOT_FOUND` | 期限内に一致するノードが見つからなかった場合、またはエージェントの操作が、すでに利用できないノードを参照した場合。フィルター付きロケーターでは、失敗後の診断でチェーンを読み取れれば、各フィルターステップ後の候補数を数えてメッセージに表示することもあります | test | 1 |
+| `LOCATOR_AMBIGUOUS` | 単一ノードを対象とする操作に複数のノードが一致した場合。ポーリングせず、直ちに失敗します。フィルター付きロケーターでは、失敗後の診断でチェーンを読み取れれば、各フィルターステップ後の候補数を数えて表示することもあります | test | 1 |
+| `ACTION_FAILED` | 操作可能性のチェック失敗、操作のタイムアウト、または操作がすでに反映された可能性がある場合。値を持たないノードへの `inputValue()`、チェック状態を持たないノードへの `isChecked()` も該当します | test | 1 |
+| `STEP_BUDGET_EXHAUSTED` | 結論に達する前に、モデル呼び出し回数または操作ステップ数の上限に達した場合 | test | 1 |
+| `STEP_TIMEOUT` | 呼び出しの期限が切れた場合。その期限からポーリング 1 回分以内でタイムアウトした操作も含みます。最後の判定があれば保持し、その判定が不確定だった場合は[画像入力に関するヒント](/reference/agent#agent-assert)も含めます | test | 1 |
+| `CONTEXT_OVERFLOW` | リクエストがモデルのコンテキストウィンドウを超えた場合。`act` は履歴を短くし、それによってリクエストが小さくなれば 1 回リトライします。判定は直ちに失敗します。`agents.<name>.maxObservationBytes` を小さくするか、指示を短いステップに分割してください。blocked: automation として報告します | test | 1 |
+| `MODEL_REFUSED` | モデルがリクエストを拒否し（終了理由 `content-filter`）、利用できる回答を返さなかった場合。指示を言い換えるか、別のモデルを使ってください。blocked: automation として報告します | test | 1 |
+| `ASSERTION_FAILED` | `agent.assert` が false と判定した場合、またはロケーター、`browser`、値のマッチャーが失敗した場合 | test | 1 |
+| `ASSERTION_INCONCLUSIVE` | `agent.assert` が判定できなかった場合。画面に判断に必要な情報が足りないときです（該当箇所が画面にない、読み込み中、読み取れないなど）。`agent.extract` でも、モデルが要求されたデータは画面にないと回答した場合、仮の値を返さずこのエラーになります。成功にはならず、必ず失敗です。説明には不足していた情報を示します。`vision` を無効にしてツリーだけで判定した場合、メッセージに[画像入力に関するヒント](/reference/agent#agent-assert)を追加することがあります | test | 1 |
+| `AUTHENTICATION_FAILED` | エグゼキューターがアプリ内のサインイン失敗と結論づけた場合。プロダクトについての判定です。設定済みの認証情報をアプリが拒否した場合の blocked 判定は `AUTH_CREDENTIAL_INVALID` です | test | 1 |
+| `STEP_NO_CONCLUSION` | エグゼキューターが `complete_step` を呼ばずにすべてのターンを使い切った場合。エージェントの最後の要約を付けてステップが失敗します | test | 1 |
+| `REPLAY_STALE` | `cache.strict` または `--strict-cache` が有効で、ステップの記録はあるもののリプレイできなくなっている場合。エージェントに引き継がず、モデルを呼ばずにステップが失敗します。`step.cache.reason` は `invalid-entry`、`wrong-context`、`target-not-found`、`target-ambiguous`、`viewport-changed`、`action-failed`、`action-uncertain`、`end-mismatch` のいずれかです。また、キャッシュディレクトリ（カスタムの `cache.store` は対象外）に別のキーでそのステップの記録がある場合は `no-entry` となり、メッセージにそのキーを示します。毎回同じ記録をリプレイするため、リトライしません。修正するには、このフラグを外した読み書き可能な実行で記録し直し、変更されたエントリをコミットしてください。設定で `cache.strict` を有効にしていた場合は、そちらも無効にします。メッセージには strict を有効にした設定項目と、設定済みキャッシュディレクトリ（または `cache.store`）を示します | configuration | 2 |
+
+### ランナーのコード
+
+ターミナル出力とレポートには、次のコードが文字列として現れます。
+
+| コード | 発生条件 | 分類 | 終了コード |
+| --- | --- | --- | ---: |
+| `CONFIG_NOT_FOUND` | `--config <path>` が存在しないファイルを指定した場合、または作業ディレクトリからリポジトリルートまでの間に `e2e.config.ts`、`e2e.config.mts`、`e2e.config.js`、`e2e.config.mjs` のいずれもない場合 | configuration | 2 |
+| `CONFIG_AMBIGUOUS` | 同じディレクトリに `e2e.config.ts` と `e2e.config.mts` の両方がある場合、または TypeScript の設定がないディレクトリに `e2e.config.js` と `e2e.config.mjs` の両方がある場合 | configuration | 2 |
+| `CONFIG_LOAD_FAILED` | 設定モジュールのインポートに失敗した場合。宣言済みだが未インストールのパッケージ、未宣言のパッケージ、誤ったサブパス、削除されたエクスポート、または評価中に投げられたその他のエラーが原因です。メッセージに修正方法を示します。評価中に発生した設定エラーは固有のコードを維持します。設定が呼び出すファクトリーにオプションを拒否された場合や、`secrets.get()` のハンドルを文字列に変換した場合は `INVALID_CONFIG` です | configuration | 2 |
+| `INVALID_CONFIG` | 設定モジュールが呼び出すファクトリー（`web()`、`mobile()`、`defineEngine()`、`decisionExecutor()`、`decisionFilter()`）がオプションを拒否した場合。ファクトリー自身のメッセージを表示します。次の場合も該当します。未知のキー、範囲外の値、不正な列挙値、`targets` の欠落。`{ name, platform, engine, app, trace, video }` 以外のターゲットキー。未知または不正な形式のターゲット `app` キー。エンジンのないターゲットの `app`。`app.url` がない、またはデバイス用フィールドを持つ `web()` ターゲット。`app.bundleId` と `app.appPath` のどちらもない `mobile()` ターゲット、`app.url` を持つもの（未対応）、リンクを開けないエンジンのターゲットにある `app.linkBase`、絶対 URL またはスキームでないもの、クエリやフラグメントを含むもの、禁止スキームを指定するもの、`bundleId` にリンクがあるもの、未知の権限名や状態があるもの（最も近い名前をメッセージに示します）。`web()` または `mobile()` オプションの未知のキー。`web({ connect })` と `web({ basicAuth })` も含みます（最も近いキーを示します）。記録モードではない `trace` または `video`。削除済みの成果物種類リスト（`artifacts: [...]` または `artifacts.kinds`）や `artifacts.trace` ブロック（対応する `trace` モードを示します）。削除済みの `artifacts.video` ブロックや `video` 成果物種類（`video` オプションを示します）。削除済みの `specVersion` キー。エンジンオプション内の `secrets.get()` が `secrets` のエントリを指していない場合（認証情報のパスワードは対象外）。設定の評価中に `secrets.get()` の参照を文字列化した場合（テンプレートリテラル、`String()`）、または文字列が必要な場所に渡した場合（`app.command` の `args` 要素や `env` 値。シークレットを宣言するエンジンオプションだけが受け取れます）。文字列でない `app.command` の `args` 要素や `env` 値（`undefined` の `env` 値は除外します）。`app.command` の未知のキー（最も近いキーを示します）。`defineEngine` のハンドルでない `engine`。`json` レポーターと `list` の併用、または `--step` での使用。重複した、または不正な形式のターゲット名。6 文字（コードポイント）未満のシークレットや認証情報のパスワード。`{ username, password }` 形式でない認証情報、文字列でない `username`（関数にできるのは `password` だけ）、設定にも `E2E_USER_<NAME>_USERNAME` にもユーザー名がない認証情報。名前が同じ `E2E_USER_*` または `E2E_SECRET_*` 上書き変数に変換される 2 つの認証情報または 2 つのシークレット（`api-key` と `api_key` など）。大きすぎる `agents.<name>.context`。有限のミリ秒数でない `expect.poll` の `timeout` または `interval`、テスト外での `timeout` が 0。glob または glob のリストでない `tests`、`!` による除外だけの `tests` リスト。削除済みのトップレベル `limits` キー。`StepExecutor` を直接指定した agents エントリ（`{ executor }` を示します）やモデルインスタンスを直接指定したもの（`{ model }` を示します）。エージェントの未知のキー（最も近いキーを示します）。削除済みのエージェントキー `timeout` と `maxTurns`（`judgmentTimeout` と `maxModelCalls` を示します）。`executor` と並べた `system` または `tools`。`defineTool` で作成していない `tools` エントリ、組み込みツール名を使うもの（文法の動詞、`complete_step`、`locate`、`run_code`、`test_lines`、`start_recording`、`stop_recording`、`report_finding`）。`createToolLoopExecutor({ maxTurns })`。`app.url` で空きポートを要求するアプリの `reuseExisting`。サーバーを起動する `app.command` のないポート 0 の `app.url`。`{ name, filter }` のリストでない `filters`（`decisionFilter` のような関数を直接渡した場合は呼び出すよう示します）。ターゲット名の規則に違反する、256 文字を超える、または重複したフィルターの `name` | configuration | 2 |
+| `CONFIG_NOT_DETERMINISTIC` | ワーカーが設定モジュールを再解決した結果、ランナーと異なるダイジェストを得た場合 | configuration | 2 |
+| `APP_URL_REQUIRED` | `app.url` を宣言していないターゲットでのナビゲーションまたは相対 URL（`app.linkBase` がないデバイスターゲットでの `app.open(path)`）、またはポーリングする `app.url` も `app.readyUrl` もない `app.command` | configuration | 2 |
+| `INVALID_APP_URL` | ベース URL を解析できない場合、ユーザー情報、クエリ、フラグメント、HTTP 以外のスキームを含む場合、ループバック以外のホストで暗号化されない HTTP を使う場合。リテラルのループバックアドレス（`127.0.0.1`、`[::1]`）以外のホストのポート 0、または実行時に空きポートをバインドできなかったループバックアドレスも該当します | configuration | 2 |
+| `INVALID_GLOB` | 空のパターン。`tests` の除外を表す先頭 1 つの `!` 以外に、最初のセグメントが `!` で始まるもの（`!!tests/**`、`./!tests/**`）。単独の `!`。波括弧、文字クラス、extglob。区切りのバックスラッシュ。絶対パスまたは `..` セグメント。末尾の `/` または `.`。ワイルドカードがなくディレクトリを指す `tests` エントリ（使うべき glob をメッセージに示します）。プロジェクトルートだけを指すパターン。セグメント全体を占めない `**` | configuration | 2 |
+| `UNKNOWN_TARGET` | `--target`、`open_session.target`、または `openHost`（`e2e/runner`）が未設定のターゲットを指定した場合 | configuration | 2 |
+| `TARGET_REQUIRED` | `e2e mcp` または `openHost`（`e2e/runner`）で、設定に複数のターゲットがあるのに対象を指定しなかった場合 | configuration | 2 |
+| `NO_SESSION` | `e2e mcp` で、`open_session` の前またはセッション終了後に `call` または `tools` を呼んだ場合（理由をメッセージに示します）。または `call`、`tools`、`close_session` が、開いていないかクローズ処理中の `session` ID を指定した場合 | configuration | 2 |
+| `SESSION_REQUIRED` | `e2e mcp` で複数のセッションが開いているのに、`call`、`tools`、`close_session` に `session` を指定しなかった場合。メッセージにセッション一覧を示します | configuration | 2 |
+| `ENGINE_IN_USE` | `e2e mcp` の `open_session` で、別の開いているセッションが同じエンジンインスタンスを使うターゲットを開いた場合。設定が、全セッションで共有するパッケージからエンジンを取得していることが原因です。設定内、または設定がパスでインポートするファイル内でエンジンを作成してください | configuration | 2 |
+| `ENGINE_NOT_INSTALLED` | `e2e mcp` の `open_session {engine}` が、プロジェクト、e2e と同じ場所、`~/.e2e/engines` のいずれにもインストールされていないパッケージを指定した場合。インストールコマンドをメッセージに示します | configuration | 2 |
+| `CONFIG_IN_USE` | `e2e mcp` の `open_session` が、開いているセッションとは異なる設定を指定した場合、または `engine` で開いたセッションがある状態で設定を指定した場合。認証情報とシークレットはプロセス全体で解決するため、同じ設定で開くか、先に既存のセッションを閉じてください | configuration | 2 |
+| `SESSION_OPEN` | `e2e mcp` の `open_session` で、すべてのセッション枠（`--max-sessions`、デフォルト 4）が、開いているセッション、オープン処理中、クローズ処理中のセッションで埋まっている場合、またはサーバー終了中の場合。先に 1 つ閉じてください | configuration | 2 |
+| `UNKNOWN_TOPIC` | `e2e mcp` の `e2e://guide/{topic}` リソースが、スキルにないトピックを指定した場合。メッセージにトピック一覧を示します | configuration | 2 |
+| `UNKNOWN_TOOL` | `e2e mcp` の `call` または `tools` が、セッションのカタログにないツールを指定した場合。メッセージにカタログを示します。エンジンが宣言していない操作の動詞は、代わりに `UNSUPPORTED_CAPABILITY` になります | configuration | 2 |
+| `TEST_AMBIGUOUS` | `e2e mcp` の `open_session` の `test` が、セッションのターゲット上で複数のテストを選んだ場合。`file:line` 形式で一覧を示します | configuration | 2 |
+| `SESSION_TEST_UNSUPPORTED` | `e2e mcp` の `open_session` の `test` が、セッション単独では実行できないテストを選んだ場合。直列グループのメンバー、セットアップテストの `session` から開始するテスト、または複数のエージェントとして実行するテストです。`e2e run` で実行してください | configuration | 2 |
+| `UNSUPPORTED_ARTIFACT` | ターゲット、またはそのターゲットで実行するテストに設定した [`video` モード](/reference/config#recording)が、いずれかの試行で録画するのに、そのエンジンが録画できない場合。メッセージにターゲットを示し、テストのモードならテストも示します。設定のルートまたは `--video` からのモードでは発生しません。録画できるターゲットに適用し、それ以外を通知します | configuration | 2 |
+| `UNSUPPORTED_CAPABILITY` | ターゲットのエンジンが宣言していないフィクスチャ、操作、または機能レベルを使った場合。テストもフックも実行していないときにワーカーフィクスチャが組み込みフィクスチャを使った場合（ターゲットにないフィクスチャは `COLLECTION_ERROR`）、`locate` なしの `screen`、`state` なしの状態復元、`artifacts` なしのスクリーンショット、永続ブラウザコンテキストでの `app.clearState()`（モードをメッセージに示します）、`vision: true` を宣言しないエグゼキューターでの `agent.assert` の `vision`、またはテストの動画を録画中の `app.startRecording()` です | configuration | 2 |
+| `NO_TESTS` | 実行可能な通常テストとターゲットの組が 0 件の場合。メッセージに原因を示します。`tests` の glob に一致するファイルがない（似たファイルを列挙）、位置引数に一致するものがない（指定ファイルを除外する `!` エントリを提示）、ファイルがテストを登録していない、またはフィルターがすべてを除外した場合です。`--pass-with-no-tests` で抑制できます。[テストフィルター](/filters)によって実行対象がなくなった場合は、代わりに成功します（終了コード 0）。`e2e mcp` の `open_session` の `test` が実行可能なテストを選べなかった場合も該当します。 | configuration | 2 |
+| `RUNNER_BUSY` | テストスイートが別のスイート、オープン処理中または開いているホスト、実行中の試行と重なった場合。スイート中にホストを開いた場合。別の `e2e mcp` の `run_tests` が実行中に開始した場合。`e2e run --step` が、ステップ実行中のディレクトリ、または起動中に強制終了した実行のロックが残るディレクトリで、ターミナルなしに開始した場合（削除するファイルをメッセージに示します）。スイートを await し、既存のホストを閉じてから再試行してください。ステップ実行は `e2e run --step stop` で終了するか、メッセージにあるロックファイルを削除してください。 | configuration | 2 |
+| `RUNNER_NOT_INSTALLED` | `e2e` がインストールされていない場所（`@e2e-dev/core` だけを使うプログラムなど）で、`@e2e-dev/web` または `@e2e-dev/mobile` の `test`、`describe`、フックを呼んだ場合。同じエントリのエンジンファクトリーは引き続き使えます。テストを書くには `e2e` をインストールしてください | configuration | 2 |
+| `NO_LAST_RUN` | `--last-failed` が、実行の出力先に `report.json` を見つけられなかった場合、またはそのファイルが `report-1` ドキュメントでない場合。まずフラグなしで 1 回実行してください。 | configuration | 2 |
+| `INVALID_CHANGED_SINCE` | `--changed-since`（`changedSince`）が文字列でない、空、または `-` で始まる場合。また、テストフィルターを呼ぶ実行や変更内容を調べる `e2e explore` で、チェックアウトに存在しないコミットを指定したか、HEAD と履歴を共有しない場合（浅いクローンでは履歴をさらに取得するよう示し、それ以外では履歴に関連がないことを示します）。プロジェクトが git リポジトリにない、git がない、または git が 30 秒以内に応答しなかった場合も該当します | configuration | 2 |
+| `ONLY_IN_CI` | フォーカス指定されたテストが CI で実行されようとした場合 | configuration | 2 |
+| `COLLECTION_ERROR` | 収集処理の外での登録。不正なタイトル。関数でない本体。非同期の `describe` 本体。直列グループのネスト。直列グループ内で禁止されたオプション。`describe` 内のセットアップテスト。不正なセッション名。重複のない名前リストになっていない `tags` など、不正な形式のテストオプション。呼び出しが受け付けないテストまたは `describe` オプションキー（最も近いキーを示します）。位置引数のない実行、または位置引数で選んだテストファイルのインポート失敗。選択されたテストが利用する、または `e2e explore --session` が指定するセッションを、収集したどのセットアップテストも生成しない場合（宣言済みセッションを列挙）。セッションを利用するターゲットのエンジンに、保存用の `state` 機能がない場合。プロジェクトルート外を指す位置引数のパス。フィクスチャの規則への違反（コードのファイルと行を付けて報告します）。具体的には、最初の引数を分割代入しない、そこで残余プロパティを受け取る、またはバインド済み関数である、テスト本体、フック、`test.extend()` のフィクスチャ関数。実行するテストのターゲットにないフィクスチャ名。テストフィクスチャを指定する `beforeAll`、`afterAll`、ワーカーフィクスチャ。互いを循環して指定するフィクスチャ。拡張元のフィクスチャと異なる `scope` または `auto` を持つ `test.extend()` のフィクスチャ | configuration | 2 |
+| `SESSION_MISMATCH` | 保存したセッションが、現在の実行、ターゲット、エンジン、プラットフォーム、またはアプリの識別情報と一致しない場合。`@e2e-dev/core` の `SessionState` を異なるエンジン、プラットフォーム、アプリのホストに渡した場合も該当します | configuration | 2 |
+| `SESSION_EXPIRED` | 保存したセッションまたは `@e2e-dev/core` の `SessionState` が、復元時またはインポート時に期限切れの場合（configuration、終了コード 2）。またはセットアップテストが、作成時刻より後でない有効期限を持つ状態を保存した場合（test、終了コード 1） | configuration または test | 2 または 1 |
+| `SESSION_INVALID` | 保存したセッションの認証に失敗した場合。改ざんまたは破損しています。`SessionState.import`（`@e2e-dev/core`）に渡したバイト列が `session-state-1` ドキュメントでない場合、または鍵による認証に失敗した場合（別の鍵やバイトの変更）も該当します | configuration | 2 |
+| `SESSION_UNAVAILABLE` | テストが必要とするセッションを、選択されたどのセットアップテストも生成していない場合 | configuration | 2 |
+| `SESSION_CONTRACT` | セットアップテストがセッションを 2 回保存した、未宣言の名前で保存した、または宣言したセッションを保存せずに終了した場合 | test | 1 |
+| `TEST_TIMEOUT` | 試行が解決済みのテスト `timeout` を超えた場合。本体は停止しません。実行中のハーネス操作をキャンセルし、試行とともにフィクスチャを終了するため、次のテストには影響できません。イベントループをブロックするテストは、タイムアウト後に `cleanupTimeout`（最低 5 秒）が経過するとワーカーごと強制終了します。[フック](/reference/test#hooks)を参照してください | test | 1 |
+| `STEP_NOT_AWAITED` | テスト本体が開始したステップがまだ実行中なのに、本体が完了した場合。`await` のないステップ呼び出しです。呼び出し行でステップを失敗にし、キャンセルします。メッセージには、そのステップを開始したコード (テスト本体、`beforeEach` フック、フィクスチャのセットアップ) が示されます。本体が正常に戻った場合、試行はこのコードで失敗します。本体が例外を投げた場合は、そのエラーを維持し、このエラーは `secondaryErrors` に記録します。本体、`afterEach` フック、またはフィクスチャの後処理が戻ったときに `expect.poll` マッチャーがまだ実行中の場合も、同様に呼び出し行でそのフェーズを失敗にしてキャンセルします。`beforeAll` または `afterAll` フックが残したマッチャーや実行中のステップは、そのフックを `HOOK_FAILED` で失敗にします | test | 1 |
+| `UNHANDLED_REJECTION` | 実行中のテストがない状態で Promise が reject された場合。Node は Promise を作成したテストを特定できないため、未処理の reject は表面化したときに実行中のテストに帰属します。テストの合間ならこの実行エラーとなり、そのワーカーで最後に完了したテストを発生元の候補として示します。ワーカーでまだ 1 件もテストが完了していない場合は、代わりにワーカーを終了します。reject が実行エラーとなり、開始しようとしていたテストは `WORKER_CRASH` で失敗します。reject を残した本体は、`TEST_TIMEOUT` を超えた本体と同様に実行を続けます。`e2e mcp` でも、セッションが実行するテストのコードの実行中は同様に帰属します。本体終了後の reject はこのコードとなり、`close_session` で報告するか、セッション終了後なら stderr に警告を出します | test | 1 |
+| `HOOK_FAILED` | `beforeAll` または `afterAll` が例外を投げた場合。スイートのテストをスキップします。 | test | 1 |
+| `UNEXPECTED_PASS` | [`test.fail`](/reference/test#test-fail) を指定したテストが成功した場合。他のテスト失敗と同様にリトライします。原因を修正したら指定を外してください | test | 1 |
+| `RUN_TIMEOUT` | 実行が [`maxDuration`](/reference/config#maxduration) または `--max-duration` を使い切った場合。実行中のテストは `interrupted` で終了し、残りは理由 `time-limit` でスキップします | test | 1 |
+| `LAUNCH_TIMEOUT` | エンジンの初期化または試行の開始が `config.launchTimeout` を超えた場合 | infrastructure | 3 |
+| `CLEANUP_TIMEOUT` | エンジンの試行終了処理が `config.cleanupTimeout` を超えた場合、または試行の完了時に、エンジンがテストのために実行したルートやダイアログのハンドラーがまだ実行中だった場合 | infrastructure | 3 |
+| `BROWSER_INSTALL_FAILED` | ブラウザの準備に失敗した場合 | infrastructure | 3 |
+| `WORKER_INIT_FAILED` | ワーカープロセスが準備完了にならなかった場合 | infrastructure | 3 |
+| `WORKER_EXIT` | ファイルの実行中にワーカーが予期せず終了した場合。実行中のテストは `WORKER_CRASH` で失敗し、そのファイルのほかのテストはスキップします。終了前に完了した試行はレポートに残します。リトライ前の試行や、直列グループの完了済みメンバーも含みます。クラッシュはそれらの後の試行として記録し、最後の試行後に発生した場合（`afterAll`）は最後の試行に記録します。未処理の reject によってワーカーが終了した場合（`UNHANDLED_REJECTION` を参照）、実行エラーはこのコードではなく、その reject です | infrastructure | 3 |
+| `WORKER_CRASH` | 特定のテストの実行中にワーカーが終了した場合 | infrastructure | 3 |
+| `WORKER_ENTRY_MISSING` | ワーカーのエントリモジュールを解決できなかった場合。パッケージングの不具合です。 | infrastructure | 3 |
+| `NODE_UNSUPPORTED` | ランタイムが e2e を実行できない場合。`^22.22.3 \|\| >=24.8.0` の範囲外の Node.js、1.4.3 より古い Bun、または Deno です。CLI は開始前に確認し、同じメッセージで終了コード 2 を返します。CLI を使わず e2e のランナーを実行するホスト向けに、ローダーも設定またはテストファイルを読み込む前に再確認します。Bun では `e2e/runner` の `run`、`list`、`explore`、`openHost` もこのエラーを投げます。これらには Node.js が必要です | infrastructure | 3 |
+| `TYPESCRIPT_COMPILER_UNAVAILABLE` | e2e の TypeScript をコンパイルする oxc を読み込めなかった場合。原因をメッセージに示します。多くの場合、このプラットフォーム用のネイティブバインディング（`@oxc-transform/binding-<platform>-<arch>`、`@oxc-parser/binding-<platform>-<arch>`）が未インストールです。npm は `--omit=optional` を指定した場合や、別のプラットフォームで `package-lock.json` を作成した場合（npm/cli#4828）に、それらを除外します。`--omit=optional` なしで再インストールするか、`package-lock.json` と `node_modules` を削除して `npm install` を実行してください | infrastructure | 3 |
+| `IMAGE_CODEC_UNAVAILABLE` | スクリーンショットの PNG を読み書きする `@napi-rs/image` を読み込めなかった場合。原因をメッセージに示します。最初のスクリーンショットの読み書き時に読み込むため、スクリーンショットを撮らない実行では不要です。多くの場合、このプラットフォーム用のネイティブバインディング（`@napi-rs/image-<platform>-<arch>*`）が未インストールです。npm は `--omit=optional` を指定した場合や、別のプラットフォームで `package-lock.json` を作成した場合（npm/cli#4828）に、それを除外します。`--omit=optional` なしで再インストールするか、`package-lock.json` と `node_modules` を削除して `npm install` を実行してください。ppc64、s390x、riscv64 の Linux 向けバインディングは公開されていません。これらでは `toHaveScreenshot` は動作せず、ランナーでリサイズが必要なエージェントのスクリーンショット（一辺が 768 px を超えるもの）も使えません | infrastructure | 3 |
+| `ENGINE_FAILURE` | より具体的な分類に対応しないエンジン障害 | infrastructure | 3 |
+| `WORKER_PROTOCOL` | ワーカーが誤った処理単位を報告した場合、試行が実行中の試行と重なった場合、`openHost` が別のホストの所有するエンジンインスタンスを取得しようとした場合、または `host.openSession` が閉じたホストを再利用したり、オープン処理中、使用中、クローズ処理中のセッションと重なろうとした場合。`@e2e-dev/core` では、別のホストが所有するエンジンインスタンスでの `launch`、閉じたホストやセッションが開いているホストでの `host.newSession` が該当します | infrastructure | 3 |
+| `SESSION_KEY_INVALID` | ワーカーが 32 バイトでないセッション鍵を受け取った場合。パッケージングまたは IPC の不具合です。 | infrastructure | 3 |
+| `REPORT_WRITE_FAILED` | `report.json` または `ai-trace.json` を書き込めなかった場合。実行エラーとして記録しますが、メモリ上の結果は完全なままです。`junit.xml` を書き込めなかった場合は、代わりに `junit` レポーターの stderr に 1 行出力します | infrastructure | 3 |
+| `EVALUATE_FAILED` | `browser.evaluate` がページ内で例外を投げた場合、またはエンジンのページ内コードが必要とする JavaScript の組み込み機能（`Map` など）をページが削除または置き換え、以降の評価とロケーターが失敗する場合（`@e2e-dev/web`） | test | 1 |
+| `INTERRUPTED` | ユーザーまたは CI のシグナルが実行を中止した場合。`--max-failures` または時間制限で中断したテストもこのコードで終了し、制限をメッセージに示します。その場合の実行の終了コードは 130 ではなく 1 です | interrupted | 130 |
+
+#### テストコードのエラー
+
+| コード | 発生条件 | 分類 | 終了コード |
+| --- | --- | --- | ---: |
+| `INVALID_ARGUMENT` | テストコードの引数検証が引数を拒否した場合 | test | 1 |
+| `INVALID_LOCATOR` | テストコードの引数検証がロケーターの引数を拒否した場合 | test | 1 |
+| `ERROR` | テストコードから投げられ、ほかのコードに分類されない値 | test | 1 |

@@ -18,6 +18,7 @@ import type { ScreenshotContext } from '@e2e-dev/core/lib/run/screenshots';
 import type { ScreenExpectation, ScreenshotOptions } from '@e2e-dev/core/lib/types';
 import { parseScreenshotCall, type ScreenshotCall } from './screenshot-call.ts';
 import { screenshotCapturer, type Capture } from './screenshot-capture.ts';
+import { labelAmbiguous, withMessage } from './heading.ts';
 
 /** The stored screenshot one call compares against: its absolute path, and project-relative as a failure names it. */
 interface Stored {
@@ -29,18 +30,24 @@ interface Stored {
 interface Run {
   readonly context: ScreenContext;
   readonly store: ScreenshotContext;
-  readonly api: string;
+  /** The first line of every failure: the matcher, after the caller's message when there is one. */
+  readonly heading: string;
   readonly call: ScreenshotCall;
   readonly stored: Stored;
   readonly reads: ReadWindow;
   readonly capture: () => Promise<Capture>;
 }
 
-/** The `expect(screen)` surface; a scoped screen (a frame) refuses, since its box is not known. */
-export function createScreenExpectation(context: ScreenContext, scoped: boolean, negated = false): ScreenExpectation {
+/** The `expect(screen, message?)` surface; a scoped screen (a frame) refuses, since its box is not known. */
+export function createScreenExpectation(
+  context: ScreenContext,
+  scoped: boolean,
+  message: string | undefined,
+  negated = false,
+): ScreenExpectation {
   return {
     get not() {
-      return createScreenExpectation(context, scoped, !negated);
+      return createScreenExpectation(context, scoped, message, !negated);
     },
     toHaveScreenshot: (nameOrOptions?: string | ScreenshotOptions, options?: ScreenshotOptions) => {
       if (scoped) {
@@ -49,23 +56,26 @@ export function createScreenExpectation(context: ScreenContext, scoped: boolean,
           'toHaveScreenshot compares the whole screen or one locator; call it on screen, or on a locator inside the frame',
         ));
       }
-      return expectScreenshot(context, undefined, negated, nameOrOptions, options);
+      return expectScreenshot(context, undefined, negated, message, nameOrOptions, options);
     },
   };
 }
 
 /**
  * Runs one `toHaveScreenshot` call as an assertion step: of the whole screen
- * when `subject` is undefined, else of the one node it matches.
+ * when `subject` is undefined, else of the one node it matches. `message`
+ * opens every failure.
  */
 export async function expectScreenshot(
   context: ScreenContext,
   subject: LocatorExpression | undefined,
   negated: boolean,
+  message: string | undefined,
   nameOrOptions: string | ScreenshotOptions | undefined,
   maybeOptions: ScreenshotOptions | undefined,
 ): Promise<void> {
   const api = `expect.${negated ? 'not.' : ''}toHaveScreenshot`;
+  const heading = withMessage(message, `${api} failed`);
   const store = context.screenshots;
   if (store === undefined) {
     throw new TestError('UNSUPPORTED_CAPABILITY', `${api} keeps screenshots beside a test file, so it runs only inside a test`);
@@ -77,11 +87,14 @@ export async function expectScreenshot(
   await context.steps.run('assertion', api, label, async () => {
     const deadline = context.engine.deadline(call.timeout ?? context.engine.assertionTimeout);
     const reads = context.engine.reads(deadline);
-    const capture = screenshotCapturer(context, { api, subject, masks: call.masks, maskColor: call.maskColor }, reads);
-    const run: Run = { context, store, api, call, stored, reads, capture };
+    const captureOnce = screenshotCapturer(context, { api, subject, masks: call.masks, maskColor: call.maskColor }, reads);
+    const capture = (): Promise<Capture> => captureOnce().catch((error: unknown) => {
+      throw labelAmbiguous(error, message);
+    });
+    const run: Run = { context, store, heading, call, stored, reads, capture };
     const expected = existsSync(file) ? readStored(api, stored) : undefined;
     if (expected !== undefined && (negated || !store.update) && store.written.has(file)) {
-      throw failure(api, `${stored.shown} was written earlier in this run and is not reviewed yet: look at it, commit it, and run again`, stored, 'unreviewed stored screenshot');
+      throw failure(heading, `${stored.shown} was written earlier in this run and is not reviewed yet: look at it, commit it, and run again`, stored, 'unreviewed stored screenshot');
     }
     if (negated) {
       await expectDifferent(run, expected, deadline);
@@ -137,7 +150,7 @@ async function matchOrSettle(run: Run, expected: RgbaImage | undefined, deadline
       return false;
     },
     onTimeout: (cause) => {
-      if (latest === undefined) return failure(run.api, missing ?? (cause === undefined ? 'no screenshot was taken' : 'the last screenshot ran past the timeout'), run.stored, 'no screenshot', cause);
+      if (latest === undefined) return failure(run.heading, missing ?? (cause === undefined ? 'no screenshot was taken' : 'the last screenshot ran past the timeout'), run.stored, 'no screenshot', cause);
       if (!settles && expected !== undefined && latest.comparison !== undefined && latest.comparison.kind !== 'match') {
         return mismatch(run, expected, latest.image, latest.comparison, cause);
       }
@@ -151,7 +164,7 @@ async function matchOrSettle(run: Run, expected: RgbaImage | undefined, deadline
       const message = captures < 2
         ? `took ${captures} screenshot${captures === 1 ? '' : 's'} before the timeout and needs two the same; give it a longer timeout`
         : `the screen never held still: no two of ${captures} screenshots in a row were the same`;
-      return failure(run.api, [message, ...images].join('\n'), run.stored, 'no stable screenshot', cause);
+      return failure(run.heading, [message, ...images].join('\n'), run.stored, 'no stable screenshot', cause);
     },
   });
   return settled;
@@ -164,23 +177,23 @@ async function matchOrSettle(run: Run, expected: RgbaImage | undefined, deadline
  * thrown away and a retry must not pass against what its first attempt wrote.
  */
 async function keep(run: Run, expected: RgbaImage | undefined, settled: RgbaImage): Promise<void> {
-  const { store, stored, api } = run;
+  const { store, stored, heading } = run;
   if (expected === undefined && !store.update && store.ci) {
     const kept = attach(run, path.join('snapshots', ...stored.shown.split('/')), settled);
-    throw failure(api, `no stored screenshot at ${stored.shown}, and CI writes none without --update-snapshots; commit this run's there\nactual: ${kept}`, stored, 'no stored screenshot');
+    throw failure(heading, `no stored screenshot at ${stored.shown}, and CI writes none without --update-snapshots; commit this run's there\nactual: ${kept}`, stored, 'no stored screenshot');
   }
   mkdirSync(path.dirname(stored.file), { recursive: true });
   await writeFileAtomic(stored.file, encodePng(settled));
   store.written.add(stored.file);
   if (expected === undefined && !store.update) {
-    throw failure(api, `no stored screenshot at ${stored.shown}; wrote this run's there. Look at it, commit it, and run again`, stored, 'no stored screenshot');
+    throw failure(heading, `no stored screenshot at ${stored.shown}; wrote this run's there. Look at it, commit it, and run again`, stored, 'no stored screenshot');
   }
 }
 
 /** `.not`: waits for the screen to differ from the stored screenshot, which must exist. */
 async function expectDifferent(run: Run, expected: RgbaImage | undefined, deadline: Deadline): Promise<void> {
   if (expected === undefined) {
-    throw failure(run.api, `no stored screenshot at ${run.stored.shown} to differ from`, run.stored, 'no stored screenshot');
+    throw failure(run.heading, `no stored screenshot at ${run.stored.shown} to differ from`, run.stored, 'no stored screenshot');
   }
   let compared = false;
   let missing: string | undefined;
@@ -200,8 +213,8 @@ async function expectDifferent(run: Run, expected: RgbaImage | undefined, deadli
     },
     onTimeout: (cause) =>
       compared
-        ? failure(run.api, `the screen still matches ${run.stored.shown}`, run.stored, 'matching', cause)
-        : failure(run.api, missing ?? (cause === undefined ? 'no screenshot was taken' : 'the last screenshot ran past the timeout'), run.stored, 'no screenshot', cause),
+        ? failure(run.heading, `the screen still matches ${run.stored.shown}`, run.stored, 'matching', cause)
+        : failure(run.heading, missing ?? (cause === undefined ? 'no screenshot was taken' : 'the last screenshot ran past the timeout'), run.stored, 'no screenshot', cause),
   });
 }
 
@@ -233,12 +246,12 @@ function mismatch(
   const observed = comparison.kind === 'size'
     ? `a ${comparison.actual.width}x${comparison.actual.height} screenshot where ${shown} is ${comparison.expected.width}x${comparison.expected.height}`
     : `${comparison.diffPixels} pixels (${formatRatio(comparison.ratio)} of the image) differ from ${shown}`;
-  return failure(run.api, [`${observed}; run with --update-snapshots to keep this run's`, ...images].join('\n'), run.stored, observed, cause);
+  return failure(run.heading, [`${observed}; run with --update-snapshots to keep this run's`, ...images].join('\n'), run.stored, observed, cause);
 }
 
 /** An assertion failure naming the stored screenshot. */
-function failure(api: string, message: string, stored: Stored, observed: string, cause?: unknown): TestError {
-  return new TestError('ASSERTION_FAILED', `${api} failed\n${message}`, {
+function failure(heading: string, detail: string, stored: Stored, observed: string, cause?: unknown): TestError {
+  return new TestError('ASSERTION_FAILED', `${heading}\n${detail}`, {
     details: { expected: stored.shown, observed },
     ...(cause === undefined ? {} : { cause }),
   });

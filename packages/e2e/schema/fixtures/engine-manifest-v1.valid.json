@@ -24,5 +24,6 @@
     "lifecycle/endAttempt"
   ],
   "actions": ["tap", "doubleTap", "longPress", "fill", "clear", "press", "check", "uncheck", "focus", "scrollIntoView", "dragTo", "swipe"],
-  "pointerActions": ["tap", "doubleTap", "longPress", "dragTo", "swipe", "swipeTo"]
+  "pointerActions": ["tap", "doubleTap", "longPress", "dragTo", "swipe", "swipeTo"],
+  "isolation": "worker"
 }

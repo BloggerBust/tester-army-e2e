@@ -466,6 +466,26 @@ function nearestExisting(target: string): string | undefined {
   }
 }
 
+const DEFAULT_OUTPUT_DIR = '.e2e';
+
+/**
+ * Resolves the results directory (`--output` over the config's `output`,
+ * defaulting to `.e2e`) from `projectRoot` without validating the rest of
+ * the project config.
+ */
+export function resolveOutputDir(
+  configured: unknown,
+  flag: string | undefined,
+  projectRoot: string,
+): string {
+  const where = flag === undefined ? 'output' : '--output';
+  const value: unknown = flag ?? configured;
+  if (value !== undefined && (typeof value !== 'string' || value.trim() === '')) {
+    throw new ConfigurationError('INVALID_CONFIG', `${where} must be a non-empty path relative to the project root, got ${describeValue(value)}`);
+  }
+  return path.resolve(projectRoot, (value as string | undefined) ?? DEFAULT_OUTPUT_DIR);
+}
+
 /**
  * Resolves the results directory, `--output` over the config's `output`,
  * from the project root. A run clears `<output>/results` and writes over
@@ -488,11 +508,8 @@ function resolveOutput(
 ): string {
   const where = flag === undefined ? 'output' : '--output';
   const value: unknown = flag ?? configured;
-  if (value !== undefined && (typeof value !== 'string' || value.trim() === '')) {
-    throw new ConfigurationError('INVALID_CONFIG', `${where} must be a non-empty path relative to the project root, got ${describeValue(value)}`);
-  }
-  const output = path.resolve(projectRoot, (value as string | undefined) ?? '.e2e');
-  const named = value === undefined ? `${where} ".e2e" (the default)` : `${where} ${JSON.stringify(value)}`;
+  const output = resolveOutputDir(configured, flag, projectRoot);
+  const named = value === undefined ? `${where} "${DEFAULT_OUTPUT_DIR}" (the default)` : `${where} ${JSON.stringify(value)}`;
   const refuse = (reason: string): never => {
     throw new ConfigurationError('INVALID_CONFIG', `${named} ${reason}`);
   };

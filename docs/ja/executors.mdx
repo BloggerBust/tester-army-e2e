@@ -1,0 +1,203 @@
+---
+title: 独自のエグゼキューター
+description: エージェントのループをカスタマイズするか、独自のステップエグゼキューターを実装します。
+"og:image": "https://e2e.com/docs/images/og/executors.png?v=283f7962bb"
+"twitter:image": "https://e2e.com/docs/images/og/executors.png?v=283f7962bb"
+---
+
+ステップエグゼキューターは、エージェントの `agent.act` と `agent.assert` を実行します。`system` プロンプトと[プロジェクトツール](/tools)だけでは足りない場合に、独自のものを実装します。
+
+| 選択肢 | 自分で実装するもの | ランナーが引き続き担当するもの |
+| --- | --- | --- |
+| `e2e/agent` の `createToolLoopExecutor` | ツールとプロンプト。ループが追加するのは `complete_step` だけ | 予算、繰り返し呼び出しの検出、判定、使用量の集計、デバッグ用トランスクリプト |
+| `StepExecutor` | `runStep(ctx)`。モデルは任意で、`e2e` と `e2e/engine` の型は `ai` パッケージなしでコンパイルできる | ステップの期限、機密情報をマスキングした観測、検証済みの操作、判定の記録 |
+
+どちらも `agents` エントリーの `executor` に設定します。そのエントリーの `model`、`judge`、`context`、予算は引き続き使われますが、`system` と `tools` は拒否されます。これらは `createToolLoopExecutor` に渡してください。選択肢を限定した回答を返すプロバイダーには、[デシジョンエグゼキューター](/decision-models)を参照してください。
+
+## ループを保ち、ツールと指示を変える
+
+このエージェントには、画面を読むツールと、ID でノードをタップするツールの 2 つがあります。
+
+```ts title="e2e.config.ts"
+import type { E2EConfig } from 'e2e';
+import { createToolLoopExecutor } from 'e2e/agent';
+import { web } from '@e2e-dev/web';
+import { gateway, tool } from 'ai';
+import { z } from 'zod';
+
+export default {
+  targets: [{ engine: web(), app: { url: 'http://localhost:3000' } }],
+  agents: {
+    default: {
+      model: gateway('openai/gpt-6-luna-fast'),
+      maxModelCalls: 15,
+      executor: createToolLoopExecutor({
+        name: 'tap-only',
+        system: 'Read the screen before acting. Tap controls by their id from the latest read.',
+        buildPrompt: (ctx) => ctx.step.instruction,
+        tools: (ctx, { guard }) => ({
+          read_screen: tool({
+            description: 'Read the screen as text, one node per line as #id role "name"',
+            inputSchema: z.object({}),
+            execute: () => guard(async () => (await ctx.observe()).text),
+          }),
+          tap: tool({
+            description: 'Tap a node by its id from the latest read_screen',
+            inputSchema: z.object({ id: z.string() }),
+            execute: ({ id }) =>
+              guard(async () => {
+                await ctx.actions.tap({ id: id.replace(/^#/, '') });
+                return `Tapped ${id}.`;
+              }),
+          }),
+        }),
+      }),
+    },
+  },
+} satisfies E2EConfig;
+```
+
+ループは、エントリーの `model`、または `createToolLoopExecutor({ model })` に指定したモデルで、ステップごとに最大 `maxModelCalls` ターン実行します。エグゼキューター自身に `judge` を持たせることもできます。エントリーにも同じオプションを設定する場合、両方が同じプロバイダーとモデルを指す必要があります。異なると設定読み込みが `INVALID_CONFIG` で失敗します。
+
+`buildPrompt` は文字列またはメッセージ履歴を返します。`prepareMessages` はターン間に実行され、履歴を短くするか、進展がない場合に `{ messages, stop }` を返します。メッセージを直接書き換える場合も置き換える場合も、リクエストの前半部分が変わります。Anthropic モデルでは推論がそれに結び付いているため、ループはそのメッセージ以降の推論を送らなくなります。プロバイダーがリクエストを大きすぎるとして拒否した場合、ループは履歴を短くし、リクエストが小さくなれば 1 回だけ再試行します。小さくならなければ `CONTEXT_OVERFLOW` で失敗します。以前の画面が根拠になるアサーションループでは、`inconclusiveOnOverflow: true` を設定すると代わりに `ASSERTION_INCONCLUSIVE` で失敗します。`guard()` は、ステップが終了処理に入ると新たなツール呼び出しを止め、モデルに失敗をテキストで返します。`ctx.actions` が各操作を許可、集計、記録するため、これらのステップは[キャッシュ](/cache)から再生でき、`tap` に対応するどのエンジンでも動きます。
+
+独自ツールと一緒に組み込みの操作も使うには、`createGrammarTools(ctx, { guard })` をツールセットに展開します。ターゲットのエンジンが対応する動詞に応じて、組み込みエージェントの操作ツールを返します。各結果には画面の変化が含まれます。`BASE_RULES` は、これらのツールに対する組み込みエージェントの指示です。`system` の先頭に置いてください。
+
+```ts
+import { BASE_RULES, createGrammarTools, createToolLoopExecutor } from 'e2e/agent';
+
+createToolLoopExecutor({
+  name: 'with-inbox',
+  system: `${BASE_RULES}\n\nCheck the inbox with read_inbox when a step mentions an email.`,
+  buildPrompt: (ctx) => ctx.step.instruction,
+  tools: (ctx, { guard }) => ({ ...createGrammarTools(ctx, { guard }), read_inbox: readInbox }),
+});
+```
+
+ループの外では、操作ツールは `ScreenOutput` を返します。内容はテキスト、またはスクリーンショット付きテキストです。ツールが投げたエラーを `isRuntimeHardStop(error)` が受け付ける場合は、ステップを終了し、そのエラーを投げ直してください。
+
+テスト API の呼び出しなど、`ctx.actions` の外で動くツールは、本体を `ctx.budgets.runTool({ name, mutates })` で包みます。操作予算を 1 回分使い、結果を記録します。`runTool` の中で `ctx.actions` や `ctx.observe` を呼ばないでください。呼び出しが自分自身の完了を待ち、デッドロックします。
+
+## エグゼキューターを置き換える
+
+このエグゼキューターはモデルを使わず、`agent.assert('the screen says Ready')` というひとつのアサーションだけに対応します。他のステップには、ブロックされた判定を返します。
+
+```ts title="e2e.config.ts"
+import type { E2EConfig, StepExecutor } from 'e2e';
+import { web } from '@e2e-dev/web';
+
+const scripted: StepExecutor = {
+  name: 'scripted',
+  version: '1',
+  cache: 'off',
+  async runStep(ctx) {
+    if (ctx.step.kind !== 'assert' || ctx.step.instruction !== 'the screen says Ready') {
+      return {
+        status: 'blocked',
+        errorCode: 'AUTOMATION_UNSUPPORTED',
+        summary: 'This executor only checks whether the screen says Ready.',
+      };
+    }
+    const screen = await ctx.observe();
+    const ready = screen.text.includes('Ready');
+    return {
+      status: ready ? 'passed' : 'failed',
+      summary: ready ? 'The screen says Ready.' : 'Ready is absent from the screen.',
+    };
+  },
+};
+
+export default {
+  targets: [{ engine: web(), app: { url: 'http://localhost:3000' } }],
+  agents: { default: { executor: scripted } },
+} satisfies E2EConfig;
+```
+
+## コンテキストに含まれるもの
+
+| メンバー | 内容 |
+| --- | --- |
+| `ctx.step` | `kind`、指示、パラメーター、試行のタイムライン内の `index`。指示やパラメーター内の設定済みシークレットは `<secret:name>` になります。`secrets.get()` のハンドルは名前だけのプレースホルダーとして届き、`typeSecret` が入力します |
+| `ctx.observe({ tree, pixels })` | 機密情報をマスキングした画面テキスト。任意でノードツリーとマスキング済みスクリーンショットも含む |
+| `ctx.read({ id }, { style })` | 現在列挙されているノードの、シークレットをマスキングした計算済みスタイル。[プロジェクトツール](/tools#read-a-nodes-computed-style)を参照 |
+| `ctx.actions` | 検証・記録される操作: `tap`、`doubleTap`、`longPress`、`secondaryTap`、`hover`、`type`、`typeSecret`、`press`、`select`、`check`、`drag`、`scrollTo`、`scrollUntil`、`upload`、`scroll`、`navigate`、`back`、`resize`、`switchTab`、`closeTab`、および以下の座標・キーボード操作 |
+| `ctx.target` | ターゲットの `name`、`platform`、エンジンが対応する操作を示す `verbs`。モデルにはこれらだけを提供します。`tap`、`doubleTap`、`secondaryTap` が `{ modifiers }` を受け取れる場合、`tapModifiers` は true です |
+| `ctx.signal` | キャンセル、ステップの期限、その他の強制停止で中断されます。期限を無視する処理は止められません |
+| `ctx.replayedPrefix` | キャッシュのリプレイがステップの一部を先に実行した場合に設定。[リプレイキャッシュ](#replay-cache)を参照 |
+| `ctx.model`, `ctx.providerOptions` | 設定されている場合、エージェントのモデルと `providerOptions` |
+| `ctx.agentContext` | エージェントの `context` とテストの `agentContext` を合わせたもの |
+| `ctx.ledger` | テストの完了済みステップ |
+| `ctx.attempt` | テストと試行の ID、テストの `titlePath`（`e2e run` の外では空）、リトライのインデックス、AbortSignal、レポートには含まれない `memory` マップ |
+| `ctx.budgets` | 独自ツール（`runTool`）とモデル呼び出し（`recordModelCall`）の使用量管理 |
+| `ctx.attachTranscript(text)` | `--debug` 時にモデルのトランスクリプトを `log` アーティファクトとして添付。最後に 1 回呼び出します |
+| `ctx.attachTurns(turns)` | モデルのターン（`{ index, calls, outcome }`）を短縮した記録としてステップに保持。失敗したステップの下に直近のものを表示します |
+| `ctx.attachScreenshot(pixels, label)` | 観測した画像をステップの `screenshot` アーティファクトとして保持し、レポート内の ID を返します |
+
+`tapAt(point)` と `hoverAt(point)` は、エンジンの座標操作を呼び出します。座標操作がない場合は、その地点にある列挙済みコントロールを操作します。`dragAt(from, to)` は、エンジンの `dragTo` ポインター操作で 2 点間をドラッグします。それがなくても `dragTo` 操作に対応するエンジンなら、両点が異なる列挙済みコントロール上にある場合に ID でドラッグします。それ以外の `dragAt` は `UNSUPPORTED_CAPABILITY` で失敗します。`hitTest(point)` は操作せずに、その座標のコントロールを探します。キーボードに対応するエンジンには、フォーカス中のコントロール向けの `typeText`、`pressKey`、`dismissKeyboard` が加わります。`upload(target, paths)` はプロジェクト相対パスと、[アップロードポリシー](/reference/agent#action-tools)にある `sample:` ファイルを受け取ります。プロジェクトルート外や隠しパスは `POLICY_DENIED`、存在しないファイルは `INVALID_ARGUMENT` で拒否します。
+
+観測の `keyboardVisible` は画面キーボードの表示状態を示します。エンジンが判断できない場合は省略されます。
+
+セマンティックな取得に失敗した場合、観測には `treeUnavailable: true` が設定され、`tree` はなくなります。ポリシーが許せばスクリーンショットが含まれます。それ以前のノード ID は無効です。ツリーがないことは、コントロールが存在しない証拠にはなりません。
+
+## エグゼキューターが処理する呼び出し
+
+`act` と `assert` は、エージェントの `maxSteps`、`maxModelCalls`、`timeout` とともに `runStep` に届きます。`assert` の `vision` は、エグゼキューターが `vision: true` を宣言している場合だけ `ctx.step.vision` に届きます。宣言していなければ、呼び出しは `UNSUPPORTED_CAPABILITY` で失敗します。`screenshot` は、独自の判定の後にも証拠を添付します。
+
+`waitFor` と `extract` は、引き続き組み込みの判定を使います。モデルが設定されていない場合は `MODEL_UNAVAILABLE` で失敗します。
+
+## 判定を返す
+
+要約とともに `passed`、`failed`、`blocked` を返します。`blocked` にはエラーコードが必要で、`passed` には付けません。コードの一覧は[エージェントステップの仕組み](/agent-steps#how-a-step-ends)にあります。`STEP_BUDGET_EXHAUSTED`、`STEP_TIMEOUT`、`CANCELLED` は、それぞれ予算を使い切った、期限を過ぎた、テストがキャンセルされた場合にだけ返してください。その他の使い方や、コード付きの成功判定は、ランナーが `MODEL_OUTPUT_INVALID` で拒否します。
+
+エグゼキューター自身がモデルを動かす場合、`e2e/agent` の `createVerdictTool(ctx.step.kind)` が組み込みエージェントの `complete_step` に相当します。モデルにその `tool` と `VERDICT_RULES` を渡し、`verdict()` を返してください。`act` ステップでは、失敗判定から `ASSERTION_INCONCLUSIVE` を取り除きます。
+
+## リプレイキャッシュ
+
+`StepExecutor` の `cache` は、`act` ステップで[リプレイキャッシュ](/cache)をどう使うかを設定します。`assert` ステップはキャッシュされません。
+
+デフォルトの `'inherit'` は設定済みのキャッシュモードに従い、記録済みのステップは `runStep` を呼ばずに再生されます。`'off'` は再生も記録も行いません。エグゼキューター自身の履歴やメモリーを正とする場合に使ってください。
+
+途中でリプレイが止まると、ランナーは再生済みの操作と停止理由を `ctx.replayedPrefix` に入れて `runStep` を呼び出します。それらを繰り返さず、現在の画面から続けてください。
+
+キャッシュは、ステップが `ctx.actions` を通して行った操作を記録します。状態を変更するツール呼び出しは記録に空白を残し、再生時にエグゼキューターがその部分を埋めます。エントリーのキーは、エグゼキューターではなく、設定されたエージェントとそのコンテキストです。エージェントのエグゼキューターを変えても、エントリーは保持されます。
+
+## ページを直接操作する
+
+Web エンジンでは、`@e2e-dev/web` の `surfaceOf(handle)` から現在の試行の `Page` と `BrowserContext` を取得できます。アクティブな試行の外では、どちらのアクセサーも `INVALID_STATE` を投げます。`page()` はページが開かれていない場合にも投げます。
+
+```ts
+import type { E2EConfig, StepExecutor } from 'e2e';
+import { web, surfaceOf } from '@e2e-dev/web';
+
+const engine = web();
+const own: StepExecutor = {
+  name: 'own-tools',
+  version: '1',
+  cache: 'off',
+  async runStep(ctx) {
+    const page = surfaceOf(engine)!.page();   // the page app.open() navigated
+    await ctx.budgets.runTool({ name: 'click', mutates: true }, () =>
+      page.getByRole('button', { name: 'Save' }).click(),
+    );
+    return { status: 'passed', summary: 'saved' };
+  },
+};
+
+export default {
+  targets: [{ engine, app: { url: 'http://localhost:3000' } }],
+  agents: { default: { executor: own } },
+} satisfies E2EConfig;
+```
+
+Playwright の直接呼び出しは、操作の認可とリプレイキャッシュを通らず、アーティファクトも残しません。ステップの期限と判定の記録は引き続き適用されます。
+
+## 次のステップ
+
+<CardGroup cols={2}>
+  <Card title="agent リファレンス" icon="wand-magic-sparkles" href="/reference/agent">
+    すべてのメソッド、オプション、予算を確認します。
+  </Card>
+  <Card title="エンジンを作る" icon="plug" href="/writing-an-engine">
+    別のプラットフォームへの対応を追加します。
+  </Card>
+</CardGroup>

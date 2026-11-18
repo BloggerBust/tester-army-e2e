@@ -1,0 +1,107 @@
+---
+title: BrowserStack
+sidebarTitle: BrowserStack
+description: 使用 @e2e-dev/browserstack 的 browserstack() 设备提供方，在 BrowserStack App Automate 的 Android 和 iOS 真机上运行移动端测试目标。
+"og:image": "https://e2e.com/docs/images/og/integrations/browserstack.png?v=e37c085f7a"
+"twitter:image": "https://e2e.com/docs/images/og/integrations/browserstack.png?v=e37c085f7a"
+---
+
+`@e2e-dev/browserstack` 中的 `browserstack()` 是用于 [BrowserStack App Automate](https://www.browserstack.com/app-automate) Android 和 iOS 真机的[设备提供方](/mobile#hosted-devices)。每个工作进程槽位在运行开始时租用一台设备，在运行结束时释放。
+
+<Tip>
+使用托管设备运行 e2e 不需要 Mac、Xcode 或 Android SDK。
+</Tip>
+
+## 配置
+
+将集成包与移动端引擎一起安装：
+
+<CodeGroup>
+```bash npm
+npm install --save-dev e2e @e2e-dev/mobile @e2e-dev/browserstack
+```
+
+```bash pnpm
+pnpm add -D e2e @e2e-dev/mobile @e2e-dev/browserstack
+```
+
+```bash bun
+bun add -d e2e @e2e-dev/mobile @e2e-dev/browserstack
+```
+</CodeGroup>
+
+```ts title="e2e.config.ts"
+import type { E2EConfig } from 'e2e';
+import { mobile } from '@e2e-dev/mobile';
+import { browserstack } from '@e2e-dev/browserstack';
+
+const apk = 'https://www.browserstack.com/app-automate/sample-apps/android/WikipediaSample.apk';
+
+export default {
+  targets: [
+    {
+      name: 'pixel-7',
+      engine: mobile({
+        platform: 'android',
+        device: browserstack({ device: 'Google Pixel 7', osVersion: '13.0', app: apk, appiumVersion: '3.2.0' }),
+      }),
+      app: { bundleId: 'org.wikipedia.alpha' },
+    },
+  ],
+  workers: 1,
+} satisfies E2EConfig;
+```
+
+`device` 和 `osVersion` 必须与 BrowserStack 的 App Automate 目录完全一致，按[设备列表](https://www.browserstack.com/list-of-browsers-and-platforms/app_automate)中的格式填写：Android 为 `13.0`，iOS 为 `18`。
+
+`app` 是 BrowserStack 在每个会话中安装的构建产物：可以是之前上传后得到的 `bs://` 应用 ID；BrowserStack 每次运行获取一次的 `https` URL；或相对于 `e2e.config.ts` 所在目录解析并上传的本地路径。Android 使用 `.apk` 或 `.aab`，iOS 使用已签名的 `.ipa`。不要设置测试目标的 `app.appPath`，保留 `app.bundleId` 供 `app.open()` 使用。
+
+设置 `appiumVersion`：未设置时，BrowserStack 会运行默认的 Appium 1.x，它缺少深度链接和硬件按钮使用的 `mobile:` 命令。
+
+测试与本地设备上的写法相同：
+
+```ts title="tests/home.e2e.ts"
+import { test } from '@e2e-dev/mobile';
+import { expect } from 'e2e';
+
+test('Wikipedia home screen', async ({ app, screen }) => {
+  await app.open();
+  await expect(screen.getByText('Search Wikipedia').first()).toBeVisible();
+});
+```
+
+## 身份验证
+
+在启动 `e2e run` 的环境中设置 `BROWSERSTACK_USERNAME` 和 `BROWSERSTACK_ACCESS_KEY`，例如使用 CI 机密值。从 **Account & Profile → My profile → Authentication & Security** 复制它们。用户名是该页面显示的用户名，不是你的电子邮箱地址。缺少任一值时，租用会在任何操作开始前失败。你的套餐需要包含 App Automate。
+
+## 选项
+
+| 选项 | 默认值 | 含义 |
+| ---------------- | --------------- | ------- |
+| `device` | 必填 | App Automate 目录中列出的设备名称（`'Google Pixel 7'`、`'iPhone 16'`）。 |
+| `osVersion` | 必填 | 目录中为该设备列出的操作系统版本。 |
+| `app` | 必填 | BrowserStack 安装的构建产物：`bs://` 应用 ID、`https` URL 或本地路径。 |
+| `project` | `'e2e'` | 控制台中用于归组会话的项目。 |
+| `build` | 运行 ID | 控制台中用于归组会话的构建。 |
+| `sessionName` | `e2e-<run id>-<target>-<slot>` | 控制台中的会话名称。工作进程槽位多于一个时，会追加 `-<slot>`。 |
+| `orientation` | 设备默认值 | `'portrait'` 或 `'landscape'`。 |
+| `geoLocation` | BrowserStack 默认值 | 设备 IP 地理位置对应的国家代码（`'US'`）。 |
+| `timezone` | 设备默认值 | 时区（`'New_York'`）。 |
+| `language` | 应用默认值 | 语言（`'fr'`）。 |
+| `locale` | 设备默认值 | 区域设置（`'fr_FR'`）。 |
+| `appiumVersion` | BrowserStack 默认值（1.x） | 会话的 Appium 版本（`'3.2.0'`）。 |
+| `networkProfile` | 无 | 命名的网络条件配置（`'4g-lte-advanced-good'`）。不能与 `customNetwork` 同时使用。 |
+| `customNetwork` | 无 | 自定义网络条件。不能与 `networkProfile` 同时使用。 |
+| `noResignApp` | `false` | 仅限 iOS：保留上传应用的签名，避免 BrowserStack 重新签名时移除推送通知等授权。 |
+
+设备特性在会话开始时设置，并在整个会话期间保持不变。未知选项和无效的选项类型会让配置加载以 `INVALID_CONFIG` 失败；目录中的值和平台特定约束会在开始租用设备时检查。
+
+录制[视频](/reference/config#video)的尝试会链接到 BrowserStack 的会话录像，通过 `build` 和 `sessionName` 查找。录像覆盖整个会话，因此同一工作进程槽位上的每次尝试都链接到同一段视频。重叠运行且共用固定 `build` 和 `sessionName` 的运行可能链接到彼此的视频；使用默认值则不会出现这种情况。
+
+## 限制
+
+- e2e 准备测试目标时，每个会话会在租用其槽位的设备时开始。设备准备约需 20 至 50 秒，会话会一直计费到运行释放它，即使没有测试在其上执行。`workers` 与 BrowserStack 测试目标数量的乘积不得超过套餐允许的并行会话数。
+- BrowserStack 会在上传内容最后一次使用后保留 30 天。使用 `https` `app` 的运行会再次上传；复用 `bs://` ID 可跳过上传。
+- 如果运行器在释放设备前被终止，BrowserStack 会在最后一条命令后达到空闲超时时结束会话。
+- 如果 agent-device 无法确认已结束会话，释放操作会导致运行失败，即使所有测试都已通过。可能的原因包括：结束会话超过 agent-device 约 3 秒的关闭时间窗口、守护进程被强制停止、关闭报告丢失，或守护进程在运行期间退出。通过 `build` 和 `sessionName` 在控制台中查找会话。
+- 不支持设备设置（权限、位置、网络、外观）、系统警报、通过 agent-device 录制和读取设备日志，以及端口反向转发。在 BrowserStack 控制台读取日志，使用 BrowserStack Local 访问你网络中的服务器。

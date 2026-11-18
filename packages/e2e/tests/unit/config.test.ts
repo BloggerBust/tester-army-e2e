@@ -549,6 +549,10 @@ describe('resolveConfig', () => {
     expect(() => resolve({ reporters: ['json', 'list'] })).toThrow(/json renderer/);
   });
 
+  it.each([['list', 'dot'], ['dot', 'list']] as const)('rejects %s combined with %s reporters', (first, second) => {
+    expect(() => resolve({ reporters: [first, second] })).toThrow(/list.*dot|dot.*list/u);
+  });
+
   it('accepts the junit reporter beside list or json, and rejects unknown ids', () => {
     expect(resolve({ reporters: ['junit'] }).reporters).toEqual(['junit']);
     expect(resolve({ reporters: ['list', 'junit'] }).reporters).toEqual(['list', 'junit']);

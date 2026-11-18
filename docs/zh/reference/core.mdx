@@ -1,0 +1,254 @@
+---
+title: "@e2e-dev/core"
+description: launch、宿主、会话、已保存状态和 createAgent，为不使用测试运行器而直接操作浏览器或设备的程序提供 API。
+---
+
+`@e2e-dev/core` 为不使用测试运行器而直接操作浏览器或设备的程序提供 API。`launch` 返回宿主，宿主打开会话，`createAgent` 在会话上创建智能体。[指南](/core)展示了它们的用法。
+
+```ts title="prices.ts"
+import { launch } from '@e2e-dev/core';
+import { web } from '@e2e-dev/web/engine';
+
+await using shop = await launch(web(), { app: { url: 'https://shop.example.com' } });
+await using session = await shop.newSession();
+await session.app.open('/products/A-1001');
+console.log(await session.screen.getByTestId('sale-price').textContent());
+```
+
+## 参考
+
+### 入口
+
+| 导入 | 来源 |
+| --- | --- |
+| [`launch`](#launch)、[`SessionState`](#sessionstate)、`isE2EError` | `@e2e-dev/core` |
+| [`createAgent`](#createagent)、`defineTool` | `@e2e-dev/core/agent` |
+| `web` | `@e2e-dev/web/engine` |
+| `mobile` | `@e2e-dev/mobile/engine` |
+| `defineEngine` | `@e2e-dev/core/engine` |
+
+`@e2e-dev/core/lib/*` 是私有 API。其中的模块可能在任何版本中变化。
+
+### 启动
+
+| 函数 | 返回值 |
+| --- | --- |
+| [`launch`](#launch) | `Promise<Host>` |
+
+#### `launch`
+
+准备引擎并返回可在其上打开会话的宿主。首次启动 `web()` 时会下载浏览器。
+
+```ts
+const shop = await launch(web(), {
+  app: { url: 'https://shop.example.com' },
+  timeout: 10_000,
+  artifactsDir: 'artifacts',
+});
+```
+
+| 选项 | 类型 | 默认值 |
+| --- | --- | --- |
+| [`app`](#app) | `LaunchApp` | - |
+| `secrets` | `Record<string, string>` | - |
+| `headed` | `boolean` | `false` |
+| [`timeout`](#timeout) | `number` | 按操作而定 |
+| `signal` | `AbortSignal` | - |
+| `handleSignals` | `boolean` | `true` |
+| `artifactsDir` | `string` | 临时目录 |
+| `cwd` | `string` | `process.cwd()` |
+| `env` | `NodeJS.ProcessEnv` | `process.env` |
+| `onNotice` | `(message: string) => void` | - |
+
+- `secrets`：按名称提供的值，每个至少 6 个字符。参阅[传入机密值](/core#pass-secrets)。
+- `headed`：显示浏览器窗口。设备会忽略此选项。
+- `signal`：取消启动，以及宿主上的所有会话和操作。
+- `handleSignals`：收到 SIGINT、SIGTERM 和 SIGHUP 时关闭宿主，然后让信号结束程序，除非程序自身监听了该信号。
+- `artifactsDir`：截图、下载文件和录制文件的存放位置，相对于 `cwd` 解析。默认目录会在宿主关闭时删除。
+- `cwd`：上传路径、`artifactsDir` 和智能体缓存目录的解析基准。
+- `onNotice`：操作之外的进度信息，例如浏览器下载或设备租用。
+
+| 抛出 | 条件 |
+| --- | --- |
+| `INVALID_ARGUMENT` | 第一个参数不是引擎，或存在未知选项或 `app` 键。 |
+| `INVALID_CONFIG` | 引擎不接受该应用配置：`web()` 缺少 `app.url`，或 `mobile()` 缺少 `app.bundleId` 和 `app.appPath`。 |
+| `WORKER_PROTOCOL` | 另一个宿主已占用此引擎实例。重新调用工厂函数：`launch(web())`。 |
+
+<a id="app" />
+
+##### `app`
+
+`app.open()` 在浏览器中打开或在设备上启动的应用。
+
+| 字段 | 适用对象 | 含义 |
+| --- | --- | --- |
+| `url` | `web()` | 应用的 URL。`app.open(path)` 以此为基准解析路径。 |
+| `bundleId` | `mobile()` | 要启动的已安装应用。 |
+| `appPath` | `mobile()` | 程序运行所用的应用构建产物，为 `.app` 或 `.apk`。参阅[配置](/reference/config#apppath)。 |
+| `linkBase` | `mobile()` | `app.open(path)` 将路径拼接到此值后作为链接打开。参阅[配置](/reference/config#linkbase)。 |
+| `identity` | 两者 | 保存状态和录制内容时使用的应用名称。默认值为 URL 或 bundle ID。 |
+| `launchArguments` | `mobile()` | 应用启动时使用的参数。 |
+| `permissions` | 两者 | 要授予或拒绝的权限。 |
+
+<a id="timeout" />
+
+##### `timeout`
+
+单次操作的默认超时，以毫秒为单位。未设置时：
+
+| 操作 | 默认值 |
+| --- | --- |
+| 操作、等待或读取 | 30000 |
+| `app.open()`、`app.restart()`、`app.clearState()` | 120000 |
+| 智能体步骤 | 120000，或调用自身的 `timeout` |
+
+`timeout` 设置前两行的值。会话没有截止时间。
+
+### 宿主
+
+| 成员 | 返回值 |
+| --- | --- |
+| `platform` | `string` |
+| [`newSession`](#newsession) | `Promise<Session>` |
+| [`secret`](#secret) | `Secret` |
+| [`close`](#close) | `Promise<void>` |
+
+`platform` 为 `web`、`ios`、`android`，或自定义引擎自身的标签。
+
+#### `newSession`
+
+打开一个会话：一个隔离的浏览器上下文，或设备上的应用。一个宿主同一时间只能持有一个会话。
+
+```ts
+const session = await shop.newSession({ state, signal: AbortSignal.timeout(60_000) });
+```
+
+| 选项 | 类型 | 默认值 |
+| --- | --- | --- |
+| `state` | [`SessionState`](#sessionstate) | - |
+| `signal` | `AbortSignal` | - |
+
+| 抛出 | 条件 |
+| --- | --- |
+| `WORKER_PROTOCOL` | 宿主上已有打开的会话，或宿主已关闭。 |
+| `SESSION_MISMATCH` | `state` 来自其他引擎、平台或应用。 |
+| `SESSION_EXPIRED` | `state` 已过期。 |
+
+#### `secret`
+
+返回传给 `launch` 的机密值句柄，供 `fill` 或智能体的参数使用。未知名称会抛出 `SECRET_UNAVAILABLE`。
+
+```ts
+await session.screen.getByLabel('Password').fill(shop.secret('SHOP_PASSWORD'));
+```
+
+#### `close`
+
+先关闭打开的会话，再关闭引擎。第二次调用不执行任何操作。宿主也支持自动释放：`await using` 会将其关闭。如果清理失败，会抛出包含各项失败的 `AggregateError`。
+
+### 会话
+
+| 成员 | 返回值 |
+| --- | --- |
+| `screen` | [`Screen`](/reference/screen) |
+| `app` | [`App`](/reference/app) |
+| `platform` | `string` |
+| `browser` | 使用 `web()` 时为 [`Browser`](/reference/web) |
+| `device` | 使用 `mobile()` 时为 [`Device`](/reference/mobile) |
+| [`saveState`](#savestate) | `Promise<SessionState>` |
+| [`setDefaultTimeout`](#setdefaulttimeout) | `void` |
+| `close` | `Promise<void>` |
+
+`close` 会结束会话，`await using` 也一样。之后所有操作都会以 `CANCELLED` 失败。
+
+#### `saveState`
+
+将会话的 Cookie 和存储捕获到内存中。没有可捕获状态的引擎（例如 `mobile()`）会抛出 `UNSUPPORTED_CAPABILITY`。
+
+```ts
+const state = await session.saveState();
+```
+
+#### `setDefaultTimeout`
+
+设置此后开始的操作的默认超时，以毫秒为单位，适用于操作、等待、读取，以及应用打开和重启。
+
+```ts
+session.setDefaultTimeout(5_000);
+```
+
+### SessionState
+
+| 成员 | 返回值 |
+| --- | --- |
+| `engine` | `string` |
+| `platform` | `string` |
+| [`export`](#export) | `Promise<Uint8Array>` |
+| [`SessionState.import`](#sessionstate-import) | `Promise<SessionState>` |
+
+#### `export`
+
+使用 32 字节密钥（AES-256-GCM）将状态加密为可写入磁盘的字节。不支持明文导出。
+
+```ts
+const bytes = await state.export({ key });
+```
+
+这些字节以明文记录引擎、平台和机密值名称。Cookie、存储和机密值本身均已加密。
+
+#### `SessionState.import`
+
+解密 `export` 写出的字节。
+
+```ts
+const state = await SessionState.import(bytes, { key });
+```
+
+| 抛出 | 条件 |
+| --- | --- |
+| `SESSION_INVALID` | 密钥不同、字节被修改，或字节并非由 `export` 写出。 |
+| `SESSION_EXPIRED` | 状态已过期。 |
+| `INVALID_ARGUMENT` | 密钥不是 32 字节。 |
+
+### 智能体
+
+| 函数 | 返回值 |
+| --- | --- |
+| [`createAgent`](#createagent) | 智能体 |
+
+#### `createAgent`
+
+在一个会话上创建智能体。`assert`、`waitFor` 和 `extract` 与[智能体测试夹具](/reference/agent)相同。`act` 有一处区别：启用 `cache` 时，它接受 `cacheKey`。
+
+```ts
+const agent = createAgent(session, {
+  model: gateway('anthropic/claude-sonnet-5-5'),
+  cache: { dir: '.shop-bot/cache' },
+});
+const step = await agent.act('Add the item to the cart', { cacheKey: 'add-to-cart' });
+```
+
+| 选项 | 类型 | 默认值 |
+| --- | --- | --- |
+| `model`、`judge`、`context` 及其余选项 | [`agents` 条目](/reference/config#agents) | - |
+| [`cache`](#cache) | `AgentCacheOptions` | 无缓存 |
+
+<a id="cache" />
+
+##### `cache`
+
+| 字段 | 类型 | 默认值 |
+| --- | --- | --- |
+| `dir` | `string` | `.e2e/cache` |
+| `mode` | `'read-write' \| 'read-only'` | `'read-write'` |
+| `strict` | `boolean` | `false` |
+| `store` | [`CacheStore`](/cache) | 文件存储 |
+
+启用 `cache` 后，每次 `act` 都需传入 `{ cacheKey: '<name>' }`，或传入 `{ cache: false }` 以实时执行。[回放已记录的步骤](/core#replay-recorded-steps)说明了记录何时保存。
+
+## 相关内容
+
+- [@e2e-dev/core 指南](/core)
+- [screen](/reference/screen)、[app](/reference/app) 和 [agent](/reference/agent)：会话和智能体包含的成员。
+- [错误](/reference/errors)：所有错误码。
+- [引擎](/engines)：编写自己的引擎。

@@ -14,10 +14,7 @@
  * the CLI prints and opens it themselves.
  */
 
-export interface BrowserCommand {
-  readonly command: string;
-  readonly args: readonly string[];
-}
+import { platformOpenCommand, type BrowserCommand } from '../internal/open-browser.ts';
 
 /** The schemes the opener opens, the ones a browser can follow. */
 const OPENABLE_PROTOCOLS = new Set(['http:', 'https:']);
@@ -31,11 +28,7 @@ const OPENABLE_PROTOCOLS = new Set(['http:', 'https:']);
 export function browserCommand(platform: NodeJS.Platform, url: string): BrowserCommand | undefined {
   const openable = openableUrl(url);
   if (openable === undefined) return undefined;
-  if (platform === 'darwin') return { command: 'open', args: [openable] };
-  // `rundll32` hands the URL to the handler for its scheme as it is, with
-  // no command line of its own for the URL to be read as.
-  if (platform === 'win32') return { command: 'rundll32', args: ['url.dll,FileProtocolHandler', openable] };
-  return { command: 'xdg-open', args: [openable] };
+  return platformOpenCommand(platform, openable);
 }
 
 /** The URL the opener may open, normalized as the parser read it, or undefined for any other URL. */

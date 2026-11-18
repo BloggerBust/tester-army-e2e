@@ -1,0 +1,179 @@
+---
+title: 从 Cypress 迁移
+description: 用异步测试替换 Cypress 命令链，并保留你的 data-cy 属性。
+"og:image": "https://e2e.com/docs/images/og/migrate/cypress.png?v=e4e71f42dc"
+"twitter:image": "https://e2e.com/docs/images/og/migrate/cypress.png?v=e4e71f42dc"
+---
+
+import { SetupPrompt } from '../../snippets/setup-prompt-card.jsx';
+
+export const migrationPrompt = `将这个项目的 Cypress 测试迁移到 e2e，每次迁移一个测试文件。文档：\`https://e2e.com/docs/migrate/cypress.md\`
+
+1. 阅读上面的迁移指南。它给出了 Cypress 配置、命令和断言到 e2e 的映射，并列出了 e2e 尚未提供的功能。
+2. 如果项目没有 e2e 配置（\`e2e.config.ts\`、\`.mts\`、\`.js\` 或 \`.mjs\`），运行 \`npx e2e init --yes\`（或对应的 pnpm 或 bun 命令）。它会写入配置和示例测试，此时还不会安装任何内容。
+3. 阅读 e2e 技能（\`npx e2e guide\` 输出技能内容，\`npx e2e guide <topic>\` 输出指定主题），并在以下每个步骤中遵循它。
+4. 如果运行了 init，询问我希望通过哪种方式为智能体步骤提供模型：ChatGPT、GitHub Copilot、OpenCode Console 或 SuperGrok 订阅、API 密钥，还是本地模型。使用对应提供方的包进行配置。如果需要登录，给我 \`npx e2e login\` 命令，并等待我确认。
+5. 将 \`cypress.config.*\` 迁移到 e2e 配置：将 \`baseUrl\` 和开发服务器命令设为测试目标的 \`app\`；如果测试文件通过 \`data-cy\` 选择元素，设置 \`web({ testIdAttribute: 'data-cy' })\`，让 \`screen.getByTestId\` 读取它。两个测试套件并行运行期间，保留 Cypress 的安装。
+6. 安装依赖项。
+7. 列出 Cypress 端到端测试文件，询问我先迁移哪一个。建议选择经常失败或使用 \`cy.wait(ms)\` 等待的文件。组件测试在 e2e 中没有对应功能，留在 Cypress 中。
+8. 根据指南中的表格，将该测试文件改写为 \`tests/\` 下的 \`.e2e.ts\` 文件（e2e 默认运行 \`tests/**/*.e2e.ts\`），每行一个带 await 的调用。迁移测试前，检查“e2e 尚未提供的功能”：使用“当前替代方式”中的方法，或将测试留在 Cypress 中并说明原因。原来 \`cy.contains\` 匹配文本片段的地方，传入 \`{ exact: false }\`。将每个 \`cy.wait(ms)\` 替换为对测试所等待状态的断言。
+9. 使用 \`app.open()\` 和定位器断言，让导航和最终断言保持确定性。对于经常失败的一连串脚本交互，建议改为一个 \`agent.act\` 目标。
+10. 使用 \`npx e2e run <file>\` 运行新文件，并持续修复直到通过。在我确认可以删除前，保留 Cypress 测试文件。
+11. 总结哪些测试已迁移、哪些留在 Cypress 中，以及原因。`;
+
+e2e 用在 Node 中运行的异步 TypeScript 测试替换 Cypress 命令链。你可以在项目中同时保留两个测试套件，每次迁移一个测试文件。
+
+<SetupPrompt>
+
+<Prompt description={migrationPrompt} children={migrationPrompt} actions={["copy", "cursor"]} />
+
+</SetupPrompt>
+
+对于跨多个会话的迁移，[`migrate-to-e2e` 技能](/coding-agents#migrate-an-existing-suite)会将已迁移内容记录在进度文件中，并保持旧测试套件运行，直到你逐个停用测试。
+
+## 迁移配置
+
+<Note>按照[快速开始](/quickstart)安装 e2e 并配置模型。下面的示例使用了智能体调用。</Note>
+
+| Cypress | e2e |
+| --- | --- |
+| `baseUrl`、`start-server-and-test` | 测试目标上的 `app: { url, command }`，参阅[启动应用](/web#starting-your-app) |
+| `data-cy` 选择器 | `web({ testIdAttribute: 'data-cy' })`，然后使用 `screen.getByTestId` |
+| `viewportWidth`、`viewportHeight`、`cy.visit(url, { auth, headers })` | `web({ viewport, basicAuth, headers })` |
+| `retries: { runMode: 2, openMode: 0 }` | `retries: process.env.CI ? 2 : 0`，只接受数字 |
+| `env`、`Cypress.env()`、`cypress.env.json` | `process.env`；登录信息放入 `credentials` 和 `secrets`，参阅[身份验证](/authentication) |
+| `cypress run --browser firefox` | 配置了 `web({ browser: 'firefox' })` 的测试目标，通过 `--target <name>` 运行 |
+
+```ts title="e2e.config.ts"
+import type { E2EConfig } from 'e2e';
+import { web } from '@e2e-dev/web';
+
+export default {
+  targets: [{
+    engine: web({ testIdAttribute: 'data-cy' }),
+    app: { url: 'http://localhost:3000' },
+  }],
+} satisfies E2EConfig;
+```
+
+## 改写一个测试文件
+
+```js title="Cypress"
+describe('todos', () => {
+  it('completes one', () => {
+    cy.visit('/todos');
+    cy.get('[data-cy=new-todo]').type('Buy milk{enter}');
+    cy.get('[data-cy=new-todo]').type('Walk the dog{enter}');
+    cy.contains('li', 'Buy milk').find('[data-cy=toggle]').click();
+    cy.get('[data-cy=todo]').should('have.length', 2);
+    cy.contains('1 item left').should('be.visible');
+  });
+});
+```
+
+```ts title="e2e"
+import { describe, test } from '@e2e-dev/web';
+import { expect } from 'e2e';
+
+describe('todos', () => {
+  test('completes one', async ({ app, agent, screen }) => {
+    await app.open('/todos');
+    await agent.act('add todos "Buy milk" and "Walk the dog"');
+    await expect(screen.getByTestId('todo')).toHaveCount(2);
+    await agent.act('complete "Buy milk"');
+    await expect(screen.getByText('1 item left')).toBeVisible();
+  });
+});
+```
+
+## 映射每个命令
+
+| Cypress | e2e |
+| --- | --- |
+| `cy.visit(path)`、`cy.reload()`、`cy.viewport(w, h)`、`cy.setCookie()` | `app.open(path)`、`browser.reload()`、`browser.setViewport({ width, height })`、`browser.setCookies()` |
+| `cy.get('[data-cy=x]')`、`.find('[data-cy=x]')` | `screen.getByTestId('x')`、`row.getByTestId('x')` |
+| `cy.get('css')` | `browser.locator('css')`，仅限网页端；优先使用角色或标签 |
+| `cy.contains('text')`、`cy.contains('li', 'text')` | `screen.getByText('text', { exact: false })`、`screen.getByRole('listitem').filter({ hasText: 'text' })` |
+| `.click()`、`.dblclick()`、`.clear()`、`.check()`、`.uncheck()`、`.focus()`、`.first()`、`.last()`、`.scrollIntoView()` | 相同 |
+| `.rightclick()`、`.eq(n)`、`.selectFile(path)` | `.secondaryTap()`、`.nth(n)`、`.setInputFiles(path)` |
+| `.type('text')`、`.type('{enter}')`、`.clear().type('text')` | `.pressSequentially('text')` 通过键盘事件追加文本、`.press('Enter')`、`.fill('text')` |
+| `.select('Pro')` | `.selectOption('Pro')` 匹配标签；按值需使用 `{ value: 'pro' }`，按索引需使用 `{ index: 1 }` |
+| `.should('be.visible')`、`be.checked`、`be.disabled`、`be.focused`、`exist` | `await expect(locator).toBeVisible()`、`toBeChecked()`、`toBeDisabled()`、`toBeFocused()`、`toBeAttached()` |
+| `have.text`、`contain`、`have.value`、`have.attr`、`have.length`、`not.exist` | `toHaveText`、`toContainText`、`toHaveValue`、`toHaveAttribute`、`toHaveCount(n)`、`toHaveCount(0)` |
+| `cy.url().should('include', p)`、`cy.title()` | `expect(browser).toHaveURL(/p/)`、`expect(browser).toHaveTitle(t)` |
+| `cy.intercept('/api/users', body)` | `browser.route('**/api/users', route => route.fulfill({ json: body }))`，对完整 URL 使用 glob 匹配 |
+| `cy.on('window:confirm')`、`cy.on('window:alert')` | 操作前调用 `await browser.onDialog('accept')`，取消则使用 `'dismiss'` |
+| `cy.session` | `test.setup` 和 `{ session }` |
+| `cy.task`、`cy.exec`、`cy.request`、`cy.fixture` | Node 代码：`fetch`、`fs`、你的数据库客户端、`import data from './fixture.json'` |
+| `Cypress.Commands.add` | 一个函数，或通过 `test.extend` 定义的测试夹具 |
+
+## e2e 尚未提供的功能
+
+“已计划”表示已列入路线图，“暂未提供”表示尚无时间安排。“不计划支持”表示有意不提供。
+
+### 已计划
+
+| Cypress | 当前替代方式 |
+| --- | --- |
+| `.find('css')`、`.filter('css')`、`.not('css')` | 链式调用 `getBy*` 查询，或编写一个选择器：`browser.locator('li.active >> .title')` |
+| `.invoke()`、`.its()`、`.then($el => ...)`、`.should($el => ...)` | `getAttribute()`、`textContent()`、`inputValue()`，其他情况使用 `browser.evaluate`；用 `expect.poll` 包装以重试 |
+| `have.class`、`have.css`、`have.prop`、`be.empty` | `expect(browser).toHaveClass(locator, /regexp/)`、`expect(locator).toHaveText('')`；其他情况使用 `expect.poll(() => browser.evaluate(...))` |
+| `.trigger()`、`cy.scrollTo()`、`.blur()` | `hover()`、`dragTo()`、`scrollIntoView()`、`press('Tab')`；其他情况使用 `browser.evaluate` |
+| `cy.intercept('POST', url)` 和其他方法或请求头匹配器 | 在处理函数中检查 `route.request.method`，否则调用 `route.fallback()` |
+| `cy.wait('@alias')`、`.its('request.body')`、`@alias.all` | 在操作前启动 `browser.waitForResponse(pattern)`；在 `browser.route` 处理函数中读取请求 |
+| `Cypress.on('uncaught:exception')` | 应用错误不会使测试失败。要让它导致失败，在 `browser.addInitScript` 中收集 `window.onerror`，然后用 `browser.evaluate` 断言列表为空 |
+| `--browser chrome`、`edge`、`electron`、`before:browser:launch` | `web({ browser: 'chromium' })`，或使用 `web({ connect: { cdpEndpoint } })` 连接你自己的 Chrome |
+| `cypress open`、时间回溯快照 | `npx e2e run --headed --watch`，或 `--step`；[追踪记录页面](/debugging#traces)会在运行后显示每个步骤 |
+| 操作应用的 `before()` 和 `after()`、`describe.only` | 在 `beforeEach` 中准备 UI，在 `afterEach` 中清理；在保存会话的顶层 `test.setup` 中登录；为每个测试设置 `test.only` |
+| `cy.clock()`、`cy.tick()` | 用 `browser.addInitScript({ path })` 加载模拟计时器脚本，通过 `browser.evaluate` 驱动 |
+| 携带浏览器 Cookie 的 `cy.request()` | 通过 `fetch` 发送 `browser.cookies()`，参阅[已登录请求](/api-testing#signed-in-requests) |
+
+### 暂未提供
+
+| Cypress | 当前替代方式 |
+| --- | --- |
+| `supportFile`、`blockHosts` | 每个文件都导入通过 `test.extend` 定义的共享 `test`；在其中使用 `browser.route` 中止对指定主机的请求 |
+| `cypress run --record --parallel`、Cypress Cloud | 在每个 CI 作业中使用 `--shard`，使用 `junit` 和 `github()` 报告器，并将 `.e2e` 作为产物上传 |
+| `cy.visit()` 在 4xx 或 5xx 页面上失败 | `app.open` 会忽略状态码。对页面内容进行断言 |
+| `cy.stub()`、`cy.spy()`、`cy.clearLocalStorage()` | 在 `browser.addInitScript` 中包装函数；通过 `browser.evaluate` 读取调用或清除存储 |
+
+### 不计划支持
+
+| Cypress | 替代方式 |
+| --- | --- |
+| `cy.wait(ms)` | 对测试所等待的状态使用定位器断言 |
+| `it`、`context`、`specify`、`xit` | `test`、`describe`、`test.skip` |
+| chai 的 `expect(x).to...`、`assert.*` | `expect(value)` 上的 `toEqual`、`toContain`、`toMatchObject`，或自行导入 `chai` |
+| `cy.window()`、`cy.document()`、`onBeforeLoad(win)` | 使用 JSON 值的 `browser.evaluate` 和 `browser.addInitScript`。测试在 Node 中运行，而非页面中 |
+| Mocha 报告器、`reporterOptions` | `list`、`dot`、`json`、`junit`、`markdown`、`htmlReporter()`、`github()`，或你自己的[报告器](/reference/reporters) |
+| Cucumber `.feature` 文件、`file:preprocessor` | 将功能描述改写为测试。TypeScript 不需要预处理器 |
+| 组件测试 | 保留在 Cypress 中。e2e 测试的是正在运行的应用 |
+| `.parent()`、`.closest()`、`.siblings()`、`.next()` | 定位祖先元素并缩小范围：`card.filter({ has: child })` |
+| `{ force: true }` | 操作可见标签，或使用会跳过可操作性检查的 `tap({ position })` |
+
+## 有意保留的差异
+
+- 没有命令链。在 Cypress 使用 `.as()`、`.within()` 或 `.then()` 的地方，等待每次调用，并将定位器或值保存在变量中。
+- [定位器](/reference/screen)采用严格匹配。对多个匹配项执行操作或单节点断言会以 `LOCATOR_AMBIGUOUS` 失败。使用 `.filter()`、`.first()` 或 `.nth()` 缩小范围，或遍历 `await locator.all()`。
+- 查询中的字符串匹配完整文本。`{ exact: false }` 可匹配文本片段且不区分大小写。`cy.contains` 区分大小写并取第一个匹配项，因此请传入 RegExp 或添加 `.first()`。
+- 文本匹配器比较渲染后的文本。CSS `text-transform` 会生效，隐藏的子元素会被排除，参阅[定位器读取](/reference/screen#locator-reads)。
+- 对话框不会自动被接受。没有处理函数的 `alert` 或 `confirm` 会使下一步失败，而 Cypress 会接受它。
+
+## 默认值差异
+
+| 设置 | Cypress | e2e |
+| --- | --- | --- |
+| 视口 | 1000 × 660 | 1280 × 720 |
+| 操作和断言超时 | `defaultCommandTimeout`，4 秒 | `actionTimeout` 30 秒，`assertionTimeout` 5 秒 |
+| CI 中的重试次数 | `0` | `1` |
+
+## 下一步
+
+<CardGroup cols={2}>
+  <Card title="核心概念" icon="pen-to-square" href="/core-concepts">
+    使用目标、断言和定位器代替脚本化选择器。
+  </Card>
+  <Card title="操作浏览器" icon="globe" href="/browser">
+    路由、对话框、下载、iframe 和页面求值。
+  </Card>
+</CardGroup>

@@ -15,25 +15,19 @@ import { withTimeout } from '@e2e-dev/core/lib/internal/time';
 import type { CollectedFile, CollectedTest } from '../collect/collect.ts';
 import {
   collectModule,
-  groupChain,
   groupTitles,
-  type GroupNode,
+  hooksFor,
+  scopeChain,
   type ModuleRegistration,
   type RegisteredHook,
   type RegisteredTest,
+  type Scope,
   type SuiteHook,
   type TestHook,
 } from '../collect/registry.ts';
 import type { TestTargetPair } from '../collect/select.ts';
-import type { SuiteFixtures } from '@e2e-dev/core/lib/types';
+import type { TargetSession } from '@e2e-dev/core/lib/engine/surface';
 import type { RunError } from '@e2e-dev/core/lib/run/records';
-
-/**
- * A suite scope of one realm: a describe group, or `undefined` for the file
- * scope. Scopes are the registration's own group nodes, so two sibling groups
- * that happen to share a title stay two scopes with their own hooks.
- */
-type Scope = GroupNode | undefined;
 
 /** The test module a realm imports: the project-relative path its results carry, and where it is on disk. */
 export type FileRef = Pick<CollectedFile, 'file' | 'absolutePath'>;
@@ -89,9 +83,21 @@ export async function runHook(
   if (notAwaited !== undefined) throw notAwaited;
 }
 
+/** What one pass of suite hooks runs on; see `TargetExecutor.openSuiteAttempt`. */
+export interface SuiteHookSession {
+  /** Runs one suite hook with its worker fixtures, within `timeoutMs`. */
+  run(hook: SuiteHook, timeoutMs: number): Promise<void>;
+  /** Ends what the pass opened for its hooks; never rejects. */
+  close(): Promise<void>;
+}
+
 export interface RealmManagerOptions {
   readonly targetName: string;
-  readonly platform: string;
+  /**
+   * Opens a pass of suite hooks; `shared` is the attempt already open on the
+   * engine, which the hooks then run on.
+   */
+  readonly openSuiteHooks: (shared: TargetSession | undefined) => SuiteHookSession;
   readonly timeout: number;
   readonly cleanupTimeout: number;
   /** Run-level error sink for hook failures. */
@@ -142,33 +148,37 @@ export class RealmManager {
    * each scope's hooks in reverse declaration order.
    */
   hooksFor(realm: Realm, test: RegisteredTest, kind: TestHook['kind']): TestHook[] {
-    const ordered = scopeChainFor(test).flatMap((scope) =>
-      this.scopeHooks<TestHook>(realm, scope, kind),
-    );
+    const ordered = hooksFor(realm.registration, test).filter((hook): hook is TestHook => hook.kind === kind);
     return kind === 'beforeEach' ? ordered : ordered.toReversed();
   }
 
-  /** Enters suite scopes for a test, running pending beforeAll hooks. */
-  async enterScopes(realm: Realm, test: RegisteredTest): Promise<SerializedError | undefined> {
-    for (const scope of scopeChainFor(test)) {
-      const entered = realm.entered.get(scope);
-      if (entered !== undefined) {
-        if (entered.failed !== undefined) return entered.failed;
-        continue;
-      }
-      let failed: SerializedError | undefined;
-      for (const hook of this.scopeHooks<SuiteHook>(realm, scope, 'beforeAll')) {
-        try {
-          await runHook(`${hook.kind} hook`, () => hook.fn(this.suiteFixtures()), this.options.timeout);
-        } catch (cause) {
-          failed = this.hookFailed(realm, scope, 'beforeAll', cause);
-          break;
+  /**
+   * Enters suite scopes for a test, running pending beforeAll hooks. `shared`
+   * is the attempt already open on the engine (a serial group's, a hosted
+   * test's), which the hooks run on.
+   */
+  async enterScopes(realm: Realm, test: RegisteredTest, shared?: TargetSession): Promise<SerializedError | undefined> {
+    return this.withSuiteHooks(shared, async (hooks) => {
+      for (const scope of scopeChain(test)) {
+        const entered = realm.entered.get(scope);
+        if (entered !== undefined) {
+          if (entered.failed !== undefined) return entered.failed;
+          continue;
         }
+        let failed: SerializedError | undefined;
+        for (const hook of this.scopeHooks<SuiteHook>(realm, scope, 'beforeAll')) {
+          try {
+            await hooks.run(hook, this.options.timeout);
+          } catch (cause) {
+            failed = this.hookFailed(realm, scope, 'beforeAll', cause);
+            break;
+          }
+        }
+        realm.entered.set(scope, { failed });
+        if (failed !== undefined) return failed;
       }
-      realm.entered.set(scope, { failed });
-      if (failed !== undefined) return failed;
-    }
-    return undefined;
+      return undefined;
+    });
   }
 
   /**
@@ -185,32 +195,45 @@ export class RealmManager {
   async leaveFinished(
     realm: Realm,
     remaining: readonly TestTargetPair[],
+    shared?: TargetSession,
   ): Promise<SerializedError | undefined> {
-    let failure: SerializedError | undefined;
     const needed = new Set<Scope>();
     for (const pair of remaining) {
       // A pair the realm cannot find never runs here, so it holds nothing open.
       const registered = findRegistered(realm, pair.test);
-      if (registered !== undefined) for (const scope of scopeChainFor(registered)) needed.add(scope);
+      if (registered !== undefined) for (const scope of scopeChain(registered)) needed.add(scope);
     }
-    for (const scope of [...realm.entered.keys()].toReversed()) {
-      if (needed.has(scope)) continue;
-      realm.entered.delete(scope);
-      for (const hook of this.scopeHooks<SuiteHook>(realm, scope, 'afterAll').toReversed()) {
-        try {
-          await runHook(`${hook.kind} hook`, () => hook.fn(this.suiteFixtures()), this.options.cleanupTimeout);
-        } catch (cause) {
-          const failed = this.hookFailed(realm, scope, 'afterAll', cause);
-          failure ??= failed;
+    return this.withSuiteHooks(shared, async (hooks) => {
+      let failure: SerializedError | undefined;
+      for (const scope of [...realm.entered.keys()].toReversed()) {
+        if (needed.has(scope)) continue;
+        realm.entered.delete(scope);
+        for (const hook of this.scopeHooks<SuiteHook>(realm, scope, 'afterAll').toReversed()) {
+          try {
+            await hooks.run(hook, this.options.cleanupTimeout);
+          } catch (cause) {
+            const failed = this.hookFailed(realm, scope, 'afterAll', cause);
+            failure ??= failed;
+          }
         }
       }
-    }
-    return failure;
+      return failure;
+    });
   }
 
   /** Closes every entered scope: the realm ends here. */
-  async leave(realm: Realm): Promise<void> {
-    await this.leaveFinished(realm, []);
+  async leave(realm: Realm, shared?: TargetSession): Promise<void> {
+    await this.leaveFinished(realm, [], shared);
+  }
+
+  /** Runs `work` with a pass of suite hooks, closed after it. Opening one costs nothing until a hook needs the engine. */
+  private async withSuiteHooks<T>(shared: TargetSession | undefined, work: (hooks: SuiteHookSession) => Promise<T>): Promise<T> {
+    const hooks = this.options.openSuiteHooks(shared);
+    try {
+      return await work(hooks);
+    } finally {
+      await hooks.close();
+    }
   }
 
   /**
@@ -242,16 +265,9 @@ export class RealmManager {
     );
   }
 
-  private suiteFixtures(): SuiteFixtures {
-    return { platform: this.options.platform };
-  }
 }
 
 /** The scope's report identity: its title path, or `file` for the file scope. */
 function scopeId(scope: Scope): string {
   return scope === undefined ? 'file' : groupTitles(scope).join(' \u203a ');
-}
-
-function scopeChainFor(test: RegisteredTest): Scope[] {
-  return [undefined, ...groupChain(test.group)];
 }

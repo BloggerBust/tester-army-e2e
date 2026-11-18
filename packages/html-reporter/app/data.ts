@@ -154,6 +154,31 @@ export function matchesSearch(result: Result, search: string): boolean {
   return words.every((word) => new RegExp(`(?:^|[^\\p{L}\\p{N}])${word.replaceAll(/[\\^$.*+?()[\]{}|/]/gu, '\\$&')}`, 'u').test(haystack));
 }
 
+/** The results that ran on `target`, or every result when it names none; an unknown target answers none. */
+export function onTarget(results: readonly Result[], target: string | undefined): readonly Result[] {
+  return target === undefined ? results : results.filter((result) => result.targetId === target);
+}
+
+/**
+ * The target a hash names, when the page can act on it: one the run carries
+ * results for, and only on a run that selected more than one, since a
+ * single-target run renders no tabs and so nothing could clear the choice.
+ * Anything else is no target at all, the way an unknown status falls back to
+ * every status.
+ */
+export function selectedTarget(targetIds: ReadonlySet<string>, value: string | null | undefined): string | undefined {
+  return value != null && targetIds.size > 1 && targetIds.has(value) ? value : undefined;
+}
+
+/**
+ * The status tabs to render, in `STATUS_FILTERS` order: every status with
+ * results, plus the active one even at 0, so a filter never strands itself
+ * on a tab it hid.
+ */
+export function statusTabs(counts: Readonly<Record<StatusFilter, number>>, active: StatusFilter): StatusFilter[] {
+  return (Object.keys(STATUS_FILTERS) as StatusFilter[]).filter((name) => name === 'all' || counts[name] > 0 || name === active);
+}
+
 /**
  * The URL an artifact opens at, by the payload's media mode: its file under
  * the link base, each segment encoded, or its embedded bytes. A hosted

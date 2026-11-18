@@ -1,0 +1,149 @@
+---
+title: E2B
+sidebarTitle: E2B
+description: 使用 @e2e-dev/e2b 中的 e2b() 和 e2bBrowsers() 提供方，在 E2B 沙箱中运行 Android 测试目标和网页端测试目标。
+---
+
+`@e2e-dev/e2b` 在 [E2B](https://e2b.dev) 沙箱中运行你的测试目标：通过[设备提供方](/mobile#hosted-devices) `e2b()` 运行 Android 16，通过 `@e2e-dev/e2b/web` 中的[浏览器提供方](/browser#hosted-browsers) `e2bBrowsers()` 运行 Chromium。你的测试无需修改。
+
+## 身份验证
+
+在启动 e2e 的环境中设置 `E2B_API_KEY`。在 CI 中，将它存储为机密值。从 [E2B 控制台](https://e2b.dev/dashboard)复制密钥。对于专用 E2B 集群，还需设置 `E2B_DOMAIN`。未提供密钥时，提供方会因 `INVALID_CONFIG` 失败。
+
+## 运行 Android 测试目标
+
+每个工作进程都有独立的 Android 沙箱，约 15 到 45 秒即可准备好并装入你的 `.apk`。提供方通过 agent-device 安装 `.apk`，与 `device.installApp()` 相同，并在运行结束时删除沙箱。
+
+<Tip>
+运行 e2e 的机器无需 Android SDK、模拟器或 `adb`。
+</Tip>
+
+在安装了移动端引擎的项目中安装此集成：
+
+<CodeGroup>
+```bash npm
+npm install --save-dev e2e @e2e-dev/mobile @e2e-dev/e2b e2b
+```
+
+```bash pnpm
+pnpm add -D e2e @e2e-dev/mobile @e2e-dev/e2b e2b
+```
+
+```bash bun
+bun add -d e2e @e2e-dev/mobile @e2e-dev/e2b e2b
+```
+</CodeGroup>
+
+将测试目标的 `device` 设置为 `e2b()`：
+
+```ts title="e2e.config.ts"
+import type { E2EConfig } from 'e2e';
+import { mobile } from '@e2e-dev/mobile';
+import { e2b } from '@e2e-dev/e2b';
+
+export default {
+  targets: [
+    {
+      name: 'android',
+      engine: mobile({ platform: 'android', device: e2b() }),
+      app: { bundleId: 'com.example.app', appPath: 'build/app-debug.apk' },
+    },
+  ],
+  workers: 4,
+} satisfies E2EConfig;
+```
+
+`bundleId` 是可选的：未设置时，`app.open()` 会打开 agent-device 为该 `.apk` 报告的包。
+
+## 在浏览器中运行网页端测试目标
+
+每个工作进程都有独立的 Chromium 沙箱，每次尝试都会在其中获得新的浏览器上下文，与本地运行相同。使用 `scope: 'attempt'` 时，每次尝试会获得新的沙箱（[该作用域的限制](/browser#pick-a-lease-scope)）。
+
+在安装了网页端引擎的项目中安装此集成：
+
+<CodeGroup>
+```bash npm
+npm install --save-dev e2e @e2e-dev/web @e2e-dev/e2b e2b
+```
+
+```bash pnpm
+pnpm add -D e2e @e2e-dev/web @e2e-dev/e2b e2b
+```
+
+```bash bun
+bun add -d e2e @e2e-dev/web @e2e-dev/e2b e2b
+```
+</CodeGroup>
+
+从 Playwright 镜像构建一次浏览器模板。使用与你的 `@e2e-dev/web` 所用 Playwright 版本对应的镜像标签，并为模板分配 4 GB 内存，如下所示：
+
+```ts title="build-template.ts"
+import { Template, defaultBuildLogger } from 'e2b';
+
+const template = Template().fromImage('mcr.microsoft.com/playwright:v1.65.1-noble');
+await Template.build(template, 'e2e-chromium', {
+  cpuCount: 4,
+  memoryMB: 4096,
+  onBuildLogs: defaultBuildLogger(),
+});
+```
+
+然后将测试目标的 `browser` 设置为 `e2bBrowsers()`。如果你为模板取了其他名称，通过 `template` 传入该名称：
+
+```ts title="e2e.config.ts"
+import type { E2EConfig } from 'e2e';
+import { web } from '@e2e-dev/web';
+import { e2bBrowsers } from '@e2e-dev/e2b/web';
+
+export default {
+  targets: [
+    {
+      name: 'e2b-web',
+      engine: web({ browser: e2bBrowsers() }),
+      app: { url: 'https://staging.example.com' },
+    },
+  ],
+  workers: 4,
+} satisfies E2EConfig;
+```
+
+浏览器在 E2B 云端运行，因此 `app.url` 必须能从互联网访问，不能仅在 `localhost` 上访问。
+
+## Android 选项
+
+| 选项 | 默认值 | 含义 |
+| ----------- | -------------- | ------- |
+| `template` | `'android-16'` | 启动 Android 的沙箱模板。 |
+| `timeoutMs` | `3600000`（1 小时） | 沙箱生命周期。时间结束后，E2B 会终止沙箱，即使当前运行仍在使用它。 |
+
+## 浏览器选项
+
+| 选项 | 默认值 | 含义 |
+| ----------- | ---------------- | ------- |
+| `template` | `'e2e-chromium'` | 包含 Playwright Chromium 的沙箱模板。 |
+| `scope` | `'worker'` | `'worker'`：在整个运行期间，每个工作进程槽位一个沙箱。`'attempt'`：每次尝试一个新沙箱。 |
+| `timeoutMs` | `3600000`（1 小时） | 沙箱生命周期。时间结束后，E2B 会终止沙箱，即使当前运行仍在使用它。 |
+
+未知选项或无效值会在加载配置时导致 `INVALID_CONFIG` 错误。
+
+## 沙箱如何保持私有
+
+沙箱拒绝公共流量：提供方通过 `127.0.0.1` 上的隧道访问每个沙箱，隧道会添加 E2B 的访问令牌。与本地 Chromium 一样，在运行持有租约期间，你机器上的任何程序都可以使用该隧道。
+
+## 限制
+
+- **仅限 Android。** E2B 没有 iOS 沙箱，因此 `e2b()` 会拒绝 iOS 测试目标。
+- **Android 镜像。** E2B 上的 Android 16 仅支持 x86_64，不含 Google Play Services，并使用软件渲染。包含原生库的应用需要 x86_64 构建；参阅 [E2B 的 Android 页面](https://e2b.dev/docs/use-cases/android)。提供方安装的是 `.apk`，而非 `.aab`。
+- **计费。** 沙箱运行期间会计费。Android 沙箱和工作进程作用域的浏览器沙箱从运行开始持续到结束，即使没有测试使用它们；尝试作用域的浏览器沙箱仅在对应尝试期间运行。
+- **被停止的运行。** 如果运行器在删除沙箱前被终止，E2B 会在 `timeoutMs` 结束时删除沙箱。
+
+## 下一步
+
+<CardGroup cols={2}>
+  <Card title="托管设备" icon="mobile" href="/mobile#hosted-devices">
+    设备提供方如何租用设备。
+  </Card>
+  <Card title="托管浏览器" icon="globe" href="/browser#hosted-browsers">
+    浏览器提供方如何租用浏览器。
+  </Card>
+</CardGroup>

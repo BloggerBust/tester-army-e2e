@@ -1,0 +1,203 @@
+---
+title: 自定义执行器
+description: 自定义智能体循环，或实现自己的步骤执行器。
+"og:image": "https://e2e.com/docs/images/og/executors.png?v=283f7962bb"
+"twitter:image": "https://e2e.com/docs/images/og/executors.png?v=283f7962bb"
+---
+
+步骤执行器运行智能体的 `agent.act` 和 `agent.assert` 步骤。当 `system` 提示词和[项目工具](/tools)不足以满足需求时，可以编写自己的执行器。
+
+| 选项 | 你编写的部分 | 运行器保留的能力 |
+| --- | --- | --- |
+| `e2e/agent` 中的 `createToolLoopExecutor` | 工具和提示词。循环只额外添加 `complete_step`。 | 预算、重复调用检测、判定结果、用量统计和调试对话记录 |
+| `StepExecutor` | `runStep(ctx)`。模型是可选的，`e2e` 和 `e2e/engine` 类型无需 `ai` 包即可编译。 | 步骤截止时间、脱敏后的观察结果、经过检查的操作和判定记录 |
+
+将其中任意一个设为 agents 条目中的 `executor`。该条目仍读取 `model`、`judge`、`context` 和预算，但不接受 `system` 和 `tools`：请将它们传给 `createToolLoopExecutor`。对于返回有限选项的提供方，请参阅[决策执行器](/decision-models)。
+
+## 保留循环，更换工具词汇
+
+这个智能体有两个工具：一个读取屏幕，另一个通过节点 ID 点击节点。
+
+```ts title="e2e.config.ts"
+import type { E2EConfig } from 'e2e';
+import { createToolLoopExecutor } from 'e2e/agent';
+import { web } from '@e2e-dev/web';
+import { gateway, tool } from 'ai';
+import { z } from 'zod';
+
+export default {
+  targets: [{ engine: web(), app: { url: 'http://localhost:3000' } }],
+  agents: {
+    default: {
+      model: gateway('openai/gpt-6-luna-fast'),
+      maxModelCalls: 15,
+      executor: createToolLoopExecutor({
+        name: 'tap-only',
+        system: 'Read the screen before acting. Tap controls by their id from the latest read.',
+        buildPrompt: (ctx) => ctx.step.instruction,
+        tools: (ctx, { guard }) => ({
+          read_screen: tool({
+            description: 'Read the screen as text, one node per line as #id role "name"',
+            inputSchema: z.object({}),
+            execute: () => guard(async () => (await ctx.observe()).text),
+          }),
+          tap: tool({
+            description: 'Tap a node by its id from the latest read_screen',
+            inputSchema: z.object({ id: z.string() }),
+            execute: ({ id }) =>
+              guard(async () => {
+                await ctx.actions.tap({ id: id.replace(/^#/, '') });
+                return `Tapped ${id}.`;
+              }),
+          }),
+        }),
+      }),
+    },
+  },
+} satisfies E2EConfig;
+```
+
+循环在每个步骤中最多执行 `maxModelCalls` 轮模型调用，使用条目的 `model`，或在 `createToolLoopExecutor({ model })` 中自带的模型。执行器也可以自带 `judge`。当条目设置了同一选项时，两者必须指定相同的提供方和模型，否则配置加载会以 `INVALID_CONFIG` 失败。
+
+`buildPrompt` 返回字符串或消息历史。`prepareMessages` 在轮次之间运行以缩短历史，或在步骤没有进展时返回 `{ messages, stop }`。无论它原地修改还是替换消息，都会改变请求前缀；对于思考内容绑定到该前缀的 Anthropic 模型，循环随后会停止发送从该消息开始的推理内容。当提供方因请求过大而拒绝请求时，循环会缩短历史；如果请求因此变小，就重试一次，否则以 `CONTEXT_OVERFLOW` 失败。对于将此前屏幕作为证据的断言循环，设置 `inconclusiveOnOverflow: true` 会改为让步骤以 `ASSERTION_INCONCLUSIVE` 失败。`guard()` 会在步骤正在结束时阻止新的工具调用，并以文本形式向模型返回失败信息。`ctx.actions` 会对每个操作进行授权、计数和记录，因此这些步骤可以从[缓存](/cache)回放，并在任何支持 `tap` 的引擎上运行。
+
+要在自己的工具之外保留内置操作，请将 `createGrammarTools(ctx, { guard })` 展开到工具集中。它会根据测试目标引擎支持的动词返回内置智能体的操作工具，每次返回结果都会报告屏幕上发生了什么变化。`BASE_RULES` 是内置智能体对这些工具的使用指导；请将它放在 `system` 开头。
+
+```ts
+import { BASE_RULES, createGrammarTools, createToolLoopExecutor } from 'e2e/agent';
+
+createToolLoopExecutor({
+  name: 'with-inbox',
+  system: `${BASE_RULES}\n\nCheck the inbox with read_inbox when a step mentions an email.`,
+  buildPrompt: (ctx) => ctx.step.instruction,
+  tools: (ctx, { guard }) => ({ ...createGrammarTools(ctx, { guard }), read_inbox: readInbox }),
+});
+```
+
+在循环之外，语法工具返回 `ScreenOutput`：文本，或附带截图的文本。如果工具抛出的错误被 `isRuntimeHardStop(error)` 接受，请结束步骤并重新抛出错误。
+
+对于在 `ctx.actions` 之外执行的工具，例如调用你的测试 API，应将主体包在 `ctx.budgets.runTool({ name, mutates })` 中，这会占用一个操作配额并记录结果。不要在 `runTool` 内调用 `ctx.actions` 或 `ctx.observe`：调用会排在自身后面等待，造成死锁。
+
+## 替换执行器
+
+这个执行器不使用模型，只支持一个断言：`agent.assert('the screen says Ready')`。其他步骤都会返回受阻的判定结果。
+
+```ts title="e2e.config.ts"
+import type { E2EConfig, StepExecutor } from 'e2e';
+import { web } from '@e2e-dev/web';
+
+const scripted: StepExecutor = {
+  name: 'scripted',
+  version: '1',
+  cache: 'off',
+  async runStep(ctx) {
+    if (ctx.step.kind !== 'assert' || ctx.step.instruction !== 'the screen says Ready') {
+      return {
+        status: 'blocked',
+        errorCode: 'AUTOMATION_UNSUPPORTED',
+        summary: 'This executor only checks whether the screen says Ready.',
+      };
+    }
+    const screen = await ctx.observe();
+    const ready = screen.text.includes('Ready');
+    return {
+      status: ready ? 'passed' : 'failed',
+      summary: ready ? 'The screen says Ready.' : 'Ready is absent from the screen.',
+    };
+  },
+};
+
+export default {
+  targets: [{ engine: web(), app: { url: 'http://localhost:3000' } }],
+  agents: { default: { executor: scripted } },
+} satisfies E2EConfig;
+```
+
+## 上下文包含什么
+
+| 成员 | 含义 |
+| --- | --- |
+| `ctx.step` | 本次尝试时间线中的 `kind`、指令、参数和 `index`。指令或参数中已配置的机密值会显示为 `<secret:name>`。`secrets.get()` 句柄会以仅包含名称的占位符传入，由 `typeSecret` 填充 |
+| `ctx.observe({ tree, pixels })` | 脱敏后的屏幕文本，可附带节点树和经过遮罩处理的截图 |
+| `ctx.read({ id }, { style })` | 当前列出的节点的计算样式，已对机密值脱敏。参阅[项目工具](/tools#read-a-nodes-computed-style) |
+| `ctx.actions` | 经过检查并记录的操作：`tap`、`doubleTap`、`longPress`、`secondaryTap`、`hover`、`type`、`typeSecret`、`press`、`select`、`check`、`drag`、`scrollTo`、`scrollUntil`、`upload`、`scroll`、`navigate`、`back`、`resize`、`switchTab`、`closeTab`，以及下面的坐标和键盘操作 |
+| `ctx.target` | 测试目标的 `name`、`platform` 和 `verbs`，即其引擎支持的操作。只向模型提供这些操作。当 `tap`、`doubleTap` 和 `secondaryTap` 接受 `{ modifiers }` 时，`tapModifiers` 为 true |
+| `ctx.signal` | 在取消、到达步骤截止时间或发生其他硬停止时中止。截止时间无法停止忽略该信号的工作 |
+| `ctx.replayedPrefix` | 缓存回放先执行了部分步骤时设置。参阅[回放缓存](#replay-cache) |
+| `ctx.model`, `ctx.providerOptions` | 智能体配置的模型和 `providerOptions`（如果已设置） |
+| `ctx.agentContext` | 智能体的 `context` 加上测试的 `agentContext` |
+| `ctx.ledger` | 测试中已完成的步骤 |
+| `ctx.attempt` | 测试和尝试的 ID、测试的 `titlePath`（在 `e2e run` 之外为空）、重试索引、中止信号，以及不会出现在报告中的 `memory` 映射 |
+| `ctx.budgets` | 自定义工具（`runTool`）和模型调用（`recordModelCall`）的用量统计 |
+| `ctx.attachTranscript(text)` | 在 `--debug` 模式下，将模型对话记录附加为 `log` 产物。在结束时调用一次 |
+| `ctx.attachTurns(turns)` | 在步骤上保留裁剪后的模型轮次记录（`{ index, calls, outcome }`）。报告会在失败步骤下显示最后几轮 |
+| `ctx.attachScreenshot(pixels, label)` | 将观察到的像素保留为步骤的 `screenshot` 产物，并解析为其报告 ID |
+
+`tapAt(point)` 和 `hoverAt(point)` 调用引擎的坐标操作；如果引擎没有对应操作，则对该坐标处列出的控件执行操作。`dragAt(from, to)` 通过引擎的 `dragTo` 指针类型在两点之间拖动。如果没有该类型，但引擎支持 `dragTo` 操作，且两个点落在两个不同的已列出控件上，则按 ID 拖动。其他 `dragAt` 情况都会以 `UNSUPPORTED_CAPABILITY` 失败。`hitTest(point)` 查找某个坐标处的控件，但不执行操作。支持键盘的引擎还提供 `typeText`、`pressKey` 和 `dismissKeyboard`，用于当前聚焦的控件。`upload(target, paths)` 接受相对项目的路径以及[上传策略](/reference/agent#action-tools)中列出的 `sample:` 文件；项目根目录之外的路径或隐藏路径会以 `POLICY_DENIED` 被拒绝，文件不存在则以 `INVALID_ARGUMENT` 失败。
+
+观察结果中的 `keyboardVisible` 表示屏幕键盘是否显示；引擎无法判断时，该字段不存在。
+
+当语义捕获失败时，观察结果会设置 `treeUnavailable: true`，不包含 `tree`，并在策略允许时附带截图。此前的节点 ID 不再有效，缺少树也不能证明控件不存在。
+
+## 执行器负责什么
+
+`act` 和 `assert` 会携带智能体的 `maxSteps`、`maxModelCalls` 和 `timeout` 到达 `runStep`。对于 `assert`，只有执行器声明了 `vision: true` 时，`vision` 才会通过 `ctx.step.vision` 传入；否则调用以 `UNSUPPORTED_CAPABILITY` 失败。`screenshot` 仍会在你返回判定结果后附加证据。
+
+`waitFor` 和 `extract` 仍使用内置判定。未配置模型时，它们会以 `MODEL_UNAVAILABLE` 失败。
+
+## 判定结果
+
+返回 `passed`、`failed` 或 `blocked`，并附带摘要。受阻的判定结果需要错误码，通过的判定结果则不能带错误码。[智能体步骤的工作原理](/agent-steps#how-a-step-ends)列出了这些错误码。只有在相应预算耗尽、超过截止时间或测试被取消时，才能返回 `STEP_BUDGET_EXHAUSTED`、`STEP_TIMEOUT` 或 `CANCELLED`。运行器会以 `MODEL_OUTPUT_INVALID` 拒绝其他用法，以及带错误码的通过判定结果。
+
+对于由执行器自行驱动的模型，`e2e/agent` 中的 `createVerdictTool(ctx.step.kind)` 就是内置智能体的 `complete_step`。向模型提供它的 `tool` 和 `VERDICT_RULES`，然后返回 `verdict()`。在 `act` 步骤中，它会从失败的判定结果中移除 `ASSERTION_INCONCLUSIVE`。
+
+## 回放缓存
+
+`StepExecutor` 上的 `cache` 设置其 `act` 步骤如何使用[回放缓存](/cache)。`assert` 步骤从不缓存。
+
+默认值 `'inherit'` 遵循配置的缓存模式：已录制的步骤会直接回放，不调用 `runStep`。`'off'` 从不回放或录制。如果执行器自身的历史或内存才是权威来源，请使用此值。
+
+回放中途停止时，运行器会调用 `runStep`，并通过 `ctx.replayedPrefix` 提供已回放的操作及停止原因。请从当前屏幕继续，不要重复这些操作。
+
+缓存记录步骤通过 `ctx.actions` 执行的操作。会修改状态的工具调用会留下一个空缺，由执行器在回放时补齐。条目的键由配置的智能体及其上下文决定，而非执行器，因此更换智能体的执行器会保留其条目。
+
+## 自行驱动页面
+
+在网页端引擎上，`@e2e-dev/web` 中的 `surfaceOf(handle)` 可提供当前尝试的 `Page` 和 `BrowserContext`。在没有活跃尝试时，两个访问器都会抛出 `INVALID_STATE`；未打开页面时，`page()` 也会抛出该错误。
+
+```ts
+import type { E2EConfig, StepExecutor } from 'e2e';
+import { web, surfaceOf } from '@e2e-dev/web';
+
+const engine = web();
+const own: StepExecutor = {
+  name: 'own-tools',
+  version: '1',
+  cache: 'off',
+  async runStep(ctx) {
+    const page = surfaceOf(engine)!.page();   // the page app.open() navigated
+    await ctx.budgets.runTool({ name: 'click', mutates: true }, () =>
+      page.getByRole('button', { name: 'Save' }).click(),
+    );
+    return { status: 'passed', summary: 'saved' };
+  },
+};
+
+export default {
+  targets: [{ engine, app: { url: 'http://localhost:3000' } }],
+  agents: { default: { executor: own } },
+} satisfies E2EConfig;
+```
+
+直接调用 Playwright 会跳过操作授权和回放缓存，也不会留下产物。步骤截止时间和判定记录仍然生效。
+
+## 下一步
+
+<CardGroup cols={2}>
+  <Card title="agent 参考" icon="wand-magic-sparkles" href="/reference/agent">
+    所有方法、选项和预算。
+  </Card>
+  <Card title="编写引擎" icon="plug" href="/writing-an-engine">
+    添加对其他平台的支持。
+  </Card>
+</CardGroup>

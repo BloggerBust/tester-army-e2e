@@ -18,39 +18,22 @@ const BUILDS: Readonly<Record<string, string | undefined>> = {
 };
 
 /**
- * One install per worker, which is one per device: the promise is kept on
- * `globalThis` because the runner re-imports this module for every retry,
- * serial group, and setup test, so module state would start over with it.
- */
-const INSTALLS = Symbol.for('e2e.mobile-benchmark.installs');
-type Installs = Map<string, Promise<unknown>>;
-
-function installs(): Installs {
-  const holder = globalThis as { [INSTALLS]?: Installs };
-  holder[INSTALLS] ??= new Map();
-  return holder[INSTALLS];
-}
-
-/**
  * `build`: installs the platform's build on this worker's device before its
  * first test, and nothing when the run names none (the app is already on the
- * device). The engine installs nothing on its own, so this is where the
- * suite says it; the step shows in the first test's report.
+ * device). A worker fixture, so it runs once per worker, which is one per
+ * device, and `auto`, since no test names it: it is there for the install.
+ * The engine installs nothing on its own, so this is where the suite says
+ * it; the step shows in the first test's report.
  */
-export const test = base.extend<{ build: undefined }>({
-  build: async ({ device, platform }, use) => {
-    const build = BUILDS[platform];
-    if (build !== undefined) {
-      const pending = installs();
-      let install = pending.get(platform);
-      if (install === undefined) {
-        install = device.installApp(build);
-        pending.set(platform, install);
-      }
-      await install;
-    }
-    await use(undefined);
-  },
+export const test = base.extend<{}, { build: undefined }>({
+  build: [
+    async ({ device, platform }, use) => {
+      const build = BUILDS[platform];
+      if (build !== undefined) await device.installApp(build);
+      await use(undefined);
+    },
+    { scope: 'worker', auto: true },
+  ],
 });
 
 /**

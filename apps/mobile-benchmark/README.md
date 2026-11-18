@@ -79,6 +79,14 @@ job whose comment lists failures is one that pass recovered.
 Native projects are generated with CNG (`ios/` and `android/` are ignored);
 `expo run:*` prebuilds them on first use.
 
+Built with Xcode 27, an app without UIKit scenes crashes at launch on iOS 27
+(#1894). The SDK 57 template has none, so `app.json` turns them on with
+`expo-build-properties`' `ios.enableSceneSupport`. An `ios/` generated
+before that still crashes: regenerate it with
+`pnpm --filter @e2e-dev/mobile-benchmark exec expo prebuild --platform ios --clean`.
+On SDK 58, whose template has scenes, remove the `expo-build-properties`
+plugin entry and dependency.
+
 ```bash
 pnpm build                                              # from the repo root, once
 pnpm --filter @e2e-dev/mobile-benchmark ios              # build + install on the booted simulator

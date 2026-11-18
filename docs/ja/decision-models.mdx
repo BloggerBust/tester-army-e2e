@@ -1,0 +1,199 @@
+---
+title: デシジョンモデル
+description: LLM エージェントの代わりに、デシジョンモデルと小さなテキストモデルで、選択肢を限定した操作を実行します。
+"og:image": "https://e2e.com/docs/images/og/decision-models.png?v=bc0d69c206"
+"twitter:image": "https://e2e.com/docs/images/og/decision-models.png?v=bc0d69c206"
+---
+
+`@e2e-dev/decision` は、LLM エージェントの代わりにデシジョンモデルで `agent.act` と `agent.assert` を実行します。デシジョンモデルは操作のたびに、目標、直近の操作、最新のセマンティックツリーを基に、操作の種類、対象要素の順に選びます。自由なテキストは生成せず、フィールドに入力する値は小さなテキストモデルが作成します。どの操作も、引き続きランナーの許可を受けます。
+
+TypeSafe Jev や OpenAI `gpt-6-luna` など、`choice` の質問に確率付きで答える AI SDK のデシジョンモデルを使えます。`evaluationModel()` のインスタンスも使えます。`model` にモデル ID の文字列や言語モデルを指定すると、設定読み込みが `INVALID_CONFIG` で失敗します。
+
+同じパッケージの `decisionFilter()` は、プルリクエストの影響を受ける可能性のあるテストだけを実行します。[テストフィルター](/filters)を参照してください。
+
+## インストールして設定する
+
+パッケージ、デシジョンモデルのプロバイダー、テキストモデルのプロバイダーをインストールします。デシジョンモデルには `ai` 7.0.134 以降が必要です。
+
+<CodeGroup>
+```bash npm
+npm install -D @e2e-dev/decision @ai-sdk/typesafe-ai @openrouter/ai-sdk-provider
+```
+
+```bash pnpm
+pnpm add -D @e2e-dev/decision @ai-sdk/typesafe-ai @openrouter/ai-sdk-provider
+```
+
+```bash bun
+bun add -d @e2e-dev/decision @ai-sdk/typesafe-ai @openrouter/ai-sdk-provider
+```
+</CodeGroup>
+
+`agents` のエントリーにエグゼキューターを設定します。
+
+```ts title="e2e.config.ts"
+import type { E2EConfig } from 'e2e';
+import { web } from '@e2e-dev/web';
+import { decisionExecutor } from '@e2e-dev/decision';
+import { typeSafeAi } from '@ai-sdk/typesafe-ai';
+import { openrouter } from '@openrouter/ai-sdk-provider';
+
+export default {
+  targets: [{ engine: web(), app: { url: 'http://localhost:3000' } }],
+  agents: {
+    default: {
+      executor: decisionExecutor({
+        model: typeSafeAi.decisionModel('jev-latest'),
+        textModel: openrouter('inception/mercury-2.5'),
+      }),
+    },
+  },
+} satisfies E2EConfig;
+```
+
+テストでは通常どおり `agent.act` と `agent.assert` を呼び出します。
+
+```ts title="tests/todos.e2e.ts"
+import { test, expect } from 'e2e';
+
+test('adds a todo', async ({ app, screen, agent }) => {
+  await app.open('/todos');
+  await agent.act('Add a todo named Buy coffee.');
+  await expect(screen.getByTestId('todo')).toContainText('Buy coffee');
+  await agent.assert('The todo list contains Buy coffee.');
+});
+```
+
+<Accordion title="OpenAI gpt-6-luna を使う">
+
+[画像入力](#vision)のスクリーンショットに対応する `@ai-sdk/openai` 4.0.90 以降を使ってください。`OPENAI_API_KEY` を設定します。
+
+<CodeGroup>
+```bash npm
+npm install -D @ai-sdk/openai
+```
+
+```bash pnpm
+pnpm add -D @ai-sdk/openai
+```
+
+```bash bun
+bun add -d @ai-sdk/openai
+```
+</CodeGroup>
+
+```ts title="e2e.config.ts"
+import { openai } from '@ai-sdk/openai';
+
+const executor = decisionExecutor({
+  model: openai.decisionModel('gpt-6-luna'),
+  textModel: openai('gpt-6-luna-fast'),
+  vision: true,
+});
+```
+
+</Accordion>
+
+## モデルが実行できる操作
+
+各ターンでは、最新の画面にある要素に対し、エンジンが対応する操作を選択肢として提示します。`tap`、`type`、`typeSecret`、`submit`、`select`、`check`、`upload`、`hover`、`secondary_tap`（右クリック）、`double_tap`、`long_press`、`drag`、`scroll_to`、`scroll_up`、`scroll_down`、`back` です。ホバー、右クリック、ドラッグ、指定先へのスクロールでは、ホバーでメニューを開くカードなど、コントロールではないラベル付きノードも対象にできます。ドラッグのドロップ先にも、それらのノードを選べます。`tap` はテキストフィールドにも使えるため、日付選択や候補一覧を開けます。モバイルエンジンなど、画面キーボードを閉じられるエンジンでキーボードが表示されている場合は、ツリーにキーボードがなくても `dismiss_keyboard` が選択肢に加わります。
+
+要素を対象とする操作は、該当する要素がひとつしかなくても、対象を選ぶ質問を行います。すべての対象選択には `none` があるため、適切な対象がない場合、プロバイダーは回答を拒否せず `none` を選べます。`none` を選ぶと、ステップはブロックされます。
+
+## テキストを入力する仕組み
+
+デシジョンモデルが `type` を選ぶと、テキストモデルが目標、パラメーター、フィールドのラベル、ページのテキストを基に値を作成します。エグゼキューターは、その文字列をそのまま入力します。目標に値が含まれていない場合は何も入力せず、デシジョンモデルが選び直します。`upload` では、テキストモデルが目標やパラメーターに指定されたプロジェクト相対パスを列挙し、ランナーがそれぞれを許可します。モデルの出力をセレクター、URL、キーとして使うことはありません。
+
+パスワードフィールドはテキストモデルに渡されません。シークレットを入力できるのは `typeSecret` だけで、宣言済みのハンドルを使います。
+
+テキストモデルは `waitFor` と `extract` にも応答します。`textModel` の代わりに、`agents` のエントリーに `model` を設定してもかまいません。どちらもない場合、エグゼキューターは `type`、`upload`、`tap_at`、`type_at` を選択肢に含めません。
+
+## ステップを終了する
+
+デシジョンモデルが `done` または `failed` と答えると、エグゼキューターは最新の画面で「ステップのタスクは完了したか」という 1 つの質問を行い、その判断を確認します。この確認には、モデルの推論もシークレットも渡りません。
+
+`done` が確認できればステップは成功し、`failed` が確認できれば `ACTION_FAILED` で失敗します。確認できなかった判断は、履歴としてデシジョンモデルに戻されます。2 回目も確認できなければステップを終了します。画面が目標と矛盾している場合は `ACTION_FAILED`、それ以外は `AUTOMATION_UNSUPPORTED` を伴う `blocked` になります。
+
+## しきい値を設定する
+
+2 つのしきい値はデフォルトでどちらも無効なため、エグゼキューターは最も確率の高い選択肢を採用します。`minProbability` または `minConfidence` を設定すると、確かさの低い操作をブロックし、完了確認を退け、アサーションを判定不能として失敗させられます。
+
+```ts title="Executor setup"
+const executor = decisionExecutor({ model, minProbability: 0.9, minConfidence: 0.8 });
+```
+
+Probability は、回答の確率分布における選択された選択肢の割合です。Confidence はプロバイダー独自の統計値で、報告されない場合は 0 です。OpenAI は両方を小数第 2 位に丸めます。しきい値を設定する前に、自分のテストで精度を測定してください。
+
+## 画像入力を使う
+
+`vision: true` を指定すると、すべての観測にマスキング済みのスクリーンショットが加わります。アサーションと完了確認に渡されるため、ツリーにはない描画内容も判定できます。操作と対象を選ぶ質問には、ツリーだけが渡されます。`agent.assert(..., { vision: true })` と `vision: 'only'` も使えます。
+
+モデルは画像を受け取り、`score` の質問に答えられる必要があります。TypeSafe Jev は `@ai-sdk/typesafe-ai` 3.0.19 以降と、`TYPESAFE_AI_API_KEY` に設定した TypeSafe API キーで対応します。
+
+```ts title="e2e.config.ts"
+import { typeSafeAi } from '@ai-sdk/typesafe-ai';
+import { openrouter } from '@openrouter/ai-sdk-provider';
+
+const executor = decisionExecutor({
+  model: typeSafeAi.decisionModel('jev-latest'),
+  textModel: openrouter('inception/mercury-2.5'),
+  vision: true,
+});
+```
+
+`openai.decisionModel('gpt-6-luna')` も画像を受け取れます。Vercel AI Gateway はすべてのデシジョンモデルでスクリーンショットを拒否するため、そこでは `vision` を無効にしてください。
+
+テキストモデルがある場合、画像入力を有効にすると、ツリーにないコントロール用の `tap_at` も使えます。テキストモデルが「テンキーの 3 のキー」のようにコントロールを指定し、デシジョンモデルがスクリーンショット、続いて 2 段階の拡大画像から位置を特定します。座標タップには decide 呼び出し 4 回とテキスト呼び出し 1 回がかかります。同じページの同じ場所を再度タップする場合は、それぞれ 1 回です。
+
+エンジンがフォーカス中の入力先に文字を入力できる場合、画像入力では描画されたフィールド用の `type_at` も使えます。テキストモデルが目標からフィールドと値を指定し、デシジョンモデルがスクリーンショット上のフィールドを見つけます。エグゼキューターはそこをタップし、既存のテキストの後ろ、カーソル位置に値を入力します。decide 呼び出し 2 回とテキスト呼び出し 1 回がかかります。
+
+## プロバイダーオプション
+
+エグゼキューターの `providerOptions` は、完了確認も含むすべての decide 呼び出しに付けられ、デシジョンモデルだけに渡ります。Vercel AI Gateway のデータ保持なし設定などに使います。
+
+```ts title="Executor setup"
+import { gateway } from 'ai';
+
+const executor = decisionExecutor({
+  model: gateway.decisionModel('typesafe-ai/jev'),
+  textModel: gateway('openai/gpt-6-luna-fast'),
+  providerOptions: { gateway: { zeroDataRetention: true } },
+});
+```
+
+テキストモデルには `agents` エントリーの `providerOptions` が渡ります。そのため、ゲートウェイのフォールバック一覧など、一方のモデル向けの設定が他方に渡ることはありません。
+
+AI Gateway は、確信度の低い判断を別のモデルで再実行できます。条件付きのエントリーを `gateway.models` に追加してください。すべての decide 呼び出しに渡され、フォールバックが発生した場合は両方のモデルに課金されます。
+
+```ts title="Executor setup"
+const executor = decisionExecutor({
+  model: gateway.decisionModel('typesafe-ai/jev'),
+  textModel: gateway('openai/gpt-6-luna-fast'),
+  providerOptions: {
+    gateway: { models: [{ model: 'openai/gpt-6-luna-decisions', when: { confidenceBelow: 0.6 } }] },
+  },
+});
+```
+
+デシジョンモデルへのフォールバックでもしきい値は維持され、エグゼキューターはフォールバック先の確率と確信度を読み取ります。`openai/gpt-6-luna-fast` などの言語モデルへのフォールバックは、分布なしで選択肢だけを返します。エグゼキューターはその選択を確率 1、確信度 0 として扱うため、`minConfidence` を設定すると、フォールバック後の回答はすべてブロックされます。
+
+## 制限事項
+
+- `navigate` はありません。アプリ内の画面遷移は、リンクへの `tap` で行います。URL はテストコード（`browser.goto`、`app.open`）に記述します。
+- 複数選択の `listbox` と `scrollUntil` には対応していません。`type_at` は描画されたフィールドを消去してから入力することはないため、空のフィールド向けです。
+- 描画されたコントロールを指定するテキストモデルには画像が見えません。そのため、「円をタップ」と描画するウィザードなど、描画された文字にしかない指示には従えません。
+- すべての decide 呼び出しとテキスト呼び出しが `maxModelCalls` に加算されます。
+- 3 回連続で操作が失敗するか、何も変化しないと、`AUTOMATION_UNSUPPORTED` でステップがブロックされます。
+- プロバイダーが質問を拒否すると、ステップは `MODEL_OUTPUT_INVALID` で失敗します。
+- 質問の選択肢は、TypeSafe の上限である 255 個までです。それより大きな画面では、表示領域内のノードを優先し、残りは省略数に加えます。これにより、モデルはスクロールして探せます。
+
+## 次のステップ
+
+<CardGroup cols={2}>
+  <Card title="独自のエグゼキューター" icon="gears" href="/executors">
+    エグゼキューターをランナーに組み込む仕組みを確認します。
+  </Card>
+  <Card title="モデル" icon="brain" href="/models">
+    代わりに、ツールを呼び出す LLM エージェントを使います。
+  </Card>
+</CardGroup>

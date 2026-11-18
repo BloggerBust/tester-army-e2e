@@ -1,0 +1,133 @@
+---
+title: Kernel のブラウザ
+sidebarTitle: Kernel
+description: "@e2e-dev/kernel の kernel() ブラウザプロバイダーで、Kernel がホストする Chromium 上で Web ターゲットを実行します。"
+"og:image": "https://e2e.com/docs/images/og/integrations/kernel.png?v=c116b9983d"
+"twitter:image": "https://e2e.com/docs/images/og/integrations/kernel.png?v=c116b9983d"
+---
+
+`@e2e-dev/kernel` の `kernel()` は、[Kernel](https://kernel.sh) 用の
+[ブラウザプロバイダー](/browser#hosted-browsers) です。
+ワーカースロットまたは試行ごとに、専用のホスト型 Chromium が割り当てられます。
+テストは変更せず、ターゲットの `browser` だけを変更します。
+
+## セットアップ
+
+プロバイダーと Kernel SDK をインストールします。
+
+<CodeGroup>
+```bash npm
+npm install --save-dev @e2e-dev/kernel @onkernel/sdk
+```
+
+```bash pnpm
+pnpm add -D @e2e-dev/kernel @onkernel/sdk
+```
+
+```bash bun
+bun add -d @e2e-dev/kernel @onkernel/sdk
+```
+</CodeGroup>
+
+ターゲットの `browser` に `kernel()` を設定します。
+
+```ts title="e2e.config.ts"
+import type { E2EConfig } from 'e2e';
+import { web } from '@e2e-dev/web';
+import { kernel } from '@e2e-dev/kernel';
+
+export default {
+  targets: [
+    {
+      name: 'kernel',
+      engine: web({ browser: kernel() }),
+      app: { url: 'https://staging.example.com' },
+    },
+  ],
+} satisfies E2EConfig;
+```
+
+CI のシークレットなど、`e2e run` を起動する環境に `KERNEL_API_KEY` を設定します。
+`workers` が、同時に動くブラウザの数を決めます。
+
+キーがない場合や Kernel のエラーが発生した場合は、そのメッセージとともに取得が失敗します。
+`worker` スコープではテスト開始前に実行全体が終了し、`attempt` スコープではその試行だけが失敗します。
+
+## 画面全体を使う
+
+Kernel の `viewport` で画面サイズを指定し、Web エンジンを `viewport: null` にすると、
+ページがウィンドウのサイズに合わせて広がります。
+
+```ts
+web({
+  browser: kernel({ viewport: { width: 1920, height: 1080 } }),
+  viewport: null,
+})
+```
+
+ウィンドウは最大化して開き、ページが [その全体を使います](/web#fill-the-window)。
+1920 × 1080 の画面では、ページは 1920 × 993 になります。
+Web 側で固定の `viewport` を設定すると、ライブビューでページが切れたり、ウィンドウの一部だけに表示されたりします。
+
+## オプション
+
+`kernel(options)` は、Kernel のブラウザ作成リクエストをそのまま受け取ります。
+`stealth`、`headless`、`timeout_seconds`、`profile`、`proxy_id`、`viewport`、`tags` など、
+使用中の `@onkernel/sdk` の `BrowserCreateParams` にある項目です。加えて次の 2 つを指定できます。
+
+| オプション | デフォルト | 意味 |
+| -------- | ---------- | ------- |
+| `scope` | `'worker'` | ワーカースロットまたは試行ごとに 1 ブラウザ。[スコープ](#scopes) を参照。 |
+| `replay` | `true` | Kernel のリプレイ録画か、エンジンの画面録画。[録画](#recordings) を参照。 |
+
+## スコープ
+
+`scope: 'worker'` は、実行中、ワーカースロットごとに 1 ブラウザを保持します。
+各試行にはローカル実行と同じく新しいブラウザコンテキストが割り当てられるため、他のテストの Cookie、ストレージ、権限は見えません。
+背後では Kernel の最初のタブが開いたままになります。
+Kernel の `profile` が適用されるのはデフォルトコンテキストだけなので、このスコープでは効果がありません。
+
+`scope: 'attempt'` は、リトライも含め、試行ごとに新しいブラウザを借ります。
+デフォルトコンテキストの最初のタブで実行するため、`profile` が適用され、ライブビューには 1 つのタブが表示されます。
+テストごとにブラウザ起動の負担が生じ、セッションを含む [試行単位の取得の制限](/browser#hosted-browsers) が適用されます。
+
+## 録画
+
+[動画](/reference/config#video) を記録する試行では、Kernel がブラウザ画面を録画し、
+アーティファクトディレクトリの `video/replay.mp4` に保存します。
+Kernel の `viewport` が指定するサイズで、タブやアドレスバーを含むウィンドウ全体が映ります。
+
+フレームレートは Kernel のデフォルトの 10 fps です。
+変更するには、Kernel の録画開始リクエストの項目（`framerate`、`max_duration_in_seconds`、`record_audio`）を渡します。
+例は `kernel({ replay: { framerate: 20 } })` です。
+`framerate` を 20 より大きくするには、ブラウザに `gpu: true` が必要です。
+
+Kernel が録画できるのは、画面を表示するブラウザ（デフォルト）だけです。
+`headless: true` または `replay: false` の場合、Web エンジンがページを画面録画します。
+
+## ダウンロード
+
+両スコープで、`browser.waitForDownload` はローカルと同じように動きます。
+プロバイダーがブラウザのディスクから各ファイルを取得し、試行のアーティファクトにコピーします。
+
+## ブラウザを確認・終了する
+
+レポーターは、新しいブラウザごとに `browser <id>, watch at <live view URL>` をログに出します。
+各ブラウザには独自の `tags` に加え、`e2e_run`、`e2e_target`、`e2e_slot`、
+`'attempt'` スコープでは `e2e_attempt` も付きます。Kernel のダッシュボードで、起動元の実行を識別できます。
+
+実行終了時には、その実行とターゲットのタグを持つ稼働中のブラウザをすべて削除します。
+異常終了したワーカーのブラウザも対象です。
+実行プロセス自体が先に終了した場合、Kernel が無操作の `timeout_seconds` 経過後に削除します。
+この値は指定しなければ 600 です。
+
+## 次のステップ
+
+<CardGroup cols={2}>
+  <Card title="ホスト型ブラウザ" icon="globe" href="/browser#hosted-browsers">
+    プロバイダーによるブラウザの取得と、`'attempt'` スコープの制限を確認します。
+  </Card>
+  <Card title="継続的インテグレーション" icon="rotate" href="/ci">
+    GitHub Actions などの CI サービスでスイートを実行します。
+  </Card>
+</CardGroup>

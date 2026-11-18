@@ -362,7 +362,7 @@ describe('smol()', () => {
   it('reads a download off the leased browser’s disk', async () => {
     const provider = smol();
     const lease = await provider.acquire(request({ attemptId: 'a1' }));
-    const bytes = await provider.downloads!.read(lease, '/tmp/e2e-downloads/report.csv', { runId: 'run-1', targetName: 'web', env: {}, signal: new AbortController().signal });
+    const bytes = await provider.downloads!.read(lease, '/tmp/e2e-downloads/report.csv', { runId: 'run-1', targetName: 'web', env: {}, signal: new AbortController().signal, suggestedFilename: 'report.csv' });
     expect(new TextDecoder().decode(bytes)).toBe('file bytes');
     expect(sdk.state.files).toEqual([{ machine: lease.id, path: '/tmp/e2e-downloads/report.csv' }]);
     expect(provider.downloads!.dir).toBe('/tmp/e2e-downloads');

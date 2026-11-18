@@ -28,3 +28,6 @@ packages/e2e/docs/
 .env*
 # `pnpm run canary` writes this changeset and consumes it in the same run.
 .changeset/canary.md
+
+# scripts/check-docs-translations-deepl.ts --report
+/deepl-report.json

@@ -1,0 +1,221 @@
+---
+title: 编码智能体
+description: 为编码智能体提供技能、实时应用会话和报告，让它编写和调试测试。
+"og:image": "https://e2e.com/docs/images/og/coding-agents.png?v=c6990935d7"
+"twitter:image": "https://e2e.com/docs/images/og/coding-agents.png?v=c6990935d7"
+---
+
+Claude Code、Codex 或 Cursor 等编码智能体可以编写、运行和调试 e2e 测试。它通过技能学习 e2e，通过 `e2e mcp` 服务器操作应用，并读取失败测试的追踪记录页面。
+
+## 安装技能
+
+<CodeGroup>
+```bash npm
+npx e2e init
+```
+
+```bash pnpm
+pnpm dlx e2e init
+```
+
+```bash bun
+bunx e2e init
+```
+</CodeGroup>
+
+| 路径 | 使用者 |
+| --- | --- |
+| `.agents/skills/e2e/` | Codex、Cursor、OpenCode 等读取 `.agents/skills` 的智能体 |
+| `.claude/skills/e2e/` | Claude Code。同时安装两者时，这是指向 `.agents/skills/e2e/` 的符号链接。 |
+
+安装的副本包含 `SKILL.md` 和各主题的参考资料。[`e2e upgrade`](/reference/cli#e2e-upgrade) 会更新它，在你使用包管理器升级后也可以运行此命令。无需 `init`，也可以用 `npx skills add e2e-inc/e2e` 安装技能，用 `npx e2e guide [topic]` 从已安装的包中输出技能内容。下方插件可为所有项目安装全部三个 e2e 技能。
+
+`init` 不会修改项目指令。如果智能体需要指引，请添加这一行：
+
+```md title="AGENTS.md"
+End-to-end tests use e2e; read .agents/skills/e2e/SKILL.md before writing or running one.
+```
+
+包中也包含这些文档的 `.mdx` 页面，可供离线阅读。在单包项目中，它们位于 `node_modules/e2e/docs`。例如，`/reference/cli` 这样的链接对应 `docs/reference/cli.mdx`。
+
+<Accordion title="安装 Claude Code、Codex 或 Cursor 插件">
+
+e2e 仓库是 Claude Code 和 Codex 的插件市场，也适用于读取 Claude Code 文件的 Grok Build。Cursor 从本地插件文件夹加载插件：
+
+<CodeGroup>
+```bash Claude
+claude plugin marketplace add e2e-inc/e2e
+claude plugin install e2e@e2e
+```
+
+```bash Codex
+codex plugin marketplace add e2e-inc/e2e
+codex plugin add e2e@e2e
+```
+
+```bash Cursor
+repo=$(mktemp -d)
+git clone --depth 1 https://github.com/e2e-inc/e2e "$repo"
+mkdir -p ~/.cursor/plugins/local
+rm -rf ~/.cursor/plugins/local/e2e
+cp -R "$repo/plugins/e2e" ~/.cursor/plugins/local/
+```
+</CodeGroup>
+
+启动新会话。在 Cursor 中，运行 **Developer: Reload Window**。在 Cursor Teams 和 Enterprise 中，本地插件需要管理员开启 **Allow Local Plugin Imports**，或者由管理员将 `e2e-inc/e2e` 导入为团队插件市场。插件添加 `e2e`、`create-verification-skill` 和 `migrate-to-e2e` 技能以及 [MCP 服务器](/mcp-server)，不会安装 npm 包。调用后两个技能时，Claude Code 使用插件名称前缀 `/e2e:<skill>`，Codex 使用 `$e2e:<skill>`，Cursor 使用 `/<skill>`。
+
+插件版本跟随 e2e 发布。要更新插件，请运行以下命令并启动新会话。在 Cursor 中，请重新运行上面的命令。
+
+<CodeGroup>
+```bash Claude
+claude plugin marketplace update e2e
+claude plugin update e2e@e2e
+```
+
+```bash Codex
+codex plugin marketplace upgrade e2e
+```
+</CodeGroup>
+
+</Accordion>
+
+<Accordion title="在 OpenClaw 或 Hermes Agent 中安装">
+
+这三个技能以 `@e2e` 名义发布在 [ClawHub](https://clawhub.ai/) 上。Hermes Agent 将仓库作为 tap 读取：
+
+<CodeGroup>
+```bash OpenClaw
+openclaw skills install @e2e/e2e
+openclaw skills install @e2e/create-verification-skill
+openclaw skills install @e2e/migrate-to-e2e
+```
+
+```bash Hermes
+hermes skills tap add e2e-inc/e2e
+hermes skills install e2e-inc/e2e/e2e
+```
+</CodeGroup>
+
+</Accordion>
+
+## 让智能体使用应用
+
+`e2e mcp` 为智能体提供应用的实时会话。它会在写入定位器前对照屏幕检查定位器，也会检查自己对 UI 的更改。`init` 会注册服务器。配置方法和提示词见 [MCP 服务器](/mcp-server)。
+
+## 智能体如何编写和运行测试
+
+技能要求智能体先阅读配置和一个已有测试。使用 `e2e mcp` 时，它会在会话中操作流程，并在执行每个步骤时将其写入测试。对于已知字段和精确值，使用匹配到单个节点的定位器进行 `screen` 调用：
+
+```ts title="tests/checkout.e2e.ts"
+import { test, expect, credentials } from 'e2e';
+
+test('a signed-in user reaches checkout', async ({ screen, app, agent }) => {
+  const user = credentials.user('customer');
+  await app.open('/login');
+  await screen.getByLabel('Email').fill(user.username);
+  await screen.getByLabel('Password').fill(user.password);
+  await screen.getByRole('button', 'Sign in').click();
+  await expect(screen.getByRole('heading', 'Welcome back')).toBeVisible();
+
+  await agent.act('Add the cheapest item on the page to the cart');
+  await expect(screen.getByRole('status', 'Cart')).toHaveText('1 item');
+  await agent.act('Open the cart');
+  await expect(screen.getByRole('heading', 'Your cart')).toBeVisible();
+});
+```
+
+- **每个[原子目标](/core-concepts#goals)调用一次 `agent.act`，然后调用 `expect`。** 如果智能体执行了错误的操作，`expect` 会失败。定位器匹配器或其他[验证检查](/cache#when-a-recording-is-written)也能让缓存回放该步骤。
+- **不使用固定延时。** 定位器会轮询，操作会等待目标元素，`expect` 会持续重试直到超时。
+- **通过 `credentials.user(name)` 使用机密值。** 在配置中声明机密值，绝不要写进测试。
+
+反复修改时，智能体通过 `test(` 起始行的行号，只运行当前处理的测试。使用 `--action-timeout 5000` 时，错误的定位器会在 5 秒后失败，而不是 30 秒：
+
+<CodeGroup>
+```bash npm
+npx e2e run tests/checkout.e2e.ts:3 --action-timeout 5000
+```
+
+```bash pnpm
+pnpm exec e2e run tests/checkout.e2e.ts:3 --action-timeout 5000
+```
+
+```bash bun
+bunx e2e run tests/checkout.e2e.ts:3 --action-timeout 5000
+```
+</CodeGroup>
+
+智能体会先修复 CLI、配置和收集错误，再重新运行。它不会编辑缓存录制内容。
+
+智能体保持回放缓存开启，让检查已通过的目标无需调用模型即可回放。它会关闭重试，因为重试会实时执行每个目标。测试通过后，智能体移除 `--action-timeout`，再使用 `--no-cache` 运行一次，检查实时智能体能否完成所有目标。参阅[修复测试时重新运行](/cache#rerun-a-test-while-you-fix-it)。
+
+## 智能体如何读取失败信息
+
+默认情况下（[`trace`](/reference/config#trace)），每次运行都会为失败、超时、中断或不稳定的测试写入追踪记录页面，保存在 `.e2e/results/` 下该测试的目录中。`.e2e` 是默认的 `output`。终端会在每个失败测试下方显示页面路径，格式为 `❯ trace .e2e/results/<test>/trace.md`。
+
+智能体读取该页面，而不是供[脚本](/debugging)使用、包含相同信息的 `.e2e/report.json`。页面包含失败的代码行，以及每个步骤及其操作详情：操作命中的节点、断言读取的值、缓存的决定、控制台错误和失败请求。它还包含智能体最后几轮交互和失败时的屏幕。
+
+智能体根据这些证据修复测试。它会修复证据所涉及的每一行，而不仅是失败的那一行。测试在第一个失败步骤处停止，因此智能体还会在下次运行前检查之后的代码行。
+
+要查看页面没有展示的屏幕，智能体会在 MCP 会话中通过最短路径打开它，例如在网页端直接打开其 URL，而不会从头重新操作整个流程。
+
+要查看模型调用详情，智能体会添加 `--ai-trace`，并使用 [unbox-ai](/debugging#agent-steps) 读取追踪记录。配合 `--no-cache` 可以捕获流程中的每次模型调用。不要在智能体上下文中直接打开原始追踪记录，其中包含重复的提示词，大小可能达到数 MB。
+
+## 为你的应用生成验证技能
+
+e2e 技能介绍的是运行器，不包含你的应用知识。`create-verification-skill` 技能会在项目内编写一个包含应用知识的 `.agents/skills/verify-<app>/` 技能，并在交付前测试一次。
+
+<CodeGroup>
+```bash npm
+npx skills add e2e-inc/e2e --skill create-verification-skill
+```
+
+```bash pnpm
+pnpm dlx skills add e2e-inc/e2e --skill create-verification-skill
+```
+
+```bash bun
+bunx skills add e2e-inc/e2e --skill create-verification-skill
+```
+</CodeGroup>
+
+然后让智能体执行 `/create-verification-skill`。
+
+<Accordion title="生成的技能包含什么">
+- 根据配置得出的启动和 doctor 命令。
+- 操作应用的两种方式：实时 `e2e mcp` 会话和测试。
+- 验证时需要保留的证据。
+- 功能地图，每个功能对应一个 `e2e explore` 探索任务，让 [Bug Bash](/bug-bash) 从地图展开。
+
+生成的技能只描述你的应用实际具备的内容，其余内容通过链接指向 e2e 技能。它基于 poteto 的 pstack 中的 [create-verification-skill](https://github.com/cursor/plugins/tree/main/pstack/skills/create-verification-skill)，使用 e2e 替代手写的测试执行框架。
+</Accordion>
+
+## 迁移已有测试套件
+
+`migrate-to-e2e` 技能将 Playwright、Cypress、Selenium、Appium、Detox、Maestro 或 TesterArmy 测试套件迁移到 e2e，每次会话迁移一部分。旧测试套件会与新测试继续并行运行，因此你可以在任意一次会话后停止。
+
+<CodeGroup>
+```bash npm
+npx skills add e2e-inc/e2e --skill migrate-to-e2e
+```
+
+```bash pnpm
+pnpm dlx skills add e2e-inc/e2e --skill migrate-to-e2e
+```
+
+```bash bun
+bunx skills add e2e-inc/e2e --skill migrate-to-e2e
+```
+</CodeGroup>
+
+然后让智能体执行 `/migrate-to-e2e`。它会迁移你选定的部分，并在每个测试目标上运行每个已迁移的测试三次。`MIGRATION.md` 文件会记录进度，供下次会话继续。你也可以让智能体在应用中临时植入一个错误，例如错误的结账总额，检查两个测试套件是否都因此失败。智能体只有在你确认后才会删除旧测试。它会先阅读对应运行器的迁移指南：[Playwright](/migrate/playwright)、[Cypress](/migrate/cypress)、[Selenium](/migrate/selenium)、[Appium](/migrate/appium)、[Detox](/migrate/detox)、[Maestro](/migrate/maestro) 或 [TesterArmy](/migrate/testerarmy)。
+
+## 下一步
+
+<CardGroup cols={2}>
+  <Card title="CLI 参考" icon="terminal" href="/reference/cli">
+    init、guide、mcp 和 run 的各个参数。
+  </Card>
+  <Card title="调试运行" icon="bug" href="/debugging">
+    报告、产物和智能体参数。
+  </Card>
+</CardGroup>

@@ -3,9 +3,10 @@
  * stored credentials, refreshes them ahead of expiry, replaces the SDK's key
  * header with the bearer token, and hands the request to the provider; on a
  * 401 it refreshes once and retries, or, with nothing to refresh, reports
- * that the user signs in again. One refresh serves every model instance
- * and every concurrent call over the same credentials, because vendors that
- * rotate refresh tokens reject the second concurrent refresh.
+ * that the user signs in again. One refresh serves every model instance,
+ * every concurrent call, and every worker process over the same credentials
+ * file, because vendors that rotate refresh tokens reject the second
+ * concurrent refresh.
  */
 
 import { withAbort } from '@e2e-dev/core/lib/internal/time';
@@ -94,21 +95,29 @@ export function createOAuthFetch<Credentials extends OAuthCredentials>(
     let pending = shared.refreshing.get(provider.id) as Promise<Credentials> | undefined;
     if (pending === undefined) {
       pending = (async () => {
-        // Another process may have refreshed already: prefer what the store holds now.
-        const latest = await current();
-        if (latest.access !== stale.access && !expiring(latest)) return latest;
-        try {
-          const renewed = await provider.refresh(latest);
-          await persist(renewed);
-          return renewed;
-        } catch (cause) {
-          if (cause instanceof OAuthError && cause.code === 'LOGIN_REQUIRED') {
-            const rotated = await rotatedElsewhere(latest);
-            if (rotated !== undefined) return rotated;
-            throw new OAuthError('LOGIN_REQUIRED', `${cause.message}; ${remedy}`, { cause });
+        const outcome = await store.exclusive(provider.id, async () => {
+          // Another process may have refreshed already: prefer what the store holds now.
+          const latest = await current();
+          if (latest.access !== stale.access && !expiring(latest)) return { renewed: latest };
+          try {
+            // No deadline: the vendor may rotate the token before a late answer,
+            // and dropping that answer loses the login.
+            const renewed = await provider.refresh(latest);
+            await persist(renewed);
+            return { renewed };
+          } catch (cause) {
+            if (cause instanceof OAuthError && cause.code === 'LOGIN_REQUIRED') {
+              return { rejected: cause, sent: latest };
+            }
+            throw cause;
           }
-          throw cause;
-        }
+        });
+        if ('renewed' in outcome) return outcome.renewed;
+        // After the lock, so waiters on a revoked login do not wait out each other's poll.
+        const rotated = await rotatedElsewhere(outcome.sent);
+        if (rotated !== undefined) return rotated;
+        const { rejected } = outcome;
+        throw new OAuthError('LOGIN_REQUIRED', `${rejected.message}; ${remedy}`, { cause: rejected });
       })().finally(() => shared.refreshing.delete(provider.id));
       shared.refreshing.set(provider.id, pending);
     }

@@ -1,0 +1,58 @@
+name: docs translations
+
+# Checks the translated docs sections a pull request changes against DeepL
+# (scripts/check-docs-translations-deepl.ts), including the translations an
+# English edit leaves stale, unless the edit changed the page's outline: such a
+# page is skipped with a notice. A flagged section gets a warning on its heading
+# and a row in the job summary; the job fails only when DeepL cannot be
+# reached. Advisory, so it is not a required check and filters by path here
+# instead of through a gate job. e2e-inc/e2e-site checks its UI copy the same way.
+on:
+  pull_request:
+    paths:
+      - 'docs/**/*.mdx'
+      - 'docs/ja/README.md'
+      - 'scripts/deepl-review.ts'
+      - 'scripts/check-docs-translations-deepl.ts'
+      - '.github/workflows/docs-translations.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  deepl:
+    runs-on: blacksmith-4vcpu-ubuntu-2404
+    timeout-minutes: 10
+    steps:
+      # The full history holds the PR base the check diffs against.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      # The script has no dependencies: Node runs its TypeScript as is.
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 26
+      # Only the sections the pull request changes: the whole docs are about
+      # a million characters, twice the DeepL Free plan's month. A fork's
+      # pull request has no DEEPL_API_KEY; the check then skips.
+      - name: Check the Japanese docs against DeepL
+        run: node scripts/check-docs-translations-deepl.ts --base origin/${{ github.base_ref }} --report deepl-report.json
+        env:
+          DEEPL_API_KEY: ${{ secrets.DEEPL_API_KEY }}
+          # The fallback once DeepL's monthly quota is used up.
+          AI_GATEWAY_API_KEY: ${{ secrets.AI_GATEWAY_API_KEY }}
+      # Every reviewed section with DeepL's versions and the scores; GitHub
+      # shows only the first 10 warnings of a step.
+      - if: ${{ !cancelled() }}
+        continue-on-error: true
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: deepl-report
+          path: deepl-report.json
+          if-no-files-found: ignore
+          retention-days: 14

@@ -168,6 +168,10 @@ export class RunnerOutput {
   private stdoutTo: OutputStream = 'stdout';
   /** The terminal's stdout for the list reporter: its own lines and live window go straight there. */
   readonly listOutput: Required<ListReporterOutput>;
+  /** Writes a reporter's own output past the view handling user output. */
+  readonly reporterOutput = (stream: OutputStream, text: string): void => {
+    this.terminal[stream](text);
+  };
 
   constructor(
     private readonly terminal: Readonly<Record<OutputStream, TerminalWrite>>,
@@ -175,8 +179,8 @@ export class RunnerOutput {
   ) {
     this.redactors = { stdout: new StreamRedactor(ledger), stderr: new StreamRedactor(ledger) };
     this.listOutput = {
-      write: (line) => void terminal.stdout(`${line}\n`),
-      raw: (text) => void terminal.stdout(text),
+      write: (line) => this.reporterOutput('stdout', `${line}\n`),
+      raw: (text) => this.reporterOutput('stdout', text),
     };
   }
 

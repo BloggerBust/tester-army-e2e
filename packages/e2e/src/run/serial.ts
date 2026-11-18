@@ -460,7 +460,7 @@ async function runSerialAttempt(
     // Suite scopes enter per member, exactly as for ordinary tests: a
     // beforeAll failure skips this member and, since later members build on
     // its screen, every member after it.
-    hookFailure = await host.realms.enterScopes(realm, registered);
+    hookFailure = await host.realms.enterScopes(realm, registered, shared.session);
     if (hookFailure !== undefined) {
       skipRemaining = { cause: 'hook-failed', reason: hookFailure.message };
       finishMember(skippedMember(attemptId, memberIndex, member.test.id, skipRemaining));
@@ -494,13 +494,14 @@ async function runSerialAttempt(
     // tests. A failed afterAll discards the suite instance, and the group
     // attempt is that instance: remaining members skip, as after a failed
     // beforeAll, and the attempt fails without a retry.
-    const teardownFailure = await host.realms.leaveFinished(realm, members.slice(memberIndex + 1));
+    const teardownFailure = await host.realms.leaveFinished(realm, members.slice(memberIndex + 1), shared.session);
     if (teardownFailure !== undefined && skipRemaining === undefined) {
       hookFailure = teardownFailure;
       skipRemaining = { cause: 'hook-failed', reason: teardownFailure.message };
     }
   }
-  await host.realms.leave(realm);
+  // Suite hooks run on the group's session while it is open: an engine runs one attempt at a time.
+  await host.realms.leave(realm, shared.session);
   // The group's verdict is reached before its session closes: the close reads
   // it to decide what the shared recording is worth.
   const failedMember = memberRecords.find(isFailedMember);

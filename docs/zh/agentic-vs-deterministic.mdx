@@ -1,0 +1,87 @@
+---
+title: 智能体驱动还是确定性
+description: 为端到端测试选择智能体驱动或确定性的操作和断言。
+---
+
+智能体驱动的测试让你用自然语言描述用户意图和预期结果。智能体可以选择要执行的操作，并判定屏幕是否符合你的预期。测试关注结果，UI 变化时也无需维护选择器。
+
+确定性测试通过代码指定操作和检查。两种方式都能测试用户操作的结果，e2e 允许你在同一个测试中结合使用。
+
+## 何时使用智能体驱动的测试？
+
+如果 UI 变化让你不得不反复更新测试中的选择器，可以使用智能体驱动的测试。它也适合需要多次交互、但用自然语言很容易描述的流程，例如填写并提交表单。
+
+`agent.act` 让你描述用户意图，例如应用折扣码。智能体会确定使用哪些控件以及如何操作。`agent.assert` 检查屏幕是否显示你描述的结果，例如总价已应用折扣。
+
+例如，在带有 `app` 和 `agent` 测试夹具的测试中：
+
+```ts
+await app.open('/checkout');
+await agent.act('apply the discount code SUMMER');
+await agent.assert('the checkout shows code SUMMER applied with a 10% discount');
+```
+
+你无需指定折扣输入框、应用折扣的按钮，或显示结果的元素。
+
+依赖 CSS 类名或测试 ID 的测试需要在这些标识符变化时修改。即使移动了按钮或重新设计了表单，智能体仍然可以根据屏幕内容完成用户意图。
+
+智能体驱动的测试可以在预发布或生产环境中使用真实数据进行监控，无需预先填充确定性数据，因为智能体会适应你的应用。在这些环境中使用测试账号：模型会看到屏幕上的内容。参阅[安全](/security)。
+
+对于复杂流程，用自然语言写出一系列目标。每个目标只对应一个结果，检查后再继续。关于如何将流程拆分为步骤，参阅[目标](/core-concepts#goals)。
+
+## 何时使用智能体驱动的断言？
+
+当多种措辞或布局都能满足同一要求时，智能体驱动的断言很有用。例如，验证消息可以解释问题，而不必匹配某个固定句子：
+
+```ts
+await agent.assert('the error message explains that an email address is required');
+```
+
+进行视觉检查时，添加 `vision: true`，让模型同时看到截图：
+
+```ts
+await agent.assert('the chart trends upward', { vision: true });
+```
+
+`agent.assert` 检查当前屏幕，如果陈述不成立或证据不足，就会失败。如果 UI 还需要时间才能达到预期状态，使用 `agent.waitFor`。关于这两种方法，参阅[断言](/core-concepts#assertions)。
+
+## 何时使用确定性测试？
+
+对于简短、稳定且你已知道要使用哪些控件的流程，使用定位器。在代码中指定每个字段和按钮，如以下折扣测试所示：
+
+```ts
+await app.open('/checkout');
+await screen.getByLabel('Discount code').fill('SUMMER');
+await screen.getByRole('button', 'Apply').tap();
+await expect(screen.getByRole('status')).toHaveText('10% off');
+```
+
+这些操作和检查不会调用模型。优先使用角色和标签，让测试引用用户能识别的控件。确定性测试不一定要依赖 CSS 类名或测试 ID。
+
+当你能将预期结果表达为精确值、数量或状态时，使用确定性断言。它们无需模型判定就能检查结果。如果验证消息必须使用特定措辞，用 `expect` 检查该文本。
+
+## 结合智能体驱动的测试与确定性测试
+
+操作和断言可以分别选择。你可以让智能体在不断变化的 UI 中完成操作，再用 `expect` 检查精确值：
+
+```ts
+await agent.act('apply the discount code SUMMER');
+await expect(screen.getByRole('status')).toHaveText('10% off');
+```
+
+你也可以用定位器填写并提交表单，再用 `agent.assert` 检查验证消息是否解释了问题。
+
+智能体会按你写的目标适应变化。模糊的指令可能允许出现你不希望的结果。如果特定路径很重要，请在目标中明确说明，或使用定位器执行这些操作。在 `agent.act` 后添加 `expect`，可以发现以错误方式完成的目标。
+
+模型驱动的操作和断言会增加延迟与成本，也可能出错。[回放缓存](/cache)可以重复已记录的 `agent.act` 操作，无需调用模型。断言会在每次测试运行时重新执行。当录制内容不再匹配时，除非启用了严格缓存模式，否则智能体可以适应变化后的 UI。关于其工作原理，参阅[自修复测试](/self-healing)。
+
+## 下一步
+
+<CardGroup cols={2}>
+  <Card title="核心概念" icon="lightbulb" href="/core-concepts">
+    编写目标、断言和定位器步骤。
+  </Card>
+  <Card title="自修复测试" icon="bandage" href="/self-healing">
+    了解录制的流程变化时，智能体如何恢复执行。
+  </Card>
+</CardGroup>

@@ -1,0 +1,257 @@
+---
+title: 認証
+description: 一度ログインしてセッションをテスト間で再利用し、モデルに値を見せずにシークレットを渡します。
+"og:image": "https://e2e.com/docs/images/og/authentication.png?v=6e061842b8"
+"twitter:image": "https://e2e.com/docs/images/og/authentication.png?v=6e061842b8"
+---
+
+セットアップテストで一度ログインし、名前付きセッションを保存します。他のテストはそのセッションを復元して、ログイン済みの状態から開始します。パスワードなどのシークレットは、値そのものではなくハンドルとして扱います。値はランナーが入力し、モデルへの入力とレポートでは `<secret:name>` に置き換えます。ただし、[マスキングには限界があります](/reference/security#where-redaction-stops)。
+
+<a id="sign-in-once-in-a-setup-test" />
+
+## 認証済みセッションを再利用する
+
+`test.setup` の本体でセッションを保存し、`session` オプションで復元します。テストだけを選択して実行した場合でも、ランナーはそのテストに必要なセットアップを実行します。
+
+<Tabs>
+  <Tab title="tests/auth.setup.e2e.ts">
+
+```ts
+import { test } from '@e2e-dev/web';
+import { expect, credentials } from 'e2e';
+
+test.setup('authenticate as admin', { sessions: ['admin'] }, async ({ app, screen, session, browser }) => {
+  const admin = credentials.user('admin');
+
+  await app.open('/login');
+  await screen.getByLabel('Username').fill(admin.username);
+  await screen.getByLabel('Password').fill(admin.password);
+  await screen.getByRole('button', 'Sign in').tap();
+
+  await expect(browser).toHaveURL('/dashboard');
+  await expect(screen.getByRole('status', 'Greeting')).toContainText('admin');
+
+  await session.save('admin');
+});
+```
+
+  </Tab>
+  <Tab title="tests/dashboard.e2e.ts">
+
+```ts
+import { test } from '@e2e-dev/web';
+import { expect } from 'e2e';
+
+test('the dashboard opens directly', { session: 'admin' }, async ({ app, screen, browser }) => {
+  await app.open('/dashboard');
+
+  await expect(browser).toHaveURL('/dashboard');
+  await expect(screen.getByRole('status', 'Greeting')).toHaveText(
+    'Welcome back, admin!',
+  );
+});
+```
+
+  </Tab>
+</Tabs>
+
+<Note>
+`session.save()` はログインの成功を確認しません。保存前に URL またはログイン済みの状態を示す要素をアサートしてください。
+</Note>
+
+## セッションのルール
+
+| ルール | 違反した場合 |
+| --- | --- |
+| セットアップテストは最上位に置き、`describe` の中には置かない | 収集エラー |
+| 各セッション名を宣言するセットアップは、ちょうど 1 つにする | 収集エラー |
+| `sessions` にあるすべての名前を本体で保存する | `SESSION_CONTRACT` で失敗 |
+| 宣言した名前だけを保存する | `SESSION_CONTRACT` で失敗 |
+| ターゲットのエンジンが状態の保存と復元に対応していること。試行ごとに借りるホスト型ブラウザは対応していない | テスト実行前に収集エラー |
+
+セットアップが失敗すると、それに依存するテストは `setup-failed` を理由にスキップされます。他のテストは実行を続けます。
+
+ブラウザターゲットのセッションには Cookie、ローカルストレージ、IndexedDB が含まれます。サーバーやデータベースの状態は含まれません。復元後はページが開いていないため、各テストで最初に `app.open()` を呼び出します。
+
+セッションの有効期間は 1 回の実行中だけです。ランナーはメモリー内だけに保持するキーでセッションを暗号化し、クリーンアップ時に削除します。[セッション](/reference/security#sessions)を参照してください。
+
+## 認証情報を設定する
+
+各アカウントを設定ファイルに宣言します。パスワードは環境変数から読み取ります。
+
+```ts title="e2e.config.ts"
+import type { E2EConfig } from 'e2e';
+import { web } from '@e2e-dev/web';
+
+export default {
+  targets: [{ engine: web(), app: { url: 'http://127.0.0.1:3000' } }],
+  credentials: {
+    admin: {
+      username: 'admin@example.test',
+      password: process.env.ADMIN_PASSWORD ?? '',
+    },
+  },
+} satisfies E2EConfig;
+```
+
+設定の読み込み時に各パスワードが検証されます。`ADMIN_PASSWORD` が未設定、または 6 文字未満の場合、`e2e list` を含むすべてのコマンドが `INVALID_CONFIG` で失敗します。有効な[上書き値](#override-a-value-per-run)を指定すると、その値が使われます。
+
+<Accordion title="値を環境変数に保存しない方法">
+
+`process.env` の文字列は、ランナーが起動したすべてのプロセスから読み取れます。`password` には関数も指定できますが、`username` には指定できません。ランナーは許可された入力を行うときだけ、自身のプロセスでこの関数を呼び出します。そのため、保管庫から値を取得したり、新しいワンタイムコードを使ったりできます。
+
+```ts title="e2e.config.ts"
+import type { E2EConfig } from 'e2e';
+import { web } from '@e2e-dev/web';
+import { vault } from './support/vault.ts';
+
+export default {
+  targets: [{ engine: web(), app: { url: 'http://127.0.0.1:3000' } }],
+  credentials: {
+    admin: {
+      username: 'admin@example.test',
+      password: () => vault.read('e2e/admin-password'),
+    },
+  },
+} satisfies E2EConfig;
+```
+
+値がマスキングされるのは、最初に入力した時点からです。テストで入力する前にアプリが値を表示する可能性がある場合は、文字列を使ってください。`secrets` のエントリーにも同じことが当てはまります。
+
+</Accordion>
+
+## パスワードはハンドルとして扱う
+
+`credentials.user(name)` は、ユーザー名を通常の文字列で、パスワードを `<name>.password` という名前の `Secret` で返します。`Secret` に `.value` はありません。`fill` またはエージェントステップの `params` に渡します。
+
+```ts
+await agent.act('Sign in', {
+  params: { username: admin.username, password: admin.password },
+});
+```
+
+モデルに見えるのは、シークレットの名前と用途だけです。モデルがパスワードを入力するとき、ランナーは対象がパスワードフィールドであることを確認してから値を入力します。[シークレットの入力ルール](/reference/security#secret-fills)を参照してください。エージェントはセキュアなフィールドを読めないため、代わりにログインの成功をアサートします。
+
+スクリーンショットではパスワードフィールドがマスキングされます。アプリが他の場所に表示した値はモデルに渡ります。[シークレット入力後のスクリーンショット](/reference/security#screenshots-after-a-secret-fill)を参照してください。
+
+<Warning>
+マスキングは文字列の一致によって行います。キーの末尾 4 文字など、変形された値は表示される可能性があります。シークレットの入力はセットアップテストにまとめ、送信した結果をアサートしてください。[マスキングの限界](/reference/security#where-redaction-stops)を参照してください。
+</Warning>
+
+## パスワード以外のシークレット
+
+API キー、Webhook トークンなど、テストで入力する値には `secrets` を使います。
+
+```ts title="e2e.config.ts"
+import type { E2EConfig } from 'e2e';
+import { web } from '@e2e-dev/web';
+
+export default {
+  targets: [{ engine: web(), app: { url: 'http://127.0.0.1:3000' } }],
+  secrets: {
+    'stripe-key': process.env.STRIPE_TEST_KEY ?? '',
+    'webhook-token': process.env.WEBHOOK_TOKEN ?? '',
+  },
+} satisfies E2EConfig;
+```
+
+`secrets.get()` はハンドルを返します。パスワードと同じように使います。
+
+```ts
+import { secrets } from 'e2e';
+
+await screen.getByLabel('Secret key').fill(secrets.get('stripe-key'));
+await agent.act('Connect Stripe with the given key', {
+  params: { apiKey: secrets.get('stripe-key') },
+});
+```
+
+`secrets` のエントリーは、編集可能な入力欄であればどこにでも入力できます。未設定の名前を指定すると `SECRET_UNAVAILABLE` が発生します。通常の入力欄はマスキングされないため、値が入っている間は、モデルに渡すものも含めてスクリーンショットに値が写ります。`secrets.get()` が返すのは `secrets` のエントリーだけなので、`credentials.admin` と `secrets.admin` は共存できます。
+
+`e2e.config.ts` では、[`basicAuth`](/web#protected-previews) のようにシークレットの受け入れを宣言したエンジンオプションに、`secrets.get()` でシークレットを渡せます。名前は設定読み込み時に検証されます。スクリーンショットは有効なままで、アプリの画像はマスキングされません。[エンジンオプションのシークレット](/reference/security#secrets-in-engine-options)を参照してください。
+
+## 実行ごとに値を上書きする
+
+環境変数を使うと、1 回の実行に対して設定値を置き換えられます。
+
+| エントリー | 環境変数 |
+| --- | --- |
+| `credentials.admin.username` | `E2E_USER_ADMIN_USERNAME` |
+| `credentials.admin.password` | `E2E_USER_ADMIN_PASSWORD` |
+| `secrets['stripe-key']` | `E2E_SECRET_STRIPE_KEY` |
+
+変数名にはエントリー名を大文字にし、`A-Z` と `0-9` 以外の文字をそれぞれ `_` に置き換えたものを使います。`stripe-key` と `stripe_key` のように、2 つのエントリーが同じ変数名になると、設定読み込みが `INVALID_CONFIG` で失敗します。
+
+<CodeGroup>
+```bash npm
+E2E_USER_ADMIN_PASSWORD=... E2E_SECRET_STRIPE_KEY=sk_test_... npx e2e run
+```
+
+```bash pnpm
+E2E_USER_ADMIN_PASSWORD=... E2E_SECRET_STRIPE_KEY=sk_test_... pnpm exec e2e run
+```
+
+```bash bun
+E2E_USER_ADMIN_PASSWORD=... E2E_SECRET_STRIPE_KEY=sk_test_... bunx e2e run
+```
+</CodeGroup>
+
+## 複数のログイン済みユーザーを使う
+
+ユーザーごとにセッションを保存します。そのうえで、各セッションと[エージェント](/agents)で同じテストを実行します。
+
+<Tabs>
+  <Tab title="tests/personas.setup.e2e.ts">
+
+```ts
+import { test } from '@e2e-dev/web';
+import { expect, credentials } from 'e2e';
+
+const PERSONAS = ['buyer', 'admin'] as const;
+
+test.setup('sign in each persona', { sessions: [...PERSONAS] }, async ({ app, screen, session, browser }) => {
+  for (const name of PERSONAS) {
+    const user = credentials.user(name);
+    await app.open('/login');
+    await screen.getByLabel('Username').fill(user.username);
+    await screen.getByLabel('Password').fill(user.password);
+    await screen.getByRole('button', 'Sign in').tap();
+    await expect(browser).toHaveURL('/dashboard');
+    await session.save(name);
+    await app.open('/logout');
+  }
+});
+```
+
+  </Tab>
+  <Tab title="tests/checkout.e2e.ts">
+
+```ts
+import { describe, test } from '@e2e-dev/web';
+
+for (const persona of ['buyer', 'admin'] as const) {
+  describe(`checkout as ${persona}`, { agent: persona, session: persona, tags: [persona] }, () => {
+    test('pays for one item', async ({ app, agent }) => {
+      await app.open('/cart');
+      await agent.act('pay for the item in the cart');
+      await agent.assert('the order confirmation is shown');
+    });
+  });
+}
+```
+
+  </Tab>
+</Tabs>
+
+それぞれの名前は、`agents` のエントリー、`credentials` のエントリー、保存済みセッションを指します。ペルソナごとにセッションを分ける必要がなければ、[同じフローを複数のエージェントで実行する](/agents#one-flow-several-personas)方法を使います。
+
+## 次のステップ
+
+<CardGroup cols={2}>
+  <Card title="test リファレンス" icon="flask" href="/reference/test">
+    `test.setup`、`sessions`、`session` オプションを確認します。
+  </Card>
+  <Card title="設定リファレンス" icon="sliders" href="/reference/config#credentials">
+    `credentials` と `secrets` ブロックを確認します。
+  </Card>
+</CardGroup>

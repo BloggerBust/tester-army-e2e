@@ -1,0 +1,251 @@
+---
+title: app
+description: すべてのプラットフォームで使える、アプリのライフサイクルを操作するフィクスチャ。
+"og:image": "https://e2e.com/docs/images/og/reference/app.png?v=0b63e99aab"
+"twitter:image": "https://e2e.com/docs/images/og/reference/app.png?v=0b63e99aab"
+---
+
+`app` フィクスチャは、テスト対象のアプリを開く、再起動する、状態をリセットするといった操作に加え、スクリーンショットの撮影と録画を行います。すべてのターゲットで利用できます。エンジンが対応していないメソッドを呼び出すと、`UNSUPPORTED_CAPABILITY` で失敗します。
+
+```ts title="tests/billing.e2e.ts"
+import { expect, test } from 'e2e';
+
+test('billing page', async ({ app, screen }) => {
+  await app.open('/settings/billing');
+  await expect(screen.getByRole('heading', { name: 'Billing' })).toBeVisible();
+  await app.screenshot('billing');
+});
+```
+
+## リファレンス
+
+| メンバー | 戻り値 |
+| --- | --- |
+| [`baseUrl`](#baseurl) | `string \| undefined` |
+| [`open`](#open) | `Promise<void>` |
+| [`restart`](#restart) | `Promise<void>` |
+| [`clearState`](#clearstate) | `Promise<void>` |
+| [`back`](#back) | `Promise<void>` |
+| [`screenshot`](#screenshot) | `Promise<string>` |
+| [`startRecording`](#startrecording) | `Promise<void>` |
+| [`stopRecording`](#stoprecording) | `Promise<[RecordedVideo, ...RecordedVideo[]]>` |
+
+`open`、`restart`、`clearState` には `timeout` が、それ以外には `actionTimeout` が適用されます。どちらも[設定](/reference/config)で指定し、デフォルトは `timeout` が 120000 ms、`actionTimeout` が 30000 ms です。ただし、いずれもテストの残り時間が上限になります。`app` のメソッドには、呼び出しごとにタイムアウトを指定するオプションはありません。
+
+### `baseUrl`
+
+ターゲットのアプリについて解決されたベース URL です。
+
+```ts
+const health = await fetch(`${app.baseUrl}/api/health`);
+```
+
+- 末尾にスラッシュはないため、`${app.baseUrl}/path` で結合するとスラッシュは 1 つになります。
+- `app.url` にポート `0` を指定した場合、`baseUrl` には実行時に割り当てられたポートが入ります。
+- `app.url` を宣言していないターゲットでは `undefined` です。`@e2e-dev/web` の `test` を使う場合、型は `string` になります。`web()` ターゲットは必ず `app.url` を宣言するためです。
+
+### `open`
+
+宣言された URL、その URL からの相対パス、または任意の `http(s)` の絶対 URL を開きます。
+
+```ts
+await app.open(); // the target's app.url
+await app.open('/settings/billing'); // a path relative to app.url
+await app.open('https://example.com/login'); // any http(s) URL
+```
+
+URL を持たないデバイスのターゲットでは、`open()` は指定されたアプリを新たに起動します。ターゲットに [`app.linkBase`](/reference/config#linkbase) が宣言されている場合、パスはアプリ内のリンクとして開きます。宣言されていなければ `APP_URL_REQUIRED` になります。リンクのベースがある場合、絶対リンクはそのまま開きます。アプリ独自のスキームも利用できます。
+
+| エラー | 発生条件 |
+| --- | --- |
+| `APP_URL_REQUIRED` | `app.url`（デバイスでは `app.linkBase`）を宣言していないターゲットでパスを指定した場合。 |
+| `POLICY_DENIED` | URL のスキームが `http:` または `https:` 以外の場合。ただし `about:blank` は許可されます。`app.linkBase` のあるデバイスでは、リンクのスキームが `file:`、`data:`、`javascript:`、`view-source:`、`blob:`、`filesystem:` の場合。 |
+| `APP_UNREACHABLE` | アプリの URL にアクセスできなかった場合。 |
+| `ACTION_FAILED` | 操作が失敗したか、タイムアウトした場合。 |
+| `UNSUPPORTED_CAPABILITY` | URL のあるターゲットに `session.open` がない場合、または URL のないターゲットに `session.restart` がない場合。`app.bundleId` のないデバイスでは、ターゲットのビルドがまだインストールされていない場合も該当します（[モバイル](/reference/mobile#the-app-under-test)）。 |
+
+### `restart`
+
+永続化された状態を保持したまま、実行コンテキストを作り直します。その後、ターゲットにベース URL が宣言されていれば、その URL でアプリを開き直します。
+
+```ts
+await app.restart();
+```
+
+| エラー | 発生条件 |
+| --- | --- |
+| `ACTION_FAILED`, `ENGINE_FAILURE` | 操作またはエンジンが失敗した場合。 |
+| `UNSUPPORTED_CAPABILITY` | `session.restart` がない場合、または `app.bundleId` のないデバイスでビルドがまだインストールされていない場合。 |
+
+### `clearState`
+
+永続化されたクライアントの状態を消去し、実行コンテキストを作り直します。その後、ターゲットにベース URL が宣言されていれば、その URL でアプリを開き直します。
+
+```ts
+test.beforeEach(async ({ app }) => {
+  await app.clearState();
+});
+```
+
+| エラー | 発生条件 |
+| --- | --- |
+| `ACTION_FAILED`, `ENGINE_FAILURE` | 操作またはエンジンが失敗した場合。 |
+| `UNSUPPORTED_CAPABILITY` | `session.reset` がない場合、または `app.bundleId` のないデバイスでビルドがまだインストールされていない場合。 |
+
+<Warning>
+直列実行グループ内で `clearState` を呼ぶと、グループが依存する共有状態を破壊します。通常のグループの `beforeEach` で使ってください。
+</Warning>
+
+### `back`
+
+1 つ前の画面に戻ります。
+
+```ts
+await app.back();
+```
+
+| エラー | 発生条件 |
+| --- | --- |
+| `APP_NOT_OPEN` | `app.open()` がまだ実行されていないか、エンジンが無効な状態を報告した場合。 |
+| `ACTION_FAILED` | 操作が失敗したか、タイムアウトした場合。 |
+| `UNSUPPORTED_CAPABILITY` | `session.back` がない場合。 |
+
+### `screenshot`
+
+機密フィールドをマスクした証跡用のスクリーンショットを撮影し、そのパスを返します。
+
+```ts
+const shot = await app.screenshot('after-checkout');
+```
+
+- ファイルは、試行のアーティファクトとして `screenshots/` 以下に保存されます。戻り値は絶対パスです。レポートにはアーティファクトのルートからの相対パスが記録されます。
+- `list` レポーターのサマリーでは、`Screenshots` 行に最大 10 ファイルの名前を表示し、残りは件数で示します。
+- `label` はステップの名前になり、ファイル名にも含まれます。
+- ページの遷移中に撮影した場合、その時点で表示されているドキュメントを撮影します。
+
+| エラー | 発生条件 |
+| --- | --- |
+| `UNSUPPORTED_CAPABILITY` | エンジンがスクリーンショットに対応していない場合。 |
+| `ENGINE_FAILURE` | 撮影に失敗した場合。 |
+
+<Note>
+`Secret` を入力した後も、スクリーンショットでマスクされるのは機密フィールドだけです。アプリが別の場所にシークレットを表示していれば、画像に写ります。[シークレット入力後のスクリーンショット](/reference/security#screenshots-after-a-secret-fill)を参照してください。
+</Note>
+
+### `startRecording`
+
+`stopRecording` が呼ばれるまで画面を録画します。
+
+```ts
+test('the dialog slides in', { video: 'off' }, async ({ app, screen }) => {
+  await app.open();
+  await app.startRecording({ name: 'dialog' });
+  await screen.getByRole('button', 'Open').tap();
+  await expect(screen.getByRole('dialog')).toBeVisible();
+  const [video] = await app.stopRecording();
+});
+```
+
+- 同時に実行できる録画は 1 つです。エンジンのレコーダーは 1 つなので、テストには `video: 'off'` を設定してください。テストの[動画](/reference/config#video)を録画中に開始すると失敗します。`--video`、`retain-on-failure`、`on-first-retry` で録画されるリトライも対象です。
+- テスト終了時に録画が続いている場合は、停止して保存します。
+- テストの動画と同様に、録画にはマスク処理を行いません。
+
+| エラー | 発生条件 |
+| --- | --- |
+| `UNSUPPORTED_CAPABILITY` | テストの動画を録画中の場合、またはエンジンが動画の録画に対応していない場合。 |
+| `INVALID_ARGUMENT` | 別の録画が実行中の場合。 |
+
+### `stopRecording`
+
+録画を停止し、再生順に動画を返します。
+
+```ts
+const [video] = await app.stopRecording();
+if ('path' in video) console.log(video.path);
+```
+
+- 動画は、試行の `recordings/` 以下に `001-<name>.<ext>` という名前で保存されるファイル（絶対パスの `path`）です。ホスト型ブラウザやデバイス側で録画を保持する場合は `url` になります。
+- 通常は動画が 1 つです。ただし Web では、録画中にページが置き換わると（`app.restart()`、`app.clearState()`）、ページごとに 1 つになります。
+- トレース内のステップには、各動画へのリンクが付きます。
+
+| エラー | 発生条件 |
+| --- | --- |
+| `INVALID_ARGUMENT` | 録画が実行されていない場合。 |
+| `ENGINE_FAILURE` | エンジンが動画を書き出さなかった場合。 |
+
+## 型
+
+```ts
+export interface App {
+  /**
+   * The resolved base URL of the target's app, with the port the run
+   * allocated when `app.url` declared port 0 and no trailing slash, so
+   * `${app.baseUrl}/api/users` joins with one slash; undefined for a target
+   * that declares no `app.url`.
+   */
+  readonly baseUrl: string | undefined;
+  /**
+   * Opens the app: the declared URL, a path relative to it, or any absolute
+   * http(s) URL. On a device target, which has no URL, it launches the pinned
+   * app fresh; a path opens as a link in it when the target declares
+   * `app.linkBase`.
+   */
+  open(path?: string): Promise<void>;
+  /**
+   * Recreates the execution context while preserving persisted state, then
+   * reopens the app at its base URL when the target declares one.
+   */
+  restart(): Promise<void>;
+  /**
+   * Clears persisted client state, recreates the execution context, then
+   * reopens the app at its base URL when the target declares one.
+   */
+  clearState(): Promise<void>;
+  /** Navigates back once. */
+  back(): Promise<void>;
+  /** Captures a redacted evidence screenshot and returns its absolute path. */
+  screenshot(label?: string): Promise<string>;
+  /**
+   * Starts recording the screen, until `stopRecording`. One recording at a
+   * time, and none while the test's `video` records: set `{ video: 'off' }`
+   * on the test.
+   */
+  startRecording(options?: RecordingOptions): Promise<void>;
+  /**
+   * Stops the recording and returns its videos in play order: one, or on the
+   * web one per page when the page was replaced while it recorded.
+   */
+  stopRecording(): Promise<readonly [RecordedVideo, ...RecordedVideo[]]>;
+}
+
+/** How `app.startRecording` names its file. */
+export interface RecordingOptions {
+  /** File name stem, `recordings/001-<name>.<ext>`; defaults to `recording`. */
+  readonly name?: string;
+}
+
+/** One video `app.stopRecording` returns: a file, or a link to a recording a hosted service keeps. */
+export type RecordedVideo = RecordedVideoFile | RecordedVideoLink;
+
+/** A video file under the attempt's `recordings/` directory. */
+export interface RecordedVideoFile {
+  /** Absolute path of the file. */
+  readonly path: string;
+  /** When it started recording, as an ISO timestamp. */
+  readonly startedAt: string;
+}
+
+/** A recording a hosted browser or device service keeps, by URL. */
+export interface RecordedVideoLink {
+  /** `http(s)` URL of the recording. */
+  readonly url: string;
+  /** Media type of what the URL serves: `video/mp4`, or `text/html` for a player page. */
+  readonly mediaType: string;
+  /** When it started recording, as an ISO timestamp. */
+  readonly startedAt: string;
+}
+```
+
+## 関連項目
+
+ブラウザ専用の操作は [`browser`](/reference/web) フィクスチャに、デバイスの操作は [`device`](/reference/mobile) にあります。

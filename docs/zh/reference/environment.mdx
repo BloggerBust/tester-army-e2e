@@ -1,0 +1,180 @@
+---
+title: 环境变量
+description: 运行器和官方引擎读取的所有变量及其作用。
+"og:image": "https://e2e.com/docs/images/og/reference/environment.png?v=67a4d71e70"
+"twitter:image": "https://e2e.com/docs/images/og/reference/environment.png?v=67a4d71e70"
+---
+
+这些变量用于配置运行器和官方包。表中的 `set` 表示变量存在，`value` 表示变量非空，`flag` 表示变量非空且不为 `0` 或 `false`。标志值不区分大小写。
+
+```bash
+export E2E_USER_ADMIN_PASSWORD="$ADMIN_PASSWORD"
+export E2E_CACHE_DIR=~/.cache/e2e
+export E2E_TELEMETRY_DISABLED=1
+```
+
+## 参考
+
+### 模型
+
+在 `e2e.config.ts` 中配置模型。模型的提供方读取 API 密钥：`gateway()` 使用 `AI_GATEWAY_API_KEY`，`openrouter()` 使用 `OPENROUTER_API_KEY`，`openai()` 使用 `OPENAI_API_KEY`。没有 `AI_GATEWAY_API_KEY` 时，`gateway()` 使用 [Vercel OIDC 令牌](/models#vercel-oidc-instead-of-a-key)。缺少凭据会导致首次模型调用失败。订阅模型则使用已保存的登录信息。参阅[模型](/models)和[订阅](/subscriptions)。
+
+| 变量 | 示例 | 读取条件 | 作用 |
+| --- | --- | --- | --- |
+| [`E2E_OAUTH_CREDENTIALS`](#e2e_oauth_credentials) | `E2E_OAUTH_CREDENTIALS="$(cat oauth.json)"` | value | JSON 格式的已保存订阅登录信息 |
+| [`OPENCODE_API_KEY`](#opencode_api_key) | `OPENCODE_API_KEY=<key>` | value | 替代已保存的 `opencode-console` 登录信息 |
+| `XDG_CONFIG_HOME` | `XDG_CONFIG_HOME=~/.config` | value | 已保存登录信息的目录，文件为 `$XDG_CONFIG_HOME/e2e/oauth.json`；默认 `~/.config/e2e/oauth.json` |
+
+#### `E2E_OAUTH_CREDENTIALS`
+
+JSON 格式的已保存订阅登录信息，即 `oauth.json` 的内容，供无法交互登录的机器使用。
+
+- `e2e/oauth/*` 模型和 `e2e models` 会读取它，替代 `$XDG_CONFIG_HOME/e2e/oauth.json`。
+- `e2e login` 和 `e2e logout` 拒绝更改它。
+- 刷新后的令牌不会写回。
+
+#### `OPENCODE_API_KEY`
+
+OpenCode Console 服务账户 API 密钥或 OpenCode Go 订阅 API 密钥。`opencodeConsole()` 和 `e2e models opencode-console` 使用它替代已保存的 `opencode-console` 登录信息。OpenCode 读取相同的变量。
+
+### 凭据和机密值
+
+| 变量 | 示例 | 读取条件 | 作用 |
+| --- | --- | --- | --- |
+| `E2E_USER_<NAME>_USERNAME` | `E2E_USER_ADMIN_USERNAME=admin@example.test` | set | 替代 `credentials.<name>.username` |
+| `E2E_USER_<NAME>_PASSWORD` | `E2E_USER_ADMIN_PASSWORD="$ADMIN_PASSWORD"` | set | 替代 `credentials.<name>.password` |
+| `E2E_SECRET_<NAME>` | `E2E_SECRET_API_KEY="$API_KEY"` | set | 替代 `secrets.<name>` 的值 |
+
+- `<NAME>` 是名称转为大写后，将所有不在 `A-Z0-9` 范围内的字符替换为 `_` 的结果，因此 `power-user` 会变成 `E2E_USER_POWER_USER_USERNAME`。
+- 如果两个凭据或两个机密值的名称映射到同一个 `<NAME>`，配置加载时会报 `INVALID_CONFIG`，无论是否设置了变量。这样一次轮换就不会替换两个条目。错误信息会列出条目和变量。例如，`api-key` 和 `api_key` 都读取 `E2E_SECRET_API_KEY`；`svc-a` 和 `svc_a` 都读取 `E2E_USER_SVC_A_USERNAME` 和 `_PASSWORD`。
+- 凭据和机密值可以同名，因为它们的前缀不同。
+- 配置中不存在的名称对应的变量会被忽略。
+- 密码或机密值为空，或少于 6 个字符（码点），都会报 `INVALID_CONFIG`。脱敏会改写值的每一次出现，过短的值会连普通文本也一起改写。用户名可以为空。
+
+### 运行模式
+
+| 变量 | 示例 | 读取条件 | 作用 |
+| --- | --- | --- | --- |
+| [`CI`](#ci) | `CI=1` | flag | CI 模式 |
+
+#### `CI`
+
+启用 CI 模式：
+
+- `retries` 默认为 1，`workers` 默认为 1。
+- `cache` 默认为 `read-only`。
+- 聚焦测试会报 `ONLY_IN_CI`。
+- 应用命令上的 `reuseExisting` 会被忽略。
+
+### 回放缓存
+
+| 变量 | 示例 | 读取条件 | 作用 |
+| --- | --- | --- | --- |
+| [`E2E_CACHE_DIR`](#e2e_cache_dir) | `E2E_CACHE_DIR=~/.cache/e2e` | value | 替代 [`cache.dir`](/reference/config#cache) |
+
+#### `E2E_CACHE_DIR`
+
+替代 `e2e run` 和 `e2e cache` 的 [`cache.dir`](/reference/config#cache)，相对于项目根目录解析。
+
+- `~` 或开头的 `~/` 表示主目录。
+- `--cache-dir` 优先于它。
+- 自定义 `cache.store` 会忽略它。
+- 缓存模式保持配置中的设置，`--no-cache` 仍会关闭缓存。
+
+### 诊断
+
+| 变量 | 示例 | 读取条件 | 作用 |
+| --- | --- | --- | --- |
+| `NO_COLOR` | `NO_COLOR=1` | set | CLI 使用纯文本输出。未设置时，TTY 或 CI 中启用颜色，通过管道输出时关闭颜色 |
+| `FORCE_COLOR` | `FORCE_COLOR=1` | set | 即使通过管道输出，CLI 也使用彩色输出 |
+| `TERM` | `TERM=dumb` | value | `dumb` 让 `e2e init` 显示静态标志，不播放动画，与 CI 中一样 |
+| `GITHUB_SHA`、`GITHUB_HEAD_REF`、`GITHUB_REF_NAME` | `GITHUB_REF_NAME=main` | value | 当 `git` 无法读取项目根目录时，报告在 `run.vcs` 下记录的提交和分支。`GITHUB_HEAD_REF` 优先于 `GITHUB_REF_NAME` |
+
+`--debug` 和 `--ai-trace` 是标志，不是变量；参阅 [CLI](/reference/cli#e2e-run)。
+
+### 遥测
+
+| 变量 | 示例 | 读取条件 | 作用 |
+| --- | --- | --- | --- |
+| `E2E_TELEMETRY_DISABLED` | `E2E_TELEMETRY_DISABLED=1` | flag | 关闭匿名使用遥测和[更新检查](/reference/cli#help-and-version)。`e2e telemetry disable` 会在偏好设置文件中保存同样的遥测选择 |
+| `DO_NOT_TRACK` | `DO_NOT_TRACK=1` | flag | 与 `E2E_TELEMETRY_DISABLED` 相同 |
+| `E2E_UPDATE_CHECK_DISABLED` | `E2E_UPDATE_CHECK_DISABLED=1` | flag | 关闭每天检查 e2e 新版本的功能 |
+| `NO_UPDATE_NOTIFIER` | `NO_UPDATE_NOTIFIER=1` | flag | 与 `E2E_UPDATE_CHECK_DISABLED` 相同 |
+| `npm_config_registry` | `npm_config_registry=https://npm.example.com/` | value | [`e2e upgrade`](/reference/cli#e2e-upgrade) 读取版本的包注册表；默认为 `https://registry.npmjs.org/`。包管理器会为它们运行的命令设置此变量 |
+| `E2E_TELEMETRY_DEBUG` | `E2E_TELEMETRY_DEBUG=1` | flag | 将每个遥测事件输出到 stderr，而不发送 |
+| [`E2E_TELEMETRY_FLEET`](#e2e_telemetry_fleet) | `E2E_TELEMETRY_FLEET=acme` | value | 指定为用户运行 e2e 的平台名称 |
+| `XDG_CONFIG_HOME` | `XDG_CONFIG_HOME=~/.config` | value | 偏好设置文件和更新检查的 `update-check.json` 所在目录，为 `$XDG_CONFIG_HOME/e2e`；默认 `~/.config/e2e` |
+| `APPDATA` | `APPDATA=C:\Users\ada\AppData\Roaming` | value | Windows 上对应的目录，为 `%APPDATA%\e2e`；默认 `~/AppData/Roaming/e2e` |
+
+#### `E2E_TELEMETRY_FLEET`
+
+指定为用户运行 e2e 的平台名称。
+
+- 事件归属于 `fleet:<name>`，而非每台机器的 ID。
+- 不会写入偏好设置文件，也不会输出通知。
+- 非简单标识符的值会作为 `other` 发送。
+
+#### 检测到的环境
+
+遥测还会检查 CI 厂商和编码智能体设置的标记。只发送推导出的名称。
+
+| 标记 | 报告为 |
+| --- | --- |
+| `GITHUB_ACTIONS`、`GITLAB_CI`、`CIRCLECI`、`BUILDKITE`、`JENKINS_URL`、`TRAVIS`、`BITBUCKET_BUILD_NUMBER`、`TF_BUILD`、`TEAMCITY_VERSION`、`CODEBUILD_BUILD_ID`、`VERCEL`、`NETLIFY`、`DRONE`、`SEMAPHORE`、`APPVEYOR`、`WOODPECKER`、`EAS_BUILD`、`BITRISE_IO`、`CM_BUILD_ID`、`CI_XCODE_CLOUD` | `ci_name`：`github-actions`、`gitlab`、`circleci`、`buildkite`、`jenkins`、`travis`、`bitbucket`、`azure-pipelines`、`teamcity`、`aws-codebuild`、`vercel`、`netlify`、`drone`、`semaphore`、`appveyor`、`woodpecker`、`eas`、`bitrise`、`codemagic`、`xcode-cloud`；仅设置 `CI` 时为 `unknown` |
+| `CLAUDECODE`、`CLAUDE_CODE`、`CURSOR_AGENT`、`CURSOR_TRACE_ID`、`CODEX_SANDBOX`、`CODEX_THREAD_ID`、`CODEX_CI`、`GEMINI_CLI`、`COPILOT_GITHUB_TOKEN`、`COPILOT_MODEL`、`COPILOT_ALLOW_ALL`、`OPENCODE_CLIENT`、`AUGMENT_AGENT`、`ANTIGRAVITY_AGENT`、`REPL_ID`、`AI_AGENT` | `coding_agent`：`claude-code`、`cursor`、`codex`、`gemini-cli`、`copilot`、`opencode`、`augment`、`antigravity`、`replit`、`other` |
+| `WSL_DISTRO_NAME` | `wsl: true` |
+| `npm_config_user_agent` | `package_manager`：调用命令的包管理器。`e2e init` 读取同一变量来选择安装命令 |
+
+发送的内容以及查看方式，请参阅[遥测](/telemetry)页面。
+
+### 报告器
+
+`@e2e-dev/github` 在运行结束时读取 GitHub Actions 设置的变量：
+
+| 变量 | 示例 | 读取条件 | 作用 |
+| --- | --- | --- | --- |
+| `GITHUB_ACTIONS` | `GITHUB_ACTIONS=true` | value | 未设置时，报告器不发布任何内容，并说明原因 |
+| `GITHUB_REPOSITORY`、`GITHUB_RUN_ID`、`GITHUB_EVENT_NAME`、`GITHUB_WORKFLOW`、`GITHUB_JOB` | `GITHUB_REPOSITORY=acme/shop` | value | 始终由运行器设置。缺少任何一个都会导致报告器失败，并指出变量名。仓库和运行 ID 用于构建产物链接。事件名称显示在“不是拉取请求（PR）”行中。工作流和作业名称会加入标记，以便重新运行时找到自己的评论 |
+| `GITHUB_TOKEN`、`GH_TOKEN` | `GITHUB_TOKEN=<token>` | value | 用于发布评论；优先使用第一个已设置的变量。未设置时，仍会写入作业摘要。Fork 的 `pull_request` 令牌为只读，无法发布；参阅[未发布任何内容时](/github#when-nothing-is-posted) |
+| `GITHUB_EVENT_PATH`、`GITHUB_REF` | `GITHUB_REF=refs/pull/42/merge` | value | 从事件载荷读取拉取请求（PR）编号和最新提交，或从 `refs/pull/N/merge` 读取编号 |
+| `GITHUB_SHA` | `GITHUB_SHA=<commit>` | value | 事件与拉取请求（PR）无关时，源代码链接指向的提交 |
+| `GITHUB_WORKSPACE` | `GITHUB_WORKSPACE=/home/runner/work/shop/shop` | value | 检出根目录。源代码链接会添加项目在其中的路径，让子目录中的测试套件链接到正确文件 |
+| `GITHUB_SERVER_URL`、`GITHUB_API_URL` | `GITHUB_SERVER_URL=https://github.example.com` | value | 用于 Enterprise Server 的 GitHub 主机。默认分别为 `https://github.com` 和 `https://api.github.com` |
+| `GITHUB_STEP_SUMMARY` | `GITHUB_STEP_SUMMARY=<file>` | value | 评论文本追加到的作业摘要文件 |
+
+### 引擎
+
+| 变量 | 示例 | 读取条件 | 作用 |
+| --- | --- | --- | --- |
+| `PLAYWRIGHT_BROWSERS_PATH` | `PLAYWRIGHT_BROWSERS_PATH=~/.cache/ms-playwright` | value | Playwright 的浏览器缓存，引擎的 `prepare` 钩子会遵循此设置 |
+| `PLAYWRIGHT_SKIP_BROWSER_GC` | `PLAYWRIGHT_SKIP_BROWSER_GC=0` | value | 引擎安装浏览器时默认为 `1`，保留缓存中的其他浏览器。`0` 允许安装过程移除它们 |
+| `KERNEL_API_KEY` | `KERNEL_API_KEY=<key>` | value | `@e2e-dev/kernel` 的 `kernel()` 创建浏览器所用的 API 密钥。未设置时，浏览器租用失败。参阅 [Kernel](/integrations/kernel) |
+| `LIGHTPANDA_PATH` | `LIGHTPANDA_PATH=/opt/lightpanda` | value | `@e2e-dev/lightpanda` 的 `lightpanda()` 启动 CDP 服务器所用的二进制文件。未设置时，使用 `PATH`、`~/.lightpanda` 或 `~/.local/bin` 中的 `lightpanda`。参阅 [Lightpanda](/integrations/lightpanda) |
+| `MOLI_PATH` | `MOLI_PATH=/opt/moli` | value | 未设置 `binary` 时，`@e2e-dev/moli` 的 `moli()` 启动的可执行文件。没有 `MOLI_PATH` 时，先搜索 `PATH`，再搜索 `~/.local/bin/moli`。参阅 [Moli](/integrations/moli) |
+| [`EXPO_TOKEN`](#expo_token) | `EXPO_TOKEN=<token>` | value | `@e2e-dev/eas` 的 `expoSimulators()` 使用的 Expo 访问令牌 |
+| `HOME`、`USERPROFILE` | `HOME=/home/ada` | value | 没有 `EXPO_TOKEN` 时，`expoSimulators()` 查找 eas-cli 登录信息的位置：Windows 上使用 `USERPROFILE`，其他系统使用 `HOME`，未设置时使用操作系统用户的主目录 |
+| `LIMRUN_API_KEY` | `LIMRUN_API_KEY=<key>` | value | `@e2e-dev/limrun` 的 `limrun()` 租用设备所用的 API 密钥。未设置时，租用失败并报 `INVALID_CONFIG`。参阅 [Limrun](/integrations/limrun) |
+| `LIMRUN_BASE_URL` | `LIMRUN_BASE_URL=<url>` | value | Limrun API 主机。默认 `https://api.limrun.com` |
+| `BROWSERSTACK_USERNAME`、`BROWSERSTACK_ACCESS_KEY` | `BROWSERSTACK_USERNAME=acme_AbC123` | value | `@e2e-dev/browserstack` 的 `browserstack()` 租用设备所用的 BrowserStack 用户名和访问密钥。缺少任意一个都会导致设备租用失败。参阅 [BrowserStack](/integrations/browserstack) |
+| `BROWSERSTACK_API_ENDPOINT` | `BROWSERSTACK_API_ENDPOINT=<url>` | value | `browserstack()` 上传 `https` 构建和查询会话录制内容所用的 App Automate API 基础 URL。默认 `https://api-cloud.browserstack.com/app-automate`。值不是 http(s) URL，或包含用户名或密码时，会失败并报 `INVALID_CONFIG` |
+| `LT_USERNAME`、`LT_ACCESS_KEY` | `LT_USERNAME=acme` | value | `@e2e-dev/testmu` 的 `testmu()` 租用设备所用的 TestMu AI 用户名和访问密钥。缺少任意一个都会导致设备租用失败。`@e2e-dev/testmu/web` 的 `testmuBrowsers()` 只将它们放入每个浏览器会话的 CDP URL 中，缺少任意一个都会导致浏览器租用失败。参阅 [TestMu AI](/integrations/testmu) |
+| `TESTMU_API_ENDPOINT` | `TESTMU_API_ENDPOINT=<url>` | value | `testmu()` 查询会话录制内容所用的 TestMu AI 会话 API 基础 URL。默认 `https://mobile-api.lambdatest.com/mobile-automation/api/v1`。值不是 http(s) URL，或包含用户名或密码时，会导致查询失败并报 `INVALID_CONFIG`。agent-device 的 TestMu AI 插件也会读取它 |
+| `E2B_API_KEY` | `E2B_API_KEY=<key>` | value | `@e2e-dev/e2b` 的 `e2b()` 和 `@e2e-dev/e2b/web` 的 `e2bBrowsers()` 创建沙箱所用的 API 密钥。未设置时，租用失败并报 `INVALID_CONFIG`。参阅 [E2B](/integrations/e2b) |
+| `E2B_DOMAIN` | `E2B_DOMAIN=e2b.example.com` | value | 提供方创建沙箱所用的 E2B 域名。默认 `e2b.app`。使用专用 E2B 集群时设置 |
+| `E2B_API_URL` | `E2B_API_URL=<url>` | value | 提供方调用的 E2B API URL。默认 `https://api.<E2B_DOMAIN>` |
+| `E2B_SANDBOX_URL` | `E2B_SANDBOX_URL=<url>` | value | 提供方发送沙箱命令和上传内容的 URL。默认由 E2B SDK 根据 `E2B_DOMAIN` 构建。如果启动 e2e 的 shell 设置了它，运行环境必须设置相同的值，否则租用失败并报 `INVALID_CONFIG` |
+| `E2E_WEB_BROWSERS_<TARGET>_<digest>` | - | value | `@e2e-dev/web` 在 `prepare` 中写入；每个工作进程读取它来找到租用的浏览器。不要手动设置 |
+| `E2E_AGENT_DEVICE_POOL_<TARGET>_<digest>` | - | value | `@e2e-dev/mobile` 在 `prepare` 中写入；每个工作进程读取它来找到已启动的设备。不要手动设置 |
+
+#### `EXPO_TOKEN`
+
+`@e2e-dev/eas` 的 `expoSimulators()` 启动和停止模拟器会话所用的 Expo 访问令牌。参阅 [Expo Simulators](/integrations/eas)。
+
+- 未设置时，使用主目录下 `.expo/state.json` 中的 eas-cli 登录信息（[`HOME`、`USERPROFILE`](#engines)）。
+- 两者都不存在时，设备租用失败。
+
+## 应用进程继承的变量
+
+应用的 `command` 会接收 `PATH`、`HOME`、`TMPDIR`、`TMP`、`TEMP`、`SystemRoot` 和 `COMSPEC`，以及 `command.inheritEnv` 匹配的变量和 `command.env` 设置的所有变量。
+
+读取 `APP_URL` 的是脚手架生成的配置模块，而不是运行器。如果开发服务器也需要它，请通过 `command.env` 传入。

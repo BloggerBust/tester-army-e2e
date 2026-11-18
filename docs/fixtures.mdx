@@ -18,8 +18,8 @@ can create its data through the app with [goals](/core-concepts#goals):
 import { test as base } from '@e2e-dev/web';
 import { expect, unique } from 'e2e';
 
-/** A fresh project for each test, created and deleted through the app. */
-export const test = base.extend<{ project: string }>({
+export const test = base.extend<{ project: string; task: string }>({
+  /** A fresh project, created and deleted through the app. */
   project: async ({ app, agent, screen }, use) => {
     const name = `Launch plan ${Date.now()}`;
     await app.open('/projects');
@@ -30,13 +30,10 @@ export const test = base.extend<{ project: string }>({
     await agent.act('delete the project {name}', { params: { name: unique(name) } });
     await expect(screen.getByRole('link', name)).toBeHidden();
   },
-});
-
-/** One task in that project. Deleting the project deletes it too. */
-export const taskTest = test.extend<{ task: string }>({
-  task: async ({ agent, screen }, use) => {
+  /** One task in that project. Deleting the project deletes it too. */
+  task: async ({ project, agent, screen }, use) => {
     const title = 'Write the announcement';
-    await agent.act('add a task {title}', { params: { title } });
+    await agent.act('add a task {title} to the project {project}', { params: { title, project } });
     await expect(screen.getByRole('checkbox', title)).toBeVisible();
     await use(title);
   },
@@ -48,7 +45,7 @@ teardown. Import the extended `test` in your test files:
 
 ```ts title="tests/tasks.e2e.ts"
 import { expect } from 'e2e';
-import { taskTest as test } from './fixtures.ts';
+import { test } from './fixtures.ts';
 
 test('completes a task', { session: 'admin' }, async ({ screen, task }) => {
   await screen.getByRole('checkbox', task).check();
@@ -65,28 +62,108 @@ test API, a `fetch` call is faster.
 
 ## Build one fixture on another
 
-A fixture can read only the fixtures of the `test` it extends. So `task`
-uses `project` through a second `extend`. Teardown runs in reverse order.
+A fixture names the fixtures it needs in its first parameter, and e2e sets
+those up first. `task` names `project`, so a test that names `task` gets a
+project too. Teardown runs in reverse order.
 
-## Give each setup its own test
+A fixture can name the fixtures of the `test` it extends and the ones
+declared beside it, in any order. One that needs none takes `({}, use)`.
 
-Every fixture in a chain runs for every test registered through it, named
-or not. Export one `test` for each setup, like `test` and `taskTest` above.
+## Set up only what a test names
+
+e2e sets a fixture up only for a test that names it: in the test body, in a
+`beforeEach` or `afterEach` hook, or in another fixture the test uses. A test
+that names no fixture sets none up, so one `test` can hold every fixture of
+the suite.
+
+Name fixtures by destructuring the first parameter. e2e reads the names from
+it, so `async (fixtures) => {}` and a rest property (`{ app, ...rest }`)
+fail when the file is collected.
+
+## Run a fixture for every test
+
+Set `auto: true` on a fixture that tests need and don't name, such as one
+that resets data:
+
+```ts title="tests/fixtures.ts"
+export const test = base.extend<{ cleanData: void }>({
+  cleanData: [async ({ app }, use) => {
+    await fetch(`${app.baseUrl}/api/test/reset`, { method: 'POST' });
+    await use();
+  }, { auto: true }],
+});
+```
+
+With `{ scope: 'worker', auto: true }` it runs one time per worker.
+
+## Extend a built-in fixture
+
+Give a fixture the name of a built-in fixture, such as `app` or `device`, to
+run code around it. Inside the function the name is the built-in. Tests and
+hooks that name it get the value you pass to `use`:
+
+```ts title="tests/fixtures.ts"
+export const test = base.extend({
+  device: async ({ device }, use) => {
+    await device.setPermission('camera', 'deny');
+    await use(device);
+  },
+});
+```
+
+The fixture keeps the [scope of the built-in fixture](/reference/test#fixtures).
+On a mobile target `device` is a worker fixture, so this one runs one time
+per worker and `beforeAll` gets it. See
+[Extending a fixture](/reference/test#extending-a-fixture).
+
+## Share a fixture across a worker
+
+A worker fixture is set up one time per worker and target, by the first test
+or suite hook that names it, and torn down when the worker ends. Use one for a
+database, a server, or an API client that many tests share. Declare it with `{ scope: 'worker' }` and type it with the second
+type argument:
+
+```ts title="tests/fixtures.ts"
+export const test = base.extend<{}, { database: Database }>({
+  database: [async ({}, use) => {
+    const database = await startDatabase();
+    await use(database);
+    await database.stop();
+  }, { scope: 'worker' }],
+});
+```
+
+A worker fixture outlives every test, so it sees worker fixtures only: its
+own kind, and the [built-in fixtures](/reference/test#fixtures) whose scope is
+worker on the target.
+
+Declare it in a module your test files import, not in a test file. A test
+file loads again after a failed test and for each serial group and setup test,
+and a worker fixture it declares gets a
+new instance each time. The old instance stays set up until the worker ends.
 
 ## Read fixtures in hooks
 
-Register the hook on your extended `test` to get the fixture types:
+Register the hook on your extended `test` to get the fixture types. A hook
+names its fixtures like a test does:
 
 ```ts
-taskTest.beforeEach(async ({ screen, project }) => {
+test.beforeEach(async ({ screen, project }) => {
   await expect(screen.getByRole('heading', project)).toBeVisible();
 });
 ```
 
+`beforeAll` and `afterAll` get worker fixtures only. A device keeps its state
+between tests, so on mobile the built-in fixtures `device`, `app`, and
+`screen` are worker fixtures too. A browser test gets a new context, so put UI
+setup in `beforeEach`. See the scope of each
+[built-in fixture](/reference/test#fixtures).
+
 ## When a fixture fails
 
-An error in setup fails the test in `beforeEach`. An error in teardown is
-reported in `afterEach`. See the [full list of mistakes](/reference/test#your-own-fixtures).
+An error in setup fails the test in `beforeEach`, and an `afterEach` hook
+that names the failed fixture is skipped. An error in teardown is reported in
+`afterEach`. See the [full list of mistakes](/reference/test#your-own-fixtures).
 
 ## Next
 

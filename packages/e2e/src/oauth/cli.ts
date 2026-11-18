@@ -4,10 +4,10 @@
  * the flags commander parsed.
  */
 
-import { spawn } from 'node:child_process';
 import * as clack from '@clack/prompts';
 import pc from 'picocolors';
 import { sanitizeText } from '@e2e-dev/core/lib/internal/errors';
+import { spawnBrowserCommand } from '../internal/open-browser.ts';
 import { browserCommand } from './browser.ts';
 import { OAuthError } from './errors.ts';
 import { login, logout } from './login.ts';
@@ -266,12 +266,5 @@ function defaultIo(): CliIo {
 /** Best effort: the URL is printed regardless, so a failure to open a browser is not an error. */
 function openInBrowser(url: string): void {
   const command = browserCommand(process.platform, url);
-  if (command === undefined) return;
-  try {
-    const child = spawn(command.command, [...command.args], { stdio: 'ignore', detached: true });
-    child.on('error', () => {});
-    child.unref();
-  } catch {
-    // The printed URL is the fallback.
-  }
+  if (command !== undefined) spawnBrowserCommand(command);
 }

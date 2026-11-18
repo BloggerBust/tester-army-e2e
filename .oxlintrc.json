@@ -33,7 +33,9 @@
     // Helpers inside page.evaluate callbacks must stay inline to serialize.
     "unicorn/consistent-function-scoping": "off",
     // Conflicts with the conditional-spread idiom exactOptionalPropertyTypes forces.
-    "oxc/no-map-spread": "off"
+    "oxc/no-map-spread": "off",
+    // A fixture that depends on none says so with an empty pattern: `async ({}, use) => {}`.
+    "eslint/no-empty-pattern": ["error", { "allowObjectPatternsAsParameters": true }]
   },
   "jsPlugins": [{ "name": "e2e", "specifier": "./scripts/oxlint-plugin/index.ts" }],
   "overrides": [

@@ -87,6 +87,7 @@ function makeTest(file: string, title: string, overrides: Partial<CollectedTest>
     kind: 'test',
     title,
     titlePath: [title],
+    names: [],
     declarationIndex: 0,
     options: {},
     sessions: [],

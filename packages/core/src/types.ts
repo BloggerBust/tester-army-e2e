@@ -13,11 +13,23 @@ import type { StepCacheInfo } from './run/steps.ts';
 import type { EngineHandle } from './engine/index.ts';
 import type { KeyModifier, Momentum, ScrollDirection, SelectOption, ViewportPoint } from './engine/contract.ts';
 import type { CacheStore } from './cache/store.ts';
+import type { FixtureDefinitions, FixtureOverrides, WorkerFixtures } from './types/fixtures.ts';
 
 export type { KeyModifier, Momentum, ScrollDirection, SelectOption } from './engine/contract.ts';
 export type { CacheReadResult, CacheStore } from './cache/store.ts';
 export type { DerivedReason } from './cache/trace.ts';
 export type { StepCacheInfo } from './run/steps.ts';
+export type {
+  FixtureDefinitions,
+  FixtureFn,
+  FixtureOverride,
+  FixtureOverrides,
+  FixtureScope,
+  SuiteFixtures,
+  TestFixtureDefinition,
+  WorkerFixtureDefinition,
+  WorkerFixtures,
+} from './types/fixtures.ts';
 export type {
   Credential,
   CredentialConfig,
@@ -720,11 +732,6 @@ export interface SetupFixtures extends TestFixtures {
   readonly session: SetupSession;
 }
 
-export interface SuiteFixtures {
-  /** The target's platform label: `web`, `ios`, `android`, or an engine's own string. */
-  readonly platform: string;
-}
-
 export interface TestOptions {
   /** Attempt deadline in milliseconds; defaults to `config.timeout`. Innermost wins. */
   timeout?: number;
@@ -786,35 +793,22 @@ export interface SetupOptions extends Omit<TestOptions, 'session' | 'only' | 'sk
   agent?: string;
 }
 
-/** A test body. */
+/**
+ * A test body. It names the fixtures it uses by destructuring its first
+ * parameter (`async ({ app, screen }) => {}`), and the runner sets up only
+ * those; a body that takes the whole object (`async (fixtures) => {}`) or a
+ * rest property is a `COLLECTION_ERROR`. The same holds for a hook and for
+ * the first parameter of a `test.extend()` fixture.
+ */
 export type TestFn<Fixtures = TestFixtures> = (fixtures: Fixtures) => void | Promise<void>;
 /** A setup test body; `session.save` is the extra fixture. */
 export type SetupFn<Fixtures = TestFixtures> = (
   fixtures: Fixtures & SetupFixtures,
 ) => void | Promise<void>;
-/** A `beforeEach` or `afterEach` body. */
+/** A hook body: `beforeEach` and `afterEach` get the test's fixtures, `beforeAll` and `afterAll` its worker fixtures. */
 export type TestHookFn<Fixtures = TestFixtures> = (fixtures: Fixtures) => void | Promise<void>;
-/** A `beforeAll` or `afterAll` body. */
-export type SuiteHookFn = (fixtures: SuiteFixtures) => void | Promise<void>;
-/**
- * Defines one fixture: everything before `await use(value)` is its setup,
- * everything after is its teardown. The body, its hooks, and later fixtures
- * run while `use` is pending; it resolves once they are done, whether or not
- * the body failed.
- */
-export type FixtureFn<Fixtures, Value> = (
-  fixtures: Fixtures,
-  use: (value: Value) => Promise<void>,
-) => Promise<void>;
-/**
- * One definition per fixture `test.extend()` adds. A definition sees the
- * fixtures of the `test` it extends, not its siblings: a fixture that needs
- * another one goes in a chained `extend()`. A name the base already has is a
- * type error (and a `COLLECTION_ERROR` at runtime).
- */
-export type FixtureDefinitions<Base, Extra> = {
-  readonly [K in keyof Extra]: K extends keyof Base ? never : FixtureFn<Base, Extra[K]>;
-};
+/** @deprecated use `TestHookFn<WorkerFixtures>`. */
+export type SuiteHookFn = TestHookFn<WorkerFixtures>;
 /** A `describe` body. An async body is a type error. */
 export type SynchronousBody<Result> = Extract<Result, PromiseLike<unknown>> extends never
   ? () => Result
@@ -831,16 +825,21 @@ export interface TestCase {
 }
 
 /** The two call forms of `test`, shared with what `test.skipIf` and `test.runIf` return. */
-export interface TestRegistrar<Fixtures = TestFixtures> {
+export interface TestRegistrar<Fixtures = TestFixtures & WorkerFixtures> {
   /** Registers one test synchronously during module evaluation. */
   (title: string, fn: TestFn<Fixtures>): TestCase;
   /** Registers one configured test synchronously during module evaluation. */
   (title: string, options: TestOptions, fn: TestFn<Fixtures>): TestCase;
 }
 
-export interface TestAPI<Fixtures = TestFixtures> extends TestRegistrar<Fixtures> {
+/**
+ * The `test` function and its members. `Fixtures` are what a test attempt
+ * sets up for itself; `Worker` the fixtures that outlive a test, which the
+ * test, its hooks, and the suite hooks all see.
+ */
+export interface TestAPI<Fixtures = TestFixtures, Worker = WorkerFixtures> extends TestRegistrar<Fixtures & Worker> {
   /** Registers one skipped test. */
-  skip(title: string, fn: TestFn<Fixtures>): TestCase;
+  skip(title: string, fn: TestFn<Fixtures & Worker>): TestCase;
   /**
    * Inside a running test: skips it when `condition` is true (or always,
    * with no condition) by throwing, so nothing after the call runs. The
@@ -864,14 +863,14 @@ export interface TestAPI<Fixtures = TestFixtures> extends TestRegistrar<Fixtures
    * rejects the call: set `skip` on the serial `describe` instead. A Promise
    * condition also fails the call: await it first.
    */
-  skipIf<Condition>(condition: SynchronousCondition<Condition>): TestRegistrar<Fixtures>;
+  skipIf<Condition>(condition: SynchronousCondition<Condition>): TestRegistrar<Fixtures & Worker>;
   /**
    * Returns a function that registers one test, like `test(title, fn)`:
    * skipped when `condition` is falsy, `test.skipIf(!condition)`.
    */
-  runIf<Condition>(condition: SynchronousCondition<Condition>): TestRegistrar<Fixtures>;
+  runIf<Condition>(condition: SynchronousCondition<Condition>): TestRegistrar<Fixtures & Worker>;
   /** Registers one test that is expected to fail. */
-  fail(title: string, fn: TestFn<Fixtures>): TestCase;
+  fail(title: string, fn: TestFn<Fixtures & Worker>): TestCase;
   /**
    * Inside a running test: marks it expected to fail when `condition` is
    * true (or always, with no condition). The body keeps running. A test
@@ -884,9 +883,9 @@ export interface TestAPI<Fixtures = TestFixtures> extends TestRegistrar<Fixtures
   fail(condition: boolean, reason?: string): void;
   fail(reason?: string): void;
   /** Registers one focused local test. CI rejects focused tests. */
-  only(title: string, fn: TestFn<Fixtures>): TestCase;
+  only(title: string, fn: TestFn<Fixtures & Worker>): TestCase;
   /** Registers one setup test with statically declared session outputs. */
-  setup(title: string, options: SetupOptions, fn: SetupFn<Fixtures>): TestCase;
+  setup(title: string, options: SetupOptions, fn: SetupFn<Fixtures & Worker>): TestCase;
   /**
    * Returns the same runtime `test`, typed with an engine's contributed
    * fixtures. A pure type refinement, the fixtures still resolve from the
@@ -895,12 +894,30 @@ export interface TestAPI<Fixtures = TestFixtures> extends TestRegistrar<Fixtures
    *
    *   export const test = base.extend<{ device: Device }>();
    */
-  extend<Extra>(): TestAPI<Fixtures & Extra>;
+  extend<Extra = {}, ExtraWorker = {}>(): TestAPI<Fixtures & Extra, Worker & ExtraWorker>;
+  /**
+   * Returns a new `test` whose registrations extend fixtures it already
+   * has, built-in ones included. Inside the function the fixture's own name
+   * is the fixture it extends; the value it hands to `use` is what tests,
+   * hooks, and other fixtures receive under that name. It keeps the type and
+   * the scope of the fixture it extends:
+   *
+   *   export const test = base.extend({
+   *     app: async ({ app }, use) => {
+   *       await app.open('/dashboard');
+   *       await use(app);
+   *     },
+   *   });
+   */
+  extend(overrides: FixtureOverrides<Fixtures & Worker, Worker>): TestAPI<Fixtures, Worker>;
   /**
    * Returns a new `test` whose registrations carry these fixture
-   * definitions on top of the ones it already had. Each attempt sets them up
-   * in declaration order after the engine's fixtures, runs the hooks and the
-   * body with them, and tears them down in reverse order after `afterEach`:
+   * definitions on top of the ones it already had. Each attempt sets up the
+   * ones its body and its `beforeEach` and `afterEach` hooks name, and the
+   * ones those fixtures name, in declaration order with each after the
+   * fixtures it names; it runs the hooks and the body with them, and tears
+   * them down in reverse order after `afterEach`. A fixture nothing names is
+   * not set up:
    *
    *   export const test = base.extend<{ workspace: Workspace }>({
    *     workspace: async ({ browser }, use) => {
@@ -909,8 +926,27 @@ export interface TestAPI<Fixtures = TestFixtures> extends TestRegistrar<Fixtures
    *       await workspace.cleanup();
    *     },
    *   });
+   *
+   * A worker fixture (the second type argument, `[fn, { scope: 'worker' }]`)
+   * is set up once per worker and target, the first time a test or suite
+   * hook of the chain names it, and torn down when the worker ends:
+   *
+   *   export const test = base.extend<{}, { database: Database }>({
+   *     database: [async ({}, use) => {
+   *       const database = await startDatabase();
+   *       await use(database);
+   *       await database.stop();
+   *     }, { scope: 'worker' }],
+   *   });
+   *
+   * `auto: true` sets a fixture up whether or not anything names it: for
+   * every test (`[fn, { auto: true }]`), or once per worker
+   * (`[fn, { scope: 'worker', auto: true }]`). A suite hook sets up the auto
+   * worker fixtures of its chain, never a test fixture.
    */
-  extend<Extra>(fixtures: FixtureDefinitions<Fixtures, Extra>): TestAPI<Fixtures & Extra>;
+  extend<Extra = {}, ExtraWorker = {}>(
+    fixtures: FixtureDefinitions<Fixtures & Worker, Extra, Worker, ExtraWorker>,
+  ): TestAPI<Fixtures & Extra, Worker & ExtraWorker>;
   /** Declares a group synchronously. */
   describe<Result>(title: string, body: SynchronousBody<Result>): void;
   /** Declares a configured group synchronously. */
@@ -919,14 +955,14 @@ export interface TestAPI<Fixtures = TestFixtures> extends TestRegistrar<Fixtures
     options: DescribeOptions,
     body: SynchronousBody<Result>,
   ): void;
-  /** Registers a test-attempt setup hook. */
-  beforeEach(fn: TestHookFn<Fixtures>): void;
-  /** Registers a test-attempt teardown hook. */
-  afterEach(fn: TestHookFn<Fixtures>): void;
-  /** Registers a suite-instance setup hook. */
-  beforeAll(fn: SuiteHookFn): void;
-  /** Registers a suite-instance teardown hook. */
-  afterAll(fn: SuiteHookFn): void;
+  /** Registers a test-attempt setup hook: it runs after the test's fixtures are set up. */
+  beforeEach(fn: TestHookFn<Fixtures & Worker>): void;
+  /** Registers a test-attempt teardown hook: it runs before the test's fixtures are torn down. */
+  afterEach(fn: TestHookFn<Fixtures & Worker>): void;
+  /** Registers a suite setup hook, run once per describe between attempts, with the worker fixtures. */
+  beforeAll(fn: TestHookFn<Worker>): void;
+  /** Registers a suite teardown hook, run once per describe between attempts, with the worker fixtures. */
+  afterAll(fn: TestHookFn<Worker>): void;
 }
 
 /**
@@ -1161,8 +1197,10 @@ type NotAny<T> = 0 extends 1 & T ? never : T;
  * land on the value overload.
  */
 export interface ExpectCall {
-  <L extends Locator>(actual: NotAny<L>): AsyncExpectation;
-  <S extends Screen>(actual: NotAny<S>): ScreenExpectation;
+  /** `message` opens each assertion failure and an ambiguous locator's error, before the matcher and the locator it names. */
+  <L extends Locator>(actual: NotAny<L>, message?: string): AsyncExpectation;
+  /** `message` opens each assertion failure, before the matcher. */
+  <S extends Screen>(actual: NotAny<S>, message?: string): ScreenExpectation;
   <E extends object>(actual: Expectable<E>): E;
   /** `message` opens the failure text, so a bare `expected false to be true` says which check it was. */
   <T>(actual: T, message?: string): ValueExpectation<T>;
@@ -1170,8 +1208,10 @@ export interface ExpectCall {
 
 /** The `expect.soft(actual)` call: `expect(actual)` whose failures are kept instead of thrown. */
 export interface SoftExpectCall {
-  <L extends Locator>(actual: NotAny<L>): AsyncExpectation;
-  <S extends Screen>(actual: NotAny<S>): ScreenExpectation;
+  /** `message` opens each assertion failure and an ambiguous locator's error, before the matcher and the locator it names. */
+  <L extends Locator>(actual: NotAny<L>, message?: string): AsyncExpectation;
+  /** `message` opens each assertion failure, before the matcher. */
+  <S extends Screen>(actual: NotAny<S>, message?: string): ScreenExpectation;
   <E extends object>(actual: Expectable<E>): E;
   /** `message` opens the failure text, so a bare `expected false to be true` says which check it was. */
   <T>(actual: T, message?: string): SoftValueExpectation<T>;

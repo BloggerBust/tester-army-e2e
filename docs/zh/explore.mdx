@@ -1,0 +1,179 @@
+---
+title: 无需测试文件的探索
+description: 给智能体一个目标，无需测试文件。它会规划步骤、操作应用并报告发现。
+"og:image": "https://e2e.com/docs/images/og/explore.png?v=8969611dd1"
+"twitter:image": "https://e2e.com/docs/images/og/explore.png?v=8969611dd1"
+---
+
+import { Video } from '../snippets/video.jsx';
+
+`e2e explore` 根据目标而非测试文件，让智能体操作你的应用。智能体会规划一个步骤、执行它并记录发现，直到覆盖目标或耗尽预算，然后写出评估结果。它使用与 `agent.act()` 相同的模型、工具和操作规则。
+
+<Video>
+  <video src="/images/explore.mp4" aria-label="e2e explore 在有头模式的浏览器中操作应用，并在终端中报告发现。" muted loop playsInline controls />
+
+  `e2e explore --headed` 会操作应用，并在执行过程中报告发现。
+</Video>
+
+## 开始探索
+
+说明流程和用户目标，必要时添加限制：
+
+<CodeGroup>
+```bash npm
+npx e2e explore 'Explore the checkout flow like a first-time buyer and report anything off'
+```
+
+```bash pnpm
+pnpm exec e2e explore 'Explore the checkout flow like a first-time buyer and report anything off'
+```
+
+```bash bun
+bunx e2e explore 'Explore the checkout flow like a first-time buyer and report anything off'
+```
+</CodeGroup>
+
+限制可以是“在下单前停止”。未提供目标时，explore 使用 `Explore the app and find bugs`。步骤失败不会中止运行。
+
+如果没有 `e2e.config.ts`，explore 会先运行 [`e2e init`](/reference/cli#e2e-init) 向导。如果没有需要手动完成的事项，探索会立即开始。否则，init 会列出剩余步骤，例如 `npm install` 或设置模型密钥。在 CI 等没有终端的环境中，explore 会以 `CONFIG_NOT_FOUND` 失败。
+
+## 查看结果
+
+终端会实时显示每项发现和每个已完成的步骤：
+
+```text
+ ❯  web  Exploring  Explore this bookshop like a careful first-time buyer: browse the catalog, ...
+   ⚑ medium issue  Home greeting exposes an unresolved userName template (/)
+   ⚑ high issue  Neuromancer shows an impossible negative stock availability (/catalog)
+   ✓ 1  Catalog browsing 31.46s · 7 actions · 4 findings
+   ⚑ high issue  Cart total does not update when Hyperion quantity increases (/cart)
+   ⚑ trivial warning  Checkout newsletter label misspells Receive (/checkout)
+   ✓ 2  Cart quantities and removal 19.47s · 4 actions · 3 findings
+   ended: the agent covered the goal
+```
+
+`issue` 会使运行失败，退出码为 1。`warning` 不会。最终报告会将最严重的问题放在前面。每项发现都包含复现步骤，并尽可能附带截图。采取行动前，请将每项发现与其证据核对。其他退出码、JSON 报告和产物路径请参阅 [CLI 参考](/reference/cli#e2e-explore)。
+
+## 检查其他屏幕尺寸
+
+如果测试目标的引擎支持调整视口大小（网页端引擎支持），可以在目标中要求检查其他宽度下的布局：
+
+<CodeGroup>
+```bash npm
+npx e2e explore 'Check the pricing page at desktop, tablet, and phone widths for broken layouts'
+```
+
+```bash pnpm
+pnpm exec e2e explore 'Check the pricing page at desktop, tablet, and phone widths for broken layouts'
+```
+
+```bash bun
+bunx e2e explore 'Check the pricing page at desktop, tablet, and phone widths for broken layouts'
+```
+</CodeGroup>
+
+## 从已登录状态开始
+
+添加 `--session <name>`，指定[准备测试](/authentication)保存的会话名称：
+
+<CodeGroup>
+```bash npm
+npx e2e explore --session admin 'Explore the admin settings and find bugs'
+```
+
+```bash pnpm
+pnpm exec e2e explore --session admin 'Explore the admin settings and find bugs'
+```
+
+```bash bun
+bunx e2e explore --session admin 'Explore the admin settings and find bugs'
+```
+</CodeGroup>
+
+Explore 只运行该准备测试并恢复会话。探索智能体知道应用启动时已登录，因此不会规划登录步骤。
+
+截图会遮盖密码字段。应用在其他任何位置显示的值都会传给模型。参阅[填入机密值后的截图](/reference/security#screenshots-after-a-secret-fill)。
+
+## 探索拉取请求（PR）的改动
+
+添加 `--changed-since <ref>` 来探索分支的改动。规划器会读取自与该引用的合并基点以来的提交消息和已提交的差异，并将步骤用于改动可能影响的屏幕。
+
+<CodeGroup>
+```bash npm
+npx e2e explore --changed-since origin/main
+```
+
+```bash pnpm
+pnpm exec e2e explore --changed-since origin/main
+```
+
+```bash bun
+bunx e2e explore --changed-since origin/main
+```
+</CodeGroup>
+
+只有改动可能导致的缺陷才是 `issue`。应用其他部分的缺陷属于 `warning`，不会使运行失败。
+
+未提供目标时，目标为 `Explore what this change affects and find bugs in
+it`。此时，规划器可以跳过用户不可见的改动，例如只涉及文档或测试的改动。运行以 `skipped` 结束并通过。只有读取完整改动后才会跳过。大型差异、二进制文件或未提交的文件都会阻止跳过。
+
+分支本身的提交消息和代码可能影响这一判断。要区分跳过和未发现问题的探索，请查看 `run.explore.ended`。
+
+关于模型读取的内容，请参阅[安全](/reference/security#mcp-and-explore)。
+
+在 GitHub Actions 上，请在 `pull_request` 事件中使用独立作业运行。配置 [GitHub 报告器](/github)后，发现会发布到独立的拉取请求（PR）评论中。来自 fork 的运行无法发布评论；参阅[未发布任何内容时](/github#when-nothing-is-posted)。
+
+```yaml title=".github/workflows/explore.yml"
+on: pull_request
+
+jobs:
+  explore:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+    # An issue exits 1. Keep the findings as a review aid, not a merge gate.
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      # ...install, browsers
+      - run: npx e2e explore --changed-since origin/${{ github.base_ref }} --max-steps 4
+        env:
+          AI_GATEWAY_API_KEY: ${{ secrets.AI_GATEWAY_API_KEY }}
+          GITHUB_TOKEN: ${{ github.token }}
+```
+
+`fetch-depth: 0` 会将基准分支包含在检出内容中。如果没有它，运行会以 `INVALID_CHANGED_SINCE` 失败。
+
+安装和构建后请保持工作树干净，否则运行永远不会跳过。忽略 `.e2e/` 和构建输出。使用 `npx` 运行 e2e，不要使用可能重写 `pnpm-lock.yaml` 的 `pnpm exec`。
+
+<Warning>
+切勿在 `pull_request_target` 上运行。该运行持有你的机密值，而模型会读取 fork 编写的差异和提交消息。
+</Warning>
+
+## 如果运行过早停止
+
+运行会在 8 个步骤或 10 分钟后停止。要深入探索流程，请增大 `--max-steps <n>`（最多 100）或 `--timeout <ms>`（最多 `7200000`，即 2 小时）。
+
+如果完成主要流程后仍有剩余时间，运行会返回这些流程，尝试边界输入、组合筛选条件和重新加载；如果配置了多个账户且未指定 `--session`，还会尝试另一个账户。只有在无法到达任何新内容时才会提前结束。
+
+## 选择测试目标和智能体
+
+Explore 使用 `e2e.config.ts` 中的测试目标、应用命令、模型和智能体。通过 `--target <name>` 和 `--agent <name>` 选择。未指定 `--target` 时，explore 使用第一个测试目标。
+
+## 从代码中探索
+
+要从你自己的代码中启动探索，并使用配置值、取消操作和进度事件，请调用 [`e2e/runner` 中的 `explore`](/reference/runner#explore)。
+
+## 下一步
+
+<CardGroup cols={2}>
+  <Card title="Bug Bash" icon="bug" href="/bug-bash">
+    通过多次探索检查整个应用或分支，并用测试证实每个缺陷。
+  </Card>
+  <Card title="智能体和角色" icon="users" href="/agents">
+    explore 可以使用的智能体身份。
+  </Card>
+</CardGroup>

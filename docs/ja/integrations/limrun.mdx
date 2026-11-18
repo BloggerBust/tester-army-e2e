@@ -1,0 +1,152 @@
+---
+title: Limrun でモバイルアプリをテストする
+sidebarTitle: Limrun
+description: ホスト型の iOS シミュレーターと Android エミュレーターでモバイルアプリのテストを実行します。
+"og:image": "https://e2e.com/docs/images/og/integrations/limrun.png?v=9be019105e"
+"twitter:image": "https://e2e.com/docs/images/og/integrations/limrun.png?v=9be019105e"
+---
+
+`@e2e-dev/limrun` は、モバイルエンジン向けのホスト型デバイスプロバイダーです。
+ワーカーごとにデバイスを作成してアプリをインストールし、実行の終了時にデバイスを解放します。
+標準の `app`、`screen`、`expect` API を使って、アプリのユーザーフローをテストできます。
+
+## インストールと認証
+
+モバイルエンジンとそのピア依存関係とともに、連携パッケージをインストールします。
+
+<CodeGroup>
+```bash npm
+npm install --save-dev e2e @e2e-dev/mobile @e2e-dev/limrun @limrun/api
+```
+
+```bash pnpm
+pnpm add -D e2e @e2e-dev/mobile @e2e-dev/limrun @limrun/api
+```
+
+```bash bun
+bun add -d e2e @e2e-dev/mobile @e2e-dev/limrun @limrun/api
+```
+</CodeGroup>
+
+e2e を起動する環境に `LIMRUN_API_KEY` を設定します。CI ではシークレットとして保存してください。
+インスタンスの作成と操作の権限を持つキーを使います。
+プロバイダーは実行環境の環境変数を読み取ります。`lim login` のセッションや `LIM_API_KEY` は読み取りません。
+
+テストランナーには Node.js とパッケージの依存関係が必要です。Android の場合は、
+[Android SDK Platform-Tools](https://developer.android.com/tools/releases/platform-tools) の `adb` を
+`PATH` に追加してください。ローカルのエミュレーターは不要です。iOS のランナーにはローカルの Xcode も
+シミュレーターも必要ありません。アプリは別途、iOS シミュレーター用、または Android APK としてビルドしてください。
+
+## ターゲットの設定
+
+モバイルエンジンに `device: limrun()` を設定し、`appPath` にビルドのパスを指定します。
+次の設定は、Limrun の [app-flow サンプル](https://github.com/limrun-inc/testerarmy-e2e-limrun)の SwiftUI アプリを実行します。
+
+```ts title="e2e.config.ts"
+import type { E2EConfig } from 'e2e';
+import { mobile } from '@e2e-dev/mobile';
+import { limrun } from '@e2e-dev/limrun';
+
+export default {
+  targets: [{
+    name: 'ios',
+    engine: mobile({ platform: 'ios', device: limrun() }),
+    app: {
+      bundleId: 'dev.e2e.examples.swiftui',
+      appPath: 'build/HelloApp.app',
+    },
+  }],
+  workers: 2,
+} satisfies E2EConfig;
+```
+
+Android の場合は `platform: 'android'` を指定し、`bundleId` にアプリのパッケージ名、
+`appPath` に APK を指定します。パスはプロジェクトルートを基準に解決されます。
+プロバイダーはテストの開始前にビルドをインストールします。
+
+## アプリのフローをテストする
+
+安定したテスト ID と画面上のテキストを使い、フォームに入力して結果を確認します。
+次のテストでは、空のまま送信した後に入力を修正し、挨拶のスクリーンショットを保存します。
+
+```ts title="tests/greeting.e2e.ts"
+import { expect } from 'e2e';
+import { test } from '@e2e-dev/mobile';
+
+test('corrects an empty submission', async ({ app, screen }) => {
+  await app.open();
+  await screen.getByTestId('greet').click();
+  await expect(screen.getByText('Enter a name first.', { exact: true })).toBeVisible();
+
+  await screen.getByTestId('name').fill('Ada');
+  await screen.getByTestId('greet').click();
+  await expect(screen.getByText('Hello, Ada!', { exact: true })).toBeVisible();
+  await expect(screen.getByText('Enter a name first.', { exact: true })).not.toBeVisible();
+  await app.screenshot('greeting');
+});
+```
+
+Limrun は、SwiftUI アプリと Compose アプリに対して同じ 5 つのテストを実行する
+[実行可能なサンプル](https://github.com/limrun-inc/testerarmy-e2e-limrun)を管理しています。
+初期状態のフォーム、バリデーションエラーからの復帰、入力の前後の空白除去、繰り返し送信、アプリの再起動を確認します。
+両方のアプリを Limrun 上でリモートビルドし、設定には両方のターゲットを含めています。AI のキーは不要です。
+
+## 実行を録画する
+
+すべての試行を録画するには `--video` を追加します。
+
+<CodeGroup>
+```bash npm
+npx e2e run --video
+```
+```bash pnpm
+pnpm exec e2e run --video
+```
+```bash bun
+bunx e2e run --video
+```
+</CodeGroup>
+
+動画とスクリーンショットは、実行レポートとともに `.e2e/` 以下に保存されます。
+
+## デバイスオプションの選択
+
+| オプション | デフォルト | 用途 |
+| --- | --- | --- |
+| `region` | Limrun が選択 | `eu` や `us-east1` など、希望するリージョン。空き容量によっては別のリージョンが使われます。 |
+| `hardTimeout` | `1h` | 放置された実行も含む、デバイスの最大存続時間。`30m` や `2h` などの Go の duration 形式を使います。 |
+| `ios.model` | Limrun が選択 | `iphone` または `ipad`。 |
+| `android.model` | Limrun が選択 | `phone` または `tablet`。 |
+| `android.osVersion` | `15` | スケジューリングの参考情報として指定する Android のメジャーバージョン。 |
+
+各ワーカーには、テストランナー上で隔離された agent-device デーモンと、1 つの Limrun インスタンスが割り当てられます。
+デーモンは agent-device の Limrun ドライバーでアプリの操作と録画を行います。
+この連携は、モバイルエンジンと同じ agent-device バージョンに固定されており、割り当て前にその一致を確認します。
+
+デバイスは 5 分以内に準備とインストールを完了する必要があります。
+セットアップに失敗するとプロバイダーが後片付けを行い、実行の終了時や中断時にはエンジンが取得済みのすべてのデバイスを解放します。
+他のターゲットの実行中は、プロバイダーが待機中のドライバーのリースを更新します。
+デーモンはコマンド間も使用中のデバイスを維持します。ランナーが停止した場合でも、設定した最大存続時間を超えると強制的に終了します。
+実行時間より長いタイムアウトを選んでください。
+
+進捗出力にはインスタンス ID が表示されます。Limrun では `source=e2e` と `run=<run id>` のラベルで
+実行に対応するインスタンスを検索できます。録画は通常のモバイル成果物のパス、各試行ディレクトリ内の `video/video.mp4` に保存されます。
+
+## アプリの互換性を確認する
+
+Limrun の iOS トランスポートは、`locator.press('Enter')` などのキーボード操作を `UNSUPPORTED_CAPABILITY` で拒否します。
+フローに送信ボタンがある場合は、そのボタンをタップしてください。
+
+アプリで使うロケーターやライブラリを、対象のランタイムでテストしてください。
+挨拶のサンプルはネイティブのフォーム操作を示すものであり、すべてのモバイルフレームワークやコントロールとの互換性を保証するものではありません。
+
+## 次のステップ
+
+<CardGroup cols={2}>
+  <Card title="モバイルのテスト" icon="mobile-screen" href="/mobile">
+    アプリの起動、権限、モバイルのロケーターを設定します。
+  </Card>
+  <Card title="モバイル API" icon="code" href="/reference/mobile">
+    device フィクスチャとプロバイダーの契約を確認します。
+  </Card>
+</CardGroup>

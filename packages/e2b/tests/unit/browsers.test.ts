@@ -245,7 +245,7 @@ describe('e2bBrowsers()', () => {
   it('reads a download back from the sandbox', async () => {
     const provider = e2bBrowsers();
     expect(provider.downloads!.dir).toBe('/tmp/e2e-downloads');
-    const bytes = await provider.downloads!.read({ id: 'sbx9', cdpEndpoint: 'wss://x' }, '/tmp/e2e-downloads/report.csv', { ...context() });
+    const bytes = await provider.downloads!.read({ id: 'sbx9', cdpEndpoint: 'wss://x' }, '/tmp/e2e-downloads/report.csv', { ...context(), suggestedFilename: 'report.csv' });
     expect(new TextDecoder().decode(bytes)).toBe('file bytes');
     expect(sdk.state.read).toEqual([{ id: 'sbx9', path: '/tmp/e2e-downloads/report.csv' }]);
   });

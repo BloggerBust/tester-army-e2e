@@ -10,6 +10,8 @@ import { abortError, cancelledError } from '@e2e-dev/core/lib/internal/time';
 import type { SourceLocation } from '@e2e-dev/core/lib/internal/source';
 import type { AttemptBudget } from '@e2e-dev/core/lib/run/budget';
 import type { StepHoldRequest } from '@e2e-dev/core/lib/run/steps';
+import type { OperationContext, TargetSession } from '@e2e-dev/core/lib/engine/surface';
+import { traceScreen, type TraceScreenOptions } from '@e2e-dev/core/lib/run/step-screens';
 
 /** A step held before it runs, as the runner's `beforeStep` hook sees it. */
 export interface HeldStep {
@@ -150,5 +152,57 @@ export class AttemptHolds {
         this.timer = undefined;
       });
     });
+  }
+}
+
+/** What a test attempt's holds are built from. */
+export interface AttemptStepHolds extends Pick<AttemptHoldsOptions, 'budget' | 'signal' | 'onResume'> {
+  /** The attempt as every step held in it names it. */
+  readonly attempt: Pick<HeldStep, 'target' | 'testId' | 'agent' | 'repeat' | 'title'>;
+  /** Asks the runner whether the step may run. */
+  readonly holdStep: (step: HeldStep, signal: AbortSignal) => Promise<void>;
+  /** Reads the screen a hold starts on, when the run reads screens (`StepHolding`). */
+  readonly readScreen?: ((signal: AbortSignal) => Promise<string | undefined>) | undefined;
+}
+
+/** The holds of one test attempt: each hold asks the runner, with the screen it starts on when the run reads one. */
+export function holdAttemptSteps(options: AttemptStepHolds): AttemptHolds {
+  const { attempt, holdStep, readScreen } = options;
+  // Steps held together (one `Promise.all`) wait on one screen, read once.
+  let heldScreen: Promise<string | undefined> | undefined;
+  return new AttemptHolds({
+    budget: options.budget,
+    signal: options.signal,
+    ask: async (step, signal) => {
+      const screen = readScreen === undefined ? undefined : await (heldScreen ??= readScreen(signal));
+      await holdStep(
+        { ...attempt, api: step.api, label: step.label, ...(step.source === undefined ? {} : { source: step.source }), ...(screen === undefined ? {} : { screen }) },
+        signal,
+      );
+    },
+    onResume: (remainingMs) => {
+      heldScreen = undefined;
+      options.onResume(remainingMs);
+    },
+  });
+}
+
+/**
+ * The screen a held step waits on, as the trace page lists one: its
+ * location, then a line per node, redacted with the session's ledger. Read
+ * while the test clock is stopped; a screen that cannot be read (no app open
+ * yet, an engine without a tree) is undefined and never fails the test.
+ */
+export async function readHeldScreen(
+  session: TargetSession,
+  operation: OperationContext,
+  options: TraceScreenOptions,
+): Promise<string | undefined> {
+  try {
+    const screen = traceScreen(await session.observe(operation), options);
+    if (screen === undefined) return undefined;
+    return [...(screen.location === undefined ? [] : [screen.location]), ...screen.lines.map((line) => line.text)].join('\n');
+  } catch {
+    return undefined;
   }
 }

@@ -1,0 +1,90 @@
+---
+title: Cloudflare Browser Run
+sidebarTitle: Browser Run
+description: browserRun() ブラウザプロバイダーで、Cloudflare がホストする Chromium 上で Web ターゲットを実行します。
+---
+
+`@e2e-dev/browser-run` の `browserRun()` は、ワーカースロットまたはテストの試行ごとに、Cloudflare の Chromium ブラウザを提供します。
+テストには従来と同じ Web エンジンとフィクスチャを使えます。
+
+## アカウントを接続する
+
+アカウントに対する `Browser Rendering - Edit` 権限を持つ
+[Cloudflare API トークン](https://developers.cloudflare.com/browser-run/cdp/) を作成します。
+`e2e run` を起動する環境に、`CLOUDFLARE_ACCOUNT_ID` と `CLOUDFLARE_API_TOKEN` を設定してください。
+
+`e2e`、`@e2e-dev/web` と一緒にプロバイダーをインストールします。
+
+<CodeGroup>
+```bash npm
+npm install --save-dev @e2e-dev/browser-run
+```
+
+```bash pnpm
+pnpm add -D @e2e-dev/browser-run
+```
+
+```bash bun
+bun add -d @e2e-dev/browser-run
+```
+</CodeGroup>
+
+ターゲットのブラウザを設定します。
+
+```ts title="e2e.config.ts"
+import type { E2EConfig } from 'e2e';
+import { web } from '@e2e-dev/web';
+import { browserRun } from '@e2e-dev/browser-run';
+
+export default {
+  targets: [{
+    name: 'cloudflare',
+    engine: web({ browser: browserRun() }),
+    app: { url: 'https://staging.example.com' },
+  }],
+  workers: 2,
+} satisfies E2EConfig;
+```
+
+アプリには公開された HTTPS URL を指定してください。
+ホスト型ブラウザからランナーの `localhost` には接続できません。ローカルのアプリはトンネル経由で公開します。
+
+## ブラウザの利用期間を設定する
+
+| オプション | デフォルト | 意味 |
+| --- | --- | --- |
+| `scope` | `'worker'` | ワーカースロットごとに 1 つのブラウザ。`'attempt'` は試行やリトライのたびに新しいブラウザを借ります。 |
+| `keepAlive` | `600000` | 操作がない場合のタイムアウト。ミリ秒単位で、`10000` から `1200000` まで。 |
+
+接続中でも、CDP コマンドがない時間はタイムアウトの対象です。
+テストが 10 分以上停止する可能性がある場合は、`keepAlive` を増やしてください。
+
+ワーカースコープでは、試行ごとに独立したコンテキストを作ります。
+試行スコープでは、新しいブラウザのデフォルトコンテキストを使い、通信が途切れた後もそのブラウザに再接続できます。
+[試行ごとのプロバイダーの制限](/browser#hosted-browsers) が適用されます。
+
+セッションは終了処理で削除されます。
+ランナーがクリーンアップ前に終了した場合は、無操作のタイムアウトでブラウザが終了します。
+
+## 互換性を確認する
+
+Chromium、ナビゲーション、ロケーター、ネットワークルート、Cookie、スクリーンショット、Web エンジンの画面録画は CDP を使います。
+CDP の認証ヘッダーはブラウザへの接続に使われ、ページのリクエストヘッダーには入りません。
+
+Browser Run では、`browser.back()` や `browser.forward()` の後にページの `load` イベントを待つ間、
+履歴移動がタイムアウトすることがあります。
+
+リモートのファイルダウンロードには対応していません。
+Browser Run が、プロバイダーから読み取れるブラウザのファイルシステム API を公開していないためです。
+Cloudflare 固有のセッション録画はレポートに添付されません。
+[動画](/reference/config#video) を有効にすると、Web エンジンが試行ごとに WebM の画面録画を保存します。
+
+`workers` は、アカウントの [同時実行数と取得数の上限](https://developers.cloudflare.com/browser-run/limits/) 以内にしてください。
+HTTP `401` または `403` の場合は、確認すべきトークンの権限がメッセージに示されます。
+
+## 次のステップ
+
+<CardGroup cols={2}>
+  <Card title="ホスト型ブラウザ" href="/browser#hosted-browsers">プロバイダーのスコープと分離の仕組みを確認します。</Card>
+  <Card title="Web エンジン" href="/web">ビューポート、アプリへのアクセス、動画を設定します。</Card>
+</CardGroup>

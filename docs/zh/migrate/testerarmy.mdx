@@ -1,0 +1,189 @@
+---
+title: 从 TesterArmy 迁移
+description: 将 TesterArmy 中保存的测试转换为在你的代码仓库和 CI 中运行的 e2e 测试。
+---
+
+import { SetupPrompt } from '../../snippets/setup-prompt-card.jsx';
+
+export const migrationPrompt = `将这个项目在 TesterArmy 中保存的测试迁移到 e2e，每次迁移一个分组。文档：\`https://e2e.com/docs/migrate/testerarmy.md\`
+
+1. 阅读上面的迁移指南。它说明 TesterArmy 的项目设置、步骤和分组如何映射到 e2e，并标明 e2e 尚不支持的功能。
+2. 如果没有 \`testerarmy\` MCP 工具，使用 \`npx add-mcp --global --name testerarmy https://tester.army/mcp\` 添加服务器。如果 Claude Code 使用自定义的 \`CLAUDE_CONFIG_DIR\`，改为运行 \`claude mcp add --transport http testerarmy https://tester.army/mcp\`。请我登录并重启会话，然后等待我确认。
+3. 调用 \`list_projects\`，并询问我要迁移哪个项目。使用 \`get_project\`、\`list_project_environments\`、\`list_project_credentials\`、\`list_project_memories\`、\`list_project_files\`、\`list_groups\` 和 \`list_tests\` 读取它。只使用读取工具。绝不在 TesterArmy 中创建、更新、删除或运行任何内容。
+4. 如果项目没有 e2e 配置（\`e2e.config.ts\`、\`.mts\`、\`.js\` 或 \`.mjs\`），运行 \`npx e2e init --yes\`（或对应的 pnpm 或 bun 命令），移动端项目加上 \`--engine mobile\`。将 \`tests/example.e2e.ts\` 改写为适用于该应用的测试，或删除它。
+5. 阅读 e2e 技能（\`npx e2e guide\` 输出技能内容，\`npx e2e guide <topic>\` 输出指定主题），并在以下每个步骤中遵循它。
+6. 如果运行了 init，询问我智能体步骤要使用哪种模型：ChatGPT、GitHub Copilot、OpenCode Console 或 SuperGrok 订阅、API 密钥，还是本地模型。使用对应提供方的包进行配置。如果需要登录，给我 \`npx e2e login\` 命令，并等待我确认。
+7. 按照指南中的“迁移项目”表格，将项目迁移到 e2e 配置。TesterArmy 从不返回密码。在 \`credentials\` 中为每个凭据命名，从环境变量读取其密码，并请我设置该变量。
+8. 列出分组及其中的测试，询问我要先迁移哪个分组。建议选择较小的分组，或包含其他测试所需准备测试的分组。
+9. 对于每个测试，使用 \`get_test\` 读取它，并按照指南中的“映射每个步骤”表格，在 \`tests/\` 下编写一个 \`.e2e.ts\` 文件，每个启用的步骤对应一次带 await 的调用。将准备测试或登录测试转换为保存会话的 \`test.setup\`。如果某个步骤、凭据或项目设置列在“e2e 尚不支持的功能”下，使用该行中的替代方案（“当前可用方案”或“替代方案”）。如果该行没有替代方案，将该测试保留在 TesterArmy 中，并告诉我原因。
+10. 在每个测试的最后一个 \`agent.assert\` 后，如果标签或测试 ID 能标识同一个结束状态，则添加一个针对该状态的定位器断言。
+11. 使用 \`npx e2e run <file>\` 运行新文件，并修复到通过为止。在我确认可以移除之前，保留 TesterArmy 测试。
+12. 总结哪些测试已迁移，哪些仍留在 TesterArmy，以及原因。`;
+
+TesterArmy 中保存的测试是一组自然语言步骤，由 QA 智能体在 TesterArmy 云端运行。在 e2e 中，每个步骤都会变为 TypeScript 测试中的一行，在你的机器或 CI 中运行：它可以是 `agent.act` 或 `agent.assert` 调用；如果步骤无需判定，也可以是定位器调用。编码智能体通过 TesterArmy MCP 服务器读取你的项目和测试，并编写 e2e 测试。
+
+<SetupPrompt>
+
+<Prompt description={migrationPrompt} children={migrationPrompt} actions={["copy", "cursor"]} />
+
+</SetupPrompt>
+
+对于跨多个会话的迁移，[`migrate-to-e2e` 技能](/coding-agents#migrate-an-existing-suite)会在进度文件中记录已迁移的内容，并保留 TesterArmy 测试，直到你逐个停用它们。
+
+## 连接 TesterArmy MCP 服务器
+
+编码智能体从 `https://tester.army/mcp` 上的托管服务器读取你的测试。将它添加到你机器上的编码智能体中：
+
+<CodeGroup>
+```bash npm
+npx add-mcp --global --name testerarmy https://tester.army/mcp
+```
+
+```bash pnpm
+pnpm dlx add-mcp --global --name testerarmy https://tester.army/mcp
+```
+
+```bash bun
+bunx add-mcp --global --name testerarmy https://tester.army/mcp
+```
+</CodeGroup>
+
+`add-mcp` 会将 Claude Code 的条目写入 `~/.claude.json`。如果设置了 `CLAUDE_CONFIG_DIR`，请改为运行 `claude mcp add --transport http testerarmy https://tester.army/mcp`。客户端提示时进行登录。其他添加服务器的方式见 [TesterArmy 的 MCP 配置](https://tester.army/docs/cli/mcp)。
+
+迁移只会读取 TesterArmy 中的内容，绝不会编辑、删除或运行其中的测试。
+
+## 迁移项目
+
+<Note>按照[快速开始](/quickstart)安装 e2e 并配置模型。智能体调用需要模型。</Note>
+
+| TesterArmy | e2e |
+| --- | --- |
+| 网页端项目的 `url` | `web()` 测试目标上的 `app: { url }` |
+| 移动端项目及其上传的构建产物 | 设置了 `app: { bundleId, appPath }` 的 `mobile({ platform })` 测试目标。你负责构建应用，`device.installApp()` 负责安装，参阅[移动端](/mobile) |
+| 静态环境（Staging、QA） | 每个环境对应一个测试目标，各自设置 `app.url`。`--target staging` 只运行一个测试目标 |
+| PR 预览环境 | 在 CI 作业中将 `app.url` 设为预览 URL，参阅[受保护的预览](/web#protected-previews) |
+| `login` 凭据 | 一个 `credentials` 条目。TesterArmy 从不返回密码或 TOTP 机密值，因此应从环境变量读取，参阅[身份验证](/authentication#credentials) |
+| 凭据的 `totpSecret` | 一个 `secrets` 条目，其值为计算验证码的函数。e2e 不附带 TOTP 生成器，因此需要添加一个 TOTP 库 |
+| 凭据的环境覆盖值 | 一个 `credentials` 条目，在每个环境中设置 `E2E_USER_<NAME>_PASSWORD`，参阅[按运行覆盖值](/authentication#override-a-value-per-run) |
+| `agentInstructions` | 智能体上的 `system`，参阅[指令与工具词汇](/agents#instructions-and-vocabulary) |
+| 记忆 | 智能体上的 `context` |
+| 项目文件 | 代码仓库中的文件，例如 `tests/fixtures/receipt.jpg` |
+| 测试的 `viewport` 设置 | `web({ viewport: { width, height } })`，每种尺寸对应一个测试目标 |
+| PR 测试 | 在每个拉取请求（PR）上运行 e2e 作业，并使用 [GitHub 报告器](/github)发表评论 |
+| 分组计划 | 定时运行的 CI 工作流 |
+
+## 改写一个测试
+
+每个步骤对应一次带 await 的调用。`login` 步骤变为初始化测试，只登录一次并保存会话：
+
+```json title="TesterArmy (get_test)"
+{
+  "title": "Creates a project",
+  "steps": [
+    { "type": "login", "title": "Log in as the admin" },
+    { "type": "act", "title": "Open Projects from the sidebar and click New Project" },
+    { "type": "act", "title": "Name the project Apollo and save" },
+    { "type": "assert", "title": "Apollo appears in the project list" }
+  ]
+}
+```
+
+<Tabs>
+  <Tab title="tests/projects.e2e.ts">
+
+```ts
+import { test } from '@e2e-dev/web';
+import { expect } from 'e2e';
+
+test('creates a project', { session: 'admin' }, async ({ app, agent, screen }) => {
+  await app.open('/');
+  await agent.act('open Projects from the sidebar and click New Project');
+  await agent.act('name the project {name} and save', { params: { name: 'Apollo' } });
+  await agent.assert('Apollo appears in the project list');
+  await expect(screen.getByText('Apollo')).toBeVisible();
+});
+```
+
+  </Tab>
+  <Tab title="tests/auth.setup.e2e.ts">
+
+```ts
+import { test } from '@e2e-dev/web';
+import { credentials } from 'e2e';
+
+test.setup('log in as the admin', { sessions: ['admin'] }, async ({ app, agent, session }) => {
+  const admin = credentials.user('admin');
+
+  await app.open('/login');
+  await agent.act('log in', { params: { username: admin.username, password: admin.password } });
+  await agent.assert('the dashboard is shown');
+  await session.save('admin');
+});
+```
+
+  </Tab>
+</Tabs>
+
+TesterArmy 会在第一个步骤之前打开项目 URL。在 e2e 中，页面不会自动打开，因此每个测试都以 `app.open()` 开始。
+
+## 映射每个步骤
+
+| TesterArmy | e2e |
+| --- | --- |
+| `act` 步骤 | `agent.act('...')`；如果步骤只是打开已知路由或操作一个有名称的控件，也可以使用定位器调用 |
+| `assert` 步骤 | `agent.assert('...')`；如果标签或测试 ID 能标识结束状态，再添加一个定位器断言 |
+| `login` 步骤 | 在 `test.setup` 中登录并调用 `session.save()`，然后在每个测试上设置 `{ session }`，参阅[身份验证](/authentication) |
+| 网页端的 `files` 步骤、步骤中的 `@receipt.jpg` | 在目标中使用文件在代码仓库中的路径：`agent.act('attach tests/fixtures/receipt.jpg')`，或使用 `locator.setInputFiles()` |
+| `screenshot` 步骤 | `app.screenshot('label')` |
+| `javascript` 步骤 | `browser.evaluate()`。只有代码抛出错误时它才会失败，因此需要用 `expect` 检查 `{ success: false }` 返回值 |
+| 设置了 `disabled: true` 的步骤 | 省略该步骤 |
+| 已禁用的测试 | `test.skip` |
+| 分组 | 带有 `tags` 的 `describe`，通过 `npx e2e run --tag <tag>` 运行 |
+| 分组的 `runMode: sequential` | 在分组上设置 `{ serial: true }` |
+| 分组的 `maxConcurrentRuns` | 配置中的 `workers`。它限制整次运行，而非单个分组 |
+| 分组的 `prepTestId` | 保存会话的 `test.setup`，以及分组上的 `{ session }` |
+| `run_test`, `run_group` | `npx e2e run <file>`、`npx e2e run --tag <tag>` |
+
+如果步骤需要读取屏幕后再决策、跨越多个屏幕，或没有稳定的控件名称，就保留智能体。在将步骤替换为定位器之前，先找到控件的准确名称，并检查相同的结束状态。
+
+## e2e 尚不支持的功能
+
+“已规划”表示已列入路线图。“尚未支持”表示没有确定日期。“不计划支持”表示有意不提供。请使用替代方案，或将测试保留在 TesterArmy 中。
+
+### 已规划
+
+| TesterArmy | 当前可用方案 |
+| --- | --- |
+| `inbox` 凭据、使用 `temporaryEmail` 的 `login` | 从[测试夹具](/fixtures)调用你自己的测试收件箱 |
+| 移动端的 `files` 步骤（照片图库） | 在 iOS 模拟器上，在 `app.open()` 前运行 `xcrun simctl addmedia`，然后在系统选择器中选取照片；Android 尚未验证。参阅[设备测试夹具](/mobile#the-device-fixture)下的“为选择器测试准备照片” |
+| `accessibilityAuditEnabled` | - |
+
+### 尚未支持
+
+| TesterArmy | 当前可用方案 |
+| --- | --- |
+| `microphone` 步骤 | - |
+
+### 不计划支持
+
+| TesterArmy | 替代方案 |
+| --- | --- |
+| `browserRegion`, `simulatorRegion` | 浏览器运行在执行 `e2e run` 的机器上，或运行在[托管提供方](/integrations)上 |
+| `webSearchEnabled` | 将智能体需要了解的内容放在其 `context` 中 |
+
+## 有意保留的差异
+
+- 测试在你的机器或 CI 中运行，而非 TesterArmy 云端。由你选择应用 URL 和设备。
+- 模型永远看不到密码。运行器通过句柄输入密码，参阅[身份验证](/authentication#the-password-is-a-handle)。
+- `agent.act` 步骤会回放其录制的操作，无需调用模型。屏幕不再匹配时，由智能体接手，参阅[回放缓存](/cache)。
+
+## 下一步
+
+<CardGroup cols={2}>
+  <Card title="智能体步骤" icon="wand-magic-sparkles" href="/agent-steps">
+    模型能看到什么、可以做什么，以及步骤如何结束。
+  </Card>
+  <Card title="身份验证" icon="key" href="/authentication">
+    会话、凭据和模型永远看不到的机密值。
+  </Card>
+</CardGroup>

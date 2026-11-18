@@ -14,15 +14,15 @@ import { markRunningTestExpectedToFail } from '@e2e-dev/core/lib/internal/expect
 import { parseModifierCall, skipRunningTest } from '../internal/skip.ts';
 import { unknownKeyMessage } from '@e2e-dev/core/lib/internal/options';
 import type { SourceLocation } from '@e2e-dev/core/lib/internal/source';
+import { fixtureNames } from './fixture-names.ts';
+import { checkDeclaredFixtures, describeFixture, describeUser } from './fixture-plan.ts';
 import type {
   DescribeOptions,
   FixtureFn,
-  SetupFn,
+  FixtureScope,
   SetupOptions,
-  SuiteHookFn,
   TestAPI,
   TestCase,
-  TestFn,
   TestHookFn,
   TestOptions,
   TestRegistrar,
@@ -37,10 +37,43 @@ export interface GroupNode {
 
 export type TestMode = 'normal' | 'skip' | 'only';
 
-/** One fixture a `test.extend()` call defined: its name and its setup/teardown function. */
+/**
+ * A registered test or hook body. `TestAPI` types what each receives; at run
+ * time it gets the object its attempt or suite hook binds (`bindFixtures`).
+ */
+export type TestBody = TestHookFn<object>;
+
+/**
+ * One fixture a `test.extend()` call defined: its name, its setup/teardown
+ * function, and how long one instance lives. The object is the fixture's
+ * identity: a worker keeps one instance per definition. The fixtures it
+ * depends on are the ones its function names (`fixtureNames`). One named
+ * like a built-in fixture, or like an earlier fixture of its chain, extends
+ * it: inside its function its own name is the fixture it extends.
+ */
 export interface FixtureDefinition {
   readonly name: string;
   readonly fn: FixtureFn<object, unknown>;
+  /** The fixtures `fn` names in its first parameter: what it depends on. */
+  readonly names: readonly string[];
+  /**
+   * The scope it declares. A plain function declares none: it has the scope
+   * of the fixture it extends, and is a test fixture when it extends none.
+   */
+  readonly scope: FixtureScope | undefined;
+  /**
+   * Whether it declares itself set up for every test (or once per worker)
+   * whether or not anything names it. One that does not say has the `auto`
+   * of the fixture it extends, and is set up on demand when it extends none.
+   */
+  readonly auto: boolean | undefined;
+  /**
+   * Which `test.extend()` call of its chain defined it, counted from 0. A
+   * fixture sees the fixtures of its own call and of the ones before it.
+   */
+  readonly layer: number;
+  /** Where its `test.extend()` call is. */
+  readonly source?: SourceLocation | undefined;
 }
 
 export interface RegisteredTest {
@@ -52,7 +85,10 @@ export interface RegisteredTest {
   readonly sessions: readonly string[];
   /** The tags the test declares: its describe chain's, outermost first, then its own, each once. */
   readonly tags: readonly string[];
-  readonly fn: TestFn | SetupFn;
+  /** The body, called with the fixtures it names; its `test` typed what those are. */
+  readonly fn: TestBody;
+  /** The fixtures `fn` names in its first parameter: the ones its attempt sets up for it. */
+  readonly names: readonly string[];
   /** The `test.extend()` chain the test was registered through, outermost definition first. */
   readonly fixtures: readonly FixtureDefinition[];
   readonly group: GroupNode | undefined;
@@ -63,27 +99,33 @@ export interface RegisteredTest {
 interface HookBase {
   readonly group: GroupNode | undefined;
   readonly declarationIndex: number;
+  readonly fn: TestBody;
+  /** The fixtures `fn` names in its first parameter. */
+  readonly names: readonly string[];
+  /** The `test.extend()` chain the hook was registered through. */
+  readonly fixtures: readonly FixtureDefinition[];
+  /** Where the hook was registered. */
+  readonly source?: SourceLocation | undefined;
 }
 
 /**
- * A per-test hook: runs with the attempt's fixtures. The chain it was
- * registered through is recorded; at run time the hook receives the test's
- * fixture object, which the test's own chain shapes.
+ * A per-test hook: runs with the attempt's fixtures. At run time the hook
+ * receives the test's fixture object, which the test's own chain shapes.
  */
 export interface TestHook extends HookBase {
   readonly kind: 'beforeEach' | 'afterEach';
-  readonly fn: TestHookFn;
-  readonly fixtures: readonly FixtureDefinition[];
 }
 
-/** A suite hook: runs once per scope instance with suite fixtures only. */
+/**
+ * A suite hook: runs once per scope instance with worker fixtures only, the
+ * built-in ones and the worker fixtures of the chain it was registered through.
+ */
 export interface SuiteHook extends HookBase {
   readonly kind: 'beforeAll' | 'afterAll';
-  readonly fn: SuiteHookFn;
 }
 
 export type RegisteredHook = TestHook | SuiteHook;
-type HookDeclaration = Pick<TestHook, 'kind' | 'fn' | 'fixtures'> | Pick<SuiteHook, 'kind' | 'fn'>;
+type HookDeclaration = Pick<RegisteredHook, 'kind' | 'fn' | 'fixtures'>;
 
 export interface ModuleRegistration {
   readonly tests: readonly RegisteredTest[];
@@ -147,7 +189,7 @@ class Collector {
     title: string,
     options: TestOptions,
     sessions: readonly string[],
-    fn: TestFn | SetupFn,
+    fn: TestBody,
     fixtures: readonly FixtureDefinition[],
   ): TestCase {
     this.assertOpen(kind === 'setup' ? 'test.setup()' : 'test()');
@@ -178,6 +220,7 @@ class Collector {
     }
     validateTestOptions(options, this.currentGroup, kind);
     const titlePath = [...groupTitles(this.currentGroup), normalizedTitle];
+    const source = captureSource(this.moduleFile);
     const registered: RegisteredTest = {
       kind,
       title: normalizedTitle,
@@ -187,10 +230,11 @@ class Collector {
       sessions,
       tags: declaredTags(this.currentGroup, options),
       fn,
+      names: fixtureNames(fn, describeUser({ kind, titlePath }), source),
       fixtures,
       group: this.currentGroup,
       mode,
-      source: captureSource(this.moduleFile),
+      source,
     };
     this.declarationCounter += 1;
     this.tests.push(registered);
@@ -227,8 +271,11 @@ class Collector {
     if (typeof hook.fn !== 'function') {
       throw new CollectionError(`${hook.kind} hook must be a function`);
     }
+    const source = captureSource(this.moduleFile);
     this.hooks.push({
       ...hook,
+      names: fixtureNames(hook.fn, describeUser(hook), source),
+      source,
       group: this.currentGroup,
       declarationIndex: this.declarationCounter,
     });
@@ -273,6 +320,27 @@ export function groupTitles(group: GroupNode | undefined): string[] {
 function declaredTags(group: GroupNode | undefined, options: TestOptions): string[] {
   const layers = [...groupChain(group).map((node) => node.options), options];
   return [...new Set(layers.flatMap((layer) => layer.tags ?? []))];
+}
+
+/**
+ * A suite scope: a describe group, or `undefined` for the file scope. Scopes
+ * are the registration's own group nodes, so two sibling groups that happen
+ * to share a title stay two scopes with their own hooks.
+ */
+export type Scope = GroupNode | undefined;
+
+/** The suite scopes `test` is in, outermost first: the file scope, then each describe group around it. */
+export function scopeChain(test: Pick<RegisteredTest, 'group'>): Scope[] {
+  return [undefined, ...groupChain(test.group)];
+}
+
+/**
+ * The hooks that apply to `test`, of every kind: those of each scope it is
+ * in, outermost scope first, each scope's in declaration order, wherever in
+ * the file a scope's hooks were declared relative to the test.
+ */
+export function hooksFor(registration: Pick<ModuleRegistration, 'hooks'>, test: Pick<RegisteredTest, 'group'>): RegisteredHook[] {
+  return scopeChain(test).flatMap((scope) => registration.hooks.filter((hook) => hook.group === scope));
 }
 
 /** Finds the outermost serial group enclosing a node, if any. */
@@ -575,9 +643,9 @@ function captureSource(moduleFile: string | undefined): SourceLocation | undefin
 }
 
 function normalizeArgs(
-  optionsOrFn: TestOptions | TestFn,
-  maybeFn: TestFn | undefined,
-): { options: TestOptions; fn: TestFn } {
+  optionsOrFn: TestOptions | TestBody,
+  maybeFn: TestBody | undefined,
+): { options: TestOptions; fn: TestBody } {
   if (typeof optionsOrFn === 'function') {
     return { options: {}, fn: optionsOrFn };
   }
@@ -585,14 +653,13 @@ function normalizeArgs(
   return { options: optionsOrFn, fn: maybeFn };
 }
 
-/** Fixtures every attempt has without any engine or `test.extend()` defining them. */
-const CORE_FIXTURE_NAMES: ReadonlySet<string> = new Set(['agent', 'app', 'screen', 'platform', 'session']);
-
 /**
- * Checks one `test.extend()` argument against the chain it extends. Names
- * are validated here, at import time, so a typo or a clash fails the file
- * before any attempt runs; the engine's own fixtures are only known per
- * target and are checked when the attempt builds its fixtures.
+ * Checks one `test.extend()` argument against the chain it extends. What
+ * each function names is validated here, at import time, so a cycle or a
+ * scope that cannot be fails the file before any attempt runs; the engine's
+ * own fixtures are only known per target and are checked when a test that
+ * runs there is selected (`assertFixtureUse`). A name the chain or the
+ * target already has extends that fixture.
  */
 function validateFixtureDefinitions(
   definitions: unknown,
@@ -609,34 +676,42 @@ function validateFixtureDefinitions(
       'test.extend() takes a plain object of fixture definitions, one function per fixture name',
     );
   }
-  const taken = new Set(chain.map((definition) => definition.name));
   const added: FixtureDefinition[] = [];
+  const layer = (chain.at(-1)?.layer ?? -1) + 1;
+  // The innermost frame outside the runner: the `test.extend()` call itself, wherever a test file imports it from.
+  const source = captureSource(undefined);
   for (const [name, fn] of Object.entries(definitions)) {
     if (name === '') throw new CollectionError('test.extend(): a fixture name must not be empty');
-    if (CORE_FIXTURE_NAMES.has(name)) {
-      throw new CollectionError(
-        `test.extend(): "${name}" is a core fixture and cannot be redefined`,
-      );
-    }
-    if (taken.has(name)) {
-      throw new CollectionError(
-        `test.extend(): fixture "${name}" is already defined by an earlier test.extend()`,
-      );
-    }
-    if (typeof fn !== 'function') {
-      throw new CollectionError(
-        `test.extend(): fixture "${name}" must be a function (fixtures, use) => Promise<void>`,
-      );
-    }
-    taken.add(name);
-    added.push({ name, fn: fn as FixtureFn<object, unknown> });
+    const definition = fixtureDefinition(name, fn);
+    const names = fixtureNames(definition.fn, describeFixture(name, definition.scope), source);
+    added.push({ name, ...definition, names, layer, source });
   }
+  checkDeclaredFixtures([...chain, ...added], added);
   return added;
+}
+
+/** The function, scope, and `auto` of one `test.extend()` entry: `fn`, or `[fn, { scope, auto }]`. */
+function fixtureDefinition(name: string, entry: unknown): Pick<FixtureDefinition, 'fn' | 'scope' | 'auto'> {
+  const shape = `test.extend(): fixture "${name}" must be a function ({ ...fixtures }, use) => Promise<void>, or [fn, { scope: 'test' | 'worker', auto: boolean }]`;
+  if (typeof entry === 'function') return { fn: entry as FixtureFn<object, unknown>, scope: undefined, auto: undefined };
+  if (!Array.isArray(entry) || entry.length !== 2 || typeof entry[0] !== 'function') throw new CollectionError(shape);
+  const options: unknown = entry[1];
+  if (typeof options !== 'object' || options === null || Array.isArray(options)) throw new CollectionError(shape);
+  const unknown = unknownKeyMessage(`test.extend(): fixture "${name}" options`, options, ['scope', 'auto']);
+  if (unknown !== undefined) throw new CollectionError(unknown);
+  const { scope, auto } = options as { scope?: unknown; auto?: unknown };
+  if (scope !== undefined && scope !== 'test' && scope !== 'worker') {
+    throw new CollectionError(`test.extend(): fixture "${name}" scope must be 'test' or 'worker', got ${describeValue(scope)}`);
+  }
+  if (auto !== undefined && typeof auto !== 'boolean') {
+    throw new CollectionError(`test.extend(): fixture "${name}" auto must be true or false, got ${describeValue(auto)}`);
+  }
+  return { fn: entry[0] as FixtureFn<object, unknown>, scope: scope as FixtureScope | undefined, auto };
 }
 
 /**
  * One `test` object per fixture chain. Every registration made through it
- * records the chain, so an attempt knows which fixtures to set up; the
+ * records the chain, so an attempt knows which fixtures it can set up; the
  * shared `test` is the empty chain.
  */
 function createTestAPI(chain: readonly FixtureDefinition[]): TestAPI {
@@ -646,10 +721,10 @@ function createTestAPI(chain: readonly FixtureDefinition[]): TestAPI {
    * skipped, keeping any reason its `skip` option gives. Either way a serial
    * group rejects it, so a file collects the same on every platform.
    */
-  const registrar = (api: string, skip?: boolean): TestRegistrar => (
+  const registrar = (api: string, skip?: boolean): TestRegistrar<object> => (
     title: string,
-    optionsOrFn: TestOptions | TestFn,
-    maybeFn?: TestFn,
+    optionsOrFn: TestOptions | TestBody,
+    maybeFn?: TestBody,
   ): TestCase => {
     const collector = requireCollector(api);
     if (skip !== undefined && collector.inSerialGroup) {
@@ -668,32 +743,32 @@ function createTestAPI(chain: readonly FixtureDefinition[]): TestAPI {
   const testFunction = registrar('test()');
 
   const api: TestAPI = Object.assign(testFunction, {
-    skip(first?: string | boolean, second?: TestFn | string): TestCase | undefined {
+    skip(first?: string | boolean, second?: TestBody | string): TestCase | undefined {
       const call = parseModifierCall(first, second);
       if (call.kind === 'register') {
-        return requireCollector('test.skip()').registerTest('test', 'skip', call.title, { skip: true }, [], call.fn as TestFn, chain);
+        return requireCollector('test.skip()').registerTest('test', 'skip', call.title, { skip: true }, [], call.fn as TestBody, chain);
       }
       skipRunningTest(call.condition, call.reason);
       return undefined;
     },
-    fail(first?: string | boolean, second?: TestFn | string): TestCase | undefined {
+    fail(first?: string | boolean, second?: TestBody | string): TestCase | undefined {
       const call = parseModifierCall(first, second);
       if (call.kind === 'register') {
-        return requireCollector('test.fail()').registerTest('test', 'normal', call.title, { fail: true }, [], call.fn as TestFn, chain);
+        return requireCollector('test.fail()').registerTest('test', 'normal', call.title, { fail: true }, [], call.fn as TestBody, chain);
       }
       markRunningTestExpectedToFail(call.condition, call.reason);
       return undefined;
     },
-    skipIf(condition: unknown): TestRegistrar {
+    skipIf(condition: unknown): TestRegistrar<object> {
       return registrar('test.skipIf()', readCondition('test.skipIf()', condition));
     },
-    runIf(condition: unknown): TestRegistrar {
+    runIf(condition: unknown): TestRegistrar<object> {
       return registrar('test.runIf()', !readCondition('test.runIf()', condition));
     },
-    only(title: string, fn: TestFn): TestCase {
+    only(title: string, fn: TestBody): TestCase {
       return requireCollector('test.only()').registerTest('test', 'only', title, { only: true }, [], fn, chain);
     },
-    setup(title: string, options: SetupOptions, fn: SetupFn): TestCase {
+    setup(title: string, options: SetupOptions, fn: TestBody): TestCase {
       if (options === undefined || !Array.isArray(options.sessions)) {
         throw new CollectionError('test.setup() requires a static sessions list');
       }
@@ -710,17 +785,17 @@ function createTestAPI(chain: readonly FixtureDefinition[]): TestAPI {
       if (body === undefined) throw new CollectionError('describe body function is required');
       requireCollector('describe()').registerDescribe(title, options, body);
     },
-    beforeEach(fn: TestHookFn): void {
+    beforeEach(fn: TestBody): void {
       requireCollector('beforeEach()').registerHook({ kind: 'beforeEach', fn, fixtures: chain });
     },
-    afterEach(fn: TestHookFn): void {
+    afterEach(fn: TestBody): void {
       requireCollector('afterEach()').registerHook({ kind: 'afterEach', fn, fixtures: chain });
     },
-    beforeAll(fn: SuiteHookFn): void {
-      requireCollector('beforeAll()').registerHook({ kind: 'beforeAll', fn });
+    beforeAll(fn: TestBody): void {
+      requireCollector('beforeAll()').registerHook({ kind: 'beforeAll', fn, fixtures: chain });
     },
-    afterAll(fn: SuiteHookFn): void {
-      requireCollector('afterAll()').registerHook({ kind: 'afterAll', fn });
+    afterAll(fn: TestBody): void {
+      requireCollector('afterAll()').registerHook({ kind: 'afterAll', fn, fixtures: chain });
     },
     // Without definitions this is a type-only refinement: contributed
     // fixtures resolve from the engine at runtime, so the same object serves.

@@ -1,0 +1,166 @@
+---
+title: smol machines 浏览器
+sidebarTitle: smol machines
+description: 使用 @e2e-dev/smol 的 smol() 浏览器提供方，让每次网页端测试尝试都在你计算机上预热的 Chromium 微型虚拟机的独立分支中运行。
+"og:image": "https://e2e.com/docs/images/og/integrations/smol.png?v=93b61e0399"
+"twitter:image": "https://e2e.com/docs/images/og/integrations/smol.png?v=93b61e0399"
+---
+
+`@e2e-dev/smol` 中的 `smol()` 是一个[浏览器提供方](/browser#hosted-browsers)，在你计算机上的 [smol machines](https://smolmachines.com) 微型虚拟机中运行 Chromium。每个工作进程槽位启动一台浏览器虚拟机。默认情况下，每次测试尝试都在它的写时复制分支中运行，约一秒即可就绪，因此每次重试都从相同的浏览器状态开始。只有当应用[在虚拟机中运行](#run-the-app-in-the-machine)时，应用数据才会重置。你计算机上或外部服务中的状态仍然共享。
+
+## 配置提供方
+
+<Note>
+smol machines 可在 Apple Silicon 的 macOS 上运行，也可在支持 KVM（`/dev/kvm`）的 Linux 上运行。无需账号或 API 密钥。首次启动会拉取 Playwright Ubuntu 镜像，因此耗时较长。
+</Note>
+
+安装提供方和 smol machines SDK：
+
+<CodeGroup>
+```bash npm
+npm install --save-dev @e2e-dev/smol smolmachines
+```
+
+```bash pnpm
+pnpm add -D @e2e-dev/smol smolmachines
+```
+
+```bash bun
+bun add -d @e2e-dev/smol smolmachines
+```
+</CodeGroup>
+
+将测试目标的 `browser` 设置为 `smol()`：
+
+```ts title="e2e.config.ts"
+import type { E2EConfig } from 'e2e';
+import { web } from '@e2e-dev/web';
+import { smol } from '@e2e-dev/smol';
+
+export default {
+  targets: [
+    {
+      name: 'web',
+      engine: web({ browser: smol({ hostPorts: [3000] }) }),
+      app: {
+        url: 'http://localhost:3000',
+        command: { executable: 'npm', args: ['run', 'dev'] },
+      },
+    },
+  ],
+  workers: 4,
+} satisfies E2EConfig;
+```
+
+在虚拟机中，`localhost` 指的是虚拟机本身。`hostPorts` 列出你计算机上的端口，浏览器可通过自身的 `localhost` 访问这些端口，因此 `app.url` 仍然是 `http://localhost:3000`。
+
+<Warning>
+`hostPorts` 不是允许列表。虚拟机可以通过 `host.smolvm.internal` 访问你计算机上的任何回环端口，并且拥有不受限制的出站网络访问权限。在使用 `smol()` 测试不可信的应用前，请停止敏感的回环服务。
+</Warning>
+
+## 让每个测试从已登录状态开始
+
+`prepare` 会在任何尝试创建分支前，操作每个预热浏览器一次。该槽位上的每次尝试都从它留下的 Cookie、存储和页面开始。它替代了 `'attempt'` 作用域无法使用的[会话](/authentication)。
+
+`prepare` 接收浏览器的 DevTools 端点。请在尝试运行所在的默认上下文中操作。在 `prepare` 完成前断开连接，并保持浏览器运行。
+
+<Accordion title="使用 Playwright 登录">
+安装 `@e2e-dev/web` 固定使用的 `playwright-core` 版本，目前为 1.65.1，升级时也要保持版本一致。pnpm 不允许你的配置导入依赖项的依赖项。
+
+<CodeGroup>
+```bash npm
+npm install --save-dev playwright-core@1.65.1
+```
+
+```bash pnpm
+pnpm add -D playwright-core@1.65.1
+```
+
+```bash bun
+bun add -d playwright-core@1.65.1
+```
+</CodeGroup>
+
+```ts title="Provider options"
+import { chromium } from 'playwright-core';
+
+smol({
+  hostPorts: [3000],
+  prepare: async (cdpEndpoint) => {
+    const browser = await chromium.connectOverCDP(cdpEndpoint);
+    const page = browser.contexts()[0]!.pages()[0]!;
+    await page.goto('http://localhost:3000/login');
+    await page.getByLabel('Email').fill('qa@example.com');
+    await page.getByLabel('Password').fill(process.env.QA_PASSWORD!);
+    await page.getByRole('button', { name: 'Sign in' }).click();
+    await page.waitForURL('**/dashboard');
+    await browser.close();
+  },
+})
+```
+
+对于通过 `connectOverCDP` 连接的浏览器，`browser.close()` 只会断开连接。
+</Accordion>
+
+## 在虚拟机中运行应用
+
+设置 `app` 后，被测应用会在每台浏览器虚拟机中运行，而不是在你的计算机上运行，因此测试或智能体让应用执行的任何操作都不会在宿主机上运行。如[配置提供方](#set-up-the-provider)中的警告所述，虚拟机仍然可以访问你的回环端口。在 `'attempt'` 作用域中，每次尝试都会获得正在运行的应用及其文件的独立副本，包括本地数据库。
+
+```ts title="Provider options"
+smol({
+  app: {
+    source: '.',
+    setup: 'npm ci && npm run db:seed',
+    start: 'npm start',
+    port: 3000,
+    env: { DATABASE_URL: 'file:/app/dev.db' },
+  },
+})
+```
+
+将 `app.url` 设置为 `http://localhost:<port>`，且不要声明 `app.command`。每次虚拟机启动时，都会在 `prepare` 之前运行 `setup` 和 `start`。
+
+| `app` 字段 | 含义 |
+| ----------- | ------- |
+| `start` | 必填。提供应用服务的 Shell 命令，在 `/app` 中后台运行。提供方最多等待 180 秒，直到应用在 `port` 上响应。 |
+| `port` | 必填。应用在虚拟机内部监听的端口。不能使用浏览器占用的 80 或 9229，也不能是 `hostPorts` 中的端口。 |
+| `source` | 要复制到 `/app` 的目录，不包括 `node_modules`、`.git` 或 `.e2e`。相对于运行开始时所在的目录解析。默认为 `.`。 |
+| `setup` | 在 `start` 之前以 root 身份在 `/app` 中运行的 Shell 脚本。镜像包含 Node.js 和 npm，因此 `npm ci` 会安装适用于虚拟机 Linux 系统的依赖项。 |
+| `env` | `setup` 和 `start` 的环境变量。名称必须符合 Shell 变量命名规则。 |
+
+## 选择作用域
+
+默认值 `scope: 'attempt'` 让每次尝试都获得槽位预热浏览器的独立分支，并受到[每次尝试租约](/browser#hosted-browsers)的限制。
+
+`scope: 'worker'` 在本次运行中为每个工作进程槽位保留一台虚拟机。每次尝试都会在其中获得一个新的浏览器上下文，与本地运行相同，因此会话以及 `headers`、`locale` 等选项都可用。此时不会创建任何分支，设置 `prepare` 会导致 `INVALID_CONFIG`。
+
+## 选项
+
+| 选项 | 默认值 | 含义 |
+| ----------- | ----------- | ------- |
+| `scope` | `'attempt'` | 参阅[选择作用域](#choose-a-scope)。 |
+| `prepare` | 无 | 参阅[让每个测试从已登录状态开始](#start-every-test-signed-in)。 |
+| `hostPorts` | `[]` | 参阅[配置提供方](#set-up-the-provider)。不能使用 80 或 9229。 |
+| `app` | 无 | 参阅[在虚拟机中运行应用](#run-the-app-in-the-machine)。 |
+| `setup` | 无 | 在每台虚拟机启动 Chromium 之前以 root 身份运行的 Shell 脚本，例如通过 `apt-get update && apt-get install -y fonts-noto-cjk` 安装更多字体。 |
+| `cpus` | `2` | 每台虚拟机的 vCPU 数量。 |
+| `memoryMb` | `2048` | 每台虚拟机的内存，单位为 MiB。 |
+
+## 与本地浏览器的差异
+
+浏览器的前进/后退缓存已关闭，因此后退会重新加载页面。`browser.waitForDownload` 的行为与本地一致。
+
+## 清理残留虚拟机
+
+运行结束时，运行器会删除本次运行的虚拟机，包括崩溃工作进程的虚拟机。如果运行器被终止，例如 CI 作业被取消，`'worker'` 作用域的虚拟机会以停止状态保留下来，名称以 `e2e-` 开头。使用 [smol CLI](https://smolmachines.com) 列出并删除它们，例如 `smol machine ls`。
+
+## 下一步
+
+<CardGroup cols={2}>
+  <Card title="安全" icon="shield-halved" href="/security">
+    哪些内容在你的计算机上运行，以及哪些内容仍可能泄露。
+  </Card>
+  <Card title="托管浏览器" icon="globe" href="/browser#hosted-browsers">
+    浏览器提供方如何租用浏览器，以及 `'attempt'` 作用域的限制。
+  </Card>
+</CardGroup>

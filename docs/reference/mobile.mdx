@@ -1296,7 +1296,10 @@ export interface DeviceSelection {
 `FoldPose`, `InstallAppOptions`, `InstalledApp`, and `OpenAppOptions` are exported from
 `@e2e-dev/mobile`. The runtime exports are `mobile`, and `test`, `describe`,
 `beforeEach`, `afterEach`, `beforeAll`, and `afterAll`, typed with the `device`
-fixture; `mobileTools` comes from `@e2e-dev/mobile/tools`.
+fixture. A device keeps its state between tests, so `device`, `app`, and
+`screen` are [worker fixtures](/reference/test#worker-fixtures), and
+`beforeAll` and `afterAll` get them. `mobileTools` comes from
+`@e2e-dev/mobile/tools`.
 
 ## Related
 

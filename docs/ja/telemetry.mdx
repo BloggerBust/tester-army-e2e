@@ -1,0 +1,213 @@
+---
+title: テレメトリー
+description: CLI が送信する情報、送信しない情報、無効にする方法を説明します。
+"og:image": "https://e2e.com/docs/images/og/telemetry.png?v=723dc5172f"
+"twitter:image": "https://e2e.com/docs/images/og/telemetry.png?v=723dc5172f"
+---
+
+`e2e` CLI は、利用されているコマンド、エンジン、機能、実行が失敗する箇所について、匿名の利用データを送信します。テレメトリーはデフォルトで有効です。送るのは件数やバージョンで、テスト内容、アプリの内容、認証情報は送信しません。
+
+## 無効にする
+
+次のいずれかで、テレメトリーを無効にできます。
+
+<CodeGroup>
+```bash npm
+npx e2e telemetry disable   # saved in ~/.config/e2e/telemetry.json
+export E2E_TELEMETRY_DISABLED=1          # for a shell or a CI job
+export DO_NOT_TRACK=1                    # the cross-tool convention
+```
+
+```bash pnpm
+pnpm exec e2e telemetry disable   # saved in ~/.config/e2e/telemetry.json
+export E2E_TELEMETRY_DISABLED=1          # for a shell or a CI job
+export DO_NOT_TRACK=1                    # the cross-tool convention
+```
+
+```bash bun
+bunx e2e telemetry disable   # saved in ~/.config/e2e/telemetry.json
+export E2E_TELEMETRY_DISABLED=1          # for a shell or a CI job
+export DO_NOT_TRACK=1                    # the cross-tool convention
+```
+</CodeGroup>
+
+環境変数は保存済みの設定より優先されます。`e2e telemetry enable` は保存済みの `disable` を解除します。`e2e telemetry` は状態を表示し、無効な場合は理由も表示します。設定ファイルは、`$XDG_CONFIG_HOME` が設定されていれば `$XDG_CONFIG_HOME/e2e/` 配下、Windows では `%APPDATA%\e2e\` 配下にあります。
+
+`disable` は、別のターミナルですでに実行中のコマンドからの送信も止めます。設定ディレクトリに書き込めない場合や、e2e リポジトリのソースチェックアウトから実行した場合は、何も送信しません。
+
+## 送信される内容を確認する
+
+<CodeGroup>
+```bash npm
+E2E_TELEMETRY_DEBUG=1 npx e2e run
+```
+
+```bash pnpm
+E2E_TELEMETRY_DEBUG=1 pnpm exec e2e run
+```
+
+```bash bun
+E2E_TELEMETRY_DEBUG=1 bunx e2e run
+```
+</CodeGroup>
+
+CLI は、実際のペイロードを `[telemetry] {...}` として標準エラー出力に表示し、何も送信しません。
+
+## 送信する情報
+
+各コマンドは `e2e_cli_session` イベントを 1 つ送ります。加えて、`run` と `explore` は `e2e_run_completed`、`init` は `e2e_init_completed`（先に init ウィザードを動かす `explore` も同様）、`upgrade` は `e2e_upgrade_completed` を送ります。`mcp` は MCP セッションごとに `e2e_mcp_session` を 1 つ送ります。`--help` と `--version` は、どのコマンドでも何も送りません。`e2e/runner` の `run()` と `explore()` はセッションイベントを送らず、レポートを返す呼び出しごとに `e2e_run_completed` を 1 つだけ送ります。
+
+コマンド、`run()`、`explore()` の終了時に、イベントをひとつのリクエストにまとめ、2 秒の期限で送信します。`e2e mcp` はセッションイベントごとに別のリクエストを送り、`e2e run --watch` は各実行の終了時にそのイベントを送ります。
+
+イベントに含まれるのは、以下のプロパティだけです。大文字のトークンでないエラーコードは `OTHER` として送ります。エンジン、プラットフォーム、モデル、フリート、MCP クライアントの名前と、MCP クライアントのバージョンは、英字、数字、ドット、ハイフン、アンダースコアだけのトークンでなければ `other` として送ります。semver でないエンジンバージョンは `unversioned` として送ります。操作数とツール呼び出し数では、プロジェクト独自のツールをまとめて `tool`、その他の未知の名前を `other` として数えます。
+
+<AccordionGroup>
+<Accordion title="すべてのイベント">
+
+| プロパティ | 値 |
+| --- | --- |
+| `distinct_id` | 設定ファイルに保存するランダム ID。CI では代わりに `ci:<vendor>`、フリートでは `fleet:<name>` を使います（[フリート環境](#in-a-fleet)を参照） |
+| `project_id` | リポジトリのルートコミットのハッシュ。完全なクローン間で共通です。git の外や shallow clone では `null` |
+| `session_id` | この呼び出し用のランダム ID |
+| `first_run`, `days_since_first_run` | このコマンドが設定ファイルを作成したかと、それから経過した日数の整数値。CI、フリート、作成時刻を記録する前の設定ファイルでは `null` |
+| `os`, `os_release`, `arch`, `cpu_count`, `memory_gb`, `docker`, `wsl`, `tty` | マシンの種類や構成 |
+| `sandbox` | カーネルが名乗る microVM（`firecracker`）。それ以外は `null` |
+| `ci`, `ci_name` | `CI` が設定されているかと、識別情報がある場合のベンダー（`github-actions`、`gitlab`、`circleci` など） |
+| `fleet` | `E2E_TELEMETRY_FLEET` の値。未設定は `null` |
+| `coding_agent` | コマンドを実行したシェルのコーディングエージェント。識別情報がある場合のみ（`claude-code`、`cursor`、`codex` など） |
+| `e2e_version`, `package_manager` | e2e のバージョンと、CLI を起動したパッケージマネージャー |
+| `runtime`, `runtime_version`, `node_version` | `node`、`bun`、`deno` とそのバージョン。`node_version` は Node 自身のバージョン、または Bun・Deno の Node 互換バージョン |
+| `$lib`, `$lib_version`, `$process_person_profile`, `$geoip_disable` | `e2e`、そのバージョン、`false`、`true`。PostHog は個人プロフィールを保持せず、位置情報も推定しません |
+
+</Accordion>
+<Accordion title="e2e_cli_session: コマンドごとに 1 回">
+
+| プロパティ | 値 |
+| --- | --- |
+| `command` | `init`、`run`、`list`、`cache ls`、`guide`、`telemetry` など |
+| `flags` | `--headed` や `--tag` など、指定されたフラグ名。値は含みません |
+| `exit_code`, `duration_ms` | コマンドの終了結果と所要時間 |
+| `error_code` | 実行前にコマンドを停止させた失敗のランナーコード（`CONFIG_NOT_FOUND`、`INVALID_CONFIG` など）。CLI が拒否したフラグや引数は `CLI_USAGE`、それ以外は `null` |
+
+</Accordion>
+<Accordion title="e2e_init_completed: init ウィザードごとに 1 回">
+
+| プロパティ | 値 |
+| --- | --- |
+| `result` | `scaffolded`、`already-initialized`、`cancelled`、`install-failed`、`not-interactive`、`invalid-project`、`example-failed` |
+| `yes`, `existing_config` | `--yes` が指定されたかと、設定がすでにありエンジンやゲートウェイの選択を尋ねなかったか |
+| `example` | `--example` の名前（`with-vite`、`with-expo` など）。フラグがなければ `null` |
+| `engine`, `gateway` | 新しい設定で選んだエンジンとモデルゲートウェイの ID（`web`、`mobile`、`web,mobile`、`none`; `vercel`、`openrouter`、`openai-compatible`、`chatgpt`、`copilot`、`opencode-console`、`grok`、`none`）。質問しなかった場合は `null`。OpenAI 互換ゲートウェイに入力したエンドポイントは含みません |
+| `skill`, `mcp`, `install` | エージェントスキル、MCP 登録、依存パッケージのインストールを選択したか |
+| `ci` | 選択した CI パイプライン（`github-actions`、`gitlab`、`none`）。質問しなかった場合は `null` |
+
+</Accordion>
+<Accordion title="e2e_upgrade_completed: e2e upgrade ごとに 1 回">
+
+| プロパティ | 値 |
+| --- | --- |
+| `result` | `upgraded`、`up-to-date`、`dry-run`、`no-project`、`invalid-project`、`linked`、`unknown-target`、`incompatible`、`registry-failed`、`install-failed` |
+| `target` | バージョンを明示した場合は `version`。それ以外は dist-tag: `latest`、`nightly`、`canary`、`beta`、`other` |
+| `from_version`, `to_version`, `prerelease` | 更新前の `e2e` バージョン、指定先が解決されたバージョン、そのバージョンがプレリリースか。不明な場合は `null` |
+| `manager` | コマンドがプロジェクト用に選んだパッケージマネージャー: `npm`、`pnpm`、`yarn`、`bun`。インストールするのは `upgraded` の場合だけ。選択前に停止した場合は `null` |
+| `siblings` | 更新計画に含まれる `@e2e-dev` パッケージからスコープを除いた名前: `["web", "kernel"]`。リンクされたパッケージとレジストリにないものは除外 |
+| `packages_moved`, `packages_linked` | `package.json` の `e2e` と `@e2e-dev` エントリーを書き換えた数と、レジストリのバージョンでないため変更しなかった数（`workspace:`、`file:`、`catalog:`、パス、git、エイリアス）。ロックファイルのパッケージ数ではありません |
+
+</Accordion>
+<Accordion title="e2e_run_completed: e2e run、e2e explore、完了した run()・explore() ごとに 1 回">
+
+| プロパティ | 値 |
+| --- | --- |
+| `command` | `run`、`explore`、`e2e/runner` の `run()` では `runner.run`、`explore()` では `runner.explore` |
+| `status`, `exit_code`, `duration_ms` | 実行の結果 |
+| `flags` | 実行コマンドに指定したフラグ名。値は含みません |
+| `tests_discovered`, `tests_selected`, `tests_executed`, `tests_passed`, `tests_failed`, `tests_interrupted`, `tests_flaky`, `tests_skipped` | サマリーの件数 |
+| `tests_failed_as_expected` | `test.fail` の対象として失敗し、成功に数えたテスト |
+| `attempts_total`, `tests_retried` | テストと直列実行グループ全体で行った試行数と、複数回の試行を必要としたものの数 |
+| `filters_run`, `filters_timed_out`, `filters_failed`, `filters_skipped`, `filters_changed_files`, `tests_left_out_by_filters` | 適用した[テストフィルター](/filters)の数、時間切れと失敗の数、変更ファイルがないなどの理由で `--changed-since` 付きの実行がフィルターを呼ばなかったか、変更ファイル数、除外したテスト数。フィルター名、理由、注記、パス、コミットは含みません |
+| `targets`, `platforms`, `engines` | ターゲット数、プラットフォーム、エンジンとそのバージョン: `web`、`ios`、`web@0.6.1`、または独自エンジンの名前とバージョン |
+| `steps_total`, `steps_agent`, `steps_locator`, `steps_assertion`, `steps_screen`, `steps_app`, `steps_session`, `steps_resource` | 種類別のステップ数 |
+| `steps_agent_act`, `steps_agent_assert`, `steps_agent_extract`, `steps_agent_waitfor` | 呼び出し口別のエージェントステップ数 |
+| `tests_with_agent_steps`, `tests_with_act` | 実行済みテストのうち、エージェントステップを使った数と、`agent.act` を使った数 |
+| `agent_steps_replayed`, `agent_steps_partial`, `agent_steps_missed`, `agent_steps_uncached`, `agent_steps_vision` | エージェントステップでのリプレイキャッシュの利用状況、キャッシュを無効にして実行した `agent.act` の数、画像を根拠に使った数 |
+| `agent_miss_reasons`, `agent_handoff_reasons` | キャッシュミスとエージェントへの引き継ぎの理由。ランナー固有の理由名で集計: `{"no-entry": 3, "retry": 1}` |
+| `tests_code_only`, `tests_replayed`, `tests_assisted`, `tests_live` | 実行済みテストをキャッシュの利用状況で分類: エージェントステップなし、全エージェントステップをキャッシュから再生、エージェントも実行したが一部をキャッシュで処理、全エージェントステップを実際に実行 |
+| `agent_actions` | エージェントが各操作を行った回数。ランナー固有の名前で集計: `{"tap": 12, "typeText": 3, "scroll": 2}` |
+| `model_gateway`, `model_provider`, `model_id`, `model_calls`, `model_tokens`, `model_cached_tokens`, `estimated_cost_usd` | 最初にモデルを使ったステップについて、処理した AI SDK プロバイダー（Vercel AI Gateway は `gateway`、ほかに `openrouter.chat`、`openai.chat` など）、ベンダー（`vendor/model` ID の最初の部分、なければプロバイダー）、公開モデル ID。その後の項目は実行全体の合計 |
+| `model_calls_act`, `model_calls_assert`, `model_calls_extract`, `model_calls_waitfor` | エージェントの呼び出し口別のモデル呼び出し数 |
+| `cost_source` | プロバイダーが料金を示した場合は `provider`、誰も示さなかった場合は `none`、モデル呼び出しのない実行は `null` |
+| `artifact_bytes` | 実行が書き込んだアーティファクトのサイズ |
+| `errors`, `error_codes` | 実行全体のエラー数と、実行内で現れた異なるエラーコード（`LOCATOR_NOT_FOUND`、`APP_UNREACHABLE` など）。最大 20 種類 |
+| `primary_error_code` | 実行のステータスを決めた、最初に記録されたエラー。実行全体のエラー、なければ失敗した試行の判定、なければステップのエラー。問題のない実行は `null` |
+| `error_kinds` | `ENGINE_FAILURE`、`MODEL_PROVIDER_FAILED`、`ERROR` について、コードと、メッセージを限定された一覧（`auth`、`rate-limit`、`overloaded`、`timeout`、`network`、`server`、`bad-request`、`device`、`daemon`、`browser`、`permission`、`not-found`、`memory`、`other`）に照合して得た種類。形式は `MODEL_PROVIDER_FAILED:rate-limit`。マシン外に出るのは種類名だけで、メッセージは出ません |
+
+設定の機能情報は、設定を読み込めなかった場合には含まれません。各値は件数、真偽値、ランナー自身のオプション値のいずれかで、利用者が書いたテキストは含みません。
+
+| プロパティ | 値 |
+| --- | --- |
+| `config_workers`, `config_retries` | 実行時に解決されたワーカー数とリトライ数 |
+| `config_agents`, `config_custom_executor`, `config_separate_judge`, `config_project_tools` | 設定済みエージェント数、独自エグゼキューターまたは専用ジャッジモデルを持つものがあるか、宣言された異なるプロジェクトツールの数 |
+| `config_credentials`, `config_secrets` | 設定済みの認証情報とシークレットの数 |
+| `config_cache_mode`, `config_cache_store`, `config_cache_strict` | `off`、`read-only`、`read-write`; `file`、`custom`; 厳格なリプレイが有効か |
+| `config_reporters`, `config_custom_reporters`, `config_artifact_store` | 組み込みレポーターの ID（`list`、`dot`、`json`、`junit`、`markdown`）、設定で追加したレポーターオブジェクト数、アーティファクトストアが設定されているか |
+| `config_filters` | 設定に宣言されたテストフィルター数 |
+| `config_trace_modes`, `config_video_modes` | ターゲット全体で使われる異なる記録モード（`off`、`on`、`retain-on-failure`、`on-first-retry`、`on-all-retries`） |
+| `config_app_commands`, `config_environments` | アプリコマンドを起動するターゲット数と、異なるアプリ環境（`test`、`staging`、`production`） |
+
+`e2e explore` と `explore()` にだけ、探索に渡された条件と検出結果の件数が含まれます。
+
+| プロパティ | 値 |
+| --- | --- |
+| `explore_ended` | 終了理由: `finished`、`skipped`、`step-limit`、`time`、`stuck`、`aborted` |
+| `explore_max_steps`, `explore_timeout_ms` | 実行に適用した予算 |
+| `explore_steps`, `explore_steps_passed`, `explore_steps_failed`, `explore_steps_blocked`, `explore_steps_exhausted` | 終了状態別の探索ステップ数 |
+| `explore_assessed` | エージェントが最後の評価を返したか |
+| `explore_issues`, `explore_warnings`, `explore_findings_by_severity` | 種類別と重大度別の検出結果: `{"1": 0, "2": 1, "3": 0, "4": 0, "5": 1}` |
+
+</Accordion>
+<Accordion title="e2e_mcp_session: MCP セッションごとに 1 回">
+
+`e2e mcp` サーバーは、受け取った各 `open_session` に対し、セッション終了時または開始失敗時に 1 つ送信します。クライアントがサーバーを強制終了した時点で開いたままのセッションは送信しません。
+
+| プロパティ | 値 |
+| --- | --- |
+| `client`, `client_version` | MCP クライアントが名乗る名前とバージョン（`claude-code`、`cursor-vscode` など）。クライアントが自己紹介する前は `null` |
+| `outcome`, `error_code` | 開始できたセッションは `closed`。開始失敗は `open-failed` と失敗のランナーコード（`APP_UNREACHABLE`、`ENGINE_FAILURE` など） |
+| `ended_by` | `close_session` は `agent`、アイドル終了は `idle`、セッションの時間制限は `step`、サーバー終了は `server`。開始失敗は `null` |
+| `platform`, `engine`, `headed` | 通常の実行と同様に、ターゲットのプラットフォーム、エンジンとバージョン、UI を表示したか |
+| `duration_ms`, `sessions_open` | セッションの存続時間と、開始時に開いていた他のセッション数 |
+| `calls_total`, `calls_failed`, `calls` | ツール呼び出し数、失敗数、セッション固有のツール名別の回数: `{"observe": 4, "tap": 9, "locate": 2, "screenshot": 1}` |
+| `error_codes` | 各ランナーコードによる呼び出し失敗数: `{"LOCATOR_NOT_FOUND": 2}`。最大 20 コード |
+
+</Accordion>
+</AccordionGroup>
+
+## 送信しない情報
+
+テレメトリーは、テストタイトル、ファイルパス、URL、オリジン、指示、観測内容、ページ内容、スクリーンショット、エラーメッセージ、スタックトレース、環境変数の値、認証情報、ファイル内容を送信しません。ターゲット、エージェント、認証情報、シークレット、プロジェクトツールの名前、MCP ツールの引数や結果、探索の目標やチャーター、検出結果の文章も送信しません。
+
+## CI 環境
+
+CI の実行はマシン単位ではなく CI ベンダーとして集計し、設定ファイルも通知もありません。CI ベンダーの環境ではないのに、コーディングエージェントがシェルで `CI` を設定した場合は、動作するマシンとして数えます。
+
+CI では、環境変数でのみテレメトリーを無効にできます。ジョブの `env` に `E2E_TELEMETRY_DISABLED: '1'` を設定してください。
+
+## フリート環境
+
+利用者のために新しいマシンで e2e を動かすプラットフォームでは、そのままだと各マシンを新しいユーザーとして数えてしまいます。それらのマシンに `E2E_TELEMETRY_FLEET=<name>` を設定してください。イベントは `fleet:<name>` として集計され、CI と同様に設定ファイルも通知もありません。何も送らない場合は `E2E_TELEMETRY_DISABLED=1` を設定します。
+
+## 送信先
+
+イベントは、e2e のメンテナーが運用する PostHog プロジェクトの `eu.i.posthog.com` に送られます。PostHog は個人プロフィールを保持せず、リクエスト元アドレスを保存せず、各イベントで GeoIP を使いません。データは集計した状態で読みます。
+
+テレメトリーには[セキュリティポリシー](https://github.com/e2e-inc/e2e/blob/main/SECURITY.md)が適用されます。実行が行うその他の接続は、[外向きの接続](/reference/security#outbound-connections)に記載しています。
+
+## フィードバック
+
+[`e2e feedback`](/reference/cli#e2e-feedback) はテレメトリーではありません。フラグ内の文章を、上記のマシン情報とともに、ひとつの `e2e_feedback` イベントとして同じ PostHog プロジェクトへ送ります。テレメトリーが有効な場合は、同じ匿名 ID を使います。
+
+保存済みの `e2e telemetry disable` では停止しません。`E2E_TELEMETRY_DISABLED=1` と `DO_NOT_TRACK=1` では停止します。[CLI リファレンス](/reference/cli#e2e-feedback)で、マスキング、`--dry-run`、`--repro` のないバグ報告について説明しています。
+
+## 通知
+
+最初のコマンド、または `e2e/runner` の最初の `run()` や `explore()` は、無効化方法を示す通知を標準エラー出力に表示します。`--reporter json` の出力は変えません。`e2e init` と `e2e telemetry` は通知を表示せず、次のコマンドまで待ちます。収集するデータに大きな変更があると、通知を再表示します。

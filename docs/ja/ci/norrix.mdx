@@ -1,0 +1,128 @@
+---
+title: Norrix
+description: Norrix で NativeScript アプリをビルドし、Norrix のシミュレーターやエミュレーターで e2e スイートを実行します。
+---
+
+import { SetupPrompt } from '../../snippets/setup-prompt-card.jsx';
+
+export const setupPrompt = `この NativeScript アプリに e2e スイートを追加し、Norrix で実行してください。ドキュメント: \`https://e2e.com/docs/ci/norrix.md\` と \`https://e2e.com/docs/mobile.md\`
+
+1. 両方のページを読んでください。
+2. \`e2e/\` を作り、専用の \`package.json\`、\`e2e.config.ts\`、最初のテストを置いてください。\`bundleId\` には \`nativescript.config.ts\` の ID を設定します。
+3. テストが確認する各要素に \`testID\` を付けてください。
+4. \`norrix env set\` でモデルのキーをこのプロジェクトのスコープに保存するよう、私に依頼してください。
+5. \`norrix build ios debug --simulator\` を実行し、成功したら知らせるよう私に依頼してください。その後、\`norrix test ios --runner e2e --wait\` を実行し、スイートが成功するまでエラーを修正してください。`;
+
+[Norrix](https://norrix.net) は、NativeScript アプリをクラウドでビルドします。
+`norrix test` は Norrix のマシン上で、シミュレーターまたはエミュレーター用ビルドに対して e2e スイートを実行します。
+Norrix がスイートの依存関係をインストールし、起動済みデバイスにビルドをインストールして、
+そのプラットフォームのターゲットに `e2e run` を実行します。
+E2E テストには Norrix Enterprise の組織が必要です。
+
+<Note>
+Norrix の [E2E Testing ガイド](https://docs.norrix.net/guides/e2e-testing/) では、
+NativeScript アプリに初めてテストを追加し、ローカル、Norrix、CI で実行するまでを説明しています。
+全フラグは [`norrix test` リファレンス](https://docs.norrix.net/cli/test/) にあります。
+</Note>
+
+<SetupPrompt>
+
+<Prompt description={setupPrompt} children={setupPrompt} actions={["copy", "cursor"]} />
+
+</SetupPrompt>
+
+## スイート
+
+通常は `e2e/` などの専用ディレクトリに、独立した `package.json` と `e2e.config.ts` を置きます。
+Norrix は、アプリの依存関係を含めずにスイートをインストールします。
+
+```text
+my-app/
+├── app/
+├── nativescript.config.ts
+└── e2e/
+    ├── package.json      # e2e, @e2e-dev/mobile, ai, and your provider package if not the gateway
+    ├── e2e.config.ts
+    └── tests/
+```
+
+```ts title="e2e/e2e.config.ts"
+import type { E2EConfig } from 'e2e';
+import { gateway } from 'ai';
+import { mobile } from '@e2e-dev/mobile';
+
+export default {
+  agents: { default: { model: gateway('openai/gpt-6-luna-fast') } },
+  targets: [
+    { name: 'ios', engine: mobile({ platform: 'ios' }), app: { bundleId: 'org.example.myapp' } },
+    { name: 'android', engine: mobile({ platform: 'android' }), app: { bundleId: 'org.example.myapp' } },
+  ],
+  workers: 1,
+} satisfies E2EConfig;
+```
+
+- Norrix が各ターゲットの `app.appPath` にビルドを設定します。
+  Norrix が起動したシミュレーターやエミュレーターを使うには、`mobile()` の `device` を省略します。
+- テスト対象の要素に `testID` を付け、`getByTestId` で探します。
+  [フレームワークごとのテスト ID](/mobile#test-ids-by-framework) を参照してください。
+- Norrix は、組織、プロジェクト、プラットフォームごとに [リプレイキャッシュ](/cache) を実行間で保持します。
+  CI のデフォルトが読み取り専用でも書き込みます。
+  `cache: 'off'` やカスタムの `store` を設定している場合は、その設定が維持されます。
+
+## Norrix で実行する
+
+アプリのディレクトリで、シミュレーター用にビルドします。
+
+```bash
+norrix build ios debug --simulator
+```
+
+`norrix build` は、ビルドが開始すると戻ります。
+`norrix build-status <id>` が `success` を返すまで待ち、スイートを実行します。
+
+```bash
+norrix test ios --runner e2e --wait
+```
+
+Android では `norrix build android debug --emulator` でビルドし、
+`norrix test android --runner e2e --wait` で実行します。
+`--wait` は、実行が失敗、キャンセル、タイムアウトした場合に 0 以外で終了します。
+
+| フラグ | 動作 |
+| --- | --- |
+| `--suite-dir <path>` | スイートが `.` または `./e2e` 以外にある場合のディレクトリ |
+| `--target <name>` | `e2e.config.ts` の 1 ターゲット。デフォルトはビルドのプラットフォーム上の全ターゲット |
+| `--tests`, `--grep`, `--tag` | ファイル、タイトルの一致、タグでテストを絞り込みます |
+| `--junit-output <dir>` | 指定ディレクトリに `junit.xml` をダウンロードします。`--wait` も有効になります |
+| `--build <id>`, `-n` | CI 向けに、確認プロンプトなしで 1 つのビルドをテストします |
+
+ダッシュボードの **View Report** で、レポートと失敗した各試行の動画を確認できます。
+ビルドの完了を待つ GitHub Actions ワークフローは、Norrix ガイドの
+[Run in CI](https://docs.norrix.net/guides/e2e-testing/#run-in-ci) を参照してください。
+
+## モデルのキー
+
+`AI_GATEWAY_API_KEY` などのプロバイダーのキーを、Norrix の環境変数に保存します。
+`agent` を使わないテストには不要です。
+
+```bash
+norrix env set AI_GATEWAY_API_KEY "$AI_GATEWAY_API_KEY" --project my-app
+```
+
+変数のスコープ内で実行されるすべてのスイートが、その値を読めます。
+`--project` を省略すると、組織内の全スイートが対象になります。信頼できるコードだけを実行してください。
+[モデルの認証情報](/ci#model-credentials) を参照してください。
+
+Norrix の環境変数は、`E2E_SECRET_<NAME>` と `E2E_USER_<NAME>_PASSWORD` を通じて、
+設定の [シークレットと認証情報](/authentication) にも渡されます。
+
+## 次のステップ
+
+<CardGroup cols={2}>
+  <Card title="モバイル" icon="mobile-screen" href="/mobile">
+    デバイスのテストを書き、各 UI フレームワークでテスト ID を設定します。
+  </Card>
+  <Card title="継続的インテグレーション" icon="rotate" href="/ci">
+    CI のデフォルト、シャーディング、再実行、終了コードを確認します。
+  </Card>
+</CardGroup>

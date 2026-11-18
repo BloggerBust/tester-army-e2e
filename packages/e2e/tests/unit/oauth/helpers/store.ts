@@ -18,4 +18,7 @@ export class MemoryCredentialStore implements CredentialStore {
   async list(): Promise<string[]> {
     return [...this.entries.keys()];
   }
+  async exclusive<T>(_providerId: string, refresh: () => Promise<T>): Promise<T> {
+    return refresh();
+  }
 }

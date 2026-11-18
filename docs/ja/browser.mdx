@@ -1,0 +1,433 @@
+---
+title: ブラウザを操作する
+description: API のモック、ダイアログへの対応、ファイルのダウンロード、iframe 内の操作、ブラウザの選択を行います。
+"og:image": "https://e2e.com/docs/images/og/browser.png?v=9e41078fc1"
+"twitter:image": "https://e2e.com/docs/images/og/browser.png?v=9e41078fc1"
+---
+
+`@e2e-dev/web` の `browser` フィクスチャでは、リクエストのモック、ダイアログへの対応、ファイルのダウンロード、ページ内でのコード実行ができます。エンジンは [Playwright](https://github.com/microsoft/playwright) を通して Chromium、Firefox、WebKit を動かします。画面遷移、操作、確認には `screen`、`app`、`expect` を使います。
+
+`browser` を使うには、`@e2e-dev/web` から `test` をインポートします。
+
+```ts
+import { test } from '@e2e-dev/web';
+import { expect } from 'e2e';
+
+test('the dashboard loads', async ({ app, screen, browser }) => {
+  await app.open('/dashboard');
+  await expect(browser).toHaveURL('/dashboard');
+  await expect(browser).toHaveTitle(/Dashboard/);
+  await expect(screen.getByRole('heading', 'Overview')).toBeVisible();
+});
+```
+
+デバイスターゲットを含むスイートでは、`browser` を使うテストに `{ requires: ['browser'] }` を追加します。これにより、ランナーはデバイス上でそのテストをスキップします。
+
+## API をモックする
+
+`browser.route` は、登録後、その試行が終わるまでリクエストをインターセプトします。`app.restart()` やセッションの復元後も有効です。ページを開く前に登録してください。
+
+```ts
+await browser.route('**/api/quote', async (route) => {
+  await route.fulfill({ json: { cents: 4200 } });
+});
+
+await app.open('/checkout');
+await expect(screen.getByText('$42.00')).toBeVisible();
+```
+
+- 各ハンドラーは `fulfill`、`continue`、`fallback`、`abort` のいずれかを、ちょうど 1 回呼び出します。
+- 最後に登録したルートが最初に実行されます。`continue` はリクエストをネットワークへ送り、`fallback` はひとつ前に登録されたルートへ渡します。
+- ハンドラー内の `expect` が失敗すると、次のステップ時、またはテスト終了時にテストが失敗します。
+
+リクエストを送る前に `browser.waitForResponse` を開始します。最初の `browser.goto` や `app.open` より前でも使えます。
+
+```ts
+const [response] = await Promise.all([
+  browser.waitForResponse('**/api/orders'),
+  screen.getByRole('button', 'Place order').tap(),
+]);
+expect(response.status).toBe(201);
+```
+
+## ダイアログに対応する
+
+未処理の `alert`、`confirm`、`prompt` があると、次のステップが失敗します。先にハンドラーを登録してください。
+
+```ts
+const off = await browser.onDialog('accept');
+await screen.getByRole('button', 'Delete').tap();
+await off();
+```
+
+関数のハンドラーにはダイアログが渡されます。ハンドラーは `accept(text?)` または `dismiss()` を呼び出す必要があります。
+
+## ファイルをダウンロードする
+
+```ts
+import { readFile } from 'node:fs/promises';
+
+const file = await browser.waitForDownload(() =>
+  screen.getByRole('link', 'Export CSV').tap(),
+);
+const csv = await readFile(file.absolutePath, 'utf8');
+expect(csv).toContain('Invoice');
+```
+
+e2e はファイルを `download` アーティファクトとして保存します。読み取りには `file.absolutePath` を使います。ホスト型ブラウザでも同じように使えます。`file.path` は、プロジェクトではなく、その試行のアーティファクトディレクトリからの相対パスです。
+
+## iframe 内を操作する
+
+`browser.frameLocator` は、検索範囲をフレーム内に限定します。
+
+```ts
+const payment = browser.frameLocator('#payment-frame');
+await payment.getByLabel('Card number').fill('4242424242424242');
+```
+
+フレーム内では、`locator` に CSS または XPath セレクターを渡せます。`frameLocator` でさらに入れ子のフレームに入れます。
+
+```ts
+const editor = browser.frameLocator('#result');
+await editor.locator('#upload').setInputFiles('fixtures/photo.png');
+await expect(editor.frameLocator('#preview').getByRole('heading', 'Uploaded')).toBeVisible();
+```
+
+`browser.locator('css or xpath')` は、ページに対して同じ操作を行います。セレクターは、ロール、ラベル、テスト ID で要素を見つけられない場合にだけ使ってください。非表示の重複要素によって一致が曖昧になる場合は、まず `{ visible: true }` を試します。
+
+エージェントのセマンティックツリーでは、ホスト型のカード入力欄など、別サイトのフレームは中身のない `iframe` 要素として表示されます（[サイトの検査](/reference/security#site-check)）。エージェントがその内容を確認できるのはスクリーンショット経由だけです。フレーム内の操作には `frameLocator` を使ってください。`agent.assert` で内容を判定するには [`vision`](/reference/agent#vision) を渡します。そのフレーム内だけに変化があった `agent.act` は、[リプレイ](/cache#when-a-recording-is-written)を記録しません。
+
+## ページから情報を読み取る
+
+`browser.evaluate` はページ内で関数を実行します。e2e が関数をシリアライズするため、テスト内の変数は参照できません。データは第 2 引数として渡します。
+
+```ts
+const count = await browser.evaluate(() => document.querySelectorAll('li').length);
+const flag = await browser.evaluate((name: string) => window.localStorage.getItem(name), 'featureFlags');
+```
+
+`evaluate` は、`screen` では読み取れない状態にだけ使ってください。
+
+## ページのスクリプトより先に実行する
+
+初期化スクリプトは、すべてのドキュメントでページ自身のスクリプトより先に実行されます。ブラウザ API のモック、`Math.random` のシード設定、起動時にアプリが読むフラグの設定などに使います。全テストに適用する場合は、次のように設定します。
+
+```ts
+web({ initScripts: [{ path: 'tests/init.js' }] })
+```
+
+1 つのテストだけで使う場合は、ページを開く前に設定します。
+
+```ts
+await browser.addInitScript((value) => { Math.random = () => value; }, 0.5);
+await app.open('/raffle');
+```
+
+[初期化スクリプト](/reference/web#init-scripts)を参照してください。
+
+## ダークモードとモーション抑制をエミュレートする
+
+`colorScheme` と `reducedMotion` は、最初の描画から、ページの `@media` ルールと `matchMedia` が読む値を設定します。全テストに適用する場合は、次のように設定します。
+
+```ts
+web({ colorScheme: 'dark', reducedMotion: 'reduce' })
+```
+
+1 つのテストだけで使う場合は `browser.emulateMedia` を呼び出します。指定した値でページを読み込むには、ページを開く前に呼び出してください。
+
+```ts
+await browser.emulateMedia({ reducedMotion: 'reduce' });
+await app.open('/');
+```
+
+値はテストの終了まで保持され、`app.restart()` や `app.clearState()` を呼び出しても変わりません。[メディアのエミュレーション](/reference/web#media-emulation)を参照してください。
+
+## Cookie
+
+```ts
+await browser.setCookies([{ url: 'http://localhost:3000', name: 'tz', value: 'UTC' }]);
+```
+
+Cookie の URL が解析できない場合、`about:blank` の場合、`http:` または `https:` 以外のスキームの場合は `POLICY_DENIED` になります。ドメイン Cookie は、送信先となるオリジンとして検証されます。1 つでも拒否されると、e2e はどの Cookie も設定しません。
+
+## ブラウザを選ぶ
+
+ブラウザはエンジンのオプションで、デフォルトは `chromium` です。同じアプリを 2 種類のブラウザでテストする場合は、[ターゲットごとにサイズを指定する](/web#one-size-per-target)例と同様に、2 つのターゲットを定義します。
+
+```ts title="Target fragment"
+{ name: 'webkit', engine: web({ browser: 'webkit' }), app },
+```
+
+CI では、[インストールコマンド](/reference/web#installing-browsers)で追加のブラウザをインストールします。
+
+<CodeGroup>
+```bash npm
+npx @e2e-dev/web install webkit --with-deps
+```
+
+```bash pnpm
+pnpm exec e2e-web install webkit --with-deps
+```
+
+```bash bun
+bunx @e2e-dev/web install webkit --with-deps
+```
+</CodeGroup>
+
+`connect` を使うと、ブラウザを起動する代わりに、CDP 経由でリモートの Chromium に接続します。起動済みの [Lightpanda](/integrations/lightpanda) や [Moli](/integrations/moli) など、CDP に対応する他のブラウザにも接続できます。サイズの設定については[ビューポート](/web#viewports)を参照してください。
+
+## ホスト型ブラウザ
+
+ブラウザプロバイダーは、サービスからブラウザを借り、CDP エンドポイントをエンジンに渡します。`browser` にプロバイダーを指定してください。エンジンは、どの終了経路でもスコープの終了時にブラウザを返却します。そのため、分単位で課金されるセッションも、実行で不要になった時点で停止します。
+
+| サービス | プロバイダー |
+| --- | --- |
+| [Kernel](/integrations/kernel) | `@e2e-dev/kernel` の `kernel()` |
+| 自分のコンピューターで動く [smol machines](/integrations/smol) の microVM | `@e2e-dev/smol` の `smol()` |
+| 自分のマシンで動くオープンソースのヘッドレスブラウザ [Lightpanda](/integrations/lightpanda) | `@e2e-dev/lightpanda` の `lightpanda()` |
+| 必要に応じてレイアウト計算とスクリーンショット撮影を行うローカルブラウザ [Moli](/integrations/moli) | `@e2e-dev/moli` の `moli()` |
+| [TestMu AI](/integrations/testmu#run-web-targets-in-browsers) | `@e2e-dev/testmu/web` の `testmuBrowsers()` |
+| [E2B](/integrations/e2b#run-web-targets-in-browsers) のサンドボックス | `@e2e-dev/e2b/web` の `e2bBrowsers()` |
+| その他のサービス | プロジェクト内に数十行で実装する独自プロバイダー |
+
+サービスのライブビューにウィンドウが表示される場合は、`viewport: null` を追加して、[ページをウィンドウ全体に広げます](/web#fill-the-window)。
+
+プロバイダーで使うブラウザは、エンジンが CDP 経由で Chromium として操作できるものです。Chromium 自体のほか、Lightpanda、Moli が該当します。`connect` との併用はできません。実行するテストがないターゲットはブラウザを借りません。
+
+### プロバイダーを実装する
+
+プロバイダーは次のインターフェースを実装します。
+
+```ts
+export interface BrowserProvider {
+  /** Label in progress lines and error messages. */
+  readonly name: string;
+  /** `worker` (default): one browser per worker slot for the run. `attempt`: a fresh browser per attempt. */
+  readonly scope?: 'worker' | 'attempt';
+  acquire(request: BrowserRequest): Promise<BrowserLease>;
+  release(lease: BrowserLease, context: BrowserReleaseContext): Promise<void>;
+  /** Optional: resolves CDP handshake headers from the worker's environment. */
+  cdpHeaders?(lease: BrowserLease, context: BrowserRequest): Readonly<Record<string, string>> | Promise<Readonly<Record<string, string>>>;
+  /** Optional: the service's own recording of the browser, in the worker, for an attempt that records video. */
+  record?(lease: BrowserLease, context: ProviderRecordContext): Promise<ProviderRecording>;
+  /** Optional: serves `browser.waitForDownload` for a browser on another machine. */
+  readonly downloads?: BrowserProviderDownloads;
+  /** Optional: releases the run's leases a dead worker left open, once the run ends; resolves to their ids. */
+  sweep?(context: BrowserReleaseContext): Promise<readonly string[]>;
+}
+
+export interface BrowserProviderDownloads {
+  /** Absolute directory on the browser's machine the browser saves downloads to. */
+  readonly dir: string;
+  /** The bytes of one finished download, `file` a path under `dir`, read off the leased browser. */
+  read(lease: BrowserLease, file: string, context: BrowserDownloadContext): Promise<Uint8Array>;
+}
+
+export interface BrowserLease {
+  /** The provider's handle (a session id), handed back to `release`. */
+  readonly id: string;
+  /** `ws://`, `wss://`, or `http://` DevTools endpoint to attach to over CDP. */
+  readonly cdpEndpoint: string;
+  /** Endpoint to reattach to the same browser after a transport drop; per-attempt leases only. */
+  readonly reconnectEndpoint?: string;
+}
+```
+
+`acquire` には、実行 ID、ターゲット、ワーカースロットとスロット数、試行単位のリースでは試行 ID、実行の環境変数、AbortSignal、レポーターに届く `log` が渡されます。トークンは `process.env` ではなく `request.env` から読み取ってください。
+
+リースは JSON データです。`release` には `acquire` が返したオブジェクトがそのまま渡るため、プロバイダー独自のフィールドを保持できます。ワーカーに渡るのは `id`、`cdpEndpoint`、`reconnectEndpoint` だけです。録画など、ワーカーが使う情報は `lease.id` をキーにして管理してください。
+
+認証が必要な CDP 接続では `cdpHeaders(lease, request)` を実装し、ワーカー内の `request.env` から認証情報を読み取ります。ヘッダーはリースの JSON には含まれず、ページのリクエストヘッダーにもなりません。
+
+一般的なセッション API に対しては、セッションの作成、DevTools エンドポイントが得られるまでのポーリング、セッションの停止という 3 種類のリクエストを送ります。
+
+<Accordion title="プロバイダーと設定の例">
+
+```ts title="browser-provider.ts"
+import type { BrowserProvider } from '@e2e-dev/web';
+
+/**
+ * Leases browsers from a service that starts a Chromium per session and
+ * exposes its DevTools endpoint. Replace the three requests with your
+ * service's API.
+ */
+export function hostedBrowsers(options: { serviceUrl: string; scope?: 'worker' | 'attempt' }): BrowserProvider {
+  return {
+    name: 'hosted-browsers',
+    scope: options.scope ?? 'worker',
+    async acquire(request) {
+      const token = request.env['BROWSER_SERVICE_TOKEN'];
+      if (token === undefined || token === '') throw new Error('BROWSER_SERVICE_TOKEN is not set');
+      const headers = { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' };
+      // 1. Ask for a browser; name the session after the run so it can be found later.
+      const created = await fetch(`${options.serviceUrl}/sessions`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          name: `e2e ${request.runId} ${request.targetName} ${request.attemptId ?? `slot ${request.slot + 1} of ${request.slots}`}`,
+        }),
+        signal: request.signal,
+      });
+      if (!created.ok) throw new Error(`browser service: HTTP ${created.status}`);
+      const { id } = (await created.json()) as { id: string };
+      // 2. Wait until the session exposes its DevTools endpoint.
+      for (;;) {
+        const response = await fetch(`${options.serviceUrl}/sessions/${id}`, { headers, signal: request.signal });
+        const session = (await response.json()) as { status: string; cdpUrl?: string; viewerUrl?: string };
+        if (session.status === 'ready' && session.cdpUrl !== undefined) {
+          if (session.viewerUrl !== undefined) request.log(`watch at ${session.viewerUrl}`);
+          return { id, cdpEndpoint: session.cdpUrl };
+        }
+        if (session.status !== 'starting') throw new Error(`browser service: session ${id} is ${session.status}`);
+        await new Promise((resolve) => setTimeout(resolve, 2_000));
+      }
+    },
+    async release(lease, context) {
+      // 3. Stop the session; the run waits for this within cleanupTimeout.
+      const token = context.env['BROWSER_SERVICE_TOKEN'] ?? '';
+      await fetch(`${options.serviceUrl}/sessions/${lease.id}/stop`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+        signal: context.signal,
+      });
+    },
+  };
+}
+```
+
+```ts title="e2e.config.ts"
+import type { E2EConfig } from 'e2e';
+import { web } from '@e2e-dev/web';
+import { hostedBrowsers } from './browser-provider.ts';
+
+export default {
+  targets: [
+    {
+      name: 'hosted',
+      engine: web({
+        browser: hostedBrowsers({ serviceUrl: 'https://browsers.example.com' }),
+      }),
+      app: { url: 'https://staging.example.com' },
+    },
+  ],
+  workers: 2,
+} satisfies E2EConfig;
+```
+
+2 つのワーカーが並列で 2 つのセッションを借り、実行中はそれらを保持します。
+
+</Accordion>
+
+### リースのスコープを選ぶ
+
+デフォルトの `scope: 'worker'` は、ワーカースロットごとに 1 つのブラウザを実行全体で保持します。`scope: 'attempt'` は、リトライを含む各試行に、それ以前のテストが使っていない新しいブラウザを割り当てます。その分、試行ごとにセッションを起動するコストがかかります。ホスト型セッションは稼働中に費用がかかるため、`workers` はスイートが使い切れる数にしてください。
+
+ワーカーがクラッシュ、`process.exit`、強制終了などで停止すると、取得したリースを解放できません。`sweep` を実装すると、ランナーが実行終了時にターゲットごとに 1 回、残ったリースを解放できます。サービスのタグ、または実行とターゲットごとに分けた共有のローカルリース記録からリースを探し、レポーター用に ID を返します。sweep の失敗は 1 行表示されますが、実行を失敗にはしません。`sweep` がなければ、そのブラウザはサービス側で終了されるまで動き続けます。
+
+<Accordion title="ワーカースコープ: リースの開始と終了">
+- 実行開始時に、エンジンは全スロットのブラウザを並列で借ります。1 つでも失敗すると、テストを実行する前に終了し、取得できたリースを解放します。
+- 最後のワーカーが終了した後、エンジンは `cleanupTimeout` 以内にリースを解放します。失敗、中断、`prepare` の例外など、どの終了経路でも同じです。
+- ワーカーのブラウザが切断されると、ワーカーは次の試行開始時に代わりを借り、自身の終了時に解放します。このため、`acquire` はワーカープロセスでも実行されます。ランナープロセス内で作った状態には依存しないでください。`log` は引き続きレポーターに届き、ターゲットとスロットが接頭辞として付きます。
+- リースを取得した側が、ちょうど 1 回だけ解放します。
+</Accordion>
+
+<Accordion title="試行スコープ: 制限事項">
+試行はブラウザの永続的なデフォルトコンテキストの最初のタブで実行されるため、リモートブラウザにはそのコンテキストだけが存在する必要があります。[`connect.reconnectEndpoint`](/reference/web#recovering-a-cdp-transport) の制限が適用されます。
+
+- `headers`、`basicAuth`、`userAgent`、`locale`、`timezoneId` は使えません。いずれも `INVALID_CONFIG` になります。
+- `app.clearState()` は使えません。スコープを示す `UNSUPPORTED_CAPABILITY` になります。
+- セッション状態の取得と復元はできません。そのターゲットで[セッション](/authentication)を使うテストがある場合、セットアップテストがログインする前に `COLLECTION_ERROR` で失敗します。
+
+トランスポートが切断された後は、次の操作でリースの `reconnectEndpoint`、なければ `cdpEndpoint` を使って再接続し、同じブラウザであることを確認します。
+</Accordion>
+
+### プロバイダーでダウンロードに対応する
+
+`downloads` を実装すると、`browser.waitForDownload` をローカルと同じように使えます。ホスト型ブラウザは、ランナーから開けない自身のディスクにファイルを保存します。`downloads` があると、ファイルを `dir` 配下に保存し、エンジンが完成したファイルのパスを `read` に渡します。`read` はワーカー内でサービスのファイル API からバイト列を取得します。この処理には呼び出しのタイムアウトが適用されます。[Kernel](/integrations/kernel#downloads) はこの方法でダウンロードに対応しています。
+
+`downloads` がない場合、別のマシン上のブラウザでダウンロードすると、プロバイダー名を示す `ENGINE_FAILURE` になります。ランナーと同じマシンでブラウザを動かすプロバイダーでは、追加の実装は不要です。
+
+### プロバイダーで録画に対応する
+
+`record` を実装すると、サービス自身の録画を試行の動画として使えます。試行で[動画](/reference/config#video)を記録する場合、ワーカーはページを開いた後、エンジンのスクリーンキャストを開始する代わりに `record` を呼び出します。録画には、タブやアドレスバーを含むブラウザウィンドウ全体が映ります。
+
+`record` は `e2e/engine` の `ProviderRecording` を返します。試行が動画を回収するとき、その `stop` は次のいずれかを行います。
+
+- 渡されたディレクトリにファイルを書き込み、`{ file }` を返します。e2e は試行の他のアーティファクトと並べて、`video/<file>` として保存します。
+- サービスが保持する録画に対して `{ url, mediaType }` を返します。レポートにはそのリンクが表示されます。
+
+<Accordion title="record メソッドの例">
+
+```ts title="browser-provider.ts"
+import type { ProviderRecording } from 'e2e/engine';
+
+// In hostedBrowsers(), beside acquire and release.
+async record(lease, context): Promise<ProviderRecording> {
+  const headers = { Authorization: `Bearer ${context.env['BROWSER_SERVICE_TOKEN'] ?? ''}` };
+  const startedAt = new Date().toISOString();
+  const started = await fetch(`${options.serviceUrl}/sessions/${lease.id}/recordings`, {
+    method: 'POST',
+    headers,
+    signal: context.signal,
+  });
+  if (!started.ok) throw new Error(`browser service: HTTP ${started.status}`);
+  const { id } = (await started.json()) as { id: string };
+  return {
+    startedAt,
+    async stop({ signal }) {
+      const stopped = await fetch(`${options.serviceUrl}/recordings/${id}/stop`, { method: 'POST', headers, signal });
+      if (!stopped.ok) throw new Error(`browser service: HTTP ${stopped.status}`);
+      // The service keeps the recording; the report links to its player page.
+      return { url: `${options.serviceUrl}/recordings/${id}`, mediaType: 'text/html' };
+    },
+  };
+},
+```
+
+</Accordion>
+
+`record` が失敗すると、プロバイダーとリースを示して試行の起動が失敗します。`stop` が失敗した場合は、共有ブラウザで録画が残り続けないよう、試行終了時にもう一度実行します。ヘッドレスブラウザなど、サービスで録画できないブラウザでは `record` を省略してください。エンジンがスクリーンキャストを録画します。[Kernel](/integrations/kernel#recordings) はこの方法で録画に対応しています。
+
+## アイコンフォントと生成コンテンツ
+
+スタイルシートの `::before` や `::after` が追加したテキストは、スクリーンリーダーで読み上げられるのと同様に、コントロールの名前に含まれます。たとえば、`.next::before { content: "→" }` を持つボタンは `button "→ Next"` になります。`getByLabel` が読むラベルテキストには、生成コンテンツは含まれません。
+
+アイコンフォントは例外です。Font Awesome などのフォントは、私用領域の文字（`\f090`）でアイコンを描きます。エンジンはすべての名前からこれらの文字を取り除きます。
+
+- `<button><i class="fa fa-sign-in"> Login</i></button>` は `button "Login"` となり、`getByRole('button', 'Login')` で見つかります。
+- 2 つの単語の間にあるグリフは、空白として扱われます。
+- アイコンだけのコントロールに `title` があれば、それが名前として表示されます。ただし、ブラウザ自身は引き続きグリフを名前にするため、そのタイトルを指定した `getByRole` では見つかりません。`aria-label` を追加するか、`browser.locator('[title="Sign out"]')` を使ってください。
+- 名前に `RegExp` を指定すると、グリフを含むブラウザ側の名前に照合されます。そのため、`/Login/` のように先頭・末尾のアンカーを付けずに使ってください。
+
+## inert なコンテンツ
+
+エージェントには inert なコンテンツが見えないため、入力を受け付けないコントロールを操作対象にしません。
+
+- `inert` 属性を持つ要素と、そのすべての子孫要素。
+- `showModal()` または `show-modal` コマンドで開いたモーダル `<dialog>` の外側にあるすべての要素。複数開いている場合は、最後に表示したものだけが残ります。どれが最後か判定できない場合、e2e は何も除外しません。
+
+Playwright と同様に、ロケーターは inert なコンテンツも見つけ、`toBeVisible` も成功します。
+
+## Shadow DOM
+
+`screen` の検索、スコープ、`has` フィルターは、open と closed の両方の Shadow Root 内を検索でき、エージェントにもその内容が見えます。`first`、`last`、`nth` は、closed なルートの外側の一致を先に数え、その後、各ルート内の一致を順に数えます。
+
+```ts
+// The input and the button live in a closed shadow root a widget attached.
+await screen.getByPlaceholder('Access code').fill('SHADOW-42');
+await screen.getByRole('button', 'Submit').tap();
+await expect(screen.getByText('Access granted')).toBeVisible();
+```
+
+`browser.locator`、`frameLocator`、`filter({ hasText })` は closed なルートの内部には入りません。代わりにルート内のテキストを検索するか、`has` で絞り込んでください。HTML で宣言した closed なルート（`<template shadowrootmode="closed">`）にはアクセスできません。
+
+## 次のステップ
+
+<CardGroup cols={2}>
+  <Card title="Web エンジンリファレンス" icon="masks-theater" href="/reference/web">
+    `browser` の全メソッド、タイムアウト、発生するエラーを確認します。
+  </Card>
+  <Card title="Web" icon="play" href="/web">
+    開発サーバーを起動し、保護されたプレビューにアクセスし、ビューポートをテストします。
+  </Card>
+</CardGroup>

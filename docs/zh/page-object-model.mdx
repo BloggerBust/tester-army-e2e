@@ -1,0 +1,99 @@
+---
+title: 页面对象
+description: 将一个屏幕的定位器和操作封装到类中，并通过测试夹具提供给测试。
+"og:image": "https://e2e.com/docs/images/og/page-objects.png?v=c53bbc6604"
+"twitter:image": "https://e2e.com/docs/images/og/page-objects.png?v=c53bbc6604"
+---
+
+页面对象将一个屏幕的定位器和操作集中管理，让测试调用它的方法，无需重复相同的查询。这是一种设计模式，在任何测试框架中的用法都一样。如果你在 Playwright 或 Selenium 中写过页面对象，就会很熟悉。
+
+在 e2e 中，页面对象是一个接收 `screen` 的普通 TypeScript 类。你通过测试夹具将它提供给测试。
+
+## 编写页面对象
+
+构造函数接收 `screen` 并创建定位器。定位器采用惰性求值，只有方法使用它时才会执行查找：
+
+```ts title="tests/pages/sign-in-page.ts"
+import type { Locator, Screen, Secret } from 'e2e';
+
+export class SignInPage {
+  readonly email: Locator;
+  readonly password: Locator;
+  readonly submit: Locator;
+  readonly error: Locator;
+
+  constructor(readonly screen: Screen) {
+    this.email = screen.getByLabel('Email');
+    this.password = screen.getByLabel('Password');
+    this.submit = screen.getByRole('button', 'Sign in');
+    this.error = screen.getByRole('alert');
+  }
+
+  async signIn(email: string, password: string | Secret) {
+    await this.email.fill(email);
+    await this.password.fill(password);
+    await this.submit.tap();
+  }
+}
+```
+
+文件名不要以 `.e2e.ts` 结尾，否则运行器会将它收集为测试。
+
+## 通过测试夹具提供页面对象
+
+使用 `test.extend` 在测试夹具中创建页面对象。每个导入此 `test` 的测试都会获得它，无需 `beforeEach`：
+
+```ts title="tests/fixtures.ts"
+import { test as base } from 'e2e';
+import { SignInPage } from './pages/sign-in-page.ts';
+
+export const test = base.extend<{ signInPage: SignInPage }>({
+  signInPage: async ({ screen }, use) => {
+    await use(new SignInPage(screen));
+  },
+});
+```
+
+```ts title="tests/sign-in.e2e.ts"
+import { expect } from 'e2e';
+import { test } from './fixtures.ts';
+
+test('rejects a wrong password', async ({ app, signInPage }) => {
+  await app.open();
+  await signInPage.signIn('ada@example.test', 'not-the-password');
+  await expect(signInPage.error).toHaveText('Wrong email or password');
+});
+```
+
+## 保持跨平台兼容
+
+只使用 `screen` 的页面对象可以在网页端和移动端测试目标上运行。如果需要 `browser`（键盘、CSS 选择器、`evaluate`）或 `device`，它就只能在相应平台上运行。
+
+列出 `browser` 或 `device` 的测试夹具会让使用它的每个测试都需要它。在其他测试目标上，运行会在收集阶段以 `COLLECTION_ERROR` 失败。为这些测试设置 `requires: ['browser']`，即可在这些测试目标上跳过它们。不列出该测试夹具的测试仍保持可移植。
+
+## 智能体目标的使用位置
+
+方法可以将 `agent` 作为参数，封装应用中经常变化的目标：
+
+```ts
+async addCard(agent: Agent, name: string) {
+  await agent.act('add a new card named {name}', { params: { name } });
+}
+```
+
+不要在测试夹具中读取 `agent`。否则该 `test` 下的所有测试都需要配置模型，包括确定性测试。
+
+许多页面对象方法只是为了通过点击完成一个流程。一个 [`agent.act` 目标](/core-concepts#goals)就能替代它们。对于每个测试都会重复、且需要精确执行的步骤，保留方法。
+
+要让测试从已登录状态开始，不要在每个测试中调用 `signIn`。改为保存一次会话。参阅[身份验证](/authentication)。
+
+## 下一步
+
+<CardGroup cols={2}>
+  <Card title="身份验证" icon="key" href="/authentication">
+    登录一次，复用会话。
+  </Card>
+  <Card title="测试 API" icon="code" href="/reference/test#your-own-fixtures">
+    测试夹具的准备、清理和执行顺序。
+  </Card>
+</CardGroup>

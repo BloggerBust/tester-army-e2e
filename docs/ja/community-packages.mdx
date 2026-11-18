@@ -1,0 +1,74 @@
+---
+title: コミュニティパッケージ
+description: e2e を拡張するサードパーティーパッケージを探し、自分の連携パッケージを掲載できます。
+---
+
+コミュニティパッケージは、ツール、エンジン、レポーターで e2e を拡張します。保守とサポートは、e2e のコアチームではなく各パッケージのメンテナーが行います。掲載は推奨を意味しません。
+
+対応する e2e のバージョンとセットアップ要件は、各パッケージのドキュメントで確認してください。以下のバージョン情報は、2026 年 11 月 12 日に公開済みパッケージを確認した記録であり、e2e チームによる互換性テストの結果ではありません。
+
+## パッケージを探す
+
+### `e2e-cige`
+
+[CIGE](https://www.amazon.science/publications/cige-an-agentic-ai-test-case-standard) のテストケースを JSON で受け取り、`agent.act` と `agent.assert` で実行します。実行サマリーと、失敗したテストを修復するエージェント向けのチェックも含まれます。
+
+メンテナー: [Vivek Krishna](https://github.com/vivekkrishna)。バージョン `0.1.0` は `e2e >=0.21.0 <1` を宣言しています。
+
+[npm](https://www.npmjs.com/package/e2e-cige) · [リポジトリとセットアップ](https://github.com/vivekkrishna/cige)
+
+### `@appduct/e2e`
+
+テストフィクスチャやエージェントステップから、MCP 経由でアプリの Appduct ツールを呼び出します。Web、iOS シミュレーター、Android エミュレーターのターゲットに対応します。
+
+メンテナー: [Callstack](https://github.com/callstackincubator/appduct)。バージョン `0.16.0` は `e2e >=0.21.0 <1` と `ai ^7.0.0` を宣言しています。
+
+[npm](https://www.npmjs.com/package/@appduct/e2e) · [リポジトリとセットアップ](https://github.com/callstackincubator/appduct/tree/main/packages/e2e)
+
+### `@mobai-app/e2e`
+
+iOS と Android の実機、シミュレーター、エミュレーター、デバイスファーム向けに、MobAI デバイスエンジンとダッシュボードレポーターを追加します。
+
+メンテナー: [MobAI](https://github.com/MobAI-App)。バージョン `0.1.3` は `e2e >=0.19.0 <1` を宣言しています。
+
+[npm](https://www.npmjs.com/package/@mobai-app/e2e) · [リポジトリとセットアップ](https://github.com/MobAI-App/mobai-e2e)
+
+### `@testdino/e2e`
+
+テストケース、リトライ、ステップ、エラー、コンソール出力、スクリーンショット、動画を TestDino に報告します。
+
+メンテナー: [TestDino](https://testdino.com)。バージョン `1.1.0` は `e2e >=0.16.0 <1` を宣言しています。選択と再実行のコマンドには e2e `0.19.0` 以降が必要です。
+
+[npm](https://www.npmjs.com/package/@testdino/e2e) · [ドキュメント](https://docs.testdino.com/cli/testdino-e2e)
+
+### `@testomatio/reporter`
+
+`@testomatio/reporter/e2e` アダプターを通して、e2e の結果を Testomat.io に送信します。
+
+メンテナー: [Testomat.io](https://github.com/testomatio)。バージョン `2.23.0` にアダプターが含まれます。使用例は `e2e ^0.21.0` を使っていますが、パッケージは e2e の peer 依存範囲を宣言していません。
+
+[npm](https://www.npmjs.com/package/@testomatio/reporter) · [リポジトリと使用例](https://github.com/testomatio/reporter/tree/2.x/example/e2e)
+
+## 関連する連携を探す
+
+e2e チームは、[ホスト型ブラウザとデバイスの連携](/integrations)、[GitHub レポーター](/github)、[組み込みレポーター](/reference/reporters)を保守しています。
+
+アプリのテストスイートやプロバイダーの実装例は、[コミュニティとパートナーの例](https://e2e.com/examples)で探せます。[Limrun のアプリフローの例](https://github.com/limrun-inc/testerarmy-e2e-limrun)や [Notte のブラウザプロバイダーの例](https://github.com/nottelabs/notte/tree/main/examples/e2e)も含まれています。
+
+## 自分のパッケージを追加する
+
+[このページを編集する](https://github.com/e2e-inc/e2e/edit/main/docs/community-packages.mdx)プルリクエストを作成し、次の情報を含めてください。
+
+- パッケージ名、公開パッケージへのリンク、リポジトリまたはドキュメント。
+- e2e とどのように連携するかの短い説明と、その根拠または使用例。
+- メンテナー、対応プラットフォーム、e2e の互換性要件。
+- 追加時に確認したバージョンと公開日。
+
+説明は事実に基づいて記載してください。パッケージの問題は、そのメンテナーに報告してください。アプリの使用例を追加する場合は、[使用例の貢献ガイド](https://github.com/e2e-inc/e2e/blob/main/examples/CONTRIBUTING.md)に従ってください。
+
+## 次のステップ
+
+<CardGroup cols={2}>
+  <Card title="独自のツール" href="/tools">アプリ固有の操作をエージェントに公開します。</Card>
+  <Card title="フィクスチャ" href="/fixtures">テスト間でセットアップとリソースを共有します。</Card>
+</CardGroup>

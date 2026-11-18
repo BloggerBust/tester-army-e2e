@@ -1,0 +1,149 @@
+---
+title: Selenium からの移行
+description: ロケーター、自動リトライするアサーション、エージェントの目標を使い、Selenium のフローを TypeScript に書き換えます。
+"og:image": "https://e2e.com/docs/images/og/migrate/selenium.png?v=32737f50da"
+"twitter:image": "https://e2e.com/docs/images/og/migrate/selenium.png?v=32737f50da"
+---
+
+import { SetupPrompt } from '../../snippets/setup-prompt-card.jsx';
+
+export const migrationPrompt = `このプロジェクトの Selenium テストを、1 フローずつ e2e に移行してください。ドキュメント: \`https://e2e.com/docs/migrate/selenium.md\`
+
+1. 上記の移行ガイドを読んでください。Selenium の設定と WebDriver 呼び出しに対応する e2e の機能と、e2e にまだない機能が載っています。
+2. e2e のテストは TypeScript です。Selenium のスイートが Java、Python、その他の言語なら、新しいテストプロジェクトの場所を私に確認してください。たとえば、独自の \`package.json\` を持つ \`e2e/\` フォルダーです。
+3. そのプロジェクトに e2e 設定（\`e2e.config.ts\`、\`.mts\`、\`.js\`、\`.mjs\`）がなければ、そこで \`npx e2e init --yes\`（または pnpm、bun の同等のコマンド）を実行してください。設定とサンプルテストを書き出しますが、この時点では何もインストールしません。
+4. e2e スキルを読み、以降のすべての手順で従ってください。\`npx e2e guide\` でスキル全体、\`npx e2e guide <topic>\` で各トピックを表示できます。
+5. init を実行した場合は、エージェントのステップに使うモデルを私に確認してください。ChatGPT、GitHub Copilot、OpenCode Console、SuperGrok のサブスクリプション、API キー、ローカルモデルから選びます。対応するプロバイダーパッケージで設定してください。サインインが必要なら、\`npx e2e login\` のコマンドを示し、私の確認を待ってください。
+6. 各 \`driver.get\` が使う URL を、ターゲットの \`app\` に設定してください。スイートがアプリを起動している場合は、そのコマンドも設定してください。パスワードとトークンは \`credentials\` または \`secrets\` に移してください。
+7. 依存関係をインストールしてください。
+8. ページオブジェクトとそれを使うフローを一覧にし、最初に移すものを私に確認してください。1 つのページオブジェクトと、それに関連するフローを提案してください。
+9. ガイドの表を使い、それらのフローを \`tests/\` 内の \`.e2e.ts\` に書き換えてください（e2e のデフォルトは \`tests/**/*.e2e.ts\` です）。移す前に「e2e にまだない機能」を確認してください。必要な呼び出しが載っていれば、「現在使える方法」を採用するか、そのフローを Selenium に残して理由を説明してください。CSS や XPath より、ロール、ラベル、テスト ID のクエリを優先してください。すべての待機と \`Thread.sleep\` をロケーターアサーションに置き換えてください。複数ノードに一致するクエリは絞り込んでください。ページオブジェクトの準備コードはフィクスチャにしてください。
+10. ページ遷移と最終的な検証は、\`app.open()\` とロケーターアサーションで決定論的に保ってください。決め打ちの操作列が頻繁に壊れる箇所には、代わりに \`agent.act\` の目標を提案してください。
+11. \`npx e2e run <file>\` で新しいファイルを実行し、成功するまで修正してください。削除してよいと私が確認するまで、Selenium のテストは残してください。
+12. 移したフロー、Selenium に残したフロー、それぞれの理由をまとめてください。`;
+
+e2e は Selenium のスイートを TypeScript のテストに置き換えます。ロケーターはロールやラベルでノードを探し、アサーションは成功するかタイムアウトするまでリトライします。Java や Python のスイートは書き換えが必要なため、両方を動かしながら、フローを 1 つずつ移行してください。
+
+<SetupPrompt>
+
+<Prompt description={migrationPrompt} children={migrationPrompt} actions={["copy", "cursor"]} />
+
+</SetupPrompt>
+
+複数セッションにわたる移行では、[`migrate-to-e2e` スキル](/coding-agents#migrate-an-existing-suite)が移行状況を進捗ファイルに記録し、各テストを廃止するまで旧スイートを動かし続けます。
+
+## 設定を移す
+
+<Note>[クイックスタート](/quickstart)で e2e をインストールしてください。モデルが必要なのはエージェントの呼び出しだけなので、以下の例はモデルなしで動きます。</Note>
+
+| Selenium | e2e |
+| --- | --- |
+| 各 `driver.get` の URL | ターゲットの `app: { url }` に設定し、以後は相対パス |
+| スクリプトでアプリを起動 | `app: { url, command }`。[アプリの起動](/web#starting-your-app)を参照 |
+| ブラウザごとのドライバー | `web({ browser })` のビルドごとにターゲットを作成。Chrome、Edge、Safari ではなく `chromium`、`firefox`、`webkit` |
+| Selenium Grid | 並列実行には `workers`、ホスト型 Chromium には[ブラウザプロバイダー](/browser#hosted-browsers) |
+| `System.getenv` からのパスワード | 設定の `credentials` または `secrets`。[認証](/authentication)を参照 |
+
+## フローを 1 つ書き換える
+
+```java title="Selenium"
+driver.get("http://localhost:3000/login");
+WebDriverWait wait = new WebDriverWait(driver, Duration.ofSeconds(10));
+wait.until(visibilityOfElementLocated(By.id("username"))).sendKeys("admin@example.test");
+driver.findElement(By.id("password")).sendKeys(System.getenv("ADMIN_PASSWORD"));
+driver.findElement(By.xpath("//button[contains(., 'Sign in')]")).click();
+wait.until(urlContains("/dashboard"));
+assertEquals("Welcome back, admin!",
+    driver.findElement(By.cssSelector(".greeting")).getText());
+```
+
+```ts title="e2e"
+import { test } from '@e2e-dev/web';
+import { expect, credentials } from 'e2e';
+
+test('signs in', async ({ app, screen, browser }) => {
+  const admin = credentials.user('admin');
+  await app.open('/login');
+  await screen.getByLabel('Username').fill(admin.username);
+  await screen.getByLabel('Password').fill(admin.password);
+  await screen.getByRole('button', 'Sign in').tap();
+  await expect(browser).toHaveURL('/dashboard');
+  await expect(screen.getByRole('status')).toHaveText('Welcome back, admin!');
+});
+```
+
+## WebDriver の呼び出しを対応付ける
+
+| Selenium | e2e |
+| --- | --- |
+| `driver.get(url)`, `navigate().back()`, `.forward()`, `.refresh()` | `app.open(path)`、`app.back()`、`browser.forward()`、`browser.reload()` |
+| `getCurrentUrl()`, `getTitle()`, `manage().addCookie`, `getScreenshotAs` | `browser.url()`、`browser.title()`、`browser.setCookies`、`app.screenshot('label')` |
+| `By.id('x')` | `browser.locator('#x')`。ID に `:`、`.`、`$` があるか、数字で始まる場合は `'[id="x"]'` |
+| `By.name`, `By.cssSelector`, `By.xpath` | `browser.locator('[name="x"]')`、`browser.locator('css or xpath')` |
+| `By.linkText`, `By.partialLinkText` | `screen.getByRole('link', { name })`、`name: /part/` |
+| `findElements(...).size()`, `.get(n)` | `await locator.count()`、`locator.nth(n)` |
+| `.click()`, `.clear()`, `Actions.moveToElement`, `Actions.dragAndDrop` | `.tap()`、`.clear()`、`.hover()`、`.dragTo(target)` |
+| `.sendKeys('text')` | `.fill('text')` は内容を置換、`.pressSequentially('text')` は追記 |
+| `.sendKeys(Keys.ENTER)`, `Actions.keyDown(CONTROL).sendKeys('a')` | `.press('Enter')`、`.press('ControlOrMeta+a')` |
+| ファイル入力の `.sendKeys(path)`、`new Select(el).selectByVisibleText` | `.setInputFiles(path)`、`.selectOption({ label })` |
+| `.getText()`, `.isDisplayed()`, `.getDomAttribute(name)` | `.textContent()`、`.isVisible()`、`.getAttribute(name)` |
+| `.getAttribute('value')`, `.getAttribute('checked')` | `.inputValue()`、`.isChecked()`。e2e の `.getAttribute()` はプロパティではなく DOM 属性を読む |
+| `wait.until(visibilityOf(...))`, `textToBe(...)`, `urlContains(...)` | `expect(locator).toBeVisible()`、`.toHaveText(...)`、`expect(browser).toHaveURL(/.../)` |
+| `switchTo().frame()`, `switchTo().alert().accept()` | `browser.frameLocator('#frame')`、操作前に `browser.onDialog('accept')` |
+| `switchTo().window(handle)`, `getWindowHandles()`, `switchTo().newWindow()` | `tab.activate()`、`browser.tabs()`、`browser.newTab()`。アプリが開くタブには `browser.waitForPopup(() => trigger)`。[タブ](/reference/web#tabs)を参照 |
+| `executeScript(script, args)` | `browser.evaluate(fn, arg)`。入出力は JSON のみ |
+| ページオブジェクト | `test.extend` のフィクスチャ、または `agent.act` の目標。[ページオブジェクト](/page-object-model)を参照 |
+
+## e2e にまだない機能
+
+「計画済み」はロードマップに載っています。「未対応」は日程が未定です。「対応予定なし」は意図的に含めていません。
+
+### 計画済み
+
+| Selenium | 現在使える方法 |
+| --- | --- |
+| `executeScript(script, element)`, `getDomProperty`, `getCssValue` | `.tap()` や `.scrollIntoView()` などのロケーターアクション、または CSS セレクターを渡す `browser.evaluate` |
+| `element.findElement(By.cssSelector)`、WebdriverIO の `$('a').$('b')` | 単一の `browser.locator('a >> b')` セレクター、または `getBy*` クエリの連結 |
+| `ChromeOptions.addArguments`, `setBinary`, `Proxy`, `acceptInsecureCerts` | フラグを指定して Chrome または Edge を起動し、`web({ connect })` で接続 |
+| `@BeforeSuite`、`@AfterSuite`、pytest のセッションスコープのフィクスチャ、WebdriverIO の `onPrepare` | 実行ごとに 1 回なら、`app.command` が起動するスクリプト、または `e2e run` を囲むラッパー。ファイルごとなら `beforeAll` と `afterAll`。サインインはセッションを保存するトップレベルの `test.setup` |
+| Web 用の BrowserStack または Sauce Labs | ベンダーに CDP エンドポイントがあれば、独自の[ブラウザプロバイダー](/browser#write-a-provider) |
+| `manage().logs()`、リクエストリスナー、位置情報 | `browser.addInitScript` でページを変更し、`browser.route` でリクエストを記録 |
+| `setNetworkConditions` | オフラインには `browser.route` でリクエストを中断。帯域制限や遅延はなく、それらのテストは Selenium に残す |
+
+### 未対応
+
+| Selenium | 現在使える方法 |
+| --- | --- |
+| `new RemoteWebDriver(gridUrl)`、リモートノード上の Firefox または Safari | `web({ connect })` で CDP エンドポイントに接続。`firefox` と `webkit` のターゲットはローカルで実行 |
+| 1 テストに 2 つのドライバー、WebdriverIO の `multiremote` | 2 人目のユーザーをアプリの API で操作 |
+| `getPageSource()`, `getLocalStorage()`, `getSessionStorage()` | `browser.evaluate`。例: `() => localStorage.getItem('k')` |
+| Java、Python、C#、Ruby のバインディング | テストは TypeScript または JavaScript |
+
+### 対応予定なし
+
+| Selenium | 代わりに使う方法 |
+| --- | --- |
+| Cucumber の feature ファイル | 各シナリオをテストに書き換え。1 ステップを 1 つの `agent.act` の目標にできることが多い |
+| `Thread.sleep`, `Actions.pause`, `wait.until(elementToBeClickable(...))` | 待ちたい状態へのロケーターアサーション。各アクションは自身のノードを待つ |
+| ダイアログが開いた後の `switchTo().alert()`、`alertIsPresent()` | ダイアログを開く操作の前に `browser.onDialog(handler)` |
+| 実際の Safari、IE モード | Safari に最も近いビルドは `webkit`。IE モードのテストは Selenium に残す |
+| `executeCdpCommand`、`DevTools.send`、ドライバーを受け取る SDK | Selenium に残す。生のドライバー呼び出しは記録も伏せ字化もされない |
+| Allure レポート | `junit` レポーターの XML を Allure に渡すか、`htmlReporter()` を使用 |
+
+## 意図的に異なる点
+
+- `findElement` は最初の一致を選びます。e2e は複数一致すると `LOCATOR_AMBIGUOUS` で失敗するため、`.filter()`、`.first()`、`.nth()` で絞り込んでください。
+- 暗黙の待機設定はありません。アクションとアサーションが、それぞれ `actionTimeout` と `assertionTimeout` まで待ちます。
+- 各テストには共有ドライバーではなく、新しいブラウザコンテキストを用意します。サインインを 1 回で済ませるには、`test.setup` と `{ session }` を使います。[認証](/authentication)を参照してください。
+- ページのサイズは `setSize` や `maximize()` ではなく、`web({ viewport })` で決まります。
+
+## 次のステップ
+
+<CardGroup cols={2}>
+  <Card title="基本概念" icon="pen-to-square" href="/core-concepts">
+    決め打ちのセレクターに代わる、目標、アサーション、ロケーター。
+  </Card>
+  <Card title="screen のリファレンス" icon="crosshairs" href="/reference/screen">
+    すべてのクエリ、絞り込み、アクション、読み取り。
+  </Card>
+</CardGroup>

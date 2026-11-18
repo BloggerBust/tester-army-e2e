@@ -1,0 +1,96 @@
+---
+title: セルフヒーリングするテスト
+description: UI の変更に再生中のエージェントステップがどう対応し、記録がどう修復されるかを説明します。
+---
+
+セルフヒーリングするテストは、記録済みの `agent.act()` ステップに関わる UI が変わっても、成功し続けます。ランナーは、画面と一致しなくなるところまで記録を再生します。その後、残りの処理をエージェントに引き継ぎ、エージェントが現在の画面から目標を達成します。`read-write` モードでは、後続の確認が成功すると、同じ実行中に新しいフローを保存できます。
+
+この方法で修復されたステップは、実行サマリーで `handed off` に数えられます。
+
+```text
+        Cache  4 replayed · 1 handed off · 1 missed
+```
+
+## UI が変わると何が起きるか
+
+2 つの操作を記録したステップで、その後ボタン名が変わった場合を考えます。
+
+```ts title="tests/checkout.e2e.ts"
+import { expect, test } from 'e2e';
+
+test('applies a discount code', async ({ app, agent, screen }) => {
+  await app.open('/checkout');
+  await agent.act('apply the discount code SUMMER');
+  await expect(screen.getByRole('status')).toHaveText('10% off');
+});
+```
+
+1. リプレイが、モデルを呼び出さずに `Discount code` フィールドへ `SUMMER` を入力します。
+2. 記録済みのボタン `Apply` を探します。現在の名前は `Redeem` なので、15 秒以内に一致するコントロールが見つかりません。リプレイは `target-not-found` で停止します。
+3. エージェントには、リプレイが行った操作の記録とともにステップが渡ります。画面を読み、`Redeem` を見つけてタップします。
+4. `expect` が成功します。試行の終了時、ランナーは `Apply` を `Redeem` に置き換えた新しい記録を保存します。
+5. 次の実行では、モデルを呼び出さずにステップ全体を再生します。
+
+リプレイは推測しません。記録済みのコントロールが一致しなくなった場合は、似ているコントロールをタップするのではなく、エージェントに引き継ぎます。一致の判定方法は[リプレイの仕組み](/cache#how-a-replay-works)を参照してください。
+
+## エージェントに伝わる情報
+
+エージェントの最初のプロンプトには、リプレイがすでに実行した操作と、停止した理由が列挙されます。上のステップでは、次の内容になります。
+
+```text
+Cached replay already performed these recorded actions for this step:
+1. type "SUMMER" into textbox "Discount code"
+Replay stopped (target-not-found) after 1 of 2 recorded actions.
+Continue the step from the CURRENT screen state shown below — do NOT redo the actions above.
+```
+
+プロンプトは、すでに送信済みの処理など、それまでの操作を繰り返さないようエージェントに指示します。次の 2 つの停止理由では、警告も加わります。
+
+- `end-mismatch`: すべての操作は実行されたものの、記録どおりの結果が得られたと確認できません。結果が表示されなかったか、リプレイの操作前から表示されていた場合です。エージェントには、操作する前にステップの効果があったか確認するよう伝えます。
+- `action-uncertain`: 操作が失敗しましたが、アプリには届いている可能性があります。エージェントには、同様の操作を再度試す前に現在の状態を確認するよう伝えます。
+
+再生済みの操作と待機時間は、ステップの[予算](/reference/agent#budgets)と制限時間に含まれます。すべての停止理由は[キャッシュのページ](/cache#why-a-step-was-not-replayed)に記載しています。最初の操作より前にリプレイが止まった場合は、引き継ぎではなくキャッシュミスです。エージェントには通知せず、最初からステップを実行します。
+
+## 記録が修復される仕組み
+
+修復したステップは、新しいステップと同じ条件で記録し直されます。`read-write` モードで、ロケーターのアサーションや `agent.assert` など、後続の確認が成功した場合に限ります。ストアが書き込みを拒否した場合（`not-written`）を除き、新しいコントロールと終了状態を含む記録を保存します。それ以外では、古いエントリーを削除します。
+
+- ステップが失敗した場合。次の実行で壊れたフローを再生しないためです。
+- ステップの後に確認が成功しなかった場合。
+- リプレイで確認できる変化がなかった場合。保存する新しいフローがありません。
+- `end-mismatch` を解消するためにエージェントの操作が必要だった場合。失敗したフローに修正操作を継ぎ足したものではなく、次に確認が成功した実行で、最初から正しいフローを記録します。
+
+モデルが一度も応答しなかった場合や、実行がキャンセルされた場合は、エントリーをそのまま保持します。レポートの `step.cache.write` で処理結果を確認できます。各値と確認として数える操作については、[記録が書き込まれる条件](/cache#when-a-recording-is-written)を参照してください。
+
+## UI の変更に対応しながら、不具合も検出する
+
+エージェントは、記録済みのクリック手順ではなく、指示にある目標に向けて修復します。割引ボタンが移動したなら見つけ直します。割引が機能しなくなったなら、ステップまたは後続の確認が失敗します。
+
+それでも、別の割引を使うなど、意図しない方法で目標を達成する可能性はあります。上の `toHaveText('10% off')` のように、結果を決定論的に確認してテストを終えてください。この確認は、再生でも修復でも、実行のたびに行われます。
+
+## 修復されたステップを確認する
+
+修復された各ステップは、`step.cache.mode: 'agent-concluded'` と停止理由を報告します。`step.cache.detail` には、リプレイが止まった位置と理由が入ります。[トレースページ](/debugging#traces)では、ステップの下に表示されます。
+
+```text
+cache: replayed 1 of 2 recorded actions, then the agent took over: a recorded target is not on the screen; recorded with `openai/gpt-6-luna-fast`; at action 2 of 2, tap button "Apply"; recording saved (`.e2e/cache/<entry>.json`)
+```
+
+`agent.act()` は、`write` を除く同じ記録を `result.cache` として返します。[独自のエグゼキューター](/executors#replay-cache)には `ctx.replayedPrefix` で引き継がれます。こちらも現在の画面から処理を続ける必要があります。
+
+## CI で修復のたびにモデルコストがかかるのを防ぐ
+
+`CI` が設定され、`cache` が未設定の場合、キャッシュは `read-only` となり、修復したステップは保存されません。CI の実行ごとに引き継ぎが起き、そのたびにモデル呼び出しの費用がかかります。ローカルの `read-write` 実行で記録し直し、[リプレイキャッシュをコミット](/cache#commit-the-replay-cache)してください。
+
+修復する代わりに失敗させるには、CI で `--strict-cache` を指定します。記録を再生できなくなったステップは `REPLAY_STALE` で失敗し、モデルを呼び出しません。[古くなった記録で失敗させる](/cache#fail-on-a-stale-recording)を参照してください。
+
+## 次のステップ
+
+<CardGroup cols={2}>
+  <Card title="キャッシュ" icon="box-archive" href="/cache">
+    モード、停止理由、記録の内容を確認します。
+  </Card>
+  <Card title="エージェントステップの仕組み" icon="list-check" href="/agent-steps">
+    エージェントに見える情報とステップの終了条件を確認します。
+  </Card>
+</CardGroup>

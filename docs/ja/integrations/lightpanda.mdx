@@ -1,0 +1,174 @@
+---
+title: Lightpanda
+sidebarTitle: Lightpanda
+description: "@e2e-dev/lightpanda の lightpanda() ブラウザプロバイダーで、オープンソースのヘッドレスブラウザ Lightpanda 上で Web ターゲットを実行します。"
+"og:image": "https://e2e.com/docs/images/og/integrations/lightpanda.png?v=b97a3ebae4"
+"twitter:image": "https://e2e.com/docs/images/og/integrations/lightpanda.png?v=b97a3ebae4"
+---
+
+[Lightpanda](https://lightpanda.io) は、Chromium を使わずにゼロから開発されたオープンソースのヘッドレスブラウザです。
+ミリ秒単位で起動し、Chrome より大幅に少ないメモリーで動作し、Chrome DevTools Protocol に対応しています。
+`@e2e-dev/lightpanda` の `lightpanda()` は、その [ブラウザプロバイダー](/browser#hosted-browsers) です。
+実行開始時に、ワーカースロットごとに専用の `lightpanda serve` を空きポートで起動し、終了時に停止します。
+テストと CI は変更せず、設定内のターゲットの `browser` だけを変えます。
+
+Lightpanda にはレイアウトエンジンがありません。
+DOM の構築、JavaScript の実行、アクセシビリティツリーの公開を行います。
+ロケーター、アサーション、[エージェントステップ](/agent-steps) は、エンジンが読み取ったこのツリーを使います。
+ノードの描画位置に依存する機能は動作が異なるため、スイートを移す前に [使えない機能](#what-does-not-work) を確認してください。
+
+## セットアップ
+
+パッケージをインストールします。
+
+<CodeGroup>
+```bash npm
+npm install --save-dev @e2e-dev/lightpanda
+```
+
+```bash pnpm
+pnpm add -D @e2e-dev/lightpanda
+```
+
+```bash bun
+bun add -d @e2e-dev/lightpanda
+```
+</CodeGroup>
+
+プロバイダーが起動する Lightpanda の nightly バイナリもインストールします。
+
+<CodeGroup>
+```bash macOS
+brew install lightpanda-io/browser/lightpanda
+```
+
+```bash Linux
+curl -L -o lightpanda https://github.com/lightpanda-io/browser/releases/download/nightly/lightpanda-x86_64-linux
+install -D -m 755 lightpanda ~/.local/bin/lightpanda
+```
+</CodeGroup>
+
+```ts title="e2e.config.ts"
+import type { E2EConfig } from 'e2e';
+import { web } from '@e2e-dev/web';
+import { lightpanda } from '@e2e-dev/lightpanda';
+
+export default {
+  targets: [
+    {
+      name: 'lightpanda',
+      engine: web({ browser: lightpanda() }),
+      app: { url: 'http://localhost:3000' },
+    },
+  ],
+} satisfies E2EConfig;
+```
+
+プロバイダーは、`PATH`、`~/.lightpanda/lightpanda`、`~/.local/bin/lightpanda` から `lightpanda` を探します。
+これらは [agent-browser](https://agent-browser.dev/engines/lightpanda) も検索する場所です。
+`e2e run` の起動環境の `LIGHTPANDA_PATH`、またはオプションの `binary` でバイナリを指定することもできます。
+見つからなければテスト開始前に実行が失敗し、インストールページが案内されます。
+各ワーカーに専用サーバーがあるため、`workers` が同時起動数を決めます。各サーバーは実行ログに表示されます。
+
+```text
+ℹ lightpanda (1 of 2): lightpanda 1.1.0-nightly at ws://127.0.0.1:51165/
+```
+
+## 起動済みサーバーに接続する
+
+CI の Docker イメージなど、すでに動いている Lightpanda には、プロバイダーではなく
+[`connect`](/reference/web#options) を使うターゲットとして接続します。
+エンジンは CDP エンドポイントに接続し、実行終了時もサーバーを停止しません。
+
+```ts title="e2e.config.ts"
+web({ connect: { cdpEndpoint: () => process.env.LIGHTPANDA_URL ?? 'ws://127.0.0.1:9222/' } })
+```
+
+```bash
+docker run -d --name lightpanda -p 127.0.0.1:9222:9222 lightpanda/browser:nightly
+```
+
+この場合、全ワーカーが同じサーバーを共有します。
+1 つの `lightpanda serve` が受け付ける接続数はデフォルトで 16 です。
+それ以上で実行する場合は、`--cdp-max-connections` を `workers` より大きくしてください。
+
+## オプション
+
+| オプション | デフォルト | 意味 |
+| --------------- | ------------------------------- | ------- |
+| `binary` | `LIGHTPANDA_PATH`、なければ検索 | 起動するバイナリ。パス、または `PATH` 上の名前。 |
+| `loadResources` | `[]` | サーバーが取得するサブリソース。`iframe`、`image`、`stylesheet`。[ページの追加リソースを取得する](#fetch-more-of-the-page) を参照。 |
+| `args` | `[]` | プロバイダーが設定するフラグの後に渡す、追加の `lightpanda serve` フラグ。 |
+
+プロバイダーは実行中、ワーカースロットごとに 1 サーバーを保持します。
+Lightpanda は試行単位のリースが再接続に使うデフォルトコンテキストの識別情報を公開しないため、`scope: 'attempt'` はありません。
+サーバーが 10 秒以内にポートで応答しない場合や、それより先にバイナリが終了した場合は取得に失敗します。
+後者では stderr がメッセージに含まれます。
+
+## ページの追加リソースを取得する
+
+`lightpanda serve` はデフォルトでは画像、外部スタイルシート、iframe などのサブリソースを要求しません。
+`loadResources` で個別に有効にすると、サーバーに `--load-resources` として渡されます。
+
+```ts
+web({ browser: lightpanda({ loadResources: ['stylesheet', 'iframe'] }) })
+```
+
+インラインスタイル、`<style>` ブロック、`hidden` 属性は、追加設定なしで可視性に反映されます。
+`stylesheet` を有効にすると外部ファイルのルールも反映され、リンク先のスタイルシートで隠されたノードはクエリでも非表示になります。
+`image` は画像のヘッダーを取得し、`load` と `error` に実際の状態を反映します。
+
+## 使える機能
+
+2026 年 10 月中旬の Lightpanda nightly で e2e testbed のローカルスイートを実行したところ、
+以下は変更なしで成功しました。
+
+- `app.open`、`app.back`、`expect(browser).toHaveURL`、`toHaveTitle`。
+- すべての `screen` クエリ（`getByRole`、`getByLabel`、`getByText`、`getByTestId`、フィルター、`nth`）と、
+  その操作である `tap`、`fill`、`check`、`select`、`press`、キーボード入力。
+- テキスト、値、個数、状態をポーリングするアサーション。
+- `browser.route` によるモックと、リクエストの待機。
+- ページを開いた後、テストから呼び出す `browser.setCookies`。
+- `app.screenshot` と、失敗時のスクリーンショット。
+  Lightpanda が描くのは DOM の簡易表示であり、Chrome と同じ見た目ではありません。
+- エージェントステップの `agent.act`、`agent.assert`、`agent.extract`、`agent.waitFor`。
+  Lightpanda が完全に提供する画面ツリーを読み取ります。
+  testbed のエージェントスイートでは、ツリーに基づくフロー（todos、ウィザード、サインイン、ホバー、コンテキストメニュー、長押し、アップロード）が成功します。
+  失敗するのは、canvas に描かれた内容、ドラッグ操作、画面下方の見えない領域です。
+  画像で判定しても簡易表示しか見えないため、エージェントにはツリーを使わせてください。
+
+表示位置ではなく、ユーザーに示される内容を検証するテストは、そのまま移せます。
+
+## 使えない機能
+
+以下はいずれもハングせず、エンジンの通常のエラーで失敗します。
+原因は Lightpanda 側にあり、多くは [Playwright 互換性の issue](https://github.com/lightpanda-io/browser/issues/3076) で追跡されています。
+
+| 機能 | 動作 | 理由 |
+| ------- | ------------ | --- |
+| [セッション](/authentication)（`test.setup` と `session.save`、テストの `session:`） | セットアップと保存は成功しますが、復元したテストはログアウト状態で開きます。 | 最初のページ作成前にコンテキストへ設定した Cookie が失われます。代わりに、テストで `app.open` の後に `browser.setCookies` を使ってください。 |
+| [ダイアログ](/browser#handle-a-dialog) | `browser.onDialog` が実行された後、`Page.handleJavaScriptDialog` がダイアログなしと報告し、`ENGINE_FAILURE` で失敗します。 | クライアントより先に Lightpanda 自身が `alert`、`confirm`（`false`）、`prompt`（`null`）に応答します。 |
+| [ダウンロード](/browser#download-a-file) | `browser.waitForDownload` がタイムアウトします。 | CDP でダウンロードイベントが送られません。 |
+| [iframe](/browser#reach-into-an-iframe) | `frameLocator` が一致を見つけません。 | デフォルトでは iframe を読み込みません。`loadResources: ['iframe']` で読み込めばクエリと入力は動きますが、フレームが作成した要素にホストページが設定したリスナーは発火しません。 |
+| ドラッグ：`screen.swipe`、`locator.swipeTo`、ボタンを押したままの `browser.mouse` 移動 | `Input.setInterceptDrags` を示す `ENGINE_FAILURE`。 | Playwright がドラッグに必要とするこのコマンドを、Lightpanda が実装していません。 |
+| `browser.setViewport` | ページは新しいサイズを認識しますが、`resize` リスナーは実行されません。 | `resize` イベントが送られません。 |
+| [メディアのエミュレーション](/reference/web#media-emulation)：`colorScheme`、`reducedMotion`、`browser.emulateMedia` | ページは `light` と、動きの低減なしを報告し続けます。 | `Emulation.setEmulatedMedia` が `matchMedia` の応答を変えません。 |
+| スクロール：`scrollIntoView`、`scrollUntilVisible`、ビューポート外のノードへの操作 | スクロールしても変化せず、操作可能になるまでの待機がタイムアウトすることがあります。 | レイアウトがなく、移動できるスクロール位置がありません。簡易表示は各ブロックを 1 列に積むため、Chrome より多くの内容が画面下方に隠れ、その領域には到達できません。 |
+| `<canvas>` の内容：2D コンテキストで描いたピン、キーパッド、グラフ | スクリーンショットに描画が現れず、canvas は領域を占めません。エージェントの画像操作（`tap_at`、`type_at`、視覚的な判定）に見えるものがありません。 | `getContext('2d')` が返すコンテキストは、描画処理の内容を記録しません。 |
+
+Lightpanda のリリースで制限が解消されれば、e2e 側を変えずに該当行の機能が使えるようになります。
+エンジンは Chrome と同じ CDP コマンドを送っているためです。
+
+## 適した用途
+
+Lightpanda は、座標や配置への依存が少なく、エージェントが画面を読み取る処理の多いスイートに適しています。
+スモークテスト、フォーム、ナビゲーション、API を使うページ、テキストと状態で検証する `agent.act` などです。
+Chrome を入れていないマシンでも、Chrome より大幅に少ない時間とメモリーでこうしたスイートを実行できます。
+
+それ以外のテストには Chromium ターゲットを残してください。
+同じ設定に両方がある場合は、ターゲットで選びます。
+
+```bash
+e2e run --target lightpanda
+e2e run --target chromium
+```

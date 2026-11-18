@@ -1,0 +1,235 @@
+---
+title: GitHub Actions
+description: 在 GitHub Actions 上运行网页端、iOS 和 Android 测试，上传报告，并将结果发布到拉取请求（PR）。
+"og:image": "https://e2e.com/docs/images/og/ci/github-actions.png?v=1a59aebfc8"
+"twitter:image": "https://e2e.com/docs/images/og/ci/github-actions.png?v=1a59aebfc8"
+---
+
+import { SetupPrompt } from '../../snippets/setup-prompt-card.jsx';
+
+export const setupPrompt = `添加一个运行此项目 e2e 测试的 GitHub Actions 工作流。文档：\`https://e2e.com/docs/ci/github-actions.md\` 和 \`https://e2e.com/docs/ci.md\`
+
+1. 阅读这两个页面。网页端测试目标使用网页端工作流，移动端测试目标使用 iOS 和 Android 工作流。
+2. 根据项目调整工作流：包管理器、Node 版本、应用的启动或构建方式，以及应用路径。
+3. 对于移动端作业，将 iOS 运行时替换为运行器镜像中已有的版本，并固定该版本。
+4. 列出工作流读取的仓库机密值，例如模型密钥，并让我添加它们。
+5. 在我推送后，读取作业日志并修复错误，直到作业通过。`;
+
+以下两个工作流分别运行网页端测试目标，以及 iOS 和 Android 测试目标。关于 CI 默认设置、模型密钥和退出码，请参阅[持续集成](/ci)。`e2e init --ci github-actions` 会根据你的测试目标和包管理器写入这些作业，并包含 Expo 或裸 React Native 应用的构建步骤；参阅 [CI 流水线](/reference/cli#ci-pipeline)。
+
+<SetupPrompt>
+
+<Prompt description={setupPrompt} children={setupPrompt} actions={["copy", "cursor"]} />
+
+</SetupPrompt>
+
+## 网页端
+
+这个工作流在同一个作业中运行确定性测试和智能体测试。它假设配置中有启动应用的 [command](/web#starting-your-app)，并使用 AI Gateway 调用模型。模型密钥和用户凭据来自仓库机密值：
+
+```yaml title=".github/workflows/e2e.yml" expandable
+name: e2e
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  e2e:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: pnpm/action-setup@9fd676a19091d4595eefd76e4bd31c97133911f1 # v4.2.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 26
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('pnpm-lock.yaml') }}
+
+      - name: Install browsers
+        run: pnpm exec e2e-web install chromium --with-deps
+
+      - name: Run e2e
+        run: npx e2e run --reporter list,junit
+        env:
+          APP_URL: http://127.0.0.1:3000
+          AI_GATEWAY_API_KEY: ${{ secrets.AI_GATEWAY_API_KEY }}
+          E2E_USER_ADMIN_USERNAME: ${{ secrets.E2E_USER_ADMIN_USERNAME }}
+          E2E_USER_ADMIN_PASSWORD: ${{ secrets.E2E_USER_ADMIN_PASSWORD }}
+
+      - name: Upload report
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: e2e-report
+          path: |
+            .e2e/report.json
+            .e2e/junit.xml
+          if-no-files-found: warn
+
+      - name: Upload artifacts
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: e2e-artifacts
+          path: .e2e/results
+          if-no-files-found: warn
+          retention-days: 7
+```
+
+`npx e2e` 运行锁文件安装的版本。[安装命令](/reference/web#installing-browsers)会下载引擎固定的 Playwright 版本所需的浏览器及其系统库；在锁文件发生变化之前，缓存步骤会跳过下载。重试后通过的测试仍会在上传内容中保留失败尝试的证据。
+
+## 缓存耗时历史
+
+使用 `actions/cache` 恢复并保存 [`.e2e/timings.json`](/ci#cache-the-timings-history)，让新运行器优先运行耗时最长的文件。在运行前添加以下步骤：
+
+```yaml
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: .e2e/timings.json
+          key: e2e-timings-${{ github.ref_name }}-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: |
+            e2e-timings-${{ github.ref_name }}-
+            e2e-timings-main-
+```
+
+每次运行和重新运行都会保存一个新条目，并恢复当前分支的最新条目。拉取请求（PR）可以读取基础分支的缓存，但不能写入，因此新分支的首次运行会使用 `main` 的历史记录。
+
+该步骤在作业通过后保存缓存。要在运行失败后也保存，请在运行前使用 `actions/cache/restore`，并在运行后使用带有 `if: ${{ !cancelled() }}` 的 `actions/cache/save`。历史记录只对 [`workers`](/reference/config#workers) 为 2 或更多时有帮助，而上面的工作流只运行一个工作进程。
+
+## iOS 和 Android
+
+这个工作流为每个平台运行一个作业，并遵循[移动端作业](/ci#mobile-jobs)的规则。任何能生成模拟器 `.app` 且不启动应用的构建命令都可以替代 `xcodebuild`。对于 Expo，`npx expo run:ios --configuration Release --device generic --no-bundler --output build/ios` 无需模拟器即可构建，并将 `.app` 写入 `build/ios`。
+
+```yaml title=".github/workflows/e2e-mobile.yml" expandable
+name: e2e mobile
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  ios:
+    runs-on: macos-26
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 26
+          cache: npm
+      - run: npm ci
+      - run: pod install
+        working-directory: ios
+
+      - name: Build for the simulator
+        run: |
+          xcodebuild -workspace ios/MyApp.xcworkspace -scheme MyApp \
+            -configuration Release -sdk iphonesimulator \
+            -destination 'generic/platform=iOS Simulator' \
+            -derivedDataPath build
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.agent-device/apple-runner/derived
+          key: agent-device-runner-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+
+      - name: Boot a simulator and install the app
+        run: |
+          UDID=$(xcrun simctl create e2e "iPhone 17" com.apple.CoreSimulator.SimRuntime.iOS-26-5)
+          xcrun simctl bootstatus "$UDID" -b
+          xcrun simctl install "$UDID" build/Build/Products/Release-iphonesimulator/MyApp.app
+
+      - run: npx e2e run --target ios --reporter list,junit
+        env:
+          AI_GATEWAY_API_KEY: ${{ secrets.AI_GATEWAY_API_KEY }}
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: ${{ !cancelled() }}
+        with:
+          name: e2e-ios
+          path: .e2e
+          if-no-files-found: warn
+
+  android:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 26
+          cache: npm
+      - uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
+        with:
+          distribution: temurin
+          java-version: 17
+      - run: npm ci
+
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      # React Native and Expo templates sign release builds with the debug keystore.
+      - name: Build the APK
+        run: cd android && ./gradlew :app:assembleRelease
+
+      - name: Run on an emulator
+        uses: reactivecircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d # v2.38.0
+        with:
+          api-level: 36
+          arch: x86_64
+          target: google_apis
+          profile: pixel_7
+          emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim
+          disable-animations: true
+          script: |
+            adb install -r android/app/build/outputs/apk/release/app-release.apk
+            npx e2e run --target android --reporter list,junit
+        env:
+          AI_GATEWAY_API_KEY: ${{ secrets.AI_GATEWAY_API_KEY }}
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: ${{ !cancelled() }}
+        with:
+          name: e2e-android
+          path: .e2e
+          if-no-files-found: warn
+```
+
+模拟器运行器 action 会在新的 shell 中运行每一行 `script`，并在步骤结束时停止模拟器。请在同一个步骤中安装并运行。
+
+本仓库的 [`mobile.yml`](https://github.com/e2e-inc/e2e/blob/main/.github/workflows/mobile.yml) 还为每个原生指纹添加了缓存的 Expo 构建、供两个工作进程使用的两个模拟器，以及一次 `--last-failed` 重新运行。
+
+## 拉取请求（PR）评论
+
+添加 [`@e2e-dev/github` 报告器](/github)，将每个作业的结果发布为一条拉取请求（PR）评论，重新运行时更新，并复制到作业摘要中。
+
+作业需要 `pull-requests: write`，并在测试步骤的环境变量中设置 `GITHUB_TOKEN`；上面的工作流只有读取权限。参阅[配置](/github#setup)。Fork 的 `pull_request` 运行获得的是只读令牌，因此不会发布任何内容（[原因](/github#when-nothing-is-posted)）。
+
+## 下一步
+
+<CardGroup cols={2}>
+  <Card title="拉取请求（PR）评论" icon="code-pull-request" href="/github">
+    每次运行一条评论，重新运行时原地更新。
+  </Card>
+  <Card title="持续集成" icon="rotate" href="/ci">
+    CI 默认设置、分片、重新运行和退出码。
+  </Card>
+</CardGroup>

@@ -14,6 +14,7 @@ import { SESSION_CONTROLS } from '../engine/manifest.ts';
 import { classifyError, ConfigurationError, E2EError, InfrastructureError, serializeError, TestError } from '../internal/errors.ts';
 import { rejectUnknownKeys, rejectUnknownOptions } from '../internal/options.ts';
 import { MAX_TIMER_MS } from '../internal/time.ts';
+import { builtInFixtures, CORE_FIXTURES } from '../run/fixtures.ts';
 import { redactOpening } from '../run/redact-opening.ts';
 import { processSecrets, registerStaticSecrets, sessionLedger } from '../run/secrecy.ts';
 import { targetIdentity } from '../run/sessions.ts';
@@ -101,7 +102,7 @@ export interface SessionControls extends AsyncDisposable {
   saveState(): Promise<SessionState>;
   /** The default timeout of operations started from now on, in milliseconds: actions, waits, reads, and app opens and restarts. */
   setDefaultTimeout(timeout: number): void;
-  /** Ends the session. Idempotent. Throws an `AggregateError` of the failures closing found, such as a cleanup that did not finish. */
+  /** Ends the session and cancels the calls still running on it: each fails as `CANCELLED`, an action, wait, or app or agent call naming itself. Idempotent. Throws an `AggregateError` of the failures closing found, such as a cleanup that did not finish. */
   close(): Promise<void>;
 }
 
@@ -122,8 +123,8 @@ const LAUNCH_APP_KEYS = ['url', 'bundleId', 'appPath', 'linkBase', 'identity', '
 const SESSION_OPTION_KEYS = ['state', 'signal'] as const;
 /** The finished steps a session keeps, what its agent reads as the steps before its own; a bot's session runs for days. */
 const RETAINED_STEPS = 500;
-/** The fixtures every session exposes; the engine's own join them. */
-const CORE_FIXTURES = ['screen', 'app', 'platform'] as const;
+/** The core fixtures that belong to a test. A session has no test, so it exposes every other built-in fixture. */
+const TEST_FIXTURES = new Set(Object.entries(CORE_FIXTURES).flatMap(([name, fixture]) => (fixture.scope === 'test' ? [name] : [])));
 
 /**
  * Launches `engine`: prepares it (a first-run browser download, a device
@@ -229,7 +230,10 @@ export async function launch<Fixtures extends object = {}>(engine: EngineHandle<
         // No session deadline: each operation keeps its own timeout.
         timeoutMs: MAX_TIMER_MS,
         onProgress: failures.onProgress,
-        closed: () => new E2EError('infrastructure', 'CANCELLED', 'the session is closed'),
+        cancelsOnClose: {
+          closed: () => new E2EError('infrastructure', 'CANCELLED', 'the session is closed'),
+          cut: (call) => new E2EError('infrastructure', 'CANCELLED', `the session closed while ${call} was running`),
+        },
         // No report stands between an operation's error and the program, so the error itself is classified and redacted.
         redactThrown: true,
         retainSteps: RETAINED_STEPS,
@@ -295,7 +299,8 @@ function coreSession<Fixtures extends object>(
   } satisfies Record<(typeof SESSION_CONTROLS)[number] | typeof Symbol.asyncDispose, unknown>;
   // Built property by property: the fixtures are accessors, each acquired on first touch, and their names come from the engine.
   const session = {} as Session<Fixtures>;
-  for (const name of [...CORE_FIXTURES, ...Object.keys(target.engine?.fixtures ?? {})]) {
+  for (const name of builtInFixtures(target).names) {
+    if (TEST_FIXTURES.has(name)) continue;
     Object.defineProperty(session, name, { enumerable: true, get: () => Reflect.get(fixtures, name) as unknown });
   }
   Object.defineProperties(session, Object.getOwnPropertyDescriptors(controls));

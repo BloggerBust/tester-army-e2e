@@ -3,6 +3,7 @@ import { collectModule, test } from '../../src/collect/registry.ts';
 import type { TestTargetPair } from '../../src/collect/select.ts';
 import { RealmManager, findRegistered, type Realm } from '../../src/run/realm.ts';
 import type { RunError } from '@e2e-dev/core/lib/run/records';
+import { plainSuiteHooks } from '../helpers/suite-hooks.ts';
 
 /**
  * The hook lifecycle contract, checked on the realm
@@ -17,7 +18,7 @@ const noop = async () => {};
 const FILE = { file: 'tests/realm.e2e.ts', absolutePath: '/project/tests/realm.e2e.ts' };
 
 function manager(runErrors: RunError[] = [], timeouts = { timeout: 1000, cleanupTimeout: 1000 }) {
-  return new RealmManager({ targetName: 'web', platform: 'web', runErrors, redactTitle: (title) => title, ...timeouts });
+  return new RealmManager({ targetName: 'web', openSuiteHooks: plainSuiteHooks(), runErrors, redactTitle: (title) => title, ...timeouts });
 }
 
 /** The pairs still to run, as `leaveFinished` sees them: only the title path matters here. */

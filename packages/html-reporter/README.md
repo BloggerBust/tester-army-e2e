@@ -1,7 +1,8 @@
 # @e2e-dev/html-reporter
 
 The HTML reporter for [e2e](https://e2e.com). At the end of a run it
-writes `.e2e/report.html`: one page that opens from disk with no server. It
+writes `.e2e/report.html`: one page that opens from disk with no server
+(or via `npx e2e report`; pass its path with `npx e2e report <path>` when `outputFile` is set). It
 lists the tests by file, with status tabs and a search box. Each test's page
 shows its attempts, error, steps, screenshots, and video, and each step links
 to its moment in the video.

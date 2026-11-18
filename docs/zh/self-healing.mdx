@@ -1,0 +1,96 @@
+---
+title: 自修复测试
+description: UI 变化后，回放的智能体步骤如何恢复，以及录制内容如何自行修复。
+---
+
+当已录制的 `agent.act()` 步骤对应的 UI 发生变化时，自修复测试仍能通过。运行器会回放录制内容，直到它与屏幕不再匹配。随后，它将步骤的剩余部分交给智能体，智能体从当前屏幕继续完成目标。在 `read-write` 模式下，只要后续检查通过，同一次运行就能保存新流程。
+
+运行摘要会将每个通过这种方式修复的步骤计为 `handed off`：
+
+```text
+        Cache  4 replayed · 1 handed off · 1 missed
+```
+
+## UI 变化时会发生什么
+
+以一个录制了两个操作的步骤为例，其中一个按钮后来被重命名了：
+
+```ts title="tests/checkout.e2e.ts"
+import { expect, test } from 'e2e';
+
+test('applies a discount code', async ({ app, agent, screen }) => {
+  await app.open('/checkout');
+  await agent.act('apply the discount code SUMMER');
+  await expect(screen.getByRole('status')).toHaveText('10% off');
+});
+```
+
+1. 回放将 `SUMMER` 输入 `Discount code` 字段，无需调用模型。
+2. 回放查找已录制的按钮 `Apply`。按钮现在叫 `Redeem`，因此在 15 秒内找不到匹配的控件。回放以 `target-not-found` 停止。
+3. 智能体收到该步骤，以及回放已执行操作的记录。它读取屏幕，看到 `Redeem` 并点击它。
+4. `expect` 通过。在本次尝试结束时，运行器保存新录制内容，用 `Redeem` 替换 `Apply`。
+5. 下次运行时会回放整个步骤，无需调用模型。
+
+回放从不猜测。已录制的控件不再匹配时，会交给智能体处理，绝不会点击最接近的控件。有关控件如何匹配，请参阅[回放的工作原理](/cache#how-a-replay-works)。
+
+## 智能体会收到什么信息
+
+智能体的第一条提示词列出回放已经执行的操作及停止原因。对于上面的步骤，内容如下：
+
+```text
+Cached replay already performed these recorded actions for this step:
+1. type "SUMMER" into textbox "Discount code"
+Replay stopped (target-not-found) after 1 of 2 recorded actions.
+Continue the step from the CURRENT screen state shown below — do NOT redo the actions above.
+```
+
+提示词要求智能体不要重复这些操作，例如已经成功的提交。有两种停止原因会附加警告：
+
+- `end-mismatch`：所有操作都已执行，但回放无法证明它们产生了录制时的结果。结果没有出现，或者在回放执行操作之前就已经显示在屏幕上。智能体会被要求先检查步骤是否生效，再采取操作。
+- `action-uncertain`：某个操作失败了，但可能已经到达应用。智能体会被要求先检查当前状态，再尝试类似操作。
+
+回放的操作和等待时间都会计入步骤的[预算](/reference/agent#budgets)和截止时间。[缓存页面](/cache#why-a-step-was-not-replayed)列出了所有停止原因。如果回放在第一次操作之前就停止，该步骤会计为未命中，而非交接：智能体会从头运行它，不会收到通知。
+
+## 录制内容如何自行修复
+
+修复后的步骤会像新步骤一样重新录制：必须处于 `read-write` 模式，且其后的检查（例如定位器断言或 `agent.assert`）通过。随后，录制内容会以新的控件和结束状态保存，除非存储拒绝写入（`not-written`）。否则，旧条目会被删除：
+
+- 步骤失败。下次运行不会回放已经出错的流程。
+- 步骤之后没有检查通过。
+- 步骤没有改变任何回放可以检查的内容，因此没有新流程可保存。
+- 智能体必须执行操作才能修复 `end-mismatch`。下一次经过验证的运行会录制一套完整正确的流程，而不是失败流程加上修复操作。
+
+如果没有模型响应或运行被取消，条目保持不变。报告中的 `step.cache.write` 会说明发生了什么。有关每个值及哪些操作算作检查，请参阅[何时写入录制内容](/cache#when-a-recording-is-written)。
+
+## 检测回归问题，而不只是应对 UI 变化
+
+智能体的修复以指令中的目标为准，而不是以录制的点击操作为准。如果折扣按钮移动了，智能体会找到它。如果折扣功能失效，步骤或其后的检查会失败。
+
+目标仍可能以不符合你预期的方式达成，例如使用了另一种折扣。在测试末尾对结果进行确定性检查，例如上面的 `toHaveText('10% off')`。每次运行都会执行该检查，无论步骤是回放还是修复完成的。
+
+## 查看哪些步骤已修复
+
+每个修复后的步骤都会报告 `step.cache.mode: 'agent-concluded'` 及停止原因，`step.cache.detail` 则说明回放在哪停止、为什么停止。[追踪记录页面](/debugging#traces)会在步骤下显示这些信息：
+
+```text
+cache: replayed 1 of 2 recorded actions, then the agent took over: a recorded target is not on the screen; recorded with `openai/gpt-6-luna-fast`; at action 2 of 2, tap button "Apply"; recording saved (`.e2e/cache/<entry>.json`)
+```
+
+`agent.act()` 通过 `result.cache` 返回相同的记录，但不包含 `write`。[自定义执行器](/executors#replay-cache)通过 `ctx.replayedPrefix` 接收交接，也必须从当前屏幕继续。
+
+## 避免在 CI 中因反复修复而产生模型调用费用
+
+设置了 `CI` 且未设置 `cache` 时，缓存为 `read-only`，因此修复后的步骤不会保存。每次 CI 运行都会再次交给智能体处理，并产生模型调用费用。在本地以 `read-write` 模式重新录制，然后[提交回放缓存](/cache#commit-the-replay-cache)。
+
+如果希望直接失败而不是修复，请在 CI 中使用 `--strict-cache`。录制内容无法再回放的步骤会以 `REPLAY_STALE` 失败，并且不会调用模型。参阅[录制内容过期时失败](/cache#fail-on-a-stale-recording)。
+
+## 下一步
+
+<CardGroup cols={2}>
+  <Card title="缓存" icon="box-archive" href="/cache">
+    模式、停止原因，以及录制内容包含什么。
+  </Card>
+  <Card title="智能体步骤的工作原理" icon="list-check" href="/agent-steps">
+    智能体看到什么，以及步骤如何结束。
+  </Card>
+</CardGroup>

@@ -1,0 +1,87 @@
+---
+title: Moli
+sidebarTitle: Moli
+description: "@e2e-dev/moli でローカルの Moli ブラウザを自動起動・終了し、Web ターゲットを実行します。"
+---
+
+[Moli](https://github.com/lexmount/moli) は、Chrome DevTools Protocol に対応したオープンソースのブラウザです。
+`@e2e-dev/moli` の `moli()` は、ワーカースロットごとに 1 つのローカルブラウザを起動し、テスト実行の終了時に停止します。
+
+## Moli のターゲットを起動する
+
+[Moli のバイナリ](https://github.com/lexmount/moli#direct-installation) と、以下のパッケージをインストールします。
+
+<CodeGroup>
+```bash npm
+npm install --save-dev e2e @e2e-dev/web @e2e-dev/moli
+```
+
+```bash pnpm
+pnpm add -D e2e @e2e-dev/web @e2e-dev/moli
+```
+
+```bash bun
+bun add -d e2e @e2e-dev/web @e2e-dev/moli
+```
+</CodeGroup>
+
+```ts title="e2e.config.ts"
+import type { E2EConfig } from 'e2e';
+import { web } from '@e2e-dev/web';
+import { moli } from '@e2e-dev/moli';
+
+export default {
+  targets: [
+    {
+      name: 'moli',
+      engine: web({ browser: moli() }),
+      app: { url: 'http://localhost:3000' },
+    },
+  ],
+} satisfies E2EConfig;
+```
+
+[`e2e run`](/reference/cli#e2e-run) でテストを実行します。
+各ワーカーは、空いているループバックポートで別々の Moli プロセスを使います。
+サーバーが 10 秒以内に CDP を公開しなければ、ブラウザの取得に失敗します。
+
+## ブラウザを設定する
+
+| オプション | デフォルト | 意味 |
+| --- | --- | --- |
+| `binary` | `MOLI_PATH`、次に `PATH`、最後に `~/.local/bin/moli` | 実行ファイルのパスまたは名前。ブラウザ起動時に実行環境から解決します。 |
+| `layout` | `true` | `--layout` を渡し、必要時のレイアウト計算とスクリーンショットを有効にします。 |
+| `loadResources` | `true` | `--resource` を渡し、画像、フォント、音声、動画、メディア、テキストトラックなどの追加リソースを取得します。 |
+| `args` | `[]` | 追加の `moli serve` フラグ。 |
+
+このプロバイダーはワーカースコープに対応します。試行ごとの取得は未実装です。
+
+<Accordion title="自分で起動したサーバーに接続する">
+別のターミナルで Moli を起動します。
+
+```bash
+moli serve --host 127.0.0.1 --port 19222 --layout --resource
+```
+
+Web エンジンの `connect` オプションで接続します。テスト実行が終わっても、このサーバーは停止しません。
+
+```ts
+web({ connect: { cdpEndpoint: () => process.env.MOLI_CDP_URL?.trim() || 'http://127.0.0.1:19222' } })
+```
+</Accordion>
+
+## ブラウザの互換性を確認する
+
+利用する Moli のビルドでスイートを実行してください。
+CDP の互換性に関する制限は [Moli の issue](https://github.com/lexmount/moli/issues) で確認できます。
+
+## 次のステップ
+
+<CardGroup cols={2}>
+  <Card title="ブラウザ API" icon="globe" href="/browser">
+    ナビゲーション、ネットワークの傍受、ダウンロード、スクリーンショットを確認します。
+  </Card>
+  <Card title="認証" icon="key" href="/authentication">
+    ログイン済みセッションを保存し、テスト間で復元します。
+  </Card>
+</CardGroup>

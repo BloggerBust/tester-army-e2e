@@ -9,7 +9,7 @@ const SOFT_SUITE = `import { test, expect } from 'e2e';
 test('soft failures let the body run on', async ({ app, screen }) => {
   await app.open();
   expect.soft(1, 'the count').toBe(2);
-  await expect.soft(screen.getByRole('button', { name: 'Submit' })).toBeHidden({ timeout: 300 });
+  await expect.soft(screen.getByRole('button', { name: 'Submit' }), 'the form closed').toBeHidden({ timeout: 300 });
   expect.soft('ok').toBe('ok');
   await expect(screen.getByRole('button', { name: 'Submit' })).toBeVisible();
 });
@@ -62,7 +62,7 @@ describe('expect.soft in a run', () => {
     const lines = attempt.error!.message.split('\n');
     expect(lines[0]).toBe('2 soft assertions failed');
     expect(lines[1]).toBe('1. the count: expected 1 to be 2');
-    expect(lines[2]).toBe('2. expect.toBeHidden failed');
+    expect(lines[2]).toBe('2. the form closed: expect.toBeHidden failed');
     expect(lines.filter((line) => line.startsWith('   locator: ') && line.includes('Submit'))).toHaveLength(1);
     expect(attempt.error?.source?.file).toBe('tests/soft.e2e.ts');
     // The failed locator matcher is a recorded step; the hard matcher after it still ran and passed.

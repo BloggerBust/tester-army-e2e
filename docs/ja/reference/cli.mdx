@@ -1,0 +1,1134 @@
+---
+title: CLI
+description: コマンド、フラグ、出力形式、終了コード。
+"og:image": "https://e2e.com/docs/images/og/reference/cli.png?v=e0e03be674"
+"twitter:image": "https://e2e.com/docs/images/og/reference/cli.png?v=e0e03be674"
+---
+
+`e2e` コマンドは、プロジェクトのひな形作成、テストの実行・一覧表示・探索、リプレイキャッシュ、サブスクリプションのログイン、テレメトリーの管理、自身のアップグレードを行います。すべてのコマンドで `--help` を使えます。
+
+<CodeGroup>
+```bash npm
+npx e2e init                              # scaffold a project
+npx e2e run                               # run every test
+npx e2e run tests/signup.e2e.ts --headed  # one file, with a visible browser
+```
+
+```bash pnpm
+pnpm dlx e2e init                              # scaffold a project
+pnpm exec e2e run                              # run every test
+pnpm exec e2e run tests/signup.e2e.ts --headed # one file, with a visible browser
+```
+
+```bash bun
+bunx e2e init                              # scaffold a project
+bunx e2e run                               # run every test
+bunx e2e run tests/signup.e2e.ts --headed  # one file, with a visible browser
+```
+</CodeGroup>
+
+<Note>
+CLI には Node.js 24.8 以降（Node.js 22 では 22.22.3 以降）、または [Bun](#bun) 1.4.3 以降が必要です。npm、pnpm、Yarn（Plug'n'Play の有無は不問）、Bun のいずれでもインストールできます。Node.js 24.8〜24.11.0 の Yarn Plug'n'Play では、Yarn のローダーが渡すソースを Node.js が拒否するため、`.cts` ファイルの読み込みに失敗します。24.11.1 以降では読み込めます。
+</Note>
+
+## リファレンス
+
+### ヘルプとバージョン
+
+| オプション | 説明 |
+| --- | --- |
+| `-h`, `--help` | 直前のコマンドのヘルプを表示し、0 で終了します。`e2e help run` は `e2e run --help` と同じです。 |
+| `-v`, `--version` | インストール済みの `e2e` のバージョンを表示し、0 で終了します。 |
+
+```console
+$ npx e2e --version
+0.14.0
+```
+
+- ターミナルまたは CI では色付きで出力し、パイプ出力や `NO_COLOR` の設定時は色なしになります。`FORCE_COLOR` を設定すると色を維持します。
+- コマンドを付けずに `e2e` を実行すると、stderr にヘルプを表示して 2 で終了します。
+- 幅が 52 列以上のターミナルでは、`e2e --help` の冒頭にブロック文字の e2e ロゴを表示します。パイプ出力や幅の狭いターミナルでは、テキストだけを表示します。
+- npm に新しい `e2e` がある場合、ターミナルで実行したコマンドの最後に、そのバージョン、プロジェクトのパッケージマネージャー向けの [`e2e upgrade`](#e2e-upgrade) コマンド、GitHub で e2e にスターを付けるリンクを表示します。レジストリの確認は 1 日 1 回です。CI、stderr がターミナルでない場合、`e2e mcp` と `e2e upgrade`、または `E2E_UPDATE_CHECK_DISABLED=1`、`NO_UPDATE_NOTIFIER=1`、`E2E_TELEMETRY_DISABLED=1`、`DO_NOT_TRACK=1` の設定時は何も表示しません。
+
+### コマンド
+
+| コマンド | 説明 |
+| --- | --- |
+| [`e2e init`](#e2e-init) | プロジェクトのひな形を作成します |
+| [`e2e login`](#e2e-login) | モデルのサブスクリプションにサインインします |
+| [`e2e logout`](#e2e-logout) | 保存済みのログイン情報を削除します |
+| [`e2e models`](#e2e-models) | 保存済みのログインで使えるモデルを一覧表示します |
+| [`e2e guide`](#e2e-guide) | エージェントスキルを表示します |
+| [`e2e mcp`](#e2e-mcp) | MCP 経由でセッションを提供します |
+| [`e2e run`](#e2e-run) | テストを実行します |
+| [`e2e explore`](#e2e-explore) | 目標に沿ってアプリを探索します |
+| [`e2e list`](#e2e-list) | 実行で選択されるテストを表示します |
+| [`e2e doctor`](#e2e-doctor) | 実行を開始できるか確認します |
+| [`e2e cache`](#e2e-cache) | リプレイキャッシュを調べるか消去します |
+| [`e2e report`](#e2e-report) | HTML レポートをブラウザーで開きます |
+| [`e2e upgrade`](#e2e-upgrade) | e2e と関連パッケージを更新します |
+| [`e2e feedback`](#e2e-feedback) | e2e チームにフィードバックを送ります |
+| [`e2e telemetry`](#e2e-telemetry) | 利用状況テレメトリーの表示・切り替えを行います |
+
+デフォルトの記載がないオプションは、指定しない限り無効です。
+
+#### `e2e init`
+
+プロジェクトのひな形を作成し、`devDependencies` に `e2e` を追加します。既存の設定とテストファイルはスキップします。
+
+<CodeGroup>
+```bash npm
+npx e2e init --yes
+npx e2e init --yes --gateway openrouter --skills .agents/skills --mcp .mcp.json --install
+```
+
+```bash pnpm
+pnpm dlx e2e init --yes
+pnpm dlx e2e init --yes --gateway openrouter --skills .agents/skills --mcp .mcp.json --install
+```
+
+```bash bun
+bunx e2e init --yes
+bunx e2e init --yes --gateway openrouter --skills .agents/skills --mcp .mcp.json --install
+```
+</CodeGroup>
+
+| オプション | 説明 |
+| --- | --- |
+| `[directory]` | 作成先です。なければディレクトリを作ります。デフォルトは作業ディレクトリです。 |
+| `-y`, `--yes` | 質問を省略します。フラグで指定していない回答にはデフォルトを使います。Web エンジン、Vercel AI Gateway、両方の場所へのスキルと MCP 設定、CI パイプラインなし、インストールなしです。 |
+| `--example <name>` | サンプルアプリから始めます。`with-vite`、`with-next`、`with-astro`、`with-angular`、`with-expo`、`with-swiftui`、`with-compose`、`with-kotlin-multiplatform`、`with-flutter`、`with-maui` を指定できます。`with-` は省略可能です。[サンプルから始める](#starting-from-an-example)を参照してください。 |
+| `--engine <ids>` | 新しい設定のエンジンです。`web`、`mobile`、`none` を、カンマ区切りまたは繰り返し指定します。`web,mobile` はそれぞれのターゲットを書き込みます。デフォルトでは対話形式で尋ねます。 |
+| `--gateway <id>` | 新しい設定でエージェントステップに使うモデルゲートウェイです。`vercel`、`openrouter`、`openai-compatible`、`chatgpt`、`copilot`、`opencode-console`、`grok`、`none` を指定できます。デフォルトでは対話形式で尋ねます。 |
+| `--endpoint <url>` | `--gateway openai-compatible` のベース URL で、このゲートウェイの指定も兼ねます。HTTPS、またはループバックホストの HTTP を使えます。デフォルトでは対話形式で尋ね、`--yes` では `http://127.0.0.1:11434/v1` です。 |
+| `--skills <dirs>` | エージェントスキルのインストール先です。`.agents/skills`、`.claude/skills`、`none` を、カンマ区切りまたは繰り返し指定します。デフォルトでは対話形式で尋ねます。 |
+| `--mcp <files>` | MCP サーバーの登録先です。`.mcp.json`、`.cursor/mcp.json`、`.codex/config.toml`、`none` を、カンマ区切りまたは繰り返し指定します。デフォルトでは対話形式で尋ねます。 |
+| `--ci <id>` | テスト用の CI パイプラインです。プラットフォームごとに 1 ジョブを作成します。`github-actions`、`gitlab`、`none` を指定できます。[CI パイプライン](#ci-pipeline)を参照してください。デフォルトでは対話形式で尋ね、`--yes` では `none` です。 |
+| `--install`, `--no-install` | 依存関係をインストールするかを指定します。デフォルトでは対話形式で尋ね、`--yes` では `--no-install` です。 |
+
+- フラグを指定すると、その質問への回答になり、該当する質問を省略します。
+- `--engine`、`--gateway`、`--endpoint` は新しい設定にだけ適用します。`--example` との併用は使い方のエラーになります。
+
+| 終了コード | 条件 |
+| --- | --- |
+| 0 | ひな形の作成が完了した、またはウィザードをキャンセルした場合。キャンセル時は既存ファイルに触れず、コピーしたサンプルを削除します。 |
+| 2 | 未知のフラグ値。書き込み前に終了し、有効な値を列挙します。 |
+| 2 | 不正な `package.json`。書き込み前に終了します。 |
+| 2 | stdin と stdout がターミナルではなく、`--yes` もない場合。メッセージにフラグを示します。 |
+| 2 | ファイルのあるディレクトリに `--example` を指定した、またはサンプルのダウンロードに失敗した場合。何も残しません。 |
+| 2 | 依存関係のインストールに失敗した場合。 |
+| 130 | ロゴ描画中やサンプルのダウンロード中の Ctrl-C または SIGTERM、あるいは依存関係のインストール中の SIGINT。途中まで取得したサンプルは削除します。 |
+
+##### 質問
+
+幅が 52 列以上のターミナルでは、ウィザードの冒頭で e2e ロゴを表示します。上の行から順に ░ から █ へ変わり、約 0.5 秒で描画します。`--yes`、CI、dumb ターミナル、7 行未満のターミナルでは一度に表示します。パイプ出力や幅の狭いターミナルでは表示しません。
+
+CI 以外のターミナルでは、ひな形の作成後に GitHub で e2e にスターを付けるリンクを表示します。ただし、init の起動目的だったコマンドへそのまま進む場合は表示しません。
+
+新しいプロジェクトでは、ウィザードが次の内容を尋ねます。
+
+- **エンジン。** 片方、両方、またはなしを選びます。**Web**（Playwright、デフォルト）は `@e2e-dev/web` を追加します。**Mobile (iOS/Android)** は `@e2e-dev/mobile` を追加し、macOS では iOS、それ以外では Android をデフォルトにして、設定アプリを開きます。なしを選ぶとエンジンを追加しません。HTTP テストや独自エンジン向けです。
+- **エージェントステップ用のモデルプロバイダーまたはサブスクリプション。** Vercel AI Gateway、OpenRouter、OpenAI 互換エンドポイント、ChatGPT、GitHub Copilot、OpenCode Console、SuperGrok から選びます。ロケーターだけのテストでは、なしを選びます。ウィザードは必要なパッケージとモデル設定を追加します。サブスクリプションを使う場合、その後 [`e2e login`](#e2e-login) でサインインします。[モデル](/models)と[サブスクリプション](/subscriptions)を参照してください。
+- **エージェントスキルのインストール先**（[e2e guide](#e2e-guide) を参照）。`.agents/skills/` は Codex、Cursor、Copilot、Gemini CLI、OpenCode、Zed 用、`.claude/skills/` は Claude Code 用です。最初は両方が選択されています。
+- **[MCP サーバー](/reference/mcp)の登録先。** Claude Code 用の `.mcp.json`、Cursor 用の `.cursor/mcp.json`、Codex 用の `.codex/config.toml` です。最初はすべて選択されています。Codex は信頼済みのプロジェクトで設定を読み込みます。依存関係のインストール後、新しいセッションを始めてください。
+- **CI パイプライン。** Web またはモバイルエンジンがあるプロジェクトでは、GitHub Actions または GitLab CI/CD を選び、プラットフォームごとのジョブを作成します。リポジトリのリモート、`.github/` フォルダー、`.gitlab-ci.yml` から判断したサービスを、ウィザードがあらかじめ選択します。[CI パイプライン](#ci-pipeline)を参照してください。
+
+ファイルの変更を確認すると、ウィザードは選択した依存関係をインストールするか尋ねます。インストーラーは、プロジェクトの `packageManager` フィールドまたはロックファイル、呼び出し元のパッケージマネージャー、npm の順に選びます。
+
+##### ファイル
+
+| 作成するもの | 内容 |
+| --- | --- |
+| `package.json` | なければ非公開の ESM パッケージとして作成し、既存なら不足する依存関係とスクリプトだけを追加します。関連パッケージ（`@e2e-dev/web`、`@e2e-dev/mobile`）には CLI と同時にリリースしたバージョンのキャレット範囲を指定し、CLI がプレリリースなら完全一致のバージョンを指定します。既存のものがなければ、`e2e run` を実行する `test:e2e` スクリプトを追加します |
+| `e2e.config.ts` | 選んだエンジンごとにターゲットを 1 つ作り、その `app` にアプリを設定します。Playwright は `APP_URL`（デフォルト `http://localhost:3000`）を `app.url` に読み込み、コメントで `app.command` を示します。モバイルは iOS で `app: { bundleId: 'Settings' }`、Android で `com.android.settings`、および `workers: 1` を設定します。ゲートウェイがあれば `agents.default` は `{ model, system }` です |
+| `tests/example.e2e.ts` | どのページでも成功するアプリ起動テストと、コメントアウトしたエージェントテストです。デバイス向けでは、代わりに設定アプリの確認を作ります。両方のエンジンを選ぶと、`tests/web.e2e.ts` と `tests/mobile.e2e.ts` を作り、各テストに `requires: ['browser']` または `requires: ['device']` を付け、もう一方のターゲットではスキップさせます |
+| `.gitignore` | `node_modules/`、`.e2e/results/`、`.e2e/cache/`、`.e2e/sessions/`、`.e2e/report.json`、`.e2e/ai-trace.json`、`.e2e/timings.json`、`.e2e/junit.xml`、`.e2e/summary.md`、`.e2e/logs/`、`.e2e/videos/` を追記します。キャッシュのコミットは任意です。[リプレイキャッシュのコミット](/cache#commit-the-replay-cache)を参照してください |
+| `.agents/skills/e2e/`, `.claude/skills/e2e/` | `SKILL.md` と、`e2e guide` のトピックごとの `references/<topic>.md` です。両方を選ぶと、Claude Code のディレクトリはコピーを指す相対シンボリックリンク（`../../.agents/skills/e2e`）になります。`npx skills add` と同じ構成です |
+| `.mcp.json`, `.cursor/mcp.json`, `.codex/config.toml` | ほかのサーバーを変更せずに `e2e mcp` を登録します |
+| `.github/workflows/e2e.yml`, `.gitlab-ci.yml` | `--ci` 指定時に、ターゲットが動くプラットフォームごとのジョブを作ります。サブフォルダー内のプロジェクトでも、リポジトリルートに配置します。[CI パイプライン](#ci-pipeline)を参照してください |
+
+<a id="ci-pipeline" />
+##### CI パイプライン
+
+`--ci github-actions` または `--ci gitlab` は、設定のターゲットが動く Web、iOS、Android の各プラットフォームに 1 ジョブずつのパイプラインを書き込みます。Web とモバイルのターゲットがある設定でも、すべてのジョブを 1 ファイルにまとめます。各ジョブは依存関係をインストールし、`e2e run --target <its targets> --reporter
+list,junit` を実行して、`.e2e/report.json`、`.e2e/junit.xml`、`.e2e/results/` を保存します。
+
+<CodeGroup>
+```bash npm
+npx e2e init --yes --ci gitlab
+```
+
+```bash pnpm
+pnpm dlx e2e init --yes --ci gitlab
+```
+
+```bash bun
+bunx e2e init --yes --ci gitlab
+```
+</CodeGroup>
+
+| ジョブ | GitHub Actions | GitLab CI/CD |
+| --- | --- | --- |
+| Web | Chromium を含む `ubuntu-latest` | GitLab のランナー上の、Chromium を含む `node` イメージ |
+| iOS | `macos-26`。アプリをビルドし、固定した iOS ランタイムでイメージの iPhone 17 Pro を起動して、アプリをインストールします | 自己管理の Mac。固定したランタイムで専用のシミュレーターを作成します |
+| Android | KVM を使う `ubuntu-latest`。リリース APK をビルドし、API 36 のエミュレーターで実行します | KVM を使う自己管理の Linux ランナー。`e2e` という AVD を起動します |
+
+| サービス | ファイル | 実行タイミング | モデルのキー |
+| --- | --- | --- | --- |
+| GitHub Actions | `.github/workflows/e2e.yml` | プルリクエストと `main` への push | リポジトリシークレットを実行ステップの `env` に渡します |
+| GitLab CI/CD | `.gitlab-ci.yml` | マージリクエストのパイプラインとデフォルトブランチ。JUnit レポートをマージリクエストに表示します | GitLab がジョブに渡す CI/CD 変数 |
+
+- `init` は変更の確認とインストールの後、新たに書いた設定からターゲットを読むか、`e2e run` と同じ方法で既存の設定を読み込みます。既存の設定をまだ読み込めない場合、`init` は理由を表示し、`package.json` にフォールバックします。Web エンジンだけなら 1 つの Web ジョブですべてのターゲットを実行し、モバイルエンジンがあればパイプラインを作りません。
+- Web ジョブは、HTTP テストを含め、iOS と Android 以外のすべてのターゲットを実行します。モバイルターゲットのない設定では、全ターゲットを実行します。
+- モバイルのジョブはアプリをビルドします。Expo アプリは `expo run:ios` と、`expo prebuild` および Gradle を使います。bare React Native アプリは `ios/*.xcworkspace` を `xcodebuild`（`Gemfile` があれば Bundler 経由）でビルドし、`android/gradlew` を実行します。その他のアプリには、置き換えるまで失敗するビルドステップを生成し、`init` が編集するファイルを示します。
+- モバイルのジョブは、起動したデバイスを `E2E_DEVICE` に設定します。デバイスを指定するターゲットでは、`mobile()` 内の `device: process.env.E2E_DEVICE` で読み取り、そのデバイスを操作します。指定しないターゲットでは、起動済みのデバイスを操作します。
+- GitLab のホスト型ランナーではシミュレーターやエミュレーターを動かせないため、モバイルジョブには自己管理ランナーが必要です。`tags` を設定してください。[GitLab CI/CD](/ci/gitlab#ios-and-android) を参照してください。
+- ファイルは、パッケージの `templates/ci/` に同梱されたテンプレートを基にします。リポジトリルートの npm と Expo アプリ向けの完全なパイプラインです。`init` はコメントを残したまま、プロジェクトに合わせて埋めます。
+- ジョブはプロジェクトのパッケージマネージャーと、`.nvmrc` または `.node-version` の Node バージョン（なければ 24）を使います。GitHub はファイルを読むため、正確なバージョンを使います。GitLab の Web ジョブは、そのメジャーバージョンの `node` イメージを使います。たとえば `22.22.3` なら `node:22` です。GitHub のアクションはコミットで固定します。
+- `init` は、`AI_GATEWAY_API_KEY` など追加すべきシークレットや変数と、それを追加する `gh` または `glab` コマンドを示します。
+- サブフォルダー内のプロジェクトでは、ファイルをリポジトリルートに置き、ジョブはサブフォルダーで実行します。
+- 設定に `app.command` がなければ、ランナー上でほかにアプリを起動するものがないため、`init` は警告します。サインイン情報がローカルマシンに残るサブスクリプションのゲートウェイや、ローカルマシン上の OpenAI 互換 `baseURL` にも警告します。どちらも CI ではエージェントステップが失敗します。
+- 既存のパイプラインファイルは変更しません。`.gitlab-ci.yml` があれば、`init` はその隣に `.gitlab/e2e.gitlab-ci.yml` を書き込み、追加すべき `include:` 行を表示します。ジョブは `test` ステージで実行し、`stages:` にそれがなければ `init` が知らせます。同名のジョブ（`e2e-web`、`e2e-ios`、`e2e-android`）がある場合は、すべてのジョブ名に `-run` を付けます。
+- `init` は、シンボリックリンクの `.github` や `.gitlab` フォルダーを経由して書き込みません。警告し、何も書き込みません。
+- すでに `e2e run` を実行するワークフローや `.gitlab-ci.yml` には何も追加しません。Web もモバイルもエンジンがないプロジェクトも同様です。
+
+<a id="starting-from-an-example" />
+##### サンプルから始める
+
+`--example` は[サンプルアプリ](https://github.com/e2e-inc/e2e/tree/main/examples)を新しいディレクトリまたは空のディレクトリにコピーし、その e2e プロジェクトでウィザードを実行します。Web または Expo アプリではそのディレクトリ自体、ネイティブアプリでは `e2e/` フォルダーです。
+
+<CodeGroup>
+```bash npm
+npx e2e init my-app --example with-expo
+```
+
+```bash pnpm
+pnpm dlx e2e init my-app --example with-expo
+```
+
+```bash bun
+bunx e2e init my-app --example with-expo
+```
+</CodeGroup>
+
+- CLI は、実行中の CLI に対応する `e2e@<version>` タグから、GitHub 上のサンプルをダウンロードします。そのタグがなければ `main` を使い、警告します。
+- `.git`、`.DS_Store`、`Thumbs.db` しかないディレクトリは空と見なします。
+- サンプルの設定、テスト、スクリプトはそのまま残します。ウィザードが尋ねるのはスキル、MCP サーバー、インストールだけで、不足する `.gitignore` エントリを追加します。ネイティブアプリではこれらを `e2e/` に配置するため、コーディングエージェントもそこで開いてください。
+- e2e プロジェクトの `package.json` の名前にはディレクトリ名を使います（ネイティブアプリの隣では `-e2e` を付けます）。`e2e`、`@e2e-dev/web`、`@e2e-dev/mobile` のバージョン範囲は、新規プロジェクトの `init` と同じにします。
+- 最後の `Next:` 行は、サンプルのテストスクリプトを示します。ネイティブアプリは先にビルドが必要です。方法はその `README.md` にあります。
+
+##### init の再実行
+
+- 既存の設定とテストファイルは、バイト単位で変更しません。エンジンとゲートウェイの回答は新しい設定だけに適用するため、そのパッケージも追加しません。サンプルテストがなければ作成しますが、エンジンごとのサンプルがすでにある場合は作りません。
+- `package.json` と `.gitignore` には、引き続き不足するものを追加します。`e2e` の開発依存、`test:e2e` スクリプト、無視エントリです。既存の依存関係、スクリプト、エントリはそのままにします。
+- MCP 登録では、起動コマンドを修復する場合でも、環境変数やクライアントのタイムアウトなど、e2e サーバーの追加設定を維持します。最新の登録はバイト単位で変更しません。
+- スキルディレクトリが一度作られると、その後の実行では、インストール済みバージョンと異なるコピーを更新します。プロジェクトが選ばなかったディレクトリを新たに追加することはありません。`--skills` と `--mcp` を指定した場合は、その場所を正確に対象とし、他の場所はそのままにします。
+- 以前のバージョンの `.claude/skills/e2e/` が同梱ファイルだけを含むコピーなら、シンボリックリンクに変換します。他のファイルがあるコピーは、コピーのまま更新します。
+- `init` は、別の場所を指すシンボリックリンクのスキルディレクトリや、その下のディレクトリを経由して書き込みません。`--yes` ではリンクとリンク先を示す警告を出してスキップします。対話形式では、コピーへの置き換えか、本来リンクを置く場所なら適切なリンクへの置き換えを提案します。
+- ファイルであるべき場所がディレクトリ、またはその逆になっているコピーは、そのエントリを示す警告を出してスキップします。`init` は修復のために何かを削除することはありません。
+- シンボリックリンク経由、またはリンクされたディレクトリ内の MCP 設定ファイルは、同じ警告でスキップし、変更しません。その場所にはサーバーを登録しません。通常の設定は従来どおりマージします。
+
+#### `e2e login`
+
+サブスクリプションにサインインし、認証情報を `$XDG_CONFIG_HOME/e2e/oauth.json`（デフォルト `~/.config/e2e/oauth.json`）に保存します。モデルの設定は[サブスクリプション](/subscriptions)を参照してください。
+
+<CodeGroup>
+```bash npm
+npx e2e login openai              # ChatGPT, browser sign-in
+npx e2e login openai --device     # sign in with a device code
+npx e2e login github-copilot --from-gh  # use your GitHub CLI login
+npx e2e login github-copilot --client-id <id> [--enterprise-url <host>]
+npx e2e login opencode-console    # OpenCode Console, device code
+npx e2e login spacexai            # SuperGrok, device code
+npx e2e login                     # choose a provider
+```
+
+```bash pnpm
+pnpm exec e2e login openai              # ChatGPT, browser sign-in
+pnpm exec e2e login openai --device     # sign in with a device code
+pnpm exec e2e login github-copilot --from-gh  # use your GitHub CLI login
+pnpm exec e2e login github-copilot --client-id <id> [--enterprise-url <host>]
+pnpm exec e2e login opencode-console    # OpenCode Console, device code
+pnpm exec e2e login spacexai            # SuperGrok, device code
+pnpm exec e2e login                     # choose a provider
+```
+
+```bash bun
+bunx e2e login openai              # ChatGPT, browser sign-in
+bunx e2e login openai --device     # sign in with a device code
+bunx e2e login github-copilot --from-gh  # use your GitHub CLI login
+bunx e2e login github-copilot --client-id <id> [--enterprise-url <host>]
+bunx e2e login opencode-console    # OpenCode Console, device code
+bunx e2e login spacexai            # SuperGrok, device code
+bunx e2e login                     # choose a provider
+```
+</CodeGroup>
+
+| オプション | 説明 |
+| --- | --- |
+| `[provider]` | サブスクリプションです。`openai`、`github-copilot`、`opencode-console`、`spacexai` を指定できます。デフォルトでは選択画面を表示します。 |
+| `--device` | ChatGPT 用です。ブラウザを開かず、別のデバイスで入力するコードを表示します。 |
+| `--from-gh` | GitHub Copilot 用です。サインイン済みの GitHub CLI のトークンを再利用します。 |
+| `--client-id <id>` | GitHub Copilot 用です。デバイスフローを有効にした GitHub OAuth App のクライアント ID です。 |
+| `--enterprise-url <host>` | GitHub Copilot 用です。GitHub Enterprise のホストです。 |
+
+| 終了コード | 条件 |
+| --- | --- |
+| 1 | サインインに失敗した場合。 |
+| 2 | 未知のプロバイダー。 |
+| 130 | サインインをキャンセルした場合。 |
+
+#### `e2e logout`
+
+1 つのプロバイダーの保存済みログイン情報を削除します。
+
+<CodeGroup>
+```bash npm
+npx e2e logout           # pick one of the stored logins
+npx e2e logout openai    # forget one
+```
+
+```bash pnpm
+pnpm exec e2e logout           # pick one of the stored logins
+pnpm exec e2e logout openai    # forget one
+```
+
+```bash bun
+bunx e2e logout           # pick one of the stored logins
+bunx e2e logout openai    # forget one
+```
+</CodeGroup>
+
+| オプション | 説明 |
+| --- | --- |
+| `[provider]` | ログイン情報を削除する対象です。`openai`、`github-copilot`、`opencode-console`、`spacexai` を指定できます。デフォルトでは保存済みのログインから選ぶ画面を表示します。 |
+
+#### `e2e models`
+
+保存済みのログインで使えるモデルをサービスに問い合わせ、モデルごとに 1 行表示します。OpenCode Console では、`OPENCODE_API_KEY` が設定されていればそれを使います。
+
+<CodeGroup>
+```bash npm
+npx e2e models           # every stored login
+npx e2e models openai    # one provider
+```
+
+```bash pnpm
+pnpm exec e2e models           # every stored login
+pnpm exec e2e models openai    # one provider
+```
+
+```bash bun
+bunx e2e models           # every stored login
+bunx e2e models openai    # one provider
+```
+</CodeGroup>
+
+| オプション | 説明 |
+| --- | --- |
+| `[provider]` | `openai`、`github-copilot`、`opencode-console`、`spacexai` を指定できます。デフォルトでは保存済みの全ログインを使い、`OPENCODE_API_KEY` だけがある場合も OpenCode Console を含めます。 |
+
+各行には次の情報があります。
+
+- `chatgpt()`、`copilot()`、`opencodeConsole()`、`grok()` が受け取る ID。
+- サービス側のモデル名。
+- 補足情報。推論レベル、画像入力、プレビュー、非表示の状態などです。Copilot で `copilot()` から呼べない場合は `not enabled` または `no chat or responses` を表示します。OpenCode Console では、利用できるプラン（Zen または Go）を示します。
+
+Copilot のアカウントで一覧のモデルを使えるかどうかは、実際に呼び出して初めて分かります。
+
+| 終了コード | 条件 |
+| --- | --- |
+| 1 | 認証情報がない、または指定したプロバイダーの認証情報がない場合。メッセージにサインインのコマンドを示します。 |
+| 1 | 複数のログインのうち 1 つで一覧取得に失敗した場合。ほかの結果は表示します。 |
+| 2 | 未知のプロバイダー。 |
+
+[モデルを選ぶ](/subscriptions#pick-a-model)を参照してください。
+
+#### `e2e guide`
+
+`init` がインストールするスキルを表示します。`npx skills add e2e-inc/e2e` でも同じスキルをインストールできます。[コーディングエージェント](/coding-agents)を参照してください。
+
+<CodeGroup>
+```bash npm
+npx e2e guide            # the overview
+npx e2e guide setup      # one topic
+```
+
+```bash pnpm
+pnpm exec e2e guide            # the overview
+pnpm exec e2e guide setup      # one topic
+```
+
+```bash bun
+bunx e2e guide            # the overview
+bunx e2e guide setup      # one topic
+```
+</CodeGroup>
+
+| オプション | 説明 |
+| --- | --- |
+| `[topic]` | `setup`、`writing-tests`、`agent`、`running`、`explore`、`debugging`、`mcp`、`bug-bash` のいずれかです。デフォルトは概要です。未知のトピックでは 2 で終了し、有効なものを示します。 |
+
+#### `e2e mcp`
+
+コーディングエージェントにアプリのセッションを提供する、stdio 上の MCP サーバーです。
+
+<CodeGroup>
+```bash npm
+npx e2e mcp [--config <path>] [--target <name>] [--headed] [--max-sessions <n>]
+```
+
+```bash pnpm
+pnpm exec e2e mcp [--config <path>] [--target <name>] [--headed] [--max-sessions <n>]
+```
+
+```bash bun
+bunx e2e mcp [--config <path>] [--target <name>] [--headed] [--max-sessions <n>]
+```
+</CodeGroup>
+
+| オプション | 説明 |
+| --- | --- |
+| `--config <path>` | `open_session` で指定しない場合に各セッションが読み込む設定です。デフォルトは最も近い `e2e.config.ts`、`.mts`、`.js`、`.mjs` です。 |
+| `--target <name>` | 各セッションを開くターゲットです。デフォルトは唯一のターゲット、または `open_session` で指定したものです。 |
+| `--headed` | エンジンが対応していれば、`open_session` で `headed` を設定しないセッションの UI を表示します。 |
+| `--max-sessions <n>` | 同時に開くセッション数です。それぞれ独自のブラウザまたはデバイスを持ちます。1〜16、デフォルトは 4、[Bun](#bun) では 1 です。 |
+
+これらのオプションの詳細、ツール、セッションの規則は [MCP サーバー](/reference/mcp)のページを参照してください。
+
+#### `e2e run`
+
+設定から検出したテストを実行し、[出力ディレクトリ](/reference/config#output)に `report.json` を書き込みます。
+
+<CodeGroup>
+```bash npm
+npx e2e run
+npx e2e run tests/signup.e2e.ts --tag smoke
+npx e2e run tests/signup.e2e.ts:12
+npx e2e run tests/agent
+npx e2e run 'tests/**/*.smoke.e2e.ts'
+npx e2e run --target web,webkit --tag smoke,billing --tag-mode all
+npx e2e run --tag smoke --exclude-tag slow
+npx e2e run --grep checkout --grep-invert '/refund/i'
+npx e2e run --last-failed
+npx e2e run --changed-since origin/main
+npx e2e run --shard 2/3
+npx e2e run --reporter json --workers 4 --retries 2
+npx e2e run --max-failures 3
+npx e2e run --repeat-each 5 --no-cache tests/checkout.e2e.ts
+npx e2e run --reporter list,junit
+```
+
+```bash pnpm
+pnpm exec e2e run
+pnpm exec e2e run tests/signup.e2e.ts --tag smoke
+pnpm exec e2e run tests/signup.e2e.ts:12
+pnpm exec e2e run tests/agent
+pnpm exec e2e run 'tests/**/*.smoke.e2e.ts'
+pnpm exec e2e run --target web,webkit --tag smoke,billing --tag-mode all
+pnpm exec e2e run --tag smoke --exclude-tag slow
+pnpm exec e2e run --grep checkout --grep-invert '/refund/i'
+pnpm exec e2e run --last-failed
+pnpm exec e2e run --changed-since origin/main
+pnpm exec e2e run --shard 2/3
+pnpm exec e2e run --reporter json --workers 4 --retries 2
+pnpm exec e2e run --max-failures 3
+pnpm exec e2e run --repeat-each 5 --no-cache tests/checkout.e2e.ts
+pnpm exec e2e run --reporter list,junit
+```
+
+```bash bun
+bunx e2e run
+bunx e2e run tests/signup.e2e.ts --tag smoke
+bunx e2e run tests/signup.e2e.ts:12
+bunx e2e run tests/agent
+bunx e2e run 'tests/**/*.smoke.e2e.ts'
+bunx e2e run --target web,webkit --tag smoke,billing --tag-mode all
+bunx e2e run --tag smoke --exclude-tag slow
+bunx e2e run --grep checkout --grep-invert '/refund/i'
+bunx e2e run --last-failed
+bunx e2e run --changed-since origin/main
+bunx e2e run --shard 2/3
+bunx e2e run --reporter json --workers 4 --retries 2
+bunx e2e run --max-failures 3
+bunx e2e run --repeat-each 5 --no-cache tests/checkout.e2e.ts
+bunx e2e run --reporter list,junit
+```
+</CodeGroup>
+
+<a id="positional-arguments" />
+
+##### 位置引数
+
+```bash
+e2e run [files...]
+```
+
+プロジェクトルートからの相対指定で、テストファイル、ディレクトリ、glob を渡します。
+
+| 位置引数 | 選択するもの |
+| --- | --- |
+| ファイルパス（`tests/signup.e2e.ts`） | そのファイル。 |
+| ディレクトリ（`tests/agent`、`.`） | その配下で検出したすべてのテストファイル。 |
+| 名前だけの指定（`signup.e2e.ts`、`agent/signup.e2e.ts`、`signup`） | パスの末尾がセグメント境界で一致する、検出済みの全ファイル。最初の 2 つはどちらも `tests/agent/signup.e2e.ts` を選びます。`/` も `.` もなければ、拡張子を除いたファイル名と照合するため、`signup` でも選べます。 |
+| 上記のいずれかに `:line` を追加（`tests/signup.e2e.ts:12`、`signup:12`） | 対象ファイルのその行で宣言されたテストだけです。エディターやレポートの `source` に表示される、`test(` 呼び出しの開始行を指定します。 |
+| 引用符で囲んだ glob（`'tests/**/*.smoke.e2e.ts'`） | 一致する検出済みの全ファイル。設定の `tests` glob と同じ文法で、`*`、`?`、セグメント全体を占める `**` を使えます。 |
+
+- **行。** 直列グループの 1 メンバーを指定する行は、グループ全体を実行します。同じファイルの複数行の指定は合算し、行番号なしの指定はファイル全体を選びます。指定行にテスト宣言がなければ、`NO_TESTS` が位置引数と、そのファイル内のテスト宣言行を示します。指定どおりの名前でディスク上に存在するものは、`:12` で終わっていてもパスとして扱います。
+- **glob。** 波括弧、文字クラス、extglob は、何にも一致しないパターンとして扱わず、ヒント付きの `INVALID_GLOB` にします。展開は行わないため、候補ごとに glob を指定してください。`./`、`..`、末尾の `/`、プロジェクト内の絶対パスは、ほかの位置引数のパスと同じように解決します。既存のファイルやディレクトリは、名前に含まれる文字にかかわらずパスで選択します。
+- 位置引数は、設定の glob とタグ、プラットフォーム、機能のフィルターをさらに絞り込みます。これらを迂回することはありません。名前と glob はどの OS でも大文字小文字を区別します。プロジェクトルート外のパスは `COLLECTION_ERROR` です。
+- ランナーは、一部だけを選択した場合も、検出した全テストファイルをインポートします。選択したテストが別ファイルのセッションセットアップを見つけられるようにするためです。ほかの通常テストは未選択のままです。選択したファイル内の収集エラー、または位置引数のない実行の任意のファイル内の収集エラーは、実行を失敗にします。位置引数で除外したファイルのインポートやテスト登録が失敗した場合は、通知してスキップします。そのため、ほかに書きかけのファイルがあっても `npx e2e run tests/login.e2e.ts` は止まりません。その結果、選択したテストのセッションにセットアップテストが見つからない場合は、セットアップがありそうな場所として、そのファイルをエラーに示します。
+- `-` で始まり、ファイルも指していない位置引数は、終了コード 2 の使い方のエラーです。`pnpm test:e2e -- --headed` で発生します。`--` が e2e に届くため、そのままでは `--headed` をファイルとして扱ってしまいます。メッセージには直接実行する形式 `pnpm exec e2e run --headed` を示します。npm では `npm exec -- e2e run --headed` です。npm はフラグを渡すため、バイナリの前に区切りが必要です。
+- 実行対象がなくなると、`NO_TESTS` が原因を示します。glob に一致するファイルがない（`tests/login.test.ts` など似たファイルも提示）、位置引数に一致するものがない（最も近いパスを提示）、一致したファイルがテストを登録していない、またはすべてのテストがフィルターで除外された場合です。
+
+<a id="flags" />
+
+##### フラグ
+
+**選択**
+
+| オプション | 説明 |
+| --- | --- |
+| `--config <path>` | 設定パスを明示します。デフォルトは最も近い `e2e.config.ts`、`.mts`、`.js`、`.mjs` です（[読み込み](/reference/config#loading)を参照）。ファイルがなければ `CONFIG_NOT_FOUND` です。 |
+| `--target <ids>` | ターゲット名をカンマ区切りまたは繰り返し指定します。デフォルトは設定済みの全ターゲットです。アプリのコマンドを起動するのは選択したターゲットだけです。未知の ID は `UNKNOWN_TARGET` です。 |
+| `--tag <tags>` | 指定タグを持つテストだけを選びます。カンマ区切りまたは繰り返し指定します。いずれかのタグに一致すれば対象となり、`--tag-mode all` ではすべての一致が必要です。 |
+| `--tag-mode <mode>` | 複数タグの組み合わせ方です。`any` または `all` で、デフォルトは `any` です。 |
+| `--exclude-tag <tags>` | 指定タグを 1 つでも持つテストを除外します。カンマ区切りまたは繰り返し指定し、`--tag` や位置引数の選択より優先します。直列グループは 1 メンバーでも選ばれると全体を実行するため、フローを除外するには直列の `describe` にタグを付けてください。 |
+| `--grep <pattern>` | タイトルがいずれかの正規表現に一致するテストだけを選びます。繰り返し指定できます。タイトルは describe のタイトルとテストタイトルをスペース 1 つで結合したもの（`checkout pays`）で、ファイルやタグは含めません。通常のパターンは大文字小文字を区別し、`'/pattern/i'` でフラグを追加できます。コンパイルできないパターンは、終了コード 2 の使い方のエラーです。 |
+| `--grep-invert <pattern>` | タイトルがいずれかの正規表現に一致するテストを除外します。繰り返し指定でき、対象テキストと形式は `--grep` と同じです。両方ある場合は、`--grep` の一致から `--grep-invert` の一致を除きます。 |
+| `--changed-since <ref>` | 指定した参照以降の変更に、設定済みの[テストフィルター](/filters)を適用します。参照と `HEAD` のマージベースから異なる全ファイルが対象で、未コミット・未追跡ファイルも含みます。各ターゲットは、フィルターが関連性を高く評価したテストのファイルから開始します。未指定ならフィルターは動きません。フィルターが設定されていなければ、すべてのテストを実行する旨を警告します。 |
+| `--last-failed` | 前回成功しなかったテストだけを選びます。対象の詳細は表の後の一覧にあります。 |
+| `--shard <index/total>` | `2/3` など、選択したテストの連続した一部分を実行します。ほかのすべてのフラグの後で分割します。各部分のテスト数の差は最大 1 件です。直列グループは 1 件と数え、分割しません。各シャードは自身のテストに必要なセットアップだけを伴います。スキップするテストは分割対象にせず、直前の最も近い実行対象テストを持つシャード、なければ最初のシャードが報告し、重複させません。各シャードはインデックスだけを変えて同じコマンドを実行します。順序はレポート順なので、どのマシンでも同じ分割になります。テストのないシャードは、`--pass-with-no-tests` がなければ `NO_TESTS` です。[シャーディング](/ci#sharding)を参照してください。 |
+| `--pass-with-no-tests` | 選択結果が空の場合、`NO_TESTS` ではなく 0 で終了します。実行対象がなければ、エンジンの準備もアプリやサービスのコマンドの起動も行いません。 |
+
+**実行**
+
+| オプション | 説明 |
+| --- | --- |
+| `--headed` | エンジンが対応していれば UI を表示します。 |
+| `--agent <names>` | エージェントを固定していないテストを、選択したエージェントごとに 1 回実行します。カンマ区切りまたは繰り返し指定し、デフォルトは `default` です。`{ agent }` のあるテストでは、共通の名前があればそれらを選び、なければテスト自身の指定を維持します。未知の名前は `INVALID_CONFIG` です。 |
+| `--retries <n>` | `config.retries` を置き換えます。0〜10 の整数で、デフォルトは設定値です。 |
+| `--workers <n>` | `config.workers` を置き換えます。1〜1024 の整数で、デフォルトは設定値です。 |
+| `--action-timeout <ms>` | この実行の [`actionTimeout`](/reference/config#actiontimeout) を置き換えます。1〜2147483647 の整数で、それ以外は終了コード 2 の使い方のエラーです。デフォルトは設定値、なければ `30000` です。呼び出し自身の `timeout` が引き続き優先されます。テスト作成中に `5000` など小さな値を使うと、誤ったロケーターが 30 秒ではなく 5 秒後に `LOCATOR_NOT_FOUND` で失敗します。 |
+| `--assertion-timeout <ms>` | この実行の [`assertionTimeout`](/reference/config#assertiontimeout) を置き換えます。1〜2147483647 の整数で、それ以外は終了コード 2 の使い方のエラーです。デフォルトは設定値、なければ `5000` です。マッチャー自身の `timeout` が引き続き優先されます。 |
+| `--max-failures <n>` | 指定数（1 以上）のテストが失敗またはタイムアウトした時点で実行を停止します。以後の処理は割り当てず、ほかのワーカーで実行中のテストは `interrupted` で終了します。上限に達したテストと同じファイルの残りも含め、未開始のテストは cause `failure-limit`、理由 `run stopped after 3 failures (--max-failures 3)` でスキップします。130 ではなく、失敗自身のコードである 1 で終了します。 |
+| `--max-duration <ms>` | 1 回の実行の [`maxDuration`](/reference/config#maxduration) を上書きします。1〜2147483647 の整数で、デフォルトは設定値です。130 ではなく 1 で終了します。 |
+| `--repeat-each <n>` | 選択した各テストを指定回数実行します。1 以上で、デフォルトは `1` です。各実行は独立した結果となり、`repeat` が 0〜`n - 1`、`id` も固有です。list レポーターは 2 回目以降のタイトルに `(repeat #1)`、`(repeat #2)` を付け、成果物を `repeat-<n>` ディレクトリに保存します。セットアップテストは 1 回だけ実行します。リプレイキャッシュが有効なら初回を記録し、以後はリプレイします。毎回モデルを呼ぶには `--no-cache` を追加してください。`list` のサマリーには `Repeats` 行（`1 of 2 tests passed all 5 runs`）と、全回成功しなかったテストごとに失敗した回を示す行を追加します。`markdown` ページにも同じ集計を表示します。 |
+| `--no-cache` | `config.cache` にかかわらず、この実行のリプレイキャッシュを無効にします。 |
+| `--strict-cache` | この実行で `cache.strict` を有効にします。記録はあるがリプレイできなくなったステップは、エージェントに引き継がず `REPLAY_STALE` で失敗します。リトライもリプレイし、キャッシュには書き込みません。[古くなった記録で失敗させる](/cache#fail-on-a-stale-recording)を参照してください。 |
+| `-u`, `--update-snapshots` | [`toHaveScreenshot`](/reference/expect#screenshot-matchers) が未保存または相違ありと判断したスクリーンショットを書き込み、マッチャーを成功にします。未指定では、未保存のものを書き込んで失敗にし、CI では結果への添付だけを行います。 |
+| `-w`, `--watch` | 実行後、テストファイルや設定の変更、またはキー操作で再実行します。[監視モード](#watch-mode)を参照してください。 |
+| `--step` | 最初のステップを実行し、以後の各ステップはキー入力まで待機します。Enter はそのステップ、`n` はテストの残り、`a` は実行の残りを進め、`h` はキー一覧、`q` は終了コード 130 で停止します。待機時間はどのタイムアウトにも含めません。ターミナルがなければバックグラウンドで進み、各コマンドは次の待機ステップで画面を返します。`--step next` はそのステップ、`--step rest` は残り、`--step stop` は終了です。ワーカーは 1 つで、CI、`--watch`、1 を超える `--workers`、json レポーターとの併用は拒否します（終了コード 2）。[ステップごとにテストを進める](/debugging#step-through-a-test)と[ターミナルなしで進める](/debugging#step-through-a-test-without-a-terminal)を参照してください。 |
+
+**出力**
+
+| オプション | 説明 |
+| --- | --- |
+| `--reporter <ids>` | `config.reporters` の組み込み ID を置き換えます。`list`、`dot`、`json`、`junit`、`markdown` をカンマ区切りで指定します。デフォルトは設定値です。`json` または `dot` と `list` の併用は `INVALID_CONFIG` です。設定内の[レポーターオブジェクト](/reference/reporters)は引き続き実行します。 |
+| `--output <dir>` | 設定の [`output`](/reference/config#output) より優先する、この実行の結果ディレクトリです。レポート、レポーターのファイル、AI トレース、`results/`、`sessions/` を含みます。デフォルトは設定値、なければ `.e2e` です。プロジェクトルートから解決し、その内側のディレクトリである必要があります。ルート自体や、実行が所有できないその他のディレクトリ（リンク先に一覧）は `INVALID_CONFIG` です。テスト開始時に `results/` を消去しますが、`--last-failed` の再実行では前回のレポートが参照するものを残します。 |
+| `--cache-dir <dir>` | [`E2E_CACHE_DIR`](/reference/environment#replay-cache) と [`cache.dir`](/reference/config#cache) より優先する、この実行のリプレイキャッシュディレクトリです。デフォルトは `E2E_CACHE_DIR`、次に `cache.dir`、なければ `.e2e/cache` です。プロジェクトルートから解決し、`~` または先頭の `~/` はホームディレクトリです。キャッシュモードは設定のままです。カスタムの `cache.store` との併用は `INVALID_CONFIG` です。 |
+| `--timings <file>` | 実行終了時に更新する[所要時間の履歴](/ci#cache-the-timings-history)です。`<output>/timings.json` より優先します。複数ワーカーでは、時間の記録がないファイルを先に、残りを所要時間の長い順に開始します。プロジェクトルートから解決します。ファイルがない、または不正な場合は履歴なしとして扱い、エラーにはしません。 |
+| `--debug` | 実行後、stderr にフェーズ別の時間とエージェントステップの表を出力します。[デバッグ出力](#debug-output)を参照してください。 |
+| `--ai-trace` | すべてのモデル呼び出しを `<output>/ai-trace.json` に記録します。[出力](#output)を参照してください。 |
+| `--trace [mode]` | トレースページ（`<output>/results/<test>/trace.md`）を残すテストを指定します。`off`、`on`、`retain-on-failure`、`on-first-retry`、`on-all-retries` を使えます。デフォルトは設定値です。`--trace off` は、独自の `trace` 指定のないテストのページを書きません。[trace](/reference/config#trace) を参照してください。 |
+| `--video [mode]` | 動画を録画する試行を指定します（ブラウザエンジンは WebM、デバイスエンジンは MP4）。モードは `--trace` と同じで、デフォルトは設定値です。録画可能なエンジンのターゲットだけが対象となり、それ以外は 1 つの通知にまとめて示します。[video](/reference/config#video) を参照してください。 |
+
+`--trace` と `--video` は設定と各ターゲットの値より優先しますが、テスト自身の `trace` または `video` が最優先です。値を付けないフラグは `on` となり、たとえば `--trace` だけなら全テストのページを残します。値は省略可能ですが、次の引数を値として取り込みます。`--trace tests/a.e2e.ts` はファイルをモードと解釈して失敗します。`--trace=<mode>` と書くか、テストファイルをフラグの前に置いてください。
+
+削除済みの `--artifacts <dir>` は失敗し、対応する `--output` を示します。`--artifacts out/artifacts` は `--output out` に相当し、親がプロジェクトルート自身またはその外側のディレクトリなら `--output .e2e` に対応します。
+
+`--last-failed` は前回成功しなかったテストを選びます。この実行が上書きする `report.json`、つまり `<output>/report.json` から読み取ります（`--output`、なければ設定の [`output`](/reference/config#output)）。
+
+- 失敗、タイムアウト、中断したテスト。
+- セットアップ、直列グループの先行テスト、フック、ワーカーの失敗、または `--max-failures`、`--max-duration` による実行停止でスキップしたテスト。
+- 失敗した `beforeAll` または `afterAll` が、そのターゲット上の describe またはファイルで対象にした全テスト。セットアップの場合は、そのセッションを使うテストです。再実行でフックをもう一度実行し、まだ失敗するなら再び報告します。そのスコープ内のいずれかのテストを実行し、フックが失敗しなければ解消します。
+- 別のフィルター（`--grep`、`--tag`、`--target`、`--agent`、位置引数）が再実行から除外したテストは、再実行が必要なままです。レポートは、その最後の結果と、そのテストをスコープに含むフックの失敗を `run.carried` に引き継ぎます。次の `--last-failed` は再び選択し、[`@e2e-dev/github`](/github) のページは成功するまで赤のままです（前回中断されたテストは ⏹️）。再実行自身の終了コードとサマリーは、実際に実行したものだけを数えます。
+- 再実行は前回のレポートが参照する成果物を維持し、自身の成果物を各テストの `rerun-<n>/` に保存します。前の試行のファイルを上書きしません。
+- テストはターゲットとエージェントごとに識別します。
+- レポートがなければ `NO_LAST_RUN` です。前回の失敗がなければ選択結果は空になり、`--pass-with-no-tests` がなければ `NO_TESTS` です。
+
+範囲外の `--retries` と `--workers` は、設定値と同様、何かを開始する前に `INVALID_CONFIG` で失敗します。`--target`、`--tag`、`--exclude-tag`、`--agent` は各名前を 1 回だけ扱います。空の値（`--tag ''`、または変数未設定の `--tag "$TAGS"`）は、選択範囲を広げず、終了コード 2 の使い方のエラーにします。空の `--reporter` も同じエラーであり、レポーターなしの実行にはなりません。
+
+フィルターは範囲を狭めるだけで、位置引数、`.only`、`--tag`、`--exclude-tag`、`--grep`、`--grep-invert`、`--last-failed`、プラットフォームと機能の規則、`--shard` の順に適用します。実行対象がなくなると、`NO_TESTS` が各フィルターの除外数とタグ・パターンを示します。どのテストも宣言していないタグを明示し、最も近い宣言済みタグを示します。`--changed-since` があれば、設定済みの[テストフィルター](/filters)を最後に実行します。
+
+<a id="debug-output" />
+
+##### デバッグ出力
+
+`--debug` は stderr に 2 つの表を追加します。フェーズ別の時間は、ランナーと全ワーカーで合算します。エージェントステップの表は、実行順に各ステップのフェーズ別内訳、モデル呼び出し、トークン数、プロバイダーが報告した場合はコストを示します。
+
+```console
+$ npx e2e run --debug
+...
+[e2e debug] phase timings (wall 14.2s)
+  phase               count   total     avg     max
+  scheduler               1   11.8s   11.8s   11.8s
+  test.body               6   10.1s   1.7s    3.9s
+  session.launch          6    1.1s   183ms   410ms
+  engine.prepare          1   612ms   612ms   612ms
+  collect                 1   420ms   420ms   420ms
+  config.load             1   118ms   118ms   118ms
+  realm.import            1    96ms    96ms    96ms
+  session.close           6    88ms    15ms    31ms
+  engine.init             1    74ms    74ms    74ms
+
+[e2e debug] agent steps (execution order, model openai/gpt-6-luna-fast, total $0.0312)
+  step                                   total   model  observe  action  calls  tokens in/out  cached       cost
+  act "add a todo named groceries"       3.9s    2.8s    410ms   620ms      3  9412/388       61% (5740)   $0.0198
+  assert "the list shows groceries"      1.2s    1.1s     88ms     0ms      1  3120/41        0% (0)       $0.0114
+```
+
+`cached` は、入力トークンのうちプロバイダーがプロンプトキャッシュから処理した割合です。内訳の報告がなければ `-` です。レポートにもステップごと（`model.cacheReadTokens`、`model.cacheWriteTokens`）と実行ごと（`usage.modelCachedTokens`）に同じ情報を記録します。
+
+<a id="output" />
+
+##### 出力
+
+| レポーター | 出力内容 |
+| --- | --- |
+| `list` | ターミナルの進捗、周辺コード付きの失敗、実行サマリーです。TTY では現在のエージェントステップ、モデルのターン、ツール呼び出し、推論の抜粋をリアルタイムに表示します。stdout がターミナルでなければ（パイプ、リダイレクト、多くの CI）、各テストの完了時に表示します。最後に、失敗した各テストのファイルと行、エラーの最初の行、作成済みならトレースページを示します。信頼できないフィールドは 8 KiB に制限し、制御文字を除きます。 |
+| `dot` | 選択した各テストの結果を 1 文字で表示し、その後に失敗の詳細と実行サマリーを表示します。記号、色、改行については [`dot`](/reference/reporters#dot) を参照してください。`dot,json` では、ターミナル向けの出力をすべて stderr に送ります。 |
+| `json` | stdout にレポートドキュメントだけを出すため、`e2e run --reporter json \| jq` を使えます。内容は `<output>/report.json` と同じで、パッケージの `schema/report-v1.schema.json` に定義されています。形式の変更は `schemaVersion` フィールドの変更時だけです（現在は `report-1`）。 |
+| `junit` | レポートと同じ場所の `junit.xml` です。ファイルごとに 1 つの `<testsuite>`、テストとターゲットの組ごとに `title > path [target]` という名前の `<testcase>` を作ります。test 分類のエラーは `<failure>`、それ以外は `<error>`、スキップは理由付きの `<skipped>` です。中断したテストには判定がないため、メッセージが `interrupted:` で始まる `<skipped>` にします。[テストフィルター](/filters)が除外したテストは、`left out by filter <name>:` で始まる `<skipped>` です。それ以外の未選択テストは載せません。実行全体のエラーは `run` スイートにまとめます。 |
+| `markdown` | レポートと同じ場所の `summary.md` です。件数、コスト、エラー、失敗の詳細を載せ、トレースページを残したものにはそのパスを示します。探索実行では発見事項を表示します。[`@e2e-dev/github`](/github) はこのサマリーをプルリクエストのコメントに使います。 |
+
+テスト実行まで進んだすべての実行は、[出力ディレクトリ](/reference/config#output)（デフォルト `.e2e`）に次を書き込みます。
+
+- レポーターにかかわらず、スクリプト用の `report.json`。
+- [`trace`](/reference/config#trace) モードで保持するトレースページ。`results/` 内の各テストのディレクトリに保存します。
+- レポートと同じディレクトリの、レポーターのファイル。
+
+テスト開始前に停止した実行は、これらを何も書かず、前回のファイルを残します。設定や収集のエラー、`NO_TESTS`、`NO_LAST_RUN`、`UNSUPPORTED_ARTIFACT`、アプリコマンドの起動失敗、中断が該当します。エラーはターミナルと終了コードで示します。`junit.xml` または `summary.md` の書き込み失敗は stderr の 1 行で示し、実行エラーにはしません。
+
+`list` と `dot` レポーターは実行エラーを `Run Errors` の下に表示します。どちらもなければ、`json` の場合も含め、各エラーを stderr に `CODE: message` として表示します。
+
+レポートの `run.summary` は結果を集計します。
+
+- `discovered` は収集したすべてのテストとターゲットの組、`selected` は今回選んだ組です。除外した組は `results` に `selected: false` として含めますが、ほかの件数には含めません。
+- `passed`、`failed`（タイムアウトを含む）、`interrupted`、`flaky`、`skipped` は選択した結果を数え、合計が `selected` になります。
+- `interrupted` は、シグナル、`--max-failures`、`--max-duration`、`MODEL_UNAVAILABLE` などの実行全体のエラーにより、判定前に止められたテストです。失敗には数えません。
+- `executed` は、少なくとも 1 回試行した選択済みの結果です。直列グループのメンバーは、グループのいずれかの試行がそのメンバーに達すれば試行済みです。本体が始まった場合（`test.skip()` を呼んだ本体も含む）、または起動時などにそのメンバーで試行が失敗した場合を指します。フックや先行テストの失敗、実行の中断で開始できなかったメンバーは含めません。
+
+`--ai-trace` を指定すると、AI SDK devtools データベースの `<output>/ai-trace.json` も書き込みます。モデルとの 1 往復ごとに、正確なプロンプト、ツール定義、応答、使用量、プロバイダーメタデータを記録します。観測は秘匿済みで、インライン画像やファイルのバイト列はバイト数に置き換えます。[unbox-ai](https://github.com/e2e-inc/unbox-ai) で開いてください。`npx unbox-ai runs .e2e/ai-trace.json` で実行を一覧表示できます。[実行のデバッグ](/debugging#agent-steps)を参照してください。[テストフィルター](/filters)のモデル呼び出しは記録しません。
+
+<a id="watch-mode" />
+
+##### 監視モード
+
+`--watch` は選択したテストを実行してサマリーを表示し、終了せずに待機します。
+
+<CodeGroup>
+```bash npm
+npx e2e run --watch
+npx e2e run --watch tests/checkout.e2e.ts --headed
+```
+
+```bash pnpm
+pnpm exec e2e run --watch
+pnpm exec e2e run --watch tests/checkout.e2e.ts --headed
+```
+
+```bash bun
+bunx e2e run --watch
+bunx e2e run --watch tests/checkout.e2e.ts --headed
+```
+</CodeGroup>
+
+- 設定の [`tests`](/reference/config#top-level) glob に一致するテストファイルを保存すると、位置引数の代わりに、そのファイルだけを全体として再実行します。
+- テスト付近のソースファイル（ヘルパーやフィクスチャ。glob が指定するディレクトリ内、または設定の隣にある `.ts`、`.js`、`.json`）、または設定を保存すると、選択結果を再実行します。
+- どちらもコマンドラインのほかのフィルターと、`p`、`t` のフィルターを維持します。
+- 実行中の変更は完了を待ち、まとめて次に実行します。初回実行中はテストディレクトリがまだ設定から分からないため、設定とそのディレクトリだけを監視します。
+- ターミナルでは再実行の前に画面を消去し、きっかけをバナーに示します。
+- 再実行ごとに、テストがインポートするヘルパーも含め、プロジェクトのファイルを新たに読み込みます。
+
+ターミナルでは vitest と同じようにキーで操作します。
+
+| キー | 動作 |
+| --- | --- |
+| `a`, `enter` | `p` と `t` のフィルターを解除し、コマンドラインで選んだ全テストを実行します |
+| `r` | `p` と `t` のフィルターを適用して、選択結果を再実行します |
+| `f` | `--last-failed` と同様に前回のレポートを読み、成功しなかったテストを場所にかかわらず実行します。位置引数と `p` フィルターでは絞り込みません |
+| `u` | 現在の選択を `--update-snapshots` 付きで実行します |
+| `p` | 次の実行の選択に使う位置引数（ファイル、名前、glob）を尋ねます。空で解除します |
+| `t` | `--grep` と同様のタイトルパターンを尋ねます。空で解除します |
+| `h` | キー一覧を表示します |
+| `q` | 終了します |
+
+- 実行中にこれらのキー（スペースや `c` も含む）を押すと、中断と同じように実行をキャンセルします。2 回目は強制し、セッションは再び待機します。
+- Ctrl-C または Ctrl-D は実行を中断し、セッションを終了します。`p` や `t` の入力中も同様です。Escape は入力中以外なら同じ動作で、入力中なら入力画面だけを閉じます。Ctrl-Z は通常どおりプロセスを一時停止します。
+- 再実行は毎回完全な実行です。設定を読み込むと、実行対象がない場合を除き、`report.json` とレポーターのファイルを書き、アプリのコマンドを起動・停止します。再実行の間も開発サーバーを維持するには、自分で起動し、コマンドに [`reuseExisting`](/reference/config#command) を設定してください。
+- `--last-failed` とテストフィルターは初回実行だけに適用するため、再実行ではフィルターのモデルを呼びません。何も選ばない再実行は、空のまま成功します。
+- 終了コードは、最後に完了した実行のコードです。
+- stdin がターミナルでなければ、ファイル変更だけで再実行します。
+
+<Note>
+`--watch` は CI 向けではありません。自動終了しないプロセスがジョブを止めてしまうため、`CI` の設定時は拒否します。`--reporter json` との併用も拒否し、設定の `reporters` に `json` があれば、初回実行後に 2 で終了します。
+</Note>
+
+##### シグナル
+
+シグナルは回数に応じて停止を強めます。
+
+1. 最初の `SIGINT` または `SIGTERM` は中断です。実行中のテストは `interrupted` で終わり、`afterEach` フックとセッションのクローズをクリーンアップの予算内で実行し、各ワーカーがエンジンを破棄します。未開始のテストは cause `infrastructure-unavailable`、理由 `run interrupted before execution` でスキップします。レポートには予定した全テストを載せ、`--last-failed` は中断したものと未開始のものを再実行します。ランナーはレポートを書いて 130 で終了します。テスト開始前（収集中、エンジンの `prepare`、アプリの起動中）の中断ではレポートを書かず、前回のものを残します。
+2. 2 回目のシグナルは強制停止です。ワーカーはすぐエンジンを破棄し、クリーンアップの予算を使い切ると強制終了します。レポートは引き続き書き込み、`junit` と `markdown` レポーターが有効なら `junit.xml` と `summary.md` も書きます。カスタムレポーターの `onRunFinished` は待機をやめます。
+3. 3 回目のシグナルは、実行が起動した全アプリコマンドのプロセスグループを強制終了して、直ちに終了します。`reuseExisting` で接続したプロセスには触れません。
+
+ランナーが消失したワーカーは、クリーンアップの予算内にエンジンを破棄して終了します。
+
+#### `e2e explore`
+
+テストファイルを使わない実行です。エージェントは目標を受け取り、探索ステップを 1 つずつ計画し、`report_finding` ツールで不具合を報告し、最後に評価をまとめます。[テストなしで探索する](/explore)を参照してください。
+
+<CodeGroup>
+```bash npm
+npx e2e explore
+npx e2e explore 'Explore the checkout flow like a first-time buyer and report anything off'
+npx e2e explore --target web --max-steps 4 --headed
+npx e2e explore 'Hunt for broken forms and dead links' --agent thorough --video
+```
+
+```bash pnpm
+pnpm exec e2e explore
+pnpm exec e2e explore 'Explore the checkout flow like a first-time buyer and report anything off'
+pnpm exec e2e explore --target web --max-steps 4 --headed
+pnpm exec e2e explore 'Hunt for broken forms and dead links' --agent thorough --video
+```
+
+```bash bun
+bunx e2e explore
+bunx e2e explore 'Explore the checkout flow like a first-time buyer and report anything off'
+bunx e2e explore --target web --max-steps 4 --headed
+bunx e2e explore 'Hunt for broken forms and dead links' --agent thorough --video
+```
+</CodeGroup>
+
+| オプション | 説明 |
+| --- | --- |
+| `[goal]` | 探索する内容を 1 文で指定します。デフォルトは `Explore the app and find bugs` です。 |
+| `--config <path>` | 設定パスを明示します。エラーは `run` と同じで、デフォルトでは自動検出します。設定が見つからず stdin と stdout がどちらもターミナルなら、まず作業ディレクトリで [`e2e init`](#e2e-init) ウィザードを実行します。依存関係のインストール、モデルのキー設定またはサインイン、Web ターゲットの用意が済み、手作業が残っていなければ、そのまま探索へ進みます（探索する URL を示します）。それ以外では、残りの手順と入力どおりの `e2e explore` コマンドを示して init を終えます。ターミナルがなく設定もなければ `CONFIG_NOT_FOUND` です。 |
+| `--target <id>` | 探索する 1 つのターゲットです。デフォルトは最初の設定済みターゲットです。複数あるのにフラグを指定しない場合、最初を探索して stderr にその旨を示します。未知の名前は `UNKNOWN_TARGET` です。 |
+| `--agent <name>` | 探索に使う設定済みエージェントです。デフォルトは `default` で、そのモデル、`system`、ツール、コンテキストを再利用します。独自の `StepExecutor` は組み込みエージェントに置き換え、通知します。カスタムエグゼキューターも含め、モデルのないエントリは開始前に `MODEL_UNAVAILABLE` になります。未知の名前は `INVALID_CONFIG` です。 |
+| `--session <name>` | サインイン済みの状態で始めます。設定のテストファイルから、そのセッションを宣言するセットアップテストを先に実行します。`{ session }` を使うテストと同様に、保存した状態を探索で復元します。ほかのテストは実行しません。どのセットアップも宣言していない名前は、アプリプロセスの起動前に `COLLECTION_ERROR` となり、宣言済みの名前を示します。[サインイン済みで始める](/explore#start-signed-in)を参照してください。 |
+| `--changed-since <ref>` | 指定した参照と HEAD のマージベース以降の変更を探索します。プランナーはコミットメッセージとコミット済みの差分を読みます。目標を省略すると `Explore what this change affects and find bugs in it` となり、ユーザーに見える影響がない変更はプランナーがスキップできます。その場合、探索は `skipped` で終わり、実行は成功します。空の参照、`-` で始まる参照、git が差分を計測できない参照は `INVALID_CHANGED_SINCE` です。レポートは変更を `run.explore.change` に記録します。[プルリクエストの変更を探索する](/explore#explore-a-pull-requests-change)と、モデルが読む内容についての[セキュリティ](/reference/security#mcp-and-explore)を参照してください。 |
+| `--max-steps <n>` | 探索ステップ数の上限です。1〜100 の整数で、デフォルトは `8` です。範囲外は 2 で終了します。 |
+| `--timeout <ms>` | 実行の実時間の上限です。180000〜7200000 の整数で、デフォルトは `600000` です。最後の 1 分は最終評価用に確保します。範囲外は 2 で終了します。 |
+| `--headed` | エンジンが対応していれば UI の表示を要求します。 |
+| `--reporter <ids>` | `run` と同じです。デフォルトは解決済みの設定値です。`list` はサマリーの下に探索の行を表示し、`json` はレポートに記録を含め、`markdown` は発見事項を `<output>/summary.md` に書きます。 |
+| `--output <dir>` | `run` と同じです。デフォルトは設定値、なければ `.e2e` です。発見事項の証拠となるスクリーンショットは、`<output>/results` 内の試行の成果物です。 |
+| `--debug` | `run` と同じく、フェーズ別の時間とエージェントステップの表を出します。 |
+| `--ai-trace` | `run` と同じです。 |
+| `--trace [mode]` | `run` と同じく、探索のトレースページです。デフォルトは設定値です。 |
+| `--video [mode]` | `run` と同じく、探索全体の動画を 1 つ記録します（ブラウザエンジンは WebM、デバイスエンジンは MP4）。デフォルトは設定値です。録画できないエンジンでは通知を出します。 |
+
+`--trace` と `--video` は、値なしなら `on` です。`retain-on-failure` は探索が成功しなかった場合だけページや動画を残します。探索は 1 回の試行なので、リトライ用モードでは何も記録せず、計画時の通知で `--trace on`（または `--video on`）を案内します。目標をフラグの前に置くか、`--trace=<mode>` または `--video=<mode>` と書いてください。
+
+##### レポート
+
+- 実行には仮想ファイル `explore` の下に 1 つの結果があり、目標をタイトルに使います。
+- 探索は最初にアプリを開きます。ターゲットの `app.url`、デバイスでは[指定したアプリ](/mobile#point-at-your-app)を新たに起動します。ビルドはインストールしないため、ローカルデバイスのターゲットには `app.bundleId` が必要です。
+- `--session` があれば、セットアップテストの結果も含めます。プロジェクトのほかのテストは、`run` が位置引数で指定されていないファイルのテストを扱うのと同じく、cause `filtered` でスキップとして載せます。
+- 設定にかかわらず、探索ではリプレイキャッシュを無効にし、リトライを 0 回にします。`--session` のセットアップテストは、設定のエージェント、キャッシュ、リトライを使い、`run` と同じように実行します。
+- `<output>/report.json` には `run.explore` を追加します。目標、予算、終了理由（`finished`、`skipped`、`step-limit`、`time`、`stuck`、`aborted`）、評価、`--changed-since` の変更（`base` と `files`）、ステップ、発見事項を含みます。
+- 成果物のディレクトリ名は、目標の冒頭の語と、目標・ターゲット・エージェントのダイジェストから作ります。例: `<output>/results/explore-check-the-cart-totals-1a2b3c4d5e6f7a8b/`。同じ目標を同じターゲットとエージェントで再実行すると、同じディレクトリに書き込みます。
+
+##### ステップの予算
+
+各ステップの予算は、エージェントに `maxSteps` または `maxModelCalls`（1〜100）を設定しない限り、操作 40 回、モデル呼び出し 40 回です。操作回数または時間の上限に達したステップはそこで打ち切りますが、発見事項は有効です。ステップが失敗しても実行は終わりません。新しい発見事項がないまま、失敗またはブロックしたステップが 3 回連続すると終了します（`stuck`）。
+
+##### 発見事項
+
+- 種類が `issue` の発見事項は機能上の不具合、`warning` は見た目の問題です。
+- 重大度は `trivial`（1）から `critical`（5）です。レポートは warning より issue を先にし、重大度の高い順に並べます。
+- 各発見事項には、場所、期待する動作と観測した動作、再現手順を含めます。撮影が許可され、成功した場合はスクリーンショットも付けます。
+
+##### 結果
+
+| 結果 | 実行状態 | 終了コード |
+| --- | --- | --- |
+| ステップを実行し、`issue` の発見がなく、すべてのステップがブロックされたわけでもない | passed | 0 |
+| `issue` の発見が 1 件以上ある | failed | 1 |
+| ステップを実行せず、発見もない。ただしプランナーが変更をスキップした場合を除く | blocked | 1 |
+| `--changed-since` で、ユーザーから見えない変更をプランナーがスキップした | passed | 0 |
+| 全ステップがブロックされ、`issue` の発見がない | blocked | 最初のブロック要因による 1、2、3 |
+| 設定、エンジン、モデルプロバイダーのエラー | error | 2 または 3 |
+| Ctrl-C | | 130 |
+
+#### `e2e list`
+
+ドライランです。`list` は `run` とまったく同じようにテストを選び、テストとターゲットの組ごとに 1 行表示して終了します。アプリプロセス、エンジン、ワーカーは起動せず、何も書き込みません。
+
+<CodeGroup>
+```bash npm
+npx e2e list
+npx e2e list tests/signup.e2e.ts
+npx e2e list --tag smoke --target web
+npx e2e list --grep checkout --exclude-tag slow
+npx e2e list --reporter json
+npx e2e list --changed-since origin/main
+```
+
+```bash pnpm
+pnpm exec e2e list
+pnpm exec e2e list tests/signup.e2e.ts
+pnpm exec e2e list --tag smoke --target web
+pnpm exec e2e list --grep checkout --exclude-tag slow
+pnpm exec e2e list --reporter json
+pnpm exec e2e list --changed-since origin/main
+```
+
+```bash bun
+bunx e2e list
+bunx e2e list tests/signup.e2e.ts
+bunx e2e list --tag smoke --target web
+bunx e2e list --grep checkout --exclude-tag slow
+bunx e2e list --reporter json
+bunx e2e list --changed-since origin/main
+```
+</CodeGroup>
+
+| オプション | 説明 |
+| --- | --- |
+| `[files...]` | [`run`](#positional-arguments) と同じです。 |
+| `--config`, `--target`, `--tag`, `--tag-mode`, `--exclude-tag`, `--grep`, `--grep-invert`, `--changed-since`, `--last-failed`, `--shard`, `--pass-with-no-tests` | [`run`](#flags) と同じです。`--last-failed` は設定の [`output`](/reference/config#output) 内の `report.json` を読みます。設定済みの[テストフィルター](/filters)は `run` と同じように実行し、その出力は stderr に送ります。 |
+| `--reporter <id>` | `list` または `json`。デフォルトは `list` です。 |
+
+| レポーター | 出力内容 |
+| --- | --- |
+| `list` | 選択順に、組ごとに `file › title [target]` を 1 行表示します。describe の階層は ` › ` でつなぎ（`tests/billing.e2e.ts › checkout › pays [web]`）、その後に各宣言済みタグを `#tag` として付けます（`tests/billing.e2e.ts › checkout › pays [web] #smoke #billing`）。スキップするテストも行を残し、`(skipped: <reason>)` を付けます。テストフィルターが除外したものは `(left out by <filter>: <reason>)` で終えます。セットアップテストも同じように載せます。 |
+| `json` | `{ "pairs": [...] }` を stdout に出します。各組には `id`、`file`、`title`、`titlePath`、`kind`（`test` または `setup`）、`tags`（宣言したタグ、なければ `[]`）、宣言位置が分かる場合の `source`、セッションを使う場合の `session`、`sessions`、直列グループに属する場合の `serialId`、`target`、`agent`、`disposition`（`run`、`skip`、テストフィルターで除外した場合の `filtered`）、スキップや除外の `reason`、除外したテストフィルター名の `filter` を含めます。 |
+
+選択用フラグで除外した組は載せません。[`e2e/runner` の `list`](/reference/runner) は同じ選択をプロセス内で行い、除外した組も返します。
+
+#### `e2e doctor`
+
+ここで `e2e run` を開始できるか、実際には何も起動せずに確認します。設定を読み込み、各ターゲットのエンジンチェックを実行し、各エージェントが解決したモデルを示します。アプリ、エンジンのセッション、ワーカーは起動しません。独自プロセスで動くエンジンのサーバーだけは起動します。`--check-model` を渡さなければ、モデルは呼びません。
+
+<CodeGroup>
+```bash npm
+npx e2e doctor
+npx e2e doctor --json
+npx e2e doctor --check-model
+npx e2e doctor --target web --headed
+```
+
+```bash pnpm
+pnpm exec e2e doctor
+pnpm exec e2e doctor --json
+pnpm exec e2e doctor --check-model
+pnpm exec e2e doctor --target web --headed
+```
+
+```bash bun
+bunx e2e doctor
+bunx e2e doctor --json
+bunx e2e doctor --check-model
+bunx e2e doctor --target web --headed
+```
+</CodeGroup>
+
+| オプション | 説明 |
+| --- | --- |
+| `--config <path>` | [`run`](#flags) と同じです。 |
+| `--target <ids>` | 指定ターゲットだけを確認します。[`run`](#flags) と同じ指定方法です。 |
+| `--headed` | ヘッドレスシェルではなく完全版の Chromium など、画面付き実行に必要なものを確認します。 |
+| `--check-model` | 短いプロンプトとエージェントのプロバイダーオプションで、各エージェントのモデルを 1 回呼びます。ジャッジが別モデルならそちらも呼びます。モデル、プロバイダーオプション、`maxInputTokens` が同じエージェントは呼び出しを共有します。要求した JSON でない回答や拒否も、応答として数えます。 |
+| `--json` | チェックごとの行の代わりに、`doctor-1` レポートを表示します。 |
+
+| チェック | 状態 |
+| --- | --- |
+| `node` | `pass`: Node.js または Bun のバージョンです。非対応ランタイムでも、`--json` は `node` が `fail` のレポートを表示します。 |
+| `config` | `path` と `targets`（`name`、`platform`、`engine`）を持つ `pass`、または `CONFIG_*`、`UNKNOWN_TARGET` コード付きの `fail` です。`config` が失敗すると、そこでチェックを終えます。 |
+| `target` 付きのエンジンチェック | ターゲットのエンジンが報告する内容です。たとえば Web エンジンの `browser` は、インストール済みなら `pass`、初回実行でダウンロードするなら `warn`、ブラウザプロバイダーや `connect` なら `skip` です。モバイルエンジンは agent-device のチェック（`agent-device`、`toolchain`、`ios-runner-cache`、設定デバイスごとの `device`、`target-app`）と `app-path` を報告します。デバイスプロバイダーでは `device` だけを `skip` として報告します。エンジンが何も報告しなければ、チェックは追加しません。`doctor` フックがなければ `engine` は `skip`、フックの例外、タイムアウト、不正な形式のチェックでは `fail` です。 |
+| `agent` 付きの `model` | `model` と `judge` を、AI SDK インスタンスが報告する `provider` と `modelId` で示します。[`e2e login`](/subscriptions) を使うモデルは、保存済みログインやプロバイダーの API キー変数から `pass` または `fail` を判定し、エージェントのモデルが 1 つのログインを読む場合は `login` を設定します。その他のモデルは独自に認証情報を読むため `unknown` です。`--check-model` では全モデルが応答すれば `pass`、そうでなければエラーコード付きの `fail` です。モデルとジャッジの両方がある場合、メッセージの先頭に `model:` または `judge:` を付けます。モデルがなければ `skip` です。カスタムエグゼキューターが独自エージェントを使い、モデルもジャッジも宣言しなければ `executor` 付きの `unknown` です。宣言したモデルは通常のエージェントと同様に確認します。 |
+
+デフォルトでは、チェックごとに記号、チェック ID、角括弧内のターゲットまたはエージェント、詳細を 1 行で表示します。最後の行で実行を開始できるかを示します。
+
+`--json` では、`doctor-1` レポートを stdout に表示します。形式は `{ "schemaVersion": "doctor-1", "version", "ok", "checks": [...] }` です。各チェックには `id`、`status`（`pass`、`warn`、`fail`、`skip`、`unknown`）があり、該当する場合は `target`、`agent`、`code`、`message` と上の表のフィールドを含めます。JSON Schema はパッケージの `schema/doctor-v1.schema.json` に同梱されています。
+
+| 終了コード | 条件 |
+| --- | --- |
+| 0 | 失敗したチェックがない場合。`warn`、`skip`、`unknown` は失敗にしません。 |
+| 2 | 1 つ以上のチェックが失敗した場合。 |
+| 130 | Ctrl-C または SIGTERM で中断した場合。チェックを停止し、レポートを表示します。中断されたチェックは `CANCELLED` 付きの `fail`、後続のチェックは省略します。3 回目の Ctrl-C は直ちに終了します。 |
+
+#### `e2e cache`
+
+リプレイキャッシュを調べるか消去します。各サブコマンドは、自動検出した設定または `--config <path>` を読み込み、実行時と同じディレクトリを参照します。空のストアなら 0 で終了します。
+
+<CodeGroup>
+```bash npm
+npx e2e cache ls
+npx e2e cache stats
+npx e2e cache clear
+npx e2e cache ls --config packages/web/e2e.config.ts
+```
+
+```bash pnpm
+pnpm exec e2e cache ls
+pnpm exec e2e cache stats
+pnpm exec e2e cache clear
+pnpm exec e2e cache ls --config packages/web/e2e.config.ts
+```
+
+```bash bun
+bunx e2e cache ls
+bunx e2e cache stats
+bunx e2e cache clear
+bunx e2e cache ls --config packages/web/e2e.config.ts
+```
+</CodeGroup>
+
+| コマンド | 出力内容 |
+| --- | --- |
+| `e2e cache ls` | エントリごとに、記録対象のテストとターゲット、指示のダイジェストの先頭 12 文字、経過時間、リプレイする操作数を 1 行で表示します（記録が操作数の上限に達した場合は `(truncated)`）。テスト、ターゲットの順にまとめ、古い順に並べます。 |
+| `e2e cache stats` | ストアのディレクトリ、読み取れるエントリ数、合計サイズ、あれば読み取れないファイル数を表示します。 |
+| `e2e cache clear` | すべてのキャッシュファイルを削除し、ほかに何も残っていなければディレクトリも削除して、削除したファイル数を報告します。 |
+
+| オプション | 説明 |
+| --- | --- |
+| `--config <path>` | 設定パスを明示します。デフォルトは最も近い `e2e.config.ts`、`.mts`、`.js`、`.mjs` です（[読み込み](/reference/config#loading)を参照）。 |
+| `--cache-dir <dir>` | ストアのディレクトリです。デフォルトは `E2E_CACHE_DIR`、次に `cache.dir`、なければ `.e2e/cache/` です。 |
+
+```text
+TEST                             TARGET  INSTRUCTION   AGE  ACTIONS
+tests/billing.e2e.ts::upgrades   web     4f1c0a9d3b62  2h   4
+tests/signup.e2e.ts::signs%20up  web     9ab7715ce004  3d   7 (truncated)
+```
+
+- 記録元の情報を持つようになる前のエントリは、その列に `-` を表示しますが、引き続きリプレイできます。
+- ストアが読めないファイル（切り詰められたもの、1 MiB の上限を超えるもの、新しいスキーマのもの）は、stderr で別に数えます。実行時はキャッシュミスとして扱い、`clear` では削除します。
+- ランナーが書いていないファイルには触れません。
+
+<Note>
+これらのコマンドが読むのはファイルストアだけです。カスタムの `cache.store` がある場合は、その旨を示して 2 で終了します。
+</Note>
+
+#### `e2e upgrade`
+
+`e2e` を最新リリース、dist-tag、または指定バージョンに更新します。同じ `package.json` の `@e2e-dev/*` パッケージも更新し、プロジェクトのパッケージマネージャーでインストールします。`e2e update` も同じコマンドです。
+
+<Note>
+`npx e2e` はインストール済みのバージョンを実行します。そのバージョンにまだ `upgrade` コマンドがない場合は、1 回だけ `npx e2e@latest upgrade` を実行してください。
+</Note>
+
+<CodeGroup>
+```bash npm
+npx e2e upgrade             # the latest release
+npx e2e upgrade 0.21.0      # one version
+npx e2e upgrade nightly     # a dist-tag
+npx e2e update --dry-run    # show the plan, change nothing
+```
+
+```bash pnpm
+pnpm exec e2e upgrade             # the latest release
+pnpm exec e2e upgrade 0.21.0      # one version
+pnpm exec e2e upgrade nightly     # a dist-tag
+pnpm exec e2e update --dry-run    # show the plan, change nothing
+```
+
+```bash bun
+bunx e2e upgrade             # the latest release
+bunx e2e upgrade 0.21.0      # one version
+bunx e2e upgrade nightly     # a dist-tag
+bunx e2e update --dry-run    # show the plan, change nothing
+```
+</CodeGroup>
+
+```console
+$ npx e2e upgrade
+Upgrading with npm:
+  e2e              0.19.0 → 0.21.2
+  @e2e-dev/web     0.13.0 → 0.15.2
+  @e2e-dev/kernel  0.1.2 → 0.2.1
+package.json: "e2e": "^0.21.2", "@e2e-dev/web": "^0.15.2", "@e2e-dev/kernel": "^0.2.1"
+$ npm install
+...
+Upgraded: e2e 0.21.2, @e2e-dev/web 0.15.2, @e2e-dev/kernel 0.2.1
+Release notes: https://github.com/e2e-inc/e2e/releases/tag/e2e%400.21.2
+Updated the agent skill in .agents/skills/e2e/ (12 files)
+```
+
+| オプション | 説明 |
+| --- | --- |
+| `[version]` | `0.22.0` などのバージョン、または `latest`、`nightly` などの dist-tag です。バージョン範囲は拒否します。デフォルトは `latest` です。 |
+| `--dry-run` | バージョン、新しい指定、インストールコマンド、更新するスキルのコピーを表示し、何も変更しません。 |
+
+- **プロジェクト。** 作業ディレクトリから上へ探し、`e2e` を記載した最も近い `package.json` を使います。
+- **ターミナル上。** 新しい `e2e` のインストール後、e2e ロゴと GitHub でスターを付けるリンクを表示します。CI やパイプ出力では表示しません。
+- **関連パッケージのバージョン。** 各 `@e2e-dev/*` パッケージは、同じ dist-tag（バージョン指定の場合は `latest`）のリリースを使います。ただし、その peer のバージョン範囲が新しいバージョンを受け付ける必要があります。受け付けなければ、適合する最新リリースを使います。適合するものがなければ 2 で終了します。非推奨リリースは選ばず、プレリリースは `e2e` 自身がプレリリースになる場合だけ選びます。連携パッケージは、接続先のエンジンに合わせます。
+- **追加の peer。** エンジンの `@e2e-dev/core` など、新しいリリースが peer とする `@e2e-dev/*` パッケージが `package.json` にない場合、必要とするパッケージと同じ場所に追加します。Yarn はプロジェクトに記載のない peer をインストールしないためです。バージョンは、新しい `e2e` の依存するものにします。
+- **パッケージマネージャー。** プロジェクトのロックファイルか `packageManager` フィールドが指定するものを使います。pnpm ワークスペースのルートなら pnpm です。どちらもないワークスペースメンバーは、ルートの指定を使います。どのワークスペースにも属さないプロジェクトでは、その上の階層のロックファイルは使いません。
+- **インストール。** `package.json` の元のセクションにそれぞれ新しい指定を書き、1 回の `install` でまとめて解決します。CI でもロックファイルを変更できるよう、pnpm には `--no-frozen-lockfile`、Yarn には `YARN_ENABLE_IMMUTABLE_INSTALLS=false` を渡します。Ctrl-C はパッケージマネージャーに届き、コマンドは停止を待ちます。
+- **インストール失敗。** `package.json` と、インストールが変更したロックファイルを元に戻します。`node_modules` には、次のインストールまで一部の新しいバージョンが残ることがあります。
+- **保存するバージョン範囲。** インストール済みバージョンが変わるパッケージだけ指定を書き換えます。バージョンの明示指定やプレリリースは完全一致に固定し、dist-tag では古い指定の `^` または `~` を維持します。インストール済みの 0.21.3 に対する `e2e upgrade 0.21.3` は、`^0.21.3` をそのまま残します。
+- **変更しないもの。** `workspace:`、`file:`、`link:`、`catalog:`、パス、git URL でリンクしたパッケージと、レジストリにない `@e2e-dev/*` パッケージです。`e2e` 自身がリンクされていれば 2 で終了します。
+- **更新不要の場合。** すべてのインストール済みバージョンがすでに一致していれば、何もインストールしません。Yarn Plug'n'Play などで `node_modules` がなければ、代わりに `package.json` の指定を比較します。
+- **レジストリ。** パッケージマネージャーが設定した `npm_config_registry`、なければ `https://registry.npmjs.org/` を使います。
+- **エージェントスキル。** `.agents/skills/e2e` または `.claude/skills/e2e` のコピーを、インストール後にそのバージョンのものへ更新します。すべて最新だった場合も更新します。`.agents/skills` のコピーを指す `.claude/skills/e2e` のシンボリックリンクは、それに追従します。新しいスキルに含まれなくなったファイルは残します。プロジェクト外のコピーを指すシンボリックリンクは経由して書き込まず、Yarn Plug'n'Play など `node_modules` がない場合は、代わりに `e2e init` を案内します。
+
+| 終了コード | 条件 |
+| --- | --- |
+| 0 | パッケージをインストールした、すでに目的のバージョンだった、または `--dry-run` で計画を表示した場合。 |
+| 2 | バージョン範囲、未知のバージョンや dist-tag、`e2e` を記載した `package.json` がない、リンクされた `e2e`、適合リリースのない関連パッケージ、インストール失敗。 |
+| 3 | レジストリへのリクエストが失敗、エラーステータスが返った、または読み取れないメタデータが返った場合。 |
+| 130 | インストール中の Ctrl-C または SIGTERM。`package.json` とロックファイルを元に戻します。 |
+
+#### `e2e feedback`
+
+e2e 自体の問題について、e2e チームへ 1 件の報告を送ります。動作の不具合、ドキュメントやスキルの誤った案内、不足する機能などが対象です。コーディングエージェントは、テスト対象のアプリではなく e2e の問題に遭遇したときに送信できます。先に `--dry-run` の出力をユーザーに示し、同意を得ます。
+
+<CodeGroup>
+```bash npm
+npx e2e feedback --type bug -m "list ignores --grep" --command "e2e list --grep checkout" \
+  --repro "e2e list --grep checkout lists every test"
+npx e2e feedback --type docs -m "The mcp topic never says how to close a session"
+npx e2e feedback --type feature -m "Need a way to set the viewport per test" --dry-run
+```
+
+```bash pnpm
+pnpm exec e2e feedback --type bug -m "list ignores --grep" --command "e2e list --grep checkout" \
+  --repro "e2e list --grep checkout lists every test"
+pnpm exec e2e feedback --type docs -m "The mcp topic never says how to close a session"
+pnpm exec e2e feedback --type feature -m "Need a way to set the viewport per test" --dry-run
+```
+
+```bash bun
+bunx e2e feedback --type bug -m "list ignores --grep" --command "e2e list --grep checkout" \
+  --repro "e2e list --grep checkout lists every test"
+bunx e2e feedback --type docs -m "The mcp topic never says how to close a session"
+bunx e2e feedback --type feature -m "Need a way to set the viewport per test" --dry-run
+```
+</CodeGroup>
+
+| オプション | 説明 |
+| --- | --- |
+| `-m`, `--message <text>` | 必須です。問題を 1〜2 文で説明します。 |
+| `--type <type>` | `bug`、`docs`、`feature`、`other`。デフォルトは `other` です。 |
+| `--task <text>` | 何をしようとしていたか。 |
+| `--expected <text>` | 期待した動作。 |
+| `--actual <text>` | 実際の動作とエラーメッセージ。 |
+| `--error-code <code>` | `LOCATOR_AMBIGUOUS` など、該当する e2e エラーコード。 |
+| `--repro <text>` | バグの場合、アプリの内容を含まない、毎回再現できる手順。 |
+| `--approach <text>` | 回避策を含め、試したこと。 |
+| `--command <text>` | 関係する e2e コマンドまたは API。 |
+| `--agent <text>` | 送信するコーディングエージェントとモデル。 |
+| `--allow-outdated` | 新しい e2e リリースがあっても送信します。 |
+| `--dry-run` | 送信予定のイベントを表示し、何も送信しません。 |
+
+文字数上限は、`--message` が 2000、`--command` と `--agent` が 200、`--task`、`--expected`、`--actual`、`--repro`、`--approach` が 1500 です。
+
+- **バグには `--repro` が必要です。** なければ何も送らず、代わりに入力済みの [GitHub issue](https://github.com/e2e-inc/e2e/issues/new?template=bug_report.yml) へのリンクを表示します。そこなら e2e チームが再現方法を尋ねられます。最小限の再現例を追加し、自分で送信してください。
+- **古いリリースは拒否します。** 送信前に npm レジストリへ最新の e2e リリースを問い合わせます。問題がすでに修正済みの可能性があるため、使用中のものが古ければ 2 で終了し、何も送りません。[`e2e upgrade`](#e2e-upgrade) で更新し、まだ発生することを確認して再送するか、`--allow-outdated` を渡してください。オプトアウトの環境変数が設定されている場合、この確認は省略します。
+- **送信先。** [テレメトリー](/telemetry#feedback)と同じ PostHog プロジェクトに、1 つの `e2e_feedback` イベントを送ります。各テレメトリーイベントに含まれる匿名のマシン情報も付けます。
+- **オプトアウト。** フィードバックはコマンドを実行したときだけ送るため、保存済みの `e2e telemetry disable` では停止しません。`E2E_TELEMETRY_DISABLED=1` と `DO_NOT_TRACK=1` は停止します。どちらかがあれば何も送らず、本来送るはずの報告は 2 で終了します。したがって、オプトアウトした CI ジョブや一括運用環境では、エージェントが実行しても送信しません。`--dry-run`、`E2E_TELEMETRY_DEBUG=1`（`--dry-run` と同じくイベントを表示）、`--repro` のないバグは元から送信しないため、0 で終了します。
+
+| 終了コード | 条件 |
+| --- | --- |
+| 0 | PostHog がイベントを受け取り、参照 ID を表示した場合。`--dry-run`、`E2E_TELEMETRY_DEBUG=1`、`--repro` のない `--type bug` も該当します。これらは送信しないため、オプトアウト変数があっても 0 です。ただし古いリリースの確認が先に動くため、古いインストールでは、`--allow-outdated` またはオプトアウト変数がない限り、これらも 2 で終了します。 |
+| 2 | 空または長すぎるテキスト値、`--allow-outdated` もオプトアウト変数もない古いリリース、または `E2E_TELEMETRY_DISABLED=1`、`DO_NOT_TRACK=1` の設定中に本来送信するはずの報告を行った場合。 |
+| 3 | PostHog がイベントの受信を確認できなかった場合。届いている可能性もあるため、メッセージに参照 ID を示します。 |
+
+<Warning>
+送信前に、名前に `KEY`、`TOKEN`、`SECRET`、`PASS`、`_PWD`、`CREDENTIAL`、`AUTH`、`COOKIE`、`PRIVATE` を含む環境変数の値を、6 文字以上なら `<secret:NAME>` に置き換えます。これは設定のシークレットの最小長と同じで、それより短いと通常の単語まで書き換えてしまうためです。Bearer トークン、URL の認証情報、秘密鍵、JWT、一般的な API キーの形式は `<redacted>` に置き換えます。アプリのデータ、ページ内容、テストファイルを貼り付けないでください。
+</Warning>
+
+#### `e2e telemetry`
+
+匿名の利用状況テレメトリーの有効・無効を表示し、切り替えます。送信する全プロパティは[テレメトリー](/telemetry)に記載しています。
+
+<CodeGroup>
+```bash npm
+npx e2e telemetry
+npx e2e telemetry disable
+E2E_TELEMETRY_DEBUG=1 npx e2e run
+```
+
+```bash pnpm
+pnpm exec e2e telemetry
+pnpm exec e2e telemetry disable
+E2E_TELEMETRY_DEBUG=1 pnpm exec e2e run
+```
+
+```bash bun
+bunx e2e telemetry
+bunx e2e telemetry disable
+E2E_TELEMETRY_DEBUG=1 bunx e2e run
+```
+</CodeGroup>
+
+| コマンド | 動作 |
+| --- | --- |
+| `e2e telemetry`, `e2e telemetry status` | `Status: enabled`、または理由付きの `Status: disabled` を表示します。理由は、設定された変数、保存済みの選択、書き込み不能な設定ディレクトリのいずれかです。デフォルトは `status` です。 |
+| `e2e telemetry disable` | `~/.config/e2e/telemetry.json`（設定されていれば `$XDG_CONFIG_HOME/e2e/`、Windows では `%APPDATA%\e2e\`）にオプトアウトを保存し、状態を表示します。 |
+| `e2e telemetry enable` | オプトインを保存し、状態を表示します。環境変数の指定は引き続き優先され、その場合は状態にも示します。 |
+
+- `E2E_TELEMETRY_DISABLED=1` と `DO_NOT_TRACK=1` は、ファイルを変更せずにテレメトリーを無効にします。
+- `E2E_TELEMETRY_DEBUG=1` は、すべてのイベントを stderr に表示し、何も送りません。
+- マシン上の最初のコマンドで、`e2e init` と `e2e telemetry` を除き、通知を 1 回表示します。CI では何も表示せず、ファイルも書きません。
+
+#### `e2e report`
+
+[`htmlReporter()`](/reference/reporters#htmlreporter) が書き出した HTML レポートを既定のブラウザーで開きます（デフォルトは `<output>/report.html`）。読み取れるレポートファイルが見つからない場合、または `[path]` と `--output` の両方が渡された場合は終了コード `2` で終了します。
+
+<CodeGroup>
+```bash npm
+npx e2e report
+npx e2e report out/custom.html
+npx e2e report --output out
+```
+
+```bash pnpm
+pnpm exec e2e report
+pnpm exec e2e report out/custom.html
+pnpm exec e2e report --output out
+```
+
+```bash bun
+bunx e2e report
+bunx e2e report out/custom.html
+bunx e2e report --output out
+```
+</CodeGroup>
+
+| 引数またはフラグ | 説明 |
+| --- | --- |
+| `[path]` | HTML ファイルまたは `report.html` を含むディレクトリ（デフォルト: `<output>/report.html`、`--output` とは併用不可） |
+| `--config <path>` | 設定ファイル（デフォルト: 最も近い `e2e.config.ts`、`.mts`、`.js`、`.mjs`） |
+| `--output <dir>` | `report.html` がある結果ディレクトリ（デフォルト: 設定の `output`、なければ `.e2e`） |
+
+- [`htmlReporter({ outputFile })`](/reference/reporters#htmlreporter) で別の場所に書き出した場合は、そのパスを `[path]` として渡してください。`e2e report` は `<output>/report.html` のみを探します。
+
+## 終了コード
+
+| コード | 意味 |
+| ---: | --- |
+| 0 | 選択した全テストが成功、リトライ後に成功、または明示的にスキップされた |
+| 1 | テストまたはセットアップが最終的に失敗、またはテストがタイムアウトした |
+| 2 | CLI、設定、収集、依存関係、認証情報、モデル設定、ポリシーのエラー |
+| 3 | エンジン、アプリプロセス、モデルプロバイダー、成果物、クリーンアップのインフラ障害。配信できなかった `e2e feedback`、レジストリに接続できなかった `e2e upgrade` |
+| 4 | ランナー内部の不変条件違反、またはランナーの未処理エラー |
+| 130 | ユーザーや CI のシグナル、`--step` の入力待ちでの `q`、`e2e run --step stop` による中断 |
+
+- 複数の結果が混在する実行での優先順位は `130 > 4 > 3 > 2 > 1 > 0` です。個々の結果はすべてレポートに残し、優先順位はプロセスの終了コードだけに影響します。
+- 引数の解析失敗は、stderr に 1 行のエラーを出して 2 で終了します。
+
+## 診断
+
+- 名前を拒否するメッセージは、最も近い有効な名前を提案します。
+- 他のランナーの設定キー（`testDir`、`baseURL`、`webServer`、`projects`）には、e2e での対応する設定先を案内します。
+- 設定またはテストファイルの `import` が失敗した場合、最後にプロジェクトのパッケージマネージャー向けのインストール・追加コマンド、またはパッケージが公開するサブパスを示します。
+- モデルの認証情報をプロバイダーが拒否した場合、そのプロバイダーが読む環境変数を示します。
+
+## Bun
+
+Bun 1.4.3 以降では、CLI は Node.js なしで動きます。Node.js がインストールされている場合、`bunx e2e` と `bun run` は CLI の `node` シバンに従い、Node.js で実行します。`bunx --bun e2e` と `bun --bun run` は Bun で実行します。Node.js がなければ、いずれも Bun で実行します。Web エンジンは Bun で動きます。`@e2e-dev/mobile` と連携パッケージは、Bun ではまだ検証していません。
+
+Bun は自身の TypeScript サポートで設定とテストファイルをコンパイルします。Node.js との違いは次のとおりです。
+
+- ディレクトリに対応する `#` インポートは、その index を読み込みません。ファイルに対応づけてください。
+- `.cts` ファイルのレガシーデコレーターは読み込みに失敗します。クラスを `.ts` ファイルへ移してください。
+- `e2e run --watch` と `e2e mcp` は `tsconfig.json` を 1 回だけ読み、計算したパスで `import()` または `require()` が指定するファイルも 1 回だけ読み込みます。どちらかを編集した後、またはインポートが見つけられなかったファイルを追加した後は再起動してください。
+- `e2e mcp` は一度に 1 セッションだけを開き、`--max-sessions` を無視します。
+- [`e2e/runner`](/reference/runner) には Node.js が必要です。
+- `executable: 'node'` を持つアプリの `command` には Node.js が必要です。ただし `bun run` または `bunx` が CLI を起動した場合を除きます。これらは Bun を実行する `node` を `PATH` に配置します。
+- ヘルパーが `await` の後で宣言するテストは、そのヘルパー内の行を報告します。

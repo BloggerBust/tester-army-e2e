@@ -99,7 +99,10 @@ describe('host.openSession', { timeout: 60_000 }, () => {
     await started;
     const failures = await session.close();
     expect(await settled).toBe('rejected');
-    expect(failures.map((failure) => failure.code)).toContain('STEP_NOT_AWAITED');
+    expect(failures.map(({ code, message }) => ({ code, message }))).toContainEqual({
+      code: 'STEP_NOT_AWAITED',
+      message: 'the hosted session returned before locator.click "getByRole("button", name: "Submit")" finished; put `await` in front of every step call',
+    });
     expect(fake.stats()).toMatchObject({ attemptsEnded: 1, disposes: 0 });
     await host.close();
     expect(fake.stats().disposes).toBe(1);

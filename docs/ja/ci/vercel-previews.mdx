@@ -1,0 +1,252 @@
+---
+title: Vercel Previews
+description: GitHub Actions で Vercel のプレビューと本番デプロイをテストし、e2e が成功するまで本番公開を待機させます。
+---
+
+import { SetupPrompt } from '../../snippets/setup-prompt-card.jsx';
+import { Video } from '../../snippets/video.jsx';
+
+export const setupPrompt = `Vercel のデプロイに対して、このプロジェクトの e2e テストを実行してください。ドキュメント: \`https://e2e.com/docs/ci/vercel-previews.md\`
+
+1. ページを読み、ローカルでの起動コマンド、URL、モデルプロバイダーをこのアプリに合わせて設定してください。
+2. vercel.deployment.ready の repository_dispatch ワークフローを追加してください。デプロイされたコミットのチェックアウトと、環境ごとのステータスを維持してください。
+3. Vercel の repository dispatch イベントを有効にし、自動化用のバイパスシークレットとモデルのキーを GitHub に保存するよう、私に依頼してください。
+4. Vercel から起動できるようにするには、先にワークフローをデフォルトブランチに入れる必要があることを説明してください。
+5. 私がデプロイしたらワークフローの結果を確認し、スイートが成功するまでエラーを修正してください。その後、e2e - production の Deployment Check を追加する手順を案内してください。`;
+
+[Vercel](https://vercel.com) は、アプリのデプロイごとに専用の URL を割り当てます。
+GitHub Actions からその URL に対して e2e を実行し、
+[Deployment Check](https://vercel.com/docs/deployment-checks) でテスト成功まで本番公開を待機させます。
+
+ロケーターテストとエージェントテストを備えた Next.js アプリは、
+[e2e-vercel のサンプル](https://github.com/e2e-inc/e2e-vercel) を参照してください。
+
+<Video>
+  <video src="/images/vercel-previews.mp4" aria-label="挨拶フォームをクラッシュさせるプルリクエストが Vercel プレビューの e2e チェックで失敗する様子。コメントには失敗したエージェントステップとアプリの未処理エラーが表示され、動画でクラッシュを確認できます。" muted loop playsInline controls />
+
+  不具合のあるプルリクエストを、Vercel プレビュー上の e2e が検出します。コメントは [GitHub レポーター](#post-results-on-the-pull-request) が投稿します。
+</Video>
+
+<SetupPrompt>
+
+<Prompt description={setupPrompt} children={setupPrompt} actions={["copy", "cursor"]} />
+
+</SetupPrompt>
+
+## 手動でセットアップする
+
+[Web のテストスイート](/web) と、GitHub リポジトリに接続した Vercel プロジェクトを用意します。
+以下のワークフローは npm と、コミット済みの `package-lock.json` を使います。
+
+### デプロイの URL を設定する
+
+`APP_URL` を読み取ってデプロイ先をテストします。
+未設定なら、この構成はローカルのアプリを起動します。コマンドとポートをアプリに合わせてください。
+
+```ts title="e2e.config.ts"
+import type { E2EConfig } from 'e2e';
+import { web } from '@e2e-dev/web';
+import { gateway } from 'ai';
+
+const appUrl = process.env.APP_URL;
+const bypassSecret = process.env.VERCEL_AUTOMATION_BYPASS_SECRET;
+
+export default {
+  agents: { default: { model: gateway('openai/gpt-6-luna-fast') } },
+  targets: [
+    {
+      engine: web(bypassSecret ? { headers: { 'x-vercel-protection-bypass': bypassSecret } } : {}),
+      app: {
+        identity: 'my-app',
+        environment: process.env.DEPLOYMENT_ENVIRONMENT === 'production' ? 'production' : 'test',
+        ...(appUrl
+          ? { url: appUrl }
+          : {
+              url: 'http://localhost:3000',
+              command: { executable: 'npm', args: ['run', 'dev'], reuseExisting: true },
+            }),
+      },
+    },
+  ],
+} satisfies E2EConfig;
+```
+
+テストでは `app.open('/')` を使うと、設定した URL に合わせて移動できます。
+
+### イベントとデプロイへのアクセスを有効にする
+
+Vercel プロジェクトの **Settings → Git** で、
+[`repository_dispatch` イベント](https://vercel.com/docs/git/vercel-for-github#repository-dispatch-events) を有効にします。
+**Settings → Deployment Protection** で、
+[Protection Bypass for Automation](https://vercel.com/docs/deployment-protection/methods-to-bypass-deployment-protection/protection-bypass-automation)
+のシークレットを作成します。設定から `x-vercel-protection-bypass` ヘッダーとして送信されます。
+
+GitHub の **Settings → Secrets and variables → Actions** に、次を追加します。
+
+| シークレット | 用途 |
+| --- | --- |
+| `VERCEL_AUTOMATION_BYPASS_SECRET` | 保護されたプレビューと、未公開の本番デプロイへのアクセス |
+| `AI_GATEWAY_API_KEY` | 上の設定でのモデル呼び出し。ロケーターだけのスイートには不要です |
+
+<Note>
+このサンプルは、モデルの認証情報がない場合にエージェントテストを明示的にスキップします。
+e2e が自動でスキップするわけではありません。全テストを実行するには CI にキーを渡してください。
+</Note>
+
+### ワークフローを追加する
+
+ビルド後、Deployment Checks の前に発生する `vercel.deployment.ready` を使います。
+公開待ちのビルドをテストするため、`APP_URL` にイベントのデプロイ URL を設定します。
+
+```yaml title=".github/workflows/e2e.yml" expandable
+name: e2e
+
+on:
+  repository_dispatch:
+    types: [vercel.deployment.ready]
+
+run-name: e2e - ${{ github.event.client_payload.environment }} - ${{ github.event.client_payload.git.shortSha }}
+
+permissions:
+  contents: read
+  actions: read
+  statuses: write
+
+jobs:
+  e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: vercel/repository-dispatch/actions/status@30f760c6640485cd92f8c785ef361382555fb712 # v1
+        with:
+          name: e2e - ${{ github.event.client_payload.environment }}
+      - uses: vercel/repository-dispatch/actions/checkout@30f760c6640485cd92f8c785ef361382555fb712 # v1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('package-lock.json') }}
+      - run: npx e2e-web install chromium --with-deps
+
+      - name: Run e2e against the deployment
+        run: npx e2e run --reporter list,junit --video on
+        env:
+          APP_URL: ${{ github.event.client_payload.url }}
+          DEPLOYMENT_ENVIRONMENT: ${{ github.event.client_payload.environment }}
+          AI_GATEWAY_API_KEY: ${{ secrets.AI_GATEWAY_API_KEY }}
+          VERCEL_AUTOMATION_BYPASS_SECRET: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
+
+      - name: Upload the report
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: e2e-report-${{ github.event.client_payload.environment }}
+          path: |
+            .e2e/report.json
+            .e2e/junit.xml
+            .e2e/results
+          if-no-files-found: warn
+          retention-days: 7
+```
+
+Vercel の checkout アクションは、デプロイされたコミットを選びます。
+status アクションは、そのコミットにジョブの結果を報告します。
+`e2e - preview` と `e2e - production` を別のステータスにすることで、環境間で結果が上書きされるのを防ぎます。
+
+<Note>
+デプロイをテストする前に、ワークフローをデフォルトブランチに追加してください。
+プルリクエスト内で編集しても、Vercel が起動するワークフローは変わりません。
+</Note>
+
+このワークフローは、信頼できるデプロイのコードにだけ使ってください。
+そのコミットのコードを、リポジトリのシークレットと書き込みトークンを渡してインストール・実行します。
+[モデルの認証情報](/ci#model-credentials) を参照してください。
+
+### テスト結果で本番公開を制御する
+
+最初の本番向け実行後に、Vercel の **Settings → Build and Deployment → Deployment Checks** を開きます。
+**Add Checks**、**GitHub** の順に選び、`e2e - production` を選択します。
+
+以降の本番ビルドは、チェックが終わるまで本番ドメインの割り当てを待ちます。
+チェックに失敗すると、前のデプロイが公開されたままになります。
+Vercel とワークフローのステータス名は一致させてください。
+[Deployment Checks](https://vercel.com/docs/deployment-checks#adding-github-checks) を参照してください。
+
+## エージェントの記録を再利用する
+
+[`.e2e/cache`](/cache#commit-the-replay-cache) をコミットすると、記録済みの `agent.act` ステップを CI でリプレイできます。
+設定で `app.identity` を固定し、環境を `test` にすることで、URL が異なるローカルとプレビューでも記録を共有できます。
+本番は環境が異なるため、専用のキャッシュエントリーを使います。
+
+CI はデフォルトで記録を読み、キャッシュミス時にはモデルを呼び出します。
+`agent.assert`、`agent.waitFor`、`agent.extract` は常にライブ実行されるため、
+記録があってもモデルのキーは必要です。
+
+## プルリクエストに結果を投稿する
+
+dispatch のペイロードにはプルリクエスト番号がありません。
+[`@e2e-dev/github` レポーター](/github) に渡すため、デプロイされたコミットから調べます。
+
+<Accordion title="ワークフローにプルリクエストへのコメントを追加する">
+
+レポーターの [セットアップ](/github#setup) に従って `@e2e-dev/github` をインストールし、
+設定の `reporters` に `github()` を追加します。
+CLI の `--reporter list,junit` を指定しても、カスタムレポーターは有効なままです。
+
+ワークフローの権限に `pull-requests: write` を追加します。
+**Run e2e against the deployment** の前に、次のステップを挿入します。
+
+```yaml
+      - name: Find the pull request
+        id: pull-request
+        run: |
+          number=$(gh api "repos/$GITHUB_REPOSITORY/commits/$SHA/pulls" \
+            --jq '[.[] | select(.state == "open")][0].number // empty')
+          echo "number=$number" >> "$GITHUB_OUTPUT"
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SHA: ${{ github.event.client_payload.git.sha }}
+```
+
+実行ステップを置き換えます。一時的なイベントファイルで、プルリクエスト番号と、
+ソースへのリンクに使うデプロイ済みコミットをレポーターに渡します。
+
+```yaml
+      - name: Run e2e against the deployment
+        run: |
+          export GITHUB_SHA="$SHA"
+          if [ -n "$PULL_REQUEST" ]; then
+            jq -n --argjson number "$PULL_REQUEST" --arg sha "$SHA" \
+              '{pull_request: {number: $number, head: {sha: $sha}}}' > "$RUNNER_TEMP/pull-request.json"
+            export GITHUB_EVENT_PATH="$RUNNER_TEMP/pull-request.json"
+          fi
+          npx e2e run --reporter list,junit --video on
+        env:
+          PULL_REQUEST: ${{ steps.pull-request.outputs.number }}
+          SHA: ${{ github.event.client_payload.git.sha }}
+          GITHUB_TOKEN: ${{ github.token }}
+          APP_URL: ${{ github.event.client_payload.url }}
+          DEPLOYMENT_ENVIRONMENT: ${{ github.event.client_payload.environment }}
+          AI_GATEWAY_API_KEY: ${{ secrets.AI_GATEWAY_API_KEY }}
+          VERCEL_AUTOMATION_BYPASS_SECRET: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
+```
+
+レポーターは再実行時に同じコメントを更新し、ジョブのサマリーも書き込みます。
+開いているプルリクエストがなければ、サマリーだけを書き込みます。
+
+</Accordion>
+
+## 次のステップ
+
+<CardGroup cols={2}>
+  <Card title="プルリクエストのコメント" icon="code-pull-request" href="/github">
+    プルリクエストから、失敗、スクリーンショット、トレースを確認します。
+  </Card>
+  <Card title="継続的インテグレーション" icon="rotate" href="/ci">
+    CI のデフォルト、アーティファクト、モデルの認証情報を確認します。
+  </Card>
+</CardGroup>

@@ -30,6 +30,7 @@ const KNOWN_KEYS = [
   'tapModifiers',
   'keyboard',
   'fixtures',
+  'isolation',
   'state',
   'artifacts',
   'validateApp',
@@ -276,6 +277,9 @@ export function defineEngine<Fixtures extends object = {}>(declared: EngineSpec<
       throw invalid(name, 'declares tapModifiers without perform: modifiers ride the tap actions perform receives');
     }
   }
+  if (spec.isolation !== undefined && spec.isolation !== 'attempt' && spec.isolation !== 'worker') {
+    throw invalid(name, `isolation must be 'attempt' or 'worker', got ${JSON.stringify(spec.isolation)}`);
+  }
   if (spec.keyboard !== undefined && !capabilities.has('observation')) {
     throw invalid(name, 'declares keyboard without observe: the focused field is read off the observation');
   }
@@ -293,6 +297,7 @@ export function defineEngine<Fixtures extends object = {}>(declared: EngineSpec<
   }
   if (spec.actions !== undefined) handle['actions'] = declaredKinds(name, 'actions', spec.actions, LOCATOR_ACTION_KINDS);
   if (spec.tapModifiers === true) handle['tapModifiers'] = true;
+  if (spec.isolation === 'worker') handle['isolation'] = 'worker';
   if (spec.pointerActions !== undefined) {
     handle['pointerActions'] = declaredKinds(name, 'pointerActions', spec.pointerActions, POINTER_ACTION_KINDS);
   }

@@ -28,6 +28,14 @@
     },
     "plugins": [
       [
+        "expo-build-properties",
+        {
+          "ios": {
+            "enableSceneSupport": true
+          }
+        }
+      ],
+      [
         "expo-image-picker",
         {
           "photosPermission": "The benchmark attaches a receipt photo from the photo library."

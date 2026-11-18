@@ -1,0 +1,48 @@
+---
+title: 托管浏览器和设备
+sidebarTitle: 概览
+description: 与托管浏览器和设备服务的官方集成，每个服务对应一个包。
+"og:image": "https://e2e.com/docs/images/og/integrations/index.png?v=324a20a30f"
+"twitter:image": "https://e2e.com/docs/images/og/integrations/index.png?v=324a20a30f"
+---
+
+每个官方集成都以一个包的形式，通过引擎的提供方接口，从托管服务为测试目标提供 `browser` 或 `device`。只需修改配置中测试目标的 `browser` 或 `device`。
+
+<CardGroup cols={2}>
+  <Card title="Cloudflare Browser Run" icon="/images/integrations/cloudflare.svg" href="/integrations/browser-run">
+    `@e2e-dev/browser-run`：为网页端测试目标提供托管 Chromium，每个工作进程或每个测试使用一个浏览器。
+  </Card>
+  <Card title="Kernel" icon="/images/integrations/kernel.svg" href="/integrations/kernel">
+    `@e2e-dev/kernel`：为网页端测试目标提供托管 Chromium，每个工作进程或每个测试使用一个浏览器。
+  </Card>
+  <Card title="Lightpanda" icon="/images/integrations/lightpanda.svg" href="/integrations/lightpanda">
+    `@e2e-dev/lightpanda`：开源无头模式浏览器，在你自己的机器上为每个工作进程槽位启动一个实例，不使用 Chromium。
+  </Card>
+  <Card title="Moli" icon="/images/integrations/moli.png" href="/integrations/moli">
+    `@e2e-dev/moli`：本地 Moli 浏览器，按需进行布局和截图，每个工作进程槽位启动一个实例。
+  </Card>
+  <Card title="Expo Simulators" icon="/images/integrations/expo.svg" href="/integrations/eas">
+    `@e2e-dev/eas`：为移动端测试目标提供托管 iOS 模拟器和 Android 模拟器。
+  </Card>
+  <Card title="smol machines" icon="/images/integrations/smol.png" href="/integrations/smol">
+    `@e2e-dev/smol`：在你的计算机上运行 Chromium 微型虚拟机，每个测试在预热浏览器的一个分支中运行。
+  </Card>
+  <Card title="Limrun" icon="/images/integrations/limrun.svg" href="/integrations/limrun">
+    `@e2e-dev/limrun`：托管 iOS 模拟器和 Android 模拟器，支持应用安装和设备清理。
+  </Card>
+  <Card title="TestMu AI" icon="/images/integrations/testmu.svg" href="/integrations/testmu">
+    `@e2e-dev/testmu`：为移动端测试目标提供托管 Android 模拟器、iOS 模拟器和真机，为网页端测试目标提供 Chrome 和 Edge。
+  </Card>
+  <Card title="BrowserStack" icon="/images/integrations/browserstack.svg" href="/integrations/browserstack">
+    `@e2e-dev/browserstack`：为移动端测试目标提供 BrowserStack App Automate Android 和 iOS 真机。
+  </Card>
+  <Card title="E2B" icon="/images/integrations/e2b.svg" href="/integrations/e2b">
+    `@e2e-dev/e2b`：为移动端测试目标提供 Android 16 沙箱，为网页端测试目标提供 Chromium 沙箱。
+  </Card>
+</CardGroup>
+
+## 使用尚无集成的服务
+
+对于其他服务，在项目中编写一个小型提供方：网页端引擎使用 [`BrowserProvider`](/browser#hosted-browsers)，移动端引擎使用 [`DeviceProvider`](/mobile#hosted-devices)。
+
+要在 GitHub Actions、Expo Workflows 或 Norrix 等 CI 服务上运行 e2e，请参阅[持续集成](/ci)。

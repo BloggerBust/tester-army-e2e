@@ -1,0 +1,201 @@
+---
+title: 核心概念
+description: 目标、断言和定位器，以及如何用它们组织和运行测试。
+"og:image": "https://e2e.com/docs/images/og/core-concepts.png?v=e4829aef06"
+"twitter:image": "https://e2e.com/docs/images/og/core-concepts.png?v=e4829aef06"
+---
+
+一个测试可以混合使用三种步骤：
+
+| 步骤 | API | 是否调用模型 |
+| --- | --- | --- |
+| [目标](#goals) | `agent.act` | 是，除非由[缓存](/cache)回放 |
+| [断言](#assertions) | `agent.assert`、`agent.waitFor`、`agent.extract` | 是 |
+| [定位器](#locators) | `screen` 和 `expect` | 否 |
+
+使用[自定义执行器](/executors)时，`act` 和 `assert` 无需模型。
+
+```ts title="tests/todos.e2e.ts"
+import { describe, test, expect } from 'e2e';
+
+describe('todos', () => {
+  test('the Done filter shows only completed todos', async ({ app, agent, screen }) => {
+    await app.open('/todos');
+    await agent.act('add todos "Buy milk" and "Walk the dog"');
+    await agent.act('complete "Buy milk"');
+    await agent.waitFor('"Buy milk" is completed and "Walk the dog" is open');
+
+    await screen.getByRole('tab', 'Done').tap();
+
+    await expect(screen.getByTestId('todo')).toHaveCount(1);
+    await agent.assert('the only todo listed is "Buy milk"');
+  });
+});
+```
+
+每个测试分三部分检查一种行为：准备初始状态，执行该行为，然后断言结果。
+
+对每次智能体调用、屏幕调用和 `expect.poll` 都使用 await。如果测试返回时仍有步骤在运行，测试会以 `STEP_NOT_AWAITED` 失败。
+
+## 目标
+
+`agent.act` 接收一个目标，并执行完成目标所需的操作。目标完成时返回，目标失败时抛出错误。
+
+```ts
+await agent.act('complete checkout with the test card');
+await agent.act('invite {email} as an editor', { params: { email: 'ada@example.test' } });
+```
+
+每个目标都应是原子目标：一个结果，用一次检查即可确认。如果一条指令的两个部分各自都会产生值得检查的状态，就应拆成两个目标。一个测试可以包含多个目标。
+
+```ts title="Bad: three goals in one call, no check between them"
+await agent.act('open the Pro plan, set the seats to {seats}, and check out', {
+  params: { seats: 3 },
+});
+```
+
+```ts title="Good: one atomic goal per call, arrange, act, assert"
+test('checks out the Pro plan', async ({ app, agent, screen }) => {
+  await app.open('/plans');
+  await agent.act('open the Pro plan');
+  await agent.act('set the seats to {seats}', { params: { seats: 3 } });
+  await agent.waitFor('the cart shows the Pro plan with 3 seats');
+
+  await agent.act('check out');
+
+  await expect(screen.getByText('Order confirmed')).toBeVisible();
+});
+```
+
+先执行准备目标，并在结尾等待它们达到的状态。接着执行被测目标，最后断言其结果。这样，失败信息就能指出哪个目标出了问题。每个目标都从自己的录制内容回放，并有独立的模型调用和操作[预算](/reference/agent#budgets)。为达成同一个结果而执行的操作不算单独的目标，例如打开包含控件的屏幕或菜单、滚动到控件、关闭横幅，或填写同一表单的字段。
+
+- 你控制目标的顺序，智能体选择操作。
+- 在测试结尾用 `expect` 检查结果。[回放缓存](/cache)只有在后续检查或等待通过后才会记录目标。
+- 使用屏幕上显示的词语。
+- 通过 `params` 提供测试数据。密码使用 `Secret`。模型绝不会收到其文本值。参阅[身份验证](/authentication)。
+- 对于每次运行都会变化的值，使用 `unique()`，以便[缓存能回放该步骤](/cache#what-must-match)：
+
+```ts
+import { unique } from 'e2e';
+
+const email = `ada+${Date.now()}@example.test`;
+await agent.act('sign up with email {email}', { params: { email: unique(email) } });
+```
+
+`act` 会在需要时获取截图。在某些引擎上，它可以在图像中的指定位置点击和输入。
+
+如果目标失败，阅读报告并让指令更具体。将多个目标都会用到的描述放进智能体的 [`context`](/agents)。
+
+## 断言
+
+断言会判定屏幕内容。模型能看到陈述、当前屏幕经过脱敏的文本快照、屏幕位置，以及智能体的上下文。它看不到之前的步骤或 `act` 的摘要。
+
+- `agent.assert` 检查当前屏幕。陈述不成立时以 `ASSERTION_FAILED` 失败。证据不足时以 `ASSERTION_INCONCLUSIVE` 失败。
+- `agent.waitFor` 等待条件成立。只有屏幕内容或位置发生变化时才调用模型。
+- `agent.extract` 将屏幕上的数据读入 [Standard Schema](https://standardschema.dev) 类型，例如 Zod。
+
+```ts
+import { expect } from 'e2e';
+import { z } from 'zod';
+
+await agent.assert('the dashboard shows a trial badge');
+await agent.waitFor('a download link appears', { timeout: 120_000 });
+await agent.assert('the chart trends upward', { vision: true });
+
+const data = await agent.extract('every todo title', {
+  schema: z.object({ titles: z.array(z.string()) }),
+});
+expect(data.titles).toContain('Buy milk');
+```
+
+对于模型生成的文本，检查其含义，而非完整句子。如果精确文本很重要，使用[定位器](#locators)。
+
+对于图表或布局等视觉检查，添加 `vision: true`。如果只想判定截图，使用 `vision: 'only'`。图像会增加输入 token 数。参阅[智能体参考](/reference/agent#vision)。
+
+## 定位器
+
+定位器查找已知控件，无需调用模型。当你知道确切操作或精确值时，使用定位器。
+
+```ts
+// Role and name first, label second, test ID last.
+await screen.getByRole('button', 'Sign in').tap();
+await screen.getByLabel('Email').fill('ada@example.test');
+
+// Scope into a row.
+const row = screen.getByRole('listitem').filter({ hasText: 'Design review' });
+await row.getByRole('button', 'Archive').tap();
+
+// Gestures and coordinates.
+await screen.swipe({ direction: 'up' });
+await screen.getByRole('image', 'Seat map').tap({ position: { x: 120, y: 48 } });
+
+// Assertions retry until they pass or time out.
+await expect(screen.getByRole('status')).toHaveText('2 remaining');
+```
+
+- 如果查询匹配到多个节点，操作、读取或单节点断言都会失败。使用 `.filter()`、`.first()` 或 `.nth()` 定位到一个节点。
+- `textContent()` 等直接读取会等待匹配项，然后只读取一次，不会为获取某个值而重试。
+
+参阅 [screen 参考](/reference/screen)和 [expect 参考](/reference/expect#locator-matchers)。关于路由、Cookie、对话框和下载，参阅[使用浏览器](/browser)。
+
+## 组织测试
+
+```ts
+import { beforeEach, describe, test } from 'e2e';
+
+describe('billing', { tags: ['billing'] }, () => {
+  beforeEach(async ({ app }) => { await app.open('/billing'); });
+
+  test('upgrades', { retries: 2, timeout: 60_000 }, async ({ agent }) => {
+    await agent.act('upgrade to Pro');
+  });
+});
+
+test('needs two organizations', async ({ app }) => {
+  test.skip((await countOrganizations()) < 2, 'nothing to switch to');
+  await app.open('/organizations');
+});
+```
+
+- 每个测试都在独立的尝试中运行。让测试从接近被检查屏幕的位置开始，这样每次运行都能跳过到达该屏幕的点击操作。在测试夹具或钩子中创建测试数据。在浏览器中，恢复[已保存的会话](/authentication)，并通过路径打开屏幕。在设备上，打开[深度链接](/mobile#the-device-fixture)。
+- 条件为 true 时，`test.skip(condition, reason)` 会停止测试，并将状态设为 `skipped`。
+- 对于跨多个测试的流程，在分组上设置 `{ serial: true }`。这些测试会在同一个工作进程中依次运行，并一起重试。
+- 使用 `test.extend` 进行准备和清理。参阅[编写测试夹具](/fixtures)。
+- 从 `@e2e-dev/web` 或 `@e2e-dev/mobile` 导入 `test`，为 `browser` 或 `device` 测试夹具提供类型。
+
+[测试参考](/reference/test)列出了全部选项。
+
+## 运行单个测试
+
+<CodeGroup>
+```bash npm
+npx e2e run tests/signup.e2e.ts:12   # the test at line 12
+npx e2e run --grep checkout          # tests with a matching title
+npx e2e run --target web             # one target
+```
+
+```bash pnpm
+pnpm exec e2e run tests/signup.e2e.ts:12   # the test at line 12
+pnpm exec e2e run --grep checkout          # tests with a matching title
+pnpm exec e2e run --target web             # one target
+```
+
+```bash bun
+bunx e2e run tests/signup.e2e.ts:12   # the test at line 12
+bunx e2e run --grep checkout          # tests with a matching title
+bunx e2e run --target web             # one target
+```
+</CodeGroup>
+
+[CLI 参考](/reference/cli#e2e-run)列出了全部标志。
+
+## 下一步
+
+<CardGroup cols={2}>
+  <Card title="缓存" icon="box-archive" href="/cache">
+    回放已通过的目标，无需调用模型。
+  </Card>
+  <Card title="智能体步骤的工作原理" icon="list-check" href="/agent-steps">
+    判定结果、退出码，以及模型看到的内容。
+  </Card>
+</CardGroup>

@@ -1,0 +1,55 @@
+---
+title: 简介
+description: 面向网页应用和移动应用的开源 AI 测试。减少测试耗时，把更多时间用于开发。
+---
+
+import { VideoCard } from '../snippets/video-card.jsx';
+
+e2e 是一个面向网页应用和移动应用的开源测试框架。测试可以使用精确的[定位器](/core-concepts#locators)和[断言](/reference/expect#locator-matchers)，也可以用自然语言描述[目标](/core-concepts#goals)，交给智能体完成，还可以在同一个测试中结合这两种方式。
+
+<VideoCard
+  id="NEawZb6Hssw"
+  title="2 分钟了解 e2e"
+  subtitle="将智能体目标与定位器检查串联起来，在网页端、iOS 和 Android 上运行同一个测试，并在一分钟内配置好项目。"
+/>
+
+```ts title="tests/checkout.e2e.ts"
+import { test, expect } from 'e2e';
+
+test('a member upgrades to Pro', async ({ app, agent, screen }) => {
+  await app.open('/settings/billing');
+
+  await agent.act('upgrade the workspace to the Pro plan');
+  await agent.assert('the invoice preview shows a prorated amount');
+
+  await expect(screen.getByRole('status')).toContainText('Pro');
+});
+```
+
+## 为什么选择 e2e
+
+- **减少测试耗时。** 写下目标，无需编写包含选择器和等待逻辑的脚本。UI 变化时，智能体会适应变化，减少你需要修复的测试。
+- **降低运行成本。** 后续检查通过后，e2e 会记录 `agent.act` 步骤。下次运行时会[回放该步骤](/cache)，无需调用模型；应用发生变化时，再交给智能体处理。使用内置智能体时，`assert`、`waitFor` 和 `extract` 始终会调用模型。
+
+## 工作原理
+
+- **测试目标。** 每个测试都会在每个测试目标上运行一次，例如 Chromium 或 iPhone 模拟器。[网页端引擎](/web)通过 Playwright 操作浏览器。[移动端引擎](/mobile)通过 agent-device 操作 iOS 模拟器和 Android 模拟器。你也可以[编写自己的引擎](/writing-an-engine)。
+- **智能体步骤。** `agent.act` 完成目标。`agent.assert`、`agent.waitFor` 和 `agent.extract` 判定屏幕内容。你可以使用自己的[订阅](/subscriptions)、[API 密钥或本地模型](/models)。不包含智能体步骤的测试无需模型。
+- **报告。** 运行器会对模型输入中的[已注册机密值进行脱敏](/security)，并将步骤、失败信息和产物记录在[报告](/debugging)中，供你或编码智能体查看。
+
+## 开始使用
+
+<CardGroup cols={2}>
+  <Card title="快速开始" icon="rocket" href="/quickstart">
+    给编码智能体一条提示词，或手动配置。
+  </Card>
+  <Card title="示例项目" icon="folder-open" href="/example-projects">
+    运行已包含 e2e 测试的独立网页应用或移动应用。
+  </Card>
+  <Card title="核心概念" icon="pen-to-square" href="/core-concepts">
+    目标、断言和定位器。
+  </Card>
+  <Card title="编码智能体" icon="robot" href="/coding-agents">
+    让编码智能体编写、运行和调试测试。
+  </Card>
+</CardGroup>

@@ -284,6 +284,6 @@ for (const scenario of SCENARIOS) {
       ...(scenario.gap === undefined ? {} : { skip: scenario.gap }),
       ...(scenario.platforms === undefined ? {} : { platforms: scenario.platforms }),
     },
-    (fixtures) => complete(scenario, fixtures),
+    ({ agent, app, device, platform, screen }) => complete(scenario, { agent, app, device, platform, screen }),
   );
 }

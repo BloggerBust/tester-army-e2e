@@ -250,7 +250,8 @@ Throw `EngineError` with a code from the
 
 ## Contributed fixtures
 
-An engine can contribute fixtures such as `browser` or `device`. Wrap their
+An engine can contribute fixtures such as `browser` or `device`. To a test
+they are [built-in fixtures](/reference/test#fixtures). Wrap their
 methods with `context.fixture` to record each call as a `<fixture>.<method>`
 step, with its own artifacts and failures. Fixtures run in the runner's
 process, beside the test. An engine server gets them from `connectEngine`; see

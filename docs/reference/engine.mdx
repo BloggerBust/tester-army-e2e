@@ -106,6 +106,7 @@ rules:
 | `perform`, `actions` | One without the other. An `actions` list that is empty, repeats a kind, or names one outside `LOCATOR_ACTION_KINDS`. |
 | `performAt`, `pointerActions` | One without the other. A `pointerActions` list that is empty, repeats a kind, or names one outside `POINTER_ACTION_KINDS`. |
 | `tapModifiers` | Not a boolean, or `true` without `perform`. |
+| `isolation` | Anything but `'attempt'` or `'worker'`. |
 | `keyboard`, `state`, `artifacts`, `session` | An unknown key or a non-function member. `keyboard` without `type` and `press`; `state` without both `capture` and `restore`; `artifacts` without `screenshot`; `startVideo` without `stopVideo`, or the reverse. |
 | `secrets` | Not an array of `secrets.get()` handles. |
 | `fixtures` | Not an object, a fixture that is not a factory function, or a fixture name that is not a lower-camel identifier or shadows `agent`, `app`, `screen`, `platform`, or `session`. |
@@ -137,6 +138,7 @@ The body of one target. Every member but `name`, `version`, and
 | [`tapModifiers`](#capabilities) | `boolean` |
 | [`keyboard`](#keyboard) | `EngineKeyboard` |
 | [`fixtures`](#contributed-fixtures) | factories |
+| [`isolation`](#fixture-isolation) | `'attempt' \| 'worker'` |
 | [`state`](#state) | `EngineStateCapability` |
 | [`artifacts`](#artifacts) | `EngineArtifacts` |
 | [`validateApp`](#app) | method |
@@ -243,6 +245,11 @@ export interface Engine {
    * capability names; `requires: ['<name>']` gates at selection.
    */
   readonly fixtures?: Readonly<Record<string, EngineFixtureFactory>>;
+  /**
+   * How long the state behind this engine's `fixtures`, `app`, and `screen`
+   * lives; see `EngineIsolation`. Defaults to `attempt`.
+   */
+  readonly isolation?: EngineIsolation;
   /** capability: state - opaque snapshot capture/restore for session reuse. */
   readonly state?: EngineStateCapability;
   /** capability: artifacts - screenshots under the attempt directory, and videos there or at a provider. */
@@ -2140,7 +2147,8 @@ export function stopProviderRecording(
 ### Contributed fixtures
 
 An engine contributes named surfaces to the test fixtures through
-`fixtures`. Each key becomes a fixture and a capability name.
+`fixtures`. Each key becomes a fixture and a capability name. To a test it is
+a [built-in fixture](/reference/test#fixtures), beside `app` and `screen`.
 
 ```ts title="src/index.ts"
 fixtures: {
@@ -2248,6 +2256,44 @@ export interface EngineFixtureContext {
 }
 ```
 
+#### Fixture isolation
+
+`isolation` declares whether what an attempt does stays for the next one. It
+sets the scope of the built-in fixtures the engine backs: the ones it
+contributes, `app`, and `screen`.
+
+```ts
+defineEngine({ name: 'device', /* ... */ isolation: 'worker' });
+```
+
+| Value | Means | Fixture scope |
+| --- | --- | --- |
+| `'attempt'` (default) | `startAttempt` gives each attempt a fresh surface, such as a browser context. | Test fixtures. `beforeAll` and `afterAll` cannot read them. |
+| `'worker'` | What an attempt does stays. A device keeps permissions and installed apps. | [Worker fixtures](/reference/test#worker-fixtures). `beforeAll`, `afterAll`, and worker fixtures get them. |
+
+`@e2e-dev/mobile` declares `'worker'`. On such an engine:
+
+- Each pass of suite hooks runs in a short attempt of its own (`startAttempt`,
+  then `endAttempt`). So do the teardowns of worker fixtures when the worker
+  ends. Make `startAttempt` launch nothing.
+- In a serial group, or a test an `e2e mcp` session runs, the hooks run on the
+  attempt already open. An engine runs one attempt at a time.
+- When the attempt cannot open, or the run was interrupted, the hooks run
+  without those built-in fixtures. See [`beforeAll`](/reference/test#beforeall).
+
+```ts
+/**
+ * What one attempt on an engine leaves for the next. `attempt`: nothing,
+ * `startAttempt` gives each attempt a fresh surface (a browser context), so
+ * the engine's fixtures, `app`, and `screen` are test fixtures, and a suite
+ * hook cannot use them. `worker`: what an attempt does stays (a device keeps
+ * permissions, keychain, and installed apps), so they are worker fixtures,
+ * which `beforeAll`, `afterAll`, and worker-scoped `test.extend()` fixtures
+ * see; a suite hook runs in a short attempt of its own for them.
+ */
+export type EngineIsolation = 'attempt' | 'worker';
+```
+
 #### Declaring operations
 
 `context.fixture(name, surface, operations)` declares which methods are
@@ -2314,7 +2360,7 @@ return context.fixture('printer', printer, { print: { kind: 'resource' } });
 `KEY_NAMES`, `parseKey`, `ENGINE_ERROR_CODES`, `RETRYABLE_ENGINE_ERROR_CODES`,
 `Secret`, `isSecret`, `TextMatch`, `JsonValue`, `JsonValueRules`,
 `ResolveExpressionOptions`, `PollConditionOptions`, `WithoutUndefined`,
-`FixtureOperation`, `OBSERVED_NAME_LIMIT`, and `OBSERVED_TEXT_LIMIT` are
+`FixtureOperation`, `EngineIsolation`, `OBSERVED_NAME_LIMIT`, and `OBSERVED_TEXT_LIMIT` are
 exported from `e2e/engine`. So are the [engine protocol](/reference/engine-protocol)'s
 `connectEngine`, `serveEngine`, `describeEngine`, `spawnTransport`,
 `socketTransport`, `loopbackTransport`, `ENGINE_METHODS`,

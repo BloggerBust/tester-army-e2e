@@ -1,6 +1,6 @@
 import { StrictMode, useMemo, type ReactNode } from 'react';
 import { createRoot } from 'react-dom/client';
-import { buildModel, isStatusFilter, readPayload, type ReportModel } from './data.ts';
+import { buildModel, isStatusFilter, readPayload, selectedTarget, type ReportModel } from './data.ts';
 import { ListView } from './list.tsx';
 import { useRoute } from './route.ts';
 import { TestView } from './test.tsx';
@@ -14,8 +14,10 @@ function App({ model }: { model: ReportModel }) {
   const testId = route.get('test');
   const result = useMemo(() => (testId === null ? undefined : model.results.find((candidate) => candidate.id === testId)), [model, testId]);
   const status = route.get('status');
+  // A target the report carries no results for drops the way an unknown status does, so a hand-edited link cannot invent a view.
+  const targetId = selectedTarget(model.targetIds, route.get('target'));
   return result === undefined ? (
-    <ListView model={model} status={isStatusFilter(status) ? status : 'all'} search={route.get('q') ?? ''} />
+    <ListView model={model} status={isStatusFilter(status) ? status : 'all'} search={route.get('q') ?? ''} target={targetId} />
   ) : (
     <TestView model={model} result={result} attemptParam={route.get('attempt')} />
   );

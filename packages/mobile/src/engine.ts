@@ -66,6 +66,10 @@ export function buildEngine(surface: AgentDeviceSurface): EngineHandle<MobileFix
     fixtures: {
       device: (context) => createDeviceFixture(surface, context),
     },
+    // A device keeps permissions, keychain, and installed apps from one
+    // attempt to the next, so `device`, `app`, and `screen` are worker
+    // fixtures: `beforeAll` and `afterAll` can drive them.
+    isolation: 'worker',
   });
   surfaces.set(handle, surface);
   return handle;

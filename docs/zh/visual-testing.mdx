@@ -1,0 +1,126 @@
+---
+title: 视觉比较
+description: 使用同一个测试，在网页端、iOS 和 Android 上将屏幕或单个元素与已存储的截图进行比较。
+"og:image": "https://e2e.com/docs/images/og/visual-testing.png?v=4929216b19"
+"twitter:image": "https://e2e.com/docs/images/og/visual-testing.png?v=4929216b19"
+---
+
+import { Video } from '../snippets/video.jsx';
+
+`toHaveScreenshot` 将应用显示的内容与存放在测试文件旁的 PNG 进行比较。它适用于所有能捕获像素的引擎，因此一个测试即可检查浏览器、iOS 模拟器和 Android 模拟器。
+
+<Video>
+  <video src="/images/visual-testing.mp4" aria-label="终端中失败的 toHaveScreenshot 断言，随后并排显示预期图像、实际图像和差异图像。" muted loop playsInline controls />
+
+  一次失败的比较，以及对应的预期图像、实际图像和差异图像。
+</Video>
+
+```ts title="tests/checkout.e2e.ts"
+import { test, expect } from 'e2e';
+
+test('checkout looks right', async ({ app, screen }) => {
+  await app.open('/checkout');
+  await expect(screen).toHaveScreenshot('checkout.png');
+  await expect(screen.getByRole('button', 'Pay')).toHaveScreenshot('pay-button.png');
+});
+```
+
+`expect(screen)` 比较整个屏幕。`expect(locator)` 将其唯一匹配项滚动到可见区域，并比较该区域。
+
+## 已存储的截图
+
+将截图与测试一起提交。首次运行时没有可比较的截图，因此会写入截图并失败。查看图像，提交它，然后再次运行。
+
+```text
+tests/checkout.e2e.ts
+tests/checkout.e2e.ts-snapshots/checkout-web-linux.png
+tests/checkout.e2e.ts-snapshots/checkout-ios-darwin.png
+tests/checkout.e2e.ts-snapshots/pay-button-web-linux.png
+```
+
+由于字体和渲染不同，每个测试目标和操作系统会保留各自的文件。如果未指定名称，文件会使用测试名称：`checkout-looks-right-1-web-linux.png`。
+
+当应用发生预期的变化时，重写有差异的截图，并写入缺失的截图。这样运行就会通过：
+
+<CodeGroup>
+```bash npm
+npx e2e run --update-snapshots
+```
+
+```bash pnpm
+pnpm exec e2e run --update-snapshots
+```
+
+```bash bun
+bunx e2e run --update-snapshots
+```
+</CodeGroup>
+
+## 在 CI 中
+
+在与 CI 中负责渲染的机器相同的环境中生成截图：网页端和 Android 使用 Linux 运行器，iOS 使用配备相同模拟器的 macOS 运行器。
+
+没有 `--update-snapshots` 时，CI 运行绝不会向项目中写入文件。截图缺失会使测试失败，运行会将截图保存到测试结果中的 `snapshots/<path in the project>`，供你下载并提交。要一次性写入所有截图，请在与测试作业类似的作业中运行 `--update-snapshots`：
+
+```yaml title=".github/workflows/screenshots.yml"
+name: Update screenshots
+on: workflow_dispatch
+jobs:
+  screenshots:
+    runs-on: ubuntu-latest
+    steps:
+      # the same checkout, setup, and install steps as the test job
+      - run: npx e2e run --update-snapshots
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: screenshots
+          path: tests/**/*-snapshots/
+```
+
+将产物下载到项目中，检查图像，然后提交。
+
+## 比较失败时
+
+匹配器会持续截图，直到有一张匹配，或断言超时（`assertionTimeout`，5 秒）。如果不匹配，失败信息会给出差异像素数，并在测试结果中提供三张图像：用红色标出变化像素的 `-diff`、`-actual` 和 `-expected`。
+
+```text
+2173 pixels (0.24% of the image) differ from tests/home.e2e.ts-snapshots/screen-web-darwin.png; run with --update-snapshots to keep this run's
+diff: .e2e/results/home-1a2b3c4d5e6f7a8b/attempt-1/screenshots/screen-diff.png
+actual: .e2e/results/home-1a2b3c4d5e6f7a8b/attempt-1/screenshots/screen-actual.png
+expected: .e2e/results/home-1a2b3c4d5e6f7a8b/attempt-1/screenshots/screen-expected.png
+```
+
+写入截图前，匹配器会等待连续两张截图相同。如果屏幕始终无法保持静止，测试会失败，并提供最后两张截图及其差异图。
+
+## 容差和遮罩
+
+```ts
+await expect(screen).toHaveScreenshot('dashboard.png', {
+  maxDiffPixelRatio: 0.01,
+  mask: [screen.getByTestId('last-updated')],
+});
+```
+
+| 选项 | 默认值 | 含义 |
+| --- | --- | --- |
+| `threshold` | `0.2` | 单个像素的颜色允许偏差多少仍被视为相同，范围为 0 到 1 |
+| `maxDiffPixels` | `0` | 允许不同的像素数量 |
+| `maxDiffPixelRatio` | `0` | 允许不同的像素比例，范围为 0 到 1 |
+| `mask` | 无 | 比较前覆盖的定位器，用于遮住多次运行之间会变化的内容 |
+| `maskColor` | `#ff00ff` | 遮罩矩形的颜色 |
+| `timeout` | `assertionTimeout` | 断言时间预算，单位为毫秒 |
+
+在网页端，e2e 会停止动画并隐藏文本光标。在 iOS 和 Android 上，它会固定状态栏，让每次运行中的时钟和电池保持一致。
+
+e2e 会在每张截图中遮蔽安全字段，填入机密值后也一样。如果引擎无法证明屏幕上每个安全字段都已被遮蔽，匹配器会因 `POLICY_DENIED` 失败。
+
+## 下一步
+
+<CardGroup cols={2}>
+  <Card title="截图匹配器" icon="circle-check" href="/reference/expect#screenshot-matchers">
+    `toHaveScreenshot`、`.not` 及其全部选项。
+  </Card>
+  <Card title="安全" icon="shield-halved" href="/security">
+    如何避免机密值进入截图、报告和模型输入。
+  </Card>
+</CardGroup>

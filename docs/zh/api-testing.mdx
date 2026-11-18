@@ -1,0 +1,67 @@
+---
+title: API
+description: 使用 fetch 和值匹配器检查 API，与 UI 测试放在同一文件中并一起运行。
+"og:image": "https://e2e.com/docs/images/og/api-testing.png?v=bd427bf4fd"
+"twitter:image": "https://e2e.com/docs/images/og/api-testing.png?v=bd427bf4fd"
+---
+
+API 测试使用 `fetch` 调用你的 API，并通过值匹配器检查响应。它与 UI 测试放在同一文件中，并在同一次运行中执行。只使用 `app` 的测试不会调用模型。
+
+```ts title="tests/users-api.e2e.ts"
+import { test, expect } from 'e2e';
+import { z } from 'zod';
+
+const User = z.object({ id: z.number(), name: z.string() });
+
+test('GET /api/users returns the seeded users', async ({ app }) => {
+  const response = await fetch(`${app.baseUrl}/api/users`);
+  expect(response.status).toBe(200);
+  expect(response.headers.get('content-type')).toContain('application/json');
+  const users = expect(await response.json()).toMatchSchema(z.array(User));
+  expect(users).toHaveLength(3);
+  expect(users.map((user) => user.name)).toEqual(['Ada', 'Grace', expect.any(String)]);
+});
+```
+
+`toMatchSchema` 接受任何 [Standard Schema](/reference/expect#matching-a-schema)，例如 Zod、Valibot 或 ArkType，并返回带有类型的值。使用应用解析 API 时所用的 schema，API 不再符合该 schema 时，测试就会失败。
+
+## API 的运行位置
+
+`app.baseUrl` 是测试目标的 `app.url` 去掉末尾斜杠后的值；如果 URL 声明端口为 `0`，则会使用本次运行选定的端口。因此，同一个文件既可以针对配置中由 `app.command` 启动的应用运行，也可以针对已部署的预览环境运行。
+
+如果 API 在返回响应后才写入状态，请使用 [`expect.poll`](/reference/expect#polling-a-value) 反复读取，直到匹配器通过。
+
+## 已登录的请求
+
+要以已登录用户的身份调用 API，请编写[测试夹具](/reference/test#your-own-fixtures)，在每次请求中发送 `browser.cookies()`。每个使用此 `test` 的测试都会获得 `browser`，因此需要网页端测试目标：
+
+```ts title="tests/api.ts"
+import { test as base } from '@e2e-dev/web';
+
+export const test = base.extend<{ api: (path: string, init?: RequestInit) => Promise<Response> }>({
+  api: async ({ app, browser }, use) => {
+    await use(async (path, init) => {
+      const url = new URL(`${app.baseUrl}${path}`);
+      if (url.origin !== new URL(app.baseUrl).origin) throw new Error(`${url} is not on the app`);
+      const headers = new Headers(init?.headers);
+      headers.set('cookie', (await browser.cookies()).map((c) => `${c.name}=${c.value}`).join('; '));
+      return fetch(url, { ...init, headers });
+    });
+  },
+});
+```
+
+## 不使用浏览器
+
+在网页端测试目标上，API 测试仍会打开浏览器上下文。不带引擎的测试目标不会打开任何内容，也没有 `app.baseUrl`，因此需要从环境变量读取 URL。在 `e2e init` 中选择不使用引擎时，它会创建这种配置。
+
+## 下一步
+
+<CardGroup cols={2}>
+  <Card title="值匹配器" icon="circle-check" href="/reference/expect#value-matchers">
+    所有匹配器、`toMatchSchema` 和 `expect.poll`。
+  </Card>
+  <Card title="身份验证" icon="key" href="/authentication">
+    登录一次，在每个测试中复用会话。
+  </Card>
+</CardGroup>

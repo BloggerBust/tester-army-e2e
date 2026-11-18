@@ -1,0 +1,216 @@
+---
+title: 持续集成
+sidebarTitle: 配置 CI
+description: 在 GitHub Actions、Vercel 部署、GitLab CI/CD、Expo Workflows、Bitrise、Codemagic、Norrix 或任何支持 Node 的 CI 服务上运行 e2e。
+"og:image": "https://e2e.com/docs/images/og/ci.png?v=01be716140"
+"twitter:image": "https://e2e.com/docs/images/og/ci.png?v=01be716140"
+---
+
+e2e 可在支持 Node 24.8 或更高版本（Node 22 需使用 22.22.3 或更高版本）的任何 CI 服务上运行，网页端测试也可使用 [Bun](/reference/cli#bun) 1.4.3 或更高版本。每个作业都会安装依赖项、启动应用或设备、运行测试，然后上传 `.e2e/`。
+
+## 选择 CI 服务
+
+<CardGroup cols={2}>
+  <Card title="GitHub Actions" icon="/images/integrations/github-actions.svg" href="/ci/github-actions">
+    网页端和移动端工作流。将结果发布为拉取请求（PR）评论。
+  </Card>
+  <Card title="Vercel Previews" icon="/images/integrations/vercel.svg" href="/ci/vercel-previews">
+    测试每次部署，等待测试通过后再发布到生产环境。
+  </Card>
+  <Card title="GitLab CI/CD" icon="/images/integrations/gitlab.svg" href="/ci/gitlab">
+    网页端和移动端作业。在合并请求中显示结果。
+  </Card>
+  <Card title="Expo Workflows" icon="/images/integrations/expo.svg" href="/ci/eas-workflows">
+    使用 Expo Build 构建 Expo 应用，然后对其运行 iOS 和 Android 测试。
+  </Card>
+  <Card title="Bitrise" icon="/images/integrations/bitrise.svg" href="/ci/bitrise">
+    使用 Bitrise 的模拟器步骤运行 iOS 和 Android 工作流。
+  </Card>
+  <Card title="Codemagic" icon="/images/integrations/codemagic.svg" href="/ci/codemagic">
+    在 Mac mini 和 Linux 实例上运行 iOS 和 Android 工作流。
+  </Card>
+  <Card title="Norrix" icon="/images/integrations/norrix.png" href="/ci/norrix">
+    使用 Norrix 构建 NativeScript 应用，然后在 Norrix 模拟器上运行其测试套件。
+  </Card>
+</CardGroup>
+
+对于其他 CI 服务，复制 [GitHub Actions](/ci/github-actions) 工作流即可。要从托管服务租用浏览器或设备，请参阅[托管浏览器和设备](/integrations)。
+
+## 上传报告
+
+在每个作业结束时上传 `.e2e/`，测试失败时也要上传。它包含：
+
+| 路径 | 内容 |
+| --- | --- |
+| `report.json` | 每次进入测试执行阶段的运行所生成的运行报告 |
+| `junit.xml` | 使用 `junit` 报告器（`--reporter list,junit`）时：测试结果、被[测试过滤器](/filters)排除并标为跳过的测试，以及 `run` 套件中的 `APP_UNREACHABLE` 等启动失败信息 |
+| `results/` | 每个测试的追踪记录页面、截图和屏幕转储。使用 `--video` 时，还会包含每个支持录制的引擎测试目标的视频 |
+
+将 CI 服务的测试报告集成指向 `.e2e/junit.xml`。在 GitLab 上，`junit.xml` 还会链接每张失败截图，使其显示在测试报告中。[`output`](/reference/config#output) 选项可更改 `.e2e/` 的位置。
+
+## 模型凭据
+
+为作业提供模型提供方所需的凭据，例如 `AI_GATEWAY_API_KEY`（参阅[模型](/models)）。从不使用 `agent` 的测试不需要凭据。
+
+<Warning>
+每个拥有密钥的作业都会将密钥交给它运行的代码：测试、配置和依赖项。只向可信分支的构建提供密钥。运行不可信拉取请求（PR）的代码时，不要提供机密值或写入令牌。参阅[安全](/security)。
+</Warning>
+
+将密钥保存在 CI 机密值中，并尽可能设置消费限额。GitHub 不会向来自 fork 的拉取请求（PR）提供机密值。
+
+## CI 模式的变化
+
+当 `CI` 的值不是空字符串、`0` 或 `false` 时，CI 模式会开启。要在本地使用这些默认值，运行 `CI=1 npx e2e run`：
+
+| 设置 | 本地 | CI |
+| --- | --- | --- |
+| `retries` | `0` | `1` |
+| `workers` | CPU 核心数的一半 | `1` |
+| 未设置时的 `cache` | `read-write` | `read-only` |
+| `.only` | 允许 | 以 `ONLY_IN_CI` 拒绝 |
+| `command.reuseExisting` | 生效 | 忽略，并显示提示 |
+
+使用标志更改工作进程和重试的默认值：
+
+<CodeGroup>
+```bash npm
+npx e2e run --workers 4 --retries 0
+```
+
+```bash pnpm
+pnpm exec e2e run --workers 4 --retries 0
+```
+
+```bash bun
+bunx e2e run --workers 4 --retries 0
+```
+</CodeGroup>
+
+要禁止 CI 发送[遥测](/telemetry#in-ci)，请在作业的 `env` 中添加 `E2E_TELEMETRY_DISABLED: '1'`。
+
+## 移动端作业
+
+不使用[托管设备服务](/mobile#hosted-devices)时，每个平台都需要各自的机器、构建和设备：
+
+| | iOS | Android |
+| --- | --- | --- |
+| 机器 | 安装了 Xcode 和模拟器运行时的 macOS | 支持 KVM（嵌套虚拟化）的 Linux |
+| 构建 | Release 模拟器 `.app`，无需签名 | Release `.apk` |
+| 设备 | 已启动的 iOS 模拟器 | 已启动的 Android 模拟器 |
+
+两个平台都应使用 Release 构建。React Native 或 Expo 的调试构建会从 Metro 加载 JavaScript，而这些作业不会启动 Metro，因此应用打开后会显示错误页面。示例使用仓库中包含 `ios/` 和 `android/` 的 React Native 项目。如果 Expo 项目没有这两个目录，请先运行 `npx expo prebuild`。
+
+安装构建产物，然后运行测试套件：
+
+<CodeGroup>
+```bash npm
+# iOS
+xcrun simctl install booted path/to/MyApp.app
+npx e2e run --target ios --reporter list,junit
+
+# Android
+adb install -r path/to/app.apk
+npx e2e run --target android --reporter list,junit
+```
+
+```bash pnpm
+# iOS
+xcrun simctl install booted path/to/MyApp.app
+pnpm exec e2e run --target ios --reporter list,junit
+
+# Android
+adb install -r path/to/app.apk
+pnpm exec e2e run --target android --reporter list,junit
+```
+
+```bash bun
+# iOS
+xcrun simctl install booted path/to/MyApp.app
+bunx e2e run --target ios --reporter list,junit
+
+# Android
+adb install -r path/to/app.apk
+bunx e2e run --target android --reporter list,junit
+```
+</CodeGroup>
+
+这些命令假设存在两个名为 `ios` 和 `android` 的测试目标，均使用 `mobile()` 引擎，并配置了应用的 `bundleId`。参阅[指向你的应用](/mobile#point-at-your-app)。要让测试套件安装构建产物，请设置 `app.appPath` 并调用 `device.installApp()`。
+
+以下规则适用于所有服务：
+
+- **每个平台使用一个作业。** 在 Mac 上运行 `--target ios`，在支持 KVM 的 Linux 上运行 `--target android`。托管 Mac 使用 Apple Silicon，不支持嵌套虚拟化，因此无法在其上启动 Android 模拟器。
+- **在独立步骤中启动设备。** 如果没有已启动的设备，引擎会请求 agent-device 启动一个，但新的 Linux 运行器没有模拟器镜像。独立步骤也便于区分启动失败和测试失败。
+- **固定 iOS 运行时。** 按名称（`iPhone 17`）选择的模拟器会运行镜像默认的 iOS，而不同 iOS 版本的无障碍树可能不同。因此，即使代码没有变化，运行器镜像更新也可能导致定位器断言失败。示例会在指定的运行时上创建模拟器，再通过 UDID 启动。请将 `iOS-26-5` 替换为镜像中已有的运行时（`xcrun simctl list runtimes`）。
+- **缓存 `~/.agent-device/apple-runner/derived`。** agent-device 首次操作模拟器时，会在那里构建 XCUITest 运行器。不要缓存整个 `~/.agent-device`。其余内容是上一次守护进程的状态，恢复这些状态可能导致下一次运行因 `Failed to communicate with daemon` 而停止。
+- **回放本地录制。** 回放缓存键包含应用信息，不包含设备信息，因此在你的模拟器上录制的步骤可以在 CI 模拟器上回放。[提交回放缓存](/cache#commit-the-replay-cache)。
+
+## 将测试设为拉取请求（PR）的合并条件
+
+任何非零退出码都会使作业失败，包括智能体步骤失败的情况。要在运行失败时阻止合并，将 e2e 作业设为必需检查。[调试运行](/debugging#read-the-failure)列出了每个退出码，以及重新运行作业是否有帮助。
+
+要让检查结果保持可预期：
+
+- 每次 `agent.act` 只指定一个[原子目标](/core-concepts#goals)，然后用定位器断言或 `agent.assert` 检查结果。
+- [提交回放缓存](/cache#commit-the-replay-cache)。回放的 `agent.act` 不会调用模型。使用内置智能体时，缓存未命中、交接处理，以及每次智能体判定（`agent.assert`、`agent.waitFor`、`agent.extract`）都会调用模型。
+- 留意不稳定测试。只有在 CI 重试时才通过的测试，会在报告中标为不稳定测试。
+- 添加 `--max-failures <n>`，在达到指定失败测试数后停止运行，避免有问题的部署在剩余每个步骤上都消耗模型调用。作业会以退出码 1 结束。
+- 添加 `--max-duration <ms>` 以限制测试运行时间；计时从测试开始时启动，不包含应用启动过程。作业会以退出码 1 结束。
+
+## 只运行受影响的测试
+
+在拉取请求（PR）中传入 `--changed-since`，让[测试过滤器](/filters)排除不太可能受变更影响的测试。当过滤器像决策过滤器一样为测试评分时，每个测试目标会优先运行最可能失败的测试所在的文件。不传入该标志时，例如在 `main` 上，会运行整个测试套件。参阅[添加决策过滤器](/filters#add-the-decision-filter)。
+
+CI 默认使用一个工作进程，此时文件仅按相关性分组排序，同组文件按收集顺序排列：e2e 只会在工作进程多于一个时读取[耗时历史](#cache-the-timings-history)。参阅[优先运行最相关的测试](/filters#start-the-likeliest-first)。
+
+## 缓存耗时历史
+
+当工作进程多于一个时，`e2e run` 会先运行没有耗时记录的文件，再按耗时从长到短运行其他文件，排序依据为 `<output>/timings.json`（默认为 `.e2e/timings.json`）。这个文件只有几 KB，只要一次运行完整执行了至少一个文件，就会更新它。全新的 CI 检出目录中没有该文件，因此应在运行前从 CI 缓存中恢复，运行后再保存。[GitHub Actions](/ci/github-actions#cache-the-timings-history) 中提供了对应步骤。
+
+- 该文件仅供参考。如果缺失、损坏或无效，就视为没有历史记录，运行会回退到之前的 `report.json`。恢复的文件可以改变文件执行顺序，但不会改变结果。
+- 只有完整执行一个文件，运行才会记录其耗时。使用 `--grep` 或 `--last-failed` 时，部分执行的文件所对应的条目保持不变。
+- CI 默认使用一个工作进程。设置 [`workers`](/reference/config#workers) 或传入 `--workers` 才能利用耗时历史。
+- 按分支设置缓存键，以 `main` 作为回退，这样新的拉取请求（PR）就能从 `main` 的历史记录开始。使用[分片](#sharding)时，将分片索引加入缓存键。
+- `--timings <file>` 可以读取和写入其他路径。
+
+## 分片
+
+`--shard <index/total>` 运行测试套件的一部分。每个作业使用各自的索引运行同一条命令，每台机器都以相同方式划分套件。没有测试的分片会以 `NO_TESTS` 失败。如果矩阵可能包含比测试数量更多的分片，请添加 `--pass-with-no-tests`。[CLI 参考](/reference/cli#flags)中提供了划分规则。
+
+在 GitHub Actions 上，通过矩阵为每个分片运行一个作业：
+
+```yaml
+jobs:
+  e2e:
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3]
+    steps:
+      # ...
+      - run: npx e2e run --shard ${{ matrix.shard }}/3 --reporter list,junit
+```
+
+上传每个分片的 `report.json` 和 `junit.xml` 时，使用包含分片索引的名称。e2e 目前还不能合并分片报告。
+
+## 重新运行失败的测试
+
+`--last-failed` 从输出目录中的 `report.json` 读取结果，只运行上次未通过的测试。在首次运行所在的同一个步骤中执行它：
+
+```yaml
+      - run: npx e2e run || npx e2e run --last-failed
+```
+
+重新运行会保留首次运行的产物，并将本次产物写入每个测试目录下的 `rerun-<n>/`，因此一次上传即可包含两次运行的产物。[CLI 参考](/reference/cli#flags)列出了哪些情况算作未通过。
+
+单独的作业在其运行器上没有报告。请先将报告下载到输出目录，或重新运行失败的作业。
+
+## 下一步
+
+<CardGroup cols={2}>
+  <Card title="拉取请求（PR）评论" icon="code-pull-request" href="/github">
+    每次运行一条评论，重新运行时原地更新。
+  </Card>
+  <Card title="CLI 参考" icon="terminal" href="/reference/cli">
+    标志、报告器和所有退出码。
+  </Card>
+</CardGroup>

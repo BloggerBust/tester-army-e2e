@@ -50,7 +50,7 @@ test.describe('chain', () => {
 });
 
 const leaky = base.extend<{ leaky: string }>({
-  leaky: async (_fixtures, use) => {
+  leaky: async ({}, use) => {
     await use('leaky');
     throw new Error('teardown boom');
   },
@@ -66,15 +66,6 @@ const silent = base.extend<{ silent: string }>({
 });
 silent('never calls use', async ({ silent }) => {
   log('unreachable:' + silent);
-});
-
-const clash = base.extend<{ gadget: string }>({
-  gadget: async (_fixtures, use) => {
-    await use('not the gadget');
-  },
-});
-clash('redefines an engine fixture', async ({ gadget }) => {
-  log('unreachable:' + String(gadget));
 });
 `;
       const logPath = path.join('/tmp', `e2e-extend-${Date.now()}.log`);
@@ -104,12 +95,6 @@ clash('redefines an engine fixture', async ({ gadget }) => {
       expect(silent.attempts[0]!.error?.phase).toBe('beforeEach');
       expect(silent.attempts[0]!.error?.code).toBe('TEST_SETUP_FAILED');
       expect(silent.attempts[0]!.error?.message).toContain('fixture "silent" returned without calling use()');
-
-      const clash = resultByTitle(outcome, 'redefines an engine fixture');
-      expect(clash.status).toBe('failed');
-      expect(clash.attempts[0]!.error?.phase).toBe('beforeEach');
-      expect(clash.attempts[0]!.error?.code).toBe('TEST_SETUP_FAILED');
-      expect(clash.attempts[0]!.error?.message).toContain('fixture "gadget" is contributed by engine fake');
 
       expect(readFileSync(logPath, 'utf8').trim().split('\n')).toEqual([
         'setup:first:fake',
@@ -143,22 +128,22 @@ import { test as base } from 'e2e';
 const log = (entry: string) => appendFileSync(process.env.HOOK_LOG!, entry + '\\n');
 
 const test = base.extend<{ slow: string }>({
-  slow: async (_fixtures, use) => {
+  slow: async ({}, use) => {
     log('setup:slow');
     await new Promise((resolve) => setTimeout(resolve, 1000));
     await use('slow');
     log('teardown:slow');
   },
 }).extend<{ later: string }>({
-  later: async (_fixtures, use) => {
+  later: async ({}, use) => {
     log('unreachable:later');
     await use('later');
   },
 });
 
 test.beforeEach(() => log('unreachable:beforeEach'));
-test('times out in setup', { timeout: 500 }, async () => {
-  log('unreachable:body');
+test('times out in setup', { timeout: 500 }, async ({ slow, later }) => {
+  log('unreachable:body:' + slow + later);
 });
 `;
       const logPath = path.join('/tmp', `e2e-extend-late-${Date.now()}.log`);

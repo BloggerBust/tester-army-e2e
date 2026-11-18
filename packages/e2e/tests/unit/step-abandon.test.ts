@@ -1,4 +1,4 @@
-/** StepRecorder.abandonRunning: the steps a test body returned without awaiting. */
+/** StepRecorder.abandonRunning: the steps a test body, a hook, or a fixture returned without awaiting. */
 
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
@@ -90,6 +90,27 @@ describe('StepRecorder.abandonRunning', () => {
     await step;
     expect(steps.all()[0]?.status).toBe('failed');
     expect(steps.lastVerifiedStepIndex).toBe(-1);
+  });
+
+  it('names the code that started the step, not the code that runs when it is found', async () => {
+    const { steps } = recorder();
+    const left = gate();
+    const notAwaited = (owner: string, call: string): string => `${owner} returned before ${call} finished; put \`await\` in front of every step call`;
+    steps.owner = 'the beforeEach hook';
+    const inHook = steps.run('app', 'app.open', '/', () => left.promise);
+    steps.owner = 'the fixture "account" setup';
+    const inFixture = steps.run('app', 'app.reload', '', () => left.promise);
+    steps.owner = 'the test body';
+    await steps.run('app', 'app.back', '', async () => {});
+
+    expect(steps.abandonRunning()?.message).toBe(notAwaited('the beforeEach hook', 'app.open "/" and 1 more'));
+    expect(steps.all().map((step) => step.error?.message)).toEqual([
+      notAwaited('the beforeEach hook', 'app.open "/" and 1 more'),
+      notAwaited('the fixture "account" setup', 'app.reload'),
+      undefined,
+    ]);
+    left.open();
+    await Promise.all([inHook, inFixture]);
   });
 
   it('names the first step and counts the rest', async () => {

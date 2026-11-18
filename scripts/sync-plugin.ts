@@ -1,9 +1,9 @@
 /**
- * Copy the maintained skills into the shared Claude, Codex, Cursor, and GitHub
- * Copilot plugin. Each skill's agents/openai.yaml and the plugin's assets belong
+ * Copy the maintained skills into the shared Claude, Codex, Cursor, GitHub
+ * Copilot, and Devin plugin. Each skill's agents/openai.yaml and the plugin's assets belong
  * to the plugin; every other skill file, the license, every manifest's version
  * (the runner's, so plugin installs update with each release), the Claude,
- * Cursor, and Agent Plugins manifests (from Codex's), and .mcp.json and
+ * Cursor, Devin, and Agent Plugins manifests (from Codex's), and .mcp.json and
  * mcp.json, which pin the MCP server's `npx` launcher to that version, are
  * generated here. `version-packages`
  * runs it after `changeset version`. Use --check in CI to report missing,
@@ -137,6 +137,24 @@ generated.set(
 generated.set(join(plugin, 'LICENSE'), readFileSync(join(root, 'LICENSE')));
 // Claude's plugin directory refuses a launcher that fetches an unpinned package.
 const server = { command: 'npx', args: ['-y', `e2e@${runner.version}`, 'mcp'] };
+// Devin's marketplace card (https://github.com/CognitionAI/devin-marketplace): a description
+// without a trailing period, a short one of 40 characters or fewer, a logo path inside the
+// plugin, a category as the keyword, and the MCP server inline.
+generated.set(
+  join(plugin, '.devin-plugin/plugin.json'),
+  json({
+    name: versioned.name,
+    version: versioned.version,
+    displayName: codexManifest.interface.displayName,
+    description: versioned.description.replace(/\.$/, ''),
+    shortDescription: codexManifest.interface.shortDescription,
+    homepage: versioned.homepage,
+    repository: versioned.repository,
+    logo: codexManifest.interface.logo.replace(/^\.\//, ''),
+    keywords: ['Development Tools'],
+    mcpServers: { e2e: server },
+  }),
+);
 generated.set(join(plugin, '.mcp.json'), json({ mcpServers: { e2e: server } }));
 // The Agent Plugins MCP config Copilot reads: its own $schema and an explicit transport type.
 generated.set(

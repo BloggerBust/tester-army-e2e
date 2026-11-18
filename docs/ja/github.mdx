@@ -1,0 +1,184 @@
+---
+title: プルリクエストへのコメント
+sidebarTitle: GitHub PR コメント
+description: "@e2e-dev/github レポーターが GitHub Actions から実行ごとにひとつのコメントを投稿し、再実行時に更新します。"
+"og:image": "https://e2e.com/docs/images/og/github.png?v=be9fcc65d9"
+"twitter:image": "https://e2e.com/docs/images/og/github.png?v=be9fcc65d9"
+---
+
+`@e2e-dev/github` は、GitHub Actions からテスト結果をプルリクエストのコメントとして投稿し、ジョブサマリーにも書き込むレポーターです。再実行すると同じコメントを更新します。
+
+## セットアップ
+
+<CodeGroup>
+```bash npm
+npm install --save-dev @e2e-dev/github
+```
+
+```bash pnpm
+pnpm add -D @e2e-dev/github
+```
+
+```bash bun
+bun add -d @e2e-dev/github
+```
+</CodeGroup>
+
+```ts title="e2e.config.ts"
+import type { E2EConfig } from 'e2e';
+import { web } from '@e2e-dev/web';
+import { github } from '@e2e-dev/github';
+
+export default {
+  targets: [{ engine: web(), app: { url: 'http://localhost:3000' } }],
+  reporters: ['list', github()],
+} satisfies E2EConfig;
+```
+
+ワークフローに `pull-requests: write` 権限を付けます。テストのステップに `GITHUB_TOKEN` を渡してください。
+
+```yaml title=".github/workflows/e2e.yml"
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  e2e:
+    steps:
+      # ...checkout, install, browsers
+      - name: Run e2e
+        run: npx e2e run --reporter list,junit
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+      - name: Upload artifacts
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: e2e-artifacts
+          path: .e2e/results
+```
+
+リトライで成功した場合も、アーティファクトをアップロードしてください。各失敗の証拠へのリンクは、その実行の Artifacts セクションを開きます。ダウンロードしたファイルのテスト別ディレクトリがレポートと一致するよう、`path: .e2e/results` を維持してください。
+
+ソースへのリンクは、`GITHUB_WORKSPACE` 内で最も近い `.git` を持つディレクトリを起点にします。`packages/e2e-tests` のようにその下にあるプロジェクトでは、そのパスを含むリンクになります。`path` 入力を指定した `actions/checkout` にも対応します。
+
+## コメントの内容
+
+```markdown expandable
+### 🔴 e2e: 1 failed, 1 flaky, 3 passed, 1 skipped
+9 agent steps · 4 replayed from cache · 31 model calls · 128k tokens (62% cached) · $0.31
+
+**🔴 billing › upgrades to Pro**  
+[tests/billing.e2e.ts:12](https://github.com/acme/shop/blob/1a2b3c/tests/billing.e2e.ts#L12)
+
+**ASSERTION_FAILED** at step 4 of 6: `agent.act` "Pick the Pro plan and pay", after 38.0s and 12 model calls
+
+> expected heading "Your cart" to be visible
+> The Pay button opened a page that still shows the Free plan.
+
+- Failed the same way on both attempts: **ASSERTION_FAILED** at step 4.
+- Turn 9: `tap({"target":"n41"})` → Screen changed: /checkout/plan. New: #n50 heading "Free plan"
+- Screen: `/checkout/plan`
+
+Evidence: [screenshot](https://github.com/acme/shop/actions/runs/123#artifacts), [video](https://github.com/acme/shop/actions/runs/123#artifacts)
+
+<details>
+<summary>⚠️ 1 flaky test passed on a retry</summary>
+
+**⚠️ invite a member by email**  
+[tests/team.e2e.ts:21](https://github.com/acme/shop/blob/1a2b3c/tests/team.e2e.ts#L21)
+
+**STEP_TIMEOUT** at step 3 of 3: `agent.waitFor` "the invitation email", after 30.0s
+
+> the invitation email took too long
+
+Evidence: [screenshot](https://github.com/acme/shop/actions/runs/123#artifacts)
+</details>
+
+<details>
+<summary>All 6 tests in 5 files</summary>
+
+| | Test | Agent | Time |
+| --- | --- | --- | --- |
+| 🔴 | **tests/billing.e2e.ts** · 1 failed | 3 steps · 19 calls | 41.2s |
+| 🔴 | billing › upgrades to Pro | 3 steps · 19 calls | 41.2s |
+| ⚠️ | **tests/team.e2e.ts** · 1 flaky | 1 step | 6.4s |
+| ⚠️ | invite a member by email (1 failed attempt first) | 1 step | 6.4s |
+...
+</details>
+
+<sub>Tested by [e2e](https://e2e.com) 0.13.0 · 2m 15s · web · [run artifacts](https://github.com/acme/shop/actions/runs/123#artifacts)</sub>
+```
+
+実行全体のエラーがある場合は、テストの失敗より先に表示されます。テスト一覧のエージェント列は、実行でエージェントを使った場合にだけ表示されます。
+
+[テストフィルター](/filters)がテストを除外した場合、見出しにも `e2e: 7 passed, 35 left out by filters` のように示されるため、スイート全体の結果と誤解することはありません。テスト一覧の上には、`12 files changed since abc1234` のように、フィルターが判定した変更を示す行が表示されます。その後、各フィルターが残したテスト数が 1 行ずつ表示され、折りたたみ表に除外された各テストとその理由が並びます。変更ファイルがないなど、フィルターを実行しなかった場合は、その理由が表示されます。
+
+大きなレポートは、GitHub のコメント上限に収まるように短縮されます。GitHub がメンション、Issue リンク、URL に変換するアプリ内のテキストはコードとして表示されるため、画面に `@someone` があっても通知は送られません。組み込みの `markdown` レポーターは、同じサマリーを `.e2e/summary.md` に書き込みます。
+
+## 失敗したテストを再実行する
+
+`--last-failed` による再実行は、最初の実行と合わせたひとつの実行としてコメントを更新し、スイート全体を報告します。
+
+```yaml
+      - name: Run e2e
+        run: npx e2e run || npx e2e run --last-failed
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+```
+
+| 最初の結果 | 再実行の結果 | コメントの表示 |
+| --- | --- | --- |
+| 失敗 | 成功 | flaky |
+| 失敗 | 失敗 | failed |
+| 中断 | 成功 | passed |
+| その他 | 実行なし | 最初の結果 |
+
+最初の実行のフィルター情報と除外されたテストは、コメントに残ります。
+
+再実行すべきものが残っている間、コメントは赤のままです。対象には、失敗したテスト、`--max-failures` や `--max-duration` により実行前に止まったテスト、別のフィルターが対象テストを除外したために再確認できなかった失敗済みの `beforeAll` や `afterAll` が含まれます。最初の実行で完了しなかったテストを再実行から除外した場合は、⏹️ を表示します。再実行自身の終了コードは、実際に再実行したものだけで決まります。各試行の証拠へのリンクは、その試行自身のファイルを指します。
+
+## マトリックスジョブ
+
+レポーターは、プロジェクト、ワークフロー、ジョブで自分のコメントを見つけます。マトリックスジョブではそれらが共通するため、各エントリーに固有の `key` を指定してください。
+
+```ts
+reporters: ['list', github({ key: process.env.MATRIX_BROWSER })],
+```
+
+ステップの `env` に `MATRIX_BROWSER: ${{ matrix.browser }}` を設定します。キーは、`e2e chromium: 77 passed` のように見出しに表示されます。再実行時に既存のコメントを更新できるよう、キーは実行間で変えないでください。
+
+## 探索
+
+[`e2e explore`](/explore) の実行は、独立したコメントを投稿します。そのため、ひとつのジョブでテストを実行してから探索できます。探索には `npx e2e explore --output .e2e-explore` のように専用の `--output` を指定し、そのディレクトリもアップロードしてください。指定しないとテスト実行の結果を置き換え、テストのコメントにある証拠へのリンクが切れます。
+
+## 投稿されない場合
+
+レポーターは、実行のステータスや終了コードを変更しません。投稿できない場合は、サマリーの下に理由が 1 行表示されます。
+
+```
+       GitHub  not posted: set GITHUB_TOKEN in the step's env (GITHUB_TOKEN: ${{ github.token }}); written to the job summary
+```
+
+| 状況 | 動作 |
+| --- | --- |
+| GitHub Actions 上ではない | 何も書き込みません。その旨を表示します。 |
+| `push`、`schedule`、`workflow_dispatch` の実行 | ジョブサマリーに書き込みます。コメント先のプルリクエストはありません。 |
+| ステップの `env` に `GITHUB_TOKEN` がない | ジョブサマリーに書き込みます。追加すべき行を表示します。レポーターは `GH_TOKEN` も読み取ります。 |
+| フォークからの `pull_request` イベント | トークンが読み取り専用なので投稿に失敗します。理由を表示します。 |
+| `issue_comment` イベント | プルリクエストのスレッドでは、チェックアウトしたコミットがデフォルトブランチ上にあるため、コメントにソースへのリンクを付けません。 |
+| `pull-requests: write` がない | 投稿に失敗し、必要な権限を示します。 |
+| GitHub API のレート制限 | 投稿を停止し、制限に達したことを報告します。リセット時刻または `Retry-After` を待ってからジョブを再実行してください。 |
+
+レポーターは実行終了時にトークンを読み取り、レポートには含めません。GitHub Enterprise Server では `GITHUB_SERVER_URL` と `GITHUB_API_URL` を使います。
+
+## 次のステップ
+
+<CardGroup cols={2}>
+  <Card title="GitHub Actions" icon="/images/integrations/github-actions.svg" href="/ci/github-actions">
+    インストール、ブラウザ、キャッシュ、アーティファクトを含むワークフロー全体を確認します。
+  </Card>
+  <Card title="実行をデバッグする" icon="magnifying-glass" href="/debugging">
+    各失敗からリンクされるトレースページを読みます。
+  </Card>
+</CardGroup>

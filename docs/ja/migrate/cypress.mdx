@@ -1,0 +1,179 @@
+---
+title: Cypress からの移行
+description: data-cy 属性を維持しながら、Cypress のコマンドチェーンを非同期テストに置き換えます。
+"og:image": "https://e2e.com/docs/images/og/migrate/cypress.png?v=e4e71f42dc"
+"twitter:image": "https://e2e.com/docs/images/og/migrate/cypress.png?v=e4e71f42dc"
+---
+
+import { SetupPrompt } from '../../snippets/setup-prompt-card.jsx';
+
+export const migrationPrompt = `このプロジェクトの Cypress テストを、spec を 1 つずつ e2e に移行してください。ドキュメント: \`https://e2e.com/docs/migrate/cypress.md\`
+
+1. 上記の移行ガイドを読んでください。Cypress の設定、コマンド、アサーションと e2e の対応、および e2e にまだない機能が載っています。
+2. プロジェクトに e2e 設定（\`e2e.config.ts\`、\`.mts\`、\`.js\`、\`.mjs\`）がなければ、\`npx e2e init --yes\`（または pnpm、bun の同等のコマンド）を実行してください。設定とサンプルテストを書き出しますが、この時点では何もインストールしません。
+3. e2e スキルを読み、以降のすべての手順で従ってください。\`npx e2e guide\` でスキル全体、\`npx e2e guide <topic>\` で各トピックを表示できます。
+4. init を実行した場合は、エージェントのステップに使うモデルを私に確認してください。ChatGPT、GitHub Copilot、OpenCode Console、SuperGrok のサブスクリプション、API キー、ローカルモデルから選びます。対応するプロバイダーパッケージで設定してください。サインインが必要なら、\`npx e2e login\` のコマンドを示し、私の確認を待ってください。
+5. \`cypress.config.*\` を e2e の設定に移してください。\`baseUrl\` と開発サーバーのコマンドはターゲットの \`app\` にします。spec が \`data-cy\` で要素を選ぶ場合は、\`web({ testIdAttribute: 'data-cy' })\` を設定し、\`screen.getByTestId\` で読めるようにしてください。両方のスイートを動かす間は、Cypress をインストールしたままにしてください。
+6. 依存関係をインストールしてください。
+7. Cypress の E2E spec を一覧にして、最初に移すものを私に確認してください。よく壊れるものや、\`cy.wait(ms)\` で待機するものを提案してください。コンポーネントテストに対応する e2e の機能はないため、Cypress に残してください。
+8. ガイドの表を使い、その spec を \`tests/\` 内の \`.e2e.ts\` に書き換えてください（e2e のデフォルトは \`tests/**/*.e2e.ts\` です）。各行で 1 つの呼び出しを await してください。移す前に「e2e にまだない機能」を確認し、「現在使える方法」を採用するか、テストを Cypress に残して理由を説明してください。\`cy.contains\` が部分一致していた箇所には \`{ exact: false }\` を渡してください。各 \`cy.wait(ms)\` を、待っている状態へのアサーションに置き換えてください。
+9. ページ遷移と最終的な検証は、\`app.open()\` とロケーターアサーションで決定論的に保ってください。決め打ちの操作列が頻繁に壊れる箇所には、代わりに \`agent.act\` の目標を提案してください。
+10. \`npx e2e run <file>\` で新しいファイルを実行し、成功するまで修正してください。削除してよいと私が確認するまで、Cypress の spec は残してください。
+11. 移したテスト、Cypress に残したテスト、それぞれの理由をまとめてください。`;
+
+e2e は、Cypress のコマンドチェーンを、Node 上で動く非同期の TypeScript テストに置き換えます。両方のスイートをプロジェクトに残したまま、spec を 1 つずつ移行できます。
+
+<SetupPrompt>
+
+<Prompt description={migrationPrompt} children={migrationPrompt} actions={["copy", "cursor"]} />
+
+</SetupPrompt>
+
+複数セッションにわたる移行では、[`migrate-to-e2e` スキル](/coding-agents#migrate-an-existing-suite)が移行状況を進捗ファイルに記録し、各テストを廃止するまで旧スイートを動かし続けます。
+
+## 設定を移す
+
+<Note>[クイックスタート](/quickstart)で e2e をインストールし、モデルを設定してください。以下の例ではエージェントを呼び出します。</Note>
+
+| Cypress | e2e |
+| --- | --- |
+| `baseUrl`, `start-server-and-test` | ターゲットの `app: { url, command }`。[アプリの起動](/web#starting-your-app)を参照 |
+| `data-cy` セレクター | `web({ testIdAttribute: 'data-cy' })` を設定し、`screen.getByTestId` を使用 |
+| `viewportWidth`, `viewportHeight`, `cy.visit(url, { auth, headers })` | `web({ viewport, basicAuth, headers })` |
+| `retries: { runMode: 2, openMode: 0 }` | `retries: process.env.CI ? 2 : 0`。数値のみ |
+| `env`, `Cypress.env()`, `cypress.env.json` | `process.env`。サインインの値は `credentials` と `secrets`。[認証](/authentication)を参照 |
+| `cypress run --browser firefox` | `web({ browser: 'firefox' })` のターゲットを作り、`--target <name>` で実行 |
+
+```ts title="e2e.config.ts"
+import type { E2EConfig } from 'e2e';
+import { web } from '@e2e-dev/web';
+
+export default {
+  targets: [{
+    engine: web({ testIdAttribute: 'data-cy' }),
+    app: { url: 'http://localhost:3000' },
+  }],
+} satisfies E2EConfig;
+```
+
+## spec を 1 つ書き換える
+
+```js title="Cypress"
+describe('todos', () => {
+  it('completes one', () => {
+    cy.visit('/todos');
+    cy.get('[data-cy=new-todo]').type('Buy milk{enter}');
+    cy.get('[data-cy=new-todo]').type('Walk the dog{enter}');
+    cy.contains('li', 'Buy milk').find('[data-cy=toggle]').click();
+    cy.get('[data-cy=todo]').should('have.length', 2);
+    cy.contains('1 item left').should('be.visible');
+  });
+});
+```
+
+```ts title="e2e"
+import { describe, test } from '@e2e-dev/web';
+import { expect } from 'e2e';
+
+describe('todos', () => {
+  test('completes one', async ({ app, agent, screen }) => {
+    await app.open('/todos');
+    await agent.act('add todos "Buy milk" and "Walk the dog"');
+    await expect(screen.getByTestId('todo')).toHaveCount(2);
+    await agent.act('complete "Buy milk"');
+    await expect(screen.getByText('1 item left')).toBeVisible();
+  });
+});
+```
+
+## コマンドを対応付ける
+
+| Cypress | e2e |
+| --- | --- |
+| `cy.visit(path)`, `cy.reload()`, `cy.viewport(w, h)`, `cy.setCookie()` | `app.open(path)`、`browser.reload()`、`browser.setViewport({ width, height })`、`browser.setCookies()` |
+| `cy.get('[data-cy=x]')`, `.find('[data-cy=x]')` | `screen.getByTestId('x')`、`row.getByTestId('x')` |
+| `cy.get('css')` | Web 専用の `browser.locator('css')`。ロールやラベルを優先 |
+| `cy.contains('text')`, `cy.contains('li', 'text')` | `screen.getByText('text', { exact: false })`、`screen.getByRole('listitem').filter({ hasText: 'text' })` |
+| `.click()`, `.dblclick()`, `.clear()`, `.check()`, `.uncheck()`, `.focus()`, `.first()`, `.last()`, `.scrollIntoView()` | 同じ |
+| `.rightclick()`, `.eq(n)`, `.selectFile(path)` | `.secondaryTap()`、`.nth(n)`、`.setInputFiles(path)` |
+| `.type('text')`, `.type('{enter}')`, `.clear().type('text')` | キーイベント付きで追記する `.pressSequentially('text')`、`.press('Enter')`、`.fill('text')` |
+| `.select('Pro')` | `.selectOption('Pro')` はラベルと照合。値なら `{ value: 'pro' }`、インデックスなら `{ index: 1 }` |
+| `.should('be.visible')`, `be.checked`, `be.disabled`, `be.focused`, `exist` | `await expect(locator).toBeVisible()`、`toBeChecked()`、`toBeDisabled()`、`toBeFocused()`、`toBeAttached()` |
+| `have.text`, `contain`, `have.value`, `have.attr`, `have.length`, `not.exist` | `toHaveText`、`toContainText`、`toHaveValue`、`toHaveAttribute`、`toHaveCount(n)`、`toHaveCount(0)` |
+| `cy.url().should('include', p)`, `cy.title()` | `expect(browser).toHaveURL(/p/)`、`expect(browser).toHaveTitle(t)` |
+| `cy.intercept('/api/users', body)` | `browser.route('**/api/users', route => route.fulfill({ json: body }))`。URL 全体に対する glob |
+| `cy.on('window:confirm')`, `cy.on('window:alert')` | 操作前に `await browser.onDialog('accept')`。キャンセルには `'dismiss'` |
+| `cy.session` | `test.setup` と `{ session }` |
+| `cy.task`, `cy.exec`, `cy.request`, `cy.fixture` | Node のコード: `fetch`、`fs`、データベースクライアント、`import data from './fixture.json'` |
+| `Cypress.Commands.add` | 関数、または `test.extend` のフィクスチャ |
+
+## e2e にまだない機能
+
+「計画済み」はロードマップに載っています。「未対応」は日程が未定です。「対応予定なし」は意図的に含めていません。
+
+### 計画済み
+
+| Cypress | 現在使える方法 |
+| --- | --- |
+| `.find('css')`, `.filter('css')`, `.not('css')` | `getBy*` クエリを連結、または `browser.locator('li.active >> .title')` のような単一のセレクター |
+| `.invoke()`, `.its()`, `.then($el => ...)`, `.should($el => ...)` | `getAttribute()`、`textContent()`、`inputValue()`、それ以外は `browser.evaluate`。リトライには `expect.poll` で包む |
+| `have.class`, `have.css`, `have.prop`, `be.empty` | `expect(browser).toHaveClass(locator, /regexp/)`、`expect(locator).toHaveText('')`。それ以外は `expect.poll(() => browser.evaluate(...))` |
+| `.trigger()`, `cy.scrollTo()`, `.blur()` | `hover()`、`dragTo()`、`scrollIntoView()`、`press('Tab')`。それ以外は `browser.evaluate` |
+| `cy.intercept('POST', url)` など、メソッドやヘッダーのマッチャー | ハンドラー内で `route.request.method` を確認し、対象外なら `route.fallback()` |
+| `cy.wait('@alias')`, `.its('request.body')`, `@alias.all` | 操作前に `browser.waitForResponse(pattern)` を開始。リクエストは `browser.route` のハンドラーで読む |
+| `Cypress.on('uncaught:exception')` | アプリのエラーだけではテストは失敗しません。失敗させるには、`browser.addInitScript` で `window.onerror` を収集し、`browser.evaluate` で一覧が空だと検証 |
+| `--browser chrome`, `edge`, `electron`, `before:browser:launch` | `web({ browser: 'chromium' })`、または自分で起動した Chrome に `web({ connect: { cdpEndpoint } })` で接続 |
+| `cypress open`、タイムトラベル用のスナップショット | `npx e2e run --headed --watch` または `--step`。[トレースページ](/debugging#traces)で実行後に各ステップを確認 |
+| アプリを操作する `before()` と `after()`、`describe.only` | UI の準備は `beforeEach`、後処理は `afterEach`。サインインはセッションを保存するトップレベルの `test.setup`。各テストに `test.only` |
+| `cy.clock()`, `cy.tick()` | `browser.addInitScript({ path })` でタイマーを模擬するスクリプトを読み、`browser.evaluate` で操作 |
+| ブラウザの Cookie を使う `cy.request()` | `browser.cookies()` を `fetch` で送信。[認証済みのリクエスト](/api-testing#signed-in-requests)を参照 |
+
+### 未対応
+
+| Cypress | 現在使える方法 |
+| --- | --- |
+| `supportFile`, `blockHosts` | `test.extend` で共有の `test` を作り、全ファイルからインポート。その中の `browser.route` で対象ホストを中断 |
+| `cypress run --record --parallel`、Cypress Cloud | CI ジョブごとの `--shard`、`junit` と `github()` レポーター、`.e2e` をアーティファクトとしてアップロード |
+| 4xx や 5xx のページで失敗する `cy.visit()` | `app.open` はステータスを無視。ページ内容を検証 |
+| `cy.stub()`, `cy.spy()`, `cy.clearLocalStorage()` | `browser.addInitScript` で関数をラップし、`browser.evaluate` で呼び出しを読むかストレージを消去 |
+
+### 対応予定なし
+
+| Cypress | 代わりに使う方法 |
+| --- | --- |
+| `cy.wait(ms)` | 待ちたい状態へのロケーターアサーション |
+| `it`, `context`, `specify`, `xit` | `test`、`describe`、`test.skip` |
+| chai の `expect(x).to...`、`assert.*` | `expect(value)` の `toEqual`、`toContain`、`toMatchObject`、または自分で `chai` をインポート |
+| `cy.window()`, `cy.document()`, `onBeforeLoad(win)` | JSON 値を使う `browser.evaluate` と `browser.addInitScript`。テストはページ内ではなく Node で実行 |
+| Mocha レポーター、`reporterOptions` | `list`、`dot`、`json`、`junit`、`markdown`、`htmlReporter()`、`github()`、または独自の[レポーター](/reference/reporters) |
+| Cucumber の `.feature` ファイル、`file:preprocessor` | フィーチャーをテストに書き換え。TypeScript にプリプロセッサーは不要 |
+| コンポーネントテスト | Cypress に残す。e2e は実行中のアプリをテスト |
+| `.parent()`, `.closest()`, `.siblings()`, `.next()` | 祖先を探して絞り込む: `card.filter({ has: child })` |
+| `{ force: true }` | 可視のラベルを操作、または操作可能性の検証を省略する `tap({ position })` |
+
+## 意図的に異なる点
+
+- コマンドチェーンはありません。Cypress の `.as()`、`.within()`、`.then()` を使う箇所では、各呼び出しを await し、ロケーターや値を変数に保持します。
+- [ロケーター](/reference/screen)は厳密です。複数一致に対するアクションや単一ノードのアサーションは、`LOCATOR_AMBIGUOUS` で失敗します。`.filter()`、`.first()`、`.nth()` で絞るか、`await locator.all()` をループしてください。
+- クエリの文字列はテキスト全体に一致します。`{ exact: false }` は大文字・小文字を区別しない部分一致です。`cy.contains` は大文字・小文字を区別して最初の一致を選ぶため、RegExp を渡すか `.first()` を加えてください。
+- テキストのマッチャーは描画済みテキストを比較します。CSS の `text-transform` が適用され、非表示の子は除かれます。[ロケーターの読み取り](/reference/screen#locator-reads)を参照してください。
+- ダイアログを自動で承認しません。Cypress は承認しますが、ハンドラーのない `alert` や `confirm` は次のステップを失敗させます。
+
+## デフォルト値の違い
+
+| 設定 | Cypress | e2e |
+| --- | --- | --- |
+| ビューポート | 1000 × 660 | 1280 × 720 |
+| アクションとアサーションのタイムアウト | `defaultCommandTimeout`、4 秒 | `actionTimeout` 30 秒、`assertionTimeout` 5 秒 |
+| CI でのリトライ | `0` | `1` |
+
+## 次のステップ
+
+<CardGroup cols={2}>
+  <Card title="基本概念" icon="pen-to-square" href="/core-concepts">
+    決め打ちのセレクターに代わる、目標、アサーション、ロケーター。
+  </Card>
+  <Card title="ブラウザの操作" icon="globe" href="/browser">
+    ルート、ダイアログ、ダウンロード、iframe、ページ内のコード実行。
+  </Card>
+</CardGroup>

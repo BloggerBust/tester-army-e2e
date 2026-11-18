@@ -227,6 +227,11 @@ the `npx e2e login <provider>` command to run. See the
 
 Model-call cancellation also applies while waiting for a token refresh.
 
+When a login saved with `npx e2e login` expires, parallel workers refresh it
+once between them. A worker waits up to 30 seconds for another worker's
+refresh. After that its step fails with `MODEL_PROVIDER_FAILED`, unless the
+step's own timeout ends it first, as `STEP_TIMEOUT`.
+
 ## CI
 
 Use API keys in CI. Claude Max or Team already uses one. For OpenCode

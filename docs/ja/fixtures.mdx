@@ -1,0 +1,143 @@
+---
+title: フィクスチャを作る
+description: 各テストの前にテストデータやリソースを用意し、終了後に片付けます。
+"og:image": "https://e2e.com/docs/images/og/fixtures.png?v=a85d0155da"
+"twitter:image": "https://e2e.com/docs/images/og/fixtures.png?v=a85d0155da"
+---
+
+フィクスチャは、テストに渡す値です。テストの前に準備し、失敗した場合も含めてテストの後に後処理を行います。テストデータの作成に使ってください。ログインには、代わりに[保存済みセッション](/authentication)を使います。
+
+## フィクスチャをひとつのファイルに定義する
+
+エンジンの `test` を拡張してエクスポートします。フィクスチャでは `agent` を使えるため、[目標](/core-concepts#goals)を指定してアプリからデータを作成できます。
+
+```ts title="tests/fixtures.ts" expandable
+import { test as base } from '@e2e-dev/web';
+import { expect, unique } from 'e2e';
+
+export const test = base.extend<{ project: string; task: string }>({
+  /** A fresh project, created and deleted through the app. */
+  project: async ({ app, agent, screen }, use) => {
+    const name = `Launch plan ${Date.now()}`;
+    await app.open('/projects');
+    await agent.act('create a project named {name}', { params: { name: unique(name) } });
+    await expect(screen.getByRole('heading', name)).toBeVisible();
+    await use(name);
+    await app.open('/projects');
+    await agent.act('delete the project {name}', { params: { name: unique(name) } });
+    await expect(screen.getByRole('link', name)).toBeHidden();
+  },
+  /** One task in that project. Deleting the project deletes it too. */
+  task: async ({ project, agent, screen }, use) => {
+    const title = 'Write the announcement';
+    await agent.act('add a task {title} to the project {project}', { params: { title, project } });
+    await expect(screen.getByRole('checkbox', title)).toBeVisible();
+    await use(title);
+  },
+});
+```
+
+`await use(value)` より前がセットアップ、その後が後処理です。テストファイルでは、拡張した `test` をインポートします。
+
+```ts title="tests/tasks.e2e.ts"
+import { expect } from 'e2e';
+import { test } from './fixtures.ts';
+
+test('completes a task', { session: 'admin' }, async ({ screen, task }) => {
+  await screen.getByRole('checkbox', task).check();
+  await expect(screen.getByRole('checkbox', task)).toBeChecked();
+});
+```
+
+保存済みセッションは、フィクスチャの実行前に復元されます。
+
+<Note>
+フィクスチャ内のエージェントステップは、それを使うテストごとに実行されます。アプリにテスト API がある場合は、`fetch` 呼び出しのほうが高速です。
+</Note>
+
+## 他のフィクスチャを使って組み立てる
+
+フィクスチャは、必要なフィクスチャを最初の引数で指定します。e2e はそれらを先にセットアップします。`task` は `project` を指定しているため、`task` を指定したテストにはプロジェクトも用意されます。後処理は逆順に実行されます。
+
+フィクスチャは、拡張元の `test` のフィクスチャと、同じ呼び出しで宣言したフィクスチャを、順序を問わず指定できます。何も必要としないフィクスチャは `({}, use)` と書きます。
+
+## テストが指定したものだけをセットアップする
+
+e2e がフィクスチャをセットアップするのは、それを指定したテストだけです。指定できる場所は、テスト本体、`beforeEach` または `afterEach` フック、そのテストが使う別のフィクスチャです。フィクスチャを指定しないテストでは何もセットアップしないため、スイートのすべてのフィクスチャをひとつの `test` にまとめられます。
+
+フィクスチャは、最初の引数の分割代入で指定します。e2e はそこから名前を読み取るため、`async (fixtures) => {}` や残余プロパティ（`{ app, ...rest }`）は、ファイルの収集時に失敗します。
+
+## すべてのテストでフィクスチャを実行する
+
+テストに必要でも、テストが指定しないフィクスチャには `auto: true` を設定します。データをリセットするフィクスチャがその例です。
+
+```ts title="tests/fixtures.ts"
+export const test = base.extend<{ cleanData: void }>({
+  cleanData: [async ({ app }, use) => {
+    await fetch(`${app.baseUrl}/api/test/reset`, { method: 'POST' });
+    await use();
+  }, { auto: true }],
+});
+```
+
+`{ scope: 'worker', auto: true }` を指定すると、ワーカーごとに 1 回実行されます。
+
+## 組み込みフィクスチャを拡張する
+
+`app` や `device` などの組み込みフィクスチャと同じ名前をフィクスチャに付けると、その前後でコードを実行できます。関数の中では、その名前は組み込みフィクスチャを指します。その名前を指定したテストとフックは、`use` に渡した値を受け取ります。
+
+```ts title="tests/fixtures.ts"
+export const test = base.extend({
+  device: async ({ device }, use) => {
+    await device.setPermission('camera', 'deny');
+    await use(device);
+  },
+});
+```
+
+このフィクスチャは、[組み込みフィクスチャのスコープ](/reference/test#fixtures)を引き継ぎます。モバイルターゲットでは `device` はワーカーフィクスチャなので、この例はワーカーごとに 1 回実行され、`beforeAll` にも渡されます。[フィクスチャの拡張](/reference/test#extending-a-fixture)を参照してください。
+
+## ワーカー内でフィクスチャを共有する
+
+ワーカーフィクスチャは、ワーカーとターゲットの組ごとに 1 回だけセットアップされます。セットアップするのは、それを最初に指定したテストまたはスイートのフックで、後処理はワーカーの終了時に実行されます。多くのテストが共有するデータベース、サーバー、API クライアントに使ってください。`{ scope: 'worker' }` を付けて宣言し、2 番目の型引数で型を指定します。
+
+```ts title="tests/fixtures.ts"
+export const test = base.extend<{}, { database: Database }>({
+  database: [async ({}, use) => {
+    const database = await startDatabase();
+    await use(database);
+    await database.stop();
+  }, { scope: 'worker' }],
+});
+```
+
+ワーカーフィクスチャはどのテストよりも長く存続するため、参照できるのはワーカーフィクスチャだけです。つまり、他のワーカーフィクスチャと、そのターゲットでスコープがワーカーになる[組み込みフィクスチャ](/reference/test#fixtures)です。
+
+ワーカーフィクスチャは、テストファイルではなく、テストファイルがインポートするモジュールで宣言してください。テストファイルは、テストの失敗後や、直列実行グループ、セットアップテストごとに再び読み込まれ、そのファイルで宣言したワーカーフィクスチャはそのたびに新しいインスタンスになります。古いインスタンスは、ワーカーが終了するまでセットアップされたまま残ります。
+
+## フックからフィクスチャを参照する
+
+フィクスチャの型を使うには、拡張した `test` にフックを登録します。フックも、テストと同じ方法でフィクスチャを指定します。
+
+```ts
+test.beforeEach(async ({ screen, project }) => {
+  await expect(screen.getByRole('heading', project)).toBeVisible();
+});
+```
+
+`beforeAll` と `afterAll` が受け取るのは、ワーカーフィクスチャだけです。デバイスはテスト間で状態を保つため、モバイルでは組み込みフィクスチャの `device`、`app`、`screen` もワーカーフィクスチャです。ブラウザのテストは新しいコンテキストで始まるため、UI のセットアップは `beforeEach` に置いてください。各[組み込みフィクスチャ](/reference/test#fixtures)のスコープを参照してください。
+
+## フィクスチャが失敗した場合
+
+セットアップのエラーは `beforeEach` でテストを失敗させ、失敗したフィクスチャを指定した `afterEach` フックはスキップされます。後処理のエラーは `afterEach` として報告されます。[エラーの一覧](/reference/test#your-own-fixtures)を参照してください。
+
+## 次のステップ
+
+<CardGroup cols={2}>
+  <Card title="テストリファレンス" icon="code" href="/reference/test#your-own-fixtures">
+    フィクスチャの契約、型、すべての失敗条件を確認します。
+  </Card>
+  <Card title="認証" icon="key" href="/authentication">
+    セッションを一度保存し、各テストで復元します。
+  </Card>
+</CardGroup>

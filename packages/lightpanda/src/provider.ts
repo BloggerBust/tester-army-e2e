@@ -10,6 +10,9 @@ const STARTUP_TIMEOUT_MS = 10_000;
 /** How long a released server gets to exit on SIGTERM before SIGKILL. */
 const STOP_GRACE_MS = 5_000;
 
+/** Linked stylesheets decide visibility, which locators and agent steps read. */
+const DEFAULT_RESOURCES: readonly LightpandaResource[] = ['stylesheet'];
+
 export interface LightpandaOptions {
   /**
    * The `lightpanda` binary to start: a path, or a name on `PATH`. Default
@@ -17,7 +20,7 @@ export interface LightpandaOptions {
    * `PATH`, `~/.lightpanda/lightpanda`, or `~/.local/bin/lightpanda`.
    */
   readonly binary?: string | undefined;
-  /** Sub-resources the server fetches (`iframe`, `image`, `stylesheet`), which Lightpanda skips by default. */
+  /** Sub-resources the server fetches (`iframe`, `image`, `stylesheet`). Default `['stylesheet']`; a list replaces it. */
   readonly loadResources?: readonly LightpandaResource[] | undefined;
   /** Further `lightpanda serve` flags, after `--host`, `--port`, and `--load-resources`. */
   readonly args?: readonly string[] | undefined;
@@ -32,7 +35,7 @@ export interface LightpandaOptions {
  * target, not a provider.
  */
 export function lightpanda(options: LightpandaOptions = {}): BrowserProvider {
-  const { loadResources = [], args = [] } = options;
+  const { loadResources = DEFAULT_RESOURCES, args = [] } = options;
   // `release` gets back the object `acquire` returned, on the side that acquired it.
   const servers = new WeakMap<BrowserLease, LightpandaServer>();
   return {

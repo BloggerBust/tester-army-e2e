@@ -104,7 +104,7 @@ when you run more.
 | Option          | Default                         | Meaning |
 | --------------- | ------------------------------- | ------- |
 | `binary`        | `LIGHTPANDA_PATH`, else found   | The binary to start: a path, or a name on `PATH`. |
-| `loadResources` | `[]`                            | Sub-resources the server fetches: `iframe`, `image`, `stylesheet`. See [Fetch more of the page](#fetch-more-of-the-page). |
+| `loadResources` | `['stylesheet']`                | Sub-resources the server fetches: `iframe`, `image`, `stylesheet`. See [Fetch more of the page](#fetch-more-of-the-page). |
 | `args`          | `[]`                            | Further `lightpanda serve` flags, after the ones the provider sets. |
 
 The provider leases one server per worker slot for the run; it has no
@@ -116,8 +116,9 @@ exits first, with its stderr in the message.
 ## Fetch more of the page
 
 `lightpanda serve` requests no sub-resources by default: no images, no
-external stylesheets, no iframes. `loadResources` opts into each, as
-`--load-resources` on the server:
+external stylesheets, no iframes. The provider asks for stylesheets, and
+`loadResources` sets the list, as `--load-resources` on the server. A list
+replaces that default, so keep `stylesheet` in it, and `[]` fetches none:
 
 ```ts
 web({ browser: lightpanda({ loadResources: ['stylesheet', 'iframe'] }) })

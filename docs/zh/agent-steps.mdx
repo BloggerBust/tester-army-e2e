@@ -1,0 +1,79 @@
+---
+title: 智能体步骤的工作原理
+description: 模型能看到什么、可以做什么、步骤如何结束，以及会产生多少成本。
+"og:image": "https://e2e.com/docs/images/og/agent-steps.png?v=321767dc3b"
+"twitter:image": "https://e2e.com/docs/images/og/agent-steps.png?v=321767dc3b"
+---
+
+智能体步骤是一次 `agent.act`、`agent.assert`、`agent.waitFor` 或 `agent.extract` 调用。模型读取屏幕、请求执行操作，并以判定结果结束步骤。每个步骤都有截止时间和模型调用预算。
+
+## 各自的职责
+
+执行器选择操作并返回判定结果。运行器对屏幕内容脱敏，授权并执行每个操作，强制执行预算限制，填入机密值，并写入报告。除非智能体配置条目设置了[自定义执行器](/executors)，否则执行器就是内置智能体。
+
+## 模型能看到什么
+
+对于 `act`，第一条提示词包含指令、参数、已完成的步骤，以及经过脱敏的屏幕文本快照：角色、名称、文本和状态。其中不包含原始 HTML、Cookie、请求头或环境变量值。密码字段会被遮蔽，屏幕上已配置的机密值会替换为 `<secret:name>`。
+
+操作结束后，模型会收到屏幕的变化内容；如果大部分内容都发生了变化，则会收到新的完整快照。只要元素仍存在，其节点 ID 就保持不变。操作失败时也会返回当前屏幕，让模型选择下一步操作。
+
+`assert`、`waitFor` 和 `extract` 的默认判定会看到指令、当前屏幕及其位置，以及智能体的 `context`，不会看到已完成的步骤或执行操作的智能体所写的摘要。它们可以使用单独的[判定模型](/models#a-judge-of-its-own)。即使设置了 `judge`，内置的探索式断言也使用 `agents.<name>.model`。
+
+`vision: true` 会添加经过遮蔽的截图，`vision: 'only'` 则只根据截图进行判定。各模式的说明见[智能体参考](/reference/agent#vision)。截图只会遮蔽安全字段（[填入机密值之后](/reference/security#screenshots-after-a-secret-fill)）。
+
+## 模型可以做什么
+
+智能体可使用测试目标引擎支持的工具，例如 `tap`、`type`、`press`、`select`、`scroll` 和 `navigate`。在支持键盘的引擎上，它可以在已聚焦的控件中输入文本和按键。当文本快照无法描述某个控件时，像素工具可让它截图并在指定坐标操作。参阅[工具参考](/reference/agent#pixel-tools-screenshot-and-the-point-verbs)。
+
+要填入 `Secret` 参数，模型会调用 `type_secret`。模型只能看到机密值的名称和用途。运行器检查模型选择的字段，然后自行填入该值。该值绝不会进入提示词、对话记录、报告或 AI 追踪记录。
+
+针对特定元素的操作最多在 15 秒后超时。[项目工具](/tools)可以添加你自己的操作，并声明预算和支持的平台。
+
+循环会检测重复调用和循环操作。连续 3 次操作失败后，它会要求模型改变方法。连续 5 次失败后，它会要求模型给出判定结果。预算即将耗尽或临近截止时间时，也会要求给出判定结果。
+
+## 断言探索
+
+启用 `explore: true` 后，`agent.assert` 可以使用只读工具滚动页面，并汇总多个视口的证据。视口会停留在探索结束的位置。用它检查当前屏幕其他位置的内容，用 `waitFor` 检查随时间发生的变化。工具、预算和判定结果的说明见[断言探索](/reference/agent#agent-assert)。
+
+## 步骤如何结束
+
+步骤以以下三种判定结果之一结束：
+
+- `passed`：屏幕显示步骤已成功。
+- `failed`：所需条件不成立，或无法证明其成立。证据不足时为 `ASSERTION_INCONCLUSIVE`。
+- `blocked`：前置条件、环境或限制导致步骤在得出产品判定结果前停止。错误码决定退出码。
+
+只有 `failed` 和 `blocked` 携带错误码。
+
+| 受阻原因 | 错误码 | 退出码 |
+| --- | --- | ---: |
+| 应用拒绝的凭据，或尚未配置的凭据 | `AUTH_CREDENTIAL_INVALID`、`AUTH_CREDENTIAL_UNAVAILABLE` | 2 |
+| 环境不可用 | `ENVIRONMENT_UNAVAILABLE` | 3 |
+| 缺少种子数据或产品之外的前置条件 | `SEED_DATA_MISSING`、`TEST_SETUP_FAILED` | 2 |
+| 预算或时间限制 | `STEP_BUDGET_EXHAUSTED`、`STEP_TIMEOUT` | 1 |
+| 工具集无法执行的交互 | `AUTOMATION_UNSUPPORTED` | 1 |
+
+[错误参考](/reference/errors#agenterror)列出了判定结果可能携带的所有错误码。
+
+## 步骤的成本
+
+每次调用都有模型调用预算和默认超时时间。参阅[预算](/reference/agent#budgets)。
+
+- 不启用探索的 `assert` 和 `extract` 会进行一次判定；如果回答格式有误，再进行一次修复调用。当数据不在屏幕上时，`extract` 会以 `ASSERTION_INCONCLUSIVE` 失败，不会返回占位符。
+- 屏幕及其位置不变时，`waitFor` 不会调用模型。
+- 每次携带截图的调用都会增加输入 token。`act` 仅在文本快照不足时才请求截图。
+- [回放缓存](/cache)会重新执行通过的 `act` 步骤，无需调用模型。
+- 使用[自定义执行器](/executors#what-the-executor-handles)时，`assert` 使用 `act` 的预算。
+
+用 `expect` 进行精确检查，并为每次 `act` 指定一个[原子目标](/core-concepts#goals)。提供方缓存提示词时，`--debug` 会显示每个步骤的输入 token 中已缓存的占比。
+
+## 下一步
+
+<CardGroup cols={2}>
+  <Card title="项目工具" icon="wrench" href="/tools">
+    为智能体添加你自己的工具。
+  </Card>
+  <Card title="自定义执行器" icon="gears" href="/executors">
+    保留循环并使用你自己的提示词，或替换整个循环。
+  </Card>
+</CardGroup>

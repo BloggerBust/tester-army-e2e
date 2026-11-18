@@ -70,6 +70,19 @@ project dependencies and start the MCP client in the project directory so
     }
     ```
   </Tab>
+  <Tab title="OpenCode">
+    Add the server to `opencode.json` in the project. `opencode mcp list`,
+    run in the project, shows it as connected:
+
+    ```json title="opencode.json"
+    {
+      "$schema": "https://opencode.ai/config.json",
+      "mcp": {
+        "e2e": { "type": "local", "command": ["npx", "e2e", "mcp"] }
+      }
+    }
+    ```
+  </Tab>
 </Tabs>
 
 A session starts the target's app command, if it has one, and names it

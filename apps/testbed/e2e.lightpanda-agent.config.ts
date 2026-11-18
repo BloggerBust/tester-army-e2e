@@ -17,7 +17,7 @@ export default {
   targets: agentConfig.targets.map((target) => ({
     ...target,
     name: 'lightpanda',
-    engine: web({ browser: lightpanda({ loadResources: ['iframe'] }) }),
+    engine: web({ browser: lightpanda({ loadResources: ['stylesheet', 'iframe'] }) }),
     app: { ...target.app, url: 'http://127.0.0.1:4273', command: { ...target.app.command, env: { PORT: '4273' } } },
   })),
 } satisfies E2EConfig;

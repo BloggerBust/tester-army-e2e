@@ -1,0 +1,367 @@
+---
+title: Appium からの移行
+description: Appium と WebdriverIO のモバイルテストを、ロケーター、デバイス操作、エージェントのゴールを使う TypeScript に移行します。
+---
+
+import { SetupPrompt } from '../../snippets/setup-prompt-card.jsx';
+
+export const migrationPrompt = `このプロジェクトの Appium テストを、1 つずつ e2e へ移行してください。ドキュメント: \`https://e2e.com/docs/migrate/appium.md\` と \`https://e2e.com/docs/mobile.md\`
+
+1. 上記の移行ガイドを読んでください。Appium の ケイパビリティ、セレクター、コマンドと e2e の対応関係、および e2e にまだない機能が載っています。モバイルガイドではデバイスとアプリのビルドを説明しています。
+2. e2e のテストは Node 上で動作し、デフォルトでは TypeScript、または JavaScript で記述します。Appium スイートが Java、Python など別の言語の場合や、プロジェクトに \`package.json\` がない場合は、アプリの隣に \`e2e/\` フォルダーを作り、テスト用プロジェクトにしてください。
+3. テストプロジェクトに e2e の設定（\`e2e.config.ts\`、\`.mts\`、\`.js\`、\`.mjs\`）がなければ、そこで \`npx e2e init --yes --engine mobile\`（または pnpm、bun の同等コマンド）を実行してください。このマシンのプラットフォーム用のターゲットを 1 つ持つモバイル設定と、設定アプリに対するサンプルテストを作りますが、この時点では何もインストールしません。\`tests/example.e2e.ts\` を対象アプリ用に書き換えるか、削除してください。
+4. e2e スキルを読み、以降のすべての手順で従ってください。\`npx e2e guide\` でスキル、\`npx e2e guide <topic>\` で各トピックを表示できます。
+5. init を実行した場合は、エージェントステップに使うモデルを私に確認してください。ChatGPT、GitHub Copilot、OpenCode Console、SuperGrok のサブスクリプション、API キー、ローカルモデルから選びます。対応するプロバイダーパッケージで設定し、ログインが必要なら \`npx e2e login\` コマンドを示して、私の確認を待ってください。
+6. ガイドの表を使い、ケイパビリティ を e2e の設定に移してください。プラットフォームごとに \`mobile({ platform, device })\` を使うターゲットを作り、それぞれに \`app: { bundleId, appPath, launchArguments, permissions }\` を設定します。パスワードとトークンは \`credentials\` または \`secrets\` に移してください。
+7. 依存関係をインストールし、\`npx e2e doctor\`（e2e 0.23.0 以降）を実行して、報告された問題を修正してください。
+8. Appium テストを一覧にし、どれから移行するか私に確認してください。XPath セレクターや明示的な待機が頻繁に壊れるテストを提案してください。
+9. そのテストを \`tests/\` 以下の \`.e2e.ts\` に書き換えてください（e2e はデフォルトで \`tests/**/*.e2e.ts\` を実行します）。自動では起動しないため、\`app.open()\` から始めてください。ガイドの「セレクターの書き換え」に従ってください。XPath は移植できず、e2e は複数一致で失敗します。移行前に、使われている各ケイパビリティとコマンドを「e2e にまだない機能」と照合してください。「現在使える方法」を使うか、そのテストを Appium に残して理由を説明してください。
+10. 起動と最終的な検証は、\`app.open()\` とロケーターのアサーションで決定論的に保ってください。スクリプト化した一連のタップが頻繁に壊れる箇所には、代わりに \`agent.act\` のゴールを提案してください。
+11. アプリをビルドしてインストールし、各プラットフォームのターゲットで \`npx e2e run <file>\` を実行して、成功するまで修正してください。Appium テストは、削除してよいと私が確認するまで残してください。
+12. 移行したテスト、Appium に残したテスト、それぞれの理由をまとめてください。`;
+
+e2e は Appium サーバー、ドライバー、クライアントライブラリを、1 つの Node パッケージに置き換えます。
+`@e2e-dev/mobile` は、同梱の [agent-device](https://github.com/callstack/agent-device) を通じて
+iOS シミュレーター、Android エミュレーター、接続された実機を操作します。
+ケイパビリティ は `e2e.config.ts` のターゲットに、`driver` コマンドは `app` と `device` フィクスチャに移します。
+アプリのビルドとアクセシビリティ ID はそのまま使えます。
+
+例では WebdriverIO を使っています。Java や Python のクライアントでも対応関係は同じです。
+
+<SetupPrompt>
+
+<Prompt description={migrationPrompt} children={migrationPrompt} actions={["copy", "cursor"]} />
+
+</SetupPrompt>
+
+複数のセッションにわたる移行では、[`migrate-to-e2e` スキル](/coding-agents#migrate-an-existing-suite)が移行済みの内容を進捗ファイルに記録し、各テストを廃止するまで元のスイートを動かし続けます。
+
+## ケイパビリティ の移行
+
+<Note>[モバイルガイド](/mobile)でターゲットを、[クイックスタート](/quickstart)でモデルを設定してください。モデルが必要なのはエージェントステップだけです。</Note>
+
+| Appium | e2e |
+| --- | --- |
+| `platformName`, `appium:automationName` | `mobile({ platform: 'ios' })` または `'android'` |
+| `appium:deviceName`, `appium:udid` | `mobile({ device: 'iPhone 17' })`。名前、シミュレーターの UDID、`emulator-5554` などのシリアル。実機は名前で指定 |
+| `appium:app` | `app: { appPath }`。ビルドは自分でインストールします。[対象アプリの指定](/mobile#point-at-your-app)を参照 |
+| `appium:bundleId`, `appium:appPackage` | `app: { bundleId }`。`app.open()` が起動するアプリ |
+| `appium:processArguments`, `appium:optionalIntentArguments` | 文字列のリストである `app.launchArguments` |
+| `appium:permissions` | `app.permissions: { camera: 'grant' }`。各 [`DevicePermission`](/reference/mobile#device-fixture) 名に `grant`、`deny`、`reset` を指定 |
+| `appium:noReset` | デフォルトは `true` で、アプリのデータは消去しません。`false` に相当する動作には、テスト開始時に `app.clearState()` を呼ぶ |
+| `appium:fullReset` | `device.installApp(path, { reinstall: true })` |
+| `appium:newCommandTimeout`、WebDriverAgent のタイムアウト | 不要。操作には `actionTimeout`、アサーションには `assertionTimeout`、テストには `timeout` |
+| `bstack:options`, `lt:options` | デバイスプロバイダーの [`browserstack()`](/integrations/browserstack) または [`testmu()`](/integrations/testmu) |
+| ホスト型デバイスの `appium:platformVersion`、`appium:language`、`appium:locale` | `browserstack()` と `testmu()` の `osVersion`、`language`、`locale`。[`limrun()`](/integrations/limrun) の `android.osVersion` |
+| 複数の ケイパビリティ、`maxInstances` | プラットフォームごとのターゲット、`workers`、デバイスごとに 1 ワーカーを割り当てる `device` リスト |
+
+```ts title="e2e.config.ts"
+import type { E2EConfig } from 'e2e';
+import { mobile } from '@e2e-dev/mobile';
+
+export default {
+  targets: [
+    {
+      name: 'ios',
+      engine: mobile({ platform: 'ios', device: 'iPhone 17' }),
+      app: {
+        bundleId: 'com.example.app',
+        appPath: 'ios/build/MyApp.app',
+        launchArguments: ['-e2e', 'YES'],
+        permissions: { notifications: 'grant' },
+      },
+    },
+    {
+      name: 'android',
+      engine: mobile({ platform: 'android' }),
+      app: {
+        bundleId: 'com.example.app',
+        appPath: 'android/app/build/outputs/apk/release/app-release.apk',
+        launchArguments: ['--ez', 'e2e', 'true'],
+        permissions: { notifications: 'grant' },
+      },
+    },
+  ],
+  workers: 1,
+} satisfies E2EConfig;
+```
+
+## テストを 1 つ書き換える
+
+XPath セレクターや明示的な待機が頻繁に壊れるテストから始めます。
+
+```js title="Appium (WebdriverIO)"
+describe('login', () => {
+  it('signs in', async () => {
+    await $('~email').setValue('ada@example.test');
+    await $('~password').setValue('hunter2');
+    await $('//XCUIElementTypeButton[@name="Sign in"]').click();
+    await $('~welcome').waitForDisplayed({ timeout: 10000 });
+    await expect($('~welcome')).toHaveText('Welcome, Ada');
+  });
+});
+```
+
+```ts title="e2e"
+import { test } from '@e2e-dev/mobile';
+import { expect } from 'e2e';
+
+test('signs in', async ({ app, screen }) => {
+  await app.open();
+  await screen.getByTestId('email').fill('ada@example.test');
+  await screen.getByTestId('password').fill('hunter2');
+  await screen.getByRole('button', 'Sign in').tap();
+  await expect(screen.getByText('Welcome, Ada')).toBeVisible({ timeout: 10_000 });
+});
+```
+
+- アプリは自動では起動しないため、テストは `app.open()` から始めます。
+- 操作は対象要素を待ち、アサーションは再試行するため、明示的な待機は不要になります。
+
+スクリプト化した一連のタップが頻繁に壊れる箇所は、1 つの `agent.act` のゴールに置き換えられます。
+[リプレイキャッシュ](/cache)は後続の検証が成功した時点で操作を記録し、次回はモデルを呼ばずに再生します。
+パスワードは、モデルに渡されない[認証情報の設定](/authentication)に入れます。
+
+```ts
+import { credentials } from 'e2e';
+
+const ada = credentials.user('ada');
+await agent.act('sign in as {username}', { params: { username: ada.username, password: ada.password } });
+```
+
+## セレクターの書き換え
+
+| Appium | e2e |
+| --- | --- |
+| iOS の `$('~login')`、アクセシビリティ識別子、React Native の `testID` | `screen.getByTestId('login')` |
+| Android の `$('~Log in')`、コンテンツの説明、React Native の `accessibilityLabel` | `screen.getByLabel('Log in')` |
+| `$('id=com.example:id/email')`, `resourceId` | `screen.getByTestId('email')`。`com.example:id/` 接頭辞は省略可能 |
+| `-ios predicate string:label == "Sign in"`, `android=new UiSelector().text("Sign in")` | `screen.getByText('Sign in')` または `getByLabel('Sign in')` |
+| `-ios class chain`、クラス名（`XCUIElementTypeButton`、`android.widget.Button`） | `screen.getByRole('button', 'Sign in')` |
+| `$$(selector)[2]` | `.nth(2)`。`.all()` はすべての一致を返します |
+| クエリで表現できないセレクター | `device.locator('role=text label="Total"')`。agent-device のセレクター構文 |
+
+- `getByText`、`getByLabel`、`getByTestId` は、大文字と小文字も含めて文字列全体に一致します。
+  `RegExp` を渡すか、テキストやラベルを大文字と小文字を区別せず部分一致させるには `{ exact: false }` を指定します。
+- Appium の `$()` は最初の一致を返します。e2e の操作は一致がちょうど 1 つ必要で、複数なら `LOCATOR_AMBIGUOUS` で失敗します。
+  `.filter()`、`.first()`、`.nth()` で絞り込んでください。
+- `button`、`textbox`、`switch` などのロールは iOS と Android で共通なので、同じテストを両方で実行できます。
+  [ロール](/reference/mobile#roles)を参照してください。
+
+## 各コマンドの対応付け
+
+`device` の呼び出しはデバイスでのみ実行できます。Web でも実行するスイートでは、対象のテストに `requires: ['device']` を宣言します。
+
+<AccordionGroup>
+<Accordion title="要素とジェスチャー">
+
+| Appium | e2e |
+| --- | --- |
+| `.click()`, `.doubleClick()` | `.tap()`、`.doubleTap()` |
+| 要素に対する `mobile: longClickGesture`、`mobile: touchAndHold` | `.longPress({ duration })` |
+| `.setValue(t)`, `.clearValue()` | 内容を置き換える `.fill(t)` と `.clear()` |
+| `.addValue(t)` | カーソル位置で 1 文字ずつ入力する `.pressSequentially(t)` |
+| `driver.keys('Enter')`, `pressKeyCode(66)` | フィールドに対する `.press('Enter')` |
+| `.getText()`, `.getValue()`, `.getAttribute('value')` | `.textContent()`、`.inputValue()` |
+| `.isDisplayed()`, `.isEnabled()`, `.getAttribute('checked')` | `.isVisible()`、`.isEnabled()`、`.isChecked()` |
+| `.isExisting()` | `(await locator.count()) > 0` |
+| `.getLocation()`, `.getSize()` | `.boundingBox()` |
+| `.waitForDisplayed({ timeout })` | `await expect(locator).toBeVisible({ timeout })` または `locator.waitFor()` |
+| `.waitForDisplayed({ reverse: true })` | `await expect(locator).toBeHidden()` |
+| `mobile: swipeGesture`, `mobile: swipe`, `driver.swipe({ direction: 'up' })` | `locator.swipe({ direction: 'down' })` または `screen.swipe(...)`。e2e は指ではなく、コンテンツを進める方向を指定 |
+| `mobile: scrollGesture`、要素までの `mobile: scroll`、`.scrollIntoView()` | `screen.scrollUntilVisible(locator)` |
+| `.dragAndDrop(target)`、要素を終点とするドラッグ | `locator.dragTo(target)` |
+| 2 点間の `performActions` スワイプ | `screen.swipe({ from: { x, y }, to: { x, y } })` |
+| 座標へのタップ | `screen.tapAt({ x, y })`。要素内では `.tap({ position: { x, y } })` |
+
+</Accordion>
+<Accordion title="アプリとデバイス">
+
+| Appium | e2e |
+| --- | --- |
+| セッション開始時の起動 | `app.open()`。ターゲットのアプリを新しく起動 |
+| `driver.activateApp(id)` | `device.openApp(id)`。`{ relaunch: true }` で再起動 |
+| テスト対象アプリへの `driver.terminateApp(id)` | `device.closeApp()`。セッションが終わるため、次にアプリを開く |
+| `terminateApp` の後に `activateApp` | `app.restart()` |
+| `mobile: clearApp`, `driver.installApp(path)` | `app.clearState()`、`device.installApp(path)` |
+| `driver.background(seconds)` | `device.home()` の後に `device.openApp(id)` |
+| `driver.url('myapp://x')`, `mobile: deepLink` | `device.openLink('myapp://x')` |
+| `driver.back()`、`driver.hideKeyboard()`、Home 用の `pressKeyCode` | `app.back()`、`device.dismissKeyboard()`、`device.home()` |
+| `driver.getPageSource()` | `screen.tree()`。表示するなら `screen.debug()` |
+| `driver.takeScreenshot()` | `app.screenshot('label')`。機密フィールドはマスク |
+| `startRecordingScreen()`, `stopRecordingScreen()` | `app.startRecording()`、`app.stopRecording()`、または `npx e2e run --video` |
+| `mobile: setPermission`, `mobile: changePermissions` | `app.open()` の前に `device.setPermission('camera', 'grant')`。1 回につき 1 つ |
+| `driver.acceptAlert()`, `driver.dismissAlert()` | `device.alert('accept')`、`device.alert('dismiss')` |
+| `driver.setGeoLocation({ latitude, longitude })` | `device.setLocation({ latitude, longitude })` |
+| `driver.setOrientation('LANDSCAPE')`, `mobile: setAppearance` | `device.setOrientation('landscape-left')`、`device.setAppearance('dark')` |
+| `driver.setClipboard(t)`, `driver.getClipboard()` | `device.setClipboard(t)`、`device.clipboard()`。Appium の base64 に対し、プレーンテキスト |
+| `driver.toggleWiFi(false)`, `mobile: setConnectivity` と `wifi: false` | `device.setNetwork('offline')`。Wi-Fi のみ、Android のみ |
+| `driver.toggleAirplaneMode()`、`mobile: setConnectivity` と `airplaneMode: true` | `device.setAirplaneMode(true)`。Wi-Fi と携帯回線、Android 11 以降 |
+| `mobile: enrollBiometric`, `mobile: sendBiometricMatch`, `driver.fingerPrint(1)` | `device.enrollBiometrics('faceid', true)`、`device.setBiometrics('faceid', 'match')`、または `'fingerprint'` |
+| `mobile: clearKeychains` | `device.clearKeychain()`。iOS シミュレーターのみ |
+| `driver.isIOS`, `driver.isAndroid` | テストの `{ platforms: ['ios'] }`、または `platform` フィクスチャ |
+
+</Accordion>
+<Accordion title="アサーションとランナー">
+
+| Appium | e2e |
+| --- | --- |
+| `toBeDisplayed()`, `not.toBeDisplayed()` | `toBeVisible()`、`toBeHidden()` |
+| `toExist()`, `toBeElementsArrayOfSize(n)` | `toBeAttached()`、`toHaveCount(n)` |
+| `toHaveText(t)`, `toHaveText(t, { containing: true })` | `toHaveText(t)`、`toContainText(t)` |
+| `toHaveValue`, `toBeEnabled`, `toBeDisabled`, `toBeSelected`, `toBeChecked` | 同じ |
+| `@wdio/visual-service` の画面比較 | `await expect(screen).toHaveScreenshot('name.png')`。[画像比較](/visual-testing)を参照 |
+| `remote()`, `deleteSession()` | 呼び出し不要。ランナーがワーカーごとに 1 つのデバイスセッションを開閉 |
+| `wdio.conf.ts` の `specs` | `tests`。デフォルトは `tests/**/*.e2e.ts` |
+| `specFileRetries`、Mocha の `retries` | 設定の `retries`、またはテストの `{ retries }` |
+| Mocha の `--grep`、タイトルのタグ | `--grep`、またはテストの `{ tags }` と `--tag` |
+| `before`、`beforeEach` フック | `beforeAll`、`beforeEach` |
+| JUnit と spec レポーター | `--reporter list,junit`。`.e2e/junit.xml` を出力 |
+| HTML レポート | `@e2e-dev/html-reporter` の [`htmlReporter()`](/reference/reporters#htmlreporter) |
+
+</Accordion>
+</AccordionGroup>
+
+## 権限とディープリンク
+
+iOS では権限の変更によって実行中のアプリが停止するため、`app.open()` の前に権限を設定します。
+すべてのテストに必要な権限は `app.permissions` に指定します。
+
+```js title="Appium (WebdriverIO)"
+await driver.execute('mobile: setPermission', {
+  bundleId: 'com.example.app',
+  access: { location: 'yes' },
+});
+await driver.activateApp('com.example.app');
+await driver.url('myapp://orders/42');
+await expect($('~order-title')).toHaveText('Order #42');
+```
+
+```ts title="e2e"
+import { test } from '@e2e-dev/mobile';
+import { expect } from 'e2e';
+
+test('opens an order from a link', async ({ app, device, screen }) => {
+  await device.setPermission('location', 'grant');
+  await app.open();
+  await device.openLink('myapp://orders/42');
+  await expect(screen.getByText('Order #42')).toBeVisible();
+});
+```
+
+## CI での実行
+
+起動すべきサーバーはないため、e2e のジョブではビルドをインストールしてスイートを実行します。
+プラットフォームごとにジョブが必要です。[モバイルのジョブ](/ci#mobile-jobs)を参照してください。
+
+<CodeGroup>
+```bash npm
+xcrun simctl install booted ios/build/MyApp.app
+npx e2e run --target ios --reporter list,junit
+```
+
+```bash pnpm
+xcrun simctl install booted ios/build/MyApp.app
+pnpm exec e2e run --target ios --reporter list,junit
+```
+
+```bash bun
+xcrun simctl install booted ios/build/MyApp.app
+bunx e2e run --target ios --reporter list,junit
+```
+</CodeGroup>
+
+## e2e にまだない機能
+
+「実装予定」の項目はロードマップにあり、「未対応」の項目は時期が未定です。「実装予定なし」は意図的に対象外としています。
+[`unstable_raw`](/reference/mobile#unstable_raw) 経由の呼び出しはステップではないため、レポートへの記録とシークレットの除去を経由しません。
+
+### 実装予定
+
+<AccordionGroup>
+<Accordion title="ケイパビリティ とデバイス">
+
+| Appium | 現在使える方法 |
+| --- | --- |
+| `appium:autoGrantPermissions`、一覧にない Android 権限、iOS の位置情報 `always` | `app.permissions` に各権限を列挙するか、実行前に `adb shell pm grant`。iOS の位置情報 `always` はプロンプトのボタンをタップ |
+| `browserstack()` や `testmu()` デバイスの設定とアラート | プロンプトを UI としてタップ。それらのテストはローカルデバイスで実行 |
+| `bstack:options.local`, `lt:options.tunnel` | ホスト型デバイスからアクセスできるバックエンドをアプリに指定 |
+| `appium:appActivity`, `appWaitActivity`, `startActivity()` | `device.openLink(url)`、または [`unstable_raw`](/reference/mobile#unstable_raw) 経由の `client.apps.open` |
+| `appium:processArguments.env` | 起動引数を渡し、アプリ内で読み取る |
+| ローカルデバイスの `appium:language`、`appium:locale` | iOS では `app.launchArguments: ['-AppleLanguages', '(fr)', '-AppleLocale', 'fr_FR']`。[別の言語でアプリを実行する](/mobile#run-the-app-in-another-language)を参照。Android では実行前にデバイスの言語を設定 |
+| `appium:disableWindowAnimation`, `reduceMotion` | Android では [`unstable_raw`](/reference/mobile#unstable_raw) 経由の `client.settings.update` |
+
+</Accordion>
+<Accordion title="要素とジェスチャー">
+
+| Appium | 現在使える方法 |
+| --- | --- |
+| ラベル、ID、クラス用の `.getAttribute()`、`.isSelected()`、`.getTagName()` | ラベルには `toHaveAccessibleName`、選択状態には `toBeSelected`。ID、クラス、タグ名の読み取りはありません |
+| `pressKeyCode(code)`, `driver.keys('Backspace')`, `isKeyboardShown()` | `.press()` は `Enter`、`Space`、1 文字を受け付けます。`.clear()` と `.fill()` を使用 |
+| `driver.getWindowRect()`, `getWindowSize()`, `mobile: deviceInfo` | 方向を指定してスワイプするか、全画面要素の `.boundingBox()` を読み取る |
+| `UiScrollable` の `scrollToEnd()`、`scrollToBeginning()` | `allTextContents()` が変わらなくなるまで `locator.swipe({ direction: 'down' })` を繰り返す。先頭へは `'up'` |
+| `mobile: selectPickerWheelValue`、日付・時刻ピッカー、スライダー値 | ホイールをスワイプして `.inputValue()` を読み取るか、`agent.act` のゴールを使用 |
+| `mobile: pinchOpenGesture`、`mobile: pinch`、座標への `mobile: dragGesture`、`mobile: dragFromToForDuration` | [`unstable_raw`](/reference/mobile#unstable_raw) 経由の `client.interactions.pinch` または `.drag` |
+
+</Accordion>
+<Accordion title="アプリ、デバイス、ランナー">
+
+| Appium | 現在使える方法 |
+| --- | --- |
+| `driver.getLogs('logcat')`, `'syslog'`, `'crashlog'` | フックから `adb logcat` または `xcrun simctl spawn <udid> log stream` を実行 |
+| `driver.removeApp(id)`, `isAppInstalled(id)`, `queryAppState(id)` | [`unstable_raw`](/reference/mobile#unstable_raw) 経由の `client.apps.uninstall` または `.list` |
+| `driver.lock()`、`unlock()`、電源・音量ボタン | [`unstable_raw`](/reference/mobile#unstable_raw) 経由の `client.command.hardwareButton` |
+| `driver.openNotifications()`, `mobile: pushNotification` | 上端からの `screen.swipe({ from, to })`。Node からの `xcrun simctl push` |
+| `driver.pushFile()`, `pullFile()`, `pullFolder()` | Node から `adb push`、`adb pull`、`xcrun simctl addmedia`。ローカルデバイスのみ |
+| `driver.getAlertText()` | iOS は `screen.getByRole('alert').textContent()`、Android は `getByText` |
+| `onPrepare` や `afterTest` などの `wdio.conf.ts` フック | `afterEach`、フィクスチャ、または[カスタムレポーター](/reference/reporters#custom-reporters) |
+
+</Accordion>
+</AccordionGroup>
+
+### 未対応
+
+| Appium | 現在使える方法 |
+| --- | --- |
+| `appium:autoAcceptAlerts`, `appium:autoDismissAlerts` | `app.permissions` を設定するか `device.alert('accept')` を呼ぶ |
+| WebView コンテキスト: `getContexts()`、`switchContext()`、CSS セレクター、`execute(js)` | `getByText` と `getByRole` で WebView のアクセシビリティノードを検索 |
+| モバイル Web: `browserName: 'Safari'` または `'Chrome'` | [スマートフォンのビューポート](/web#viewports)を使う `web()` ターゲット。レイアウトのみ |
+| `appium:unlockType`, `unlockKey` | デバイスをロック解除したままにする |
+| XML 形式の `driver.getPageSource()` | XML 出力はありません。`screen.tree()` はツリーをテキストで返し、[`unstable_raw`](/reference/mobile#unstable_raw) 経由の `client.capture.snapshot()` はノードを返します。XML を使う処理は Appium に残す |
+| 複数の指や経由点を使う `performActions()` | 単一のジェスチャー、または [`unstable_raw`](/reference/mobile#unstable_raw) 経由の `client.interactions.gesture` |
+| `mobile: shell`, `getPerformanceData()` | `device.unstable_raw.deviceId` を使い、Node から `adb` や `simctl` を実行。ローカルデバイスのみ |
+| iPhone 上の `mobile: setSimulatedLocation`、`mobile: setAppearance`、`mobile: setPasteboard` | シミュレーターでテストを実行。[実機](/mobile#physical-devices)を参照 |
+| `gpsLocation`、`uploadMedia` など、その他の `bstack:options` キー | - |
+| ローカルデバイスの `appium:platformVersion`、実機の `appium:udid` | そのバージョンで動くシミュレーターやエミュレーターを名前で指定。実機は `device` に名前を指定 |
+| `appium:avd`, `avdArgs`, `isHeadless` | 実行前にエミュレーターを起動し、シリアルを指定 |
+| Java、Python、Ruby、C# のテスト | e2e のテストは Node 上で動作します。アプリの隣の `e2e/` フォルダーで TypeScript に書き換える |
+
+### 実装予定なし
+
+| Appium | 代わりに使う方法 |
+| --- | --- |
+| XPath | クエリを連結（`screen.getByTestId('row').getByText('Delete')`）するか、`filter({ has, hasText })` を使用。XPath はテストを 1 つのプラットフォームのツリーに結び付けます |
+| `-image` セレクター、`findImage` | `screen.tapAt({ x, y })`、または `agent.act` のゴール |
+| 複数一致の先頭を操作する `$(selector)` | `.first()`。[セレクターの書き換え](#rewrite-selectors)を参照 |
+| `usePrebuiltWDA` などの WebDriverAgent ケイパビリティ | 設定不要。agent-device が独自のランナーをビルドして署名 |
+| 複合的な `-ios predicate string` の条件、`UiSelector` フラグ、`fromParent()` | `filter({ has })` または `RegExp` を使う `getBy*` クエリ |
+| Gherkin の feature ファイル | シナリオごとに 1 テスト。ステップには `agent.act` のゴールを使用可能 |
+| 保存済みセッション、`test.setup` と `{ session }` | テストごとにログインするか、アプリに初期データを投入。デバイスには保存するセッションがありません。[Web との違い](/mobile#what-differs-from-the-web)を参照 |
+| デバイスのグリッドやハブ、その他のデバイスクラウド | ホスト型プロバイダー、または自作の `DeviceProvider` |
+| `sauce:options` | [`DeviceProvider`](/mobile#hosted-devices) を実装 |
+| Appium Inspector | `screen.debug()`、またはコーディングエージェントのライブセッション用の [`npx e2e mcp`](/mcp-server) |
+| `driver.updateSettings()`, `appium:settings[...]` | [`mobile()`](/reference/mobile#engine) の `snapshot`、`settle`、`transition` |
+| `.getAttribute('clickable')`, `.isClickable()` | 要素を操作。操作は対象が操作可能になるまで待機 |
+| リモート Appium サーバー（`hostname`、`port`） | デバイスが接続されているマシンで e2e を実行 |
+| Allure | `.e2e/junit.xml` を渡すか、`htmlReporter()` を使用 |
+
+## 次のステップ
+
+<CardGroup cols={2}>
+  <Card title="モバイル" icon="mobile-screen" href="/mobile">
+    アプリ、デバイス、ホスト型デバイスを設定します。
+  </Card>
+  <Card title="モバイルエンジンリファレンス" icon="book" href="/reference/mobile">
+    すべてのオプション、`device` フィクスチャ、エージェントツールを確認できます。
+  </Card>
+</CardGroup>

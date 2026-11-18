@@ -1,0 +1,516 @@
+---
+title: "e2e/runner"
+description: "运行测试套件或探索、列出选中的测试，或在其他测试运行器中托管 e2e 会话。"
+"og:image": "https://e2e.com/docs/images/og/reference/runner.png?v=a4609b13d7"
+"twitter:image": "https://e2e.com/docs/images/og/reference/runner.png?v=a4609b13d7"
+---
+
+`e2e/runner` 从代码运行测试套件，无需调用 CLI。`run` 执行测试并返回报告，`explore` 执行一次探索并返回发现，`list` 返回选中的测试，`openHost` 在其他测试运行器中托管 e2e 会话。在测试文件中导入 `e2e` 不会加载运行器。
+
+<Note>
+`run`、`list`、`explore` 和 `openHost` 需要 Node.js。在 Bun 上，它们会抛出 `NODE_UNSUPPORTED`；请使用 [CLI](/reference/cli#bun) 运行测试。
+</Note>
+
+```ts title="scripts/run-e2e.ts"
+import type { E2EConfig } from 'e2e';
+import { run } from 'e2e/runner';
+import { web } from '@e2e-dev/web';
+
+const config: E2EConfig = {
+  targets: [{ name: 'web', engine: web(), app: { url: 'http://localhost:3000' } }],
+};
+const controller = new AbortController();
+const result = await run({
+  config,
+  files: ['tests/signup.e2e.ts'],
+  interruptSignal: controller.signal,
+  onEvent(event) {
+    if (event.type === 'test-started') console.log(event.title);
+  },
+});
+
+console.log(result.status, result.report.run.summary);
+```
+
+## 参考
+
+### 函数
+
+| 函数 | 返回值 |
+| --- | --- |
+| [`run`](#run) | `Promise<RunResult>` |
+| [`explore`](#explore) | `Promise<ExploreResult>` |
+| [`list`](#list) | `Promise<ListResult>` |
+| [`openHost`](#openhost) | `Promise<E2EHost<Fixtures>>` |
+| [`isE2EError`](#ise2eerror) | `boolean` |
+
+#### `run`
+
+`run(options?: RunOptions)` 执行完整的测试套件。它会在完成清理后兑现 Promise，绝不会退出调用方的进程。
+
+```ts
+const result = await run({ files: ['tests/signup.e2e.ts'] });
+process.exitCode = result.exitCode;
+```
+
+##### 选项
+
+| 选项 | 示例 | 类型 | 默认值 |
+| --- | --- | --- | --- |
+| `cwd` | `'apps/web'` | `string` | 当前工作目录 |
+| `config` | `'e2e.ci.config.ts'` | `string \| E2EConfig` | 自动发现的 `e2e.config.ts` |
+| `files` | `['tests/signup.e2e.ts:12']` | `readonly string[]` | 配置的测试套件 |
+| `changedSince` | `'origin/main'` | `string` | - |
+| `interruptSignal` | `controller.signal` | `AbortSignal` | - |
+| `onEvent` | `(event) => {}` | `RunEventSink` | - |
+
+- `files` 接受路径、glob 模式、文件名或 `file:line`。
+- `changedSince` 与 [`--changed-since`](/filters) 的行为相同。
+- 中止 `interruptSignal` 会中断测试并执行清理。
+- `onEvent` 接收带类型的进度事件。终端进度输出会关闭。该回调不能阻塞。抛出错误或拒绝 Promise 的回调会被禁用，但不会使运行失败。
+- 将重试次数、工作进程数等执行设置放在配置中。
+- 运行时配置（`E2EConfig` 值）使用一个工作进程，在调用方进程中运行。文件配置支持按配置启动工作进程。
+
+##### 结果
+
+| 字段 | 含义 |
+| --- | --- |
+| `exitCode` | 与 CLI 对应的退出码：`0`、`1`、`2`、`3`、`4` 或 `130`。 |
+| `status` | `passed`、`failed`、`blocked`、`error` 或 `interrupted`。 |
+| `report` | 完整报告。读取 `report.run.results`、`report.run.errors` 和 `report.run.summary` 获取结果。 |
+| `reportPath` | `report.json` 的绝对路径；无法写入时为 `undefined`。 |
+| `aiTracePath` | AI 追踪记录路径；未写入 AI 追踪记录时为 `undefined`。 |
+
+测试失败、配置失败和中断都会兑现 Promise，其状态和错误包含在报告中。
+
+| 抛出错误 | 发生条件 |
+| --- | --- |
+| `RUNNER_BUSY` | 另一个测试套件正在运行，或有宿主处于打开状态。运行测试套件前关闭所有宿主，打开宿主前等待测试套件完成。 |
+
+- 测试文件导入的辅助模块会在同一进程的多次 `run` 调用之间保持缓存。修改它们后需要启动新进程。
+- 每次返回报告的运行都会发送一个匿名 [`e2e_run_completed`](/telemetry) 事件，停用方式与 CLI 相同。首次调用可能会在 stderr 上输出遥测通知。
+- 测试套件输出使用 UTF-8 文本脱敏，不保留二进制数据。应用日志和进度回调的输出仍由你控制。
+
+#### `explore`
+
+`explore(options?: ExploreOptions)` 执行一次[探索](/explore)，与 `e2e explore` 启动的运行相同。它会在完成清理后兑现 Promise，绝不会退出调用方的进程。
+
+```ts title="scripts/explore-e2e.ts"
+import type { E2EConfig } from 'e2e';
+import { explore } from 'e2e/runner';
+import { web } from '@e2e-dev/web';
+import { gateway } from 'ai';
+
+const config: E2EConfig = {
+  agents: { default: { model: gateway('openai/gpt-6-luna-fast') } },
+  targets: [{ name: 'web', engine: web(), app: { url: 'http://localhost:3000' } }],
+};
+const controller = new AbortController();
+const result = await explore({
+  config,
+  goal: 'Explore the checkout flow like a first-time buyer and report anything off',
+  maxSteps: 4,
+  interruptSignal: controller.signal,
+  onEvent(event) {
+    if (event.type === 'explore' && event.progress.phase === 'finding') console.log(event.progress.finding.title);
+  },
+});
+
+console.log(result.status, result.explore.ended, result.explore.findings.length);
+```
+
+##### 选项
+
+| 选项 | 示例 | 类型 | 默认值 |
+| --- | --- | --- | --- |
+| `cwd` | `'apps/web'` | `string` | 当前工作目录 |
+| `config` | `'e2e.ci.config.ts'` | `string \| E2EConfig` | 自动发现的 `e2e.config.ts` |
+| `goal` | `'Explore the login flow'` | `string` | `'Explore the app and find bugs'`；使用 `changedSince` 时为 `'Explore what this change affects and find bugs in it'` |
+| `target` | `'web'` | `string` | 配置中的第一个测试目标 |
+| `agent` | `'smart'` | `string` | `agents.default` |
+| `session` | `'loggedIn'` | `string` | - |
+| `changedSince` | `'origin/main'` | `string` | - |
+| `maxSteps` | `4` | `number` | `8` |
+| `timeoutMs` | `300_000` | `number` | `600_000` |
+| `interruptSignal` | `controller.signal` | `AbortSignal` | - |
+| `onEvent` | `(event) => {}` | `RunEventSink` | - |
+
+- `goal` 最多 2,000 个字符。
+- `session` 指定[准备测试](/authentication)保存的会话。该准备测试先运行，探索从它保存的状态开始，与 `--session` 的行为相同。
+- `changedSince` 探索自该引用以来的更改，与 [`--changed-since`](/reference/cli#e2e-explore) 的行为相同。
+- `maxSteps` 范围为 1 至 100。`timeoutMs` 范围为 `180000` 至 `7200000`。
+- `onEvent` 接收与 `run` 相同的事件，此外每次规划决策、步骤和发现都会产生一个 `explore` 事件。`e2e explore` 在运行开始前输出的内容，例如选中的测试目标，会在 `plan` 事件之前以测试目标为 `run` 的 `notice` 事件送达。
+- `video`、`trace` 和 `output` 等录制与输出设置来自配置。
+
+##### 结果
+
+`ExploreResult` 包含 [`RunResult`](#run) 的全部字段，以及 `explore`；`report.run.explore` 也保存了这条记录。
+
+| 字段 | 含义 |
+| --- | --- |
+| `explore.goal`、`explore.budgets` | 已对机密值脱敏的目标，以及运行使用的步骤和时间预算。 |
+| `explore.ended` | 探索停止的原因：`finished`、`skipped`（使用 `changedSince` 时，规划器判定更改不包含用户可见内容；运行通过）、`step-limit`、`time`、`stuck` 或 `aborted`。 |
+| `explore.summary` | 智能体给出的最终评估，如有。 |
+| `explore.change` | 使用 `changedSince` 时，规划所依据的更改：`base` 为合并基点，`files` 为更改的文件数。 |
+| `explore.steps` | 智能体规划并执行的每个步骤及其状态：`passed`、`failed`、`blocked` 或 `exhausted`。 |
+| `explore.findings` | 每项发现：`kind`、1 至 5 的 `severity`、`title`、`expected`、`actual` 和 `reproduction`。`issue` 会使运行失败，`warning` 不会。 |
+
+探索开始后，发现、失败和中断都会兑现 Promise，其状态包含在报告中。无法启动探索的选项或配置会提前拒绝 Promise，与对应的 `e2e explore` 标志一致。使用 [`isE2EError`](#ise2eerror) 识别这些错误。
+
+| 抛出错误 | 发生条件 |
+| --- | --- |
+| `INVALID_CONFIG` | `goal`、`maxSteps` 或 `timeoutMs` 超出范围，或 `agent` 指定的智能体未配置。 |
+| `UNKNOWN_TARGET` | `target` 指定的测试目标未配置。 |
+| `MODEL_UNAVAILABLE` | 智能体没有模型。 |
+| `INVALID_CHANGED_SINCE` | `changedSince` 为空、以 `-` 开头，或指定了 git 无法用于计算更改的引用。 |
+| `RUNNER_BUSY` | 测试套件或探索正在运行，或有宿主处于打开状态。 |
+| `run` 记录的错误码 | 缺少配置，或加载器拒绝了配置。 |
+
+每次返回报告的探索都会像 `run` 一样发送一个匿名 [`e2e_run_completed`](/telemetry) 事件。
+
+#### `list`
+
+`list(options?: ListOptions)` 按 [`e2e list`](/reference/cli#e2e-list) 的方式收集并选择测试，到此即止。不会启动应用进程、引擎或工作进程，也不会写入任何内容。
+
+```ts
+import { isE2EError, list } from 'e2e/runner';
+
+const { pairs, unmatched, targets } = await list({
+  files: ['tests/signup.e2e.ts'],
+  grep: [/checkout/],
+});
+
+for (const pair of pairs) {
+  console.log(`${pair.id} ${pair.disposition} ${pair.titlePath.join(' › ')}`);
+}
+```
+
+每次调用都会重新导入测试文件，因此同一进程中后续的 `list()` 能看到修改。
+
+##### 选项
+
+| 选项 | 示例 | 类型 | 默认值 |
+| --- | --- | --- | --- |
+| `config` | `'e2e.ci.config.ts'` | `string \| E2EConfig` | 从 `cwd` 自动发现，查找方式与 `e2e list` 相同 |
+| `targets` | `['web']` | `readonly string[]` | - |
+| `cwd` | `'apps/web'` | `string` | 当前工作目录 |
+| `files` | `['tests/', 'signup.e2e.ts:12']` | `readonly string[]` | 配置的测试套件 |
+| `tags`、`tagMode`、`excludeTags` | `{ tags: ['smoke'], tagMode: 'all' }` | `readonly string[]`、`'any' \| 'all'` | - |
+| `grep`、`grepInvert` | `[/checkout/]` | `readonly RegExp[]` | - |
+| `lastFailed` | `true` | `boolean` | - |
+| `shard` | `{ index: 1, total: 4 }` | `{ index, total }` | - |
+| `changedSince` | `'origin/main'` | `string` | - |
+| `passWithNoTests` | `true` | `boolean` | - |
+| `output` | `'.e2e'` | `string` | 配置的 `output` |
+| `env` | `{ ...process.env, CI: '1' }` | `NodeJS.ProcessEnv` | `process.env` |
+
+- `targets` 指定测试目标，与 `--target` 相同。
+- `files` 是通过位置参数选择文件的方式：路径、glob 模式、文件名和 `file:line`。
+- `tags`、`tagMode` 和 `excludeTags` 对应 `--tag`、`--tag-mode` 和 `--exclude-tag` 筛选器。
+- `grep` 和 `grepInvert`：测试的 describe 标题和测试标题用空格连接后，必须匹配至少一个 `grep` 模式，且不匹配任何 `grepInvert` 模式。
+- `lastFailed` 仅保留上次运行未通过的测试，从 `output` 下的 `report.json` 读取。
+- `shard` 对应 `--shard index/total` 分片。
+- `changedSince` 与 `--changed-since` 的行为相同。[测试筛选器](/filters)在调用方进程中运行；`list` 不输出它们的任何行，`e2e list` 会输出。
+- `passWithNoTests` 让没有可运行测试的调用兑现 Promise，而非抛出 `NO_TESTS`。
+- `output` 是结果目录。
+- `env` 是解析配置所用的环境。
+
+##### 结果
+
+`ListResult` 为 `{ pairs, unmatched, targets }`。
+
+- `pairs` 按选择顺序，为每个测试、测试目标和智能体的组合提供一个 `ListedPair`，包括被筛选器移除的组合。不展开重复运行。
+- `unmatched` 是未选中任何已发现文件的位置参数，保留原样。
+- `targets` 是按配置顺序排列的已选测试目标名称。
+
+| 字段 | 含义 |
+| --- | --- |
+| `id` | `report.json` 为第 0 次重复运行保存的结果 ID。 |
+| `file`、`title`、`titlePath`、`kind`、`tags` | 收集到的测试。`kind` 为 `test` 或 `setup`。测试未声明标签时，`tags` 为 `[]`。 |
+| `source` | 相对于项目的声明位置：`{ file, line, column }`。测试未记录时为 `undefined`。 |
+| `session` | 测试使用的会话，来自测试本身或其 describe 链。不使用会话时为 `undefined`。 |
+| `sessions` | 准备测试产生的会话名称。普通测试中为 `[]`。 |
+| `serialId` | 测试属于串行分组时设置，否则为 `undefined`。 |
+| `target`、`agent` | 该组合运行时使用的测试目标名称和已配置智能体。 |
+| `disposition` | `run`、`skip` 或 `filtered`。 |
+| `reason` | 组合被跳过或筛除的原因，例如 `title does not match --grep`。正常运行时省略。 |
+| `filter` | 筛除该组合的测试筛选器名称。由选择标志筛除的组合没有此字段。 |
+
+`e2e list` 输出 `run` 和 `skip` 组合，以及被测试筛选器排除的组合。`list` 返回每个 `filtered` 组合。
+
+##### 错误
+
+失败时会产生与 `e2e list` 退出时相同的已分类错误。使用 [`isE2EError`](#ise2eerror) 识别，并根据 `error.code` 分支处理。
+
+```ts
+import { isE2EError, list } from 'e2e/runner';
+
+try {
+  await list({ targets: ['missing'] });
+} catch (error) {
+  if (isE2EError(error) && error.code === 'UNKNOWN_TARGET') {
+    console.error(error.message);
+  }
+}
+```
+
+| 抛出错误 | 发生条件 |
+| --- | --- |
+| `NO_TESTS` | 选择结果为空，且未设置 `passWithNoTests`。属于 `ConfigurationError`。如果测试筛选器未留下任何可运行测试，`list` 则会兑现 Promise，每个组合均为 `filtered` 或 `skip`。 |
+| `UNKNOWN_TARGET` | `targets` 中某个名称不是已配置的测试目标。 |
+| `INVALID_CHANGED_SINCE` | `changedSince` 为空或以 `-` 开头，或测试筛选器运行时，该值指定了 git 无法用于计算更改的引用。 |
+| `run` 记录的错误码 | 缺少配置、加载器拒绝配置，或收集失败。 |
+
+#### `openHost`
+
+`openHost<Fixtures>(options?: OpenHostOptions)` 为 Playwright Test、Vitest、Jest 或你自己的测试执行框架准备 e2e，并返回[宿主](#host)。
+
+```ts
+import { openHost } from 'e2e/runner';
+
+await using host = await openHost({ target: 'web' });
+await using session = await host.openSession({ name: 'checkout' });
+await session.fixtures.app.open('/checkout');
+```
+
+- 你的运行器负责收集、重试和报告。
+- 宿主准备测试目标的引擎、启动应用进程，并在每个工作进程的生命周期中初始化引擎一次。使用工作进程作用域的宿主和测试作用域的会话；参阅 [Playwright Test 示例](#playwright-test-fixtures)。
+- 每次 [`host.openSession`](#host-opensession) 都创建一个与测试生命周期一致的尝试，包含新的测试夹具、截止时间、步骤和产物。
+- 如果打开失败，e2e 会先清理已启动的内容，再抛出错误。
+
+##### 选项
+
+| 选项 | 示例 | 类型 | 默认值 |
+| --- | --- | --- | --- |
+| `config` | `'e2e.config.ts'` | `string \| E2EConfig` | 最近的 `e2e.config.ts`、`.mts`、`.js` 或 `.mjs` |
+| `cwd` | `'apps/web'` | `string` | `process.cwd()` |
+| `target` | `'android'` | `string` | 唯一的测试目标 |
+| `env` | `process.env` | `NodeJS.ProcessEnv` | `process.env` |
+| `signal` | `controller.signal` | `AbortSignal` | - |
+| `headed` | `true` | `boolean` | `false` |
+| `onNotice` | `(target, message) => {}` | `(target: string, message: string) => void` | - |
+
+- `config` 是相对于 `cwd` 的配置文件路径，或 `E2EConfig` 值。省略时从 `cwd` 自动发现配置，查找方式与 `list` 相同。
+- `cwd` 是自动发现配置的起始目录，也是配置值对应的项目根目录。
+- 配置声明多个测试目标时，必须指定 `target`。
+- `env` 是配置、引擎和提供方读取的环境。
+- `signal` 取消宿主资源准备、等待中的会话打开操作，或正在执行的测试夹具调用。
+- `headed` 让浏览器引擎以有头模式运行。
+- `onNotice` 接收步骤之外的进度，例如资源准备或应用进程进度。它不能抛出错误。
+
+传入配置路径的宿主会重新加载该文件及其导入的项目文件。包导入保持共享，因此不会为每个宿主重新创建包的单例状态。配置值使用自己的引擎实例。每个实例在宿主关闭前都属于该宿主，因此第二个宿主必须使用另一个实例。
+
+| 抛出错误 | 发生条件 |
+| --- | --- |
+| `UNKNOWN_TARGET` | `target` 指定的测试目标未配置。 |
+| `TARGET_REQUIRED` | 配置声明了多个测试目标，但 `target` 未指定任何一个。 |
+| `RUNNER_BUSY` | 测试套件正在运行。打开宿主前等待它完成。 |
+
+打开失败时会产生经过分类和脱敏的错误，不会暴露引擎的原始原因。使用 [`isE2EError`](#ise2eerror) 和 `error.code` 匹配。
+
+#### `isE2EError`
+
+用于识别已分类 e2e 错误的类型守卫。根据其 `error.code` 分支处理。
+
+```ts
+if (isE2EError(error) && error.code === 'NO_TESTS') process.exitCode = 0;
+```
+
+跨包副本时，`instanceof` 可能无法识别 e2e 错误，因此应使用 `isE2EError`。`ConfigurationError` 和 `isE2EError` 都由 `e2e/runner` 导出。
+
+### 宿主
+
+`E2EHost<Fixtures>` 是 [`openHost`](#openhost) 的返回值。
+
+| 成员 | 返回值 |
+| --- | --- |
+| `runId`、`target` | `string` |
+| [`host.openSession`](#host-opensession) | `Promise<E2ESession<Fixtures>>` |
+| [`host.close`](#host-close) | `Promise<readonly SerializedError[]>` |
+
+`runId` 和 `target` 是宿主各会话共享的标识。
+
+每个进程中最多只能有一个正在打开、运行或关闭的托管尝试，即使它们属于不同宿主，且无论配置是文件还是值。
+
+- 重叠的打开操作会在引擎开始建立尝试状态前被拒绝。在同一宿主上打开下一个会话前，等待 `session.close()` 完成。
+- 启动失败或被取消时，会结束已打开的内容，并让宿主保持可用，就像运行会保留工作进程以供重试一样。
+- 如果会话的引擎清理失败，宿主会永久关闭，因为其隔离状态已不确定；请打开新宿主。
+
+| 抛出错误 | 发生条件 |
+| --- | --- |
+| `WORKER_PROTOCOL` | 托管尝试发生重叠，或在已关闭的宿主上调用。 |
+
+#### `host.openSession`
+
+`host.openSession(options: OpenSessionOptions)` 在此宿主的测试目标上打开一个新[会话](#session)。一个会话是一次测试尝试，不包含重试循环。重试会在同一工作进程宿主上打开新会话。
+
+```ts
+const session = await host.openSession({
+  name: 'checkout',
+  timeout: 60_000, // default: the config's timeout
+  onStep: (step) => {
+    if (step.phase === 'end') console.log(`${step.api} ${step.label}: ${step.status}`);
+  },
+});
+```
+
+##### 选项
+
+| 选项 | 示例 | 类型 | 默认值 |
+| --- | --- | --- | --- |
+| `name` | `'checkout'` | `string` | 必填 |
+| `timeout` | `60_000` | `number` | 配置的 `timeout` |
+| `signal` | `controller.signal` | `AbortSignal` | - |
+| `agent` | `'smart'` | `string` | 配置中的第一个智能体 |
+| `onStep` | `(step) => {}` | `(progress: StepProgress) => void` | - |
+
+- `name` 是步骤和追踪报告使用的测试名称。
+- `timeout` 是会话操作的时限，以毫秒为单位，必须是有限正数，从会话打开时开始计算。它不限制资源准备或打开过程，也不会关闭会话。
+- `signal` 取消打开操作或正在执行的测试夹具调用。宿主的 `signal` 也适用。资源准备发生在 `openHost` 中，因此只有宿主的 `signal` 能取消它；任一信号都能取消启动。
+- `agent` 是调用未指定智能体时，`agent` 测试夹具使用的智能体。
+- `onStep` 接收实时 `StepProgress`，与报告器收到的数据相同。它不能阻塞或抛出错误。其 `phase` 为 `start`、`event`、`activity`、`replay` 或 `end`。`end` 事件包含 `status`、`durationMs`、`modelCalls`，以及步骤失败时经过脱敏的 `error`。
+- `timeout`、`agent` 和 `onStep` 属于会话，不属于 `openHost`。
+
+| 抛出错误 | 发生条件 |
+| --- | --- |
+| `INVALID_CONFIG` | `name` 不是字符串，或 `timeout` 不是有限正数。 |
+| `CANCELLED` | 会话或宿主的 `signal` 在打开前或打开过程中被中止。 |
+| `WORKER_PROTOCOL` | 另一个托管尝试正在打开、运行或关闭，或宿主已关闭。 |
+
+#### `host.close`
+
+`host.close()` 取消所有活动或等待中的会话，等待其关闭，然后释放引擎、停止应用进程并释放准备的资源。
+
+```ts
+const failures = await host.close();
+if (failures.length > 0) throw new AggregateError(failures, 'e2e host close failed');
+```
+
+- 幂等：只清理和释放资源一次。
+- 宿主实现了 `AsyncDisposable`：`await using host = await openHost()` 会在退出作用域时关闭宿主，并在关闭报告失败时抛出 `AggregateError`。
+
+### 会话
+
+`E2ESession<Fixtures>` 是 [`host.openSession`](#host-opensession) 的返回值。
+
+| 成员 | 返回值 |
+| --- | --- |
+| `fixtures` | `TestFixtures & Fixtures` |
+| `runId`、`attemptId`、`target` | `string` |
+| `steps()` | `readonly StepRecord[]` |
+| `report()` | `Report \| undefined` |
+| `artifactsDir` | `string` |
+| `tracePath` | `string` |
+| [`session.close`](#session-close) | `Promise<readonly SerializedError[]>` |
+
+- `fixtures` 包含 `agent`、`app`、`screen`、`platform` 和引擎的测试夹具。
+- `runId` 和 `target` 对应宿主的运行和测试目标；`attemptId` 是本次尝试的唯一标识。
+- `steps()` 返回截至当前已运行步骤的只读 `StepRecord`，与[报告](/reference/reporters)记录的内容一致。
+- `report()` 在关闭且成功写入追踪记录后，返回用于渲染追踪记录的会话 `Report`；否则返回 `undefined`。其状态描述 SDK 会话，而非你的运行器对测试体的判定结果。
+- `artifactsDir` 是本次尝试的截图、录像和追踪记录所在的绝对目录。
+- `tracePath` 是 `trace.md` 的绝对路径；在 `close()` 完成后附加或读取它。
+
+#### `session.close`
+
+`session.close()` 取消剩余操作，结束尝试并写入追踪记录。它返回软断言、遗弃操作（尚未完成的轮询或步骤）和清理的失败信息，而不是抛出这些错误。
+
+```ts
+const failures = await session.close();
+if (failures.length > 0) throw new AggregateError(failures, 'e2e session close failed');
+```
+
+- 幂等：后续调用返回相同的失败信息。
+- 宿主保持打开，供下一个测试使用。
+- 会话实现了 `AsyncDisposable`：`await using session = await host.openSession({ name: 'checkout' })` 会在退出作用域时关闭会话，并将返回的失败作为 `AggregateError` 抛出。
+
+#### 截止时间和软失败
+
+`expect.soft` 在会话的整个生命周期中收集失败。检查 `close()` 的结果，以便让宿主运行器中的测试失败。
+
+- `expect.poll` 使用会话的剩余预算，即使它自己的超时更长。
+- 引擎提供的内置测试夹具的操作也遵守此预算，包括禁用了自身超时的操作。
+- 超过截止时间时，正在监控该截止时间的轮询或操作会报告自身的中止。其他仍在运行的操作，包括引擎或模型始终未响应的操作，都会以 `TEST_TIMEOUT` 失败。
+- 无论哪种情况，会话结果都是超时，`close()` 会返回超时错误。后续操作会以 `TEST_TIMEOUT` 失败；请关闭会话。
+
+#### 产物
+
+产物位于 `<output>/results/host/<resultSegment>/` 下。关闭时，e2e 使用与报告相同的脱敏格式，将 `trace.md` 写入该目录。
+
+- e2e 根据名称和唯一的尝试标识生成安全的 `resultSegment`。名称绝不会直接成为原始路径片段。
+- 重复名称和重试使用独立目录。
+- 使用提供方支持的机密值时，目录只使用标识片段，因为尚未解析的值无法从标题 slug 中脱敏。追踪记录仍会显示脱敏后的名称。
+- 产物路径相对于 `<output>/results`，而非 `session.artifactsDir`。
+- 视频遵循测试目标对首次尝试的录制模式。在仅失败时保留视频的模式下，软失败以及失败、受阻、超时或取消的步骤都会保留视频。
+
+<Note>
+托管会话写入自己的追踪记录，不写入 `report.json`。要接入你的运行器报告，使用 `onStep`、`steps()`、`report()` 和 `close()` 返回的失败信息。你的运行器中测试体的失败不会传给 e2e。
+
+`e2e mcp` 使用的一次性尝试仍是内部功能。没有顶层 `openSession` 导出。
+</Note>
+
+## 类型
+
+除了函数，`e2e/runner` 还导出以下类型。
+
+| 类型 | 描述 |
+| --- | --- |
+| `RunOptions`、`RunResult` | [`run`](#run) 的选项和结果 |
+| `ExploreOptions`、`ExploreResult` | [`explore`](#explore) 的选项和结果 |
+| `RunEventSink` | `onEvent` 回调 |
+| `ListOptions`、`ListResult`、`ListedPair` | [`list`](#list) 的选项、结果和单个组合 |
+| `OpenHostOptions`、`E2EHost` | [`openHost`](#openhost) 的选项和[宿主](#host) |
+| `OpenSessionOptions`、`E2ESession` | [`openSession`](#host-opensession) 的选项和[会话](#session) |
+| `StepProgress`、`StepRecord` | 单个 `onStep` 进度事件，以及 `steps()` 返回的单个步骤 |
+| `SerializedError` | `close()` 返回的单个失败 |
+
+## 示例
+
+### Playwright Test 测试夹具
+
+工作进程作用域的宿主和测试作用域的会话：
+
+```ts title="tests/fixtures.ts"
+import { test as base } from '@playwright/test';
+import { openHost, type E2EHost, type E2ESession } from 'e2e/runner';
+import type { Device } from '@e2e-dev/mobile';
+
+type Fixtures = { device: Device };
+
+const test = base.extend<
+  { e2e: E2ESession<Fixtures> },
+  { e2eHost: E2EHost<Fixtures> }
+>({
+  e2eHost: [async ({}, use) => {
+    const host = await openHost<Fixtures>({ target: 'android' });
+    try {
+      await use(host);
+    } finally {
+      const failures = await host.close();
+      if (failures.length > 0) throw new AggregateError(failures, 'e2e host close failed');
+    }
+  }, { scope: 'worker' }],
+  e2e: async ({ e2eHost }, use, testInfo) => {
+    const session = await e2eHost.openSession({
+      name: testInfo.titlePath.join(' › '),
+      // Playwright's 0 disables its timeout; e2e then falls back to the config's.
+      timeout: testInfo.timeout || undefined,
+      onStep: (step) => {
+        if (step.phase === 'end') console.log(`${step.api} ${step.label}: ${step.status}`);
+      },
+    });
+    try {
+      await use(session);
+    } finally {
+      const failures = await session.close();
+      await testInfo.attach('e2e trace', { path: session.tracePath, contentType: 'text/markdown' });
+      if (failures.length > 0) throw new AggregateError(failures, 'e2e session close failed');
+    }
+  },
+});
+
+test('turns on dark mode', async ({ e2e }) => {
+  const { agent, app } = e2e.fixtures;
+  await agent.act('open settings and turn on dark mode');
+  await app.screenshot();
+});
+```

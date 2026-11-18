@@ -105,6 +105,13 @@ export interface TraceProvenance {
   readonly callIndex?: number;
   /** Name of the configured agent the step ran with. */
   readonly agent?: string;
+  /**
+   * SHA-256 of the whole redacted test id, target id, and agent name, only
+   * when one of them is longer than an entry keeps or ends like a cut (a
+   * `createAgent` cache key can): two steps whose stored text is the same
+   * share the digest only when their names differ in a secret value alone.
+   */
+  readonly identityDigest?: string;
 }
 
 /**

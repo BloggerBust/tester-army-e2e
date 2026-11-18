@@ -1,0 +1,83 @@
+---
+title: Moli
+sidebarTitle: Moli
+description: 通过 @e2e-dev/moli 在本地 Moli 浏览器中运行网页端测试目标，并自动启动和清理浏览器。
+---
+
+[Moli](https://github.com/lexmount/moli) 是支持 Chrome DevTools Protocol 的开源浏览器。`@e2e-dev/moli` 中的 `moli()` 会为每个工作进程槽位启动一个本地浏览器，并在运行结束时停止它。
+
+## 启动 Moli 测试目标
+
+安装 [Moli 二进制文件](https://github.com/lexmount/moli#direct-installation)和以下包：
+
+<CodeGroup>
+```bash npm
+npm install --save-dev e2e @e2e-dev/web @e2e-dev/moli
+```
+
+```bash pnpm
+pnpm add -D e2e @e2e-dev/web @e2e-dev/moli
+```
+
+```bash bun
+bun add -d e2e @e2e-dev/web @e2e-dev/moli
+```
+</CodeGroup>
+
+```ts title="e2e.config.ts"
+import type { E2EConfig } from 'e2e';
+import { web } from '@e2e-dev/web';
+import { moli } from '@e2e-dev/moli';
+
+export default {
+  targets: [
+    {
+      name: 'moli',
+      engine: web({ browser: moli() }),
+      app: { url: 'http://localhost:3000' },
+    },
+  ],
+} satisfies E2EConfig;
+```
+
+使用 [`e2e run`](/reference/cli#e2e-run) 运行测试。每个工作进程使用独立的 Moli 进程，并占用一个可用的回环端口。如果服务器未在 10 秒内提供 CDP，其租约就会失败。
+
+## 配置浏览器
+
+| 选项 | 默认值 | 含义 |
+| --- | --- | --- |
+| `binary` | 依次查找 `MOLI_PATH`、`PATH`、`~/.local/bin/moli` | 可执行文件的路径或名称。在浏览器启动时从本次运行的环境中解析。 |
+| `layout` | `true` | 传入 `--layout`，启用按需布局和截图。 |
+| `loadResources` | `true` | 传入 `--resource`，获取可选的图片、字体、音频、视频、媒体和文本轨道。 |
+| `args` | `[]` | 额外的 `moli serve` 标志。 |
+
+提供方支持工作进程作用域。尚未实现每次尝试独立的租约。
+
+<Accordion title="连接到你自行启动的服务器">
+在单独的终端中启动 Moli：
+
+```bash
+moli serve --host 127.0.0.1 --port 19222 --layout --resource
+```
+
+使用网页端引擎的 `connect` 选项进行连接。运行结束后，该服务器会继续运行：
+
+```ts
+web({ connect: { cdpEndpoint: () => process.env.MOLI_CDP_URL?.trim() || 'http://127.0.0.1:19222' } })
+```
+</Accordion>
+
+## 检查浏览器兼容性
+
+使用你部署的 Moli 构建版本运行测试套件。查看[上游问题](https://github.com/lexmount/moli/issues)，了解 CDP 兼容性方面的缺口。
+
+## 下一步
+
+<CardGroup cols={2}>
+  <Card title="浏览器 API" icon="globe" href="/browser">
+    导航、网络拦截、下载和截图。
+  </Card>
+  <Card title="身份验证" icon="key" href="/authentication">
+    保存已登录的会话，并在不同测试中恢复。
+  </Card>
+</CardGroup>

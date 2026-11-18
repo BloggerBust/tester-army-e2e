@@ -1,0 +1,216 @@
+---
+title: Detox からの移行
+description: 既存のアプリビルドと testID を、screen、expect、エージェントのゴールで引き続き使います。
+"og:image": "https://e2e.com/docs/images/og/migrate/detox.png?v=1715664ae0"
+"twitter:image": "https://e2e.com/docs/images/og/migrate/detox.png?v=1715664ae0"
+---
+
+import { SetupPrompt } from '../../snippets/setup-prompt-card.jsx';
+
+export const migrationPrompt = `このプロジェクトの Detox テストを、テストファイル ごとに e2e へ移行してください。ドキュメント: \`https://e2e.com/docs/migrate/detox.md\` と \`https://e2e.com/docs/mobile.md\`
+
+1. 上記の移行ガイドを読んでください。\`.detoxrc.js\` と Detox API の e2e への対応関係、および e2e にまだない機能が載っています。モバイルガイドではデバイスとアプリのビルドを説明しています。
+2. プロジェクトに e2e の設定（\`e2e.config.ts\`、\`.mts\`、\`.js\`、\`.mjs\`）がなければ、\`npx e2e init --yes --engine mobile\`（または pnpm、bun の同等コマンド）を実行してください。このマシンのプラットフォーム用のターゲットを 1 つ持つモバイル設定と、設定アプリに対するサンプルテストを作りますが、この時点では何もインストールしません。\`tests/example.e2e.ts\` を対象アプリ用に書き換えるか、削除してください。
+3. e2e スキルを読み、以降のすべての手順で従ってください。\`npx e2e guide\` でスキル、\`npx e2e guide <topic>\` で各トピックを表示できます。
+4. init を実行した場合は、エージェントステップに使うモデルを私に確認してください。ChatGPT、GitHub Copilot、OpenCode Console、SuperGrok のサブスクリプション、API キー、ローカルモデルから選びます。対応するプロバイダーパッケージで設定し、ログインが必要なら \`npx e2e login\` コマンドを示して、私の確認を待ってください。
+5. \`.detoxrc.js\` を e2e の設定に移してください。プラットフォームごとに \`mobile({ platform })\` を使うターゲットを作り、アプリの \`bundleId\` と \`appPath\` を設定し、デバイスの種類を \`mobile({ device })\` に指定します。e2e は通常のデバッグビルドやリリースビルドを使い、Detox フレームワークは不要です。
+6. 依存関係をインストールし、\`npx e2e doctor\`（e2e 0.23.0 以降）を実行して、報告された問題を修正してください。
+7. Detox の テストファイル を一覧にし、どれから移行するか私に確認してください。頻繁にメンテナンスが必要なフローを提案してください。
+8. その テストファイル の各 Detox 呼び出しを「e2e にまだない機能」と照合してください。「現在使える方法」または「代わりに使う方法」を使うか、テストファイル を Detox に残して理由を説明してください。その後、ガイドの対応表を使い、Detox のフォルダーではなく \`tests/\` 以下の \`.e2e.ts\` に書き換えてください（e2e はデフォルトで \`tests/**/*.e2e.ts\` を実行します）。自動では起動しないため、\`app.open()\` から始めてください。複数ノードに一致するクエリは絞り込んでください。
+9. 起動と最終的な検証は、\`app.open()\` とロケーターのアサーションで決定論的に保ってください。スクリプト化した一連の操作が頻繁に壊れる箇所には、代わりに \`agent.act\` のゴールを提案してください。
+10. アプリをビルドしてインストールし、各プラットフォームのターゲットで \`npx e2e run <file>\` を実行して、成功するまで修正してください。Detox の テストファイル は、削除してよいと私が確認するまで残してください。
+11. 移行したテスト、Detox に残したテスト、それぞれの理由をまとめてください。`;
+
+e2e は、通常のデバッグビルドやリリースビルドを使い、シミュレーターやエミュレーターで React Native アプリをテストします。
+アプリに Detox フレームワークを組み込む必要はありません。
+`testID` プロパティは、両プラットフォームで `getByTestId` と組み合わせて使えます。
+
+<SetupPrompt>
+
+<Prompt description={migrationPrompt} children={migrationPrompt} actions={["copy", "cursor"]} />
+
+</SetupPrompt>
+
+複数のセッションにわたる移行では、[`migrate-to-e2e` スキル](/coding-agents#migrate-an-existing-suite)が移行済みの内容を進捗ファイルに記録し、各テストを廃止するまで元のスイートを動かし続けます。
+
+## 設定の移行
+
+<Note>[モバイルガイド](/mobile)でターゲットを、[クイックスタート](/quickstart)でモデルを設定してください。テストファイル ごとに移行する間、両ランナーは同じシミュレーターを使えます。</Note>
+
+| Detox（`.detoxrc.js`） | e2e |
+| --- | --- |
+| `apps.<name>.binaryPath`, `bundleId` | ターゲットの `app: { appPath, bundleId }` |
+| `devices.<name>.device.type` | `mobile({ device: 'iPhone 17' })` |
+| `configurations` | `targets`。プラットフォームごとに 1 エンジン |
+| Jest の `maxWorkers` | `workers`。デバイスごとに 1 ワーカー |
+| `apps.<name>.launchArgs` | ターゲットの `app.launchArguments`。プラットフォームごとの文字列リスト |
+| `launchApp({ permissions })` | ターゲットの `app.permissions`。`YES`、`NO`、`unset` に対して `grant`、`deny`、`reset`。対応する権限名は[追加予定](#planned) |
+
+```ts title="e2e.config.ts"
+import type { E2EConfig } from 'e2e';
+import { mobile } from '@e2e-dev/mobile';
+
+export default {
+  targets: [
+    {
+      name: 'ios',
+      engine: mobile({ platform: 'ios' }),
+      app: { bundleId: 'com.example.app', appPath: 'ios/build/MyApp.app' },
+    },
+    {
+      name: 'android',
+      engine: mobile({ platform: 'android' }),
+      app: { bundleId: 'com.example.app', appPath: 'android/app/build/outputs/apk/debug/app-debug.apk' },
+    },
+  ],
+  workers: 1,
+} satisfies E2EConfig;
+```
+
+## テストファイル を 1 つ書き換える
+
+アプリは自動では起動しないため、e2e テストは `app.open()` から始めます。
+パスワードは[認証情報の設定](/authentication)から取得します。
+
+```js title="Detox"
+describe('login', () => {
+  beforeAll(async () => { await device.launchApp({ newInstance: true }); });
+
+  it('shows the home screen', async () => {
+    await element(by.id('email')).typeText('ada@example.test');
+    await element(by.id('password')).typeText('hunter2');
+    await element(by.text('Sign in')).tap();
+    await waitFor(element(by.id('home'))).toBeVisible().withTimeout(10000);
+    await expect(element(by.text('Welcome, Ada'))).toBeVisible();
+  });
+});
+```
+
+```ts title="e2e"
+import { test } from '@e2e-dev/mobile';
+import { expect, credentials } from 'e2e';
+
+test('shows the home screen', async ({ agent, app, screen }) => {
+  await app.open();
+  const ada = credentials.user('ada');
+  await agent.act('sign in as {username}', { params: { username: ada.username, password: ada.password } });
+  await expect(screen.getByTestId('home')).toBeVisible({ timeout: 10_000 });
+  await expect(screen.getByText('Welcome, Ada')).toBeVisible();
+});
+```
+
+## 各 Detox 呼び出しの対応付け
+
+### マッチャーと操作
+
+| Detox | e2e |
+| --- | --- |
+| `by.id('x')`, `by.text('t')`, `by.label('l')` | `screen.getByTestId('x')`、`screen.getByText('t')`、`screen.getByLabel('l')` |
+| `by.id('x').withAncestor(by.id('row'))` | `screen.getByTestId('row').getByTestId('x')` |
+| `.atIndex(n)` | `.nth(n)` |
+| `.tap()`, `.tap({ x, y })`, `.longPress()`, `.multiTap(2)` | `.tap()`、`.tap({ position: { x, y } })`、`.longPress()`、`.doubleTap()` |
+| `.typeText(t)` | `.pressSequentially(t)` |
+| `.replaceText(t)`, `.clearText()`, `.tapReturnKey()` | `.fill(t)`、`.clear()`、`.press('Enter')` |
+| `.swipe('up', 'fast')` | `.swipe({ direction: 'down', momentum: 'fast' })`。Detox は指の方向、e2e はコンテンツを進める方向を指定 |
+| `list.scroll(200, 'down')` | `list.swipe({ direction: 'down' })`。移動量は指定しません |
+| `waitFor(el).toBeVisible().whileElement(list).scroll(...)` | `list.scrollUntilVisible(el)`。Detox で上にスクロールする場合は `{ direction: 'up' }` |
+
+### アサーション
+
+| Detox | e2e |
+| --- | --- |
+| `waitFor(el).toBeVisible().withTimeout(ms)` | `await expect(el).toBeVisible({ timeout: ms })` |
+| `.toBeVisible()`, `.toHaveText(t)` | 同じ |
+| `.not.toBeVisible()` | `.toBeHidden()` |
+| `.toExist()`, `.not.toExist()` | `.toBeAttached()`、`.toBeAttached({ attached: false })` |
+| `.toHaveToggleValue(true)` | `.toBeChecked()` |
+| `.toHaveLabel(l)` | `.toHaveAccessibleName(l)` |
+| `.toHaveValue(v)` | `.toHaveValue(v)`。フォームコントロールのみ |
+
+### デバイス
+
+| Detox | e2e |
+| --- | --- |
+| `device.launchApp({ newInstance: true })` | `app.restart()` |
+| `beforeAll` 内の `device.launchApp()` | `beforeAll` 内の `app.open()`。`beforeAll` は `device`、`app`、`screen` を受け取る |
+| `device.launchApp({ newInstance: false })` | `relaunch` なしの `device.openApp(id)` |
+| `device.launchApp({ launchArgs, permissions })` | `device.openApp(id, { relaunch: true, launchArguments, permissions })` |
+| `device.resetAppState()` | `app.clearState()` |
+| `device.launchApp({ delete: true })` | `device.installApp(path, { reinstall: true })` の後に `app.open()` |
+| `device.launchApp({ url })`, `device.openURL({ url })` | `device.openLink(url)` |
+| `device.terminateApp()`, `sendToHome()`, `pressBack()` | `device.closeApp()`、`home()`、`back()` |
+| `device.setLocation(lat, lon)`, `setOrientation('landscape')` | `device.setLocation({ latitude, longitude })`、`setOrientation('landscape-left')` |
+| `device.setBiometricEnrollment(true)` | `device.enrollBiometrics('faceid', true)` |
+| `device.matchFace()`, `unmatchFace()`, `matchFinger()`, `unmatchFinger()` | `device.setBiometrics('faceid' \| 'touchid', 'match' \| 'nonmatch')` |
+| `device.takeScreenshot()` | `app.screenshot('label')`。比較には [`toHaveScreenshot`](/visual-testing) |
+| `device.getPlatform()` | `platform` フィクスチャ |
+| テスト名の `:ios:` / `:android:` | テストの `{ platforms: ['ios'] }` |
+
+## e2e にまだない機能
+
+「実装予定」はロードマップにある機能です。「未対応」は時期が未定、「実装予定なし」は意図的に対象外としている機能です。
+
+### 実装予定
+
+| Detox | 現在使える方法 |
+| --- | --- |
+| `artifacts.plugins.log`, `--record-logs` | CI ステップで `adb logcat` または `xcrun simctl spawn booted log stream` |
+| `by.id('x').and(by.text('y'))` | `.filter({ hasText })`、または `device.locator('id=x label="y"')` |
+| `system.element(by.system.label('Allow'))` | `device.alert('accept' \| 'dismiss')`、またはプロンプトを出さないための `app.permissions` |
+| `.longPressAndDrag()`、`.swipe()` の移動量、`.multiTap(3)` | `.dragTo(target)`、`screen.swipe({ from, to })`、繰り返しの `.tap()` |
+| `.scrollTo('bottom')` | `list.scrollUntilVisible(lastRow)`。先頭行には `{ direction: 'up' }` |
+| `.tapBackspaceKey()` | 短くした文字列で `.fill(t)` |
+| `.setDatePickerDate()`, `.setColumnToValue()`, `.adjustSliderToPosition()` | `agent.act` のゴール、またはスライダー上の `screen.swipe({ from, to })` |
+| フォームコントロール以外の `.toHaveValue(v)` | `expect(device.locator('id=x value="v"')).toBeVisible()` |
+| `health`、`homekit`、`speech`、`faceid`、`userTracking` の `permissions`、値 `always`、`inuse`、`limited` | プロンプトのボタンをタップするか、`device.alert('accept')` |
+| `device.sendUserNotification()`, `device.uninstallApp()`, `.pinch()` | [`unstable_raw`](/reference/mobile#unstable_raw) の `client.apps.push()`、`client.apps.uninstall()`、`client.interactions.pinch()` |
+| `launchApp({ languageAndLocale })` | iOS では `app.launchArguments: ['-AppleLanguages', '(fr)', '-AppleLocale', 'fr_FR']`。[別の言語でアプリを実行する](/mobile#run-the-app-in-another-language)を参照 |
+| Jest の `globalSetup`、`globalTeardown` | 実行前に依存サービスを起動 |
+| `device.reverseTcpPort()` | CI ステップで `adb reverse` |
+| `device.shake()` | - |
+| 1 つのキー・値マップとしての `launchArgs` | iOS は `['-key', 'value']`、Android は `['--es', 'key', 'value']` |
+| `.getAttributes()` | `.textContent()`、`.inputValue()`、`.isEnabled()`、`.isVisible()`、`.isChecked()`、`.boundingBox()` |
+| `device.setStatusBar()` | `xcrun simctl status_bar`。`toHaveScreenshot` はステータスバーを固定します |
+
+### 未対応
+
+| Detox | 現在使える方法 |
+| --- | --- |
+| `.toBeVisible(50)` と 75% のデフォルト値 | `.toBeVisible()` は面積ではなくプラットフォームのフラグを確認します。`.boundingBox()` を比較 |
+| `web.element(by.web.cssSelector('x'))` | WebView のアクセシビリティテキストとラベル、または `agent.act` のゴール |
+| `device.resetContentAndSettings()` | `app.clearState()`。iOS では `device.clearKeychain()` も使用 |
+| `device: { type, os }`, `headless`, `bootArgs` | CI ステップでデバイスを作成して起動 |
+
+### 実装予定なし
+
+| Detox | 代わりに使う方法 |
+| --- | --- |
+| `device.reloadReactNative()` | `app.restart()`。リロードにはアプリ内の Detox フレームワークが必要 |
+| `device.disableSynchronization()`, `enableSynchronization()` | 呼び出しを削除。無効にする同期処理はありません |
+| `device.setURLBlacklist()` | 呼び出しを削除。ネットワーク通信が操作をブロックすることはありません |
+| 初期化時のインストール、`behavior.init.reinstallApp`、`--reuse` | `auto: true` を付けたワーカーフィクスチャ内の `device.installApp()` |
+| `apps.<name>.build`, `detox build` | `e2e run` の前に通常のビルドを実行 |
+| 正確な移動量を指定する `.scroll()` | `screen.swipe({ from, to })` |
+| `by.type('RCTImageView')` | `device.locator('role=image')`、または `testID` |
+| Jest のレポーター、Allure | `junit` レポーター、またはカスタムレポーター |
+
+## 意図的な違い
+
+- e2e はアプリがアイドル状態になるのを待ちません。操作は待機し、アサーションは再試行します。
+  コントロールの表示に時間がかかる場合は [`transition`](/reference/mobile#transition) を、
+  エージェントの操作では [`settle`](/reference/mobile#settle) を増やしてください。
+- エンジンは自動では何もインストールしません。`device.installApp()` を呼んでください。
+- [ロケーター](/reference/screen)は厳密です。複数一致への操作は `LOCATOR_AMBIGUOUS` で失敗します。
+  `.filter()`、`.first()`、`.nth()` で絞り込んでください。
+- デバイスには `test.setup` や `{ session }` はありません。[Web との違い](/mobile#what-differs-from-the-web)を参照してください。
+
+## 次のステップ
+
+<CardGroup cols={2}>
+  <Card title="モバイル" icon="mobile-screen" href="/mobile">
+    アプリとデバイスを設定します。
+  </Card>
+  <Card title="モバイルエンジンリファレンス" icon="book" href="/reference/mobile">
+    すべてのオプション、`device` フィクスチャ、ツールパックを確認できます。
+  </Card>
+</CardGroup>

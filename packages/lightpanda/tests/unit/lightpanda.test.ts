@@ -102,9 +102,16 @@ describe('lightpanda()', () => {
     expect(lease.cdpEndpoint).toMatch(/^ws:\/\/127\.0\.0\.1:\d+\/$/);
     expect(lease.id).toBe(lease.cdpEndpoint);
     expect(req.lines).toEqual([`lightpanda 1.1.0-test at ${lease.cdpEndpoint}`]);
-    expect(await serverArgs(lease)).toEqual(['serve', '--host', '127.0.0.1', '--port', new URL(lease.cdpEndpoint).port]);
+    expect(await serverArgs(lease)).toEqual(['serve', '--host', '127.0.0.1', '--port', new URL(lease.cdpEndpoint).port, '--load-resources', 'stylesheet']);
     await provider.release(lease, releaseContext);
     expect(await serverArgs(lease)).toBeUndefined();
+  });
+
+  it('fetches no sub-resources when loadResources is empty', async () => {
+    const provider = lightpanda({ binary, loadResources: [] });
+    const lease = await provider.acquire(request());
+    expect((await serverArgs(lease))?.slice(5)).toEqual([]);
+    await provider.release(lease, releaseContext);
   });
 
   it('reports an unknown version when /json/version answers without one', async () => {

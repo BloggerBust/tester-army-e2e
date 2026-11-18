@@ -1,0 +1,254 @@
+---
+title: "@e2e-dev/core"
+description: テストランナーを使わずにブラウザやデバイスを操作するプログラム向けの API。launch、ホスト、セッション、保存済みの状態、createAgent を説明します。
+---
+
+`@e2e-dev/core` は、テストランナーを使わずにブラウザやデバイスを操作するプログラム向けの API です。`launch` がホストを返し、ホストがセッションを開き、`createAgent` がそのセッションを操作するエージェントを作成します。それぞれの使い方は[ガイド](/core)で紹介しています。
+
+```ts title="prices.ts"
+import { launch } from '@e2e-dev/core';
+import { web } from '@e2e-dev/web/engine';
+
+await using shop = await launch(web(), { app: { url: 'https://shop.example.com' } });
+await using session = await shop.newSession();
+await session.app.open('/products/A-1001');
+console.log(await session.screen.getByTestId('sale-price').textContent());
+```
+
+## リファレンス
+
+### エントリーポイント
+
+| インポート | インポート元 |
+| --- | --- |
+| [`launch`](#launch), [`SessionState`](#sessionstate), `isE2EError` | `@e2e-dev/core` |
+| [`createAgent`](#createagent), `defineTool` | `@e2e-dev/core/agent` |
+| `web` | `@e2e-dev/web/engine` |
+| `mobile` | `@e2e-dev/mobile/engine` |
+| `defineEngine` | `@e2e-dev/core/engine` |
+
+`@e2e-dev/core/lib/*` は非公開です。これらのモジュールは、どのリリースでも変更される可能性があります。
+
+### 起動
+
+| 関数 | 戻り値 |
+| --- | --- |
+| [`launch`](#launch) | `Promise<Host>` |
+
+#### `launch`
+
+エンジンを準備し、そのエンジンでセッションを開くためのホストを返します。`web()` の初回起動時にはブラウザをダウンロードします。
+
+```ts
+const shop = await launch(web(), {
+  app: { url: 'https://shop.example.com' },
+  timeout: 10_000,
+  artifactsDir: 'artifacts',
+});
+```
+
+| オプション | 型 | デフォルト |
+| --- | --- | --- |
+| [`app`](#app) | `LaunchApp` | - |
+| `secrets` | `Record<string, string>` | - |
+| `headed` | `boolean` | `false` |
+| [`timeout`](#timeout) | `number` | 操作ごとに異なります |
+| `signal` | `AbortSignal` | - |
+| `handleSignals` | `boolean` | `true` |
+| `artifactsDir` | `string` | 一時ディレクトリ |
+| `cwd` | `string` | `process.cwd()` |
+| `env` | `NodeJS.ProcessEnv` | `process.env` |
+| `onNotice` | `(message: string) => void` | - |
+
+- `secrets`: 名前に対応する値です。各値は 6 文字以上必要です。[シークレットを渡す](/core#pass-secrets)を参照してください。
+- `headed`: ブラウザのウィンドウを表示します。デバイスでは無視されます。
+- `signal`: 起動と、ホスト上のすべてのセッションおよび操作をキャンセルします。
+- `handleSignals`: SIGINT、SIGTERM、SIGHUP を受け取るとホストを閉じます。その後、プログラム自身がそのシグナルを監視していなければ、シグナルによってプログラムを終了させます。
+- `artifactsDir`: スクリーンショット、ダウンロード、録画の保存先です。`cwd` を基準に解決します。デフォルトのディレクトリはホストを閉じると削除されます。
+- `cwd`: アップロードするファイルのパス、`artifactsDir`、エージェントのキャッシュディレクトリを解決する基準です。
+- `onNotice`: ブラウザのダウンロードやデバイスのリースなど、操作の外で発生する進捗を通知します。
+
+| エラー | 発生条件 |
+| --- | --- |
+| `INVALID_ARGUMENT` | 第 1 引数がエンジンではない場合、または未知のオプションや `app` のキーがある場合。 |
+| `INVALID_CONFIG` | エンジンがアプリの設定を受け付けない場合。`web()` で `app.url` がない場合や、`mobile()` で `app.bundleId` と `app.appPath` のどちらもない場合など。 |
+| `WORKER_PROTOCOL` | 別のホストがこのエンジンインスタンスを所有している場合。`launch(web())` のようにファクトリーをもう一度呼び出してください。 |
+
+<a id="app" />
+
+##### `app`
+
+`app.open()` がブラウザで開く対象、またはデバイスで起動する対象を指定します。
+
+| フィールド | 対象 | 意味 |
+| --- | --- | --- |
+| `url` | `web()` | アプリの URL。`app.open(path)` はこれを基準にパスを解決します。 |
+| `bundleId` | `mobile()` | 起動するインストール済みアプリ。 |
+| `appPath` | `mobile()` | プログラムが操作するアプリのビルド。`.app` または `.apk`。[設定](/reference/config#apppath)を参照してください。 |
+| `linkBase` | `mobile()` | `app.open(path)` がパスを結合し、リンクとして開く際のベース。[設定](/reference/config#linkbase)を参照してください。 |
+| `identity` | 両方 | 保存済みの状態や録画で使うアプリ名。デフォルトは URL またはバンドル ID。 |
+| `launchArguments` | `mobile()` | アプリの起動引数。 |
+| `permissions` | 両方 | 許可または拒否する権限。 |
+
+<a id="timeout" />
+
+##### `timeout`
+
+1 回の操作のデフォルトタイムアウトをミリ秒で指定します。省略した場合は次の値になります。
+
+| 操作 | デフォルト |
+| --- | --- |
+| アクション、待機、読み取り | 30000 |
+| `app.open()`, `app.restart()`, `app.clearState()` | 120000 |
+| エージェントのステップ | 120000、または呼び出し時に指定した `timeout` |
+
+`timeout` で設定されるのは最初の 2 行です。セッション自体に期限はありません。
+
+### ホスト
+
+| メンバー | 戻り値 |
+| --- | --- |
+| `platform` | `string` |
+| [`newSession`](#newsession) | `Promise<Session>` |
+| [`secret`](#secret) | `Secret` |
+| [`close`](#close) | `Promise<void>` |
+
+`platform` は `web`、`ios`、`android`、またはカスタムエンジン独自のラベルです。
+
+#### `newSession`
+
+セッションを開きます。ブラウザでは分離されたコンテキストを 1 つ作成し、デバイスではアプリを開きます。ホストが同時に保持できるセッションは 1 つです。
+
+```ts
+const session = await shop.newSession({ state, signal: AbortSignal.timeout(60_000) });
+```
+
+| オプション | 型 | デフォルト |
+| --- | --- | --- |
+| `state` | [`SessionState`](#sessionstate) | - |
+| `signal` | `AbortSignal` | - |
+
+| エラー | 発生条件 |
+| --- | --- |
+| `WORKER_PROTOCOL` | ホストにセッションが開いている場合、またはホストが閉じている場合。 |
+| `SESSION_MISMATCH` | `state` が別のエンジン、プラットフォーム、アプリで保存された場合。 |
+| `SESSION_EXPIRED` | `state` の有効期限が切れている場合。 |
+
+#### `secret`
+
+`launch` に渡したシークレットのハンドルを返します。`fill` やエージェントのパラメーターで使えます。未知の名前を指定すると `SECRET_UNAVAILABLE` をスローします。
+
+```ts
+await session.screen.getByLabel('Password').fill(shop.secret('SHOP_PASSWORD'));
+```
+
+#### `close`
+
+開いているセッションを閉じてから、エンジンを閉じます。2 回目以降の呼び出しは何もしません。ホストは破棄にも対応しているため、`await using` でも閉じられます。クリーンアップに失敗すると、それらの失敗をまとめた `AggregateError` をスローします。
+
+### セッション
+
+| メンバー | 戻り値 |
+| --- | --- |
+| `screen` | [`Screen`](/reference/screen) |
+| `app` | [`App`](/reference/app) |
+| `platform` | `string` |
+| `browser` | `web()` の場合は [`Browser`](/reference/web) |
+| `device` | `mobile()` の場合は [`Device`](/reference/mobile) |
+| [`saveState`](#savestate) | `Promise<SessionState>` |
+| [`setDefaultTimeout`](#setdefaulttimeout) | `void` |
+| `close` | `Promise<void>` |
+
+`close` は `await using` と同じくセッションを終了します。それ以降、すべての操作は `CANCELLED` で失敗します。
+
+#### `saveState`
+
+セッションの Cookie とストレージをメモリーに保存します。`mobile()` のように保存できる状態がないエンジンは、`UNSUPPORTED_CAPABILITY` をスローします。
+
+```ts
+const state = await session.saveState();
+```
+
+#### `setDefaultTimeout`
+
+この呼び出し以降に開始する操作のデフォルトタイムアウトを、ミリ秒で設定します。アクション、待機、読み取り、アプリを開く操作と再起動が対象です。
+
+```ts
+session.setDefaultTimeout(5_000);
+```
+
+### SessionState
+
+| メンバー | 戻り値 |
+| --- | --- |
+| `engine` | `string` |
+| `platform` | `string` |
+| [`export`](#export) | `Promise<Uint8Array>` |
+| [`SessionState.import`](#sessionstate-import) | `Promise<SessionState>` |
+
+#### `export`
+
+32 バイトの鍵で状態を暗号化し（AES-256-GCM）、ディスクに書き込めるバイト列を返します。平文でのエクスポートはできません。
+
+```ts
+const bytes = await state.export({ key });
+```
+
+バイト列には、エンジン、プラットフォーム、シークレットの名前が平文で含まれます。Cookie、ストレージ、シークレットの値は暗号化されます。
+
+#### `SessionState.import`
+
+`export` が出力したバイト列を復号します。
+
+```ts
+const state = await SessionState.import(bytes, { key });
+```
+
+| エラー | 発生条件 |
+| --- | --- |
+| `SESSION_INVALID` | 鍵が異なる場合、バイトが改変された場合、または `export` が出力したバイト列ではない場合。 |
+| `SESSION_EXPIRED` | 状態の有効期限が切れている場合。 |
+| `INVALID_ARGUMENT` | 鍵が 32 バイトではない場合。 |
+
+### エージェント
+
+| 関数 | 戻り値 |
+| --- | --- |
+| [`createAgent`](#createagent) | エージェント |
+
+#### `createAgent`
+
+1 つのセッションを操作するエージェントを作成します。`assert`、`waitFor`、`extract` は[エージェントフィクスチャ](/reference/agent)と同じです。`act` には 1 点違いがあり、`cache` を使う場合は `cacheKey` を受け取ります。
+
+```ts
+const agent = createAgent(session, {
+  model: gateway('anthropic/claude-sonnet-5-5'),
+  cache: { dir: '.shop-bot/cache' },
+});
+const step = await agent.act('Add the item to the cart', { cacheKey: 'add-to-cart' });
+```
+
+| オプション | 型 | デフォルト |
+| --- | --- | --- |
+| `model`、`judge`、`context` など | [`agents` のエントリー](/reference/config#agents) | - |
+| [`cache`](#cache) | `AgentCacheOptions` | キャッシュなし |
+
+<a id="cache" />
+
+##### `cache`
+
+| フィールド | 型 | デフォルト |
+| --- | --- | --- |
+| `dir` | `string` | `.e2e/cache` |
+| `mode` | `'read-write' \| 'read-only'` | `'read-write'` |
+| `strict` | `boolean` | `false` |
+| `store` | [`CacheStore`](/cache) | ファイルストア |
+
+`cache` を使う場合、各 `act` に `{ cacheKey: '<name>' }` を渡します。ライブ実行する場合は `{ cache: false }` を渡します。記録が保存されるタイミングは[記録したステップをリプレイする](/core#replay-recorded-steps)で説明しています。
+
+## 関連項目
+
+- [@e2e-dev/core ガイド](/core)
+- [screen](/reference/screen)、[app](/reference/app)、[agent](/reference/agent): セッションとエージェントが提供する API。
+- [エラー](/reference/errors): すべてのエラーコード。
+- [エンジン](/engines): 独自のエンジンの作成方法。

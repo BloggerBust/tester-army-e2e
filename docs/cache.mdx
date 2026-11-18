@@ -206,12 +206,13 @@ page on any other origin is another route.
   A node known only by a test id the app generates (`node-<uuid>`) is
   skipped the same way. When kept, a node that appeared may carry any id
   with that pattern; one that went away is still checked by its exact id.
-- A count that names what it counts, such as `3 records imported`, must read
-  the same on replay when the step made it appear on the screen it acted
-  on. A count that only moved (`41 items` to `42 items`), or one on a screen the
-  step navigated to, is skipped only when its own side of the delta has a
-  stable change. Otherwise the count stays, even when the opposite side has
-  a stable change. A bare number such as a badge follows the text rule above.
+- A count that names what it counts, such as `3 records imported` or
+  `42件`, must read the same on replay when the step made it appear on the
+  screen it acted on. A count that only moved (`41 items` to `42 items`),
+  or one on a screen the step navigated to, is skipped only when its own
+  side of the delta has a stable change. Otherwise the count stays, even
+  when the opposite side has a stable change. A bare number such as a badge
+  follows the text rule above.
 - A control with no name is found by its place among the unnamed controls
   of its kind inside the same named row, list item, or group. A control
   known only by a generated test id is found by the id pattern the same
@@ -393,6 +394,7 @@ CI=1 bunx e2e run --strict-cache
 | `invalid-entry`, `wrong-context`, `target-not-found`, `target-ambiguous`, `viewport-changed`, `action-failed`, `action-uncertain`, `end-mismatch`: the app or the entry changed | A step never recorded (a new or edited instruction or params) |
 | `no-entry`, when the cache directory holds a recording of the same step under another key | A `gap` or a `truncated` recording |
 | | A step whose store read fails |
+| | A step whose test's `testId` in `report.json`, target name, or agent name is over 300 characters, when an earlier `e2e` version recorded it under another key and no `read-write` run of this version has replayed it since |
 
 A recording under another key comes from an `e2e` upgrade that changed the
 keys, or a change to the project id, the app's identity, or the agent's

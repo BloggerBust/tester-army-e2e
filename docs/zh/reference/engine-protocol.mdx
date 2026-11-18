@@ -1,0 +1,272 @@
+---
+title: 引擎协议
+description: 在另一个进程、另一台机器上，或使用另一种语言运行引擎。
+---
+
+引擎协议是以 JSON-RPC 消息形式表达的[引擎契约](/reference/engine)。运行器通过它驱动所有引擎。要在另一个进程、另一台机器上，或使用另一种语言运行引擎，请参阅[引擎服务器](/engine-servers)。
+
+```ts title="e2e.config.ts"
+import type { E2EConfig } from 'e2e';
+import { connectEngine, spawnTransport } from 'e2e/engine';
+
+export default {
+  targets: [
+    {
+      name: 'kiosk',
+      engine: connectEngine({
+        manifest: { name: 'kiosk', version: '1.0.0', spiVersion: 1, platform: 'kiosk', methods: ['engine/observe'] },
+        transport: spawnTransport({ command: './kiosk-engine' }),
+        resolveLocators: true,
+      }),
+    },
+  ],
+} satisfies E2EConfig;
+```
+
+## 参考
+
+| 函数 | 返回值 |
+| --- | --- |
+| [`connectEngine`](#connectengine) | `EngineHandle` |
+| [`serveEngine`](#serveengine) | `Promise<void>` |
+| [`describeEngine`](#describeengine) | `EngineManifest` |
+| [`spawnTransport`](#spawntransport) | `EngineTransport` |
+| [`socketTransport`](#sockettransport) | `EngineTransport` |
+| [`loopbackTransport`](#loopbacktransport) | `EngineTransport` |
+
+### `connectEngine`
+
+将引擎服务器转换为引擎句柄，即测试目标的 `engine` 接受的值。
+
+```ts
+export function connectEngine(options: ConnectEngineOptions): EngineHandle;
+
+export interface ConnectEngineOptions {
+  /** What the server is; the server's manifest from `initialize` must match it. */
+  readonly manifest: EngineManifest;
+  /** How to reach the server. */
+  readonly transport: EngineTransport;
+  /** Engine options the server receives in `initialize`, as JSON. */
+  readonly initializationOptions?: JsonValue;
+  /** The `secrets.get()` handles the server may resolve. */
+  readonly secrets?: readonly Secret[];
+  /** Fixtures that run on the client, beside the test. */
+  readonly fixtures?: Engine['fixtures'];
+  /** Checks the target's app at config load, on the client. */
+  readonly validateApp?: Engine['validateApp'];
+  /** Answers locators on the client from observations, for a server without `engine/locate`. */
+  readonly resolveLocators?: boolean;
+  /** Session hooks the client answers instead of the server. */
+  readonly session?: EngineSession;
+}
+```
+
+运行器在加载配置时读取清单，此时还没有任何服务器运行。如果服务器的清单不一致，其首次连接就会失败。
+
+句柄在测试执行框架调用引擎的位置建立连接。在运行器中，每个测试目标的一个连接从 `prepare` 持续到 `finish`，并且只有当服务器支持 `lifecycle/prepare` 或 `lifecycle/finish` 时才会打开。每个工作进程中的一个连接从 `init` 持续到 `dispose`。`e2e doctor` 为每个测试目标打开一个 `doctor` 连接，仅用于 `lifecycle/doctor`，之后关闭。传输层可以像 `spawnTransport` 一样为其启动服务器，但不得配置机器、租用设备或安装应用。收到 doctor 信号后，服务器有 5 秒时间响应，之后连接会关闭。在 `init`..`dispose` 之外调用操作会以 `INVALID_STATE` 失败。从未运行 `init` 的工作进程没有连接，因此服务器不会收到它的 `lifecycle/dispose`。两个连接是否共享状态由服务器决定：派生的服务器为每个连接创建一个进程，而回环或套接字服务器可以通过同一个引擎处理所有连接。
+
+使用 `resolveLocators` 时，每次 `locate` 都会观察并通过 [`resolveExpression`](/reference/engine#resolveexpression) 解析表达式。`fixtures`、`validateApp`、`secrets` 和 `session` 钩子在客户端运行；`session` 钩子会替换服务器的同名方法。参阅[将主机工作保留在客户端](/engine-servers#keep-host-work-on-the-client)。
+
+<Warning>
+`lifecycle/prepare`、`lifecycle/init`、`lifecycle/finish` 和 `lifecycle/doctor` 会携带本次运行的环境，包括模型密钥和 `E2E_SECRET_*` 值，而 `attempt/resolveSecret` 会以明文响应。只连接你信任的服务器：`socketTransport` 不会加密。
+</Warning>
+
+| 抛出的错误 | 触发条件 |
+| --- | --- |
+| `INVALID_CONFIG` | 清单格式有误：包含未知方法、重复列出某个方法，或包含 `defineEngine` 拒绝的成员，例如有 `keyboard/type` 却没有 `keyboard/press`、有 `engine/perform` 却没有 `actions`，或有 `engine/perform` 却没有 `engine/observe`。 |
+| `ENGINE_FAILURE` | 服务器清单不一致，或连接在调用过程中关闭。消息包含传输层诊断信息，例如服务器最后几行 stderr 输出。 |
+
+### `serveEngine`
+
+通过一个连接提供使用 `defineEngine` 构建的引擎，直到客户端发送 `exit` 或流关闭。
+
+```ts
+export function serveEngine(
+  engine: EngineHandle | ((initializationOptions: unknown) => EngineHandle | Promise<EngineHandle>),
+  streams?: MessageStreams, // default: process.stdin and process.stdout
+): Promise<void>;
+```
+
+服务器自身的日志应写入 stderr：stdout 用于传输协议。参阅[提供 TypeScript 引擎服务](/engine-servers#serve-a-typescript-engine)。
+
+### `describeEngine`
+
+返回 `serveEngine` 为引擎句柄公布的清单：其静态成员、声明的成员所响应的方法，以及 `serveEngine` 始终响应的 `lifecycle/startAttempt` 和 `lifecycle/endAttempt`。用它声明在其他位置提供服务的 TypeScript 引擎的清单。
+
+```ts
+export function describeEngine(engine: EngineHandle): EngineManifest;
+```
+
+### `spawnTransport`
+
+为每个连接以子进程形式启动服务器，并通过其 stdin 和 stdout 通信，就像编辑器启动语言服务器一样。
+
+```ts
+export function spawnTransport(options: {
+  readonly command: string;
+  readonly args?: readonly string[];
+  /** Added to the worker's environment. */
+  readonly env?: Readonly<Record<string, string>>;
+  readonly cwd?: string; // default: the project root
+}): EngineTransport;
+```
+
+关闭连接会结束 stdin、发送 `SIGTERM`，并在清理预算耗尽后发送 `SIGKILL`。
+
+### `socketTransport`
+
+连接到本机或另一台机器上已监听 TCP 端口的服务器。关闭连接会结束套接字；服务器继续运行。
+
+```ts
+export function socketTransport(options: { readonly host: string; readonly port: number }): EngineTransport;
+```
+
+### `loopbackTransport`
+
+通过内存流在当前进程中提供引擎服务。每次调用仍会经过协议，并像其他传输方式一样序列化。
+
+```ts
+export function loopbackTransport(engine: EngineHandle): EngineTransport;
+```
+
+## 消息
+
+基础协议采用 [Language Server Protocol 的基础协议](https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#baseProtocol)：使用 UTF-8 编码的 JSON-RPC 2.0 消息，每条消息前都有一个 `Content-Length` 头和一个空行。双方都可以发送请求和通知。
+
+### 生命周期
+
+连接的建立和关闭方式与 LSP 连接相同。
+
+| 消息 | 方向 | 参数 | 结果 |
+| --- | --- | --- | --- |
+| `initialize` | 请求，客户端到服务器 | `{ protocolVersion: 1, clientInfo, role, initializationOptions? }` | `{ protocolVersion: 1, manifest }` |
+| `initialized` | 通知，客户端到服务器 | `{}` | - |
+| `shutdown` | 请求，客户端到服务器 | - | `null` |
+| `exit` | 通知，客户端到服务器 | - | - |
+
+双方都拒绝 `1` 以外的任何 `protocolVersion`。`shutdown` 之后，各方保持其信号状态不变。如果连接未经过 `shutdown` 就关闭，则中止其持有的所有信号。
+
+### 清单
+
+其 JSON Schema 随 `e2e` 包提供，路径为 `schema/engine-manifest-v1.schema.json`。
+
+```ts
+export interface EngineManifest {
+  readonly name: string;
+  readonly version: string;
+  readonly spiVersion: 1;
+  readonly platform?: string;
+  readonly workers?: number;
+  /** The engine methods the server answers; one left out is a capability the engine lacks. */
+  readonly methods: readonly EngineMethod[];
+  /** Required with `engine/perform`. */
+  readonly actions?: readonly LocatorActionKind[];
+  /** Required with `engine/performAt`. */
+  readonly pointerActions?: readonly PointerActionKind[];
+  readonly tapModifiers?: boolean;
+  /** See `Engine.isolation`; left out for `attempt`. */
+  readonly isolation?: 'worker';
+}
+```
+
+### 引擎方法
+
+每个方法对应一个引擎成员，是从客户端发往服务器的请求。其参数按成员的参数名称传递，每个 `OperationContext` 都表示为 `operation`。`ENGINE_METHODS` 列出了这些方法。
+
+| 方法 | 参数 | 结果 |
+| --- | --- | --- |
+| `engine/observe` | `{ operation, options? }` | `EngineSnapshot` |
+| `engine/readStyle` | `{ ref, properties, operation }` | `ComputedStyleValues` |
+| `engine/locate` | `{ expression, operation }` | `SemanticNode[]` |
+| `engine/perform` | `{ ref, action, operation }` | `null` |
+| `engine/performAt` | `{ point, action, operation }` | `null` |
+| `keyboard/type` | `{ text, options: { replace }, operation }` | `null` |
+| `keyboard/press` | `{ key, operation }` | `null` |
+| `keyboard/dismiss` | `{ operation }` | `null` |
+| `state/capture` | `{ operation }` | `EngineState` |
+| `state/restore` | `{ state, operation }` | `null` |
+| `artifacts/screenshot` | `{ label?, operation }` | `{ path }` 或 `{ data, mediaType }` |
+| `artifacts/startVideo` | `{ operation }` | `null` |
+| `artifacts/stopVideo` | `{ operation }` | `VideoSegment[]` |
+| `session/open` | `{ url, operation }` | `null` |
+| `session/openLink` | `{ url, operation }` | `null` |
+| `session/back`, `session/restart`, `session/reset` | `{ operation }` | `null` |
+| `session/resize` | `{ size: { width, height }, operation }` | `null` |
+| `session/switchTab` | `{ index, operation }` | `null` |
+| `session/closeTab` | `{ index, operation }` | `null` |
+| `lifecycle/prepare` | 不含 `log` 的 `EnginePrepareInfo` | `EnginePrepareResult` 或 `null` |
+| `lifecycle/finish` | 不含 `log` 的 `EngineFinishInfo` | `null` |
+| `lifecycle/doctor` | 不含 `log` 的 `EngineDoctorInfo` | `EngineDoctorCheck[]` |
+| `lifecycle/init` | 不含 `log` 的 `EngineInitInfo` | `null` |
+| `lifecycle/startAttempt` | `{ attemptId, artifactsDir, signal, screens }` | `null` |
+| `lifecycle/settleAttempt`, `lifecycle/endAttempt` | `{ signal, timeoutMs }` | `null` |
+| `lifecycle/dispose` | `{ signal, timeoutMs, reuseSignal? }` | `null` |
+
+当服务器无法写入本次尝试的产物目录时（例如服务器运行在设备上），`artifacts/screenshot` 返回 `{ data, mediaType: 'image/png' }`，图像以 base64 编码。客户端会将其写入 `screenshots/`。观察所得的像素数据以同样方式传输：`pixels.data` 为 base64。
+
+`lifecycle/startAttempt` 中的 `screens` 表示本次尝试是否保留追踪记录；保留时，服务器才可以发送 `attempt/screen`。
+
+### 服务器到客户端
+
+引擎对测试执行框架的回调以服务器到客户端的消息形式传输。每条 `attempt/*` 消息都携带其所属的 `attemptId`；如果对应尝试已经结束，客户端会丢弃该消息。
+
+| 消息 | 类型 | 参数 |
+| --- | --- | --- |
+| `engine/log` | 通知 | `{ line }`，来自 `prepare`、`init` 或 `finish` |
+| `attempt/appLog` | 通知 | `{ attemptId, entry }` |
+| `attempt/navigation` | 通知 | `{ attemptId, line }` |
+| `attempt/environment` | 通知 | `{ attemptId, facts }` |
+| `attempt/screen` | 通知 | `{ attemptId, snapshot }` |
+| `attempt/resolveSecret` | 请求 | `{ attemptId, name, derivation? }`，结果为 `{ value }` |
+
+存在 `derivation` 时，客户端会在响应前反向发起 `attempt/deriveSecret` 请求，参数为 `{ derivation, plaintext }`。服务器返回 `{ values }`，即引擎从该值派生的形式，例如 basic-auth 请求头；客户端会以该机密值的名称对这些形式脱敏。
+
+### 信号
+
+`AbortSignal` 以 `{ id, aborted?, reason? }` 形式传输。客户端为每个信号生成一个 ID，并在中止时发送带有 `{ id, reason? }` 的 `$/abort`。发送时已中止的信号携带 `aborted: true`。如果测试执行框架因自身错误（例如测试超时）而中止，`reason` 就是以 JSON-RPC 错误对象表示的中止原因，编码方式与失败方法的[错误](#errors)相同。服务器使用该错误中止信号，因此重新抛出 `signal.reason` 的引擎会抛出与进程内运行时相同的错误。没有 `reason` 时，信号以平台的 `AbortError` 中止。信号中止后，服务器会遗忘其 ID；`lifecycle/endAttempt` 完成后，服务器也会遗忘在该次尝试中首次出现的所有 ID。之后再次发送的同一 ID 会被视为新信号。
+
+### 错误
+
+失败的引擎方法以 JSON-RPC 错误码 `-32000` 响应，并将 e2e 错误放在 `data` 中，因此测试执行框架对远程失败的分类与本地失败完全一致：
+
+| `data` | 引擎抛出的错误 |
+| --- | --- |
+| `{ type: 'engine', code, retryable }` | [`EngineError`](/reference/engine#engineerror)。只有 `NODE_STALE` 和 `FRAME_NOT_FOUND` 可以重试。 |
+| `{ type: 'e2e', category, code, retryable, details? }` | 运行器错误，例如 `TestError` 或 `ConfigurationError`。 |
+
+其他错误码只携带消息。测试执行框架将其视为 infrastructure 类别的错误，与本地引擎抛出的普通 `Error` 一样处理。每个错误的 `data` 还可以携带 `stack`、`errno`（例如 `ECONNREFUSED` 这样的 Node 错误码）和 `cause`（同样结构的错误对象），让报告显示引擎失败的位置。
+
+## 类型
+
+传输层打开一个连接的字节流。参阅[编写传输层](/engine-servers#write-a-transport)。
+
+```ts
+export interface EngineTransport {
+  /** For error messages: the command, or the address. */
+  readonly label: string;
+  open(context: TransportContext): Promise<TransportConnection>;
+}
+
+export interface TransportContext {
+  readonly role: 'run' | 'worker' | 'doctor';
+  readonly env: Readonly<Record<string, string | undefined>>;
+  /** The project root. */
+  readonly cwd: string;
+  readonly signal: AbortSignal;
+  /** The target's app, from `prepare`, `init`, or `doctor`: what a transport installs, since a server elsewhere cannot read the project's files. */
+  readonly app?: EngineAppInfo;
+}
+
+export interface TransportConnection {
+  readonly input: Readable;
+  readonly output: Writable;
+  /** Releases the process or socket, within `timeoutMs`. */
+  close(timeoutMs: number): Promise<void>;
+  /** What went wrong, for an error message. */
+  diagnostics?(): string;
+}
+```
+
+## 相关内容
+
+[引擎](/engines)比较了构建引擎的不同方式。[`e2e/engine`](/reference/engine) 是每条消息所承载的契约。[引擎服务器](/engine-servers)和[编写引擎](/writing-an-engine)逐步介绍了构建过程。

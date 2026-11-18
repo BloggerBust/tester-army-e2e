@@ -1,0 +1,1158 @@
+---
+title: 浏览器
+description: 浏览器引擎、其选项，以及它提供的 browser 测试夹具。
+"og:image": "https://e2e.com/docs/images/og/reference/web.png?v=66fee465a4"
+"twitter:image": "https://e2e.com/docs/images/og/reference/web.png?v=66fee465a4"
+---
+
+`@e2e-dev/web` 是浏览器引擎，通过 Playwright 驱动 Chromium、Firefox 和 WebKit。网页端测试目标通过 `web()` 指定它作为引擎，它还提供内置的 `browser` 测试夹具，用于浏览器专属操作。
+
+```ts title="e2e.config.ts"
+import type { E2EConfig } from 'e2e';
+import { web } from '@e2e-dev/web';
+
+export default {
+  targets: [{ engine: web(), app: { url: 'http://localhost:3000' } }],
+} satisfies E2EConfig;
+```
+
+从该包导入 `test`，即可获得带类型的 `browser`：
+
+```ts title="tests/orders.e2e.ts"
+import { expect } from 'e2e';
+import { test } from '@e2e-dev/web';
+
+test('orders in dark mode', async ({ app, browser, screen }) => {
+  await browser.emulateMedia({ colorScheme: 'dark' });
+  await app.open('/orders');
+  await expect(browser).toHaveURL('/orders');
+  await expect(screen.getByRole('heading', { name: 'Orders' })).toBeVisible();
+});
+```
+
+## 参考
+
+### 选项
+
+`web(options)` 设置引擎如何驱动应用。应用本身（其 `url`、`environment`、`identity` 和启动命令）在测试目标的 `app` 中配置，详见[被测应用](/reference/config#the-app-under-test)。
+
+```ts
+web({ viewport: { width: 390, height: 844 }, locale: 'de-DE' });
+```
+
+| 选项 | 类型 | 默认值 |
+| --- | --- | --- |
+| [`browser`](#browser) | `BrowserName \| BrowserProvider` | `'chromium'` |
+| [`viewport`](#viewport) | `ViewportSize \| null` | 1280 × 720 |
+| [`screencast`](#screencast) | `WebScreencastOptions` | 视口尺寸 |
+| [`connect`](#connect) | `WebConnectOptions` | 在本地启动 |
+| [`headers`](#headers) | `Record<string, string>` | - |
+| [`basicAuth`](#basicauth) | `WebBasicAuth` | - |
+| [`credentialOrigins`](#credentialorigins) | `string[]` | - |
+| [`testIdAttribute`](#testidattribute) | `string` | `'data-testid'` |
+| [`userAgent`](#useragent) | `string` | 浏览器自身的值 |
+| [`locale`](#locale) | `string` | 浏览器自身的值 |
+| [`timezoneId`](#timezoneid) | `string` | 机器的时区 |
+| [`colorScheme`](#media-emulation) | `'light' \| 'dark' \| 'no-preference'` | 浏览器自身的值 |
+| [`reducedMotion`](#media-emulation) | `'reduce' \| 'no-preference'` | 浏览器自身的值 |
+| [`initScripts`](#init-scripts) | `WebInitScript[]` | - |
+
+- `web()` 测试目标需要 `app.url`，且拒绝设备配置键（`bundleId`、`appPath`、`launchArguments`）。它的 `app.permissions` 只接受 `'grant'`，且权限名称必须受浏览器支持；参阅 [`permissions`](/reference/config#permissions)。
+- 带有 `app.url` 的测试目标是 `browser` 测试目标，因此 `requires: ['browser']` 会选中网页端测试目标。
+- 带 JSDoc 的完整声明见类型章节下的 [`WebOptions`](#weboptions)。
+
+| 抛出错误 | 触发条件 |
+| --- | --- |
+| `INVALID_CONFIG` | `web()` 不接受的选项（包括 `url` 或其他任何应用配置键），或 `connect`、`basicAuth` 中的未知键。如果可能是拼写错误，消息会指出最接近的已知键（`viewprt` 对应 `viewport`），否则列出所有键。 |
+| `INVALID_CONFIG` | 在[持久化上下文](#recovering-a-cdp-transport)（`connect.reconnectEndpoint` 或 `scope: 'attempt'` 的提供方）上使用 `headers`、`basicAuth`、`userAgent`、`locale` 或 `timezoneId`。 |
+
+#### `browser`
+
+要启动的浏览器，或租用托管浏览器的提供方。
+
+```ts
+web({ browser: 'firefox' }); // default: 'chromium'
+```
+
+- `'chromium'`、`'firefox'` 或 `'webkit'`。
+- `BrowserProvider` 则租用托管浏览器：每次运行中每个工作进程槽位一个，或每次尝试一个（[`WebOptions`](#weboptions)）。引擎通过 CDP 将它们作为 chromium 驱动，无论实际是 Chromium，还是 [Lightpanda](/integrations/lightpanda)、[Moli](/integrations/moli) 等其他 CDP 服务器。
+- `scope: 'attempt'` 的提供方使用持久化上下文，限制见[恢复 CDP 传输连接](#recovering-a-cdp-transport)。
+- [托管浏览器](/browser#hosted-browsers)介绍了 `BrowserProvider` 契约和提供方示例。
+
+| 抛出错误 | 触发条件 |
+| --- | --- |
+| `INVALID_CONFIG` | 同时设置 `browser: provider` 和 `connect`。 |
+
+#### `viewport`
+
+每次尝试的页面初始视口。
+
+```ts
+web({ viewport: { width: 390, height: 844 } }); // default: { width: 1280, height: 720 }
+```
+
+`null` 不模拟任何尺寸，让页面填满浏览器窗口（[`WebOptions`](#weboptions)）。[`browser.setViewport`](#setviewport) 仍可将其设为固定尺寸。
+
+#### `screencast`
+
+引擎自带的屏幕录制如何录制启用了视频的尝试。
+
+```ts
+web({ screencast: { size: { width: 800, height: 450 }, quality: 60 } });
+```
+
+- `size` 使用整数像素，每边至少为 1。`quality` 为整数。
+- 哪些尝试会录制，由配置中的 [`video`](/reference/config#video) 模式决定。
+
+```ts
+/** The engine's screencast of the page: the frame size and the JPEG quality of the frames it encodes. */
+export interface WebScreencastOptions {
+  /** Frame size in pixels; default the viewport's, or the window's under `viewport: null`. A smaller size makes a smaller file. */
+  readonly size?: ViewportSize;
+  /** JPEG quality of each captured frame, 0 through 100; Playwright's default when unset. */
+  readonly quality?: number;
+}
+```
+
+| 抛出错误 | 触发条件 |
+| --- | --- |
+| `INVALID_CONFIG` | 加载配置时，`size` 或 `quality` 使用其他值，或出现其他键。旧写法 `web({ video })` 也会被拒绝，并提示使用 `screencast`。 |
+
+#### `connect`
+
+通过 CDP 连接远程浏览器，而不是在本地启动。
+
+```ts
+web({ connect: { cdpEndpoint: async () => 'ws://127.0.0.1:9222' } });
+```
+
+`reconnectEndpoint` 会启用持久化上下文；参阅[恢复 CDP 传输连接](#recovering-a-cdp-transport)。
+
+任一解析函数都可以返回作为 `CdpTarget` 的 `{ endpoint, headers }`，用于 CDP 握手身份验证。这些请求头与向应用发送请求头的 `web({ headers })` 相互独立。
+
+```ts
+interface WebConnectOptions {
+  cdpEndpoint(signal: AbortSignal): string | CdpTarget | Promise<string | CdpTarget>;
+  reconnectEndpoint?(signal: AbortSignal): string | CdpTarget | Promise<string | CdpTarget>;
+}
+```
+
+| 抛出错误 | 触发条件 |
+| --- | --- |
+| `INVALID_CONFIG` | 加载配置时，`connect` 缺少 `cdpEndpoint`，或其值为字符串。也包括同时设置 `connect` 和 `browser` 提供方。 |
+
+<a id="recovering-a-cdp-transport" />
+
+##### 恢复 CDP 传输连接
+
+`connect.reconnectEndpoint(signal)` 允许在 CDP 传输连接断开后恢复同一个远程浏览器。省略它可保持上下文隔离。
+
+远程浏览器的要求：
+
+- 每次尝试，包括重试，都需要从 `cdpEndpoint` 获得自己的全新浏览器。一个长期存在的浏览器不能服务整个测试套件。
+- 远程浏览器只能有默认上下文。
+- 宿主必须在尝试结束时删除浏览器。引擎清理只会断开自身连接，不会终止宿主的浏览器。
+- 尝试的首个页面使用浏览器自身的第一个标签页，并导航到 `about:blank`，而不是在旁边新建第二个标签页。之后打开的页面，例如 `app.restart` 打开的页面，才会使用新标签页。
+
+恢复过程：
+
+- 断开连接后，下一个操作会在该操作的超时和中止信号范围内调用一次 `reconnectEndpoint`。解析函数必须返回现有浏览器的端点。
+- 引擎检查持久化默认上下文 ID 和活动标签页的目标 ID。它会拒绝不提供默认上下文 ID 的浏览器。活动标签页缺失或上下文不同都会使尝试失败。URL 匹配不会让引擎选择替代标签页。尝试中的其他标签页按其目标 ID 查找；已消失的标签页会被移除。
+- 引擎在发布每个 CDP 绑定之前安装安全字段遮盖。不兼容的 Playwright 版本会使连接失败，而不是暴露像素。
+- 原始页面的框架必须保留封闭 Shadow DOM 跟踪钩子。不重新加载应用，就无法恢复已有的封闭根。遮盖查询会拒绝任何未被跟踪的文档。
+- 端点解析、CDP 连接、准备和分发共用一个超时。取消并发等待者不会取消发起恢复的操作。取消恢复的发起者会使共享恢复失败。
+
+| 抛出错误 | 触发条件 |
+| --- | --- |
+| `ENGINE_FAILURE` | 断开连接期间，有文档在没有封闭 Shadow DOM 钩子的情况下加载。 |
+| `OPERATION_TIMEOUT` | 端点解析、连接、准备和分发耗尽了共享超时。 |
+| `CANCELLED` | 调用方或尝试被取消。 |
+
+保留的内容：
+
+- 恢复会保留页面未保存的状态、存储和智能体记录。对话框和路由处理函数会重新附加。
+- 视频录制会恢复。断开期间丢失的片段无法找回。
+- 已分发的操作绝不会重试。
+- 恢复会清除旧节点引用。基于观测的 `tapAt` 和 `doubleTapAt` 调用、基于观测根的滑动，以及引擎对焦点元素的键盘输入，都需要新的引擎观测才能继续。
+- 恢复前开始的观测或定位器读取，在连接变化后不能发布引用。每次尝试独立拥有绑定和录制，因此迟到的清理不会更改后续尝试。
+- 确定性的 `browser.mouse` 和 `browser.keyboard` 测试夹具无需智能体观测即可继续使用。测试代码负责自己的输入，可以在操作前通过 `browser.evaluate` 读取当前几何信息和焦点。
+- 使用 `surfaceOf(engine)` 的代码必须在恢复后重新读取访问器。此前保存的 Playwright 对象属于已断开的传输连接。
+
+`scope: 'attempt'` 的 `browser` 提供方使用同样的持久化上下文，并受同样限制。租约的 `cdpEndpoint` 提供本次尝试的浏览器，`reconnectEndpoint`（未设置时再次使用 `cdpEndpoint`）重新连接到它。提供方契约保证租约是全新的，因此引擎不会将其上下文与先前尝试进行比较。托管服务可能从同一个快照恢复浏览器，使新浏览器具有相同的上下文 ID。
+
+要跨文件复用一次登录，请保留隔离上下文（不设置 `reconnectEndpoint`，提供方不使用 `scope: 'attempt'`），并[在准备测试中登录一次](/authentication#reuse-authenticated-sessions)。登录状态通过保存的会话传递，而不是共享浏览器。
+
+<Note>
+持久化上下文不支持 `headers`、`basicAuth`、`userAgent`、`locale`、`timezoneId`（参阅[选项](#options)）、`app.clearState`，以及会话状态的捕获和恢复。`app.clearState` 会以 `UNSUPPORTED_CAPABILITY` 失败。`app.restart` 仍然可用。
+</Note>
+
+#### `headers`
+
+添加到从应用源发起的每个请求的请求头，源由 `app.url` 的协议、主机和端口组成。从其他端口、子域名或任何其他主机发起的请求不会获得这些请求头。重定向会保留请求最初携带的请求头，无论重定向到哪个源。
+
+```ts
+web({ headers: { 'x-preview-token': process.env.PREVIEW_TOKEN ?? '' } });
+```
+
+- 发往允许的源的[继续请求](#route)仍会携带这些请求头。
+- 测试通过 `headers` 和 `basicAuth` 访问[受保护的预览](/web#protected-previews)。
+- 参阅[请求凭据](/reference/security#request-credentials)。
+
+| 抛出错误 | 触发条件 |
+| --- | --- |
+| `INVALID_CONFIG` | `user-agent` 条目与 [`userAgent`](#useragent) 同时设置，或 `accept-language` 条目与 [`locale`](#locale) 同时设置。 |
+
+<Note>
+`headers` 会启用请求路由，从而禁用浏览器的 HTTP 缓存并阻止 Service Worker。
+</Note>
+
+#### `basicAuth`
+
+HTTP 基本身份验证。浏览器使用这些凭据响应来自应用源的 `401` 质询。其他源的质询不会得到响应，除非 [`credentialOrigins`](#credentialorigins) 列出了该源。
+
+```ts
+import { secrets } from 'e2e';
+
+web({ basicAuth: { username: 'staging', password: secrets.get('staging-password') } });
+```
+
+`secrets.get(name)` 密码在每次尝试开始时解析，并像其他已配置的机密值一样脱敏。它转换成的 `Authorization` 请求头中的 base64 凭据也会脱敏。
+
+```ts
+/** HTTP basic authentication the browser answers a `401` challenge from the app's origin with. */
+export interface WebBasicAuth {
+  /** The user name; `:` is not allowed in one (RFC 7617). */
+  readonly username: string;
+  /** The password, or `secrets.get(name)` for one in `config.secrets`. */
+  readonly password: string | Secret;
+}
+```
+
+| 抛出错误 | 触发条件 |
+| --- | --- |
+| `INVALID_CONFIG` | 用户名中包含 `:`，或出现未知键。 |
+
+<Note>
+WebKit 无法将凭据限定到使用其协议默认端口（`https://staging.example.com`）或 IPv6 主机的源。当应用源或 `credentialOrigins` 中的某个源符合这种情况时，WebKit 会响应来自任何源的 `401`，与 Playwright 的默认行为相同。
+</Note>
+
+<Warning>
+机密值保护只针对文本。如果页面在屏幕上渲染密码，截图或模型像素中的密码不会被遮盖（[安全规则](/reference/security#secrets-in-engine-options)）。
+</Warning>
+
+#### `credentialOrigins`
+
+除应用自身的源之外，接收 [`headers`](#headers) 和 [`basicAuth`](#basicauth) 的额外源，例如另一台主机上受相同访问控制保护的 API。
+
+```ts
+web({
+  headers: { 'x-preview-token': process.env.PREVIEW_TOKEN ?? '' },
+  credentialOrigins: ['https://api.staging.example.com'],
+});
+```
+
+精确列出每个源。主机中的 `*` 和端口 `0` 不匹配任何请求。
+
+| 抛出错误 | 触发条件 |
+| --- | --- |
+| `INVALID_CONFIG` | 未设置 `headers` 或 `basicAuth`；条目不是不带路径、查询字符串或片段的 `http:` 或 `https:` 源；主机中包含 `*`；或端口为 `0`。 |
+
+#### `testIdAttribute`
+
+携带元素测试 ID 的属性：`testId` 查询（`screen.getByTestId`）解析的内容，也是 `SemanticNode.testId` 报告的内容。
+
+```ts
+web({ testIdAttribute: 'data-test' }); // default: 'data-testid'
+```
+
+#### `userAgent`
+
+每次尝试的上下文发送的 `User-Agent`，也是 `navigator.userAgent` 报告的值，适用于根据用户代理字符串中的标记切换到测试模式的应用。
+
+```ts
+web({ userAgent: 'Mozilla/5.0 e2e' }); // default: the browser's own
+```
+
+#### `locale`
+
+每次尝试的上下文使用的区域设置，为 BCP 47 标签：决定 `navigator.language`、`Intl` 格式化和 `Accept-Language` 请求头的内容。
+
+```ts
+web({ locale: 'de-DE' }); // default: the browser's own
+```
+
+#### `timezoneId`
+
+每次尝试的上下文使用的 IANA 时区：`Date` 和 `Intl` 据此解析本地时间。
+
+```ts
+web({ timezoneId: 'Europe/Berlin' }); // default: the machine's
+```
+
+#### 媒体模拟
+
+`web({ colorScheme, reducedMotion })` 设置每次尝试中每个页面报告的媒体特性，与 Playwright 同名上下文选项的作用相同。`browser.emulateMedia(media)` 则为单次尝试更改这些特性。
+
+```ts
+web({ colorScheme: 'dark', reducedMotion: 'reduce' }); // default: the browser's own
+await browser.emulateMedia({ colorScheme: 'light' });
+```
+
+- 页面的 `@media` 规则和 `matchMedia` 从首次绘制起就会读取这些值。
+- 持久化上下文也接受这些选项：引擎会在它打开的每个页面上设置它们。
+- `emulateMedia` 在本次尝试剩余期间生效，覆盖所有已打开和之后打开的标签页，并在 `app.restart()` 和 `app.clearState()` 后保留。
+- 它在首次导航前即可使用，因此下次 `app.open` 加载时会使用这些值。
+- 省略的特性保留原值。
+- 应用自行打开的标签页出现时才会获得测试中的更改，持久化上下文也是如此，因此其加载时运行的脚本仍可能读取配置中的值。
+
+```ts
+/** User preferences a page reads through `@media` rules and `matchMedia`. */
+export interface WebMedia {
+  /** `prefers-color-scheme`. */
+  readonly colorScheme?: 'light' | 'dark' | 'no-preference';
+  /** `prefers-reduced-motion`. */
+  readonly reducedMotion?: 'reduce' | 'no-preference';
+}
+```
+
+| 抛出错误 | 触发条件 |
+| --- | --- |
+| `INVALID_CONFIG` | `web()` 中使用了 `WebMedia` 以外的特性或值。 |
+| `INVALID_ARGUMENT` | `emulateMedia` 中使用了 `WebMedia` 以外的特性或值。 |
+
+#### 初始化脚本
+
+初始化脚本在每个标签页和框架的每个文档中、页面自身脚本之前运行。`web({ initScripts })` 应用于每个测试；`browser.addInitScript` 则为当前测试剩余期间添加脚本。
+
+```ts
+await browser.addInitScript((value) => { Math.random = () => value; }, 0.5);
+await app.open('/raffle');
+```
+
+- 函数不能通过闭包引用测试变量。请改为传入 JSON `arg`。
+- 页面打开后添加的脚本，会从下次导航或重新加载开始运行。
+- `browser.addInitScript` 接受相同的三种形式，或函数及其 JSON `arg`。重载见 [`Browser`](#browser-interface)。
+
+```ts
+/** JavaScript source, a file relative to the project root, or a function. */
+export type WebInitScript = string | { readonly path: string } | (() => unknown);
+```
+
+### browser 测试夹具
+
+`browser` 表示整个浏览器，并显示一个活动标签页。
+
+- 读取或操作页面的方法作用于活动标签页：`goto`、`reload`、`back`、`forward`、`url`、`title`、`waitForURL`、`locator`、`frameLocator`、`evaluate`、`waitForResponse`、`waitForDownload`、`keyboard`、`mouse`、`expect(browser)` 匹配器，以及所有 `screen` 查询。
+- 属于浏览器本身的操作覆盖所有标签页：`cookies`、`setCookies`、`clearCookies`、`route`、`unroute`、`unrouteAll`、`onDialog` 和 `addInitScript`。
+- `setViewport` 设置活动标签页及之后打开的所有标签页的尺寸。
+- [`emulateMedia`](#media-emulation) 更改所有已打开和将来打开的标签页的媒体特性。
+- 应用通过 `target="_blank"` 链接或 `window.open` 打开的标签页会在后台打开：活动标签页保持不变，直到 `waitForPopup` 或 `activate` 将其他标签页设为活动。参阅[标签页](#tabs)。
+- 除 `locator` 和 `frameLocator` 外，每个 `browser` 调用都会记录为 `browser.<method>` 步骤。这两个方法只构造定位器，不访问页面；对定位器执行的操作或断言才是步骤。
+- 相对 URL 基于测试目标的 `app.url` 解析，否则触发 `APP_URL_REQUIRED`。
+- 在也会运行于其他平台的测试套件中声明 `requires: ['browser']`。
+- `expect(browser)` 返回引擎附加的 `BrowserExpectation`：`toHaveURL`、`toHaveTitle` 和 `toHaveClass`。参阅[浏览器匹配器](/reference/expect#browser-matchers)。
+
+| 成员 | 返回值 |
+| --- | --- |
+| [`goto`](#goto) | `Promise<void>` |
+| [`reload`](#reload-back-forward) | `Promise<void>` |
+| [`back`](#reload-back-forward) | `Promise<void>` |
+| [`forward`](#reload-back-forward) | `Promise<void>` |
+| [`url`](#url-title) | `Promise<string>` |
+| [`title`](#url-title) | `Promise<string>` |
+| [`waitForURL`](#waitforurl) | `Promise<void>` |
+| [`locator`](#locator) | `Locator` |
+| [`frameLocator`](#framelocator) | `FrameScreen` |
+| [`evaluate`](#evaluate) | `Promise<T>` |
+| [`addInitScript`](#init-scripts) | `Promise<void>` |
+| [`route`](#route) | `Promise<void>` |
+| [`unroute`](#unroute) | `Promise<void>` |
+| [`unrouteAll`](#unrouteall) | `Promise<void>` |
+| [`waitForResponse`](#waitforresponse) | `Promise<WebResponse>` |
+| [`cookies`](#cookies) | `Promise<Cookie[]>` |
+| [`setCookies`](#setcookies) | `Promise<void>` |
+| [`clearCookies`](#clearcookies) | `Promise<void>` |
+| [`setViewport`](#setviewport) | `Promise<void>` |
+| [`emulateMedia`](#media-emulation) | `Promise<void>` |
+| [`onDialog`](#ondialog) | `Promise<() => Promise<void>>` |
+| [`tabs`](#tabs) | `readonly BrowserTab[]` |
+| [`waitForPopup`](#tabs) | `Promise<BrowserTab>` |
+| [`newTab`](#tabs) | `Promise<BrowserTab>` |
+| [`waitForDownload`](#waitfordownload) | `Promise<{ path, absolutePath, … }>` |
+| [`waitForDownloads`](#waitfordownloads) | `Promise<{ path, absolutePath, … }[]>` |
+| [`keyboard`](#keyboard) | `{ press, down, up, type }` |
+| [`mouse`](#mouse) | `{ move, wheel, down, up }` |
+
+[配置](/reference/config)设置各成员的预算：
+
+- `goto`、`reload`、`back` 和 `forward`：[`timeout`](/reference/config#timeout)，与 `app.open()` 使用相同预算。
+- `waitForURL`：[`assertionTimeout`](/reference/config#assertiontimeout)。
+- 其他所有成员：[`actionTimeout`](/reference/config#actiontimeout)。`locator` 和 `frameLocator` 不访问页面，也不占用预算。
+
+`{ timeout }` 选项可覆盖 `goto`、`reload`、`back`、`forward`、`waitForResponse`、`waitForPopup`、`waitForDownload` 和 `waitForDownloads` 的预算，但受测试截止时间限制（`afterEach` 中为 `cleanupTimeout`）；`0` 表示等待到该截止时间。`url`、`title`、`evaluate`、`addInitScript`、`route`、`unroute`、`unrouteAll`、`cookies`、`setCookies`、`clearCookies`、`setViewport`、`emulateMedia`、`onDialog`、`newTab`、`BrowserTab` 方法、`keyboard.*` 和 `mouse.*` 不接受覆盖值。
+
+#### `goto`
+
+将活动标签页导航到指定 URL。
+
+```ts
+await browser.goto('/dashboard', { waitUntil: 'networkidle' }); // default: 'load'
+```
+
+`waitUntil` 为 `'load'`、`'domcontentloaded'` 或 `'networkidle'`。
+
+| 抛出错误 | 触发条件 |
+| --- | --- |
+| `POLICY_DENIED` | URL 协议不是 `http:` 或 `https:`。允许 `about:blank`。 |
+| `APP_URL_REQUIRED` | 在未声明 `app.url` 的测试目标上使用相对 URL。 |
+| `ACTION_FAILED` | 导航失败。 |
+
+#### `reload`、`back`、`forward`
+
+`reload` 重新加载当前文档。`back` 和 `forward` 分别在浏览器历史中后退或前进一步。三者都会等待文档加载。前进后退缓存恢复可以复用已加载的文档。请使用定位器和断言等待应用内容。
+
+```ts
+await browser.reload();
+await browser.back({ timeout: 10_000 });
+```
+
+| 抛出错误 | 触发条件 |
+| --- | --- |
+| `ACTION_FAILED` | 导航失败。 |
+
+#### `url`、`title`
+
+返回活动标签页当前的 URL 和标题。
+
+```ts
+const url = await browser.url();
+const title = await browser.title();
+```
+
+#### `waitForURL`
+
+等待当前 URL 匹配。它在开始后的 0、20 和 50 毫秒读取 URL，此后从开始时间起每 100 毫秒读取一次，与 `expect(browser).toHaveURL` 的轮询方式相同。
+
+```ts
+await browser.waitForURL(/\/orders\/\d+$/, { timeout: 15_000 });
+```
+
+- 相对字符串基于基础 URL 解析，并在规范化后精确匹配。
+- `RegExp` 匹配完整 URL。
+
+| 抛出错误 | 触发条件 |
+| --- | --- |
+| `INVALID_ARGUMENT` | 模式不是字符串或 `RegExp`（例如谓词函数），或使用了 `timeout` 之外的选项，例如 Playwright 的 `waitUntil`。 |
+| `ASSERTION_FAILED` | URL 在超时前未匹配。 |
+
+#### `locator`
+
+从 Playwright 选择器创建仅适用于网页端的定位器。
+
+```ts
+const conditions = browser.locator(
+  '[data-testid="row"] >> nth=2 >> [data-testid="conditions"] > div',
+);
+```
+
+- 选择器默认为 CSS，使用 `xpath=` 或以 `//` 开头时为 XPath，并支持 `>>` 链，因此示例将 CSS 限定到一行内。
+- 对于包含另一个元素的元素，使用 `filter({ has })`。
+
+| 抛出错误 | 触发条件 |
+| --- | --- |
+| `INVALID_LOCATOR` | 空选择器，或在最后一部分之前使用 `*` 捕获（`*css=article >> text=Hello`）。 |
+
+<Note>
+每个 `screen` 查询都会搜索其作用域，以及页面在该作用域下附加的每个封闭 Shadow Root，使用 Playwright 自身的角色、名称、文本、标签和属性匹配方式，每个节点只查找一次。观测树列出的封闭根内控件可以被解析、操作和读取。`locator`、`frameLocator` 和 `filter({ hasText })` 保持 Playwright 的搜索范围，在封闭根处停止；详情见[浏览器指南](/browser#shadow-dom)。
+</Note>
+
+#### `frameLocator`
+
+在一个 iframe 内创建屏幕查询作用域。
+
+```ts
+const payment = browser.frameLocator('#payment-frame');
+await payment.getByLabel('Card number').fill('4242424242424242');
+```
+
+它返回 `FrameScreen`，即查询结果来自框架内部的 `Screen`。只有控件没有无障碍名称、标签、占位符或测试 ID 时，才使用框架的 `locator`。[浏览器指南](/browser#reach-into-an-iframe)展示了适用场景。
+
+```ts
+export interface FrameScreen extends Screen {
+  /** Creates a web-only CSS or XPath locator inside this frame. */
+  locator(selector: string): Locator;
+  /** Creates a screen query scope inside an iframe nested in this frame. */
+  frameLocator(selector: string): FrameScreen;
+}
+```
+
+页面和框架内的错误相同：
+
+| 抛出错误 | 触发条件 |
+| --- | --- |
+| `INVALID_LOCATOR` | 此处或框架的 `locator` 中使用了空选择器。 |
+| `LOCATOR_NOT_FOUND` | 没有匹配的框架。 |
+| `LOCATOR_AMBIGUOUS` | 多个框架匹配。 |
+
+#### `evaluate`
+
+在页面中执行可信的测试代码并返回结果。
+
+```ts
+const count = await browser.evaluate(() => document.querySelectorAll('li').length);
+const flag = await browser.evaluate(
+  (name: string) => window.localStorage.getItem(name),
+  'featureFlags',
+);
+const title = await browser.evaluate<string>('document.title');
+```
+
+- 函数在页面中运行，无法访问测试中的变量。e2e 会按源码序列化函数并内联到页面，因此它不能通过闭包引用函数体之外的内容。在函数体内声明的辅助函数可以使用。通过 `arg` 传入外部值。
+- 字符串作为单个表达式求值，而不是语句。如果求值结果是函数，则用 `arg` 调用该函数；否则直接返回求值结果。
+- 两种方式返回的 Promise 都会被等待。
+
+| 抛出错误 | 触发条件 |
+| --- | --- |
+| `INVALID_ARGUMENT` | `arg` 或返回值不是 [`JsonValue`](#jsonvalue)。类实例，例如 `DOMRect` 或元素，不符合要求：请返回 `rect.toJSON()` 或所需字段。 |
+| `EVALUATE_FAILED` | 被执行的代码抛出错误，或页面替换了引擎所需的 JavaScript 内置对象，例如 `Map`。错误携带具体消息。 |
+| `ACTION_FAILED` | Playwright 超时。 |
+| `ENGINE_FAILURE` | 页面关闭或上下文丢失。 |
+
+#### `route`
+
+添加作用域为本次尝试的网络路由。
+
+```ts
+await browser.route('**/api/quote', async (route) => {
+  await route.fulfill({ json: { cents: 4200 } });
+});
+```
+
+`route.fetch()` 在操作超时范围内返回上游的 `{ url, status, headers, body(), text(), json() }`，如果其源应接收配置的请求头，也会携带这些请求头，但不会决定路由的处理方式。它不会跟随重定向，因为重定向可能绕过导航规则。
+
+- 模式为字符串或 `RegExp`，均针对完整 URL 匹配。在字符串中，`*` 匹配路径段内的内容，`**` 可跨越 `/`，`?` 匹配任意单个字符，`\` 转义下一个字符。`unroute` 和 `waitForResponse` 接受相同模式。
+- 路由在 `app.restart()`、`app.clearState()` 和会话恢复后仍然保留。
+- 路由按最新注册的优先运行。
+- 处理函数必须且只能作出一次决定，调用 `fulfill`、`continue`、`fallback` 或 `abort`，各方法见下方 `WebRoute`。
+- `continue` URL 遵循与 `goto` 相同的规则。`continue` 中设置为 `undefined` 的请求头会被删除，重定向时也是如此。
+- `fulfill` 的响应体是字符串或字节（`Buffer`、`Uint8Array`），原样发送。
+- 要设置多个 Cookie，请在一个 `set-cookie` 请求头中用 `\n` 连接，与 `route.fetch()` 返回的响应头形式相同。请求头中的其他换行都会被拒绝。
+- 处理函数抛出的错误（例如对请求执行的 `expect` 失败）会使下一个步骤以该错误失败；如果没有后续步骤，则使尝试在结束时失败。由处理函数导致失败的步骤，例如请求被其遗留为中止状态的 `goto`，会以处理函数的错误失败。处理函数有意中止请求时，对应的 `goto` 会以 `ACTION_FAILED` 失败。此时仍在运行的处理函数会获得清理预算以完成执行。预算结束后抛出的任何错误都会被丢弃。
+
+| 抛出错误 | 触发条件 |
+| --- | --- |
+| `INVALID_ARGUMENT` | 使用谓词函数作为模式。也包括决定操作不接受的选项（Playwright 的 `abort(errorCode)`、拼错的键）：请求会被中止，下一个步骤失败。 |
+| `ACTION_FAILED` | 处理函数作出两次决定或未作决定。 |
+| `POLICY_DENIED` | `continue` URL 使用被禁止的协议。 |
+| `CLEANUP_TIMEOUT` | 处理函数运行时间超过清理预算，导致尝试失败。 |
+
+```ts
+/**
+ * One of `json`, `body`, or `path`, or none for an empty body. `path` names a
+ * file relative to the project root; its `Content-Type` follows its
+ * extension unless `contentType` or a `content-type` header sets one.
+ */
+export type RouteFulfillResponse = {
+  status?: number;
+  /** Response headers; `set-cookie` may join several cookies with `\n`, as `route.fetch()` reports them. */
+  headers?: Record<string, string>;
+  /** Sets the `Content-Type` response header. */
+  contentType?: string;
+} & (
+  | { json: JsonValue; body?: never; path?: never }
+  | { body: string | Uint8Array; json?: never; path?: never }
+  | { path: string; json?: never; body?: never }
+  | { body?: never; json?: never; path?: never }
+);
+
+/** What `continue` changes about the request before it goes to the network. */
+export interface RouteContinueOverrides {
+  /** Resolved against the base URL like `goto`; must keep the request's scheme. */
+  url?: string;
+  /** Request method. */
+  method?: string;
+  /** Replaces every request header; `undefined` drops one, and the configured `headers` for an allowed origin are added on top. */
+  headers?: Record<string, string | undefined>;
+  /** Request body. */
+  postData?: string;
+}
+
+export interface WebRoute {
+  /** The intercepted request. */
+  readonly request: {
+    readonly url: string;
+    readonly method: string;
+    readonly headers: Readonly<Record<string, string>>;
+    readonly postData?: string;
+  };
+  /** Reads upstream without deciding the route or following redirects. */
+  fetch(): Promise<WebResponse>;
+  /** Fulfills the intercepted request once. */
+  fulfill(response: RouteFulfillResponse): Promise<void>;
+  /** Sends the intercepted request to the network once, skipping every other route. */
+  continue(overrides?: RouteContinueOverrides): Promise<void>;
+  /** Hands the intercepted request to the route registered before this one, or the network when none matches. */
+  fallback(): Promise<void>;
+  /** Aborts the intercepted request once. */
+  abort(): Promise<void>;
+}
+```
+
+#### `unroute`
+
+移除匹配指定模式的、本次尝试作用域内的路由，使用 [`route`](#route) 模式语法。
+
+```ts
+await browser.unroute('**/api/quote');
+```
+
+| 抛出错误 | 触发条件 |
+| --- | --- |
+| `INVALID_ARGUMENT` | 使用谓词函数作为模式。 |
+
+#### `unrouteAll`
+
+移除浏览器测试夹具注册的所有路由，保留已配置的请求头。
+
+```ts
+await browser.unrouteAll();
+```
+
+#### `waitForResponse`
+
+等待匹配指定模式的响应，使用 [`route`](#route) 模式语法。
+
+```ts
+const response = await browser.waitForResponse('**/api/orders');
+expect(response.status).toBe(201);
+```
+
+- 截止时间限制匹配过程：响应头到达后立即返回响应。
+- `body()`、`text()` 和 `json()` 使用各自的预算等待响应体，即受测试截止时间限制的 `config.actionTimeout`。
+- `url`、`status` 和 `headers` 始终可读。
+- 确实为空的响应体通过 `body()` 读取时返回空 `Buffer`，通过 `text()` 读取时返回 `''`；`json()` 会拒绝它。
+
+| 抛出错误 | 触发条件 |
+| --- | --- |
+| `INVALID_ARGUMENT` | 使用谓词函数作为模式。 |
+| `ACTION_FAILED` | 截止时间内没有匹配项。对于 `body()`、`text()` 和 `json()`：预算耗尽时响应体仍在传输，或浏览器无法读取响应体（未达到声明的 `Content-Length` 就连接重置、请求被页面中止，或浏览器从不保留响应体的重定向），此时抛出错误，而不是返回空字符串。 |
+
+```ts
+export interface WebResponse {
+  /** Response URL. */
+  readonly url: string;
+  /** HTTP status. */
+  readonly status: number;
+  /** Response headers, lower-cased names; `route.fetch()` joins several `set-cookie` values with `\n`, `waitForResponse` leaves cookie headers out. */
+  readonly headers: Readonly<Record<string, string>>;
+  /** Waits for the body and returns its bytes. */
+  body(): Promise<Buffer>;
+  /** Waits for the body and parses it as JSON. */
+  json<T = unknown>(): Promise<T>;
+  /** Waits for the body and reads it as text. */
+  text(): Promise<string>;
+}
+```
+
+#### `cookies`
+
+返回当前上下文可见的 Cookie。
+
+```ts
+const cookies = await browser.cookies();
+```
+
+#### `setCookies`
+
+验证每个 Cookie，然后设置它们。
+
+```ts
+await browser.setCookies([{ url: 'http://localhost:3000', name: 'tz', value: 'UTC' }]);
+```
+
+- 相对 `url` 基于基础 URL 解析，与 `goto` 相同。
+- 使用 `domain` 形式时，协议遵循基础 URL，并移除开头的 `.`。
+
+| 抛出错误 | 触发条件 |
+| --- | --- |
+| `POLICY_DENIED` | 目标无法解析或协议被禁止。不会设置任何内容。 |
+
+```ts
+export interface CookieFields {
+  /** Cookie name. */
+  name: string;
+  /** Cookie value. */
+  value: string;
+  /** Unix timestamp in whole seconds. */
+  expires?: number;
+  /** HttpOnly flag. */
+  httpOnly?: boolean;
+  /** Secure flag. */
+  secure?: boolean;
+  /** SameSite attribute. */
+  sameSite?: 'Strict' | 'Lax' | 'None';
+}
+
+/** `url`, or `domain` with an optional `path`, never both. */
+export type Cookie = CookieFields &
+  (
+    | { url: string; domain?: never; path?: never }
+    | { url?: never; domain: string; path?: string }
+  );
+```
+
+#### `clearCookies`
+
+`clearCookies({ name?, domain?, path? })` 删除匹配所有给定过滤条件的 Cookie。字符串精确匹配，RegExp 匹配字段。不传选项时删除所有 Cookie。其他存储保留。
+
+```ts
+await browser.clearCookies({ name: /^session/, path: '/' });
+```
+
+```ts
+export interface CookieFilter {
+  name?: string | RegExp;
+  domain?: string | RegExp;
+  path?: string | RegExp;
+}
+```
+
+#### `setViewport`
+
+设置视口尺寸，并在报告中记录新尺寸。
+
+```ts
+await browser.setViewport({ width: 390, height: 844 });
+await app.open('/');
+```
+
+- 与 Playwright 的 `setViewportSize` 一样，它在首次导航之前也可使用。下次 `app.open` 将按该尺寸加载，因此手机尺寸的测试不会先渲染桌面布局。
+- 该尺寸在本次尝试剩余期间保持不变，包括 `app.restart()` 和 `app.clearState()` 之后。
+
+#### `onDialog`
+
+注册作用域为本次尝试的原生对话框处理函数，并返回取消订阅函数。
+
+```ts
+const off = await browser.onDialog('accept');
+await screen.getByRole('button', 'Delete').tap();
+await off();
+```
+
+- 处理方式为 `'accept'`、`'dismiss'`，或接收 `Dialog` 的函数。
+- 函数处理程序必须调用 `accept` 或 `dismiss`。两者都不调用时，对话框会被关闭，与未处理的对话框相同。
+- 处理函数抛出的错误会使下一个步骤失败；没有后续步骤时，使尝试在结束时失败。如果在响应对话框之前抛出错误，对话框会被关闭。
+
+错误在下一个步骤中出现，而不是在 `onDialog` 上出现：
+
+| 抛出错误 | 触发条件 |
+| --- | --- |
+| `APP_NOT_OPEN` | 函数处理程序既未接受也未关闭对话框，或没有处理程序接管对话框。 |
+| `ASSERTION_FAILED` | 处理函数中的 `expect` 失败。 |
+| `ENGINE_FAILURE` | 处理函数抛出未分类的错误。 |
+
+```ts
+/** A native dialog as a test's handler sees it. */
+export interface Dialog {
+  /** The native dialog kind, independent of its message. */
+  readonly type: 'alert' | 'confirm' | 'prompt' | 'beforeunload';
+  /** The dialog's text. */
+  readonly message: string;
+  /** Accepts the dialog once. */
+  accept(text?: string): Promise<void>;
+  /** Dismisses the dialog once. */
+  dismiss(): Promise<void>;
+}
+
+export type DialogHandler = 'accept' | 'dismiss' | ((dialog: Dialog) => void | Promise<void>);
+```
+
+#### 标签页
+
+应用通过 `target="_blank"` 链接或 `window.open` 打开的标签页会在后台打开。活动标签页保持不变，`screen`、`expect` 和 `browser` 的页面方法继续操作它。`waitForPopup` 会将其触发函数打开的标签页设为活动。活动标签页关闭时，打开它的标签页会重新成为活动标签页；如果打开它的标签页也已关闭，则使用最近处于活动状态的仍打开标签页。
+
+```ts
+const popup = await browser.waitForPopup(() =>
+  screen.getByRole('button', 'Open verification tab').tap(),
+);
+const code = await screen.getByText(/^TAB-/).textContent();
+await popup.close(); // the opener is active again
+await screen.getByRole('textbox', 'Verification code').fill(code);
+```
+
+- `waitForPopup(trigger)` 运行触发函数，待其打开的标签页成为活动标签页后返回该标签页。它选择等待开始后应用打开的第一个标签页，这可能是先前操作打开、但直到此时页面才加载的标签页。
+- `tabs()` 按打开顺序返回已打开标签页，同一标签页在整个尝试期间对应同一个 `BrowserTab`。标签页在首个页面加载后加入列表，因此同一操作打开的两个标签页按页面加载顺序排列。始终没有页面的标签页不会列出，例如指向下载、`mailto:` 地址或无内容响应的 `target="_blank"` 链接。
+- `tab.activate()` 将标签页设为活动，不关闭其他标签页。`tab.close()` 关闭该标签页；如果它原本是活动标签页，则等待下一个标签页成为活动。
+- `newTab()` 在同一浏览器上下文中打开空白标签页，共享 Cookie 和存储，并将其设为活动。使用 `goto` 进行导航。
+- 在 Chromium 上，即使打开它的标签页在其加载前已关闭，该标签页也会列出。测试通过 `surfaceOf(engine)` 打开的页面不会列出。
+- 屏幕录制记录活动标签页，每次切换生成一个视频片段。自行关闭的标签页不会保留片段，因为页面在录制得以保存之前就关闭了。提供方自身的录制覆盖所有标签页。
+
+```ts
+/** One tab of the browser the attempt drives. */
+export interface BrowserTab {
+  url(): Promise<string>;
+  title(): Promise<string>;
+  /** Whether this is the active tab. */
+  isActive(): boolean;
+  isClosed(): boolean;
+  /** Makes this the active tab. */
+  activate(): Promise<void>;
+  /** Closes the tab; the tab that opened it becomes active when it was. */
+  close(): Promise<void>;
+}
+```
+
+| 抛出错误 | 触发条件 |
+| --- | --- |
+| `ACTION_FAILED` | `waitForPopup`：未及时打开标签页。触发函数及时完成时，以 `no tab opened within <n>ms; the trigger resolved after <m>ms` 失败；如果标签页仍在加载首个页面，则以 `the tab the app opened did not load <url> within <n>ms` 失败。`activate`：标签页已关闭。 |
+
+#### `waitForDownload`
+
+运行触发函数并等待它启动的下载。
+
+```ts
+const file = await browser.waitForDownload(() =>
+  screen.getByRole('link', 'Export CSV').tap(),
+);
+```
+
+- 将文件注册为 `download` 产物，并返回相对 `path`、运行器侧的 `absolutePath` 和 `suggestedFilename`。
+- 使用 `absolutePath` 配合文件 API 检查内容，托管浏览器上也适用。
+- 在托管浏览器上，文件通过提供方的 [`downloads`](/browser#downloads-on-the-provider) 返回。
+- 等待时间包括触发函数自身的耗时。
+
+| 抛出错误 | 触发条件 |
+| --- | --- |
+| `ACTION_FAILED` | 下载未及时完成。触发函数及时完成但未启动下载时，以 `no download started within <n>ms; the trigger resolved after <m>ms` 失败。 |
+
+超时时仍在运行的触发函数以步骤超时失败。抛出错误的触发函数以自身错误失败。
+
+#### `waitForDownloads`
+
+`waitForDownloads(trigger, { count })` 调用触发函数一次，在同一超时内按开始顺序返回 `count` 个文件，每个文件都是独立产物。如果及时开始的下载数量不足，错误会指出预期和实际数量；多余的下载会被忽略。
+
+#### `keyboard`
+
+视口级键盘输入，作用于当前获得焦点的元素。
+
+```ts
+await browser.keyboard.press('Escape');
+await browser.keyboard.type('hello');
+```
+
+- `type(text)` 只输入纯文本，绝不接受 `Secret`。
+- 存在目标元素时，优先使用 `locator.press` 和 `locator.fill`。
+- 各方法说明见 [`Browser`](#browser-interface)。
+
+#### `mouse`
+
+测试代码发起的视口级指针输入，独立于智能体观测。
+
+```ts
+await browser.mouse.move(120, 240);
+await browser.mouse.down();
+await browser.mouse.move(320, 240);
+await browser.mouse.up();
+```
+
+各方法说明见 [`Browser`](#browser-interface)，包括 `wheel`。
+
+## 安装浏览器
+
+该包将 `playwright-core` 固定到精确版本，因此引擎始终运行经过测试的 Playwright。应用自身依赖 Playwright 时，会保留自己的副本。只有版本匹配时，两者才共享浏览器缓存。
+
+浏览器缺失时，每次运行会在运行计时开始前下载一次。要在 CI 或容器镜像中将浏览器安装作为独立步骤，请运行包提供的命令。它会为引擎固定版本的 Playwright 安装浏览器：
+
+<CodeGroup>
+```bash npm
+npx @e2e-dev/web install chromium --with-deps
+```
+
+```bash pnpm
+pnpm exec e2e-web install chromium --with-deps
+```
+
+```bash bun
+bunx @e2e-dev/web install chromium --with-deps
+```
+</CodeGroup>
+
+- 可指定 `chromium`、`firefox` 和 `webkit` 中的任意浏览器。未指定时安装 `chromium`。
+- `--with-deps` 还会在 Linux 上安装浏览器所需的系统库。
+- 命令以安装器的退出码退出。
+
+## 语义捕获恢复
+
+语义读取器超时时，智能体观测可以通过新的视口截图恢复。
+
+- Playwright 会在每个可访问的框架中重新扫描安全字段遮盖，包括开放和封闭 Shadow Root。每次遮盖探测都必须成功。
+- 观测会报告语义信息不可用，并清除先前节点引用。
+- 恢复需要操作预算仍有剩余时间，且获得运行器许可。`act` 允许恢复；判定则需要 `vision: true` 或 `'only'`。
+- 遮盖失败、取消和严重引擎错误仍会停止观测。
+
+允许回退时，读取器会为截图预留剩余观测预算的四分之一，最多两秒。截止时间覆盖页面遍历、元数据和元素回读，以及嵌套框架。
+
+语义元数据以单个 JSON 字符串通过 Playwright 连接传输，以减少序列化开销。读取器遍历过的元素保留在每个文档的一个页面内数组中，操作首次访问节点时从该数组创建句柄。引用仍然指向遍历时读取的元素，而不是后来占据该位置的元素。如果页面替换了 `JSON.stringify`，或向对象、数组原型添加了 `toJSON` 方法，则使用结构化传输。清理不会等待停滞的协议回复。已放弃的读取器不能复用节点 ID，也不能覆盖较新观测发布引用。
+
+## surfaceOf
+
+返回 `web()` 句柄的实时 Playwright 操作接口，供自行驱动页面的[自定义执行器](/executors#driving-the-page-yourself)使用。
+
+```ts
+import { web, surfaceOf } from '@e2e-dev/web';
+
+const engine = web();
+const live = surfaceOf(engine);   // PlaywrightLiveSurface | undefined
+live!.page();                     // the Page of the current attempt
+live!.context();                  // its BrowserContext
+```
+
+- 对于来自其他包的句柄，返回 `undefined`。
+- 直接调用 Playwright 不会记录为步骤。
+- [CDP 恢复](#recovering-a-cdp-transport)后，重新读取访问器。
+
+| 抛出错误 | 触发条件 |
+| --- | --- |
+| `INVALID_STATE` | 在活动尝试之外调用访问器。 |
+
+## 类型
+
+该包导出以下类型，用于为配置辅助函数和测试夹具提供类型：`WebOptions`、`WebMedia`、`WebScreencastOptions`、`WebConnectOptions`、`WebBasicAuth`、`WebInitScript`、`BrowserName`、`BrowserProvider`、`BrowserProviderScope`、`BrowserRequest`、`BrowserLease`、`BrowserReleaseContext`、`BrowserProviderDownloads`、`BrowserDownloadContext`、`PlaywrightLiveSurface`、`Browser`、`FrameScreen`、`BrowserExpectation`、`WebRoute`、`RouteFulfillResponse`、`RouteContinueOverrides`、`WebResponse`、`Cookie`、`CookieFields`、`CookieFilter`、`Dialog` 和 `DialogHandler`。
+
+运行时导出为 `web`、[`surfaceOf`](#surfaceof)，以及带有 `browser` 测试夹具类型的 `test`、`describe`、`beforeEach`、`afterEach`、`beforeAll` 和 `afterAll`。
+
+### `WebOptions`
+
+```ts
+/**
+ * Options of the browser engine: how it drives the app. The app itself
+ * (its `url`, `environment`, `identity`, and the command that starts it) is
+ * the target's `app`.
+ */
+export interface WebOptions {
+  /**
+   * Browser to launch, `chromium` by default. A `BrowserProvider` leases
+   * hosted browsers instead: one per worker slot at `prepare`, or one per
+   * attempt, each attached to over CDP and released when its scope ends. A
+   * provider implies chromium and excludes `connect`.
+   */
+  readonly browser?: BrowserName | BrowserProvider;
+  /**
+   * Initial viewport of every attempt's page; default 1280 by 720. `null`
+   * emulates no size: the page fills the browser window, whatever size the
+   * window has (a hosted browser's live view, a headed run), and
+   * `browser.setViewport` still fixes one for the rest of the attempt.
+   */
+  readonly viewport?: ViewportSize | null;
+  /**
+   * How the engine's own screencast records an attempt that records video.
+   * A browser provider that records (`BrowserProvider.record`) records in
+   * its place, and ignores these. Which attempts record is the config's
+   * `video`, not an engine option.
+   */
+  readonly screencast?: WebScreencastOptions;
+  /**
+   * Attach to a remote browser over CDP instead of launching locally. Requires
+   * the chromium browser (the default). Wired by a hosted-browser engine.
+   */
+  readonly connect?: WebConnectOptions;
+  /**
+   * Headers added to every request that starts at the app's origin (the
+   * scheme, host, and port of `app.url`) or one in `credentialOrigins`.
+   * Useful for preview-protection tokens. A request that starts at another
+   * origin goes without them; a redirect keeps them, to any origin.
+   * Names are case-insensitive and replace existing headers of the same name.
+   * This enables request routing, disables the browser's HTTP cache, and
+   * blocks service workers.
+   */
+  readonly headers?: Readonly<Record<string, string>>;
+  /**
+   * HTTP basic authentication. The browser answers a `401` challenge from the
+   * app's origin, or one in `credentialOrigins`, with these credentials.
+   */
+  readonly basicAuth?: WebBasicAuth;
+  /**
+   * More origins that receive `headers` and `basicAuth`, such as
+   * `https://api.example.com`; requires `headers` or `basicAuth`.
+   */
+  readonly credentialOrigins?: readonly string[];
+  /**
+   * The attribute that carries an element's test id: what the `testId` query
+   * (`screen.getByTestId`) resolves and what `SemanticNode.testId` reports.
+   * Defaults to `data-testid`.
+   */
+  readonly testIdAttribute?: string;
+  /**
+   * The `User-Agent` every attempt's context sends and `navigator.userAgent`
+   * reports, for an app that switches into a test mode on a marker in the
+   * agent string. Defaults to the browser's own. A `user-agent` entry in
+   * `headers` beside it is `INVALID_CONFIG`, and so is a persistent context
+   * (`connect.reconnectEndpoint`, or a provider with `scope: 'attempt'`).
+   */
+  readonly userAgent?: string;
+  /**
+   * The locale every attempt's context runs in, a BCP 47 tag such as
+   * `de-DE`: what `navigator.language`, `Intl` formatting, and the
+   * `Accept-Language` header report. Defaults to the browser's own. An
+   * `accept-language` entry in `headers` beside it is `INVALID_CONFIG`, and
+   * so is a persistent context.
+   */
+  readonly locale?: string;
+  /**
+   * The IANA time zone every attempt's context runs in, such as
+   * `Europe/Berlin`: what `Date` and `Intl` resolve local time against.
+   * Defaults to the machine's. A persistent context is `INVALID_CONFIG`.
+   */
+  readonly timezoneId?: string;
+  /** The `prefers-color-scheme` every page reports. See [Media emulation](#media-emulation). */
+  readonly colorScheme?: WebMedia['colorScheme'];
+  /** The `prefers-reduced-motion` every page reports. See [Media emulation](#media-emulation). */
+  readonly reducedMotion?: WebMedia['reducedMotion'];
+  /** Scripts every document runs before the page's own. See [Init scripts](#init-scripts). */
+  readonly initScripts?: readonly WebInitScript[];
+}
+```
+
+### `Browser` 接口
+
+```ts
+/**
+ * The browser the attempt drives, showing one active tab. Navigation, reads,
+ * `locator`, `frameLocator`, `evaluate`, `waitForResponse`, `waitForDownload`,
+ * the keyboard and mouse, `expect(browser)`, and `screen` act on the active
+ * tab; cookies, routes, and dialog handlers cover the whole browser, every
+ * tab included. A tab the app opens (a `target="_blank"` link,
+ * `window.open`) joins `tabs()` but does not become active on its own:
+ * `waitForPopup` makes the tab its trigger opens active, and `activate`
+ * any other. When the active tab closes, the tab that opened it is active
+ * again.
+ */
+export interface Browser extends Expectable<BrowserExpectation> {
+  /** Navigates to an allowed URL. */
+  goto(
+    url: string,
+    options?: {
+      waitUntil?: 'load' | 'domcontentloaded' | 'networkidle';
+      timeout?: number;
+    },
+  ): Promise<void>;
+  /** Reloads the current document. */
+  reload(options?: ActionOptions): Promise<void>;
+  /** Navigates browser history back once. */
+  back(options?: ActionOptions): Promise<void>;
+  /** Navigates browser history forward once. */
+  forward(options?: ActionOptions): Promise<void>;
+  /** Returns the current URL. */
+  url(): Promise<string>;
+  /** Returns the current title. */
+  title(): Promise<string>;
+  /** Waits for the current URL to match. */
+  waitForURL(url: string | RegExp, options?: { timeout?: number }): Promise<void>;
+  /** Creates a web-only CSS or XPath locator. */
+  locator(selector: string): Locator;
+  /** Creates a screen query scope inside one iframe. */
+  frameLocator(selector: string): FrameScreen;
+  /** Evaluates trusted test code in the page: a function, or a string expression whose value is returned, called first if it is a function. */
+  evaluate<T extends JsonValue>(fn: string | (() => T | Promise<T>)): Promise<T>;
+  /** Evaluates trusted test code with one required JSON-safe argument. */
+  evaluate<T extends JsonValue, Arg extends JsonValue>(
+    fn: string | ((arg: Arg) => T | Promise<T>),
+    arg: Arg,
+  ): Promise<T>;
+  /** Adds a script every document runs before the page's own, from the next navigation on. */
+  addInitScript(script: string | { path: string } | (() => unknown)): Promise<void>;
+  /** Adds an init script function called with one JSON argument. */
+  addInitScript<Arg extends JsonValue>(script: (arg: Arg) => unknown, arg: Arg): Promise<void>;
+  /** Adds an attempt-scoped network route. */
+  route(
+    pattern: string | RegExp,
+    handler: (route: WebRoute) => void | Promise<void>,
+  ): Promise<void>;
+  /** Removes matching attempt-scoped routes. */
+  unroute(pattern: string | RegExp): Promise<void>;
+  /** Removes all routes registered by this browser fixture, preserving the configured headers. */
+  unrouteAll(): Promise<void>;
+  /** Waits for a matching response. */
+  waitForResponse(
+    pattern: string | RegExp,
+    options?: { timeout?: number },
+  ): Promise<WebResponse>;
+  /** Returns cookies visible to the current context. */
+  cookies(): Promise<Cookie[]>;
+  /** Sets cookies after URL validation. */
+  setCookies(cookies: readonly Cookie[]): Promise<void>;
+  /** Removes matching cookies only; without filters removes every cookie, preserving other storage. */
+  clearCookies(options?: CookieFilter): Promise<void>;
+  /** Sets the viewport size. */
+  setViewport(size: { width: number; height: number }): Promise<void>;
+  /** Emulates CSS media features on every open tab and every tab opened after them. */
+  emulateMedia(media: WebMedia): Promise<void>;
+  /** Registers an attempt-scoped dialog handler and returns an unsubscribe function. */
+  onDialog(handler: DialogHandler): Promise<() => Promise<void>>;
+  /** Returns the open tabs, in the order they opened. */
+  tabs(): readonly BrowserTab[];
+  /**
+   * Runs a trigger and waits for the tab it opens, then resolves with that
+   * tab once it is the active tab. The wait takes the first tab the app
+   * opens after it starts, which can be one an earlier action opened whose
+   * page loaded only now. Rejects with `ACTION_FAILED` when no tab opens
+   * within the timeout, naming the page when a tab was still loading it.
+   */
+  waitForPopup(trigger: () => Promise<void>, options?: { timeout?: number }): Promise<BrowserTab>;
+  /** Opens a blank tab in the same browser context, sharing its cookies and storage, and makes it the active tab. */
+  newTab(): Promise<BrowserTab>;
+  /** Runs a trigger and waits for its download. */
+  waitForDownload(
+    trigger: () => Promise<void>,
+    options?: { timeout?: number },
+  ): Promise<{ path: string; absolutePath: string; suggestedFilename: string }>;
+  /** Runs one trigger and waits for the requested number of completed downloads. */
+  waitForDownloads(
+    trigger: () => Promise<void>,
+    options: { count: number; timeout?: number },
+  ): Promise<readonly { path: string; absolutePath: string; suggestedFilename: string }[]>;
+  /** Viewport-level keyboard, for whatever has focus. */
+  readonly keyboard: {
+    /** Sends one key. */
+    press(key: string): Promise<void>;
+    /** Holds one key until up; repeated down calls send a repeat event. */
+    down(key: string): Promise<void>;
+    /** Releases a held key. */
+    up(key: string): Promise<void>;
+    /** Types plain text. */
+    type(text: string): Promise<void>;
+  };
+  /**
+   * Direct pointer input from test code, independent of agent observations.
+   * After CDP recovery, test code can read current geometry with `evaluate`
+   * before starting a pointer sequence.
+   */
+  readonly mouse: {
+    /** Moves the pointer. */
+    move(x: number, y: number): Promise<void>;
+    /** Scrolls the pointer wheel. */
+    wheel(deltaX: number, deltaY: number): Promise<void>;
+    /** Presses the primary pointer button. */
+    down(): Promise<void>;
+    /** Releases the primary pointer button. */
+    up(): Promise<void>;
+  };
+}
+```
+
+### JsonValue
+
+```ts
+/** A JSON scalar. */
+export type JsonPrimitive = string | number | boolean | null;
+
+/** Data that survives JSON serialization. */
+export type JsonValue =
+  | JsonPrimitive
+  | { readonly [key: string]: JsonValue }
+  | readonly JsonValue[];
+```
+
+## 相关内容
+
+[浏览器指南](/browser)通过示例展示这些成员的用法，并介绍[托管浏览器](/browser#hosted-browsers)。可跨平台使用的操作位于 [`app`](/reference/app) 测试夹具上。

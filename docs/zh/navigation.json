@@ -1,0 +1,23 @@
+{
+  "tabs": {
+    "Documentation": "文档",
+    "Reference": "参考",
+    "Examples": "示例"
+  },
+  "groups": {
+    "Get started": "入门",
+    "Platforms": "平台",
+    "Features": "功能",
+    "Models and agents": "模型与智能体",
+    "Run in CI": "在 CI 中运行",
+    "Hosted browsers and devices": "托管浏览器与设备",
+    "Extend": "扩展",
+    "Engines": "引擎",
+    "Deep dive": "深入了解",
+    "Migrate": "迁移",
+    "Test API": "测试 API",
+    "Project": "项目",
+    "Web": "网页端",
+    "Mobile": "移动端"
+  }
+}

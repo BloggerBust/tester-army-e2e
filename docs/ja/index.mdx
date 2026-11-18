@@ -1,0 +1,70 @@
+---
+title: はじめに
+description: Web アプリとモバイルアプリ向けのオープンソース AI テスト。テストにかける時間を減らし、開発に集中できます。
+---
+
+import { VideoCard } from '../snippets/video-card.jsx';
+
+e2e は、Web アプリとモバイルアプリ向けのオープンソースのテストフレームワークです。
+テストには、正確な [ロケーター](/core-concepts#locators) と
+[アサーション](/reference/expect#locator-matchers)、エージェントが実行する自然言語の
+[ゴール](/core-concepts#goals)、またはその両方を組み合わせて使えます。
+
+<VideoCard
+  id="NEawZb6Hssw"
+  title="2 分でわかる e2e"
+  subtitle="エージェントのゴールとロケーターによるチェックを組み合わせ、同じテストを Web、iOS、Android で実行し、1 分でプロジェクトをセットアップします。"
+/>
+
+```ts title="tests/checkout.e2e.ts"
+import { test, expect } from 'e2e';
+
+test('a member upgrades to Pro', async ({ app, agent, screen }) => {
+  await app.open('/settings/billing');
+
+  await agent.act('upgrade the workspace to the Pro plan');
+  await agent.assert('the invoice preview shows a prorated amount');
+
+  await expect(screen.getByRole('status')).toContainText('Pro');
+});
+```
+
+## e2e を使う理由
+
+- **テストにかける時間を減らす。** セレクターや待機処理のスクリプトの代わりに、ゴールを書きます。
+  UI が変わってもエージェントが適応するため、テストの修正を減らせます。
+- **実行コストを抑える。** e2e は、後続のチェックが成功すると `agent.act` のステップを記録します。
+  次の実行ではモデルを呼び出さずに [リプレイ](/cache) し、アプリが変わると
+  エージェントに処理を戻します。組み込みエージェントの `assert`、`waitFor`、`extract` は、
+  常にモデルを呼び出します。
+
+## 仕組み
+
+- **ターゲット。** 各テストは、Chromium や iPhone シミュレーターなどのターゲットごとに 1 回実行されます。
+  [Web エンジン](/web) は Playwright を通じてブラウザを操作します。
+  [モバイルエンジン](/mobile) は agent-device を通じて iOS シミュレーターと Android
+  エミュレーターを操作します。[独自のエンジンを作成](/writing-an-engine) することもできます。
+- **エージェントステップ。** `agent.act` はゴールを達成します。`agent.assert`、
+  `agent.waitFor`、`agent.extract` は画面を判定します。
+  手持ちの [サブスクリプション](/subscriptions)、[API キー、またはローカルモデル](/models)
+  を使えます。エージェントステップを使わないテストにはモデルは不要です。
+- **レポート。** ランナーはモデルへの入力から [登録済みのシークレットをマスキング](/security) します。
+  ステップ、失敗、アーティファクトは、自分でもコーディングエージェントでも読める
+  [レポート](/debugging) に記録されます。
+
+## 始める
+
+<CardGroup cols={2}>
+  <Card title="クイックスタート" icon="rocket" href="/quickstart">
+    コーディングエージェントへの 1 つのプロンプト、または手動でセットアップします。
+  </Card>
+  <Card title="サンプルプロジェクト" icon="folder-open" href="/example-projects">
+    e2e テストが用意された独立した Web アプリやモバイルアプリを実行します。
+  </Card>
+  <Card title="基本概念" icon="pen-to-square" href="/core-concepts">
+    ゴール、アサーション、ロケーターについて学びます。
+  </Card>
+  <Card title="コーディングエージェント" icon="robot" href="/coding-agents">
+    コーディングエージェントでテストの作成、実行、デバッグを行います。
+  </Card>
+</CardGroup>

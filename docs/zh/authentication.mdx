@@ -1,0 +1,257 @@
+---
+title: 身份验证
+description: 登录一次，在多个测试中复用会话，并传入机密值而不向模型暴露其内容。
+"og:image": "https://e2e.com/docs/images/og/authentication.png?v=6e061842b8"
+"twitter:image": "https://e2e.com/docs/images/og/authentication.png?v=6e061842b8"
+---
+
+准备测试登录一次并保存一个命名会话。其他测试恢复该会话，以已登录状态开始。密码和其他机密值以句柄表示：运行器输入实际值，并在模型输入和报告中用 `<secret:name>` 代替它，但存在[一些限制](/reference/security#where-redaction-stops)。
+
+<a id="sign-in-once-in-a-setup-test" />
+
+## 复用已通过身份验证的会话
+
+在 `test.setup` 的函数体中保存会话，通过 `session` 选项恢复它。即使你只选中某个测试，运行器也会运行它所需的准备测试：
+
+<Tabs>
+  <Tab title="tests/auth.setup.e2e.ts">
+
+```ts
+import { test } from '@e2e-dev/web';
+import { expect, credentials } from 'e2e';
+
+test.setup('authenticate as admin', { sessions: ['admin'] }, async ({ app, screen, session, browser }) => {
+  const admin = credentials.user('admin');
+
+  await app.open('/login');
+  await screen.getByLabel('Username').fill(admin.username);
+  await screen.getByLabel('Password').fill(admin.password);
+  await screen.getByRole('button', 'Sign in').tap();
+
+  await expect(browser).toHaveURL('/dashboard');
+  await expect(screen.getByRole('status', 'Greeting')).toContainText('admin');
+
+  await session.save('admin');
+});
+```
+
+  </Tab>
+  <Tab title="tests/dashboard.e2e.ts">
+
+```ts
+import { test } from '@e2e-dev/web';
+import { expect } from 'e2e';
+
+test('the dashboard opens directly', { session: 'admin' }, async ({ app, screen, browser }) => {
+  await app.open('/dashboard');
+
+  await expect(browser).toHaveURL('/dashboard');
+  await expect(screen.getByRole('status', 'Greeting')).toHaveText(
+    'Welcome back, admin!',
+  );
+});
+```
+
+  </Tab>
+</Tabs>
+
+<Note>
+`session.save()` 不会检查登录是否成功。保存前，先断言 URL 或某个已登录状态的元素。
+</Note>
+
+## 会话规则
+
+| 规则 | 违反规则的结果 |
+| --- | --- |
+| 准备测试必须位于顶层，不能放在 `describe` 内 | 收集错误 |
+| 每个会话名必须且只能由一个准备测试声明 | 收集错误 |
+| 函数体必须保存 `sessions` 中的每个名称 | `SESSION_CONTRACT` 失败 |
+| 只能保存已声明的名称 | `SESSION_CONTRACT` 失败 |
+| 测试目标的引擎必须支持保存和恢复状态 | 在任何测试运行前发生收集错误；按尝试租用的托管浏览器没有此能力 |
+
+准备测试失败时，运行器会以 `setup-failed` 为原因跳过依赖它的测试。其他测试继续运行。
+
+对于浏览器测试目标，会话包含 Cookie、本地存储和 IndexedDB，不包含服务器或数据库状态。恢复会话后没有打开的页面，因此每个测试都要先调用 `app.open()`。
+
+会话只在一次运行中有效。运行器使用仅保存在内存中的密钥加密它，并在清理时删除。参阅[会话](/reference/security#sessions)。
+
+## 凭据
+
+在配置中声明每个账号。从环境变量读取密码：
+
+```ts title="e2e.config.ts"
+import type { E2EConfig } from 'e2e';
+import { web } from '@e2e-dev/web';
+
+export default {
+  targets: [{ engine: web(), app: { url: 'http://127.0.0.1:3000' } }],
+  credentials: {
+    admin: {
+      username: 'admin@example.test',
+      password: process.env.ADMIN_PASSWORD ?? '',
+    },
+  },
+} satisfies E2EConfig;
+```
+
+加载配置时会检查每个密码。如果未设置 `ADMIN_PASSWORD` 或其长度不足 6 个字符，所有命令都会以 `INVALID_CONFIG` 失败，包括 `e2e list`。有效的[覆盖值](#override-a-value-per-run)可以替换它。
+
+<Accordion title="避免将值放入环境变量">
+
+运行器启动的任何进程都能读取 `process.env` 中的字符串。`password` 也接受函数，`username` 则不接受。运行器只会在授权填入时，在运行器进程中调用该函数，因此值可以来自凭据库，也可以是新生成的一次性验证码：
+
+```ts title="e2e.config.ts"
+import type { E2EConfig } from 'e2e';
+import { web } from '@e2e-dev/web';
+import { vault } from './support/vault.ts';
+
+export default {
+  targets: [{ engine: web(), app: { url: 'http://127.0.0.1:3000' } }],
+  credentials: {
+    admin: {
+      username: 'admin@example.test',
+      password: () => vault.read('e2e/admin-password'),
+    },
+  },
+} satisfies E2EConfig;
+```
+
+只有首次填入后才会对该值脱敏。如果应用可能在测试输入之前显示该值，请使用字符串。`secrets` 条目也适用这一规则。
+
+</Accordion>
+
+## 密码是一个句柄
+
+`credentials.user(name)` 返回普通字符串形式的用户名，以及名为 `<name>.password` 的 `Secret` 形式的密码。`Secret` 没有 `.value`。将它传给 `fill` 或智能体步骤的 `params`：
+
+```ts
+await agent.act('Sign in', {
+  params: { username: admin.username, password: admin.password },
+});
+```
+
+模型只能看到机密值的名称和用途。模型填入密码时，运行器会要求使用密码字段，并输入实际值。参阅[机密值填入规则](/reference/security#secret-fills)。智能体无法读取安全字段，因此应改为断言登录成功。
+
+截图会遮盖密码字段。应用在其他任何位置显示的值都会传给模型。参阅[填入机密值后的截图](/reference/security#screenshots-after-a-secret-fill)。
+
+<Warning>
+脱敏依靠字符串匹配。经过变换的值，例如密钥的最后四个字符，仍可能出现。请在准备测试中输入机密值，并断言提交结果。参阅[脱敏的边界](/reference/security#where-redaction-stops)。
+</Warning>
+
+## 密码以外的机密值
+
+使用 `secrets` 声明 API 密钥、Webhook 令牌和测试需要输入的其他值：
+
+```ts title="e2e.config.ts"
+import type { E2EConfig } from 'e2e';
+import { web } from '@e2e-dev/web';
+
+export default {
+  targets: [{ engine: web(), app: { url: 'http://127.0.0.1:3000' } }],
+  secrets: {
+    'stripe-key': process.env.STRIPE_TEST_KEY ?? '',
+    'webhook-token': process.env.WEBHOOK_TOKEN ?? '',
+  },
+} satisfies E2EConfig;
+```
+
+`secrets.get()` 返回一个句柄。像密码一样使用它：
+
+```ts
+import { secrets } from 'e2e';
+
+await screen.getByLabel('Secret key').fill(secrets.get('stripe-key'));
+await agent.act('Connect Stripe with the given key', {
+  params: { apiKey: secrets.get('stripe-key') },
+});
+```
+
+`secrets` 条目可以填入任何可编辑的输入框。未配置的名称会抛出 `SECRET_UNAVAILABLE`。普通输入框不会被遮盖，因此在输入框包含该值时，截图会显示它，包括发送给模型的截图。`secrets.get()` 只返回 `secrets` 条目，因此 `credentials.admin` 和 `secrets.admin` 可以同时存在。
+
+在 `e2e.config.ts` 中，`secrets.get()` 可以将机密值传给声明支持它的引擎选项，例如 [`basicAuth`](/web#protected-previews)。加载配置时会检查名称。截图仍然启用，因此应用的像素不会被遮盖。参阅[引擎选项中的机密值](/reference/security#secrets-in-engine-options)。
+
+## 为单次运行覆盖值
+
+环境变量可以在一次运行中替换配置值：
+
+| 条目 | 变量 |
+| --- | --- |
+| `credentials.admin.username` | `E2E_USER_ADMIN_USERNAME` |
+| `credentials.admin.password` | `E2E_USER_ADMIN_PASSWORD` |
+| `secrets['stripe-key']` | `E2E_SECRET_STRIPE_KEY` |
+
+变量使用条目名称的大写形式，并将 `A-Z` 和 `0-9` 以外的每个字符替换为 `_`。如果两个条目映射到同一个变量，例如 `stripe-key` 和 `stripe_key`，加载配置会以 `INVALID_CONFIG` 失败。
+
+<CodeGroup>
+```bash npm
+E2E_USER_ADMIN_PASSWORD=... E2E_SECRET_STRIPE_KEY=sk_test_... npx e2e run
+```
+
+```bash pnpm
+E2E_USER_ADMIN_PASSWORD=... E2E_SECRET_STRIPE_KEY=sk_test_... pnpm exec e2e run
+```
+
+```bash bun
+E2E_USER_ADMIN_PASSWORD=... E2E_SECRET_STRIPE_KEY=sk_test_... bunx e2e run
+```
+</CodeGroup>
+
+## 多个已登录用户
+
+为每个用户保存一个会话。然后使用各自的会话和[智能体](/agents)运行相同的测试：
+
+<Tabs>
+  <Tab title="tests/personas.setup.e2e.ts">
+
+```ts
+import { test } from '@e2e-dev/web';
+import { expect, credentials } from 'e2e';
+
+const PERSONAS = ['buyer', 'admin'] as const;
+
+test.setup('sign in each persona', { sessions: [...PERSONAS] }, async ({ app, screen, session, browser }) => {
+  for (const name of PERSONAS) {
+    const user = credentials.user(name);
+    await app.open('/login');
+    await screen.getByLabel('Username').fill(user.username);
+    await screen.getByLabel('Password').fill(user.password);
+    await screen.getByRole('button', 'Sign in').tap();
+    await expect(browser).toHaveURL('/dashboard');
+    await session.save(name);
+    await app.open('/logout');
+  }
+});
+```
+
+  </Tab>
+  <Tab title="tests/checkout.e2e.ts">
+
+```ts
+import { describe, test } from '@e2e-dev/web';
+
+for (const persona of ['buyer', 'admin'] as const) {
+  describe(`checkout as ${persona}`, { agent: persona, session: persona, tags: [persona] }, () => {
+    test('pays for one item', async ({ app, agent }) => {
+      await app.open('/cart');
+      await agent.act('pay for the item in the cart');
+      await agent.assert('the order confirmation is shown');
+    });
+  });
+}
+```
+
+  </Tab>
+</Tabs>
+
+每个名称都对应一个 `agents` 条目、一个 `credentials` 条目和一个已保存的会话。如果这些角色不需要单独的会话，可以改为[以多个智能体运行同一个流程](/agents#one-flow-several-personas)。
+
+## 下一步
+
+<CardGroup cols={2}>
+  <Card title="test 参考" icon="flask" href="/reference/test">
+    `test.setup`、`sessions` 和 `session` 选项。
+  </Card>
+  <Card title="配置参考" icon="sliders" href="/reference/config#credentials">
+    `credentials` 和 `secrets` 配置块。
+  </Card>
+</CardGroup>

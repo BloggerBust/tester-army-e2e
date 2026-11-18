@@ -1,0 +1,355 @@
+---
+title: 从 Appium 迁移
+description: 将 Appium 和 WebdriverIO 移动端测试迁移到 TypeScript，使用定位器、设备调用和智能体目标。
+---
+
+import { SetupPrompt } from '../../snippets/setup-prompt-card.jsx';
+
+export const migrationPrompt = `将这个项目的 Appium 测试迁移到 e2e，每次迁移一个测试。文档：\`https://e2e.com/docs/migrate/appium.md\` 和 \`https://e2e.com/docs/mobile.md\`
+
+1. 阅读上面的迁移指南。它说明 Appium 的能力配置、选择器和命令如何映射到 e2e，并列出 e2e 尚不支持的功能。移动端指南介绍设备和应用构建。
+2. e2e 测试在 Node 中运行，默认使用 TypeScript，也可以使用 JavaScript。如果 Appium 测试套件使用 Java、Python 或其他语言，或项目没有 \`package.json\`，就在应用旁的 \`e2e/\` 文件夹中创建测试项目。
+3. 如果测试项目没有 e2e 配置（\`e2e.config.ts\`、\`.mts\`、\`.js\` 或 \`.mjs\`），在其中运行 \`npx e2e init --yes --engine mobile\`（或对应的 pnpm 或 bun 命令）。它会写入移动端配置，其中包含一个适合当前机器平台的测试目标，以及一个针对“设置”应用的示例测试，此时还不会安装任何内容。将 \`tests/example.e2e.ts\` 改写为适用于你的应用的测试，或删除它。
+4. 阅读 e2e 技能（\`npx e2e guide\` 输出技能内容，\`npx e2e guide <topic>\` 输出指定主题），并在以下每个步骤中遵循它。
+5. 如果运行了 init，询问我智能体步骤要使用哪种模型：ChatGPT、GitHub Copilot、OpenCode Console 或 SuperGrok 订阅、API 密钥，还是本地模型。使用对应提供方的包进行配置。如果需要登录，给我 \`npx e2e login\` 命令，并等待我确认。
+6. 按照指南中的表格，将能力配置迁移到 e2e 配置：每个平台对应一个使用 \`mobile({ platform, device })\` 的测试目标，并在每个测试目标上设置 \`app: { bundleId, appPath, launchArguments, permissions }\`。将密码和令牌移入 \`credentials\` 或 \`secrets\`。
+7. 安装依赖项，然后运行 \`npx e2e doctor\`（e2e 0.23.0 或更高版本），并修复它报告的问题。
+8. 列出 Appium 测试，询问我要先迁移哪一个。建议选择 XPath 选择器或显式等待经常出问题的测试。
+9. 将该测试改写为 \`tests/\` 下的 \`.e2e.ts\` 文件（e2e 默认运行 \`tests/**/*.e2e.ts\`）。以 \`app.open()\` 开始，因为应用不会自动启动。遵循指南中的“改写选择器”部分：XPath 无法直接迁移，且 e2e 会在匹配到多个元素时失败。迁移测试前，对照指南中的“e2e 尚不支持的功能”部分检查测试使用的每项能力和命令。使用“当前可用方案”中的替代方案，或将该测试保留在 Appium 中并告诉我原因。
+10. 使用 \`app.open()\` 和定位器断言，确保启动和最终断言具有确定性。对于经常出问题的一连串脚本点击操作，建议改用一个 \`agent.act\` 目标。
+11. 构建并安装应用，在每个平台测试目标上使用 \`npx e2e run <file>\` 运行新文件，并修复到通过为止。在我确认可以移除之前，保留 Appium 测试。
+12. 总结哪些测试已迁移，哪些仍留在 Appium，以及原因。`;
+
+e2e 用一个 Node 包替代 Appium 服务器、驱动和客户端库。`@e2e-dev/mobile` 通过其内置的 [agent-device](https://github.com/callstack/agent-device) 驱动 iOS 模拟器、Android 模拟器和已连接的手机。能力配置变为 `e2e.config.ts` 中的测试目标，`driver` 命令变为 `app` 和 `device` 测试夹具。应用构建及其无障碍 ID 保持不变。
+
+示例使用 WebdriverIO。Java 或 Python 客户端也按相同方式映射。
+
+<SetupPrompt>
+
+<Prompt description={migrationPrompt} children={migrationPrompt} actions={["copy", "cursor"]} />
+
+</SetupPrompt>
+
+对于跨多个会话的迁移，[`migrate-to-e2e` 技能](/coding-agents#migrate-an-existing-suite)会在进度文件中记录已迁移的内容，并让旧测试套件继续运行，直到你逐个停用其中的测试。
+
+## 迁移能力配置
+
+<Note>按照[移动端指南](/mobile)配置测试目标，按照[快速开始](/quickstart)配置模型。只有智能体步骤需要模型。</Note>
+
+| Appium | e2e |
+| --- | --- |
+| `platformName`, `appium:automationName` | `mobile({ platform: 'ios' })` 或 `'android'` |
+| `appium:deviceName`, `appium:udid` | `mobile({ device: 'iPhone 17' })`：名称、模拟器 UDID 或 `emulator-5554` 序列号。手机通过名称指定 |
+| `appium:app` | `app: { appPath }`。自行安装构建产物，参阅[指定你的应用](/mobile#point-at-your-app) |
+| `appium:bundleId`, `appium:appPackage` | `app: { bundleId }`，即 `app.open()` 启动的应用 |
+| `appium:processArguments`, `appium:optionalIntentArguments` | `app.launchArguments`，字符串列表 |
+| `appium:permissions` | `app.permissions: { camera: 'grant' }`。每个 [`DevicePermission`](/reference/mobile#device-fixture) 名称接受 `grant`、`deny` 或 `reset` |
+| `appium:noReset` | 默认为 `true`，因此不会清除应用数据。若需 `false` 的行为，在测试开始时调用 `app.clearState()` |
+| `appium:fullReset` | `device.installApp(path, { reinstall: true })` |
+| `appium:newCommandTimeout`, WebDriverAgent 超时 | 无需设置。操作使用 `actionTimeout`，断言使用 `assertionTimeout`，测试使用 `timeout` |
+| `bstack:options`, `lt:options` | 设备提供方：[`browserstack()`](/integrations/browserstack) 或 [`testmu()`](/integrations/testmu) |
+| 托管设备上的 `appium:platformVersion`、`appium:language`、`appium:locale` | `browserstack()` 和 `testmu()` 上的 `osVersion`、`language` 和 `locale`；[`limrun()`](/integrations/limrun) 上的 `android.osVersion` |
+| 多组能力配置、`maxInstances` | 每个平台一个测试目标、`workers`，以及每台设备对应一个工作进程的 `device` 列表 |
+
+```ts title="e2e.config.ts"
+import type { E2EConfig } from 'e2e';
+import { mobile } from '@e2e-dev/mobile';
+
+export default {
+  targets: [
+    {
+      name: 'ios',
+      engine: mobile({ platform: 'ios', device: 'iPhone 17' }),
+      app: {
+        bundleId: 'com.example.app',
+        appPath: 'ios/build/MyApp.app',
+        launchArguments: ['-e2e', 'YES'],
+        permissions: { notifications: 'grant' },
+      },
+    },
+    {
+      name: 'android',
+      engine: mobile({ platform: 'android' }),
+      app: {
+        bundleId: 'com.example.app',
+        appPath: 'android/app/build/outputs/apk/release/app-release.apk',
+        launchArguments: ['--ez', 'e2e', 'true'],
+        permissions: { notifications: 'grant' },
+      },
+    },
+  ],
+  workers: 1,
+} satisfies E2EConfig;
+```
+
+## 改写一个测试
+
+先选择一个 XPath 选择器或显式等待经常出问题的测试。
+
+```js title="Appium (WebdriverIO)"
+describe('login', () => {
+  it('signs in', async () => {
+    await $('~email').setValue('ada@example.test');
+    await $('~password').setValue('hunter2');
+    await $('//XCUIElementTypeButton[@name="Sign in"]').click();
+    await $('~welcome').waitForDisplayed({ timeout: 10000 });
+    await expect($('~welcome')).toHaveText('Welcome, Ada');
+  });
+});
+```
+
+```ts title="e2e"
+import { test } from '@e2e-dev/mobile';
+import { expect } from 'e2e';
+
+test('signs in', async ({ app, screen }) => {
+  await app.open();
+  await screen.getByTestId('email').fill('ada@example.test');
+  await screen.getByTestId('password').fill('hunter2');
+  await screen.getByRole('button', 'Sign in').tap();
+  await expect(screen.getByText('Welcome, Ada')).toBeVisible({ timeout: 10_000 });
+});
+```
+
+- 应用不会自动启动，因此测试以 `app.open()` 开始。
+- 操作会等待对应元素，断言会重试，因此无需显式等待。
+
+对于经常出问题的一连串脚本点击操作，可以用一个 `agent.act` 目标替代。后续检查通过后，[回放缓存](/cache)会记录其操作，下次运行时直接回放，无需调用模型。密码应放在[配置的凭据](/authentication)中，模型永远看不到它：
+
+```ts
+import { credentials } from 'e2e';
+
+const ada = credentials.user('ada');
+await agent.act('sign in as {username}', { params: { username: ada.username, password: ada.password } });
+```
+
+## 改写选择器
+
+| Appium | e2e |
+| --- | --- |
+| iOS 上的 `$('~login')`，无障碍标识符或 React Native 的 `testID` | `screen.getByTestId('login')` |
+| Android 上的 `$('~Log in')`，内容描述或 React Native 的 `accessibilityLabel` | `screen.getByLabel('Log in')` |
+| `$('id=com.example:id/email')`, `resourceId` | `screen.getByTestId('email')`；`com.example:id/` 前缀可省略 |
+| `-ios predicate string:label == "Sign in"`, `android=new UiSelector().text("Sign in")` | `screen.getByText('Sign in')` 或 `getByLabel('Sign in')` |
+| `-ios class chain`，类名（`XCUIElementTypeButton`、`android.widget.Button`） | `screen.getByRole('button', 'Sign in')` |
+| `$$(selector)[2]` | `.nth(2)`；`.all()` 返回所有匹配项 |
+| 查询无法表达的选择器 | `device.locator('role=text label="Total"')`，使用 agent-device 的选择器语法 |
+
+- `getByText`、`getByLabel` 和 `getByTestId` 匹配完整字符串，区分大小写。传入 `RegExp`，或使用 `{ exact: false }` 对文本或标签进行不区分大小写的子串匹配。
+- Appium 的 `$()` 返回第一个匹配项。e2e 操作要求恰好匹配一个元素，匹配到多个时会以 `LOCATOR_AMBIGUOUS` 失败。使用 `.filter()`、`.first()` 或 `.nth()` 缩小范围。
+- `button`、`textbox` 和 `switch` 等角色在 iOS 和 Android 上相同，因此同一个测试可以在两个平台上运行。参阅[角色](/reference/mobile#roles)。
+
+## 映射每个命令
+
+`device` 上的调用只在设备上运行。如果测试套件还要在网页端运行，请在这些测试上声明 `requires: ['device']`。
+
+<AccordionGroup>
+<Accordion title="元素和手势">
+
+| Appium | e2e |
+| --- | --- |
+| `.click()`, `.doubleClick()` | `.tap()`, `.doubleTap()` |
+| 对元素执行 `mobile: longClickGesture`、`mobile: touchAndHold` | `.longPress({ duration })` |
+| `.setValue(t)`, `.clearValue()` | `.fill(t)` 替换内容，`.clear()` 清空内容 |
+| `.addValue(t)` | `.pressSequentially(t)`，在光标处逐键输入 |
+| `driver.keys('Enter')`, `pressKeyCode(66)` | 对字段调用 `.press('Enter')` |
+| `.getText()`, `.getValue()`, `.getAttribute('value')` | `.textContent()`, `.inputValue()` |
+| `.isDisplayed()`, `.isEnabled()`, `.getAttribute('checked')` | `.isVisible()`, `.isEnabled()`, `.isChecked()` |
+| `.isExisting()` | `(await locator.count()) > 0` |
+| `.getLocation()`, `.getSize()` | `.boundingBox()` |
+| `.waitForDisplayed({ timeout })` | `await expect(locator).toBeVisible({ timeout })`，或 `locator.waitFor()` |
+| `.waitForDisplayed({ reverse: true })` | `await expect(locator).toBeHidden()` |
+| `mobile: swipeGesture`, `mobile: swipe`, `driver.swipe({ direction: 'up' })` | `locator.swipe({ direction: 'down' })` 或 `screen.swipe(...)`。e2e 使用内容移动的方向，而非手指移动的方向 |
+| 滚动到元素的 `mobile: scrollGesture`、`mobile: scroll`、`.scrollIntoView()` | `screen.scrollUntilVisible(locator)` |
+| `.dragAndDrop(target)`，结束于元素上的拖动 | `locator.dragTo(target)` |
+| 在两点之间滑动的 `performActions` | `screen.swipe({ from: { x, y }, to: { x, y } })` |
+| 点击坐标 | `screen.tapAt({ x, y })`；在元素内使用 `.tap({ position: { x, y } })` |
+
+</Accordion>
+<Accordion title="应用和设备">
+
+| Appium | e2e |
+| --- | --- |
+| 会话开始时启动应用 | `app.open()`，全新启动测试目标的应用 |
+| `driver.activateApp(id)` | `device.openApp(id)`；`{ relaunch: true }` 会重启应用 |
+| 对被测应用调用 `driver.terminateApp(id)` | `device.closeApp()`。它会结束会话，因此接下来需要打开应用 |
+| `terminateApp` 后接 `activateApp` | `app.restart()` |
+| `mobile: clearApp`, `driver.installApp(path)` | `app.clearState()`, `device.installApp(path)` |
+| `driver.background(seconds)` | `device.home()`，然后 `device.openApp(id)` |
+| `driver.url('myapp://x')`, `mobile: deepLink` | `device.openLink('myapp://x')` |
+| `driver.back()`、`driver.hideKeyboard()`、用于 Home 的 `pressKeyCode` | `app.back()`, `device.dismissKeyboard()`, `device.home()` |
+| `driver.getPageSource()` | `screen.tree()`，或使用 `screen.debug()` 输出它 |
+| `driver.takeScreenshot()` | `app.screenshot('label')`，安全字段会被遮罩 |
+| `startRecordingScreen()`, `stopRecordingScreen()` | `app.startRecording()`、`app.stopRecording()`，或 `npx e2e run --video` |
+| `mobile: setPermission`, `mobile: changePermissions` | `device.setPermission('camera', 'grant')`，每次调用设置一个权限，在 `app.open()` 前调用 |
+| `driver.acceptAlert()`, `driver.dismissAlert()` | `device.alert('accept')`, `device.alert('dismiss')` |
+| `driver.setGeoLocation({ latitude, longitude })` | `device.setLocation({ latitude, longitude })` |
+| `driver.setOrientation('LANDSCAPE')`, `mobile: setAppearance` | `device.setOrientation('landscape-left')`, `device.setAppearance('dark')` |
+| `driver.setClipboard(t)`, `driver.getClipboard()` | `device.setClipboard(t)`、`device.clipboard()`，使用纯文本，Appium 则使用 base64 |
+| `driver.toggleWiFi(false)`，带 `wifi: false` 的 `mobile: setConnectivity` | `device.setNetwork('offline')`，仅影响 Wi-Fi；仅限 Android |
+| `driver.toggleAirplaneMode()`，带 `airplaneMode: true` 的 `mobile: setConnectivity` | `device.setAirplaneMode(true)`，影响 Wi-Fi 和蜂窝网络；需要 Android 11 或更高版本 |
+| `mobile: enrollBiometric`, `mobile: sendBiometricMatch`, `driver.fingerPrint(1)` | `device.enrollBiometrics('faceid', true)`、`device.setBiometrics('faceid', 'match')`，或 `'fingerprint'` |
+| `mobile: clearKeychains` | `device.clearKeychain()`；仅限 iOS 模拟器 |
+| `driver.isIOS`, `driver.isAndroid` | 在测试上设置 `{ platforms: ['ios'] }`，或使用 `platform` 测试夹具 |
+
+</Accordion>
+<Accordion title="断言和运行器">
+
+| Appium | e2e |
+| --- | --- |
+| `toBeDisplayed()`, `not.toBeDisplayed()` | `toBeVisible()`, `toBeHidden()` |
+| `toExist()`, `toBeElementsArrayOfSize(n)` | `toBeAttached()`, `toHaveCount(n)` |
+| `toHaveText(t)`, `toHaveText(t, { containing: true })` | `toHaveText(t)`, `toContainText(t)` |
+| `toHaveValue`, `toBeEnabled`, `toBeDisabled`, `toBeSelected`, `toBeChecked` | 相同 |
+| `@wdio/visual-service` 屏幕比较 | `await expect(screen).toHaveScreenshot('name.png')`，参阅[视觉比较](/visual-testing) |
+| `remote()`, `deleteSession()` | 无需调用。运行器为每个工作进程打开并关闭一个设备会话 |
+| `wdio.conf.ts` 中的 `specs` | `tests`，默认为 `tests/**/*.e2e.ts` |
+| `specFileRetries`、Mocha 的 `retries` | 配置中的 `retries`，或测试上的 `{ retries }` |
+| Mocha 的 `--grep`、标题中的标签 | `--grep`，或测试上的 `{ tags }` 配合 `--tag` |
+| `before`、`beforeEach` 钩子 | `beforeAll`, `beforeEach` |
+| JUnit 和 spec 报告器 | `--reporter list,junit`，写入 `.e2e/junit.xml` |
+| HTML 报告 | `@e2e-dev/html-reporter` 中的 [`htmlReporter()`](/reference/reporters#htmlreporter) |
+
+</Accordion>
+</AccordionGroup>
+
+## 权限和深层链接
+
+在 `app.open()` 前设置权限，因为在 iOS 上更改权限会停止正在运行的应用。每个测试都需要的权限放在 `app.permissions` 中。
+
+```js title="Appium (WebdriverIO)"
+await driver.execute('mobile: setPermission', {
+  bundleId: 'com.example.app',
+  access: { location: 'yes' },
+});
+await driver.activateApp('com.example.app');
+await driver.url('myapp://orders/42');
+await expect($('~order-title')).toHaveText('Order #42');
+```
+
+```ts title="e2e"
+import { test } from '@e2e-dev/mobile';
+import { expect } from 'e2e';
+
+test('opens an order from a link', async ({ app, device, screen }) => {
+  await device.setPermission('location', 'grant');
+  await app.open();
+  await device.openLink('myapp://orders/42');
+  await expect(screen.getByText('Order #42')).toBeVisible();
+});
+```
+
+## 在 CI 中运行
+
+无需启动服务器，e2e 作业只需安装构建产物并运行测试套件。每个平台都需要单独的作业，参阅[移动端作业](/ci#mobile-jobs)。
+
+<CodeGroup>
+```bash npm
+xcrun simctl install booted ios/build/MyApp.app
+npx e2e run --target ios --reporter list,junit
+```
+
+```bash pnpm
+xcrun simctl install booted ios/build/MyApp.app
+pnpm exec e2e run --target ios --reporter list,junit
+```
+
+```bash bun
+xcrun simctl install booted ios/build/MyApp.app
+bunx e2e run --target ios --reporter list,junit
+```
+</CodeGroup>
+
+## e2e 尚不支持的功能
+
+“已规划”中的条目已列入路线图，“尚未支持”中的条目没有确定日期。“不计划支持”中的条目是有意不提供的。通过 [`unstable_raw`](/reference/mobile#unstable_raw) 发起的调用不属于步骤，因此不会进入报告，也不会对机密值脱敏。
+
+### 已规划
+
+<AccordionGroup>
+<Accordion title="能力配置和设备">
+
+| Appium | 当前可用方案 |
+| --- | --- |
+| `appium:autoGrantPermissions`、列表之外的 Android 权限、iOS 定位权限 `always` | 在 `app.permissions` 中逐项列出权限，或在运行前执行 `adb shell pm grant`。对于 iOS 定位权限 `always`，点击提示框中的按钮 |
+| `browserstack()` 或 `testmu()` 设备上的设备设置和提示框 | 通过 UI 点击提示框。在本地设备上运行这些测试 |
+| `bstack:options.local`, `lt:options.tunnel` | 将应用指向托管设备可以访问的后端 |
+| `appium:appActivity`, `appWaitActivity`, `startActivity()` | `device.openLink(url)`，或通过 [`unstable_raw`](/reference/mobile#unstable_raw) 调用 `client.apps.open` |
+| `appium:processArguments.env` | 传入启动参数，并在应用中读取 |
+| 本地设备上的 `appium:language`、`appium:locale` | 在 iOS 上使用 `app.launchArguments: ['-AppleLanguages', '(fr)', '-AppleLocale', 'fr_FR']`，参阅[以另一种语言运行应用](/mobile#run-the-app-in-another-language)。在 Android 上，运行前设置设备语言 |
+| `appium:disableWindowAnimation`, `reduceMotion` | 在 Android 上，通过 [`unstable_raw`](/reference/mobile#unstable_raw) 调用 `client.settings.update` |
+
+</Accordion>
+<Accordion title="元素和手势">
+
+| Appium | 当前可用方案 |
+| --- | --- |
+| 读取标签、ID 或类的 `.getAttribute()`、`.isSelected()`、`.getTagName()` | 对标签使用 `toHaveAccessibleName`，对选中状态使用 `toBeSelected`。没有读取 ID、类或标签名的方法 |
+| `pressKeyCode(code)`, `driver.keys('Backspace')`, `isKeyboardShown()` | `.press()` 接受 `Enter`、`Space` 或单个字符。使用 `.clear()` 和 `.fill()` |
+| `driver.getWindowRect()`, `getWindowSize()`, `mobile: deviceInfo` | 按方向滑动，或读取全屏元素的 `.boundingBox()` |
+| `UiScrollable` 的 `scrollToEnd()`、`scrollToBeginning()` | 循环调用 `locator.swipe({ direction: 'down' })`，直到 `allTextContents()` 不再变化；回到开头使用 `'up'` |
+| `mobile: selectPickerWheelValue`、日期和时间选择器、滑块值 | 滑动滚轮并读取 `.inputValue()`，或使用 `agent.act` 目标 |
+| `mobile: pinchOpenGesture`、`mobile: pinch`、拖动到坐标的 `mobile: dragGesture`、`mobile: dragFromToForDuration` | 通过 [`unstable_raw`](/reference/mobile#unstable_raw) 调用 `client.interactions.pinch` 或 `.drag` |
+
+</Accordion>
+<Accordion title="应用、设备和运行器">
+
+| Appium | 当前可用方案 |
+| --- | --- |
+| `driver.getLogs('logcat')`, `'syslog'`, `'crashlog'` | 在钩子中运行 `adb logcat` 或 `xcrun simctl spawn <udid> log stream` |
+| `driver.removeApp(id)`, `isAppInstalled(id)`, `queryAppState(id)` | 通过 [`unstable_raw`](/reference/mobile#unstable_raw) 调用 `client.apps.uninstall` 或 `.list` |
+| `driver.lock()`、`unlock()`、电源和音量按钮 | 通过 [`unstable_raw`](/reference/mobile#unstable_raw) 调用 `client.command.hardwareButton` |
+| `driver.openNotifications()`, `mobile: pushNotification` | 从顶部边缘执行 `screen.swipe({ from, to })`；在 Node 中运行 `xcrun simctl push` |
+| `driver.pushFile()`, `pullFile()`, `pullFolder()` | 在 Node 中运行 `adb push`、`adb pull` 或 `xcrun simctl addmedia`；仅限本地设备 |
+| `driver.getAlertText()` | iOS 上使用 `screen.getByRole('alert').textContent()`，Android 上使用 `getByText` |
+| `wdio.conf.ts` 中的钩子，例如 `onPrepare` 和 `afterTest` | `afterEach`、测试夹具或[自定义报告器](/reference/reporters#custom-reporters) |
+
+</Accordion>
+</AccordionGroup>
+
+### 尚未支持
+
+| Appium | 当前可用方案 |
+| --- | --- |
+| `appium:autoAcceptAlerts`, `appium:autoDismissAlerts` | 设置 `app.permissions`，或调用 `device.alert('accept')` |
+| Webview 上下文：`getContexts()`、`switchContext()`、CSS 选择器、`execute(js)` | 使用 `getByText` 和 `getByRole` 查询 webview 的无障碍节点 |
+| 移动网页：`browserName: 'Safari'` 或 `'Chrome'` | 使用[手机视口](/web#viewports)的 `web()` 测试目标，仅测试布局 |
+| `appium:unlockType`, `unlockKey` | 保持设备解锁 |
+| 以 XML 返回的 `driver.getPageSource()` | 不支持 XML 导出。`screen.tree()` 以文本形式返回树，通过 [`unstable_raw`](/reference/mobile#unstable_raw) 调用 `client.capture.snapshot()` 则返回节点。依赖 XML 的测试保留在 Appium 中 |
+| 使用多指或多个路径点的 `performActions()` | 使用单个手势，或通过 [`unstable_raw`](/reference/mobile#unstable_raw) 调用 `client.interactions.gesture` |
+| `mobile: shell`, `getPerformanceData()` | 在 Node 中使用 `device.unstable_raw.deviceId` 运行 `adb` 或 `simctl`；仅限本地设备 |
+| iPhone 上的 `mobile: setSimulatedLocation`、`mobile: setAppearance`、`mobile: setPasteboard` | 在模拟器上运行这些测试，参阅[真机](/mobile#physical-devices) |
+| 其他 `bstack:options` 键，例如 `gpsLocation` 和 `uploadMedia` | - |
+| 本地设备上的 `appium:platformVersion`、手机的 `appium:udid` | 指定运行该版本的模拟器。在 `device` 中填写手机名称 |
+| `appium:avd`, `avdArgs`, `isHeadless` | 在运行前启动模拟器，并指定其序列号 |
+| 使用 Java、Python、Ruby 或 C# 编写的测试 | e2e 测试在 Node 中运行。在应用旁的 `e2e/` 文件夹中用 TypeScript 改写 |
+
+### 不计划支持
+
+| Appium | 替代方案 |
+| --- | --- |
+| XPath | 链式查询（`screen.getByTestId('row').getByText('Delete')`）或使用 `filter({ has, hasText })`。XPath 会让测试绑定到某个平台的树 |
+| `-image` 选择器、`findImage` | `screen.tapAt({ x, y })`，或 `agent.act` 目标 |
+| `$(selector)` 对多个匹配项中的第一个执行操作 | `.first()`，参阅[改写选择器](#rewrite-selectors) |
+| WebDriverAgent 能力配置，例如 `usePrebuiltWDA` | 无需设置。agent-device 构建并签名自己的运行器 |
+| 复合的 `-ios predicate string` 逻辑、`UiSelector` 标志和 `fromParent()` | 带 `filter({ has })` 或 `RegExp` 的 `getBy*` 查询 |
+| Gherkin 特性文件 | 每个场景对应一个测试。步骤可以是 `agent.act` 目标 |
+| 保存的会话、`test.setup` 和 `{ session }` | 每个测试单独登录，或为应用预置数据。设备没有可保存的会话，参阅[与网页端的差异](/mobile#what-differs-from-the-web) |
+| 设备网格或中枢、其他设备云 | 托管提供方，或你编写的 `DeviceProvider` |
+| `sauce:options` | 编写 [`DeviceProvider`](/mobile#hosted-devices) |
+| Appium Inspector | `screen.debug()`，或用于编码智能体实时会话的 [`npx e2e mcp`](/mcp-server) |
+| `driver.updateSettings()`, `appium:settings[...]` | [`mobile()`](/reference/mobile#engine) 上的 `snapshot`、`settle` 和 `transition` |
+| `.getAttribute('clickable')`, `.isClickable()` | 对元素执行操作。操作会等待元素达到可操作状态 |
+| 远程 Appium 服务器（`hostname`、`port`） | 在拥有设备的机器上运行 e2e |
+| Allure | 向它提供 `.e2e/junit.xml`，或使用 `htmlReporter()` |
+
+## 下一步
+
+<CardGroup cols={2}>
+  <Card title="移动端" icon="mobile-screen" href="/mobile">
+    配置你的应用、设备和托管设备。
+  </Card>
+  <Card title="移动端引擎参考" icon="book" href="/reference/mobile">
+    所有选项、`device` 测试夹具和智能体工具。
+  </Card>
+</CardGroup>

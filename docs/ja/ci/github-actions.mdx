@@ -1,0 +1,261 @@
+---
+title: GitHub Actions
+description: GitHub Actions で Web、iOS、Android のテストを実行し、レポートをアップロードしてプルリクエストに結果を投稿します。
+"og:image": "https://e2e.com/docs/images/og/ci/github-actions.png?v=1a59aebfc8"
+"twitter:image": "https://e2e.com/docs/images/og/ci/github-actions.png?v=1a59aebfc8"
+---
+
+import { SetupPrompt } from '../../snippets/setup-prompt-card.jsx';
+
+export const setupPrompt = `このプロジェクトの e2e テストを実行する GitHub Actions ワークフローを追加してください。ドキュメント: \`https://e2e.com/docs/ci/github-actions.md\` と \`https://e2e.com/docs/ci.md\`
+
+1. 両方のページを読んでください。Web ターゲットには Web のワークフロー、モバイルターゲットには iOS と Android のワークフローを使ってください。
+2. パッケージマネージャー、Node のバージョン、アプリの起動・ビルド方法、パスをこのプロジェクトに合わせてください。
+3. モバイルジョブでは、iOS ランタイムをランナーイメージに含まれるものに置き換え、バージョンを固定してください。
+4. モデルのキーなど、ワークフローが読むリポジトリのシークレットを列挙し、追加するよう私に依頼してください。
+5. 私がプッシュしたらジョブのログを読み、成功するまでエラーを修正してください。`;
+
+以下の 2 つのワークフローは、それぞれ Web ターゲットと iOS・Android ターゲットを実行します。
+CI のデフォルト、モデルのキー、終了コードは [継続的インテグレーション](/ci) を参照してください。
+`e2e init --ci github-actions` は、ターゲットとパッケージマネージャーに合わせてこれらのジョブを生成します。
+Expo や bare React Native アプリのビルドも含まれます。[CI パイプライン](/reference/cli#ci-pipeline) を参照してください。
+
+<SetupPrompt>
+
+<Prompt description={setupPrompt} children={setupPrompt} actions={["copy", "cursor"]} />
+
+</SetupPrompt>
+
+## Web
+
+このワークフローは、決定論的テストとエージェントテストを 1 ジョブで実行します。
+設定の [command](/web#starting-your-app) でアプリを起動し、モデル呼び出しに AI Gateway を使う構成です。
+モデルのキーとユーザーの認証情報は、リポジトリのシークレットから取得します。
+
+```yaml title=".github/workflows/e2e.yml" expandable
+name: e2e
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  e2e:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: pnpm/action-setup@9fd676a19091d4595eefd76e4bd31c97133911f1 # v4.2.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 26
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('pnpm-lock.yaml') }}
+
+      - name: Install browsers
+        run: pnpm exec e2e-web install chromium --with-deps
+
+      - name: Run e2e
+        run: npx e2e run --reporter list,junit
+        env:
+          APP_URL: http://127.0.0.1:3000
+          AI_GATEWAY_API_KEY: ${{ secrets.AI_GATEWAY_API_KEY }}
+          E2E_USER_ADMIN_USERNAME: ${{ secrets.E2E_USER_ADMIN_USERNAME }}
+          E2E_USER_ADMIN_PASSWORD: ${{ secrets.E2E_USER_ADMIN_PASSWORD }}
+
+      - name: Upload report
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: e2e-report
+          path: |
+            .e2e/report.json
+            .e2e/junit.xml
+          if-no-files-found: warn
+
+      - name: Upload artifacts
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: e2e-artifacts
+          path: .e2e/results
+          if-no-files-found: warn
+          retention-days: 7
+```
+
+`npx e2e` は、ロックファイルに従ってインストールされたバージョンを実行します。
+[インストールコマンド](/reference/web#installing-browsers) は、エンジンが固定する Playwright のバージョンに対応した
+ブラウザとシステムライブラリをダウンロードします。
+キャッシュのステップにより、ロックファイルが変わるまではダウンロードを省略できます。
+リトライで成功したテストでも、失敗した試行の記録はアップロードに含まれます。
+
+## 実行時間の履歴をキャッシュする
+
+`actions/cache` で [`.e2e/timings.json`](/ci#cache-the-timings-history) を復元・保存すると、
+新しいランナーでも時間のかかるファイルから実行できます。テストの前に次のステップを追加します。
+
+```yaml
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: .e2e/timings.json
+          key: e2e-timings-${{ github.ref_name }}-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: |
+            e2e-timings-${{ github.ref_name }}-
+            e2e-timings-main-
+```
+
+実行や再実行のたびに新しいエントリーを保存し、そのブランチの最新のものを復元します。
+プルリクエストはベースブランチのキャッシュを読めますが、書き込めません。
+新しいブランチの初回実行は、`main` の履歴から始まります。
+
+このステップが保存するのは、ジョブが成功した場合だけです。
+失敗時にも保存するには、実行前に `actions/cache/restore`、実行後に
+`if: ${{ !cancelled() }}` 付きの `actions/cache/save` を使います。
+履歴が役立つのは [`workers`](/reference/config#workers) が 2 以上の場合だけです。
+上のワークフローは 1 ワーカーで動きます。
+
+## iOS と Android
+
+このワークフローは、[モバイルのジョブ](/ci#mobile-jobs) のルールに従って、プラットフォームごとに 1 ジョブを実行します。
+アプリを起動せずにシミュレーター用 `.app` を作るコマンドなら、`xcodebuild` の代わりに使えます。
+Expo の `npx expo run:ios --configuration Release --device generic --no-bundler --output build/ios` は、
+シミュレーターなしでビルドし、`build/ios` に `.app` を出力します。
+
+```yaml title=".github/workflows/e2e-mobile.yml" expandable
+name: e2e mobile
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  ios:
+    runs-on: macos-26
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 26
+          cache: npm
+      - run: npm ci
+      - run: pod install
+        working-directory: ios
+
+      - name: Build for the simulator
+        run: |
+          xcodebuild -workspace ios/MyApp.xcworkspace -scheme MyApp \
+            -configuration Release -sdk iphonesimulator \
+            -destination 'generic/platform=iOS Simulator' \
+            -derivedDataPath build
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.agent-device/apple-runner/derived
+          key: agent-device-runner-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+
+      - name: Boot a simulator and install the app
+        run: |
+          UDID=$(xcrun simctl create e2e "iPhone 17" com.apple.CoreSimulator.SimRuntime.iOS-26-5)
+          xcrun simctl bootstatus "$UDID" -b
+          xcrun simctl install "$UDID" build/Build/Products/Release-iphonesimulator/MyApp.app
+
+      - run: npx e2e run --target ios --reporter list,junit
+        env:
+          AI_GATEWAY_API_KEY: ${{ secrets.AI_GATEWAY_API_KEY }}
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: ${{ !cancelled() }}
+        with:
+          name: e2e-ios
+          path: .e2e
+          if-no-files-found: warn
+
+  android:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 26
+          cache: npm
+      - uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
+        with:
+          distribution: temurin
+          java-version: 17
+      - run: npm ci
+
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      # React Native and Expo templates sign release builds with the debug keystore.
+      - name: Build the APK
+        run: cd android && ./gradlew :app:assembleRelease
+
+      - name: Run on an emulator
+        uses: reactivecircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d # v2.38.0
+        with:
+          api-level: 36
+          arch: x86_64
+          target: google_apis
+          profile: pixel_7
+          emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim
+          disable-animations: true
+          script: |
+            adb install -r android/app/build/outputs/apk/release/app-release.apk
+            npx e2e run --target android --reporter list,junit
+        env:
+          AI_GATEWAY_API_KEY: ${{ secrets.AI_GATEWAY_API_KEY }}
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: ${{ !cancelled() }}
+        with:
+          name: e2e-android
+          path: .e2e
+          if-no-files-found: warn
+```
+
+エミュレーターランナーのアクションは、`script` の各行を新しいシェルで実行し、ステップ終了時にエミュレーターを止めます。
+インストールとテスト実行は同じステップにまとめてください。
+
+このリポジトリの [`mobile.yml`](https://github.com/e2e-inc/e2e/blob/main/.github/workflows/mobile.yml) では、
+ネイティブのフィンガープリントごとにキャッシュした Expo ビルド、2 ワーカー用の 2 台のシミュレーター、
+`--last-failed` による再実行も使っています。
+
+## プルリクエストのコメント
+
+[`@e2e-dev/github` レポーター](/github) を追加すると、各ジョブの結果をプルリクエストのコメントに投稿できます。
+再実行では同じコメントを更新し、ジョブのサマリーにも同じ内容を出力します。
+
+ジョブに `pull-requests: write`、テストステップの環境変数に `GITHUB_TOKEN` が必要です。
+上のワークフローは読み取り専用です。[セットアップ](/github#setup) を参照してください。
+フォークからの `pull_request` 実行には読み取り専用トークンが渡されるため、投稿されません。
+[投稿されない場合](/github#when-nothing-is-posted) を参照してください。
+
+## 次のステップ
+
+<CardGroup cols={2}>
+  <Card title="プルリクエストのコメント" icon="code-pull-request" href="/github">
+    実行ごとに 1 つのコメントを投稿し、再実行時に更新します。
+  </Card>
+  <Card title="継続的インテグレーション" icon="rotate" href="/ci">
+    CI のデフォルト、シャーディング、再実行、終了コードを確認します。
+  </Card>
+</CardGroup>

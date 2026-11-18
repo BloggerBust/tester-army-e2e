@@ -27,6 +27,7 @@ export default {
 | Reporter | Description |
 | --- | --- |
 | [`list`](#list) | Terminal progress and run summary |
+| [`dot`](#dot) | Compact progress and run summary |
 | [`json`](#json) | Report document to stdout |
 | [`junit`](#junit) | Writes `<output>/junit.xml` |
 | [`markdown`](#markdown) | Writes `<output>/summary.md` |
@@ -36,9 +37,10 @@ export default {
 | Throws | When |
 | --- | --- |
 | `INVALID_CONFIG` | `reporters` is not an array. |
-| `INVALID_CONFIG` | An id other than `list`, `json`, `junit`, or `markdown`. |
+| `INVALID_CONFIG` | An id other than `list`, `dot`, `json`, `junit`, or `markdown`. |
 | `INVALID_CONFIG` | An entry that is neither an id nor an object with a `name` and at least one handler. |
 | `INVALID_CONFIG` | `json` together with `list`. |
+| `INVALID_CONFIG` | `dot` together with `list`. |
 
 #### `list`
 
@@ -56,6 +58,28 @@ reporters: ['list'], // default
 - The output ends with a `Failed` row per failed test: its file and line,
   its error's first line, and its trace page when one was written, so `e2e run | tail` still
   names what broke.
+
+#### `dot`
+
+Prints one character when each selected test finishes.
+
+```ts
+reporters: ['dot'],
+```
+
+| Passed | Flaky | Failed | Timed out | Interrupted | Skipped |
+| --- | --- | --- | --- | --- | --- |
+| `.` | `~` | `F` | `T` | `I` | `-` |
+
+Rows wrap after 80 marks. Colors follow the terminal settings; `NO_COLOR`
+disables them. The run header, failure details and locations, summary, and
+step prompts use the same format as `list`.
+
+Reporter output goes to stdout by default. With `--reporter dot,json`, all
+human-readable output goes to stderr so stdout holds the JSON report.
+
+Unlike Playwright, e2e uses ASCII marks and prints only the final result
+after retries, with no mark for each retried attempt.
 
 #### `json`
 
@@ -153,7 +177,8 @@ const reporter = htmlReporter({ media: 'embed' });
 ```
 
 - It writes `report.html` beside the report, with the report document
-  embedded. The page opens from disk with no server.
+  embedded. The page opens from disk with no server, or with
+  [`npx e2e report`](/reference/cli#e2e-report).
 - `media` decides what happens to screenshots, videos, and downloads:
 
   | `media` | The page | To share it |
@@ -166,12 +191,15 @@ const reporter = htmlReporter({ media: 'embed' });
   runner could not scan for secrets, such as a PDF or a zip, stays out of an
   embedded page, and a video a hosted browser or device service keeps stays
   a link to it.
-- `outputFile` puts the page elsewhere, as a path from the project root.
+- `outputFile` puts the page elsewhere, as a path from the project root (pass that path to `e2e report <path>` when running from the project root).
 - The page shows only the run that wrote it: after `--last-failed`, the
   rerun's tests without the failures it carried over, and under
   `e2e explore`, the exploration without its findings.
 - The tests list as a tree: each file, its describe blocks, then their tests,
   failures first. Selecting a file's path folds its tests away.
+- A run that selected more than one target gets target tabs above the status
+  tabs. Picking one shows only its tests and their counts; the URL carries
+  the choice, so a filtered view keeps working as a link.
 - Each step shows where it starts in the attempt's video; selecting the time
   plays the video from there, and the step the video is on stays
   highlighted. The video's timeline marks each step's start, and its speed
@@ -318,7 +346,7 @@ a reporter it abandoned, cutting off what it still does; under
 
 ##### Summary rows
 
-The rows a reporter resolves with print under the `list` summary, in the
+The rows a reporter resolves with print under the `list` or `dot` summary, in the
 same layout as its own rows. The `json` reporter does not carry them.
 
 ```

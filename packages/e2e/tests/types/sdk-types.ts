@@ -71,7 +71,7 @@ import {
   type ScreenOutput,
 } from '../../src/agent/public.ts';
 import { connectEngine, socketTransport, type EngineManifest } from '../../src/engine/index.ts';
-import type { Report } from '../../src/index.ts';
+import type { Report, TestFixtures, WorkerFixtures } from '../../src/index.ts';
 import type { ToolSet } from 'ai';
 import type { LanguageModelV2, LanguageModelV3, LanguageModelV4 } from '@ai-sdk/provider';
 import { chatgpt } from '../../src/oauth/chatgpt.ts';
@@ -337,6 +337,7 @@ unique(7);
 ({ targets, output: ['a', 'b'] }) satisfies E2EConfig;
 declare const reporter: Reporter;
 ({ targets, reporters: ['list', reporter] }) satisfies E2EConfig;
+({ targets, reporters: ['dot'] }) satisfies E2EConfig;
 ({ targets, reporters: [reporter] }) satisfies E2EConfig;
 ({
   name: 'upload',
@@ -557,6 +558,14 @@ expect.stringContaining(/a/);
 // expect.soft has the expect call's three shapes and no poll of its own.
 expect.soft(1, 'why this holds').toBe(1);
 void (expect.soft(screen.getByRole('button')).toBeVisible() satisfies Promise<void>);
+// A message names a locator check too, on every locator matcher and through .not and soft.
+void (expect(screen.getByRole('button'), 'the cart is empty').toBeVisible() satisfies Promise<void>);
+void (expect(screen.getByRole('button'), 'the cart is empty').not.toHaveText('Checkout') satisfies Promise<void>);
+void (expect.soft(screen.getByRole('button'), 'the cart is empty').toBeHidden() satisfies Promise<void>);
+void (expect(screen, 'the page settled').toHaveScreenshot() satisfies Promise<void>);
+void (expect.soft(screen, 'the page settled').not.toHaveScreenshot('before') satisfies Promise<void>);
+// @ts-expect-error a locator check's message is text
+void expect(screen.getByRole('button'), 1);
 // @ts-expect-error soft is the call, not the whole entry
 expect.soft.poll(() => 1);
 // @ts-expect-error soft has no statics either
@@ -571,6 +580,7 @@ test.runIf(process.env['CI'])('inotify', { tags: ['@fs'], skip: 'reason' }, asyn
 void (test.skipIf(1) satisfies TestRegistrar);
 test.extend<{ x: number }>().skipIf(true)('uses x', async ({ x }) => { x satisfies number; });
 test.extend<{ x: number }>().runIf(true)('uses x', async ({ x }) => { x satisfies number; });
+test.extend<{}, { w: number }>().skipIf(true)('uses a worker fixture', async ({ w }) => { w satisfies number; });
 // @ts-expect-error the registrar registers a test and has no modifiers
 test.skipIf(true).skip('x', async () => {});
 // @ts-expect-error the registrar registers a test and has no modifiers
@@ -741,27 +751,133 @@ withWorkspace('renames it', async ({ workspace, app }) => {
 withWorkspace.beforeEach(async ({ workspace }) => {
   workspace.id satisfies string;
 });
-// A fixture that needs another fixture goes in a chained extend.
+// A fixture names the fixtures it needs: the ones of the test it extends, and the ones declared beside it, in any order.
 withWorkspace.extend<{ member: string }>({
   member: async ({ workspace }, use) => {
     await use(workspace.id);
   },
 });
-test.extend<{ owner: string; member: string }>({
-  owner: async (_fixtures, use) => {
+test.extend<{ member: number; owner: string }, { tenant: string }>({
+  member: async ({ owner, tenant, app }, use) => {
+    void app;
+    await use(owner.length + tenant.length);
+  },
+  owner: async ({}, use) => {
     await use('owner');
   },
-  // @ts-expect-error a definition sees the fixtures of the test it extends, not its siblings
-  member: async ({ owner }, use) => {
-    await use(owner);
+  tenant: [async ({ platform }, use) => { await use(platform); }, { scope: 'worker' }],
+});
+test.extend<{ owner: string; member: string }>({
+  owner: async ({}, use) => {
+    await use('owner');
+  },
+  // @ts-expect-error a definition sees only the fixtures that exist: the base's and its siblings'
+  member: async ({ nobody }, use) => {
+    await use(String(nobody));
   },
 });
-// @ts-expect-error a core fixture cannot be redefined
-test.extend<{ agent: string }>({ agent: async (_fixtures, use) => { await use('x'); } });
+// @ts-expect-error a built-in fixture is not a new fixture: it cannot be declared with another type
+test.extend<{ agent: string }>({ agent: async ({}, use) => { await use('x'); } });
 // @ts-expect-error the value handed to use() has the declared fixture type
-test.extend<{ count: number }>({ count: async (_fixtures, use) => { await use('one'); } });
+test.extend<{ count: number }>({ count: async ({}, use) => { await use('one'); } });
 // The zero-argument form still types an engine's contributed fixtures without defining them.
 test.extend<{ device: unknown }>()('types a device', async ({ device }) => { device satisfies unknown; });
+
+// A worker fixture is [fn, { scope: 'worker' }], typed by the second argument, and sees worker fixtures only.
+interface Database {
+  seed(): Promise<void>;
+}
+declare const startDatabase: () => Promise<Database>;
+const withDatabase = withWorkspace.extend<{}, { database: Database }>({
+  database: [
+    async ({ platform }, use) => {
+      platform satisfies string;
+      await use(await startDatabase());
+    },
+    { scope: 'worker' },
+  ],
+});
+withDatabase('reads both scopes', async ({ database, workspace }) => {
+  await database.seed();
+  workspace.id satisfies string;
+});
+// Suite hooks see worker fixtures: the database, not the workspace or the screen.
+withDatabase.beforeAll(async ({ database, platform }) => {
+  await database.seed();
+  platform satisfies string;
+});
+// @ts-expect-error a suite hook does not see a test fixture
+withDatabase.afterAll(({ workspace }) => void workspace);
+// @ts-expect-error a suite hook does not see the built-in test fixtures
+withDatabase.beforeAll(({ screen: hookScreen }) => void hookScreen);
+withDatabase.beforeEach(async ({ database, workspace }) => {
+  await database.seed();
+  workspace.id satisfies string;
+});
+withWorkspace.extend<{}, { cache: string }>({
+  // @ts-expect-error a worker fixture cannot depend on a test fixture
+  cache: [async ({ workspace }, use) => { await use(workspace.id); }, { scope: 'worker' }],
+});
+// @ts-expect-error a worker fixture needs its scope
+withWorkspace.extend<{}, { cache: string }>({ cache: async ({}, use) => { await use('c'); } });
+withWorkspace.extend<{}, { cache: string; region: string }>({
+  // A worker fixture sees the worker fixtures declared beside it.
+  cache: [async ({ region }, use) => { await use(region); }, { scope: 'worker' }],
+  region: [async ({}, use) => { await use('eu'); }, { scope: 'worker' }],
+});
+// Without type arguments the test fixtures are inferred from the definitions.
+test.extend({ count: async ({}, use: (value: number) => Promise<void>) => { await use(1); } })('infers', async ({ count }) => {
+  count satisfies number;
+});
+// A test fixture may say its scope too.
+test.extend<{ page: string }>({ page: [async ({}, use) => { await use('p'); }, { scope: 'test' }] });
+// auto: true sets a fixture up whether or not anything names it, in either scope.
+test.extend<{ watch: undefined }, { install: undefined }>({
+  watch: [async ({ app }, use) => { void app; await use(undefined); }, { auto: true }],
+  install: [async ({ platform }, use) => { void platform; await use(undefined); }, { scope: 'worker', auto: true }],
+});
+test.extend<{ watch: undefined }>({ watch: [async ({}, use) => { await use(undefined); }, { scope: 'test', auto: false }] });
+// @ts-expect-error auto is a boolean
+test.extend<{ watch: undefined }>({ watch: [async ({}, use) => { await use(undefined); }, { auto: 'yes' }] });
+// @ts-expect-error auto does not make a worker fixture: it still needs its scope
+test.extend<{}, { install: undefined }>({ install: [async ({}, use) => { await use(undefined); }, { auto: true }] });
+// A worker fixture of the engine's (a device) reaches the suite hooks through the second type argument.
+const deviceTest = test.extend<{}, { device: { reset(): Promise<void> } } & Pick<TestFixtures, 'app' | 'screen'>>();
+deviceTest.beforeAll(async ({ device, app, screen: deviceScreen }) => {
+  await device.reset();
+  await app.open();
+  void deviceScreen;
+});
+
+// A fixture named like a built-in extends it: its own name is the built-in, and it keeps the built-in's type and scope.
+test.extend({ app: async ({ app, screen: s }, use) => { void s; await app.open('/'); await use(app); } })('opens first', async ({ app }) => {
+  await app.open('/next');
+});
+test.extend({ screen: [async ({ screen: s }, use) => { await use(s); }, { scope: 'test' }] });
+// @ts-expect-error an override hands over the built-in's type
+test.extend({ app: async ({}, use) => { await use('not an app'); } });
+// @ts-expect-error app is a test fixture on this test: its override cannot be a worker fixture
+test.extend({ app: [async ({ app }, use) => { await use(app); }, { scope: 'worker' }] });
+// platform is a worker fixture everywhere, so its override sees worker fixtures only.
+test.extend({ platform: async ({ platform }, use) => { await use(platform.toUpperCase()); } });
+// @ts-expect-error a worker fixture's override does not see test fixtures
+test.extend({ platform: async ({ platform, app }, use) => { void app; await use(platform); } });
+// On an engine whose state outlives a test, device, app, and screen are worker fixtures, and so are their overrides.
+deviceTest.extend({ device: async ({ device }, use) => { await device.reset(); await use(device); } }).beforeAll(async ({ device }) => {
+  await device.reset();
+});
+deviceTest.extend({ app: [async ({ app }, use) => { await use(app); }, { scope: 'worker' }] });
+// @ts-expect-error a worker fixture's override cannot be a test fixture
+deviceTest.extend({ device: [async ({ device }, use) => { await use(device); }, { scope: 'test' }] });
+// @ts-expect-error a worker fixture's override does not see test fixtures
+deviceTest.extend({ device: async ({ device, agent: testAgent }, use) => { void testAgent; await use(device); } });
+// With type arguments for new fixtures, an override sits beside them and sees them.
+test.extend<{ draft: string }>({
+  draft: async ({ app }, use) => { void app; await use('draft'); },
+  app: async ({ app, draft }, use) => { await app.open(`/${draft}`); await use(app); },
+});
+// A fixture of an earlier extend is extended the same way.
+withWorkspace.extend({ workspace: async ({ workspace }, use) => { await use(workspace); } });
 
 // A test, a group, and a call each pin a configured agent by name.
 test('as the buyer', { agent: 'buyer' }, async () => {});
@@ -901,15 +1017,16 @@ void (expect.soft(JSON.parse('{}')).toMatchSchema(userSchema) satisfies { id: nu
 
 // describe and the hooks are top-level imports too, typed as their test.* forms.
 describe('group', { tags: ['smoke'] }, () => {
-  beforeEach(async (fixtures) => void fixtures.screen);
+  beforeEach(async ({ screen: hookScreen }) => void hookScreen);
   afterEach(async ({ app }) => void app);
   beforeAll(({ platform }) => void platform);
   afterAll(({ platform }) => void platform);
 });
 // @ts-expect-error a describe body is synchronous
 describe('async group', async () => {});
-// @ts-expect-error a suite hook sees suite fixtures only
+// @ts-expect-error a suite hook sees worker fixtures only, and screen is a test fixture on the default test
 beforeAll((fixtures) => void fixtures.screen);
+beforeAll((fixtures) => void (fixtures satisfies WorkerFixtures));
 
 // Suite execution accepts project selection, progress, and cancellation; execution settings live in config.
 declare const runResult: RunResult;

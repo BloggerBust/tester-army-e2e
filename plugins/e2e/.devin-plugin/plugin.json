@@ -1,0 +1,23 @@
+{
+  "name": "e2e",
+  "version": "0.23.1",
+  "displayName": "e2e",
+  "description": "Write, run, and debug end-to-end tests for web and mobile apps with e2e, the open source agentic test runner",
+  "shortDescription": "Agentic tests for web & mobile",
+  "homepage": "https://e2e.com",
+  "repository": "https://github.com/e2e-inc/e2e",
+  "logo": "assets/logo.png",
+  "keywords": [
+    "Development Tools"
+  ],
+  "mcpServers": {
+    "e2e": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "e2e@0.23.1",
+        "mcp"
+      ]
+    }
+  }
+}

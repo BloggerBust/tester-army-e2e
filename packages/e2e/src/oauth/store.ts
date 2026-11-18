@@ -1,14 +1,17 @@
 /**
  * Credentials between runs: one JSON file keyed by provider id, mode 0600.
  * Writes hold an advisory lock and replace the file atomically, so two runs
- * refreshing at once neither tear the file nor lose each other's entries.
+ * writing at once neither tear the file nor lose each other's entries. A
+ * refresh holds a lock for its login from its read to its write, so worker
+ * processes send a rotating refresh token once between them.
  * `E2E_OAUTH_CREDENTIALS` holding the same JSON stands in for the file on a
  * machine the user cannot sign in on; that store refuses to write.
  */
 
-import { chmodSync, closeSync, mkdirSync, openSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { chmodSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import path from 'node:path';
+import { withFileLock } from '../internal/file-lock.ts';
 import { OAuthError } from './errors.ts';
 import type { CredentialStore, OAuthCredentials } from './types.ts';
 
@@ -29,9 +32,9 @@ export function defaultCredentialStore(env: NodeJS.ProcessEnv = process.env): Cr
   return fromEnv !== undefined && fromEnv !== '' ? new EnvCredentialStore(fromEnv) : new FileCredentialStore(defaultCredentialsPath(env));
 }
 
-const LOCK_RETRY_MS = 25;
-const LOCK_STALE_MS = 10_000;
 const LOCK_WAIT_MS = 5_000;
+/** A token request has no deadline of its own, so a waiter gives up on its own. */
+const REFRESH_LOCK_WAIT_MS = 30_000;
 
 export class FileCredentialStore implements CredentialStore {
   readonly path: string;
@@ -59,6 +62,15 @@ export class FileCredentialStore implements CredentialStore {
     return Object.keys(this.read());
   }
 
+  /** Runs `refresh` holding this login's lock file, so worker processes refresh it one at a time. */
+  async exclusive<T>(providerId: string, refresh: () => Promise<T>): Promise<T> {
+    return withFileLock(`${this.path}.${providerId}.refresh.lock`, REFRESH_LOCK_WAIT_MS, () => {
+      const waited = `${REFRESH_LOCK_WAIT_MS / 1000} s`;
+      const message = `another e2e process is still refreshing the ${providerId} login after ${waited}`;
+      return new OAuthError('TIMEOUT', `${message}; run again once it finishes`);
+    }, refresh);
+  }
+
   private read(): CredentialsFile {
     let text: string;
     try {
@@ -76,8 +88,9 @@ export class FileCredentialStore implements CredentialStore {
     mkdirSync(dir, { recursive: true, mode: 0o700 });
     // Creation modes only apply to new paths; a directory or file that already existed keeps what it had unless told otherwise.
     chmodSync(dir, 0o700);
-    const release = await this.lock();
-    try {
+    const lockPath = `${this.path}.lock`;
+    const busy = () => new Error(`${lockPath} is held by another process; remove it if that process is gone`);
+    await withFileLock(lockPath, LOCK_WAIT_MS, busy, async () => {
       const temp = `${this.path}.${process.pid}.${Date.now()}.tmp`;
       writeFileSync(temp, `${JSON.stringify(change(this.read()), null, 2)}\n`, { mode: 0o600 });
       chmodSync(temp, 0o600);
@@ -87,48 +100,7 @@ export class FileCredentialStore implements CredentialStore {
         rmSync(temp, { force: true });
         throw cause;
       }
-    } finally {
-      release();
-    }
-  }
-
-  /**
-   * An advisory lock file created exclusively. A lock older than the stale
-   * bound was left by a dead process: it is claimed by renaming it, which
-   * only one waiter can win, so a lock a live process just created is never
-   * removed from under it.
-   */
-  private async lock(): Promise<() => void> {
-    const lockPath = `${this.path}.lock`;
-    const deadline = Date.now() + LOCK_WAIT_MS;
-    for (;;) {
-      try {
-        closeSync(openSync(lockPath, 'wx', 0o600));
-        return () => rmSync(lockPath, { force: true });
-      } catch (cause) {
-        if ((cause as NodeJS.ErrnoException).code !== 'EEXIST') throw cause;
-        if (Date.now() - lockAge(lockPath) > LOCK_STALE_MS) {
-          const claimed = `${lockPath}.${process.pid}.${Date.now()}.stale`;
-          try {
-            renameSync(lockPath, claimed);
-            rmSync(claimed, { force: true });
-          } catch {
-            // Another waiter claimed it first; try the lock again.
-          }
-          continue;
-        }
-        if (Date.now() > deadline) throw new Error(`${lockPath} is held by another process; remove it if that process is gone`, { cause });
-        await new Promise((resolve) => setTimeout(resolve, LOCK_RETRY_MS));
-      }
-    }
-  }
-}
-
-function lockAge(lockPath: string): number {
-  try {
-    return statSync(lockPath).mtimeMs;
-  } catch {
-    return Date.now();
+    });
   }
 }
 
@@ -152,6 +124,10 @@ export class EnvCredentialStore implements CredentialStore {
   }
   async list(): Promise<string[]> {
     return Object.keys(this.entries);
+  }
+  /** Each process holds its own copy of the variable, so there is nothing to share a refresh with. */
+  async exclusive<T>(_providerId: string, refresh: () => Promise<T>): Promise<T> {
+    return refresh();
   }
 }
 

@@ -1,0 +1,23 @@
+{
+  "tabs": {
+    "Documentation": "ドキュメント",
+    "Reference": "リファレンス",
+    "Examples": "サンプル"
+  },
+  "groups": {
+    "Get started": "はじめに",
+    "Platforms": "プラットフォーム",
+    "Features": "機能",
+    "Models and agents": "モデルとエージェント",
+    "Run in CI": "CI で実行する",
+    "Hosted browsers and devices": "ホスト型ブラウザとデバイス",
+    "Extend": "拡張する",
+    "Engines": "エンジン",
+    "Deep dive": "詳細解説",
+    "Migrate": "移行",
+    "Test API": "テスト API",
+    "Project": "プロジェクト",
+    "Web": "Web",
+    "Mobile": "モバイル"
+  }
+}

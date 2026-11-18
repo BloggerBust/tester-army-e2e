@@ -27,6 +27,7 @@ import type {
   TextMatch,
   TextMatcherOptions,
 } from '@e2e-dev/core/lib/types';
+import { labelAmbiguous, withMessage } from './heading.ts';
 import { expectScreenshot } from './screenshot.ts';
 
 interface Sample {
@@ -143,10 +144,12 @@ class AsyncExpectationImpl implements AsyncExpectation {
   constructor(
     private readonly internals: LocatorInternals,
     private readonly negated: boolean,
+    /** The caller's label for this check, opening every failure message. */
+    private readonly message: string | undefined,
   ) {}
 
   get not(): AsyncExpectation {
-    return new AsyncExpectationImpl(this.internals, !this.negated);
+    return new AsyncExpectationImpl(this.internals, !this.negated, this.message);
   }
 
   private get label(): string {
@@ -186,7 +189,9 @@ class AsyncExpectationImpl implements AsyncExpectation {
           signal: engine.signal,
           negated: this.negated,
           evaluate: async (reads) => {
-            const sample = await this.sample(spec, reads);
+            const sample = await this.sample(spec, reads).catch((error: unknown) => {
+              throw labelAmbiguous(error, this.message);
+            });
             lastSample = sample;
             if (spec.readsWithheld === true) {
               denySecureRead(sample.node === null ? sample.nodes : [sample.node], this.label);
@@ -201,7 +206,7 @@ class AsyncExpectationImpl implements AsyncExpectation {
             return new TestError(
               'ASSERTION_FAILED',
               [
-                `${api} failed`,
+                withMessage(this.message, `${api} failed`),
                 `locator: ${this.label}`,
                 `expected: ${expected}`,
                 `observed: ${observed} (match count ${lastSample.count})`,
@@ -471,7 +476,14 @@ class AsyncExpectationImpl implements AsyncExpectation {
   }
 
   toHaveScreenshot(nameOrOptions?: string | ScreenshotOptions, options?: ScreenshotOptions): Promise<void> {
-    return expectScreenshot(this.internals.context, this.internals.expression, this.negated, nameOrOptions, options);
+    return expectScreenshot(
+      this.internals.context,
+      this.internals.expression,
+      this.negated,
+      this.message,
+      nameOrOptions,
+      options,
+    );
   }
 
   toHaveCount(expected: number, options?: { timeout?: number }): Promise<void> {
@@ -557,6 +569,6 @@ function observedState(sample: Sample): string {
   return active.length === 0 ? 'default states' : `states: ${active.join(', ')}`;
 }
 
-export function createAsyncExpectation(internals: LocatorInternals): AsyncExpectation {
-  return new AsyncExpectationImpl(internals, false);
+export function createAsyncExpectation(internals: LocatorInternals, message?: string): AsyncExpectation {
+  return new AsyncExpectationImpl(internals, false, message);
 }

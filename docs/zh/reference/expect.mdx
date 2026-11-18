@@ -1,0 +1,899 @@
+---
+title: expect
+description: "定位器断言、测试夹具断言和普通值匹配器。"
+"og:image": "https://e2e.com/docs/images/og/reference/expect.png?v=118436cc41"
+"twitter:image": "https://e2e.com/docs/images/og/reference/expect.png?v=118436cc41"
+---
+
+`expect(locator)` 等待应用满足条件，`expect(screen)` 将屏幕与已存储的截图比较，`expect(value)` 则立即检查值。`expect.poll` 重复读取值，直到匹配器通过；`expect.soft` 将失败保留到测试体结束时处理，而不立即抛出；`expect.any` 和其他[非对称匹配器](#asymmetric-matchers)用于在结构比较中代替具体值。
+
+```ts title="tests/checkout.e2e.ts"
+import { expect, test } from 'e2e';
+
+test('checkout summary', async ({ screen }) => {
+  await expect(screen.getByRole('heading', 'Checkout')).toBeVisible();
+  await expect(screen.getByTestId('line-item')).toHaveCount(2);
+  const total = await screen.getByTestId('total').textContent();
+  expect(total).toContain('$');
+});
+```
+
+## 参考
+
+| 调用 | 返回值 |
+| --- | --- |
+| [`expect(locator, message?)`](#locator-matchers) | `AsyncExpectation` |
+| [`expect(screen, message?)`](#screenshot-matchers) | `ScreenExpectation` |
+| [`expect(fixture)`](#browser-matchers) | 引擎的匹配器集合 |
+| [`expect(value, message?)`](#value-matchers) | `ValueExpectation<T>` |
+| [`expect.poll(read, options?)`](#polling-a-value) | `PollExpectation<T>` |
+| [`expect.soft(actual, message?)`](#soft-assertions) | 相同的匹配器，但会保留失败 |
+| [`expect.any(Class)` 等](#asymmetric-matchers) | `AsymmetricMatcher` |
+
+`expect` 根据参数本身的类型进行区分：
+
+- 引擎提供的内置测试夹具可以提供匹配器，例如 `expect(browser).toHaveURL()`。这样的测试夹具属于 `Expectable<E>`：引擎通过 [`expectable`](/reference/engine#contributed-fixtures) 附加匹配器集合 `E`，`expect(fixture)` 会返回该集合。
+- 其他所有参数都使用值匹配器，包括 Promise。请先等待 Promise 完成，再将其结果传给 `expect`。
+
+声明见[类型](#types)。
+
+### 定位器匹配器
+
+`expect(locator)` 返回 `AsyncExpectation`。每个匹配器都会轮询，直到条件成立或超时，并遵循[行为](#behavior)中的规则，包括[严格性](#strictness)、[文本匹配](#text-matching)和[安全字段](#secure-fields)。选项见 [`AsyncExpectation`](#asyncexpectation-and-textmatcheroptions)。
+
+`expect(locator, message)` 和 `expect.soft(locator, message)` 的第二个参数用于描述检查。它出现在下列匹配器每次断言失败的开头（包括 `.not`），位于匹配器和定位器之前；定位器匹配到多个节点时的 `LOCATOR_AMBIGUOUS` 错误也以它开头。选项无效或读取被拒绝时，失败信息不带该消息。`expect(screen, message)` 以同样的方式接受消息。
+
+```ts
+await expect(screen.getByTestId('cart-empty'), 'the cart is empty').toBeVisible();
+// ASSERTION_FAILED: the cart is empty: expect.toBeVisible failed
+// locator: getByTestId("cart-empty")
+```
+
+| 匹配器 | 说明 |
+| --- | --- |
+| [`toBeVisible`](#tobevisible-and-tobehidden) | 等待可见 |
+| [`toBeHidden`](#tobevisible-and-tobehidden) | 等待隐藏或不存在 |
+| [`toBeAttached`](#tobeattached) | 等待存在一个匹配项 |
+| [`toBeEnabled`](#tobeenabled-and-tobedisabled) | 等待启用状态 |
+| [`toBeDisabled`](#tobeenabled-and-tobedisabled) | 等待禁用状态 |
+| [`toBeChecked`](#tobechecked-tobeselected-and-tobeexpanded) | 等待勾选状态 |
+| [`toBeSelected`](#tobechecked-tobeselected-and-tobeexpanded) | 等待选中状态 |
+| [`toBeExpanded`](#tobechecked-tobeselected-and-tobeexpanded) | 等待展开状态 |
+| [`toBeFocused`](#tobefocused) | 等待获得焦点 |
+| [`toHaveText`](#tohavetext-and-tocontaintext) | 等待规范化后的文本完全匹配 |
+| [`toContainText`](#tohavetext-and-tocontaintext) | 等待规范化后的文本包含指定内容 |
+| [`toHaveValue`](#tohavevalue) | 等待表单控件的值 |
+| [`toHaveAttribute`](#tohaveattribute) | 等待属性 |
+| [`toHaveCount`](#tohavecount) | 等待匹配项数量精确相等 |
+| [`toHaveAccessibleName`](#tohaveaccessiblename) | 等待无障碍名称 |
+| [`toHaveRole`](#tohaverole) | 等待角色 |
+| [`toHaveScreenshot`](#screenshot-matchers) | 与已存储的截图比较 |
+
+#### `toBeVisible` 和 `toBeHidden`
+
+`toBeVisible` 等待唯一匹配项显示。`toBeHidden` 等待其隐藏或不存在。在设备上，中心被软键盘遮挡的节点视为隐藏，但键盘自身的按键、建议栏和停靠栏、获得焦点的字段，以及仍有子元素可见的容器除外（[可见性](/reference/mobile#visibility)）。
+
+```ts
+await expect(screen.getByRole('dialog')).toBeVisible();
+await expect(screen.getByRole('dialog')).not.toBeVisible({ timeout: 10_000 });
+await expect(screen.getByRole('dialog')).toBeVisible({ visible: false }); // as toBeHidden()
+```
+
+#### `toBeAttached`
+
+等待存在一个匹配项，无论它隐藏还是显示；而 `toBeVisible` 要求该匹配项显示。
+
+```ts
+await expect(screen.getByText('Loaded')).toBeAttached();
+await expect(screen.getByText('Loading')).toBeAttached({ attached: false });
+```
+
+取反或设置 `attached: false` 时，它会等待没有匹配项，并在没有任何匹配时通过。
+
+#### `toBeEnabled` 和 `toBeDisabled`
+
+`toBeEnabled` 等待节点启用；`toBeDisabled` 等待节点禁用。
+
+```ts
+await expect(screen.getByRole('button', 'Pay')).toBeEnabled();
+await expect(screen.getByRole('button', 'Pay')).toBeEnabled({ enabled: false }); // as toBeDisabled()
+```
+
+除非节点报告 `disabled`，否则视为启用。在网页端，`disabled` 指浏览器实际应用的状态，而非仅看属性。这与 Playwright 的 `toBeDisabled` 读取的状态相同：
+
+- `<fieldset disabled>` 内的控件被禁用，除非它位于该 fieldset 的第一个 `<legend>` 中。
+- 祖先上的 `aria-disabled="true"` 会禁用其下的控件，直到 `aria-disabled="false"` 截断该继承链。
+
+#### `toBeChecked`、`toBeSelected` 和 `toBeExpanded`
+
+各自等待对应状态：勾选、选中或展开。
+
+```ts
+await expect(screen.getByLabel('Subscribe')).toBeChecked({ checked: false });
+await expect(screen.getByRole('tab', 'Billing')).toBeSelected();
+```
+
+缺失的 `checked`、`selected` 或 `expanded` 状态按 `false` 处理，因此 `.not.toBeChecked()` 对按钮或标题会通过。
+
+#### `toBeFocused`
+
+等待获得焦点。
+
+```ts
+await expect(screen.getByLabel('Email')).toBeFocused();
+```
+
+#### `toHaveText` 和 `toContainText`
+
+`toHaveText` 等待规范化后的文本完全匹配；`toContainText` 等待规范化后的文本包含指定内容。两者都接受单个 `TextMatch` 或列表。
+
+```ts
+await expect(screen.getByRole('status')).toHaveText('Saved');
+await expect(screen.getByRole('alert')).not.toContainText('error', { ignoreCase: true });
+await expect(screen.getByTestId('todo')).toHaveText(['Write spec', /^Ship/, 'Release']);
+await expect(screen.getByTestId('todo')).toContainText(['spec', 'runner', 'Release']);
+await expect(screen.getByTestId('todo')).toContainText(['spec', 'Release']);
+```
+
+列表形式的失败消息会列出观察到的全部文本。
+
+| 形式 | 成立条件 |
+| --- | --- |
+| `toHaveText([...])` | 匹配项数量等于列表长度，且每个位置的匹配项满足对应条目：字符串在规范化后完全相等，`RegExp` 则通过正则测试。没有匹配项时，空列表成立 |
+| `toContainText([...])` | 每个条目都按列表顺序被不同的匹配项包含，与 Playwright 一样。允许在之前、之间或之后有额外匹配项；重复条目需要各自独立的匹配项；空列表始终成立 |
+
+<Note>
+取反时，只要存在该有序子序列，`toContainText([...])` 就会失败，因此只要有任意匹配项包含 `Deleted`，`not.toContainText(['Deleted'])` 就会失败。
+</Note>
+
+#### `toHaveValue`
+
+等待表单控件的值，按原样比较。
+
+```ts
+await expect(screen.getByLabel('Email')).toHaveValue('ada@example.test');
+await expect(screen.getByLabel('Search')).toHaveValue('');
+```
+
+- 不进行规范化：换行和尾部空格都参与比较，失败消息也会按原样输出该值。
+- `contenteditable` 编辑器的值是其渲染文本，同样原样保留。空编辑器读取为 `''`。
+- 平台报告没有值的控件，例如设备上已清空的字段，读取为 `''`。
+- 角色不携带值的节点，例如标题或链接，无论是否取反，都不会满足 `toHaveValue`。消息为 `no value (not a form control)`。
+
+#### `toHaveAttribute`
+
+等待属性存在；传入 `value` 时，等待其值匹配。
+
+```ts
+await expect(screen.getByRole('link', 'Help')).toHaveAttribute('target');
+await expect(screen.getByRole('link', 'Help')).toHaveAttribute('href', '/help');
+```
+
+#### `toHaveCount`
+
+等待匹配项数量精确相等。
+
+```ts
+await expect(screen.getByTestId('todo')).toHaveCount(3);
+```
+
+#### `toHaveAccessibleName`
+
+等待无障碍名称。
+
+```ts
+await expect(screen.getByRole('button', { name: /close/i })).toHaveAccessibleName('Close');
+```
+
+#### `toHaveRole`
+
+等待唯一匹配项具有指定角色，按字符串比较。
+
+```ts
+await expect(screen.getByTestId('save')).toHaveRole('button');
+await expect(screen.getByTestId('wifi')).not.toHaveRole('checkbox');
+```
+
+- `role` 接受与 [`getByRole`](/reference/screen#getbyrole) 相同的角色名称。别名 `img` 读取为 `image`。从 JavaScript 传入的其他字符串会按原样比较，空字符串则导致 `INVALID_ARGUMENT`。
+- 它比较 [`screen.tree()`](/reference/screen#screen-tree) 显示的角色，因此不考虑角色层级：`switch` 不是 `checkbox`。
+- 在网页端，编辑宿主（`contenteditable`）无论标签是什么，都会读取为 `textbox`，但 `getByRole` 会按其标签对应的角色查找它。
+- 语义树中没有角色的节点，例如包含文本的 `<div>`，会导致匹配失败，失败消息为 `no role`。
+
+### 截图匹配器
+
+`expect(screen)` 和 `expect(locator)` 在所有能捕获像素的引擎上，将内容与测试文件旁存储的 PNG 比较。[视觉比较](/visual-testing)指南介绍了操作流程。
+
+| 匹配器 | 说明 |
+| --- | --- |
+| [`expect(screen).toHaveScreenshot`](#tohavescreenshot) | 比较整个屏幕 |
+| [`expect(locator).toHaveScreenshot`](#tohavescreenshot) | 比较定位器的唯一匹配项 |
+
+#### `toHaveScreenshot`
+
+等待屏幕或定位器的唯一匹配项与已存储截图一致：截图名称由 `name` 指定，或采用测试名称。
+
+```ts
+await expect(screen).toHaveScreenshot('home.png');
+await expect(screen.getByRole('navigation')).toHaveScreenshot();
+await expect(screen).toHaveScreenshot('feed.png', { mask: [screen.getByTestId('timestamp')], maxDiffPixels: 50 });
+```
+
+两种形式都接受[截图选项](#screenshot-options)。
+
+| 属性 | 值 |
+| --- | --- |
+| 存储位置 | `<test file>-snapshots/<name>-<target>-<os>.png`；名称没有 `.png` 时会自动添加 |
+| 未命名 | 测试的标题路径，转为小写并加上计数：`checkout-pays-by-card-1` |
+| 缺失 | 从连续两张在容差范围内相同的截图中取得，然后触发 `ASSERTION_FAILED`。写入测试文件旁；在未使用 `--update-snapshots` 的 CI 中，仅附加到结果的 `snapshots/<path in the project>` 下 |
+| 本次运行中已写入 | 未使用 `--update-snapshots` 时，以及所有 `.not` 情况下，与同一次运行写入的截图比较都不会通过（包括重试、重复运行或其他测试使用相同名称）：直到下次运行前都会触发 `ASSERTION_FAILED`。使用 `--update-snapshots` 时，正向匹配器会比较，并可能再次写入 |
+| 不同 | 重试，直到有一张匹配或超时；随后触发 `ASSERTION_FAILED`，并在步骤上附加 `-expected`、`-actual` 和 `-diff` 图像 |
+| `--update-snapshots`、`-u` | 从保持静止的屏幕写入缺失或不同的已存储截图，匹配器通过 |
+| `.not` | 屏幕出现差异时通过；没有已存储截图时触发 `ASSERTION_FAILED` |
+| 容差 | 同时设置 `maxDiffPixels` 和 `maxDiffPixelRatio` 时，采用较小的限制 |
+
+| 抛出错误 | 触发条件 |
+| --- | --- |
+| `INVALID_ARGUMENT` | 读取屏幕之前：名称包含路径分隔符、使用匹配器不接受的选项（Playwright 的 `fullPage`、`animations`、`clip`）、值超出范围，或对作用域限定在框架内的 screen 调用 `expect`。请改为比较框架内的定位器 |
+| `ASSERTION_FAILED` | 已存储截图缺失、不同或在同次运行中写入，如上表所示 |
+| `POLICY_DENIED` | 引擎无法证明屏幕上的每个安全字段都已被遮蔽 |
+
+#### 截图选项
+
+| 选项 | 类型 | 默认值 |
+| --- | --- | --- |
+| `threshold` | `number` | `0.2` |
+| `maxDiffPixels` | `number` | `0` |
+| `maxDiffPixelRatio` | `number` | `0` |
+| `mask` | `readonly Locator[]` | - |
+| `maskColor` | `string` | `#ff00ff` |
+| `timeout` | `number` | `config.assertionTimeout` |
+
+[`ScreenshotOptions`](#screenexpectation-and-screenshotoptions) 介绍了每个选项。
+
+### browser 匹配器
+
+由 `@e2e-dev/web` 提供；`BrowserExpectation` 类型从该包导出。每次匹配器调用都会记录为一个 `expect.<matcher>` 断言步骤。
+
+| 匹配器 | 说明 |
+| --- | --- |
+| [`toHaveURL`](#tohaveurl) | 等待当前 URL |
+| [`toHaveTitle`](#tohavetitle) | 等待当前标题 |
+| [`toHaveClass`](#tohaveclass) | 等待目标元素的 `class` |
+
+任何其他选项键都会导致 `INVALID_ARGUMENT`，例如 `toHaveTitle` 上的 `ignoreCase`，Playwright 同样不接受它。
+
+#### `toHaveURL`
+
+等待当前 URL 匹配。
+
+```ts
+await expect(browser).toHaveURL('/dashboard');
+await expect(browser).toHaveURL(/\/orders\/\d+$/);
+```
+
+- 相对字符串根据基础 URL 解析，并在规范化后精确匹配。
+- `RegExp` 对完整 URL 进行测试。
+- 其他值，例如谓词函数，会导致 `INVALID_ARGUMENT`。
+- 与定位器匹配器一样，它接受 Playwright 的 `ignoreCase`（[文本匹配](#text-matching)）。
+
+#### `toHaveTitle`
+
+等待当前标题匹配。
+
+```ts
+await expect(browser).toHaveTitle(/Dashboard/);
+```
+
+#### `toHaveClass`
+
+等待目标元素的 `class` 属性匹配：字符串对应规范化后的整个类名列表，`RegExp` 则对该列表进行测试。
+
+```ts
+await expect(browser).toHaveClass(browser.locator('.card'), 'card active');
+```
+
+- 它也会轮询节点：目标暂时没有匹配项时，会继续轮询，而不是立即失败，直到断言超时。
+- 存在歧义的目标仍会立即因 `LOCATOR_AMBIGUOUS` 失败。
+- 它读取 `class` 属性，因此 `''` 匹配 `class=""`，但不匹配完全没有 `class` 属性的元素。Playwright 的 `toHaveClass('')` 接受这两种情况。
+
+### 值匹配器
+
+`expect(value)` 同步运行，不会重试。对于仍可能变化的值，请使用[轮询值](#polling-a-value)。
+
+| 匹配器 | 说明 |
+| --- | --- |
+| [`toBe`](#tobe) | 使用 `Object.is` 比较 |
+| [`toEqual`](#toequal) | 递归比较结构相等性 |
+| [`toMatchObject`](#tomatchobject) | 递归匹配子集 |
+| [`toBeTruthy`、`toBeFalsy`](#tobetruthy-and-tobefalsy) | 真值或假值 |
+| [`toBeNull`、`toBeUndefined`、`toBeDefined`](#tobenull-tobeundefined-and-tobedefined) | `null`、`undefined` 或已定义的值 |
+| [`toHaveLength`](#tohavelength) | `length` 等于 `expected` |
+| [`toHaveProperty`](#tohaveproperty) | 路径上的属性 |
+| [`toContain`](#tocontain) | 字符串或集合包含关系 |
+| [`toMatch`](#tomatch) | 字符串或 `RegExp` 匹配 |
+| [`toBeGreaterThan` 等](#numeric-comparisons) | 满足数值边界 |
+| [`toBeCloseTo`](#tobecloseto) | 差值在 `10 ** -digits / 2` 范围内 |
+| [`toMatchSchema`](#matching-a-schema) | Standard Schema 校验 |
+
+匹配器无法判断其值时，会像不匹配一样以 `ASSERTION_FAILED` 失败。例如，对数字调用 `toContain`，或对没有数字类型 `length` 的值调用 `toHaveLength`。因此，在 `expect.poll` 下，尚未达到最终结构的值只算作又一次失败的采样。
+
+#### `toBe`
+
+使用 `Object.is` 比较。
+
+```ts
+expect(status).toBe('paid');
+```
+
+#### `toEqual`
+
+像 Jest 一样递归比较结构相等性。
+
+```ts
+expect(payload).toEqual({ ok: true, items: [{ sku: 'a' }] });
+```
+
+- 基本类型使用 `Object.is` 比较，因此 `NaN` 等于 `NaN`，而 `0` 不等于 `-0`。
+- 数组和普通对象按内容比较，`Date` 按时间比较，`RegExp` 按源模式和标志比较，`Map` 和 `Set` 按条目比较。
+- 值为 `undefined` 的属性视为不存在，稀疏数组与对应位置包含 `undefined` 的数组相等。
+- 不比较类类型：类实例与具有相同属性的普通对象相等。不提供 `toStrictEqual`；参阅[未包含的功能](#not-included)。
+
+#### `toMatchObject`
+
+要求 `expected` 的每个属性都递归匹配。
+
+```ts
+expect(order).toMatchObject({ customer: { name: 'Ada' }, lines: [{ sku: 'a' }, { sku: 'b' }] });
+```
+
+- 忽略 `expected` 未列出的属性。
+- `expected` 中的数组与相同长度的数组逐元素匹配，每个元素仍按子集规则匹配。
+- 两边都必须是对象；任意一边为基本类型都会被拒绝。
+
+#### `toBeTruthy` 和 `toBeFalsy`
+
+要求值为真值或假值。
+
+```ts
+expect(created).toBeTruthy();
+```
+
+#### `toBeNull`、`toBeUndefined` 和 `toBeDefined`
+
+`toBeNull` 要求 `null`，`toBeUndefined` 要求 `undefined`。`toBeDefined` 要求除 `undefined` 之外的任意值；`null` 会通过。
+
+```ts
+expect(row).toBeDefined();
+```
+
+#### `toHaveLength`
+
+要求 `length` 属性等于 `expected`：可以是字符串、数组或任意类数组对象。
+
+```ts
+expect(items).toHaveLength(3);
+```
+
+#### `toHaveProperty`
+
+要求 `path` 处的属性存在；传入 `expected` 时，还要求按 `toEqual` 规则与其相等。
+
+```ts
+expect(order).toHaveProperty('customer.email', 'ada@example.test');
+expect(order).toHaveProperty(['lines', 0, 'sku'], 'a');
+```
+
+- `path` 可以是点分路径（`'user.address.city'`）或键数组（`['user', 'address', 'city']`）。键包含点号，或需要用数字索引数组时，使用数组形式。
+- 继承的属性也算，值为 `undefined` 的属性也视为存在。
+- 路径上的字符串、数字或布尔值会通过其包装对象读取，与 Jest 相同，因此 `toHaveProperty('label.length', 3)` 和 `toHaveProperty(['label', 0], 'a')` 可以访问字符串内部。
+- `null` 和 `undefined` 没有属性。
+
+#### `toContain`
+
+要求满足字符串或集合包含关系。
+
+```ts
+expect(total).toContain('$');
+expect(rows).toContain(expect.objectContaining({ status: 'paid' }));
+```
+
+- 对于字符串，`expected` 必须是字符串，执行子串检查。这里不接受非对称匹配器：`expect('abc').toContain(expect.stringContaining('a'))` 会失败。
+- 对于集合，必须有一个元素等于 `expected`。这种形式接受[非对称匹配器](#asymmetric-matchers)。
+
+#### `toMatch`
+
+要求匹配字符串或 `RegExp`。
+
+```ts
+expect(id).toMatch(/^usr_/);
+```
+
+模式既不是字符串也不是 `RegExp` 时，会导致 `INVALID_ARGUMENT`。
+
+#### 数值比较
+
+`toBeGreaterThan` 和 `toBeLessThan` 要求满足不含边界的数值比较；`toBeGreaterThanOrEqual` 和 `toBeLessThanOrEqual` 则包含边界。
+
+```ts
+expect(count).toBeGreaterThan(1);
+expect(count).toBeLessThanOrEqual(10);
+```
+
+#### `toBeCloseTo`
+
+要求数值与 `expected` 的差值在 `10 ** -digits / 2` 范围内。
+
+```ts
+expect(totals.lineTotal).toBeCloseTo(60); // digits default: 2
+```
+
+`toBeCloseTo(60)` 接受 59.996，拒绝 59.99。无穷值只有与同一个无穷值比较时才会通过。
+
+#### 匹配 schema
+
+`toMatchSchema` 根据 [Standard Schema](https://standardschema.dev) 校验值：可以是 Zod、Valibot 或 ArkType schema，也可以是任何实现该规范的库。传入应用已经用于解析 API 的 schema，当 API 偏离该 schema 时，测试就会失败。它返回带类型的 schema 输出，因此测试其余部分可以直接读取属性，无需类型转换。
+
+```ts
+import { z } from 'zod';
+
+const User = z.object({ id: z.number(), name: z.string(), email: z.email() });
+
+const users = expect(await response.json()).toMatchSchema(z.array(User));
+expect(users.map((user) => user.name)).toContain('Ada');
+```
+
+- 失败时会按路径列出每个问题（`1.email: Invalid email address`）。
+- 输出来自 schema，因此默认值和转换都会生效。
+- 匹配器会在任何代码有机会等待它之前返回，因此异步校验的 schema（异步 refinement）会导致 `INVALID_ARGUMENT`。
+- 取反时，值不匹配则通过，不返回任何内容。
+
+#### 失败消息
+
+传入第二个参数，在失败消息中描述检查：
+
+```ts
+expect(created, 'the company exists through the API').toBeTruthy();
+// ASSERTION_FAILED: the company exists through the API: expected undefined to be truthy
+```
+
+[定位器](#locator-matchers)或 `screen` 断言以同样的方式接受消息。`browser` 断言不接受消息，其失败信息会注明匹配器。
+
+#### 未包含的功能
+
+单元测试运行器的匹配器（`toThrow`、`toBeInstanceOf`、`toBeNaN`、`toStrictEqual`、`resolves`、`rejects`、`expect.extend`）不属于 `expect`。端到端测试检查应用显示的内容及其 API 返回的结果；值匹配器覆盖这些需求，参阅 [API](/api-testing)。代码级检查应放在单元测试运行器中。
+
+### 非对称匹配器
+
+非对称匹配器用于在 `toEqual`、`toMatchObject`、集合形式的 `toContain` 和 `toHaveProperty` 的值中代替具体值。比较原本要检查相等性的位置，会改为询问匹配器。它们使用 Jest 的匹配器，并遵循 Jest 的规则。
+
+| 匹配器 | 匹配内容 |
+| --- | --- |
+| `expect.any(Class)` | 该类的实例。对于 `String`、`Number`、`Boolean`、`BigInt`、`Symbol` 和 `Function`，也匹配基本类型；对于 `Object`，匹配 `typeof` 判定为对象的任何值，包括 `null` |
+| `expect.anything()` | 除 `null` 和 `undefined` 之外的任何值 |
+| `expect.objectContaining(sample)` | 属性包含 `sample` 每个属性的对象，各属性按 `toEqual` 规则比较 |
+| `expect.arrayContaining(sample)` | 包含 `sample` 每个元素的数组，顺序不限，各元素按 `toEqual` 规则比较 |
+| `expect.stringContaining(text)` | 包含子串 `text` 的字符串 |
+| `expect.stringMatching(text \| RegExp)` | 使 RegExp 测试为真的字符串；文本样本会编译为 RegExp，因此 `'a.b'` 会匹配 `'axb'` |
+
+```ts
+expect(created).toEqual({
+  id: expect.stringMatching(/^usr_/),
+  createdAt: expect.any(String),
+  roles: expect.arrayContaining(['member']),
+  profile: expect.objectContaining({ name: 'Ada' }),
+});
+expect(rows).toContain(expect.objectContaining({ status: 'paid' }));
+expect(response).toHaveProperty('body.total', expect.any(Number));
+```
+
+- 在失败消息中，匹配器会输出其描述：`Any<Number>`、`ObjectContaining {"name":"Ada"}`。
+- 匹配器可以嵌套：`objectContaining` 的样本可以包含 `expect.any`。
+- 字符串形式的 `toContain` 不接受它们；参阅 [`toContain`](#tocontain)。
+
+### 软断言
+
+`expect.soft(actual, message?)` 接受与 `expect(actual, message?)` 相同的参数，并返回相同的匹配器。软匹配器失败时不会抛出异常：失败保留在当前尝试中，测试体继续执行。
+
+```ts
+test('checkout summary', async ({ agent, screen }) => {
+  await agent.act('add the "Pro" plan to the cart and open the summary');
+  expect.soft(await screen.getByTestId('subtotal').textContent()).toBe('$40.00');
+  expect.soft(await screen.getByTestId('tax').textContent()).toBe('$8.00');
+  await expect.soft(screen.getByRole('button', 'Pay')).toBeEnabled();
+  await expect(screen.getByTestId('total')).toHaveText('$48.00');
+});
+```
+
+```text
+ASSERTION_FAILED: 2 soft assertions failed
+1. expected "$41.00" to be "$40.00"
+2. expect.toBeEnabled failed
+   locator: getByRole('button', 'Pay')
+   expected: enabled
+   observed: states: disabled (match count 1)
+```
+
+- 测试体结束后、`afterEach` 之前，尝试会以一个 `ASSERTION_FAILED` 失败，并按顺序列出所有保留的失败。错误的源码行是第一个失败的软匹配器所在行。
+- 软定位器或 `browser` 匹配器仍会记录为一个 `expect.<matcher>` 步骤，并标为失败，因此报告能显示它在流程中的位置。
+- 软值匹配器与硬值匹配器一样，不算步骤；其失败出现在尝试的错误记录中。
+- 如果测试体自行抛出异常或超时，该错误仍是尝试的判定结果，软断言失败则记录在旁边的 `secondaryErrors` 下。
+- 测试体在软断言失败后通过 `test.skip(...)` 跳过自身，仍会失败：软断言失败成为尝试的错误，跳过原因保留在尝试的 `skip` 中。
+- 软 `toMatchSchema` 在值匹配时返回 schema 输出，在保留失败后返回 `undefined`，其类型也反映这一点。
+
+<Note>
+测试体之外没有可供延后处理失败的对象，因此 `expect.soft` 会像 `expect` 一样立即抛出异常：独立脚本中如此，`afterEach` 钩子中也如此，因为该钩子在软断言失败处理完毕后运行。没有 `expect.soft.poll`；`expect.poll` 使用自己的超时来判定失败。
+</Note>
+
+### 轮询值
+
+`expect.poll(read)` 重复读取值，直到匹配器通过。用它等待应用操作之后的 API 响应或已保存数据。
+
+```ts
+await agent.act('create a test named "AI checkout regression" described as {description}', {
+  params: { description },
+});
+await expect
+  .poll(() => getTest(workspace).then((row) => row?.title), { timeout: 15_000 })
+  .toBe('AI checkout regression');
+await expect.poll(async () => (await listTests(workspace)).length).toBeGreaterThan(1);
+await expect.poll(() => readStatus(), { message: 'the batch never finished' }).not.toBe('running');
+```
+
+| 选项 | 类型 | 默认值 |
+| --- | --- | --- |
+| `timeout` | `number` | 尝试期间使用 `config.assertionTimeout`，尝试之外为 5000 毫秒 |
+| `interval` | `number` | `100` |
+| `message` | `string` | - |
+
+- `timeout` 是以毫秒为单位的截止时间，必须是大于或等于 0 的有限数字。在测试体内受测试截止时间限制，在 `afterEach` 期间受钩子的 `cleanupTimeout` 限制。`0` 表示一直轮询到该上限，因此在测试外使用会导致 `INVALID_CONFIG`。
+- `interval` 是两次读取之间的暂停时间，单位为毫秒，必须是大于 0 的有限数字。
+- `message` 是超时错误中的额外一行，位于匹配器行之后。
+
+所有值匹配器都可用，返回 Promise。
+
+- 每次采样都会调用 `read` 并运行匹配器。匹配器失败或 `read` 抛出异常都算一次失败采样；挂起的 `read` 会在截止时间被放弃。
+- `toMatchSchema` 会解析为通过校验的那次读取所对应的 schema 输出。
+- 尝试被取消时，循环以 `CANCELLED` 停止。到达尝试截止时间时，以 `ASSERTION_FAILED` 停止，并指出截止时间。进行中的 `read` 会被放弃，而不会被停止：它启动的工作可以继续。
+- `expect.poll` 不会记录为报告步骤；超时只会表现为测试失败。
+
+到达截止时间时，它会抛出 `ASSERTION_FAILED`，依次给出匹配器、提供的 `message`，以及最后一次采样：最后的匹配器失败、最后的 `read` 错误，或 `no read completed`。
+
+```text
+expect.poll(...).not.toBe(...) timed out after 5000 ms
+the batch never finished
+last: expected "running" not to be "running"
+```
+
+| 抛出错误 | 触发条件 |
+| --- | --- |
+| `ASSERTION_FAILED` | 到达截止时间，仍没有通过的采样 |
+| `INVALID_CONFIG` | 首次读取前，发现 `timeout` 或 `interval` 超出范围 |
+| `CANCELLED` | 尝试被取消或超时 |
+| `STEP_NOT_AWAITED` | 启动轮询的阶段已返回，而轮询仍在运行 |
+| `HOOK_FAILED` | `beforeAll` 或 `afterAll` 钩子已返回，而其轮询仍在运行 |
+
+<Note>
+等待每个轮询完成。轮询归属于启动它的阶段：测试体（含测试夹具和 `beforeEach` 钩子）、某个 `afterEach` 钩子或测试夹具清理，或某个 `beforeAll` 或 `afterAll` 钩子。如果该阶段返回时轮询仍在运行，轮询会被取消，该阶段会在调用行因 `STEP_NOT_AWAITED` 失败，无论轮询原本是否会通过。抛出异常的测试体保留自身错误，并将此错误记录在 `secondaryErrors` 下；测试套件钩子则以 `HOOK_FAILED` 报告它。
+</Note>
+
+轮询绝不会使后续测试失败：如果某个阶段遗留的工作启动了轮询，例如超时后仍运行的测试体，该轮询会在首次读取前被取消。
+
+## 行为
+
+适用于各组匹配器的规则。
+
+### 超时和失败
+
+| 属性 | 值 |
+| --- | --- |
+| 默认超时 | [`config.assertionTimeout`](/reference/config#assertiontimeout) |
+| 覆盖 | 每个定位器和 `browser` 匹配器上的 `{ timeout }`，单位为毫秒 |
+| 读取时机 | 从开始起的 0、20 和 50 毫秒，之后每 100 毫秒读取一次 |
+| 未知选项 | `INVALID_ARGUMENT`；参阅[选项校验](#option-validation) |
+| 失败错误码 | `ASSERTION_FAILED`，退出码 1 |
+
+### 取反
+
+`.not` 对匹配器取反。取反匹配器只有在取反条件持续成立后才会通过：
+
+- 连续成立 1000 毫秒后通过。
+- 如果 `{ timeout }` 短于 1000 毫秒，且取反条件在整个预算期间都成立，则在截止时间通过。
+- 该窗口从首次读到取反条件成立的那次读取开始时计时，因此较慢的读取也计入其中。
+
+### 严格性
+
+- 正向定位器匹配器要求恰好一个匹配项。例外是 `toHaveCount`，以及列表形式的 `toHaveText` 和 `toContainText`。
+- 没有匹配项时，持续轮询直到超时。
+- 多个匹配项会立即因 `LOCATOR_AMBIGUOUS` 失败。
+- `toBeHidden`、`toBeVisible({ visible: false })`、`toBeAttached({ attached: false })`、取反的可见性检查和取反的 `toBeAttached` 都接受零个匹配项。
+- 对于这些匹配器、`toHaveCount` 和列表形式，以及 `waitFor({ state: 'detached' })` 和 `'hidden'`，如果定位器所在的框架不在文档中，则按零个匹配项处理，而不会等待框架出现。iframe 关闭后，`toHaveCount(0)` 会通过。
+
+### 文本匹配
+
+- 文本比较会进行规范化：去除首尾空白，并将每段连续空白合并为一个空格。
+- `toHaveText` 和 `toContainText` 读取与 [`textContent()`](/reference/screen#locator-reads) 相同的渲染文本，在网页端为 `innerText`。
+- `TextMatch` 字符串要求精确匹配。`RegExp` 使用自身的源模式和标志。其他值，例如谓词函数，会导致 `INVALID_ARGUMENT`。
+- 在 `toHaveText`、`toContainText`、`toHaveAccessibleName` 和带值形式的 `toHaveAttribute` 上设置 `ignoreCase: true`，会让字符串比较忽略大小写，并为 `RegExp` 添加 `i` 标志；`ignoreCase: false` 则移除该标志。
+- `toHaveAttribute(name, value)` 与 `toHaveText` 一样，在规范化后比较。
+- [`toHaveValue`](#tohavevalue) 是例外：它按原样比较值。
+
+### 安全字段
+
+安全字段（例如密码输入框）绝不会被判定：引擎不会提供其值和文本。
+
+| 匹配器 | 在安全字段上的行为 |
+| --- | --- |
+| `toHaveValue`、`toHaveText`、`toContainText` | 与 `inputValue()` 和 `textContent()` 一样触发 `POLICY_DENIED`，取反或列表形式也如此 |
+| `toHaveAttribute` | 与 `getAttribute()` 一样触发 `POLICY_DENIED`，所有属性名以及取反形式都如此 |
+| `toHaveAccessibleName`、`toHaveRole` 和状态匹配器 | 正常返回结果 |
+
+如果将未提供的值读取为 `''`，就会把已填入的密码字段当作已清空而通过；如果将未提供的 `value` 属性读取为不存在，就会让具有该属性的密码字段通过 `not.toHaveAttribute('value')`。请断言填入操作的结果，而不是字段本身。
+
+### 选项校验
+
+- 匹配器会在读取屏幕前，以 `INVALID_ARGUMENT` 拒绝它不接受的选项键，以及非布尔值的标志。
+- TypeScript 的类型可以发现这些问题，但 `e2e run` 不进行类型检查，因此 JavaScript 测试或动态计算的选项对象也会执行此校验。
+- e2e 未实现的 Playwright 选项，例如 `toBeChecked` 上的 `indeterminate` 或 `toHaveText` 上的 `useInnerText`，会以这种方式失败，而不会按默认行为通过。
+- Playwright 为这些匹配器提供的布尔选项（`checked`、`enabled`、`visible`、`attached`）在这里的行为相同。
+
+## 类型
+
+### `ExpectCall`、`SoftExpectCall` 和 `Expect`
+
+```ts
+/** `T`, or `never` when `T` is `any`, so an `any` argument skips an overload. */
+type NotAny<T> = 0 extends 1 & T ? never : T;
+
+/** The `expect(actual)` call: a locator, `screen`, an engine fixture, or a value, told apart by the argument. */
+export interface ExpectCall {
+  <L extends Locator>(actual: NotAny<L>, message?: string): AsyncExpectation;
+  <S extends Screen>(actual: NotAny<S>, message?: string): ScreenExpectation;
+  <E extends object>(actual: Expectable<E>): E;
+  <T>(actual: T, message?: string): ValueExpectation<T>;
+}
+
+/** The `expect.soft(actual)` call: `expect(actual)` whose failures are kept instead of thrown. */
+export interface SoftExpectCall {
+  <L extends Locator>(actual: NotAny<L>, message?: string): AsyncExpectation;
+  <S extends Screen>(actual: NotAny<S>, message?: string): ScreenExpectation;
+  <E extends object>(actual: Expectable<E>): E;
+  <T>(actual: T, message?: string): SoftValueExpectation<T>;
+}
+
+/** The `expect` entry: the call, `expect.poll`, `expect.soft`, and the asymmetric matchers. */
+export interface Expect extends ExpectCall {
+  /** Re-reads a value until the chosen matcher holds or `timeout` passes. */
+  poll<T>(read: () => T | Promise<T>, options?: PollOptions): PollExpectation<T>;
+  /** The same matchers, a failure kept on the attempt instead of thrown; the attempt fails once the body has settled. */
+  readonly soft: SoftExpectCall;
+  any(sample: Class | typeof BigInt | typeof Symbol): AsymmetricMatcher;
+  anything(): AsymmetricMatcher;
+  objectContaining(sample: object): AsymmetricMatcher;
+  arrayContaining(sample: readonly unknown[]): AsymmetricMatcher;
+  stringContaining(sample: string): AsymmetricMatcher;
+  stringMatching(sample: string | RegExp): AsymmetricMatcher;
+}
+```
+
+### `AsyncExpectation` 和 `TextMatcherOptions`
+
+```ts
+/**
+ * The locator matchers. An option a matcher does not take, or a flag that is
+ * not a boolean, is `INVALID_ARGUMENT` before the first read.
+ */
+export interface AsyncExpectation {
+  /** Inverts the matcher. A negated matcher passes after 1000 ms of continuous truth. */
+  readonly not: AsyncExpectation;
+  /** Waits for visibility; `visible: false` waits for hidden or absent state, as `toBeHidden`. */
+  toBeVisible(options?: { visible?: boolean; timeout?: number }): Promise<void>;
+  /** Waits for hidden or absent state. */
+  toBeHidden(options?: { timeout?: number }): Promise<void>;
+  /** Waits for one match to exist, visible or not; `attached: false` waits for none. */
+  toBeAttached(options?: { attached?: boolean; timeout?: number }): Promise<void>;
+  /** Waits for enabled state; `enabled: false` waits for disabled state. */
+  toBeEnabled(options?: { enabled?: boolean; timeout?: number }): Promise<void>;
+  /** Waits for disabled state. */
+  toBeDisabled(options?: { timeout?: number }): Promise<void>;
+  /** Waits for checked state; `checked: false` waits for unchecked state. */
+  toBeChecked(options?: { checked?: boolean; timeout?: number }): Promise<void>;
+  /** Waits for selected state. */
+  toBeSelected(options?: { timeout?: number }): Promise<void>;
+  /** Waits for expanded state. */
+  toBeExpanded(options?: { timeout?: number }): Promise<void>;
+  /** Waits for focused state. */
+  toBeFocused(options?: { timeout?: number }): Promise<void>;
+  /** Waits for exact normalized text; a list waits for exactly that many matches, each with its entry's text, in order. */
+  toHaveText(expected: TextMatch, options?: TextMatcherOptions): Promise<void>;
+  toHaveText(expected: readonly TextMatch[], options?: TextMatcherOptions): Promise<void>;
+  /** Waits for contained normalized text; a list waits for each entry to be contained by a distinct match, in order, extra matches allowed. */
+  toContainText(expected: TextMatch, options?: TextMatcherOptions): Promise<void>;
+  toContainText(expected: readonly TextMatch[], options?: TextMatcherOptions): Promise<void>;
+  /** Waits for a form control's value, compared as it is. */
+  toHaveValue(expected: TextMatch, options?: { timeout?: number }): Promise<void>;
+  /** Waits for the attribute to be present; with `value`, for it to match. */
+  toHaveAttribute(name: string, options?: { timeout?: number }): Promise<void>;
+  toHaveAttribute(name: string, value: TextMatch, options?: TextMatcherOptions): Promise<void>;
+  /** Waits for an exact match count. */
+  toHaveCount(expected: number, options?: { timeout?: number }): Promise<void>;
+  /** Waits for an accessible name. */
+  toHaveAccessibleName(expected: TextMatch, options?: TextMatcherOptions): Promise<void>;
+  /** Waits for the role; `img` is read as `image`, as `getByRole` reads it. */
+  toHaveRole(role: Role | RoleAlias, options?: { timeout?: number }): Promise<void>;
+  /** Waits for the one match to look like its stored screenshot; see [Screenshot matchers](#screenshot-matchers). */
+  toHaveScreenshot(name: string, options?: ScreenshotOptions): Promise<void>;
+  toHaveScreenshot(options?: ScreenshotOptions): Promise<void>;
+}
+
+/** Options of a locator matcher that compares text. */
+export interface TextMatcherOptions {
+  /** Compares a string case-insensitively; on a RegExp, `true` adds the `i` flag and `false` removes it. */
+  ignoreCase?: boolean;
+  /** Assertion budget in milliseconds. */
+  timeout?: number;
+}
+```
+
+### `ScreenExpectation` 和 `ScreenshotOptions`
+
+```ts
+export interface ScreenExpectation {
+  /** Inverts the matcher: waits for the screen to differ from its stored screenshot. */
+  readonly not: ScreenExpectation;
+  /** Waits for the screen to look like its stored screenshot, `name` or one named after the test. */
+  toHaveScreenshot(name: string, options?: ScreenshotOptions): Promise<void>;
+  toHaveScreenshot(options?: ScreenshotOptions): Promise<void>;
+}
+
+export interface ScreenshotOptions {
+  /** How far one pixel's color may drift and still count as the same, from 0 (exact) to 1. Default `0.2`. */
+  threshold?: number;
+  /** How many pixels may differ. Default `0`. */
+  maxDiffPixels?: number;
+  /** What share of the pixels may differ, from 0 to 1. Default `0`. */
+  maxDiffPixelRatio?: number;
+  /** Locators painted over before comparing, for content that changes from run to run. */
+  mask?: readonly Locator[];
+  /** Color of the `mask` boxes, `#rrggbb`. Default `#ff00ff`. */
+  maskColor?: string;
+  /** Assertion budget in milliseconds. */
+  timeout?: number;
+}
+```
+
+### `BrowserExpectation`
+
+```ts
+export interface BrowserExpectation {
+  /** Inverts the matcher. */
+  readonly not: BrowserExpectation;
+  /** Waits for the current URL to match; `ignoreCase` compares a string case-insensitively and adds the `i` flag to a RegExp, `false` removes it. */
+  toHaveURL(expected: string | RegExp, options?: { ignoreCase?: boolean; timeout?: number }): Promise<void>;
+  /** Waits for the current title to match. */
+  toHaveTitle(expected: TextMatch, options?: { timeout?: number }): Promise<void>;
+  /** Waits for the target's `class` attribute to match: a string is the whole normalized class list, a RegExp is tested against it. */
+  toHaveClass(target: Locator, expected: TextMatch, options?: { timeout?: number }): Promise<void>;
+}
+```
+
+### `ValueExpectation`
+
+```ts
+export interface ValueExpectation<T> {
+  /** Inverts the matcher. */
+  readonly not: NegatedValueExpectation<T>;
+  /** Compares with Object.is. */
+  toBe(expected: T): void;
+  /** Performs recursive structural equality; `undefined` properties are ignored and class types are not compared. */
+  toEqual(expected: unknown): void;
+  /** Requires every property of `expected` to match recursively; extra properties on the value are fine, arrays must match element-wise with equal length. */
+  toMatchObject(expected: object): void;
+  /** Requires a truthy value. */
+  toBeTruthy(): void;
+  /** Requires a falsy value. */
+  toBeFalsy(): void;
+  /** Requires null. */
+  toBeNull(): void;
+  /** Requires undefined. */
+  toBeUndefined(): void;
+  /** Requires any value but undefined; null passes. */
+  toBeDefined(): void;
+  /** Requires a `length` property equal to `expected`: a string, an array, or anything array-like. */
+  toHaveLength(expected: number): void;
+  /** Requires the property at `path` to exist; with `expected`, to equal it by `toEqual` rules. */
+  toHaveProperty(path: PropertyPath, ...expected: [] | [expected: unknown]): void;
+  /** Requires string or collection containment. */
+  toContain(expected: unknown): void;
+  /** Requires a string or regexp match. */
+  toMatch(expected: string | RegExp): void;
+  /** Requires a numeric lower bound. */
+  toBeGreaterThan(expected: number): void;
+  /** Requires a numeric lower bound, inclusive. */
+  toBeGreaterThanOrEqual(expected: number): void;
+  /** Requires a numeric upper bound. */
+  toBeLessThan(expected: number): void;
+  /** Requires a numeric upper bound, inclusive. */
+  toBeLessThanOrEqual(expected: number): void;
+  /** Requires a number within `10 ** -digits / 2` of `expected`; `digits` defaults to 2. */
+  toBeCloseTo(expected: number, digits?: number): void;
+  /**
+   * Requires the value to pass a synchronous Standard Schema (Zod, Valibot,
+   * ArkType, ...) and returns the schema's output, typed:
+   * `const users = expect(await response.json()).toMatchSchema(Users)`.
+   * A schema that validates asynchronously is `INVALID_ARGUMENT`.
+   */
+  toMatchSchema<Schema extends StandardSchemaV1>(schema: Schema): StandardSchemaV1.InferOutput<Schema>;
+}
+
+/** `expect(value).not`: every value matcher inverted, none returning a value; `Back` is what `.not` returns to. */
+export type NegatedValueExpectation<T, Back = ValueExpectation<T>> = {
+  readonly not: Back;
+} & {
+  readonly [K in Exclude<keyof ValueExpectation<T>, 'not'>]: (...args: Parameters<ValueExpectation<T>[K]>) => void;
+};
+
+/** `expect.soft(value)`: the value matchers, with `toMatchSchema` returning `undefined` after a kept failure. */
+export type SoftValueExpectation<T> = Omit<ValueExpectation<T>, 'toMatchSchema' | 'not'> & {
+  readonly not: NegatedValueExpectation<T, SoftValueExpectation<T>>;
+  toMatchSchema<Schema extends StandardSchemaV1>(schema: Schema): StandardSchemaV1.InferOutput<Schema> | undefined;
+};
+
+/** A class, abstract or not: what `expect.any` takes. */
+export type Class = abstract new (...args: never[]) => unknown;
+
+/** A property path for `toHaveProperty`: dotted (`'user.address.city'`) or one key per element (`['user', 'address', 'city']`). */
+export type PropertyPath = string | readonly (string | number)[];
+```
+
+### `AsymmetricMatcher`
+
+```ts
+/**
+ * A stand-in for a value inside `toEqual`, `toMatchObject`, `toContain`, and
+ * `toHaveProperty`: `expect.any(Number)` in place of a number,
+ * `expect.objectContaining({ id: 1 })` in place of a record. The structural
+ * matchers ask it whether a value matches instead of comparing.
+ */
+export interface AsymmetricMatcher {
+  /** Whether `other` satisfies the matcher. */
+  asymmetricMatch(other: unknown): boolean;
+  /** The matcher's name, `ObjectContaining`; a failure message adds the sample. */
+  toString(): string;
+}
+```
+
+### `PollOptions` 和 `PollExpectation`
+
+```ts
+export interface PollOptions {
+  /** Deadline in milliseconds. Default 5000. */
+  timeout?: number;
+  /** Pause between reads in milliseconds. Default 100. */
+  interval?: number;
+  /** Extra line in the timeout error, after the matcher line. */
+  message?: string;
+}
+
+/**
+ * The asynchronous form of every `ValueExpectation<T>` matcher: the same
+ * names and parameters, each resolving once the re-read value passes;
+ * `toMatchSchema` resolves to the schema's output for the passing read.
+ * Derived from `ValueExpectation<T>` so the two cannot drift.
+ */
+export type PollExpectation<T> = {
+  readonly not: NegatedPollExpectation<T>;
+} & {
+  readonly [K in Exclude<keyof ValueExpectation<T>, 'not' | 'toMatchSchema'>]: (
+    ...args: Parameters<ValueExpectation<T>[K]>
+  ) => Promise<void>;
+} & {
+  toMatchSchema<Schema extends StandardSchemaV1>(schema: Schema): Promise<StandardSchemaV1.InferOutput<Schema>>;
+};
+
+/** `expect.poll(read).not`: every poll matcher inverted, none resolving to a value. */
+export type NegatedPollExpectation<T> = {
+  readonly not: PollExpectation<T>;
+} & {
+  readonly [K in Exclude<keyof ValueExpectation<T>, 'not'>]: (...args: Parameters<ValueExpectation<T>[K]>) => Promise<void>;
+};
+```

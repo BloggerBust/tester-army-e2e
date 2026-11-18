@@ -1,0 +1,1133 @@
+---
+title: モバイル
+description: iOS と Android 向けのモバイルエンジンのオプションと device フィクスチャ。
+"og:image": "https://e2e.com/docs/images/og/reference/mobile.png?v=3da450961d"
+"twitter:image": "https://e2e.com/docs/images/og/reference/mobile.png?v=3da450961d"
+---
+
+`@e2e-dev/mobile` は、iOS シミュレーター、Android エミュレーター、接続した実機を [agent-device](https://github.com/callstack/agent-device) 経由で操作するエンジンです。`device` フィクスチャを提供します。`agent`、`app`、`screen`、`expect` はほかの環境と同じように使えます。このページでは、デバイスのターゲットに固有の機能を説明します。
+
+```ts title="e2e.config.ts"
+import type { E2EConfig } from 'e2e';
+import { mobile } from '@e2e-dev/mobile';
+
+export default {
+  targets: [
+    { name: 'iphone', engine: mobile({ platform: 'ios' }), app: { bundleId: 'com.apple.Preferences' } },
+  ],
+} satisfies E2EConfig;
+```
+
+```ts title="tests/settings.e2e.ts"
+import { expect } from 'e2e';
+import { test } from '@e2e-dev/mobile';
+
+test('General opens in dark mode', async ({ app, device, screen }) => {
+  await device.setAppearance('dark');
+  await app.open();
+  await screen.getByText('General').tap();
+  await expect(screen.getByText('About')).toBeVisible();
+});
+```
+
+- `device` に型を付けるには、`@e2e-dev/mobile` から `test` をインポートします。Web でも動くスイートでは、`requires: ['device']` を宣言してください。
+- `e2e init` で **Mobile (iOS/Android)** を選ぶと、設定アプリのサンプルとともにパッケージを追加します。iOS には Xcode とシミュレーター、Android には Android SDK とエミュレーターが必要です。
+- パッケージには互換性のあるバージョンの `agent-device` が含まれるため、別途インストールする必要はありません。
+
+## リファレンス
+
+### エンジン
+
+`mobile(options)` は、1 つのプラットフォーム用のエンジンを作成します。テストするプラットフォームごとに作成してください。特定のプラットフォームに固有のラベルや操作を使うテストには、`platforms: ['ios']` または `platforms: ['android']` を指定します。
+
+```ts title="e2e.config.ts"
+import type { E2EConfig } from 'e2e';
+import { mobile } from '@e2e-dev/mobile';
+import { mobileTools } from '@e2e-dev/mobile/tools';
+import { gateway } from 'ai';
+
+const iphone = mobile({ platform: 'ios' });
+const pixel = mobile({ platform: 'android' });
+
+export default {
+  targets: [
+    { name: 'iphone', engine: iphone, app: { bundleId: 'Settings' } },
+    { name: 'pixel', engine: pixel, app: { bundleId: 'com.android.settings' } },
+  ],
+  workers: 1,
+  agents: {
+    default: {
+      model: gateway('openai/gpt-6-luna-fast'),
+      tools: mobileTools(iphone, pixel),
+    },
+  },
+} satisfies E2EConfig;
+```
+
+`mobile()` は `MobileOptions` を受け取り、どのデバイスをどう操作するかを設定します。テスト対象のアプリはエンジンのオプションではなく、ターゲットの `app` です。[テスト対象のアプリ](#the-app-under-test)を参照してください。
+
+| オプション | 型 | デフォルト |
+| --- | --- | --- |
+| [`platform`](#platform) | `'ios' \| 'android'` | 必須 |
+| [`device`](#device-option) | `string \| readonly string[] \| DeviceProvider` | 起動済みの全デバイス |
+| [`session`](#session) | `string` | `e2e-<target name>` |
+| [`snapshot`](#snapshot) | `'full' \| 'interactive'` | `'full'` |
+| [`settle`](#settle) | `number \| false` | `150` |
+| [`transition`](#transition) | `number` | `500` |
+| [`videoTouches`](#videotouches) | `boolean` | `true` |
+
+省略可能な値はすべて `undefined` も受け付けるため、`process.env` から読んだ値をそのまま渡せます。条件付きのスプレッドは不要です。以下の各項目には、メンバーの宣言も載せています。
+
+| エラー | 発生条件 |
+| --- | --- |
+| `INVALID_CONFIG` | `device` のリストが空、`device` の名前が空白のみ、またはリスト内に空白のみや文字列以外の値がある場合。 |
+| `INVALID_CONFIG` | `device` が文字列、リスト、有効なプロバイダーのいずれでもない場合。プロバイダーの `name` が空、`acquire()` または `release()` がない、`record` が関数ではない場合も該当します。 |
+| `INVALID_CONFIG` | `platform` がないか、`'ios'` または `'android'` ではない場合。大文字・小文字を区別します。 |
+| `INVALID_CONFIG` | 指定した `snapshot` が `'full'` または `'interactive'` ではないか、`videoTouches` が真偽値ではない場合。 |
+| `INVALID_CONFIG` | `mobile({ app })` などの古いアプリ設定を含め、`mobile()` が受け付けないオプションがある場合。タイプミスと思われる場合は最も近い既知のオプションを、それ以外は全オプションを示します。 |
+| `INVALID_CONFIG` | `settle` または `transition` が、0 以上の整数のミリ秒数ではない場合。`settle` は `false` も受け付けます。 |
+
+#### `platform`
+
+```ts
+/** Platform the target's device runs. */
+readonly platform: MobilePlatform;
+```
+
+```ts
+mobile({ platform: 'android' });
+```
+
+- `'ios'` または `'android'`。必須です。
+
+#### `device` オプション
+
+```ts
+/**
+ * Device to use: a simulator or emulator by name, simulator UDID, or
+ * emulator serial (`emulator-5554`), or a connected phone by name. A list
+ * is a pool: the engine declares one worker per entry and worker slot `n`
+ * drives the `n`th, so `workers` at or above the pool size runs the target's
+ * files across every device at once. Omitted, the pool is every booted device
+ * of the platform at `prepare` that no other agent-device session holds, as
+ * many as the run has slots. A paired iPhone or iPad that is reachable (USB or network) counts as booted and
+ * joins the pool. With none booted, agent-device boots a shut-down one: on
+ * iOS an iPhone over an iPad over an Apple TV, on Android a phone or tablet
+ * over a TV, then the newest OS, then name order (a stopped Android emulator
+ * reports no OS version, so the name decides). With every booted one held,
+ * `prepare` fails. A `DeviceProvider` leases hosted devices
+ * instead: one per worker slot at `prepare`, each driven through the daemon
+ * and client configuration the lease names. A replacement worker resumes a
+ * healthy agent-device session on the same lease. Forced worker shutdown
+ * can close the session. `device.closeApp()` ends the agent-device session,
+ * allowing another session to take the device. If agent-device has not
+ * confirmed a recording stop, the engine resets the recording before the
+ * next attempt. This reset also ends the session. The provider lease stays
+ * held until run end. At run end, the engine closes its sessions and the
+ * provider releases its leases.
+ */
+readonly device?: string | readonly string[] | DeviceProvider | undefined;
+```
+
+```ts
+mobile({ platform: 'ios' }); // default: every booted iOS device no other agent-device session holds
+mobile({ platform: 'ios', device: 'iPhone 17' });
+mobile({ platform: 'android', device: 'emulator-5554' });
+mobile({ platform: 'ios', device: ['iPhone 17', 'iPhone 17 Pro'] });
+```
+
+- 各 `device` エントリーが別々のデバイスを指す限り、2 つのワーカーが同じデバイスを操作することはありません。
+- `device` を省略した場合、ほかのツールが自身の agent-device セッションで保持している起動済みシミュレーターは除外します。手動で操作しているものなど、どのセッションも保持していない起動済みデバイスは候補に残ります。使わせたくないデバイスがある場合は、使用するデバイスを名前で指定してください。
+- [ホスト型デバイス](/mobile#hosted-devices)に `DeviceProvider` の契約と実装例があります。
+
+```ts title="e2e.config.ts"
+import type { E2EConfig } from 'e2e';
+import { mobile } from '@e2e-dev/mobile';
+
+const iphones = mobile({
+  platform: 'ios',
+  device: ['iPhone 17', 'iPhone 17 Pro'],
+});
+
+export default {
+  targets: [{ name: 'ios', engine: iphones, app: { bundleId: 'com.example.app' } }],
+  workers: 2,
+} satisfies E2EConfig;
+```
+
+#### `session`
+
+```ts
+/**
+ * agent-device session name, before the worker slot: slot `n` drives its
+ * device under `<session>-<n>`, `e2e-<target name>-<n>` by default. One run
+ * per session at a time: concurrent runs on the same session interleave
+ * taps.
+ */
+readonly session?: string | undefined;
+```
+
+```ts
+mobile({ platform: 'ios', session: 'checkout' }); // default: e2e-<target name>
+```
+
+#### `snapshot`
+
+```ts
+/**
+ * What an observation captures. `full` (default) includes static text, so
+ * judgments can read values; `interactive` keeps only actionable nodes and
+ * is cheaper on screens with long lists.
+ */
+readonly snapshot?: 'full' | 'interactive' | undefined;
+```
+
+```ts
+mobile({ platform: 'android', snapshot: 'interactive' }); // default: 'full'
+```
+
+#### `settle`
+
+```ts
+/**
+ * How long the UI must hold still after a tap, fill, screen scroll, or
+ * back before the agent observes again, in milliseconds; `false` skips the
+ * wait. The wait keeps that observation off a transition frame; the runner's
+ * own polling (`expect`, actions waiting for their node) covers the rest,
+ * so a short window suffices. Default 150.
+ * Every frame of a running animation changes the tree, so a 150 ms
+ * window still catches a transition in flight; raise it for slow devices
+ * or apps that settle in stages, or lower it to 0 to keep only the first
+ * re-observation. A test's steps do not settle, except `device.back()`:
+ * `expect` verifies their outcome, and `transition` covers a control that is
+ * still arriving.
+ */
+readonly settle?: number | false | undefined;
+```
+
+```ts
+mobile({ platform: 'ios', settle: 300 }); // default: 150
+```
+
+#### `transition`
+
+```ts
+/**
+ * Wait before acting on a control that just appeared or moved, in
+ * milliseconds. Default 500. Accessibility bounds cannot tell a sliding
+ * control from a landed one (iOS reports the final frame at once, Android
+ * the frame in flight), so the control is found again in a fresh snapshot
+ * once the wait is over and acted on where it landed. Unmoved controls are
+ * acted on immediately only when keyboard visibility is unchanged. Opening
+ * or closing the keyboard also uses the remaining budget. Screen swipes in
+ * tests wait out the remaining budget before scrolling. Raise it for slower
+ * transitions.
+ */
+readonly transition?: number | undefined;
+```
+
+```ts
+mobile({ platform: 'ios', transition: 800 }); // default: 500
+```
+
+待機中にコントロールが変わった場合、アクションは自身のタイムアウト内で対象を探し直してから操作します。
+
+[`device`](#device) の `back`、`home`、`alert`、`dismissKeyboard`、`setOrientation`、`fold` は画面を変えるため、タップと同じくこの待機時間の対象となるアクションとして数えます。それらが表示した画面とともに現れるコントロールには、この時間が過ぎてから次のアクションを行います。
+
+`fill` と `clear` は、入力前にフィールドを読み直します。フィールドがない、機密状態が変わった、取得が不完全な場合は、変更を加える前に `NODE_STALE` を返し、新しい観測を得てから再試行します。入力欄ではない対象は `UNSUPPORTED_CAPABILITY` です。iOS の `other` は、プラットフォームが分類できなかった要素の型です。値またはテキストだけを持つ場合は入力対象になります。Compose Multiplatform や Flutter の独自描画フィールドが、そのように報告されることがあるためです。
+
+#### `videoTouches`
+
+```ts
+/**
+ * Whether a video recording draws agent-device's touch indicator where a
+ * test tapped. Default `true`. `false` records the plain screen, and skips
+ * the pass that draws the indicator once the recording stops: on a hosted
+ * daemon such as Expo Simulators' that pass can outlast the attempt's
+ * `cleanupTimeout`.
+ */
+readonly videoTouches?: boolean | undefined;
+```
+
+```ts
+mobile({ platform: 'ios', videoTouches: false }); // default: true
+```
+
+#### テスト対象のアプリ
+
+アプリはターゲットの `app` に設定します。`bundleId`、`appPath`、`launchArguments`、`permissions`、`identity`、`environment` は、[テスト対象のアプリ](/reference/config#the-app-under-test)で説明しています。
+
+```ts title="e2e.config.ts"
+export default {
+  targets: [{ name: 'ios', engine: mobile({ platform: 'ios' }), app: { appPath: './build/MyApp.app' } }],
+} satisfies E2EConfig;
+```
+
+- デバイスのターゲットには、`app.bundleId` または `app.appPath` が必要です。
+- `app.open()` はターゲットのアプリを新たに起動します。試行自体は何も起動しないため、テストは前のテストが残したアプリの状態から始まります。
+- ターゲットに [`app.linkBase`](/reference/config#linkbase) があれば、`app.open(path)` はパスをアプリ内のリンクとして開きます。なければ `app.open` にパスは渡せず、リンクは [`device.openLink`](#openlink) で開きます。
+- `app.appPath` は、スイートの実行対象となるビルドです。エンジンは自動ではインストールしません。スイートで指定した箇所で [`device.installApp()`](#installapp) を呼びます。デバイスプロバイダーは、リースしたデバイスにビルドをインストールします。
+- `bundleId` がなければ、インストールしたビルドのバンドル ID またはパッケージ名が、`app.open()` で起動するアプリになります。
+- バージョンを含むなど、実行ごとにビルドのパスが変わる場合は、名前が変わっても記録を再利用できるように `identity` を宣言してください。
+
+| エラー | 発生条件 |
+| --- | --- |
+| `INVALID_CONFIG` | 設定の読み込み時に、`app.bundleId` と `app.appPath` がどちらもない、未対応の `app.url` がある、`bundleId` にリンクがある（テストでは `device.openLink` を使います）、未知の権限名がある場合。 |
+| `UNSUPPORTED_CAPABILITY` | `app.bundleId` のないターゲットで、ビルドのインストール前に `app.open()`、`app.restart()`、`app.clearState()` を呼んだ場合。 |
+
+#### 起動引数と権限
+
+`app.launchArguments` と `app.permissions` は、指定アプリを新たに起動するたびに適用します。対象は `app.open()`、`app.restart()`、`app.clearState()` です。`app.clearState()` はデータとともに権限もリセットします。
+
+```ts title="e2e.config.ts"
+export default {
+  targets: [
+    {
+      name: 'pixel',
+      engine: mobile({ platform: 'android' }),
+      app: {
+        bundleId: 'com.example.app',
+        launchArguments: ['--ez', 'e2e', 'true'],
+        permissions: { camera: 'grant', notifications: 'deny' },
+      },
+    },
+  ],
+} satisfies E2EConfig;
+```
+
+- iOS は引数をアプリのプロセス（`ProcessInfo.processInfo.arguments`）に渡します。Android は `am start` に追加するため、`['--ez', 'e2e', 'true']` は真偽値の Intent extra になります。
+- 各権限の状態は `grant`、`deny`、`reset` です。iOS の `deny` は拒否を記録し、確認画面を出さずにアプリへ拒否を返します。Android では権限を取り消し、次にアプリが要求すると OS が再度確認します。
+- アプリを先に開かず、起動前にアプリ名を指定して権限を設定します。iOS は権限が変更された実行中のアプリを終了し、Android は権限を取り消されたアプリを終了するためです。
+- ウォームアップでは起動引数を渡さず、権限にも触れません。
+- [`device.openApp(app, { relaunch: true, launchArguments, permissions })`](#openapp) は、任意のアプリの 1 回の起動について同じことを行います。
+
+| エラー | 発生条件 |
+| --- | --- |
+| `INVALID_CONFIG` | `app.permissions` に `DevicePermission` 以外の権限名、または `grant`、`deny`、`reset` 以外の状態がある場合。権限名がタイプミスと思われる場合は、最も近い名前を示します。デバイスコマンドの実行前に失敗します。 |
+| `INVALID_ARGUMENT` | `device.openApp` で同じ誤りがある場合。 |
+
+#### 起動と準備
+
+デバイスは、実行ごとに 1 回、実行時間の計測開始前の `prepare` で起動します。そのため、CI でのコールドブートは `launchTimeout` に含まれません。
+
+- [`device`](#device-option) が、`prepare` で使うデバイスと、エンジンが宣言するワーカー数を決めます。
+- iOS では、`prepare` が agent-device の `prepare ios-runner` を使って各デバイスの自動化ランナーを起動します。初回起動の時間を最初のテストより前に済ませるためです。
+- その後、両プラットフォームとも、各デバイスでターゲットの `app.bundleId` を 1 回開きます。スイート自身がインストールするビルドは、最初の `app.open()` で起動します。以後も、テストが呼ぶたびに新たに起動し直します。
+- デバイスが起動できない場合や、ランナーが使用中、応答不能、監視タイマー超過の場合は、`prepare` で実行を終了します。
+- それ以外の理由でランナーが起動しない場合は、ログに記録して最初の試行に処理を委ねます。そのデバイスでは、この段階でアプリを開きません。
+
+各デバイスについて、失敗したステップも含め、準備の所要時間を 1 行で記録します。コールド状態の iOS シミュレーターでは次のようになります。
+
+```text
+ℹ booting E93FA5E5-1592-43C7-9149-F1B5FE0AD5F5 (1 of 1)
+ℹ E93FA5E5-1592-43C7-9149-F1B5FE0AD5F5: boot 36.3s, iOS runner 61.6s, open dev.e2e.benchmark 9.2s
+```
+
+- `boot` はデバイスの起動です。すでに起動済みでも数秒かかります。
+- `iOS runner` は自動化ランナーの起動で、iOS だけにあります。
+- `open <app>` はアプリを前面に出し、コールド状態のデバイスでは起動も行います。上記の理由で開く操作を省略したデバイスでは、この項目はありません。
+
+通常のアプリ起動失敗は独立した行に記録し、実行を続けます。この行はデバイスの所要時間の行より先に表示し、所要時間の行にも失敗した `open <app>` ステップを載せます。
+
+```text
+ℹ E93FA5E5-1592-43C7-9149-F1B5FE0AD5F5: dev.e2e.not.installed did not open (open dev.e2e.not.installed failed: Simulator device failed to launch dev.e2e.not.installed. Hint: The app bundle is not installed on this simulator. Run install before open.); the first attempt opens it
+```
+
+<Note>
+処理中のタップ、ダブルタップ、フォーカス、チェック、チェック解除は、ステップが完了を待つのをやめた場合や実行が中断された場合にキャンセルします。キーボードのヒントを閉じるタップも対象です。
+
+すでにデバイスに送信した入力は、その後に完了することがあります。ほかのコマンドは、呼び出し元のタイムアウト後も続くことがあり、次の試行はそれらの完了を待ちます。
+</Note>
+
+#### 機能
+
+| 契約のメンバー | デバイスでの動作 |
+| --- | --- |
+| `observe` | 矩形情報付きのアクセシビリティツリー。[ロール](#roles)の表に従って要素の型をロールに対応付けます。`Switch`、`CheckBox`、Android の `RadioButton` は、デバイスが報告する `checked` 状態を持ちます。`SecureTextField` と、UIAutomator が `password` と判定した Android のフィールドは、機密の `textbox` です。iOS のフィールドはラベルと同じ値も保持します（ラベルのないフィールドにはテキストから名前を付けます）。Android がテキストビューのラベルを値にも重複して報告した場合は、値の方を除きます。アクセシビリティ識別子（iOS）またはリソース ID（Android）がノードの `testId` です。Android のノード名には、アプリが設定した content description（React Native の `accessibilityLabel`）、なければテキストを使います。`text` は表示内容なので、ラベル付きテキストビューや入力済みフィールドは、`getByLabel` ではラベル、`getByText` ではテキストで見つかります。フィールドのヒントは、表示中かどうかにかかわらず `placeholder` 属性です。Compose Multiplatform は iOS でプレースホルダーを報告しません。空のフィールドは、描画するテキストをラベルに追加し（`Name, Ada Lovelace`）、1 つの `StaticText` の子を持ちます。そのテキストをフィールドの `placeholder` とし、子は除外します。空のフィールドには値がありません。Android は表示中のヒントに印を付け、XCTest は空の iOS フィールドのプレースホルダーを値として報告します。そのため、値が前後の空白を除いたプレースホルダーと等しい iOS フィールドは、実際に同じ文字列を入力した場合も含めて空と読みます。Android の `rect` とすべての座標は画面の物理ピクセルです。これはプラットフォームではなく agent-device の仕様で、報告された画面密度はまだ適用していません。Android のステータスバーとナビゲーションバーは除外します。画面端にある全幅の `com.android.systemui` ウィンドウと、その帯の中で agent-device が個別に報告する細いステータスアイコン（時計、電波、電池）が対象です。通知シェード、システムダイアログ、ヘッドアップ通知など左右端から内側にあるポップアップは残します。要求された場合は、すべての機密ノードの範囲を黒く塗った画像を返します。 |
+| `perform` | `tap`、`doubleTap`、`longPress`、`fill`、`clear`、`hover`、`check`、`uncheck`、`press`（`Enter`、`Space`、または 1 文字）、`swipe`、`dragTo`、編集可能なフィールドへの `focus`。`switch` や `checkbox` のタップは最も内側のコントロールを操作します。UIKit が設定行全体をラベル付きの switch とし、本物のトグルを子として報告するためです。`check` と `uncheck` には `checked` 状態が必要です。両プラットフォームの switch と、Android のネイティブ `CheckBox` はこれを報告します。React Native のチェックボックスやラジオボタンは、アプリが `accessibilityState.checked` を設定した場合だけ報告します。状態のないコントロールは `UNSUPPORTED_CAPABILITY` になるため、代わりにタップしてください。`doubleTap` は 2 回押す操作で、iOS では 284〜285 ms 間隔です（agent-device の XCTest タップの周期）。agent-device 自身のダブルタップジェスチャーは、React Native の `Pressable` には 1 回の押下として届くためです。300 ms 以下の検出期間を持つ実装では、2 回の単独タップと判定されることがあります。`longPress` はテストで `duration` を渡さない限り 1 秒押し続けます。React Native の `Pressable` の `delayLongPress`（500 ms）や、アプリが設定する長めの閾値を超えるためです。agent-device 自身のデフォルトは短く、そうした対象ではタップになります。`selectOption`、`setInputFiles`、`scrollIntoView`、`secondaryTap`、`tapModifiers` は宣言していないため、`tap` や `doubleTap` に `modifiers` を渡すと `UNSUPPORTED_CAPABILITY` です。新しいスナップショットで置き換えられたノードへのアクションは、別の要素を操作せず、対象を探し直します。 |
+| `performAt` | ノードを指定しない画面座標での `tap`、`doubleTap`、`longPress`、`swipeTo`。`screen.tapAt`、`screen.doubleTapAt`、`tap({ position })`、`screen.swipe({ from, to })`、エージェントの `tap_at` で、ツリーにないコントロールも操作できます。座標だけの `hover`、`secondaryTap`、`dragTo` はありません。タッチではノードなしのこれらの操作がないため、`hover_at` にはツリー内のコントロールが必要です。 |
+| `keyboard` | フォーカス中のフィールドへの `type` と `press`。エージェントの対象なしの `type` と `press`、`type_at` と `press_at` のフォールバック、および `dismiss`（エージェントの `dismiss_keyboard`）で使います。 |
+| `locate` | すべての `screen` クエリ。デバイスはテキストとラベルを親にも重複して報告するため、テキストとラベルのクエリは最も内側の一致を返します（React Native の入力欄は、ホストビューと内部のフィールドの両方にラベルがあります）。Android のテスト ID クエリは、文字列でも RegExp でも、画面上に完全な ID との一致がなければ `<package>:id/` 接頭辞を除いたリソース ID にも一致します。フレームワークの `android` 以外の全パッケージが対象です。`screen.locator('id=…')` は agent-device のセレクターで、完全な ID を指定します。 |
+| `validateApp` | `app.bundleId` または `app.appPath` が必須です。`app.url` は現時点では拒否し、そのプラットフォームのデバイスからこのマシンへ接続する方法を案内します。どちらかを持つターゲットは `native-app` なので、`requires: ['native-app']` でデバイスのターゲットを選択できます。 |
+| `session` | `back`、`restart`、`reset`、`openLink`。`openLink` は `app.linkBase` のあるターゲットで `app.open(path)` から使います。`open` はありません。パスなしの `app.open()` は `restart` で指定アプリを新たに起動します。エージェントの `navigate` は使えず、ディープリンクや Web リンクは `device.openLink(url)` で開きます。 |
+| `artifacts` | 伏せ字処理済みのスクリーンショットを `screenshots/NNN-<label>.png` に保存します。処理できない場合は書き込まずに失敗します。試行の[動画モード](/reference/config#video)が録画する場合は、`video/video.mp4` またはデバイスプロバイダー自身の録画を保存します。 |
+| `location` | リプレイキャッシュの基準となる `<bundle id> / <screen title>`。タイトルは、iOS ではナビゲーションバー、Android ではツールバーのものです。 |
+| `state` | 宣言していません。`test.setup` と `session:` は使えません。 |
+
+### デバイス
+
+`device` フィクスチャは、決定論的にデバイスを管理します。テストから直接呼び、デバイスの状態を準備または確認します。
+
+```ts
+test('offline banner', { platforms: ['android'] }, async ({ app, device, screen }) => {
+  await app.open();
+  await device.setNetwork('offline');
+  await expect(screen.getByText('You are offline')).toBeVisible();
+  await device.setNetwork('online');
+});
+```
+
+| メンバー | 戻り値 |
+| --- | --- |
+| [`unstable_raw`](#unstable_raw) | `DeviceSession` |
+| [`locator`](#locator) | `Locator` |
+| [`setNetwork`](#setnetwork) | `Promise<void>` |
+| [`setAirplaneMode`](#setairplanemode) | `Promise<void>` |
+| [`setPermission`](#setpermission) | `Promise<void>` |
+| [`setLocation`](#setlocation) | `Promise<void>` |
+| [`clearLocation`](#clearlocation) | `Promise<void>` |
+| [`setAppearance`](#setappearance) | `Promise<void>` |
+| [`setOrientation`](#setorientation) | `Promise<void>` |
+| [`fold`](#fold) | `Promise<void>` |
+| [`setBiometrics`](#setbiometrics) | `Promise<void>` |
+| [`enrollBiometrics`](#enrollbiometrics) | `Promise<void>` |
+| [`installApp`](#installapp) | `Promise<InstalledApp>` |
+| [`openApp`](#openapp) | `Promise<void>` |
+| [`openLink`](#openlink) | `Promise<void>` |
+| [`closeApp`](#closeapp) | `Promise<void>` |
+| [`clearKeychain`](#clearkeychain) | `Promise<void>` |
+| [`foregroundApp`](#foregroundapp) | `Promise<ForegroundApp>` |
+| [`home`](#home) | `Promise<void>` |
+| [`back`](#back) | `Promise<void>` |
+| [`alert`](#alert) | `Promise<void>` |
+| [`dismissKeyboard`](#dismisskeyboard) | `Promise<void>` |
+| [`clipboard`](#clipboard) | `Promise<string>` |
+| [`setClipboard`](#setclipboard) | `Promise<void>` |
+
+すべての非同期メソッドは `device.<method>` ステップとして記録し、`config.actionTimeout` で制限します。`back`、`home`、`alert`、`dismissKeyboard`、`setOrientation`、`fold` は、[`transition`](#transition) の待機時間の対象となるアクションとして数えます。以下の各項目にメンバーの宣言、[型](#device-fixture)にそこで使う型を載せています。
+
+| エラー | 発生条件 |
+| --- | --- |
+| `APP_NOT_OPEN` | セッションが失われた場合。 |
+| `ACTION_FAILED` | `actionTimeout` に達した場合。 |
+| `UNSUPPORTED_CAPABILITY` | プラットフォームがコマンドを実行できない場合。 |
+| `ENGINE_FAILURE` | それ以外のエラー。agent-device のメッセージを伴います。デバイス自身が報告するタイムアウト（起動やランナー接続など）は、元の説明とヒントを保持します。使用中または応答不能の iOS 自動化ランナーは、その状態と復旧方法を示します（[トラブルシューティング](/mobile#troubleshooting)を参照）。 |
+
+#### `unstable_raw`
+
+```ts
+/**
+ * The raw driver session this test drives, for what the methods here do
+ * not cover. Calls through `client` bypass e2e: they are not steps, so the
+ * report and trace leave them out, the agent's cache does not replay them,
+ * their arguments reach the driver unredacted, and nothing waits for the
+ * screen to settle after one. Unstable: it may change or go away in any
+ * release.
+ */
+readonly unstable_raw: DeviceSession;
+```
+
+```ts
+const { client, selection } = device.unstable_raw;
+await client.apps.list(selection);
+```
+
+`client` の型は、`@e2e-dev/mobile` がエクスポートする `DeviceSessionClient` です。操作は不安定な API であり、どのリリースでも変更される可能性があります。ワーカーがセッションを破棄した後に `unstable_raw` または `client` を読むと、`INVALID_STATE` をスローします。
+
+#### `locator`
+
+```ts
+/**
+ * A locator from an agent-device selector (`'id=SW_VERSION_SPECIFIER'`,
+ * `'role=text label="26.2"'`), for nodes the closed `screen` query
+ * vocabulary cannot name. Same polling and strictness as any locator.
+ */
+locator(selector: string): Locator;
+```
+
+```ts
+await expect(device.locator('role=navigation-bar id=About')).toBeVisible();
+await expect(device.locator('role=text label="iOS Version"')).toHaveText('iOS Version');
+await device.locator('id=SW_VERSION_SPECIFIER role=button').tap();
+```
+
+セレクターの指定項目とルールは、`agent-device
+find ... list` が使う agent-device のものです。
+
+- 指定項目: `id`、`role`、`text`、`label`、`value`、`appname`、`windowtitle`。フラグは `visible`、`hidden`、`editable`、`selected`、`focused`、`enabled`、`hittable` です。
+- `role` は `agent-device snapshot` が表示する agent-device の種別です。`button`、`text`、`text-field`、`navigation-bar`、`scroll-area`、`switch`、`image` などで、`getByRole` のロール（`textbox`）ではありません。
+- テキストは連続する空白をまとめ、大文字・小文字を区別せずに比較します。
+- `visible` は、ノードをヒットできるか、空ではないフレームを持つことを意味します。`hidden` はその逆です。
+- `text` は、ラベル、値、識別子のうち最初の空でないものを読みます。
+
+<Note>
+複数ノードに一致するセレクターへのアクションは失敗します。曖昧な `||` の選択肢を飛ばす agent-device のアクションとは異なります。
+</Note>
+
+#### `setNetwork`
+
+```ts
+/**
+ * Switches an Android device's Wi-Fi. Cellular data stays on, so an
+ * emulator hands the app over to its cellular link; `setAirplaneMode(true)`
+ * cuts both. On iOS `offline` is `UNSUPPORTED_CAPABILITY`, since a
+ * simulator shares the Mac's network and simctl can only repaint its status
+ * bar; `online` sends nothing there, so a cleanup hook shared with Android
+ * passes.
+ */
+setNetwork(state: 'online' | 'offline'): Promise<void>;
+```
+
+```ts
+await device.setNetwork('offline');
+await device.setNetwork('online');
+```
+
+| エラー | 発生条件 |
+| --- | --- |
+| `UNSUPPORTED_CAPABILITY` | iOS で `offline` を指定した場合。 |
+
+#### `setAirplaneMode`
+
+```ts
+/**
+ * Switches an Android device's airplane mode, Wi-Fi and cellular together;
+ * Android 11 or newer. On iOS, as for `setNetwork`, `true` is
+ * `UNSUPPORTED_CAPABILITY` and `false` sends nothing.
+ */
+setAirplaneMode(enabled: boolean): Promise<void>;
+```
+
+```ts
+await device.setAirplaneMode(true);
+```
+
+| エラー | 発生条件 |
+| --- | --- |
+| `UNSUPPORTED_CAPABILITY` | iOS で `true` を指定した場合。 |
+
+#### `setPermission`
+
+```ts
+/**
+ * Grants, denies, or resets one permission for the pinned app, which need
+ * not be running. A change terminates a running app on iOS, a revoke one
+ * on Android, so it goes before the `app.open()` a test starts with.
+ */
+setPermission(permission: DevicePermission, state: PermissionState): Promise<void>;
+```
+
+```ts
+await device.setPermission('location', 'deny');
+await app.open();
+```
+
+- `permission` は [`DevicePermission`](#device-fixture)、`state` は `grant`、`deny`、`reset` のいずれかです。
+
+| エラー | 発生条件 |
+| --- | --- |
+| `INVALID_ARGUMENT` | `DevicePermission` にない権限名、または `grant`、`deny`、`reset` 以外の状態の場合。権限名がタイプミスと思われる場合は最も近い名前を示します。デバイスコマンドの実行前に失敗します。 |
+
+#### `setLocation`
+
+```ts
+/** Sets the simulated location, switching location services on first on Android. */
+setLocation(coordinates: { latitude: number; longitude: number }): Promise<void>;
+```
+
+```ts
+await device.setLocation({ latitude: 52.23, longitude: 21.01 });
+```
+
+#### `clearLocation`
+
+```ts
+/** Turns simulated location off; on Android that is location services off, until the next `setLocation`. */
+clearLocation(): Promise<void>;
+```
+
+```ts
+await device.clearLocation();
+```
+
+#### `setAppearance`
+
+```ts
+/** Sets the system appearance. */
+setAppearance(mode: 'light' | 'dark'): Promise<void>;
+```
+
+```ts
+await device.setAppearance('dark');
+```
+
+#### `setOrientation`
+
+```ts
+/** Rotates the device. */
+setOrientation(orientation: DeviceOrientation): Promise<void>;
+```
+
+```ts
+await device.setOrientation('landscape-left');
+```
+
+- `'portrait'`、`'portrait-upside-down'`、`'landscape-left'`、`'landscape-right'` のいずれかです。
+
+#### `fold`
+
+```ts
+/**
+ * Puts a foldable simulator or emulator in a hinge pose. On the iPhone Duo
+ * it resolves once agent-device reads the angle back from CoreDevice at
+ * that pose, typically 10 to 16 seconds later; `closed` lights the outer
+ * display, `half-open` (a 130° book) and `open` light the inner one. On a
+ * foldable Android emulator it sets the emulator console posture and
+ * resolves once the guest commits the matching device state, within a few
+ * seconds; `half-open` is the profile's own angle there (90° on the Pixel
+ * folds), and a fold to the cover display dismisses the lock screen it
+ * raises. Either way the app window changes size, so the next observation
+ * reads a new screen. Any device without a hinge is `UNSUPPORTED_CAPABILITY`.
+ */
+fold(pose: FoldPose): Promise<void>;
+```
+
+```ts
+await device.fold('half-open');
+```
+
+| エラー | 発生条件 |
+| --- | --- |
+| `UNSUPPORTED_CAPABILITY` | デバイスにヒンジがない場合。 |
+
+#### `setBiometrics`
+
+```ts
+/**
+ * Simulates one biometric attempt on the open app. `faceid` and `touchid`
+ * work on an iOS simulator; `fingerprint` works on an Android emulator and
+ * on a phone that exposes `cmd fingerprint`. Any other pair is
+ * `UNSUPPORTED_CAPABILITY`. An Android app's prompt reads the touch
+ * only once the device has a screen lock and an enrolled fingerprint,
+ * which `enrollBiometrics` cannot set up.
+ */
+setBiometrics(sensor: BiometricSensor, result: 'match' | 'nonmatch'): Promise<void>;
+```
+
+```ts
+await device.setBiometrics('faceid', 'nonmatch');
+```
+
+- `sensor` は `'faceid'`、`'touchid'`、`'fingerprint'` のいずれかです。
+
+| エラー | 発生条件 |
+| --- | --- |
+| `UNSUPPORTED_CAPABILITY` | iOS の `fingerprint`、Android または iOS 実機の `faceid` と `touchid`、`cmd fingerprint` のない Android 端末の `fingerprint`。 |
+
+#### `enrollBiometrics`
+
+```ts
+/**
+ * Enrolls or unenrolls the simulator's Face ID or Touch ID. On Android or a
+ * physical iOS device it is `UNSUPPORTED_CAPABILITY`.
+ */
+enrollBiometrics(sensor: 'faceid' | 'touchid', enrolled: boolean): Promise<void>;
+```
+
+```ts
+await device.enrollBiometrics('touchid', true);
+```
+
+| エラー | 発生条件 |
+| --- | --- |
+| `UNSUPPORTED_CAPABILITY` | Android または iOS 実機で呼び出した場合。 |
+
+#### `installApp`
+
+```ts
+/**
+ * Installs a build (an iOS `.app` bundle or an Android `.apk`, resolved
+ * against the project root) on the device; without a path, the target's
+ * `app.appPath`. The engine installs nothing on its own, so a suite that runs
+ * against a build calls this once per device, in a fixture or a test.
+ * `reinstall: true` removes the app first so it starts with no data; a
+ * plain install replaces the binary and keeps its data. Resolves to the
+ * identity to `openApp` it by, which becomes the app `app.open()` launches
+ * when the target's build is installed and no `app.bundleId` is pinned.
+ */
+installApp(appPath?: string, options?: InstallAppOptions): Promise<InstalledApp>;
+```
+
+```ts
+await device.installApp(); // the target's app.appPath
+const { app } = await device.installApp('./build/MyApp.app', { reinstall: true });
+await device.openApp(app);
+```
+
+- 実行対象のビルドや、アップグレード手順で使う別のビルドのインストールに使います。
+- 解決する ID は、agent-device がビルドから読んだバンドル ID またはパッケージ名です。取得できなければ、渡した `app` を使います。
+
+| エラー | 発生条件 |
+| --- | --- |
+| `APP_NOT_OPEN` | パスを渡さず、ターゲットにも `app.appPath` がない場合。または `reinstall: true` で `app` を渡さず、対象アプリも決まっていない場合（`app.bundleId` がなく、ビルドもまだ未インストール）。 |
+| `ENGINE_FAILURE` | agent-device が ID を報告せず、`app` も渡されていない場合。ファイルパスを ID として返す代わりに失敗します。[トラブルシューティング](/mobile#troubleshooting)を参照してください。 |
+
+#### `openApp`
+
+```ts
+/**
+ * Brings an app to the foreground by bundle id, package, or display name;
+ * `relaunch` restarts it fresh. `launchArguments` and `permissions` apply
+ * to this launch alone; the target's configured ones apply to a `relaunch`
+ * of the pinned app, and to no foreground-only open. A link is
+ * `INVALID_ARGUMENT` (`file:`, `data:`, `javascript:`, `view-source:`,
+ * `blob:`, and `filesystem:` are `POLICY_DENIED`): `openLink` opens one.
+ */
+openApp(app: string, options?: OpenAppOptions): Promise<void>;
+```
+
+```ts
+await device.openApp('Settings');
+await device.openApp('com.example.app', { relaunch: true, permissions: { camera: 'grant' } });
+```
+
+- agent-device は `scheme:rest` 形式をすべて URL として開くため、リンクはデバイスへ渡す前に拒否します。
+
+| エラー | 発生条件 |
+| --- | --- |
+| `POLICY_DENIED` | `file:`、`data:`、`javascript:`、`view-source:`、`blob:`、`filesystem:` のリンク。 |
+| `INVALID_ARGUMENT` | それ以外のリンクの場合。`openLink` を案内します。または無効な権限名や状態の場合（[起動引数と権限](#launch-arguments-and-permissions)を参照）。 |
+
+#### `openLink`
+
+```ts
+/**
+ * Opens a deep link (`myapp://orders/42`) or a web link (`https://...`)
+ * into `app` (default: the pinned app), which the session observes
+ * afterwards. iOS launches the app for a web link and then opens the URL;
+ * a web link the app does not claim goes to Safari, and the next
+ * observation brings the app back. Android starts the link on that
+ * package. Without an app, Android lets the OS route the link; iOS needs
+ * one (`INVALID_ARGUMENT` without). `file:`, `data:`, `javascript:`,
+ * `view-source:`, `blob:`, and `filesystem:` links are `POLICY_DENIED`.
+ */
+openLink(url: string, options?: { app?: string }): Promise<void>;
+```
+
+```ts
+await device.openLink('myapp://orders/42');
+await expect(screen.getByText('Order #42')).toBeVisible();
+```
+
+- マジックリンクでのサインインや、ディープリンクのルートに使います。
+- アプリを指定しない場合、Android は検証済み App Links の所有アプリまたはブラウザへリンクを送り、セッションはそれを受け取ったパッケージを追跡します。
+- デバイスのリンクは任意のアプリのカスタムスキームを使えるため、Web のように http(s) だけを許可するのではなく、下記のスキームを拒否します。
+- レポートでは、ログイン情報やマジックリンクのトークンが入り得る userinfo（`user:password@` または `token@`）、クエリ、フラグメントを除いて表示します。パースできない文字列は、入力どおりには表示せず `<link>` と表示します。
+- リプレイキャッシュは、リンクの到達先の位置情報を基準にします。[デバイスのリプレイキャッシュ](#replay-cache-on-a-device)を参照してください。
+
+| エラー | 発生条件 |
+| --- | --- |
+| `POLICY_DENIED` | `file:`、`data:`、`javascript:`、`view-source:`、`blob:`、`filesystem:` のリンク。 |
+| `INVALID_ARGUMENT` | iOS でアプリを指定しない場合。どのアプリにも紐付かない起動では、観測するアプリセッションが残りません。 |
+| `INVALID_ARGUMENT` | 絶対 URL としてパースできない文字列。クエリ、パス、userinfo にマジックリンクのトークンが含まれる可能性があるため、メッセージには入力の一部も表示しません。 |
+
+#### `closeApp`
+
+```ts
+/**
+ * Terminates the session's app and ends the session, so the next
+ * `openApp` launches it fresh. Until then the screen is unobservable and
+ * `foregroundApp` is `APP_NOT_OPEN`.
+ */
+closeApp(): Promise<void>;
+```
+
+```ts
+await device.closeApp();
+await device.openApp('com.example.app'); // launches fresh, on its first screen
+```
+
+- 次の `openApp` までに screen クエリを実行した場合も `APP_NOT_OPEN` です。
+
+#### `clearKeychain`
+
+```ts
+/**
+ * Resets the simulator's keychain, every app's, since simctl has no
+ * per-app reset: what `app.clearState()` leaves behind (a session token, a
+ * Firebase sign-in). iOS simulator only; Android is
+ * `UNSUPPORTED_CAPABILITY`. Launch the app afterwards to see it signed out.
+ */
+clearKeychain(): Promise<void>;
+```
+
+```ts
+await device.clearKeychain();
+await app.open(); // see it signed out
+```
+
+| エラー | 発生条件 |
+| --- | --- |
+| `UNSUPPORTED_CAPABILITY` | Android の場合。デバイスコマンドを実行する前に失敗します。 |
+
+#### `foregroundApp`
+
+```ts
+/**
+ * The app the session is on. iOS answers from the session, not the
+ * device, so it names the app the session opened even after `home()`;
+ * Android reads the device's foreground activity. `APP_NOT_OPEN` once
+ * `closeApp` ended the session.
+ */
+foregroundApp(): Promise<ForegroundApp>;
+```
+
+```ts
+const { name, bundleId } = await device.foregroundApp();
+```
+
+- iOS では、agent-device の `appstate` はデバイス全体の状態を返しません。
+
+| エラー | 発生条件 |
+| --- | --- |
+| `APP_NOT_OPEN` | `closeApp` でセッションを終了した場合。 |
+
+#### `home`
+
+```ts
+/** Sends the device to its home screen. */
+home(): Promise<void>;
+```
+
+```ts
+await device.home();
+```
+
+#### `back`
+
+```ts
+/** Navigates back once (in-app back). */
+back(): Promise<void>;
+```
+
+```ts
+await device.back();
+```
+
+#### `alert`
+
+```ts
+/** Accepts or dismisses the visible system alert. */
+alert(action: 'accept' | 'dismiss'): Promise<void>;
+```
+
+```ts
+await device.alert('accept');
+```
+
+#### `dismissKeyboard`
+
+```ts
+/**
+ * Dismisses the soft keyboard: the keyboard's own dismiss key where it has
+ * one (Android, iPad), else the way a user does it on an iPhone, a short
+ * drag that a scroll view turns into a dismissal, horizontal first and
+ * vertical second, stopping as soon as the keyboard is gone. Each drag
+ * starts at the point nearest the centre of the screen that no control in
+ * the captured accessibility tree covers, inside a scroll view when the
+ * screen has one, to avoid pressing a button or toggling a checkbox. A
+ * control the tree leaves out, such as pressable text, can still be hit.
+ * The simulator's "Speed up your typing" tip goes through its Continue
+ * button first. A screen with no clear point
+ * above the keyboard, or a keyboard that outlives both drags, fails with
+ * `UNSUPPORTED_CAPABILITY`; the message names the alternatives (the app's
+ * own Done or close control, or pressing Enter on the field).
+ */
+dismissKeyboard(): Promise<void>;
+```
+
+```ts
+await device.dismissKeyboard();
+```
+
+| エラー | 発生条件 |
+| --- | --- |
+| `UNSUPPORTED_CAPABILITY` | キーボードより上のすべての点（画面にスクロールビューがあれば、その中）がコントロール上にある場合、または 2 回のドラッグ後もキーボードが残る場合。 |
+
+#### `clipboard`
+
+```ts
+/** Reads the clipboard. */
+clipboard(): Promise<string>;
+```
+
+```ts
+const copied = await device.clipboard();
+```
+
+| エラー | 発生条件 |
+| --- | --- |
+| `UNSUPPORTED_CAPABILITY` | Android のビルドに、クリップボードサービスのシェルコマンドがない場合。 |
+
+#### `setClipboard`
+
+```ts
+/** Writes the clipboard. */
+setClipboard(text: string): Promise<void>;
+```
+
+```ts
+await device.setClipboard('SAVE20');
+```
+
+| エラー | 発生条件 |
+| --- | --- |
+| `UNSUPPORTED_CAPABILITY` | Android のビルドに、クリップボードサービスのシェルコマンドがない場合。 |
+
+### エージェントのツール
+
+`@e2e-dev/mobile/tools` の `mobileTools(...engines)` は、エージェントの `tools` にデバイスのツールを追加します。
+
+```ts
+tools: mobileTools(iphone, pixel),
+```
+
+- エンジンを少なくとも 1 つ渡します。すべてのデバイスエンジンを 1 回の呼び出しで渡してください。ツールは現在の試行のエンジンを使います。
+
+| ツール | リプレイ | 用途 |
+| --- | --- | --- |
+| `open_app` | 中断 | ID でアプリを前面に出します。必要に応じて再起動もできます。ID なしではターゲットのアプリに戻ります。リンクは `device.openApp` と同じく拒否します。 |
+| `swipe` | 中断 | 論理ピクセルで指定した 2 点間を自由にスワイプします。 |
+| `alert` | 中断 | システムアラートを承認または閉じます。ツリーにボタンがあれば、リプレイ可能なタップを優先してください。 |
+
+| エラー | 発生条件 |
+| --- | --- |
+| `INVALID_STATE` | `mobile()` が返したものではないエンジン。設定内では読み込みが `CONFIG_LOAD_FAILED` で失敗し、メッセージにこのエラーも含めます。 |
+
+組み込みエージェントのステップ中にツールが失敗すると、呼び出しの結果として `Tool "<name>" failed: <message>` をモデルに返し、ステップは続行します。`open_app` は、アプリ名を指定せず、ターゲットに `app.bundleId` もなく、`app.appPath` のビルドがまだインストールされていない場合（`device.installApp()` もデバイスプロバイダーによるインストールもない）、`INVALID_STATE` で失敗します。未インストールのアプリやリンクを指定すると `INVALID_ARGUMENT`、禁止スキームのリンクなら `POLICY_DENIED` です。デバイスの試行が動いていない場合、または 1 つのワーカーで複数のデバイス試行が動いている場合は、どのツールも `INVALID_STATE` になります。
+
+標準の操作にはツールパックは不要です。エンジンが宣言するアクションにより、エージェントは次を使えます。
+
+- `tap`、`double_tap`、`long_press`、`hover`、`type`、`press`、`check`、`scroll`、`drag`、`text` による `scroll_to`（そのテキストの行が描画されるまで一覧を送る）、`back`、`dismiss_keyboard`。
+- 画像ツールの `screenshot`、`tap_at`、`hover_at`（ツリー内のコントロールのみ）、`drag_at`（ツリー内の異なる 2 コントロール間のみ）、`type_at`、`press_at`。座標操作では、アクセシビリティツリーにないコントロールもタップできます。
+- ステップが宣言したシークレットだけを入力する `type_secret`。
+
+デバイスには `right_click`、`select`、ノード ID による `scroll_to`、`upload`、`navigate` はなく、`select_at` も提供しません。
+
+<Note>
+エンジンがマスクを確認できない画像は、`MASKING_UNPROVEN` として送信を差し止めます。アクセシビリティ情報の取得失敗では、観測を停止します。デバイスのスクリーンショットのマスクは、その取得結果にある機密フィールドの範囲に依存するため、取得できなければ代替のスクリーンショットが安全だと確認できません。
+</Note>
+
+#### `unstable_deviceSession`
+
+`@e2e-dev/mobile/tools` の `unstable_deviceSession(...engines)` は、実行中の試行の `DeviceSession` をカスタムツールに渡します。テストが [`device.unstable_raw`](#unstable_raw) から読むものと同じオブジェクトです。`client` はエンジンのデーモン、リース、ワーカーごとのセッションに紐付き、e2e がまだラップしていない機能を使えます。`client` の型は `DeviceSessionClient` です。以下の例では、現在のドライバーが `settings.update` に対応していることを前提としています。
+
+```ts
+import { tool } from 'ai';
+import { z } from 'zod';
+import { defineTool } from 'e2e/agent';
+import { unstable_deviceSession } from '@e2e-dev/mobile/tools';
+
+const mobileData = defineTool(
+  tool({
+    description: 'Turn cellular mobile data on or off. Wi-Fi is not affected.',
+    inputSchema: z.object({ on: z.boolean() }),
+    execute: async ({ on }) => {
+      const { client, selection } = unstable_deviceSession(iphone, pixel);
+      await client.settings.update({ ...selection, setting: 'mobile-data', state: on ? 'on' : 'off' });
+      return on ? 'mobile data is on' : 'mobile data is off';
+    },
+  }),
+  { mutates: true, platforms: ['android'] },
+);
+
+tools: { ...mobileTools(iphone, pixel), mobileData },
+```
+
+- `mobileTools` と同じく、設定で宣言したすべてのデバイスエンジンを渡してください。試行の外では `INVALID_STATE` をスローします。
+- エンジン自身の呼び出しと同じように、呼び出しに `selection` をスプレッドしてください。セッションでアプリを開く前でも、ワーカーのデバイスに到達できます。
+- クライアントの呼び出しはステップになりません。レポートに表示するのはツール呼び出しであり、クライアントが実行した内容ではありません。キャッシュのリプレイでも `mutates: true` のツールはライブ実行します。
+- `unstable_raw` と同じく、クライアントの呼び出しは e2e の保護処理を通りません。ツールが返すスナップショットやスクリーンショットは、シークレット入力後も伏せ字化やマスクをしません。呼び出し後に画面の安定も待ちません。デバイスを変更する呼び出しを行うツールは、`mutates: true` を宣言する必要があります。
+- `unstable_raw` と同じく、どのリリースでも変更される可能性があります。
+
+## ロール
+
+デバイスの `getByRole` は、各要素型に対応するロールで検索します。表にない型は、小文字のケバブケース（`picker-wheel`）で自身の名前を維持するため、その名前が `getByRole` のロール（`group`、`table` など）でもある場合にだけ一致します。プラットフォームが編集可能と報告するノードは、すでに `combobox` に対応している場合を除き、`textbox` になります。
+
+| ロール | iOS | Android |
+| --- | --- | --- |
+| `button` | `Button` | `Button`, `ImageButton`, `MaterialButton` |
+| `link` | `Link` | |
+| `textbox` | `TextField`, `SearchField`, `TextView`, `SecureTextField` | `EditText`, `AutoCompleteTextView`, `TextInputEditText`, `SearchView` |
+| `combobox` | | `Spinner` |
+| `switch` | `Switch`, `Toggle` | `Switch`, `SwitchCompat`, `SwitchMaterial`, `ToggleButton` |
+| `checkbox` | `CheckBox` | `CheckBox`, `MaterialCheckBox` |
+| `radio` | `RadioButton` | `RadioButton` |
+| `radiogroup` | `RadioGroup` | `RadioGroup` |
+| `slider` | `Slider` | `SeekBar`, `Slider` |
+| `spinbutton` | `Stepper` | `NumberPicker` |
+| `progressbar` | `ProgressIndicator` | `ProgressBar` |
+| `status` | `ActivityIndicator` | |
+| `image` | `Image`, `ImageView` | `ImageView` |
+| `heading` | `Heading`, `Header` | 見出しのフラグが付いたビュー |
+| `list` | | `RecyclerView`, `ListView`, `AbsListView`（React Native の `FlatList`）, `GridView` |
+| `listitem` | `Cell`, `ListItem`, `TableCell`, `CollectionCell` | |
+| `row` | `TableRow` | |
+| `tablist` | `TabBar`, `TabGroup`, `SegmentedControl` | `TabLayout`, `TabWidget`, `BottomNavigationView` |
+| `tab` | `Tab`, `TabBarItem`, `TabBarButton`、および `TabBar` または `SegmentedControl` 内の `Button` | `TabLayout$TabView`, `BottomNavigationItemView` |
+| `menu` | `Menu` | |
+| `menubar` | `MenuBar` | |
+| `menuitem` | `MenuItem`, `MenuBarItem`, `MenuButton` | |
+| `toolbar` | `Toolbar` | `Toolbar` |
+| `alert` | `Alert` | |
+| `dialog` | `Dialog`, `Sheet`, `ActionSheet` | |
+| `navigation` | `NavigationBar` | |
+| `group` | | `ScrollView`, `ViewGroup`, `View`, `ComposeView`, `ViewFactoryHolder`, `CardView`、その他すべての `*Layout` |
+
+React Native は、プラットフォームに対応する型がないロールを、iOS ではアクセシビリティの値（`checkbox, unchecked`）、Android ではロールの説明（`Tab List`）に書き込みます。次の説明を持つノードは、型から決まるロールの代わりにそのロールを使います。`alert`、`checkbox`、`combo box`、`menu`、`menu bar`、`menu item`、`progress bar`、`radio button`、`radio group`、`scroll bar`、`spin button`、`switch`、`tab`、`tab list`、`timer`、`tool bar`。`scroll bar` と `timer` が与える `scrollbar` と `timer` は、`getByRole` のロールではありません。iOS では `Other` だけがこれらを持ち、ロールに続く状態の語から `checked` と `expanded` を設定します。それらの後に残る部分だけがノードの値になります。
+
+iOS の `StaticText` と `Text`、Android の `TextView` は `text`、Android の `WebView` は `document` です。どちらも `getByRole` のロールではありません。テキストは `getByText` で探してください。
+
+## 可視性
+
+デバイスのノードは、プラットフォームが画面外と報告した場合や、ソフトウェアキーボードが中心を覆う場合に非表示になります。そのため、`toBeVisible()`、`scrollUntilVisible`、`getByRole` は、キーボードの下のフィールドを、スクロールで画面外になったフィールドと同じように扱います。キーボード自身のキー、候補バー、ドック、フォーカス中のフィールドは可視のままです。
+
+- キーボードの領域には、agent-device が測定したフレームを使います。取得結果にフレームがなければ、ツリーにあるキーボードの上端から画面下端までを領域とします。
+- 中心がキーボードの下にあるコンテナでも、子が 1 つでもキーボードより上に表示されていれば可視のままです。
+- キーボードが押し上げたフッターなど、ほかのビューの下にあるノードは非表示とはみなしません。タップ時に agent-device が覆う要素を見つけると `ACTION_FAILED` になり、メッセージにその要素を示します。キーボードの下へのタップも同様に失敗します。覆っている要素を閉じるか、対象をスクロールして外に出してください。
+
+## 録画のクリーンアップ
+
+進行中の agent-device の録画停止処理は、後続の呼び出し元や試行のクリーンアップと共有します。1 つの呼び出し元が待機をキャンセルしても、停止処理を繰り返したり、後から得られる完了結果を破棄したりはしません。デバイスの停止処理が失敗した場合は、クリーンアップで再試行できます。キャンセルした呼び出し元には、引き続きキャンセルを報告します。
+
+停止に失敗したプロバイダーの録画は、そのワーカーが所有し続けます。エンジンは、試行終了時、そのワーカーの次の試行の前、ワーカー破棄時に停止を再試行します。進行中の停止処理は共有します。各再試行には、元の試行の動画ディレクトリを使います。
+
+次の試行は、プロバイダーが停止を確認してから開始します。停止待機の失敗やキャンセルは、次の試行の開始を阻止します。返されたアーティファクトが無効でも、停止を確認済みなら停止処理は繰り返しません。ワーカー交換中にプロバイダーの停止だけが失敗しても、正常な agent-device セッションは閉じません。
+
+再試行によって回収できた録画は、レポートには加えません。ファイルは元の試行の動画ディレクトリに残ることがあり、返された URL は破棄します。必須の動画で最初の停止が失敗した場合、クリーンアップの失敗という結果は変わりません。
+
+これらの録画ハンドルは、ワーカー終了後には残りません。実行終了時にエンジンは agent-device のセッションを閉じ、プロバイダーはリースを解放します。プロバイダーは、リース解放時に残っている外部の録画をすべてクリーンアップする必要があります。agent-device セッションを閉じても、任意のクラウド録画が停止する保証はありません。プロバイダーの停止コールバックが失敗した場合、録画が停止したとは確認できません。
+
+## デバイスのリプレイキャッシュ
+
+リプレイキャッシュは、デバイスが報告する [`location`](#capabilities)、つまり `<bundle id> / <screen title>` を基準にします。`com.apple.Preferences / General` で記録したステップは、設定アプリで再び General を表示したときだけリプレイします。
+
+```ts
+await app.open();
+await screen.getByText('General').tap();
+await agent.act('Open About and read the iOS version');
+```
+
+- `open_app` など、状態を変更するプロジェクトツールの呼び出しはリプレイを終了します。
+- ステップが同じ画面から始まるように、`app.bundleId` を宣言し、先に `app.open()` を呼んでください。
+- アプリの切り替えは、ステップの途中ではなくステップ間に `device` フィクスチャで行います。
+- [`device.openLink`](#openlink) の後に記録したステップは、リンクが再び同じ画面に到達したときにリプレイします。
+
+## 型
+
+### エンジンのオプション
+
+`MobileOptions` の各メンバーは、[エンジン](#engine)の該当項目に JSDoc とともに宣言されています。
+
+```ts
+/** A permission's state: held, refused, or not asked for yet, so the OS asks again. */
+export type PermissionState = 'grant' | 'deny' | 'reset';
+
+/** Permissions an app holds when it launches, by name. */
+export type LaunchPermissions = Readonly<Partial<Record<DevicePermission, PermissionState>>>;
+```
+
+### device フィクスチャ
+
+`Device` の各メンバーは、[デバイス](#device)の該当項目に JSDoc とともに宣言されています。
+
+```ts
+/** How `device.openApp` launches an app. */
+export interface OpenAppOptions {
+  /** Terminate the app first, so it starts fresh; without it a running app is brought forward as it is. */
+  readonly relaunch?: boolean;
+  /**
+   * Arguments this launch hands the app: its process arguments on iOS,
+   * `am start` arguments on Android. Replaces the target's `app.launchArguments`
+   * for a relaunch of the pinned app.
+   */
+  readonly launchArguments?: readonly string[];
+  /**
+   * Permissions the app holds before this launch, each granted, denied, or
+   * reset. Replaces the target's `app.permissions` for a relaunch of the
+   * pinned app.
+   */
+  readonly permissions?: LaunchPermissions;
+}
+
+/** Permissions agent-device can grant, deny, or reset on an app. */
+export type DevicePermission =
+  | 'camera'
+  | 'microphone'
+  | 'photos'
+  | 'contacts'
+  | 'notifications'
+  | 'calendar'
+  | 'location'
+  | 'reminders'
+  | 'motion'
+  | 'siri'
+  | 'media-library';
+
+/** Orientations `setOrientation` accepts. */
+export type DeviceOrientation = 'portrait' | 'portrait-upside-down' | 'landscape-left' | 'landscape-right';
+
+/** Hinge poses `device.fold` accepts: `closed` lights the outer display, `half-open` and `open` the inner one. */
+export type FoldPose = 'closed' | 'half-open' | 'open';
+
+/** How `device.installApp` installs a build. */
+export interface InstallAppOptions {
+  /**
+   * Bundle id or package of the build. `reinstall` needs one: agent-device
+   * removes that app before installing. Defaults to the pinned app.
+   */
+  readonly app?: string;
+  /** Remove the installed app first so the build starts with no data. */
+  readonly reinstall?: boolean;
+}
+
+/** What an install put on the device, as agent-device identified it. */
+export interface InstalledApp {
+  /** The bundle id or package to open the app by. */
+  readonly app: string;
+  readonly bundleId?: string;
+}
+
+/** The app in the foreground, as `foregroundApp` reports it. */
+export interface ForegroundApp {
+  readonly name: string;
+  readonly bundleId?: string;
+}
+
+/** Sensors `setBiometrics` simulates. */
+export type BiometricSensor = 'faceid' | 'touchid' | 'fingerprint';
+
+/** The raw driver session behind `device`; see `Device.unstable_raw`. */
+export interface DeviceSession {
+  readonly platform: MobilePlatform;
+  /** The raw driver session name: `e2e-<target>-<worker slot>`, or `<session>-<worker slot>` with the `session` option. */
+  readonly session: string;
+  /** The device id: a simulator UDID or an Android serial. */
+  readonly deviceId: string;
+  readonly deviceName: string;
+  /** The device selection the engine passes commands; spread it into a call that can run before `app.open()`. */
+  readonly selection: DeviceSelection;
+  /** The raw driver client, bound to this session. */
+  readonly client: DeviceSessionClient;
+}
+
+/** The fields agent-device commands select a device by: the platform, then one of a name, a simulator UDID, or an Android serial. */
+export interface DeviceSelection {
+  readonly platform: MobilePlatform;
+  readonly device?: string;
+  readonly udid?: string;
+  readonly serial?: string;
+}
+```
+
+### エクスポートされる型
+
+`MobileOptions`、`MobilePlatform`、`DevicePermission`、`LaunchPermissions`、
+`PermissionState`、`DeviceClientConfig`、`DeviceConnection`、`DeviceDaemon`、
+`DeviceProvider`、`DeviceLease`、`DeviceReleaseContext`、`DeviceRequest`、
+`Device`、`DeviceSession`、`DeviceSessionClient`、`DeviceSelection`、`DeviceOrientation`、`BiometricSensor`、`ForegroundApp`、
+`FoldPose`、`InstallAppOptions`、`InstalledApp`、`OpenAppOptions` を `@e2e-dev/mobile` からエクスポートします。実行時のエクスポートは `mobile` と、`device` フィクスチャの型を持つ `test`、`describe`、`beforeEach`、`afterEach`、`beforeAll`、`afterAll` です。デバイスはテスト間で状態を保つため、`device`、`app`、`screen` は[ワーカーフィクスチャ](/reference/test#worker-fixtures)であり、`beforeAll` と `afterAll` も受け取ります。`mobileTools` は `@e2e-dev/mobile/tools` からインポートします。
+
+## 関連項目
+
+[モバイル](/mobile)ガイドでは、セットアップ、ホスト型デバイス、トラブルシューティングを説明しています。プラットフォーム共通のライフサイクルメソッドは [`app`](/reference/app) にあります。

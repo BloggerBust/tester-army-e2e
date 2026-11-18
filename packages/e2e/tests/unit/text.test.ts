@@ -1,6 +1,6 @@
 import { runInNewContext } from 'node:vm';
 import { describe, expect, it } from 'vitest';
-import { bound, compareText, matchesText, normalizeRegexpFlags, normalizeText, toTextPattern } from '@e2e-dev/core/lib/internal/text';
+import { bound, boundIsAmbiguous, compareText, matchesText, normalizeRegexpFlags, normalizeText, toTextPattern } from '@e2e-dev/core/lib/internal/text';
 
 describe('normalizeText', () => {
   it('trims and collapses unicode whitespace runs to one ASCII space', () => {
@@ -84,5 +84,16 @@ describe('bound', () => {
     // The cut lands between the halves of 😀; it steps back rather than leave half a character.
     expect(bound(`abc😀def`, 5)).toBe('abc…');
     expect(bound(`ab😀def`, 5)).toBe('ab😀…');
+  });
+});
+
+describe('boundIsAmbiguous', () => {
+  it('holds for text bound cuts and for text that ends like one of its cuts, and for nothing else', () => {
+    expect(boundIsAmbiguous('abcdef', 5)).toBe(true);
+    expect(boundIsAmbiguous('abcd…', 5)).toBe(true);
+    expect(boundIsAmbiguous('abc…', 5)).toBe(true);
+    expect(boundIsAmbiguous('abcde', 5)).toBe(false);
+    expect(boundIsAmbiguous('ab…', 5)).toBe(false);
+    expect(boundIsAmbiguous('loading…', 300)).toBe(false);
   });
 });

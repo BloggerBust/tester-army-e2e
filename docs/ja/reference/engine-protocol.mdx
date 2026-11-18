@@ -1,0 +1,272 @@
+---
+title: エンジンプロトコル
+description: エンジンを別のプロセスやマシンで動かしたり、別の言語で実装したりできます。
+---
+
+エンジンプロトコルは、[エンジン契約](/reference/engine)を JSON-RPC メッセージで表したものです。ランナーは、すべてのエンジンをこのプロトコルで操作します。別のプロセス、マシン、言語で動かすには、[エンジンサーバー](/engine-servers)を参照してください。
+
+```ts title="e2e.config.ts"
+import type { E2EConfig } from 'e2e';
+import { connectEngine, spawnTransport } from 'e2e/engine';
+
+export default {
+  targets: [
+    {
+      name: 'kiosk',
+      engine: connectEngine({
+        manifest: { name: 'kiosk', version: '1.0.0', spiVersion: 1, platform: 'kiosk', methods: ['engine/observe'] },
+        transport: spawnTransport({ command: './kiosk-engine' }),
+        resolveLocators: true,
+      }),
+    },
+  ],
+} satisfies E2EConfig;
+```
+
+## リファレンス
+
+| 関数 | 戻り値 |
+| --- | --- |
+| [`connectEngine`](#connectengine) | `EngineHandle` |
+| [`serveEngine`](#serveengine) | `Promise<void>` |
+| [`describeEngine`](#describeengine) | `EngineManifest` |
+| [`spawnTransport`](#spawntransport) | `EngineTransport` |
+| [`socketTransport`](#sockettransport) | `EngineTransport` |
+| [`loopbackTransport`](#loopbacktransport) | `EngineTransport` |
+
+### `connectEngine`
+
+エンジンサーバーを、ターゲットの `engine` に指定できるエンジンハンドルに変換します。
+
+```ts
+export function connectEngine(options: ConnectEngineOptions): EngineHandle;
+
+export interface ConnectEngineOptions {
+  /** What the server is; the server's manifest from `initialize` must match it. */
+  readonly manifest: EngineManifest;
+  /** How to reach the server. */
+  readonly transport: EngineTransport;
+  /** Engine options the server receives in `initialize`, as JSON. */
+  readonly initializationOptions?: JsonValue;
+  /** The `secrets.get()` handles the server may resolve. */
+  readonly secrets?: readonly Secret[];
+  /** Fixtures that run on the client, beside the test. */
+  readonly fixtures?: Engine['fixtures'];
+  /** Checks the target's app at config load, on the client. */
+  readonly validateApp?: Engine['validateApp'];
+  /** Answers locators on the client from observations, for a server without `engine/locate`. */
+  readonly resolveLocators?: boolean;
+  /** Session hooks the client answers instead of the server. */
+  readonly session?: EngineSession;
+}
+```
+
+ランナーは、サーバーが動く前の設定読み込み時にマニフェストを読みます。サーバーのマニフェストが異なる場合、最初の接続が失敗します。
+
+ハンドルは、ハーネスがエンジンを呼び出す場所で接続を開きます。ランナーでは、ターゲットごとに 1 接続が `prepare` から `finish` まで存続します。ただし、サーバーが `lifecycle/prepare` または `lifecycle/finish` に対応する場合だけ開きます。各ワーカーでは、1 接続が `init` から `dispose` まで存続します。`e2e doctor` はターゲットごとに `doctor` 接続を開き、`lifecycle/doctor` だけを呼び出して閉じます。`spawnTransport` のように、そのためにトランスポートがサーバーを起動してもかまいませんが、マシンのプロビジョニング、デバイスのリース、アプリのインストールは行ってはいけません。doctor のシグナルが発火すると、サーバーには応答まで 5 秒の猶予が与えられ、その後接続が閉じます。`init`..`dispose` の外で操作を呼び出すと、`INVALID_STATE` で失敗します。`init` を実行しなかったワーカーには接続がないため、サーバーに `lifecycle/dispose` は届きません。2 つの接続で状態を共有するかどうかは、サーバーが決めます。spawn したサーバーは接続ごとにプロセスを持ち、loopback や socket のサーバーはひとつのエンジンで全接続を処理できます。
+
+`resolveLocators` を指定すると、各 `locate` が観測を行い、[`resolveExpression`](/reference/engine#resolveexpression) で式を解決します。`fixtures`、`validateApp`、`secrets`、`session` フックはクライアント側で実行します。`session` フックは、サーバーの同名メソッドを置き換えます。[ホスト側の処理をクライアントに置く](/engine-servers#keep-host-work-on-the-client)を参照してください。
+
+<Warning>
+`lifecycle/prepare`、`lifecycle/init`、`lifecycle/finish`、`lifecycle/doctor` には、モデルのキーや `E2E_SECRET_*` の値を含む実行環境の変数が渡されます。`attempt/resolveSecret` は平文で応答します。信頼できるサーバーにだけ接続してください。`socketTransport` は暗号化しません。
+</Warning>
+
+| 発生するエラー | 条件 |
+| --- | --- |
+| `INVALID_CONFIG` | マニフェストが不正。未知または重複したメソッド、あるいは `defineEngine` が拒否する組み合わせ。例: `keyboard/press` のない `keyboard/type`、`actions` のない `engine/perform`、`engine/observe` のない `engine/perform`。 |
+| `ENGINE_FAILURE` | サーバーのマニフェストが異なる、または呼び出し中に接続が閉じた。メッセージには、サーバーの標準エラー出力の末尾など、トランスポートの診断情報が含まれます。 |
+
+### `serveEngine`
+
+`defineEngine` で作ったエンジンをひとつの接続で提供します。クライアントが `exit` を送るか、ストリームが閉じるまで続けます。
+
+```ts
+export function serveEngine(
+  engine: EngineHandle | ((initializationOptions: unknown) => EngineHandle | Promise<EngineHandle>),
+  streams?: MessageStreams, // default: process.stdin and process.stdout
+): Promise<void>;
+```
+
+標準出力はプロトコルに使うため、サーバー自身のログは標準エラー出力に書いてください。[TypeScript エンジンをサーバーとして提供する](/engine-servers#serve-a-typescript-engine)を参照してください。
+
+### `describeEngine`
+
+エンジンハンドルに対して `serveEngine` が公開するマニフェストを返します。静的メンバー、宣言済みメンバーが対応するメソッド、`serveEngine` が常に対応する `lifecycle/startAttempt` と `lifecycle/endAttempt` が含まれます。別の場所で提供する TypeScript エンジンのマニフェストを宣言するために使います。
+
+```ts
+export function describeEngine(engine: EngineHandle): EngineManifest;
+```
+
+### `spawnTransport`
+
+エディターが言語サーバーを起動するのと同じように、接続ごとにサーバーを子プロセスとして起動し、標準入力と標準出力で通信します。
+
+```ts
+export function spawnTransport(options: {
+  readonly command: string;
+  readonly args?: readonly string[];
+  /** Added to the worker's environment. */
+  readonly env?: Readonly<Record<string, string>>;
+  readonly cwd?: string; // default: the project root
+}): EngineTransport;
+```
+
+接続を閉じると、標準入力を終了し、`SIGTERM` を送ります。クリーンアップの制限時間を使い切ると `SIGKILL` を送ります。
+
+### `socketTransport`
+
+同じマシンまたは別のマシンの TCP ポートで、すでに待ち受けているサーバーに接続します。接続を閉じるとソケットを終了しますが、サーバーは動き続けます。
+
+```ts
+export function socketTransport(options: { readonly host: string; readonly port: number }): EngineTransport;
+```
+
+### `loopbackTransport`
+
+メモリー内のストリームを通して、同じプロセス内でエンジンを提供します。すべての呼び出しは、他のトランスポートと同じようにシリアライズされ、プロトコルを通ります。
+
+```ts
+export function loopbackTransport(engine: EngineHandle): EngineTransport;
+```
+
+## メッセージ
+
+基礎となるのは [Language Server Protocol の基本プロトコル](https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#baseProtocol)です。各メッセージは、`Content-Length` ヘッダーと空行に続く UTF-8 の JSON-RPC 2.0 です。どちら側からもリクエストと通知を送れます。
+
+### ライフサイクル
+
+接続は LSP と同じ方法で開始・終了します。
+
+| メッセージ | 方向 | パラメーター | 結果 |
+| --- | --- | --- | --- |
+| `initialize` | リクエスト、クライアントからサーバー | `{ protocolVersion: 1, clientInfo, role, initializationOptions? }` | `{ protocolVersion: 1, manifest }` |
+| `initialized` | 通知、クライアントからサーバー | `{}` | - |
+| `shutdown` | リクエスト、クライアントからサーバー | - | `null` |
+| `exit` | 通知、クライアントからサーバー | - | - |
+
+両側とも、`1` 以外の `protocolVersion` は拒否します。`shutdown` の後は、保持するシグナルをそのままにします。`shutdown` なしで接続が閉じた場合は、保持するすべてのシグナルを中断します。
+
+### マニフェスト
+
+JSON Schema は、`e2e` パッケージの `schema/engine-manifest-v1.schema.json` に含まれます。
+
+```ts
+export interface EngineManifest {
+  readonly name: string;
+  readonly version: string;
+  readonly spiVersion: 1;
+  readonly platform?: string;
+  readonly workers?: number;
+  /** The engine methods the server answers; one left out is a capability the engine lacks. */
+  readonly methods: readonly EngineMethod[];
+  /** Required with `engine/perform`. */
+  readonly actions?: readonly LocatorActionKind[];
+  /** Required with `engine/performAt`. */
+  readonly pointerActions?: readonly PointerActionKind[];
+  readonly tapModifiers?: boolean;
+  /** See `Engine.isolation`; left out for `attempt`. */
+  readonly isolation?: 'worker';
+}
+```
+
+### エンジンメソッド
+
+各メソッドはひとつのエンジンメンバーに対応し、クライアントからサーバーへのリクエストです。パラメーターはメンバーの引数を名前付きで渡し、すべての `OperationContext` は `operation` とします。全メソッドは `ENGINE_METHODS` に列挙されています。
+
+| メソッド | パラメーター | 結果 |
+| --- | --- | --- |
+| `engine/observe` | `{ operation, options? }` | `EngineSnapshot` |
+| `engine/readStyle` | `{ ref, properties, operation }` | `ComputedStyleValues` |
+| `engine/locate` | `{ expression, operation }` | `SemanticNode[]` |
+| `engine/perform` | `{ ref, action, operation }` | `null` |
+| `engine/performAt` | `{ point, action, operation }` | `null` |
+| `keyboard/type` | `{ text, options: { replace }, operation }` | `null` |
+| `keyboard/press` | `{ key, operation }` | `null` |
+| `keyboard/dismiss` | `{ operation }` | `null` |
+| `state/capture` | `{ operation }` | `EngineState` |
+| `state/restore` | `{ state, operation }` | `null` |
+| `artifacts/screenshot` | `{ label?, operation }` | `{ path }` または `{ data, mediaType }` |
+| `artifacts/startVideo` | `{ operation }` | `null` |
+| `artifacts/stopVideo` | `{ operation }` | `VideoSegment[]` |
+| `session/open` | `{ url, operation }` | `null` |
+| `session/openLink` | `{ url, operation }` | `null` |
+| `session/back`, `session/restart`, `session/reset` | `{ operation }` | `null` |
+| `session/resize` | `{ size: { width, height }, operation }` | `null` |
+| `session/switchTab` | `{ index, operation }` | `null` |
+| `session/closeTab` | `{ index, operation }` | `null` |
+| `lifecycle/prepare` | `log` を除く `EnginePrepareInfo` | `EnginePrepareResult` または `null` |
+| `lifecycle/finish` | `log` を除く `EngineFinishInfo` | `null` |
+| `lifecycle/doctor` | `log` を除く `EngineDoctorInfo` | `EngineDoctorCheck[]` |
+| `lifecycle/init` | `log` を除く `EngineInitInfo` | `null` |
+| `lifecycle/startAttempt` | `{ attemptId, artifactsDir, signal, screens }` | `null` |
+| `lifecycle/settleAttempt`, `lifecycle/endAttempt` | `{ signal, timeoutMs }` | `null` |
+| `lifecycle/dispose` | `{ signal, timeoutMs, reuseSignal? }` | `null` |
+
+デバイス上のサーバーなど、試行のアーティファクトディレクトリに書き込めない場合、`artifacts/screenshot` は画像を base64 にして `{ data, mediaType: 'image/png' }` を返します。クライアントが `screenshots/` 配下に書き込みます。観測画像も同様で、`pixels.data` は base64 です。
+
+`lifecycle/startAttempt` の `screens` は、試行がトレースを保持するかを示します。保持する場合にサーバーは `attempt/screen` を送れます。
+
+### サーバーからクライアントへ
+
+エンジンからハーネスへのコールバックは、サーバーからクライアントへのメッセージになります。各 `attempt/*` メッセージには、属する試行の `attemptId` が付きます。終了済み試行のメッセージはクライアントが破棄します。
+
+| メッセージ | 種類 | パラメーター |
+| --- | --- | --- |
+| `engine/log` | 通知 | `prepare`、`init`、`finish` からの `{ line }` |
+| `attempt/appLog` | 通知 | `{ attemptId, entry }` |
+| `attempt/navigation` | 通知 | `{ attemptId, line }` |
+| `attempt/environment` | 通知 | `{ attemptId, facts }` |
+| `attempt/screen` | 通知 | `{ attemptId, snapshot }` |
+| `attempt/resolveSecret` | リクエスト | `{ attemptId, name, derivation? }`、結果は `{ value }` |
+
+`derivation` がある場合、クライアントは回答前に `attempt/deriveSecret` で `{ derivation, plaintext }` を問い合わせます。サーバーは、Basic 認証ヘッダーなど、エンジンが値から導いた形式を `{ values }` として返し、クライアントはそれらをシークレット名でマスキングします。
+
+### シグナル
+
+`AbortSignal` は `{ id, aborted?, reason? }` として渡します。クライアントはシグナルごとに ID を作り、中断時に `$/abort` を `{ id, reason? }` とともに送ります。送信時にすでに中断済みなら `aborted: true` が付きます。テストのタイムアウトなど、ハーネス自身のエラーで中断した場合、`reason` は失敗したメソッドの[エラー](#errors)と同じ形式の JSON-RPC エラーオブジェクトです。サーバーはそのエラーでシグナルを中断するため、エンジンが `signal.reason` を投げ直すと、同一プロセス内の場合と同じエラーになります。`reason` がなければ、プラットフォームの `AbortError` で中断します。サーバーはシグナルの中断時に ID を破棄し、`lifecycle/endAttempt` の完了時には、その試行中に初めて見た全 ID を破棄します。その後に同じ ID が送られても、新しいシグナルとして扱います。
+
+### エラー
+
+エンジンメソッドが失敗した場合、JSON-RPC エラーコード `-32000` と、`data` 内の e2e エラーで応答します。これにより、ハーネスはリモートの失敗をローカルと同じように分類します。
+
+| `data` | エンジンが投げたもの |
+| --- | --- |
+| `{ type: 'engine', code, retryable }` | [`EngineError`](/reference/engine#engineerror)。リトライ可能にできるのは `NODE_STALE` と `FRAME_NOT_FOUND` だけです。 |
+| `{ type: 'e2e', category, code, retryable, details? }` | `TestError` や `ConfigurationError` などのランナーエラー。 |
+
+他のエラーコードでは、メッセージだけを渡します。ハーネスは、ローカルエンジンの通常の `Error` と同じように、インフラ障害として扱います。どのエラーの `data` にも、`stack`、`errno`（`ECONNREFUSED` などの Node エラーコード）、同じ形式のエラーオブジェクトである `cause` を追加できます。これにより、レポートでエンジンの失敗箇所がわかります。
+
+## 型
+
+トランスポートは、ひとつの接続のバイトストリームを開きます。[トランスポートを実装する](/engine-servers#write-a-transport)を参照してください。
+
+```ts
+export interface EngineTransport {
+  /** For error messages: the command, or the address. */
+  readonly label: string;
+  open(context: TransportContext): Promise<TransportConnection>;
+}
+
+export interface TransportContext {
+  readonly role: 'run' | 'worker' | 'doctor';
+  readonly env: Readonly<Record<string, string | undefined>>;
+  /** The project root. */
+  readonly cwd: string;
+  readonly signal: AbortSignal;
+  /** The target's app, from `prepare`, `init`, or `doctor`: what a transport installs, since a server elsewhere cannot read the project's files. */
+  readonly app?: EngineAppInfo;
+}
+
+export interface TransportConnection {
+  readonly input: Readable;
+  readonly output: Writable;
+  /** Releases the process or socket, within `timeoutMs`. */
+  close(timeoutMs: number): Promise<void>;
+  /** What went wrong, for an error message. */
+  diagnostics?(): string;
+}
+```
+
+## 関連ページ
+
+[エンジン](/engines)では実装方法を比較しています。[`e2e/engine`](/reference/engine) は各メッセージが表す契約です。[エンジンサーバー](/engine-servers)と[エンジンを作る](/writing-an-engine)では、実装の手順を説明しています。

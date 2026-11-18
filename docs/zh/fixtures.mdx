@@ -1,0 +1,143 @@
+---
+title: 编写测试夹具
+description: 在每个测试前创建测试数据和其他资源，并在测试后清理。
+"og:image": "https://e2e.com/docs/images/og/fixtures.png?v=a85d0155da"
+"twitter:image": "https://e2e.com/docs/images/og/fixtures.png?v=a85d0155da"
+---
+
+测试夹具是测试接收的一个值，在测试前准备、测试后清理，即使测试失败也会清理。你可以用它创建测试数据。登录则应使用[已保存的会话](/authentication)。
+
+## 在一个文件中定义测试夹具
+
+扩展并导出你的引擎的 `test`。测试夹具可以使用 `agent`，因此可以通过[目标](/core-concepts#goals)在应用中创建数据：
+
+```ts title="tests/fixtures.ts" expandable
+import { test as base } from '@e2e-dev/web';
+import { expect, unique } from 'e2e';
+
+export const test = base.extend<{ project: string; task: string }>({
+  /** A fresh project, created and deleted through the app. */
+  project: async ({ app, agent, screen }, use) => {
+    const name = `Launch plan ${Date.now()}`;
+    await app.open('/projects');
+    await agent.act('create a project named {name}', { params: { name: unique(name) } });
+    await expect(screen.getByRole('heading', name)).toBeVisible();
+    await use(name);
+    await app.open('/projects');
+    await agent.act('delete the project {name}', { params: { name: unique(name) } });
+    await expect(screen.getByRole('link', name)).toBeHidden();
+  },
+  /** One task in that project. Deleting the project deletes it too. */
+  task: async ({ project, agent, screen }, use) => {
+    const title = 'Write the announcement';
+    await agent.act('add a task {title} to the project {project}', { params: { title, project } });
+    await expect(screen.getByRole('checkbox', title)).toBeVisible();
+    await use(title);
+  },
+});
+```
+
+`await use(value)` 之前的代码是准备，之后的代码是清理。在测试文件中导入扩展后的 `test`：
+
+```ts title="tests/tasks.e2e.ts"
+import { expect } from 'e2e';
+import { test } from './fixtures.ts';
+
+test('completes a task', { session: 'admin' }, async ({ screen, task }) => {
+  await screen.getByRole('checkbox', task).check();
+  await expect(screen.getByRole('checkbox', task)).toBeChecked();
+});
+```
+
+已保存的会话会在测试夹具运行前恢复。
+
+<Note>
+测试夹具中的智能体步骤会为每个使用它的测试执行一次。如果你的应用提供测试 API，调用 `fetch` 会更快。
+</Note>
+
+## 基于一个测试夹具构建另一个
+
+测试夹具在第一个参数中列出它需要的测试夹具，e2e 会先准备这些测试夹具。`task` 列出了 `project`，因此列出 `task` 的测试也会得到一个项目。清理按相反的顺序执行。
+
+测试夹具可以列出其所扩展的 `test` 中的测试夹具，以及同一次调用中声明的测试夹具，顺序不限。不需要任何测试夹具时，写成 `({}, use)`。
+
+## 只准备测试列出的测试夹具
+
+e2e 只为列出某个测试夹具的测试准备它：可以在测试主体、`beforeEach` 或 `afterEach` 钩子中列出，也可以在该测试使用的另一个测试夹具中列出。不列出任何测试夹具的测试不会准备任何测试夹具，因此一个 `test` 可以包含整个套件的所有测试夹具。
+
+通过解构第一个参数来列出测试夹具。e2e 从中读取名称，因此 `async (fixtures) => {}` 和剩余属性（`{ app, ...rest }`）会在收集文件时失败。
+
+## 为每个测试运行测试夹具
+
+对于测试需要但不会列出的测试夹具，例如重置数据的测试夹具，设置 `auto: true`：
+
+```ts title="tests/fixtures.ts"
+export const test = base.extend<{ cleanData: void }>({
+  cleanData: [async ({ app }, use) => {
+    await fetch(`${app.baseUrl}/api/test/reset`, { method: 'POST' });
+    await use();
+  }, { auto: true }],
+});
+```
+
+使用 `{ scope: 'worker', auto: true }` 时，它在每个工作进程中运行一次。
+
+## 扩展内置测试夹具
+
+给测试夹具取一个内置测试夹具的名称（例如 `app` 或 `device`），即可在它前后运行代码。在函数内部，这个名称指内置测试夹具。列出该名称的测试和钩子会得到你传给 `use` 的值：
+
+```ts title="tests/fixtures.ts"
+export const test = base.extend({
+  device: async ({ device }, use) => {
+    await device.setPermission('camera', 'deny');
+    await use(device);
+  },
+});
+```
+
+该测试夹具沿用[内置测试夹具的作用域](/reference/test#fixtures)。在移动端测试目标上，`device` 是工作进程测试夹具，因此它在每个工作进程中运行一次，`beforeAll` 也会得到它。参阅[扩展测试夹具](/reference/test#extending-a-fixture)。
+
+## 在工作进程中共享测试夹具
+
+工作进程测试夹具在每个工作进程和测试目标上只准备一次，由第一个列出它的测试或测试套件钩子准备，并在工作进程结束时清理。它适用于许多测试共享的数据库、服务器或 API 客户端。用 `{ scope: 'worker' }` 声明它，并用第二个类型参数为它提供类型：
+
+```ts title="tests/fixtures.ts"
+export const test = base.extend<{}, { database: Database }>({
+  database: [async ({}, use) => {
+    const database = await startDatabase();
+    await use(database);
+    await database.stop();
+  }, { scope: 'worker' }],
+});
+```
+
+工作进程测试夹具比每个测试都存在得更久，因此它只能看到工作进程测试夹具：其他工作进程测试夹具，以及在测试目标上作用域为工作进程的[内置测试夹具](/reference/test#fixtures)。
+
+请在测试文件导入的模块中声明它，不要在测试文件中声明。测试文件会在测试失败后重新加载，并为每个串行分组和准备测试重新加载，它声明的工作进程测试夹具每次都会得到一个新实例。旧实例会保持已准备的状态，直到工作进程结束。
+
+## 在钩子中读取测试夹具
+
+在扩展后的 `test` 上注册钩子，以获取测试夹具类型。钩子列出测试夹具的方式与测试相同：
+
+```ts
+test.beforeEach(async ({ screen, project }) => {
+  await expect(screen.getByRole('heading', project)).toBeVisible();
+});
+```
+
+`beforeAll` 和 `afterAll` 只接收工作进程测试夹具。设备会在测试之间保留状态，因此在移动端，内置测试夹具 `device`、`app` 和 `screen` 也是工作进程测试夹具。浏览器测试会获得新的上下文，因此请把 UI 准备放在 `beforeEach` 中。参阅每个[内置测试夹具](/reference/test#fixtures)的作用域。
+
+## 测试夹具失败时
+
+准备阶段的错误会使测试在 `beforeEach` 中失败，列出了失败测试夹具的 `afterEach` 钩子会被跳过。清理阶段的错误会在 `afterEach` 中报告。参阅[完整错误列表](/reference/test#your-own-fixtures)。
+
+## 下一步
+
+<CardGroup cols={2}>
+  <Card title="测试参考" icon="code" href="/reference/test#your-own-fixtures">
+    测试夹具的契约、类型和所有失败情况。
+  </Card>
+  <Card title="身份验证" icon="key" href="/authentication">
+    保存一次会话，在每个测试中恢复。
+  </Card>
+</CardGroup>

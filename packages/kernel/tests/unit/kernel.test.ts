@@ -201,7 +201,7 @@ describe('kernel()', () => {
     const provider = kernel();
     expect(provider.downloads?.dir).toBe('/tmp/e2e-downloads');
     const signal = new AbortController().signal;
-    const bytes = await provider.downloads!.read({ id: 'b1', cdpEndpoint: 'wss://kernel/b1' }, '/tmp/e2e-downloads/guid-1', { runId: 'run-1', targetName: 'web', env, signal });
+    const bytes = await provider.downloads!.read({ id: 'b1', cdpEndpoint: 'wss://kernel/b1' }, '/tmp/e2e-downloads/guid-1', { runId: 'run-1', targetName: 'web', env, signal, suggestedFilename: 'report.csv' });
     expect(new TextDecoder().decode(bytes)).toBe('file bytes');
     expect(sdk.state.files).toEqual([{ id: 'b1', path: '/tmp/e2e-downloads/guid-1', signal }]);
   });

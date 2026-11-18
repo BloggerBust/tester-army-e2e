@@ -9,6 +9,7 @@ import { explainModuleError } from '../config/diagnose.ts';
 import { importModule } from '../config/load.ts';
 import type { ResolvedConfig } from '@e2e-dev/core/lib/config/resolve';
 import { staticSecretLedger } from '@e2e-dev/core/lib/run/secrecy';
+import { declarationSite } from './fixture-errors.ts';
 import {
   collectModule,
   groupTitles,
@@ -509,7 +510,7 @@ async function collectFiles(
         continue;
       }
       // A registration error names the option but not the module it came from.
-      if (isCollectionError(cause)) throw new CollectionError(`${file}: ${cause.message}`, { cause });
+      if (isCollectionError(cause)) throw new CollectionError(`${declarationSite(cause, config.projectRoot, file)}: ${cause.message}`, { cause });
       throw new CollectionError(
         `failed to collect ${file}: ${explainModuleError(cause, absolutePath)}`,
         { cause },

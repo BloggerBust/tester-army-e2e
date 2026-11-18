@@ -1,7 +1,7 @@
-import { mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, statSync, utimesSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { CREDENTIALS_ENV, EnvCredentialStore, FileCredentialStore, defaultCredentialStore, defaultCredentialsPath } from '../../../src/oauth/store.ts';
 
 const dirs: string[] = [];
@@ -74,10 +74,54 @@ describe('FileCredentialStore', () => {
     await store.set('x', creds);
     writeFileSync(`${file}.lock`, '');
     const old = Date.now() / 1000 - 60;
-    const { utimesSync } = await import('node:fs');
     utimesSync(`${file}.lock`, old, old);
     await store.set('y', creds);
     expect((await store.list()).toSorted()).toEqual(['x', 'y']);
+  });
+
+  it('holds a lock for each login while it refreshes', async () => {
+    const file = tempFile();
+    const store = new FileCredentialStore(file);
+    await store.set('a', creds);
+    let finishA = () => {};
+    const first = store.exclusive('a', () => new Promise<void>((resolve) => (finishA = resolve)));
+    let enteredSecond = false;
+    const second = store.exclusive('a', async () => {
+      enteredSecond = true;
+    });
+    expect(await store.exclusive('b', async () => 'b')).toBe('b');
+    expect(enteredSecond).toBe(false);
+    finishA();
+    await Promise.all([first, second]);
+    expect(enteredSecond).toBe(true);
+  });
+
+  it('gives up with TIMEOUT after 30 s of another worker refreshing', async () => {
+    const file = tempFile();
+    const store = new FileCredentialStore(file);
+    await store.set('x', creds);
+    const lock = `${file}.x.refresh.lock`;
+    writeFileSync(lock, 'elsewhere.example 1 other');
+    // Touched in the future, so the lock stays fresh however far the fake clock moves.
+    const future = Date.now() / 1000 + 3_600;
+    utimesSync(lock, future, future);
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] });
+    try {
+      let settled = false;
+      const pending = store.exclusive('x', async () => {}).finally(() => {
+        settled = true;
+      });
+      const rejected = expect(pending).rejects.toMatchObject({
+        code: 'TIMEOUT',
+        message: 'another e2e process is still refreshing the x login after 30 s; run again once it finishes',
+      });
+      await vi.advanceTimersByTimeAsync(29_000);
+      expect(settled).toBe(false);
+      await vi.advanceTimersByTimeAsync(2_000);
+      await rejected;
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('drops a damaged entry instead of losing every login', async () => {

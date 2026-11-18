@@ -152,9 +152,9 @@ async function complete(
 for (const scenario of SCENARIOS) {
   const title = `act completes ${scenario.slug}`;
   if (scenario.gap === undefined) {
-    test(title, { tags: [scenario.slug] }, (fixtures) => complete(scenario, fixtures));
+    test(title, { tags: [scenario.slug] }, ({ app, agent, screen }) => complete(scenario, { app, agent, screen }));
   } else {
-    test.skip(title, (fixtures) => complete(scenario, fixtures));
+    test.skip(title, ({ app, agent, screen }) => complete(scenario, { app, agent, screen }));
   }
 }
 

@@ -181,6 +181,9 @@ importers:
       expo-audio:
         specifier: 57.0.5
         version: 57.0.5(expo-asset@57.0.21(expo@57.0.33)(react-native@0.86.3(@babel/core@7.29.7(supports-color@8.1.1))(@types/react@19.3.0)(react@19.2.3)(supports-color@8.1.1))(react@19.2.3)(supports-color@8.1.1)(typescript@7.0.2))(expo@57.0.33)(react-native@0.86.3(@babel/core@7.29.7(supports-color@8.1.1))(@types/react@19.3.0)(react@19.2.3)(supports-color@8.1.1))(react@19.2.3)
+      expo-build-properties:
+        specifier: 57.0.23
+        version: 57.0.23(expo@57.0.33)
       expo-image-picker:
         specifier: 57.0.21
         version: 57.0.21(expo@57.0.33)
@@ -254,6 +257,9 @@ importers:
       '@e2e-dev/moli':
         specifier: workspace:*
         version: link:../../packages/moli
+      '@e2e-dev/notte':
+        specifier: workspace:*
+        version: link:../../packages/notte
       '@e2e-dev/web':
         specifier: workspace:*
         version: link:../../packages/web
@@ -819,6 +825,49 @@ importers:
         specifier: 5.1.0
         version: 5.1.0(@types/node@26.6.6)(vite@8.3.8(@types/node@26.6.6)(esbuild@0.28.2)(jiti@1.21.7)(terser@5.51.2)(tsx@4.23.14)(yaml@2.9.0))
 
+  packages/notte:
+    devDependencies:
+      '@e2e-dev/web':
+        specifier: workspace:*
+        version: link:../web
+      '@types/node':
+        specifier: 26.6.6
+        version: 26.6.6
+      e2e:
+        specifier: workspace:*
+        version: link:../e2e
+      notte-sdk:
+        specifier: 1.10.9
+        version: 1.10.9(playwright-core@1.65.1)
+      typescript:
+        specifier: 7.0.2
+        version: 7.0.2
+      vitest:
+        specifier: 5.1.0
+        version: 5.1.0(@types/node@26.6.6)(vite@8.3.8(@types/node@26.6.6)(esbuild@0.28.2)(jiti@1.21.7)(terser@5.51.2)(tsx@4.23.14)(yaml@2.9.1))
+
+  packages/revyl:
+    dependencies:
+      '@agent-device/revyl':
+        specifier: 0.21.38
+        version: 0.21.38
+    devDependencies:
+      '@e2e-dev/mobile':
+        specifier: workspace:*
+        version: link:../mobile
+      '@types/node':
+        specifier: 26.6.6
+        version: 26.6.6
+      e2e:
+        specifier: workspace:*
+        version: link:../e2e
+      typescript:
+        specifier: 7.0.2
+        version: 7.0.2
+      vitest:
+        specifier: 5.1.0
+        version: 5.1.0(@types/node@26.6.6)(vite@8.3.8(@types/node@26.6.6)(esbuild@0.28.2)(jiti@1.21.7)(terser@5.51.2)(tsx@4.23.14)(yaml@2.9.1))
+
   packages/smol:
     devDependencies:
       '@e2e-dev/web':
@@ -891,6 +940,9 @@ importers:
         version: 5.1.0(@types/node@26.6.6)(vite@8.3.8(@types/node@26.6.6)(esbuild@0.28.2)(jiti@1.21.7)(terser@5.51.2)(tsx@4.23.13)(yaml@2.9.0))
 
 packages:
+
+  '@agent-device/revyl@0.21.38':
+    resolution: {integrity: sha512-xeCg4QB5gTMyjz1IP0ig3UwRr9104gMQ9nwzpSwknQtEJhxS8aPCdVB1cq41OKe7VnslQXYI4XkQbMI1TFbwZA==}
 
   '@agent-device/testmu@0.21.38':
     resolution: {integrity: sha512-SFKW45N4YouNz3BvobVs7oe7JiDGsD0OXspTfQgyEGexonY9CvpsMJtGhzbvhbavx6tOVkgvauB+CjAujO6JGw==}
@@ -3723,6 +3775,11 @@ packages:
       react: '*'
       react-native: '*'
 
+  expo-build-properties@57.0.23:
+    resolution: {integrity: sha512-O4N2m2ce4G1p4AvCZHhqpAIfHsQjbKxbvMOEMjuFh+MuAfgoxKyHa6tgsI2BFQxiPIBDL4aVWk8UEqeHXMmDfA==}
+    peerDependencies:
+      expo: '*'
+
   expo-constants@57.0.24:
     resolution: {integrity: sha512-KtJ4vCz0h5BbrC3vt4Qfi4VNvzjjWzvT4Hufo+hmOtW3VHHU0Bp1Jj7PRhVAhgFhKmry5QuzZ80ocInhoJB8hQ==}
     peerDependencies:
@@ -4650,6 +4707,15 @@ packages:
     resolution: {integrity: sha512-mIrE/Cw9y+9Au6dS5vDKDhQza9YvG6w+ZrS6X+ZzA7yFW/soAeaups4Qzn1bL6g5FVy8WtP79+0j82oPIbqRjQ==}
     engines: {node: '>=18'}
 
+  notte-sdk@1.10.9:
+    resolution: {integrity: sha512-+hQJniw1AK5YJrevEOYF8izFdEUhE2WOhMnS2In+1d9y1urbGo+ATzKHOayvfwaiVl5M/NzKnbWSaCR/sEKq8g==}
+    engines: {node: '>=20'}
+    peerDependencies:
+      playwright-core: '>=1.40.0'
+    peerDependenciesMeta:
+      playwright-core:
+        optional: true
+
   npm-package-arg@11.0.3:
     resolution: {integrity: sha512-sHGJy8sOC1YraBywpzQlIKBE4pBbGbiF95U6Auspzyem956E0+FtDtsx1ZxlOJkQCZ1AFXAY/yuvtFYrOxF+Bw==}
     engines: {node: ^16.14.0 || >=18.0.0}
@@ -5256,6 +5322,13 @@ packages:
     resolution: {integrity: sha512-LgO3D9yZJjApUiuUfl9iFAwrtaX4+lok3wJIqttGoKCHlWUqHqbQpnxCf82L8FjgKsh4iGo78hqJwgL8F6To2A==}
     engines: {node: '>=14.0.0'}
 
+  tldts-core@7.5.4:
+    resolution: {integrity: sha512-9+4zWtKEDZ3V3FoZ1B97rv+5z5oqp7yeXGVze3CxgQ+CJro9do9DCPD00wxstYZDXDMXsurkBerFfiB6GYtPbA==}
+
+  tldts@7.5.4:
+    resolution: {integrity: sha512-Rn2ABgjHZrA+jzqom5zhxA0hLohzYrIgfCPyhpTUxqsUrcsBYuab49LseR9waB9Jr8/MxdodvMHA91oRiGLO3Q==}
+    hasBin: true
+
   tmpl@1.0.5:
     resolution: {integrity: sha512-3f0uOEAQwIqGuWW2MVzYg8fV/QNnc/IpuJNG837rLuczAaLVHslWHZQj4IGiEl5Hs3kkbhwL9Ab7Hrsmuj+Smw==}
 
@@ -5608,6 +5681,8 @@ packages:
     resolution: {integrity: sha512-bXE4cR/kVZhKZX/RjPEflHaKVhUVl85noU3v6b8apfQEc1x4A+zBxjZ4lN8LqGd6WZ3dl98pY4o717VFmoPp+A==}
 
 snapshots:
+
+  '@agent-device/revyl@0.21.38': {}
 
   '@agent-device/testmu@0.21.38': {}
 
@@ -8384,6 +8459,13 @@ snapshots:
       react: 19.2.3
       react-native: 0.86.3(@babel/core@7.29.7(supports-color@8.1.1))(@types/react@19.3.0)(react@19.2.3)(supports-color@8.1.1)
 
+  expo-build-properties@57.0.23(expo@57.0.33):
+    dependencies:
+      '@expo/schema-utils': 57.0.3
+      expo: 57.0.33(@babel/core@7.29.7(supports-color@8.1.1))(@expo/dom-webview@57.0.1)(react-dom@19.3.0(react@19.2.3))(react-native-webview@13.16.1(react-native@0.86.3(@babel/core@7.29.7(supports-color@8.1.1))(@types/react@19.3.0)(react@19.2.3)(supports-color@8.1.1))(react@19.2.3))(react-native@0.86.3(@babel/core@7.29.7(supports-color@8.1.1))(@types/react@19.3.0)(react@19.2.3)(supports-color@8.1.1))(react@19.2.3)(supports-color@8.1.1)(typescript@7.0.2)
+      resolve-from: 5.0.0
+      semver: 7.8.5
+
   expo-constants@57.0.24(expo@57.0.33)(react-native@0.86.3(@babel/core@7.29.7(supports-color@8.1.1))(@types/react@19.3.0)(react@19.2.3)(supports-color@8.1.1))(supports-color@8.1.1):
     dependencies:
       '@expo/env': 2.4.4(supports-color@8.1.1)
@@ -9780,6 +9862,13 @@ snapshots:
 
   node-releases@2.0.55: {}
 
+  notte-sdk@1.10.9(playwright-core@1.65.1):
+    dependencies:
+      tldts: 7.5.4
+      zod: 4.6.7
+    optionalDependencies:
+      playwright-core: 1.65.1
+
   npm-package-arg@11.0.3:
     dependencies:
       hosted-git-info: 7.0.2
@@ -10507,6 +10596,12 @@ snapshots:
       picomatch: 4.0.7
 
   tinyrainbow@3.2.0: {}
+
+  tldts-core@7.5.4: {}
+
+  tldts@7.5.4:
+    dependencies:
+      tldts-core: 7.5.4
 
   tmpl@1.0.5: {}
 

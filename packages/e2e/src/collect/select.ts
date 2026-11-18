@@ -9,6 +9,7 @@ import type { ResolvedConfig, ResolvedTarget } from '@e2e-dev/core/lib/config/re
 import { attemptKeep, attemptVideo, pairRecording, type AttemptRecordings } from '@e2e-dev/core/lib/internal/recording-modes';
 import type { Capability, RecordingMode, TestOptions } from '@e2e-dev/core/lib/types';
 import { excludingEntry, type Collection, type CollectedTest, type UncollectedFile } from './collect.ts';
+import { assertFixtureUse } from './fixture-use.ts';
 import { groupChain } from './registry.ts';
 import type { SkipInfo } from '@e2e-dev/core/lib/run/records';
 
@@ -310,7 +311,8 @@ export function selectTargets(
 
 /**
  * Expands the collection into test-target pairs and applies focus, tag,
- * platform, capability, session, and serial-closure rules.
+ * platform, capability, session, and serial-closure rules, then checks the
+ * fixtures each pair that runs names against its target.
  */
 export function select(
   collection: Collection,
@@ -365,6 +367,7 @@ export function select(
   const withExclusions =
     filters.excluded === undefined ? withShard : applySerialClosure(applyExclusions(withShard, filters.excluded));
   const withSessions = applySessionSelection(withExclusions, sessionProducers, collection.uncollected);
+  assertFixtureUse(withSessions, collection, config.projectRoot);
 
   const runnableOrdinary = withSessions.filter(
     (pair) => pair.disposition === 'run' && pair.test.kind === 'test',

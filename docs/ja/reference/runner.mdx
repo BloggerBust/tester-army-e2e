@@ -1,0 +1,516 @@
+---
+title: "e2e/runner"
+description: "コードからテストスイートや探索を実行し、選択したテストを一覧表示し、別のテストランナー内で e2e セッションを動かします。"
+"og:image": "https://e2e.com/docs/images/og/reference/runner.png?v=a4609b13d7"
+"twitter:image": "https://e2e.com/docs/images/og/reference/runner.png?v=a4609b13d7"
+---
+
+`e2e/runner` は、CLI を呼ばずにコードからスイートを実行します。`run` はテストを実行してレポートを返し、`explore` は 1 回の探索を実行して発見事項を返し、`list` は選択結果を返します。`openHost` は別のテストランナー内で e2e セッションを動かします。テストファイルから `e2e` をインポートしても、ランナーは読み込まれません。
+
+<Note>
+`run`、`list`、`explore`、`openHost` には Node.js が必要です。Bun では `NODE_UNSUPPORTED` を投げます。Bun では [CLI](/reference/cli#bun) でテストを実行してください。
+</Note>
+
+```ts title="scripts/run-e2e.ts"
+import type { E2EConfig } from 'e2e';
+import { run } from 'e2e/runner';
+import { web } from '@e2e-dev/web';
+
+const config: E2EConfig = {
+  targets: [{ name: 'web', engine: web(), app: { url: 'http://localhost:3000' } }],
+};
+const controller = new AbortController();
+const result = await run({
+  config,
+  files: ['tests/signup.e2e.ts'],
+  interruptSignal: controller.signal,
+  onEvent(event) {
+    if (event.type === 'test-started') console.log(event.title);
+  },
+});
+
+console.log(result.status, result.report.run.summary);
+```
+
+## リファレンス
+
+### 関数
+
+| 関数 | 戻り値 |
+| --- | --- |
+| [`run`](#run) | `Promise<RunResult>` |
+| [`explore`](#explore) | `Promise<ExploreResult>` |
+| [`list`](#list) | `Promise<ListResult>` |
+| [`openHost`](#openhost) | `Promise<E2EHost<Fixtures>>` |
+| [`isE2EError`](#ise2eerror) | `boolean` |
+
+#### `run`
+
+`run(options?: RunOptions)` はスイート全体を実行します。クリーンアップを終えてから resolve し、呼び出し元のプロセスを終了することはありません。
+
+```ts
+const result = await run({ files: ['tests/signup.e2e.ts'] });
+process.exitCode = result.exitCode;
+```
+
+##### オプション
+
+| オプション | 例 | 型 | デフォルト |
+| --- | --- | --- | --- |
+| `cwd` | `'apps/web'` | `string` | 現在の作業ディレクトリ |
+| `config` | `'e2e.ci.config.ts'` | `string \| E2EConfig` | 検出した `e2e.config.ts` |
+| `files` | `['tests/signup.e2e.ts:12']` | `readonly string[]` | 設定済みのスイート |
+| `changedSince` | `'origin/main'` | `string` | - |
+| `interruptSignal` | `controller.signal` | `AbortSignal` | - |
+| `onEvent` | `(event) => {}` | `RunEventSink` | - |
+
+- `files` はパス、glob、ファイル名だけの指定、`file:line` を受け取ります。
+- `changedSince` は [`--changed-since`](/filters) と同じように動きます。
+- `interruptSignal` を中止すると、テストを中断して後処理を実行します。
+- `onEvent` は型付きの進捗イベントを受け取ります。ターミナルへの進捗表示は無効です。コールバックで処理をブロックしないでください。例外を投げるか reject するコールバックは無効化しますが、実行は失敗にしません。
+- リトライやワーカー数など、実行に関する設定は config に指定してください。
+- ランタイムの設定（`E2EConfig` 値）は、呼び出し元のプロセス内で 1 ワーカーとして実行します。ファイルの設定では、設定した数のワーカープロセスを使えます。
+
+##### 結果
+
+| フィールド | 意味 |
+| --- | --- |
+| `exitCode` | CLI と同じ終了コードです。`0`、`1`、`2`、`3`、`4`、`130` のいずれかです。 |
+| `status` | `passed`、`failed`、`blocked`、`error`、`interrupted` のいずれかです。 |
+| `report` | 完全なレポートです。結果は `report.run.results`、`report.run.errors`、`report.run.summary` で確認できます。 |
+| `reportPath` | `report.json` の絶対パスです。書き込めなかった場合は `undefined` です。 |
+| `aiTracePath` | AI トレースのパスです。書き込まなかった場合は `undefined` です。 |
+
+テスト失敗、設定の失敗、中断の場合も resolve し、状態とエラーをレポートに含めます。
+
+| 投げるエラー | 発生条件 |
+| --- | --- |
+| `RUNNER_BUSY` | 別のスイートが実行中、またはホストが開いている場合。スイートを実行する前にすべてのホストを閉じ、ホストを開く前にスイートを await してください。 |
+
+- テストファイルがインポートするヘルパーモジュールは、同じプロセスでの `run` 呼び出し間でキャッシュに残ります。変更を反映するには新しいプロセスが必要です。
+- レポートを返す実行ごとに、匿名の [`e2e_run_completed`](/telemetry) イベントを 1 回送ります。CLI と同じ方法でオプトアウトできます。最初の呼び出しでは、stderr にテレメトリーの通知を表示することがあります。
+- スイートの出力には UTF-8 テキストの秘匿処理を適用するため、バイナリデータは維持しません。アプリケーションのログや進捗コールバックの出力は、呼び出し側で管理します。
+
+#### `explore`
+
+`explore(options?: ExploreOptions)` は、`e2e explore` と同じ[探索](/explore)を 1 回実行します。クリーンアップを終えてから resolve し、呼び出し元のプロセスを終了することはありません。
+
+```ts title="scripts/explore-e2e.ts"
+import type { E2EConfig } from 'e2e';
+import { explore } from 'e2e/runner';
+import { web } from '@e2e-dev/web';
+import { gateway } from 'ai';
+
+const config: E2EConfig = {
+  agents: { default: { model: gateway('openai/gpt-6-luna-fast') } },
+  targets: [{ name: 'web', engine: web(), app: { url: 'http://localhost:3000' } }],
+};
+const controller = new AbortController();
+const result = await explore({
+  config,
+  goal: 'Explore the checkout flow like a first-time buyer and report anything off',
+  maxSteps: 4,
+  interruptSignal: controller.signal,
+  onEvent(event) {
+    if (event.type === 'explore' && event.progress.phase === 'finding') console.log(event.progress.finding.title);
+  },
+});
+
+console.log(result.status, result.explore.ended, result.explore.findings.length);
+```
+
+##### オプション
+
+| オプション | 例 | 型 | デフォルト |
+| --- | --- | --- | --- |
+| `cwd` | `'apps/web'` | `string` | 現在の作業ディレクトリ |
+| `config` | `'e2e.ci.config.ts'` | `string \| E2EConfig` | 検出した `e2e.config.ts` |
+| `goal` | `'Explore the login flow'` | `string` | `'Explore the app and find bugs'`。`changedSince` 指定時は `'Explore what this change affects and find bugs in it'` |
+| `target` | `'web'` | `string` | 最初の設定済みターゲット |
+| `agent` | `'smart'` | `string` | `agents.default` |
+| `session` | `'loggedIn'` | `string` | - |
+| `changedSince` | `'origin/main'` | `string` | - |
+| `maxSteps` | `4` | `number` | `8` |
+| `timeoutMs` | `300_000` | `number` | `600_000` |
+| `interruptSignal` | `controller.signal` | `AbortSignal` | - |
+| `onEvent` | `(event) => {}` | `RunEventSink` | - |
+
+- `goal` は最大 2,000 文字です。
+- `session` は[セットアップテスト](/authentication)が保存するセッションの名前です。`--session` と同様に、そのセットアップを先に実行し、その状態から探索を始めます。
+- `changedSince` は [`--changed-since`](/reference/cli#e2e-explore) と同様に、指定した参照以降の変更を探索します。
+- `maxSteps` は 1〜100、`timeoutMs` は `180000`〜`7200000` です。
+- `onEvent` は `run` と同じイベントに加え、計画上の判断、ステップ、発見事項ごとに `explore` イベントを受け取ります。選択したターゲットなど、`e2e explore` が実行開始前に表示する内容は、`plan` イベントの前に、ターゲットが `run` の `notice` イベントとして届きます。
+- `video`、`trace`、`output` など、記録と出力の設定には config の値を使います。
+
+##### 結果
+
+`ExploreResult` は [`RunResult`](#run) の全フィールドに加え、`explore` を持ちます。同じ記録を `report.run.explore` にも保持します。
+
+| フィールド | 意味 |
+| --- | --- |
+| `explore.goal`, `explore.budgets` | シークレットの値を秘匿した目標と、実行時のステップ数・時間の予算です。 |
+| `explore.ended` | 探索の終了理由です。`finished`、`skipped`（`changedSince` 指定時に、変更にはユーザーから見える影響がないとプランナーが判断した場合。実行は成功します）、`step-limit`、`time`、`stuck`、`aborted` のいずれかです。 |
+| `explore.summary` | エージェントが最後の評価を示した場合、その内容です。 |
+| `explore.change` | `changedSince` 指定時に計画の基にした変更です。`base` はマージベース、`files` は変更ファイル数です。 |
+| `explore.steps` | エージェントが計画して実行した各ステップと、その状態です。状態は `passed`、`failed`、`blocked`、`exhausted` のいずれかです。 |
+| `explore.findings` | 各発見事項です。`kind`、1〜5 の `severity`、`title`、`expected`、`actual`、`reproduction` を持ちます。`issue` は実行を失敗にし、`warning` は失敗にしません。 |
+
+探索が始まった後は、発見事項、失敗、中断も、それぞれの状態をレポートに含めて resolve します。探索を開始できないオプションや設定は、対応する `e2e explore` フラグと同じように、開始前に reject します。[`isE2EError`](#ise2eerror) で判別できます。
+
+| 投げるエラー | 発生条件 |
+| --- | --- |
+| `INVALID_CONFIG` | `goal`、`maxSteps`、`timeoutMs` が範囲外、または `agent` が設定済みエージェントを指していない場合。 |
+| `UNKNOWN_TARGET` | `target` が設定済みターゲットを指していない場合。 |
+| `MODEL_UNAVAILABLE` | エージェントにモデルがない場合。 |
+| `INVALID_CHANGED_SINCE` | `changedSince` が空、`-` で始まる、または git が変更を計測できない参照を指定した場合。 |
+| `RUNNER_BUSY` | スイートや探索が実行中、またはホストが開いている場合。 |
+| `run` が記録するコード | 設定がない、またはローダーが設定を拒否した場合。 |
+
+レポートを返す探索ごとに、`run` と同様に匿名の [`e2e_run_completed`](/telemetry) イベントを 1 回送ります。
+
+#### `list`
+
+`list(options?: ListOptions)` は [`e2e list`](/reference/cli#e2e-list) と同じ収集・選択を行い、そこで終了します。アプリのプロセス、エンジン、ワーカーは起動せず、何も書き込みません。
+
+```ts
+import { isE2EError, list } from 'e2e/runner';
+
+const { pairs, unmatched, targets } = await list({
+  files: ['tests/signup.e2e.ts'],
+  grep: [/checkout/],
+});
+
+for (const pair of pairs) {
+  console.log(`${pair.id} ${pair.disposition} ${pair.titlePath.join(' › ')}`);
+}
+```
+
+呼び出すたびにテストファイルを再インポートするため、同じプロセスでも、後から呼び出す `list()` には変更が反映されます。
+
+##### オプション
+
+| オプション | 例 | 型 | デフォルト |
+| --- | --- | --- | --- |
+| `config` | `'e2e.ci.config.ts'` | `string \| E2EConfig` | `e2e list` と同じ検索で `cwd` から検出 |
+| `targets` | `['web']` | `readonly string[]` | - |
+| `cwd` | `'apps/web'` | `string` | 現在の作業ディレクトリ |
+| `files` | `['tests/', 'signup.e2e.ts:12']` | `readonly string[]` | 設定済みのスイート |
+| `tags`, `tagMode`, `excludeTags` | `{ tags: ['smoke'], tagMode: 'all' }` | `readonly string[]`, `'any' \| 'all'` | - |
+| `grep`, `grepInvert` | `[/checkout/]` | `readonly RegExp[]` | - |
+| `lastFailed` | `true` | `boolean` | - |
+| `shard` | `{ index: 1, total: 4 }` | `{ index, total }` | - |
+| `changedSince` | `'origin/main'` | `string` | - |
+| `passWithNoTests` | `true` | `boolean` | - |
+| `output` | `'.e2e'` | `string` | 設定の `output` |
+| `env` | `{ ...process.env, CI: '1' }` | `NodeJS.ProcessEnv` | `process.env` |
+
+- `targets` は `--target` と同様にターゲット名を指定します。
+- `files` は位置引数に相当するファイル選択です。パス、glob、ファイル名だけの指定、`file:line` を使えます。
+- `tags`、`tagMode`、`excludeTags` は `--tag`、`--tag-mode`、`--exclude-tag` に相当するフィルターです。
+- `grep` と `grepInvert` では、テストの describe タイトルとタイトルをスペースで結合した文字列が、少なくとも 1 つの `grep` パターンに一致し、どの `grepInvert` パターンにも一致しないことが必要です。
+- `lastFailed` は、`output` 内の `report.json` を読み、前回の実行で成功しなかったテストだけを残します。
+- `shard` は `--shard index/total` に相当する分割です。
+- `changedSince` は `--changed-since` と同じように動きます。[テストフィルター](/filters)は呼び出し元のプロセスで実行します。`list` はフィルターの出力を表示せず、`e2e list` は表示します。
+- `passWithNoTests` は、実行可能なテストがなくても `NO_TESTS` を投げずに resolve します。
+- `output` は結果のディレクトリです。
+- `env` は設定を解決するときに使う環境です。
+
+##### 結果
+
+`ListResult` は `{ pairs, unmatched, targets }` です。
+
+- `pairs` にはテスト、ターゲット、エージェントの組ごとに 1 つの `ListedPair` を、選択順で含めます。フィルターが除外した組も含みます。繰り返し実行の分は展開しません。
+- `unmatched` は、検出したファイルを 1 つも選ばなかった位置引数を、指定されたままの形で含めます。
+- `targets` は選択されたターゲット名を、設定順で含めます。
+
+| フィールド | 意味 |
+| --- | --- |
+| `id` | `report.json` が繰り返し番号 0 に保存する結果 ID です。 |
+| `file`, `title`, `titlePath`, `kind`, `tags` | 収集したテストです。`kind` は `test` または `setup` です。タグの宣言がなければ `tags` は `[]` です。 |
+| `source` | 宣言位置をプロジェクト相対で示す `{ file, line, column }` です。記録していなければ `undefined` です。 |
+| `session` | テスト自身または describe の階層から得た、テストが使うセッションです。使わなければ `undefined` です。 |
+| `sessions` | セットアップが生成するセッション名です。通常のテストでは `[]` です。 |
+| `serialId` | テストが直列グループに属する場合に設定し、それ以外は `undefined` です。 |
+| `target`, `agent` | この組を実行するターゲット名と、設定済みのエージェントです。 |
+| `disposition` | `run`、`skip`、`filtered` のいずれかです。 |
+| `reason` | `title does not match --grep` など、スキップまたはフィルターで除外された理由です。実行する場合は省略します。 |
+| `filter` | この組を除外したテストフィルター名です。選択用フラグで除外した組にはありません。 |
+
+`e2e list` は `run` と `skip` の組、およびテストフィルターが除外した組を表示します。`list` はすべての `filtered` の組を返します。
+
+##### エラー
+
+失敗時には、`e2e list` の終了時と同じ分類済みエラーを返します。[`isE2EError`](#ise2eerror) で判別し、`error.code` で分岐してください。
+
+```ts
+import { isE2EError, list } from 'e2e/runner';
+
+try {
+  await list({ targets: ['missing'] });
+} catch (error) {
+  if (isE2EError(error) && error.code === 'UNKNOWN_TARGET') {
+    console.error(error.message);
+  }
+}
+```
+
+| 投げるエラー | 発生条件 |
+| --- | --- |
+| `NO_TESTS` | 選択結果が空で、`passWithNoTests` が未設定の場合。`ConfigurationError` です。テストフィルターによって実行対象がなくなった場合、`list` は代わりに resolve し、すべての組を `filtered` または `skip` として返します。 |
+| `UNKNOWN_TARGET` | `targets` 内の名前が設定済みターゲットでない場合。 |
+| `INVALID_CHANGED_SINCE` | `changedSince` が空または `-` で始まる場合。またはテストフィルターが実行され、git が変更を計測できない参照を指定した場合。 |
+| `run` が記録するコード | 設定がない、ローダーが設定を拒否した、または収集に失敗した場合。 |
+
+#### `openHost`
+
+`openHost<Fixtures>(options?: OpenHostOptions)` は、Playwright Test、Vitest、Jest、独自のハーネス向けに e2e を準備し、[ホスト](#host)を返します。
+
+```ts
+import { openHost } from 'e2e/runner';
+
+await using host = await openHost({ target: 'web' });
+await using session = await host.openSession({ name: 'checkout' });
+await session.fixtures.app.open('/checkout');
+```
+
+- 収集、リトライ、レポートは、利用するランナーが担当します。
+- ホストはターゲットのエンジンを準備し、アプリのプロセスを起動し、ワーカーの生存期間につき 1 回エンジンを初期化します。ホストはワーカースコープ、セッションはテストスコープにしてください。[Playwright Test の例](#playwright-test-fixtures)を参照してください。
+- [`host.openSession`](#host-opensession) は、呼び出すたびに新しいフィクスチャ、期限、ステップ、成果物を持つ、1 テスト分の試行を作成します。
+- オープンに失敗した場合、e2e は開始済みのものを後処理してからエラーを投げます。
+
+##### オプション
+
+| オプション | 例 | 型 | デフォルト |
+| --- | --- | --- | --- |
+| `config` | `'e2e.config.ts'` | `string \| E2EConfig` | 最も近い `e2e.config.ts`、`.mts`、`.js`、`.mjs` |
+| `cwd` | `'apps/web'` | `string` | `process.cwd()` |
+| `target` | `'android'` | `string` | 唯一のターゲット |
+| `env` | `process.env` | `NodeJS.ProcessEnv` | `process.env` |
+| `signal` | `controller.signal` | `AbortSignal` | - |
+| `headed` | `true` | `boolean` | `false` |
+| `onNotice` | `(target, message) => {}` | `(target: string, message: string) => void` | - |
+
+- `config` は `cwd` 相対の設定ファイルパス、または `E2EConfig` 値です。省略すると、`list` と同じ検索で `cwd` から設定を検出します。
+- `cwd` は設定を検索するディレクトリであり、設定値を渡す場合のプロジェクトルートでもあります。
+- 設定に複数のターゲットがある場合、`target` は必須です。
+- `env` は設定、エンジン、プロバイダーが読み取る環境です。
+- `signal` はホストの準備、進行中のセッションのオープン、実行中のフィクスチャ呼び出しをキャンセルします。
+- `headed` はブラウザエンジンを画面付きで実行します。
+- `onNotice` は、準備やアプリのプロセスなど、ステップ外の進捗を受け取ります。例外を投げないでください。
+
+設定パスを渡したホストは、そのファイルと、そこからインポートするプロジェクトファイルを新たに読み込みます。パッケージのインポートは共有するため、シングルトンの状態はホストごとには作り直しません。設定値を渡した場合は、その値自身のエンジンインスタンスを使います。各インスタンスはホストが閉じるまで 1 つのホストに属するため、2 つ目のホストには別のインスタンスが必要です。
+
+| 投げるエラー | 発生条件 |
+| --- | --- |
+| `UNKNOWN_TARGET` | `target` が設定済みターゲットを指していない場合。 |
+| `TARGET_REQUIRED` | 設定に複数のターゲットがあり、`target` を指定していない場合。 |
+| `RUNNER_BUSY` | スイートが実行中の場合。ホストを開く前に await してください。 |
+
+オープンの失敗は、分類・秘匿処理済みのエラーです。エンジン由来の生の原因は公開しません。[`isE2EError`](#ise2eerror) と `error.code` で判別してください。
+
+#### `isE2EError`
+
+分類済みの e2e エラーを判別する型ガードです。`error.code` で分岐してください。
+
+```ts
+if (isE2EError(error) && error.code === 'NO_TESTS') process.exitCode = 0;
+```
+
+パッケージのコピーをまたぐと、`instanceof` では e2e エラーを判別できないことがあるため、`isE2EError` を使ってください。`ConfigurationError` と `isE2EError` はどちらも `e2e/runner` からエクスポートされます。
+
+### ホスト
+
+`E2EHost<Fixtures>` は [`openHost`](#openhost) の戻り値です。
+
+| メンバー | 戻り値 |
+| --- | --- |
+| `runId`, `target` | `string` |
+| [`host.openSession`](#host-opensession) | `Promise<E2ESession<Fixtures>>` |
+| [`host.close`](#host-close) | `Promise<readonly SerializedError[]>` |
+
+`runId` と `target` は、このホストのセッションが共有する識別情報です。
+
+プロセス内では、オープン処理中、実行中、クローズ処理中のホスト型試行は、常に 1 つだけにできます。ホストが異なる場合も、設定がファイルか値かにかかわらず、同じ制約が適用されます。
+
+- 重複するオープンは、エンジンの試行状態が始まる前に拒否します。同じホストで次のセッションを開く前に、`session.close()` を await してください。
+- 起動が失敗またはキャンセルされた場合は、開いたものを終了し、ホストは再利用できる状態で残します。通常の実行がリトライ用にワーカーを残すのと同じです。
+- セッションのエンジンのクリーンアップに失敗した場合、分離を保証できないため、ホストを恒久的に閉じます。新しいホストを開いてください。
+
+| 投げるエラー | 発生条件 |
+| --- | --- |
+| `WORKER_PROTOCOL` | ホスト型試行の重複、または閉じたホストへの呼び出し。 |
+
+#### `host.openSession`
+
+`host.openSession(options: OpenSessionOptions)` は、このホストのターゲット上で新しい[セッション](#session)を開きます。セッションはリトライループを持たない、1 回のテスト試行です。リトライでは、同じワーカーホスト上に新しいセッションを開きます。
+
+```ts
+const session = await host.openSession({
+  name: 'checkout',
+  timeout: 60_000, // default: the config's timeout
+  onStep: (step) => {
+    if (step.phase === 'end') console.log(`${step.api} ${step.label}: ${step.status}`);
+  },
+});
+```
+
+##### オプション
+
+| オプション | 例 | 型 | デフォルト |
+| --- | --- | --- | --- |
+| `name` | `'checkout'` | `string` | 必須 |
+| `timeout` | `60_000` | `number` | 設定の `timeout` |
+| `signal` | `controller.signal` | `AbortSignal` | - |
+| `agent` | `'smart'` | `string` | 最初の設定済みエージェント |
+| `onStep` | `(step) => {}` | `(progress: StepProgress) => void` | - |
+
+- `name` はステップとトレースの報告に使うテスト名です。
+- `timeout` はセッション内の操作の期限をミリ秒で指定します。正の有限値が必要で、セッションが開いてから数えます。準備やオープン処理の時間は制限せず、セッションを閉じることもありません。
+- `signal` はオープン処理または実行中のフィクスチャ呼び出しをキャンセルします。ホストの `signal` も適用されます。準備は `openHost` で行うため、準備をキャンセルできるのはホストの `signal` だけです。起動はいずれのシグナルでもキャンセルできます。
+- `agent` は、呼び出しで名前を指定しない場合に `agent` フィクスチャが使うエージェントです。
+- `onStep` は、レポーターと同じリアルタイムの `StepProgress` を受け取ります。ブロックや例外の送出をしないでください。`phase` は `start`、`event`、`activity`、`replay`、`end` のいずれかです。`end` イベントには `status`、`durationMs`、`modelCalls` を含み、ステップが失敗した場合は秘匿済みの `error` も含みます。
+- `timeout`、`agent`、`onStep` はセッションのオプションであり、`openHost` のオプションではありません。
+
+| 投げるエラー | 発生条件 |
+| --- | --- |
+| `INVALID_CONFIG` | `name` が文字列でない、または `timeout` が正の有限値でない場合。 |
+| `CANCELLED` | オープン処理の前または途中で、セッションかホストの `signal` が中止された場合。 |
+| `WORKER_PROTOCOL` | 別のホスト型試行がオープン処理中、実行中、クローズ処理中、またはホストが閉じている場合。 |
+
+#### `host.close`
+
+`host.close()` は、実行中または開始待ちのセッションをキャンセルし、閉じるまで待ちます。その後エンジンを破棄し、アプリのプロセスを停止し、準備したリソースを解放します。
+
+```ts
+const failures = await host.close();
+if (failures.length > 0) throw new AggregateError(failures, 'e2e host close failed');
+```
+
+- 冪等です。リソースの破棄と解放は 1 回だけ行います。
+- ホストは `AsyncDisposable` です。`await using host = await openHost()` はスコープ終了時にホストを閉じ、クローズ処理で失敗が報告された場合は `AggregateError` を投げます。
+
+### セッション
+
+`E2ESession<Fixtures>` は [`host.openSession`](#host-opensession) の戻り値です。
+
+| メンバー | 戻り値 |
+| --- | --- |
+| `fixtures` | `TestFixtures & Fixtures` |
+| `runId`, `attemptId`, `target` | `string` |
+| `steps()` | `readonly StepRecord[]` |
+| `report()` | `Report \| undefined` |
+| `artifactsDir` | `string` |
+| `tracePath` | `string` |
+| [`session.close`](#session-close) | `Promise<readonly SerializedError[]>` |
+
+- `fixtures` は `agent`、`app`、`screen`、`platform` と、エンジンのフィクスチャを持ちます。
+- `runId` と `target` はホストの実行とターゲットを示し、`attemptId` はこの試行に固有です。
+- `steps()` は、これまでに実行したステップを、[レポート](/reference/reporters)と同じ形式の読み取り専用 `StepRecord` として返します。
+- `report()` は、クローズ後かつトレースの書き込みに成功した後に、トレースの生成元であるセッションの `Report` を返します。それ以外は `undefined` です。状態が示すのは SDK セッションの結果であり、利用するランナーのテスト本体の判定ではありません。
+- `artifactsDir` は、この試行のスクリーンショット、録画、トレースを置く絶対ディレクトリです。
+- `tracePath` は `trace.md` の絶対パスです。`close()` の完了後に添付または読み取りを行ってください。
+
+#### `session.close`
+
+`session.close()` は残りの操作をキャンセルし、試行を終了してトレースを書き込みます。ソフトアサーション、未完了のまま残された操作（ポーリングやステップ）、クリーンアップの失敗は、例外を投げずに返します。
+
+```ts
+const failures = await session.close();
+if (failures.length > 0) throw new AggregateError(failures, 'e2e session close failed');
+```
+
+- 冪等です。後から呼び出しても同じ失敗を返します。
+- 次のテストのためにホストは開いたままにします。
+- セッションは `AsyncDisposable` です。`await using session = await host.openSession({ name: 'checkout' })` はスコープ終了時にセッションを閉じ、返された失敗をまとめた `AggregateError` を投げます。
+
+#### 期限とソフトアサーションの失敗
+
+`expect.soft` はセッションの生存期間全体で失敗を収集します。ホスト側のランナーのテストを失敗にするには、`close()` の結果を確認してください。
+
+- `expect.poll` は、自身のタイムアウトのほうが長くても、セッションの残り時間を使います。
+- エンジンが提供する組み込みフィクスチャの操作もこの予算に従います。自身のタイムアウトを無効にする操作も含みます。
+- 期限に達すると、それを監視していたポーリングや操作は、自身の中断を報告します。それ以外の実行中の処理はすべて `TEST_TIMEOUT` で失敗します。エンジンやモデルが応答しなかった操作も含みます。
+- どちらの場合も、セッションの結果はタイムアウトになり、`close()` はそのタイムアウトを返します。以後の操作は `TEST_TIMEOUT` で失敗するため、セッションを閉じてください。
+
+#### 成果物
+
+成果物は `<output>/results/host/<resultSegment>/` に置きます。クローズ時に、e2e はレポートと同じ秘匿済みの形式で、そこに `trace.md` を書き込みます。
+
+- e2e は名前と試行固有の識別情報から、安全な `resultSegment` を生成します。名前をそのままパス要素にすることはありません。
+- 同じ名前やリトライには、それぞれ別のディレクトリを使います。
+- プロバイダーから取得するシークレットがある場合、未解決の値はタイトルのスラッグから秘匿できないため、ディレクトリには識別情報だけを使います。トレースには引き続き秘匿済みの名前を表示します。
+- 成果物のパスは `session.artifactsDir` ではなく、`<output>/results` からの相対パスです。
+- 動画は、初回試行に対するターゲットのモードに従います。失敗時だけの動画は、ソフトアサーションの失敗や、失敗、ブロック、タイムアウト、キャンセルになったステップで保存します。
+
+<Note>
+ホスト型セッションが書き込むのはトレースであり、`report.json` ではありません。利用するランナーでのレポートには、`onStep`、`steps()`、`report()`、`close()` が返す失敗を使ってください。ランナーのテスト本体の失敗は e2e に渡されません。
+
+`e2e mcp` が使う単発の試行は内部用です。トップレベルの `openSession` エクスポートはありません。
+</Note>
+
+## 型
+
+`e2e/runner` は関数に加え、次の型をエクスポートします。
+
+| 型 | 内容 |
+| --- | --- |
+| `RunOptions`, `RunResult` | [`run`](#run) のオプションと結果 |
+| `ExploreOptions`, `ExploreResult` | [`explore`](#explore) のオプションと結果 |
+| `RunEventSink` | `onEvent` コールバック |
+| `ListOptions`, `ListResult`, `ListedPair` | [`list`](#list) のオプション、結果、1 つの組 |
+| `OpenHostOptions`, `E2EHost` | [`openHost`](#openhost) のオプションと[ホスト](#host) |
+| `OpenSessionOptions`, `E2ESession` | [`openSession`](#host-opensession) のオプションと[セッション](#session) |
+| `StepProgress`, `StepRecord` | 1 つの `onStep` 進捗イベントと、`steps()` が返す 1 ステップ |
+| `SerializedError` | `close()` が返す 1 つの失敗 |
+
+## 例
+
+### Playwright Test のフィクスチャ
+
+ワーカースコープのホストと、テストスコープのセッションを使う例です。
+
+```ts title="tests/fixtures.ts"
+import { test as base } from '@playwright/test';
+import { openHost, type E2EHost, type E2ESession } from 'e2e/runner';
+import type { Device } from '@e2e-dev/mobile';
+
+type Fixtures = { device: Device };
+
+const test = base.extend<
+  { e2e: E2ESession<Fixtures> },
+  { e2eHost: E2EHost<Fixtures> }
+>({
+  e2eHost: [async ({}, use) => {
+    const host = await openHost<Fixtures>({ target: 'android' });
+    try {
+      await use(host);
+    } finally {
+      const failures = await host.close();
+      if (failures.length > 0) throw new AggregateError(failures, 'e2e host close failed');
+    }
+  }, { scope: 'worker' }],
+  e2e: async ({ e2eHost }, use, testInfo) => {
+    const session = await e2eHost.openSession({
+      name: testInfo.titlePath.join(' › '),
+      // Playwright's 0 disables its timeout; e2e then falls back to the config's.
+      timeout: testInfo.timeout || undefined,
+      onStep: (step) => {
+        if (step.phase === 'end') console.log(`${step.api} ${step.label}: ${step.status}`);
+      },
+    });
+    try {
+      await use(session);
+    } finally {
+      const failures = await session.close();
+      await testInfo.attach('e2e trace', { path: session.tracePath, contentType: 'text/markdown' });
+      if (failures.length > 0) throw new AggregateError(failures, 'e2e session close failed');
+    }
+  },
+});
+
+test('turns on dark mode', async ({ e2e }) => {
+  const { agent, app } = e2e.fixtures;
+  await agent.act('open settings and turn on dark mode');
+  await app.screenshot();
+});
+```

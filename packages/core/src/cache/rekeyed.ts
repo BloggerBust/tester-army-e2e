@@ -85,9 +85,13 @@ export function storedRecordingsFor(cache: ResolvedCacheConfig): StoredRecording
   return new StoredRecordings(new FileCacheStore({ directory: cache.dir, maxBytes: MAX_CACHE_WIRE_BYTES, writable: false }));
 }
 
-/** The whole step as one map key, or undefined when the provenance does not record all of it. */
+/**
+ * The whole step as one map key, or undefined when the provenance does not
+ * record all of it. When an entry could store a name cut, the key includes
+ * `identityDigest`, so such a step never matches an entry without one.
+ */
 function stepKey(step: TraceProvenance): string | undefined {
-  const { testId, targetId, instructionDigest, paramsDigest, callIndex, agent } = step;
+  const { testId, targetId, instructionDigest, paramsDigest, callIndex, agent, identityDigest } = step;
   if (paramsDigest === undefined || callIndex === undefined || agent === undefined) return undefined;
-  return JSON.stringify([testId, targetId, instructionDigest, paramsDigest, callIndex, agent]);
+  return JSON.stringify([testId, targetId, instructionDigest, paramsDigest, callIndex, agent, identityDigest ?? null]);
 }

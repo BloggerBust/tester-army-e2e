@@ -1,0 +1,230 @@
+---
+title: "@e2e-dev/core"
+description: 通过普通代码操作浏览器或原生应用，可选用智能体，无需测试运行器。
+---
+
+`@e2e-dev/core` 通过普通代码操作浏览器或 iOS、Android 应用。它使用 e2e 引擎、`screen` 和智能体，但不使用测试运行器：没有配置文件、报告或 `expect`。适用于脚本、自动化、爬虫和机器人。
+
+## 安装
+
+<CodeGroup>
+
+```bash npm
+npm install @e2e-dev/core @e2e-dev/web
+```
+
+```bash pnpm
+pnpm add @e2e-dev/core @e2e-dev/web
+```
+
+```bash bun
+bun add @e2e-dev/core @e2e-dev/web
+```
+
+</CodeGroup>
+
+要操作设备，安装 `@e2e-dev/mobile`，替代 `@e2e-dev/web` 或与它一起使用。`@e2e-dev/core` 不需要基于它构建的测试运行器 `e2e`。
+
+<Note>
+像示例一样，从引擎的 `/engine` 入口导入。主入口也能在没有 `e2e` 的情况下运行，但其中的 `test` 会抛出 `RUNNER_NOT_INSTALLED`，且除非启用了 `skipLibCheck`，否则其类型需要 `e2e`。
+</Note>
+
+## 操作浏览器
+
+`launch` 准备引擎并返回宿主。会话是该宿主上一个隔离的浏览器上下文，包含内置测试夹具 `screen`、`app` 和 `platform`，以及引擎提供的那一个，此处为 `browser`。
+
+```ts title="prices.ts"
+import { launch } from '@e2e-dev/core';
+import { web } from '@e2e-dev/web/engine';
+
+await using shop = await launch(web(), { app: { url: 'https://shop.example.com' } });
+
+for (const sku of ['A-1001', 'B-2040']) {
+  await using session = await shop.newSession();
+  await session.app.open(`/products/${sku}`);
+  if (await session.screen.getByText('Sold out', { exact: false, visible: true }).isVisible()) continue;
+  const price = await session.screen.getByTestId('sale-price').textContent();
+  console.log(sku, price);
+}
+```
+
+`screen` 和 `app` 与测试中的 API 相同：参阅 [screen](/reference/screen) 和 [app](/reference/app)。`await using` 在代码块结束时关闭每个会话，在文件末尾关闭宿主及其浏览器。它需要 Node.js 24 或 Bun。在 Node.js 22 上，在 `finally` 中调用 `close()`：
+
+```ts
+const shop = await launch(web(), { app: { url: 'https://shop.example.com' } });
+try {
+  const session = await shop.newSession();
+  await session.app.open('/products/A-1001');
+} finally {
+  await shop.close(); // closes the open session too
+}
+```
+
+| 规则 | 行为 |
+| --- | --- |
+| 所有权 | 每次 `launch` 都使用自己的引擎实例：`launch(web())`。同一实例上的第二个宿主会以 `WORKER_PROTOCOL` 失败。 |
+| 会话 | 一个宿主同一时间只能有一个会话。调用 `newSession()` 前先关闭它。要并行执行，启动更多宿主。 |
+| 超时 | 操作、等待或读取的超时为 30000 ms。`app.open()` 和 `app.restart()` 为 120000 ms。`launch({ timeout })` 或 `session.setDefaultTimeout(ms)` 为它们设置统一值。会话没有截止时间。 |
+| 取消 | `launch({ signal })` 和 `newSession({ signal })` 会停止正在运行的操作。 |
+| Ctrl-C | 宿主会在收到 SIGINT、SIGTERM 和 SIGHUP 时关闭，避免留下浏览器或设备会话。随后程序因该信号而结束，除非它自己监听该信号。使用 `handleSignals: false` 关闭此行为。 |
+| 文件 | 截图和下载文件存放在临时目录中，宿主关闭时删除。设置 `artifactsDir` 可保留它们。 |
+
+[参考](/reference/core)列出了全部选项。
+
+## 操作设备上的应用
+
+传入 `mobile()` 和应用。同一份 `screen` 代码可以在浏览器和设备上运行。
+
+```ts
+import { launch } from '@e2e-dev/core';
+import { mobile } from '@e2e-dev/mobile/engine';
+
+await using shopApp = await launch(mobile({ platform: 'ios' }), {
+  app: { bundleId: 'com.example.shop', linkBase: 'https://shop.example.com' },
+});
+await using session = await shopApp.newSession();
+await session.app.open('/products/A-1001');
+```
+
+`app.linkBase` 让 `app.open(path)` 在应用中打开链接：此处以通用链接的方式打开 `https://shop.example.com/products/A-1001`；设置 `linkBase: 'shopapp://'` 时则打开 `shopapp://products/A-1001`。未设置时，`app.open()` 启动应用，不接受路径。`linkBase` 也可用于 `e2e.config.ts` 的测试目标中；参阅[配置](/reference/config#linkbase)。
+
+iOS 模拟器可能会在打开自定义协议链接时显示“Open in ...?”提示。出现时，点击其 `Open` 按钮：`session.screen.getByRole('button', 'Open')`。
+
+## 保留登录状态
+
+`session.saveState()` 将浏览器会话的 Cookie 和存储捕获到内存中。关闭该会话后，用 `newSession({ state })` 从该状态启动另一个会话。移动端引擎没有可捕获的状态，因此调用会以 `UNSUPPORTED_CAPABILITY` 失败。
+
+```ts
+const state = await session.saveState();
+await session.close();
+await using next = await shop.newSession({ state });
+```
+
+要在多次程序运行之间保留状态，请使用自己保管的 32 字节密钥加密，例如将密钥存入机密存储。不提供明文导出。
+
+```ts
+import { randomBytes } from 'node:crypto';
+import { SessionState } from '@e2e-dev/core';
+
+const key = randomBytes(32);
+const bytes = await state.export({ key }); // write these to disk
+const restored = await SessionState.import(bytes, { key });
+```
+
+状态只能恢复到具有相同引擎、平台和应用的宿主上，否则会产生 `SESSION_MISMATCH`。同一应用的两个地址，例如 `localhost` 和 `127.0.0.1`，会被视为两个应用，除非两个宿主设置相同的 `app.identity`。密钥错误或任一字节被更改都会产生 `SESSION_INVALID`。
+
+## 传入机密值
+
+将机密值传给 `launch`，然后按名称填入。
+
+```ts
+await using shop = await launch(web(), {
+  app: { url: 'https://shop.example.com' },
+  secrets: { SHOP_PASSWORD: process.env.SHOP_PASSWORD! },
+});
+await session.screen.getByLabel('Password').fill(shop.secret('SHOP_PASSWORD'));
+```
+
+这些值绝不会出现在会话抛出的错误、`screen.tree()` 或智能体读取的内容中。代码主动请求的读取，例如 `textContent()`，会原样返回页面文本。导出的状态会加密保存会话已知的值，因此即使启动宿主时未传入这些值，也仍会对它们脱敏。
+
+智能体通过参数按名称获取机密值：`agent.act('Sign in with {password}', { params: { password: shop.secret('SHOP_PASSWORD') } })`。
+
+## 处理错误
+
+每次失败都是带有 `code` 的错误。用 `isE2EError` 检查，而非 `instanceof`。
+
+```ts
+import { isE2EError } from '@e2e-dev/core';
+
+try {
+  await session.screen.getByRole('button', 'Add to cart').tap();
+} catch (error) {
+  if (isE2EError(error) && error.code === 'LOCATOR_NOT_FOUND') console.log('not on sale');
+  else throw error;
+}
+```
+
+| 错误码 | 发生条件 |
+| --- | --- |
+| `LOCATOR_NOT_FOUND` | 超时前没有匹配项。等待超时也使用此错误码。 |
+| `LOCATOR_AMBIGUOUS` | 定位器匹配到多个节点。 |
+| `ACTION_FAILED` | 操作未完成。它可能已经到达应用，因此不要重复支付。 |
+| `APP_UNREACHABLE` | 应用的 URL 没有响应。 |
+| `CANCELLED` | `signal` 中止了操作，或会话已关闭。 |
+| `WORKER_PROTOCOL` | 在宿主上创建第二个会话、在同一引擎实例上创建第二个宿主，或宿主已关闭。 |
+
+[错误](/reference/errors)列出了全部错误码。
+
+## 让智能体执行操作
+
+`@e2e-dev/core/agent` 中的 `createAgent` 为一个会话创建智能体。它的 `act`、`assert`、`waitFor` 和 `extract` 与[测试](/reference/agent)中的行为相同。智能体需要 AI SDK，示例还使用 `zod` 读取带类型的结果：安装引擎时一并安装 `ai` 和 `zod`。
+
+```ts title="checkout.ts"
+import { launch } from '@e2e-dev/core';
+import { createAgent } from '@e2e-dev/core/agent';
+import { web } from '@e2e-dev/web/engine';
+import { gateway } from 'ai';
+import { z } from 'zod';
+
+await using shop = await launch(web(), { app: { url: 'https://shop.example.com' } });
+await using session = await shop.newSession();
+await session.app.open('/products/A-1001');
+
+const agent = createAgent(session, {
+  model: gateway('anthropic/claude-sonnet-5-5'),
+  cache: { dir: '.shop-bot/cache' },
+});
+
+await agent.act('Add the item to the cart and apply the coupon with the largest discount', {
+  cacheKey: 'cart-best-coupon',
+});
+// A check after the step lets the cache keep its recording.
+await session.screen.getByRole('button', /pay now/i).waitFor();
+
+const order = await agent.extract('the order total', { schema: z.object({ total: z.number() }) });
+if (order.total <= 39_000) {
+  try {
+    await session.screen.getByRole('button', /pay now/i).tap();
+  } catch (error) {
+    // A failed tap may still have reached the server: check the order list, never retry the payment.
+    console.error('check /my/orders');
+    throw error;
+  }
+} else {
+  console.log(`the total, ${order.total}, is over the limit: the order stays unpaid`);
+}
+```
+
+`createAgent` 接受 [`agents` 条目](/reference/config#agents)的选项，例如 `model`、`judge`、`maxSteps` 和 `context`，以及 `cache`。没有默认模型：未配置模型的智能体首次调用时会以 `MODEL_UNAVAILABLE` 失败。`act` 步骤有独立的超时，默认为 120000 ms；通过每次调用的 `timeout` 设置。
+
+### 回放已记录的步骤
+
+设置 `cache` 后，`act` 会记录每个流程，并在下次运行时回放，无需调用模型。此时每次 `act` 都要通过 `cacheKey` 命名录制内容，或使用 `cache: false` 实时执行。两者都未提供的 `act` 会以 `INVALID_ARGUMENT` 失败；如果 `cache` 选项写在 `createAgent` 调用中，TypeScript 也会拒绝这种调用。
+
+录制内容的键由 `cacheKey`、指令、参数、应用，以及会话中相同调用的次数决定。将每次运行会变化的值作为参数传入：智能体从屏幕读取的值会在每次运行时重新由模型决定。
+
+录制内容会在会话或其宿主关闭时保存，且只有步骤之后的检查通过才会保存，例如 `locator.waitFor()`、`agent.assert` 或 `agent.waitFor`。智能体步骤失败时，当时尚未确认的录制内容会被丢弃。你自己代码中的定位器调用失败，例如 `waitFor` 超时，不会丢弃任何录制内容。关于回放如何检查屏幕并交给模型处理，阅读[回放缓存](/cache)。
+
+| 选项 | 默认值 | 含义 |
+| --- | --- | --- |
+| `dir` | `.e2e/cache` | 相对于 `launch` 的 `cwd` 的目录。 |
+| `mode` | `read-write` | `read-only` 只回放，不写入。 |
+| `strict` | `false` | 录制内容无法再回放时，以 `REPLAY_STALE` 失败。 |
+| `store` | - | 使用自定义 [`CacheStore`](/cache) 替代文件。 |
+
+## 下一步
+
+<CardGroup cols={2}>
+  <Card title="@e2e-dev/core 参考" href="/reference/core">
+    `launch`、会话、已保存状态和 `createAgent` 的全部选项。
+  </Card>
+  <Card title="screen" href="/reference/screen">
+    会话提供的全部查询和操作。
+  </Card>
+  <Card title="智能体" href="/reference/agent">
+    `act`、`assert`、`waitFor` 和 `extract` 的参数与返回值。
+  </Card>
+  <Card title="模型" href="/models">
+    选择并配置智能体调用的模型。
+  </Card>
+</CardGroup>

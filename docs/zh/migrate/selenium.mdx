@@ -1,0 +1,149 @@
+---
+title: 从 Selenium 迁移
+description: 使用定位器、可重试的断言和智能体目标，以 TypeScript 改写 Selenium 流程。
+"og:image": "https://e2e.com/docs/images/og/migrate/selenium.png?v=32737f50da"
+"twitter:image": "https://e2e.com/docs/images/og/migrate/selenium.png?v=32737f50da"
+---
+
+import { SetupPrompt } from '../../snippets/setup-prompt-card.jsx';
+
+export const migrationPrompt = `将这个项目的 Selenium 测试迁移到 e2e，每次迁移一个流程。文档：\`https://e2e.com/docs/migrate/selenium.md\`
+
+1. 阅读上面的迁移指南。它给出了 Selenium 配置和 WebDriver 调用到 e2e 的映射，并列出了 e2e 尚未提供的功能。
+2. e2e 测试使用 TypeScript。如果 Selenium 测试套件使用 Java、Python 或其他语言，询问我应将新测试项目放在哪里，例如带有独立 \`package.json\` 的 \`e2e/\` 文件夹。
+3. 如果该项目没有 e2e 配置（\`e2e.config.ts\`、\`.mts\`、\`.js\` 或 \`.mjs\`），在其中运行 \`npx e2e init --yes\`（或对应的 pnpm 或 bun 命令）。它会写入配置和示例测试，此时还不会安装任何内容。
+4. 阅读 e2e 技能（\`npx e2e guide\` 输出技能内容，\`npx e2e guide <topic>\` 输出指定主题），并在以下每个步骤中遵循它。
+5. 如果运行了 init，询问我希望通过哪种方式为智能体步骤提供模型：ChatGPT、GitHub Copilot、OpenCode Console 或 SuperGrok 订阅、API 密钥，还是本地模型。使用对应提供方的包进行配置。如果需要登录，给我 \`npx e2e login\` 命令，并等待我确认。
+6. 将测试目标的 \`app\` 设为各个 \`driver.get\` 使用的 URL；如果测试套件负责启动应用，还要设置启动命令。将密码和令牌移入 \`credentials\` 或 \`secrets\`。
+7. 安装依赖项。
+8. 列出页面对象和使用它们的流程，询问我先迁移哪些。建议选择一个页面对象及其流程。
+9. 根据指南中的表格，将这些流程改写为 \`tests/\` 下的 \`.e2e.ts\` 文件（e2e 默认运行 \`tests/**/*.e2e.ts\`）。迁移流程前先检查“e2e 尚未提供的功能”。如果其中列出了该流程需要的调用，使用“当前替代方式”中的方法，或将流程留在 Selenium 中并说明原因。优先使用角色、标签和测试 ID 查询，而不是 CSS 和 XPath。将每个等待和 \`Thread.sleep\` 替换为定位器断言。缩小匹配多个节点的查询范围。将页面对象的准备代码改为测试夹具。
+10. 使用 \`app.open()\` 和定位器断言，让导航和最终断言保持确定性。对于经常失败的一连串脚本交互，建议改为一个 \`agent.act\` 目标。
+11. 使用 \`npx e2e run <file>\` 运行新文件，并持续修复直到通过。在我确认可以删除前，保留 Selenium 测试。
+12. 总结哪些流程已迁移、哪些留在 Selenium 中，以及原因。`;
+
+e2e 用 TypeScript 测试替换 Selenium 测试套件。定位器按角色和标签查找节点，断言则持续重试，直到通过或超时。Java 或 Python 测试套件需要改写，因此请同时运行两个测试套件，每次迁移一个流程。
+
+<SetupPrompt>
+
+<Prompt description={migrationPrompt} children={migrationPrompt} actions={["copy", "cursor"]} />
+
+</SetupPrompt>
+
+对于跨多个会话的迁移，[`migrate-to-e2e` 技能](/coding-agents#migrate-an-existing-suite)会将已迁移内容记录在进度文件中，并保持旧测试套件运行，直到你逐个停用测试。
+
+## 迁移配置
+
+<Note>按照[快速开始](/quickstart)安装 e2e。只有智能体调用需要模型，因此下面的示例无需模型即可运行。</Note>
+
+| Selenium | e2e |
+| --- | --- |
+| 每个 `driver.get` 中的 URL | 测试目标上的 `app: { url }`，之后使用相对路径 |
+| 在脚本中启动应用 | `app: { url, command }`，参阅[启动应用](/web#starting-your-app) |
+| 每个浏览器一个驱动 | 每种 `web({ browser })` 构建对应一个测试目标，使用 `chromium`、`firefox` 或 `webkit`，而非 Chrome、Edge 或 Safari |
+| Selenium Grid | 通过 `workers` 并行运行，通过[浏览器提供方](/browser#hosted-browsers)使用托管 Chromium |
+| 来自 `System.getenv` 的密码 | 配置中的 `credentials` 或 `secrets`，参阅[身份验证](/authentication) |
+
+## 改写一个流程
+
+```java title="Selenium"
+driver.get("http://localhost:3000/login");
+WebDriverWait wait = new WebDriverWait(driver, Duration.ofSeconds(10));
+wait.until(visibilityOfElementLocated(By.id("username"))).sendKeys("admin@example.test");
+driver.findElement(By.id("password")).sendKeys(System.getenv("ADMIN_PASSWORD"));
+driver.findElement(By.xpath("//button[contains(., 'Sign in')]")).click();
+wait.until(urlContains("/dashboard"));
+assertEquals("Welcome back, admin!",
+    driver.findElement(By.cssSelector(".greeting")).getText());
+```
+
+```ts title="e2e"
+import { test } from '@e2e-dev/web';
+import { expect, credentials } from 'e2e';
+
+test('signs in', async ({ app, screen, browser }) => {
+  const admin = credentials.user('admin');
+  await app.open('/login');
+  await screen.getByLabel('Username').fill(admin.username);
+  await screen.getByLabel('Password').fill(admin.password);
+  await screen.getByRole('button', 'Sign in').tap();
+  await expect(browser).toHaveURL('/dashboard');
+  await expect(screen.getByRole('status')).toHaveText('Welcome back, admin!');
+});
+```
+
+## 映射每个 WebDriver 调用
+
+| Selenium | e2e |
+| --- | --- |
+| `driver.get(url)`、`navigate().back()`、`.forward()`、`.refresh()` | `app.open(path)`、`app.back()`、`browser.forward()`、`browser.reload()` |
+| `getCurrentUrl()`、`getTitle()`、`manage().addCookie`、`getScreenshotAs` | `browser.url()`、`browser.title()`、`browser.setCookies`、`app.screenshot('label')` |
+| `By.id('x')` | `browser.locator('#x')`，ID 包含 `:`、`.`、`$` 或以数字开头时使用 `'[id="x"]'` |
+| `By.name`、`By.cssSelector`、`By.xpath` | `browser.locator('[name="x"]')`、`browser.locator('css or xpath')` |
+| `By.linkText`、`By.partialLinkText` | `screen.getByRole('link', { name })`、`name: /part/` |
+| `findElements(...).size()`、`.get(n)` | `await locator.count()`、`locator.nth(n)` |
+| `.click()`、`.clear()`、`Actions.moveToElement`、`Actions.dragAndDrop` | `.tap()`、`.clear()`、`.hover()`、`.dragTo(target)` |
+| `.sendKeys('text')` | `.fill('text')` 替换内容，`.pressSequentially('text')` 追加内容 |
+| `.sendKeys(Keys.ENTER)`、`Actions.keyDown(CONTROL).sendKeys('a')` | `.press('Enter')`、`.press('ControlOrMeta+a')` |
+| 文件输入框上的 `.sendKeys(path)`、`new Select(el).selectByVisibleText` | `.setInputFiles(path)`、`.selectOption({ label })` |
+| `.getText()`、`.isDisplayed()`、`.getDomAttribute(name)` | `.textContent()`、`.isVisible()`、`.getAttribute(name)` |
+| `.getAttribute('value')`、`.getAttribute('checked')` | `.inputValue()`、`.isChecked()`。e2e 的 `.getAttribute()` 读取 DOM 特性，而非属性 |
+| `wait.until(visibilityOf(...))`、`textToBe(...)`、`urlContains(...)` | `expect(locator).toBeVisible()`、`.toHaveText(...)`、`expect(browser).toHaveURL(/.../)` |
+| `switchTo().frame()`、`switchTo().alert().accept()` | `browser.frameLocator('#frame')`、在操作前调用 `browser.onDialog('accept')` |
+| `switchTo().window(handle)`、`getWindowHandles()`、`switchTo().newWindow()` | `tab.activate()`、`browser.tabs()`、`browser.newTab()`；对于应用打开的标签页使用 `browser.waitForPopup(() => trigger)`，参阅[标签页](/reference/web#tabs) |
+| `executeScript(script, args)` | `browser.evaluate(fn, arg)`，输入和输出仅限 JSON |
+| 页面对象 | 通过 `test.extend` 定义的测试夹具，或 `agent.act` 的目标，参阅[页面对象](/page-object-model) |
+
+## e2e 尚未提供的功能
+
+“已计划”表示已列入路线图，“暂未提供”表示尚无时间安排。“不计划支持”表示 e2e 有意不提供。
+
+### 已计划
+
+| Selenium | 当前替代方式 |
+| --- | --- |
+| `executeScript(script, element)`、`getDomProperty`、`getCssValue` | `.tap()` 或 `.scrollIntoView()` 等定位器操作，或配合 CSS 选择器使用 `browser.evaluate` |
+| `element.findElement(By.cssSelector)`、WebdriverIO 的 `$('a').$('b')` | 一个 `browser.locator('a >> b')` 选择器，或链式 `getBy*` 查询 |
+| `ChromeOptions.addArguments`、`setBinary`、`Proxy`、`acceptInsecureCerts` | 使用这些标志启动 Chrome 或 Edge，再通过 `web({ connect })` 连接 |
+| `@BeforeSuite`、`@AfterSuite`、pytest 会话作用域测试夹具、WebdriverIO 的 `onPrepare` | 每次运行执行一次：`app.command` 启动的脚本，或包装 `e2e run` 的脚本。每个文件执行一次：`beforeAll` 和 `afterAll`。登录：保存会话的顶层 `test.setup` |
+| 网页端的 BrowserStack 或 Sauce Labs | 如果厂商提供 CDP 端点，使用你自己的[浏览器提供方](/browser#write-a-provider) |
+| `manage().logs()`、请求监听器、地理位置 | 在 `browser.addInitScript` 中修改页面，在 `browser.route` 中记录请求 |
+| `setNetworkConditions` | 离线场景可在 `browser.route` 中中止请求。不支持带宽限制或延迟，请将这些测试留在 Selenium 中 |
+
+### 暂未提供
+
+| Selenium | 当前替代方式 |
+| --- | --- |
+| `new RemoteWebDriver(gridUrl)`、远程节点上的 Firefox 或 Safari | 使用 `web({ connect })` 连接 CDP 端点。在本地运行 `firefox` 和 `webkit` 测试目标 |
+| 一个测试中使用两个驱动、WebdriverIO 的 `multiremote` | 通过应用的 API 操作第二个用户 |
+| `getPageSource()`、`getLocalStorage()`、`getSessionStorage()` | `browser.evaluate`，例如 `() => localStorage.getItem('k')` |
+| Java、Python、C# 或 Ruby 绑定 | 测试使用 TypeScript 或 JavaScript |
+
+### 不计划支持
+
+| Selenium | 替代方式 |
+| --- | --- |
+| Cucumber 功能文件 | 将每个场景改写为测试。一个步骤通常适合对应一个 `agent.act` 目标 |
+| `Thread.sleep`、`Actions.pause`、`wait.until(elementToBeClickable(...))` | 对所等待的状态使用定位器断言。每个操作都会等待其节点 |
+| 对话框打开后调用 `switchTo().alert()`、`alertIsPresent()` | 在打开对话框的操作前调用 `browser.onDialog(handler)` |
+| 真正的 Safari、IE 模式 | `webkit` 是最接近 Safari 的构建。将 IE 模式测试留在 Selenium 中 |
+| `executeCdpCommand`、`DevTools.send`、接收驱动的 SDK | 将这些测试留在 Selenium 中。原始驱动调用不会被记录或脱敏 |
+| Allure 报告 | 将 `junit` 报告器的 XML 交给 Allure，或使用 `htmlReporter()` |
+
+## 有意保留的差异
+
+- `findElement` 取第一个匹配项。e2e 在匹配多个节点时会以 `LOCATOR_AMBIGUOUS` 失败，因此请使用 `.filter()`、`.first()` 或 `.nth()` 缩小范围。
+- 没有隐式等待。操作和断言会自行等待，最长分别为 `actionTimeout` 和 `assertionTimeout`。
+- 每个测试都会获得新的浏览器上下文，而非共享驱动。要只登录一次，请使用 `test.setup` 和 `{ session }`，参阅[身份验证](/authentication)。
+- 页面尺寸来自 `web({ viewport })`，而非 `setSize` 或 `maximize()`。
+
+## 下一步
+
+<CardGroup cols={2}>
+  <Card title="核心概念" icon="pen-to-square" href="/core-concepts">
+    使用目标、断言和定位器代替脚本化选择器。
+  </Card>
+  <Card title="screen 参考" icon="crosshairs" href="/reference/screen">
+    所有查询、范围细化、操作和读取方法。
+  </Card>
+</CardGroup>

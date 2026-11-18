@@ -1,0 +1,200 @@
+---
+title: GitLab CI/CD
+description: 在 GitLab CI/CD 上运行网页端、iOS 和 Android 测试，在合并请求中显示结果，并只运行合并请求可能影响的测试。
+---
+
+import { SetupPrompt } from '../../snippets/setup-prompt-card.jsx';
+
+export const setupPrompt = `添加一个 GitLab CI/CD 流水线，运行这个项目的 e2e 测试。文档：\`https://e2e.com/docs/ci/gitlab.md\` 和 \`https://e2e.com/docs/ci.md\`
+
+1. 阅读这两个页面。网页端测试目标使用网页端作业，移动端测试目标使用 iOS 和 Android 作业。
+2. 将作业添加到 \`.gitlab-ci.yml\`，如果项目已有被引入的文件，也可以添加到该文件中。根据项目调整包管理器、Node 版本、应用启动或构建方式以及应用路径。
+3. 对于移动端作业，询问我要使用的自管理运行器的标签。
+4. 列出作业读取的 CI/CD 变量，例如模型密钥，并让我添加这些变量。
+5. 在我推送后，阅读作业日志并修复错误，直到流水线通过。`;
+
+这些作业在 GitLab 的托管 Linux 运行器上运行网页端测试目标，在你自己的运行器上运行 iOS 和 Android 测试目标。关于 CI 默认值、模型密钥和退出码，请参阅[持续集成](/ci)。`e2e init --ci gitlab` 会根据你的测试目标和包管理器写入这些作业，并包含 Expo 或原生 React Native 应用的构建步骤；参阅 [CI 流水线](/reference/cli#ci-pipeline)。
+
+<SetupPrompt>
+
+<Prompt description={setupPrompt} children={setupPrompt} actions={["copy", "cursor"]} />
+
+</SetupPrompt>
+
+## 网页端
+
+这个作业会在每个合并请求以及每次推送到默认分支时运行确定性测试和智能体测试。它假定配置中有用于启动应用的[命令](/web#starting-your-app)。使用与你项目的 Node 版本对应的 `node` 镜像：
+
+```yaml title=".gitlab-ci.yml" expandable
+e2e:
+  image: node:26
+  interruptible: true
+  timeout: 30 minutes
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+  variables:
+    APP_URL: http://127.0.0.1:3000
+    PLAYWRIGHT_BROWSERS_PATH: $CI_PROJECT_DIR/.cache/ms-playwright
+  cache:
+    key:
+      files:
+        - package-lock.json
+    paths:
+      - .npm/
+      - .cache/ms-playwright/
+  script:
+    - npm ci --cache .npm --prefer-offline
+    - npx @e2e-dev/web install chromium --with-deps
+    - npx e2e run --reporter list,junit
+  artifacts:
+    when: always
+    expire_in: 7 days
+    paths:
+      - .e2e/report.json
+      - .e2e/junit.xml
+      - .e2e/results/
+    reports:
+      junit: .e2e/junit.xml
+```
+
+规则设置在作业上，而非 `workflow:` 块中，因此同一个作业既可以在独立流水线中运行，也可以[与你的其他作业一起运行](#add-it-to-an-existing-pipeline)。
+
+GitLab 只缓存项目内的路径，因此 `PLAYWRIGHT_BROWSERS_PATH` 将[浏览器](/reference/web#installing-browsers)放到项目内。缓存会保留它们，直到锁文件发生变化。
+
+让应用的命令监听 `127.0.0.1`，即 `APP_URL` 指定的主机。在容器中，监听 `localhost` 的开发服务器（例如 Vite）可能只绑定到 `::1`。这样 e2e 就无法访问它，运行会因 `APP_UNREACHABLE` 失败。
+
+`reports: junit` 在合并请求组件和流水线的 **Tests** 选项卡中显示结果。`when: always` 让测试失败时也能保留报告。
+
+在 GitLab.com 上，新账户必须验证身份后，托管运行器才会接受其作业。在此之前，每个流水线都会失败，不会启动任何作业。
+
+## 添加到现有流水线
+
+如果项目已有 `.gitlab-ci.yml`，将作业放到单独的文件中，例如 `.gitlab/e2e.gitlab-ci.yml`。然后在 `.gitlab-ci.yml` 中引入它：
+
+```yaml title=".gitlab-ci.yml"
+include:
+  - local: .gitlab/e2e.gitlab-ci.yml
+```
+
+没有 `rules` 的作业只在分支流水线中运行。因此，合并请求流水线只运行 `e2e` 作业，你的其他作业仍然在每次推送时运行一次。
+
+## 模型密钥
+
+在 **Settings > CI/CD > Variables** 下添加模型密钥，例如 `AI_GATEWAY_API_KEY`，并将可见性设为 **Masked and hidden**。也可以使用从标准输入读取值的 [GitLab CLI](https://gitlab.com/gitlab-org/cli)：
+
+```bash
+printf %s "$AI_GATEWAY_API_KEY" | glab variable set AI_GATEWAY_API_KEY --masked --hidden --raw
+```
+
+以相同方式添加用户凭据，例如 `E2E_USER_ADMIN_PASSWORD`。每个作业都会通过环境变量获取它们。
+
+- 取消勾选 **Expand variable reference**（`--raw` 会完成此操作）。否则，GitLab 会拒绝包含 `$` 和某些其他字符的掩码值。
+- GitLab 只能对至少 8 个字符、单行且不含空格的值进行掩码处理。对于无法掩码的值，例如较短的用户名，使用 **Visible**。
+- 取消勾选 **Protect variable**，除非测试只在受保护分支上运行。GitLab 只向受保护分支和标签上的流水线提供受保护变量。
+- 来自分叉仓库的合并请求在分叉项目中运行，无法获取你的任何变量。当成员在你的项目中运行它时，其代码可以读取密钥。只对你信任的代码这样做。
+
+[提交回放缓存](/cache#commit-the-replay-cache)可以减少模型调用。回放的 `agent.act` 不调用模型；每个 `agent.assert` 仍会调用。
+
+## 只运行受影响的测试
+
+要让[测试过滤器](/filters)排除合并请求不会影响的测试，请将合并请求的基准传给 `--changed-since`。在作业的 `variables` 中添加 `GIT_DEPTH: 0`，以获取完整历史记录。然后将 `npx e2e run` 行替换为以下内容，它会在合并列车中跳过这个标志：
+
+```yaml
+  script:
+    # ...
+    - |
+      if [ -n "$CI_MERGE_REQUEST_IID" ] && [ "$CI_MERGE_REQUEST_EVENT_TYPE" != merge_train ]; then
+        set -- --changed-since "${CI_MERGE_REQUEST_TARGET_BRANCH_SHA:-$CI_MERGE_REQUEST_DIFF_BASE_SHA}"
+      fi
+      npx e2e run --reporter list,junit "$@"
+```
+
+合并结果流水线中设置了 `CI_MERGE_REQUEST_TARGET_BRANCH_SHA`，其他流水线中设置的是 `CI_MERGE_REQUEST_DIFF_BASE_SHA`。默认分支会运行整个测试套件。参阅[添加决策过滤器](/filters#add-the-decision-filter)。
+
+## 分片
+
+`parallel` 为每个[分片](/ci#sharding)运行一个作业。GitLab 会在合并请求组件中合并所有分片的 JUnit 报告：
+
+```yaml
+e2e:
+  parallel: 3
+  script:
+    # ...
+    - npx e2e run --shard $CI_NODE_INDEX/$CI_NODE_TOTAL --reporter list,junit
+```
+
+没有测试的分片会因 `NO_TESTS` 失败。如果运行可能选出的测试数少于分片数，请添加 `--pass-with-no-tests`。
+
+## iOS 和 Android
+
+在使用 shell 执行器的自管理运行器上运行移动端作业：iOS 使用安装了 Xcode 的 Mac；Android 使用安装了 KVM、Gradle 构建所需 JDK 和 Android SDK 的 Linux。GitLab 的托管 macOS 运行器采用无头模式，不支持 XCUITest 所需的 `testmanagerd`。其托管 Linux 运行器未列出 KVM 支持。
+
+这些作业遵循[移动端作业](/ci#mobile-jobs)中的规则。将 `tags` 替换为你的运行器标签。Android 作业会启动你在运行器上创建的名为 `e2e` 的 AVD。
+
+```yaml title=".gitlab-ci.yml" expandable
+.e2e-mobile:
+  timeout: 60m
+  interruptible: true
+  artifacts:
+    when: always
+    expire_in: 7 days
+    paths:
+      - .e2e/
+    reports:
+      junit: .e2e/junit.xml
+
+e2e-ios:
+  extends: .e2e-mobile
+  tags: [macos]
+  script:
+    - npm ci
+    - (cd ios && pod install)
+    - |
+      xcodebuild -workspace ios/MyApp.xcworkspace -scheme MyApp \
+        -configuration Release -sdk iphonesimulator \
+        -destination 'generic/platform=iOS Simulator' \
+        -derivedDataPath build
+    - export E2E_DEVICE=$(xcrun simctl create e2e "iPhone 17" com.apple.CoreSimulator.SimRuntime.iOS-26-5)
+    - echo "$E2E_DEVICE" > .simulator-udid
+    - xcrun simctl bootstatus "$E2E_DEVICE" -b
+    - xcrun simctl install "$E2E_DEVICE" build/Build/Products/Release-iphonesimulator/MyApp.app
+    - npx e2e run --target ios --reporter list,junit
+  after_script:
+    - xcrun simctl delete "$(cat .simulator-udid)"
+
+e2e-android:
+  extends: .e2e-mobile
+  tags: [linux-kvm]
+  script:
+    - npm ci
+    - (cd android && ./gradlew :app:assembleRelease)
+    - mkdir -p .e2e
+    - PORT=$((5554 + 2 * CI_CONCURRENT_ID))
+    - export E2E_DEVICE=emulator-$PORT
+    - adb -s $E2E_DEVICE emu kill || true
+    - $ANDROID_HOME/emulator/emulator -avd e2e -read-only -port $PORT -no-window -no-audio -no-boot-anim -no-snapshot -gpu swiftshader_indirect > .e2e/emulator.log 2>&1 &
+    - timeout 300 adb -s $E2E_DEVICE wait-for-device
+    - timeout 300 sh -c 'until [ "$(adb -s $E2E_DEVICE shell getprop sys.boot_completed | tr -d "\r")" = 1 ]; do sleep 2; done'
+    - adb -s $E2E_DEVICE install -r android/app/build/outputs/apk/release/app-release.apk
+    - npx e2e run --target android --reporter list,junit
+  after_script:
+    - adb -s emulator-$((5554 + 2 * CI_CONCURRENT_ID)) emu kill
+```
+
+每个测试目标通过 `mobile()` 中的 `device: process.env.E2E_DEVICE` 指定设备。这样，运行会操作这个作业启动的设备，而不会使用同一机器上其他作业遗留的设备。
+
+GitLab 在同一个 shell 中运行所有 `script` 行，因此模拟器和 `E2E_DEVICE` 在后续行中仍然可用。`after_script` 会在新的 shell 中运行，`script` 失败后也会运行，但超时后不会运行，因此超时作业可能留下仍在运行的设备。Android 作业从 `CI_CONCURRENT_ID` 获取端口，因此同一个运行器上同时运行的作业会各自拥有独立模拟器；它也会停止超时作业在该端口上遗留的模拟器。`-read-only` 允许从同一个 AVD 启动多个模拟器。作业将模拟器日志写入 `.e2e/emulator.log`，因此启动失败的信息会出现在产物中。自管理运行器在作业之间保留 `~/.agent-device`，因此只需在首次运行时构建 XCUITest 运行器。
+
+如果不想在运行器上使用模拟器，可以向[托管设备服务](/mobile#hosted-devices)租用设备。
+
+## 下一步
+
+<CardGroup cols={2}>
+  <Card title="持续集成" icon="rotate" href="/ci">
+    CI 默认值、分片、重新运行和退出码。
+  </Card>
+  <Card title="测试过滤器" icon="filter" href="/filters">
+    只运行合并请求可能影响的测试。
+  </Card>
+</CardGroup>

@@ -1,0 +1,251 @@
+---
+title: app
+description: 可在所有平台上使用的跨平台应用生命周期测试夹具。
+"og:image": "https://e2e.com/docs/images/og/reference/app.png?v=0b63e99aab"
+"twitter:image": "https://e2e.com/docs/images/og/reference/app.png?v=0b63e99aab"
+---
+
+`app` 测试夹具用于打开、重启和重置被测应用，以及截图和录屏。每个测试目标都提供它。引擎无法执行的方法会以 `UNSUPPORTED_CAPABILITY` 失败。
+
+```ts title="tests/billing.e2e.ts"
+import { expect, test } from 'e2e';
+
+test('billing page', async ({ app, screen }) => {
+  await app.open('/settings/billing');
+  await expect(screen.getByRole('heading', { name: 'Billing' })).toBeVisible();
+  await app.screenshot('billing');
+});
+```
+
+## 参考
+
+| 成员 | 返回值 |
+| --- | --- |
+| [`baseUrl`](#baseurl) | `string \| undefined` |
+| [`open`](#open) | `Promise<void>` |
+| [`restart`](#restart) | `Promise<void>` |
+| [`clearState`](#clearstate) | `Promise<void>` |
+| [`back`](#back) | `Promise<void>` |
+| [`screenshot`](#screenshot) | `Promise<string>` |
+| [`startRecording`](#startrecording) | `Promise<void>` |
+| [`stopRecording`](#stoprecording) | `Promise<[RecordedVideo, ...RecordedVideo[]]>` |
+
+`open`、`restart` 和 `clearState` 受 `timeout` 限制，其他方法受 `actionTimeout` 限制。两者都来自[配置](/reference/config)：`timeout` 默认为 120000 ms，`actionTimeout` 默认为 30000 ms。两者均不能超过测试剩余的超时时间。`app` 方法不接受单次调用的超时选项。
+
+### `baseUrl`
+
+测试目标应用解析后的基础 URL。
+
+```ts
+const health = await fetch(`${app.baseUrl}/api/health`);
+```
+
+- 不含末尾斜杠，因此 `${app.baseUrl}/path` 拼接后只有一个斜杠。
+- 当 `app.url` 声明端口为 `0` 时，`baseUrl` 包含本次运行分配的端口。
+- 在未声明 `app.url` 的测试目标上，它为 `undefined`。使用 `@e2e-dev/web` 中的 `test` 时，其类型为 `string`：`web()` 测试目标始终声明 `app.url`。
+
+### `open`
+
+打开应用：可以使用声明的 URL、相对于它的路径，或任何绝对 `http(s)` URL。
+
+```ts
+await app.open(); // the target's app.url
+await app.open('/settings/billing'); // a path relative to app.url
+await app.open('https://example.com/login'); // any http(s) URL
+```
+
+在没有 URL 的设备测试目标上，`open()` 会重新启动指定应用。如果测试目标声明了 [`app.linkBase`](/reference/config#linkbase)，路径会作为应用内链接打开；未声明时则为 `APP_URL_REQUIRED`。设置链接基础地址后，绝对链接会按原样打开，包括自定义应用协议。
+
+| 抛出的错误 | 触发条件 |
+| --- | --- |
+| `APP_URL_REQUIRED` | 在未声明 `app.url`（设备上为 `app.linkBase`）的测试目标上使用路径。 |
+| `POLICY_DENIED` | URL 的协议不是 `http:` 或 `https:`。允许 `about:blank`。在设有 `app.linkBase` 的设备上，链接的协议为 `file:`、`data:`、`javascript:`、`view-source:`、`blob:` 或 `filesystem:`。 |
+| `APP_UNREACHABLE` | 无法访问应用 URL。 |
+| `ACTION_FAILED` | 操作失败或超时。 |
+| `UNSUPPORTED_CAPABILITY` | 有 URL 的测试目标没有 `session.open`，或无 URL 的测试目标没有 `session.restart`。在没有 `app.bundleId` 的设备上，还包括尚未安装测试目标的构建产物（[移动端](/reference/mobile#the-app-under-test)）。 |
+
+### `restart`
+
+重新创建执行上下文，并保留持久化状态。然后，如果测试目标声明了基础 URL，则在该 URL 重新打开应用。
+
+```ts
+await app.restart();
+```
+
+| 抛出的错误 | 触发条件 |
+| --- | --- |
+| `ACTION_FAILED`、`ENGINE_FAILURE` | 操作或引擎失败。 |
+| `UNSUPPORTED_CAPABILITY` | 没有 `session.restart`，或在没有 `app.bundleId` 的设备上尚未安装构建产物。 |
+
+### `clearState`
+
+清除持久化的客户端状态，并重新创建执行上下文。然后，如果测试目标声明了基础 URL，则在该 URL 重新打开应用。
+
+```ts
+test.beforeEach(async ({ app }) => {
+  await app.clearState();
+});
+```
+
+| 抛出的错误 | 触发条件 |
+| --- | --- |
+| `ACTION_FAILED`、`ENGINE_FAILURE` | 操作或引擎失败。 |
+| `UNSUPPORTED_CAPABILITY` | 没有 `session.reset`，或在没有 `app.bundleId` 的设备上尚未安装构建产物。 |
+
+<Warning>
+在串行组内调用 `clearState` 会破坏该组依赖的共享状态。请改为在普通组的 `beforeEach` 中使用它。
+</Warning>
+
+### `back`
+
+后退导航一次。
+
+```ts
+await app.back();
+```
+
+| 抛出的错误 | 触发条件 |
+| --- | --- |
+| `APP_NOT_OPEN` | 尚未运行 `app.open()`，或引擎报告状态无效。 |
+| `ACTION_FAILED` | 操作失败或超时。 |
+| `UNSUPPORTED_CAPABILITY` | 没有 `session.back`。 |
+
+### `screenshot`
+
+截取经过脱敏的证据截图，并返回其路径。
+
+```ts
+const shot = await app.screenshot('after-checkout');
+```
+
+- 文件是位于 `screenshots/` 下的本次尝试产物。返回的路径为绝对路径。报告记录相对于产物根目录的路径。
+- `list` 报告器的摘要在 `Screenshots` 行中最多列出 10 个文件，剩余文件显示数量。
+- `label` 用作步骤名称，并加入文件名。
+- 页面导航期间截取的截图会捕获当时显示的文档。
+
+| 抛出的错误 | 触发条件 |
+| --- | --- |
+| `UNSUPPORTED_CAPABILITY` | 引擎不支持截图。 |
+| `ENGINE_FAILURE` | 截图失败。 |
+
+<Note>
+截图只会遮蔽安全字段，填入 `Secret` 后也是如此。应用在其他位置显示的机密值会出现在图像中。参阅[填入机密值之后的截图](/reference/security#screenshots-after-a-secret-fill)。
+</Note>
+
+### `startRecording`
+
+开始录屏，直到调用 `stopRecording`。
+
+```ts
+test('the dialog slides in', { video: 'off' }, async ({ app, screen }) => {
+  await app.open();
+  await app.startRecording({ name: 'dialog' });
+  await screen.getByRole('button', 'Open').tap();
+  await expect(screen.getByRole('dialog')).toBeVisible();
+  const [video] = await app.stopRecording();
+});
+```
+
+- 同一时间只能进行一次录制。引擎只有一个录制器，因此请在测试上设置 `video: 'off'`：测试的[视频](/reference/config#video)正在录制时，启动录制会失败。这包括 `--video`、`retain-on-failure`，以及 `on-first-retry` 录制的重试。
+- 测试结束时仍在进行的录制会被停止并保留。
+- 与测试的视频一样，录制不会遮蔽任何内容。
+
+| 抛出的错误 | 触发条件 |
+| --- | --- |
+| `UNSUPPORTED_CAPABILITY` | 测试的视频正在录制，或引擎不支持录制视频。 |
+| `INVALID_ARGUMENT` | 已有另一次录制正在进行。 |
+
+### `stopRecording`
+
+停止录制，并按播放顺序返回视频。
+
+```ts
+const [video] = await app.stopRecording();
+if ('path' in video) console.log(video.path);
+```
+
+- 视频是本次尝试的 `recordings/` 下的文件（`path` 为绝对路径），命名为 `001-<name>.<ext>`；如果托管浏览器或设备保管录制，则为 `url`。
+- 通常只有一个视频；但在网页端，如果录制期间页面被替换（`app.restart()`、`app.clearState()`），则每个页面生成一个视频。
+- 该步骤在追踪记录中链接到每个视频。
+
+| 抛出的错误 | 触发条件 |
+| --- | --- |
+| `INVALID_ARGUMENT` | 当前没有正在进行的录制。 |
+| `ENGINE_FAILURE` | 引擎未写入任何视频。 |
+
+## 类型
+
+```ts
+export interface App {
+  /**
+   * The resolved base URL of the target's app, with the port the run
+   * allocated when `app.url` declared port 0 and no trailing slash, so
+   * `${app.baseUrl}/api/users` joins with one slash; undefined for a target
+   * that declares no `app.url`.
+   */
+  readonly baseUrl: string | undefined;
+  /**
+   * Opens the app: the declared URL, a path relative to it, or any absolute
+   * http(s) URL. On a device target, which has no URL, it launches the pinned
+   * app fresh; a path opens as a link in it when the target declares
+   * `app.linkBase`.
+   */
+  open(path?: string): Promise<void>;
+  /**
+   * Recreates the execution context while preserving persisted state, then
+   * reopens the app at its base URL when the target declares one.
+   */
+  restart(): Promise<void>;
+  /**
+   * Clears persisted client state, recreates the execution context, then
+   * reopens the app at its base URL when the target declares one.
+   */
+  clearState(): Promise<void>;
+  /** Navigates back once. */
+  back(): Promise<void>;
+  /** Captures a redacted evidence screenshot and returns its absolute path. */
+  screenshot(label?: string): Promise<string>;
+  /**
+   * Starts recording the screen, until `stopRecording`. One recording at a
+   * time, and none while the test's `video` records: set `{ video: 'off' }`
+   * on the test.
+   */
+  startRecording(options?: RecordingOptions): Promise<void>;
+  /**
+   * Stops the recording and returns its videos in play order: one, or on the
+   * web one per page when the page was replaced while it recorded.
+   */
+  stopRecording(): Promise<readonly [RecordedVideo, ...RecordedVideo[]]>;
+}
+
+/** How `app.startRecording` names its file. */
+export interface RecordingOptions {
+  /** File name stem, `recordings/001-<name>.<ext>`; defaults to `recording`. */
+  readonly name?: string;
+}
+
+/** One video `app.stopRecording` returns: a file, or a link to a recording a hosted service keeps. */
+export type RecordedVideo = RecordedVideoFile | RecordedVideoLink;
+
+/** A video file under the attempt's `recordings/` directory. */
+export interface RecordedVideoFile {
+  /** Absolute path of the file. */
+  readonly path: string;
+  /** When it started recording, as an ISO timestamp. */
+  readonly startedAt: string;
+}
+
+/** A recording a hosted browser or device service keeps, by URL. */
+export interface RecordedVideoLink {
+  /** `http(s)` URL of the recording. */
+  readonly url: string;
+  /** Media type of what the URL serves: `video/mp4`, or `text/html` for a player page. */
+  readonly mediaType: string;
+  /** When it started recording, as an ISO timestamp. */
+  readonly startedAt: string;
+}
+```
+
+## 相关内容
+
+仅限浏览器的操作位于 [`browser`](/reference/web) 测试夹具上，设备操作位于 [`device`](/reference/mobile) 上。

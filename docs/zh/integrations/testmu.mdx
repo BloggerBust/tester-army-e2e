@@ -1,0 +1,200 @@
+---
+title: TestMu AI
+sidebarTitle: TestMu AI
+description: 使用 @e2e-dev/testmu，在 TestMu AI（原 LambdaTest）的模拟器和真机上运行移动端测试目标，并在其托管的 Chrome 和 Edge 中运行网页端测试目标。
+"og:image": "https://e2e.com/docs/images/og/integrations/testmu.png?v=4bc1e43b07"
+"twitter:image": "https://e2e.com/docs/images/og/integrations/testmu.png?v=4bc1e43b07"
+---
+
+`@e2e-dev/testmu` 在 [TestMu AI](https://www.lambdatest.com)（原 LambdaTest）上运行测试目标。`testmu()` 是适用于 Android 模拟器、iOS 模拟器和真机的[设备提供方](/mobile#hosted-devices)。`@e2e-dev/testmu/web` 中的 `testmuBrowsers()` 是适用于托管 Chrome 和 Edge 的[浏览器提供方](/browser#hosted-browsers)。测试无需修改。
+
+## 身份验证
+
+在启动 `e2e run` 的环境中设置 `LT_USERNAME` 和 `LT_ACCESS_KEY`，例如通过 CI 机密值设置。从 **Account Settings → Password & Security → Username and Access Key**（[accounts.lambdatest.com/security/username-accesskey](https://accounts.lambdatest.com/security/username-accesskey)）复制它们。缺少任意一个，都会在测试开始前导致租用失败。`testmuBrowsers()` 仅通过每个会话的 CDP URL 发送它们，绝不会写入日志。
+
+## 在设备上运行移动端测试目标
+
+每个工作进程槽位在运行开始时租用一台设备，并在运行结束时释放。
+
+<Tip>
+使用托管设备运行 e2e，无需 Mac、Xcode 或 Android SDK。
+</Tip>
+
+同时安装集成包和移动端引擎：
+
+<CodeGroup>
+```bash npm
+npm install --save-dev e2e @e2e-dev/mobile @e2e-dev/testmu
+```
+
+```bash pnpm
+pnpm add -D e2e @e2e-dev/mobile @e2e-dev/testmu
+```
+
+```bash bun
+bun add -d e2e @e2e-dev/mobile @e2e-dev/testmu
+```
+</CodeGroup>
+
+```ts title="e2e.config.ts"
+import type { E2EConfig } from 'e2e';
+import { mobile } from '@e2e-dev/mobile';
+import { testmu } from '@e2e-dev/testmu';
+
+const apk = 'https://prod-mobile-artefacts.lambdatest.com/assets/docs/proverbial_android.apk';
+const ipa = 'https://prod-mobile-artefacts.lambdatest.com/assets/docs/proverbial_ios.ipa';
+
+export default {
+  targets: [
+    {
+      name: 'android-emulator',
+      engine: mobile({
+        platform: 'android',
+        device: testmu({ device: 'Galaxy S22 Ultra 5G', osVersion: '14', app: apk }),
+      }),
+      app: { bundleId: 'com.lambdatest.proverbial' },
+    },
+    {
+      name: 'ios-real',
+      engine: mobile({
+        platform: 'ios',
+        device: testmu({ device: 'iPhone 16', osVersion: '18', app: ipa, deviceType: 'real' }),
+      }),
+      app: { bundleId: 'proverbial' },
+    },
+    {
+      name: 'android-real',
+      engine: mobile({
+        platform: 'android',
+        device: testmu({ device: 'Pixel 6', osVersion: '14', app: apk, deviceType: 'real' }),
+      }),
+      app: { bundleId: 'com.lambdatest.proverbial' },
+    },
+  ],
+  workers: 1,
+} satisfies E2EConfig;
+```
+
+`device` 和 `osVersion` 必须与 TestMu AI 目录中的值完全一致，具体见[能力配置生成器](https://www.lambdatest.com/capabilities-generator)：虚拟 iOS 设备使用 `18.0`，iOS 真机使用 `18`，Android 使用 `14`。真机和虚拟设备有各自的目录。
+
+`app` 是 TestMu AI 为每个会话安装的构建产物：可以是 `lt://` 应用 ID、`https` URL，或相对于 `e2e.config.ts` 所在目录解析并上传的本地路径。Android 使用 `.apk` 或 `.aab`，iOS 模拟器使用压缩为 zip 的 `.app`，iOS 真机使用已签名的 `.ipa`。省略测试目标的 `app.appPath`，保留 `app.bundleId` 供 `app.open()` 使用。
+
+<Accordion title="测试示例">
+
+```ts title="tests/home.e2e.ts"
+import { test } from '@e2e-dev/mobile';
+import { expect } from 'e2e';
+
+test('Proverbial home screen', async ({ app, screen }) => {
+  await app.open();
+  await expect(screen.getByText('Proverbial')).toBeVisible();
+  // Android labels the button GEOLOCATION, iOS GeoLocation.
+  await expect(screen.getByRole('button', /^geolocation$/i)).toBeVisible();
+});
+```
+</Accordion>
+
+## 在浏览器中运行网页端测试目标
+
+每个工作进程槽位在运行期间都有自己的 Chrome 或 Edge 会话。与本地运行一样，每次尝试都会在该会话中获得新的浏览器上下文，因此测试永远不会看到其他测试的 Cookie、存储或权限。
+
+同时安装集成包和网页端引擎：
+
+<CodeGroup>
+```bash npm
+npm install --save-dev e2e @e2e-dev/web @e2e-dev/testmu
+```
+
+```bash pnpm
+pnpm add -D e2e @e2e-dev/web @e2e-dev/testmu
+```
+
+```bash bun
+bun add -d e2e @e2e-dev/web @e2e-dev/testmu
+```
+</CodeGroup>
+
+将测试目标的 `browser` 设为 `testmuBrowsers()`：
+
+```ts title="e2e.config.ts"
+import type { E2EConfig } from 'e2e';
+import { web } from '@e2e-dev/web';
+import { testmuBrowsers } from '@e2e-dev/testmu/web';
+
+export default {
+  targets: [
+    {
+      name: 'testmu-web',
+      engine: web({ browser: testmuBrowsers(), viewport: null }),
+      app: { url: 'https://staging.example.com' },
+    },
+  ],
+} satisfies E2EConfig;
+```
+
+## 设备选项
+
+| 选项 | 默认值 | 含义 |
+| ------------- | --------------- | ------- |
+| `device` | 必填 | TestMu AI 目录中的设备名称（`'Galaxy S22 Ultra 5G'`、`'iPhone 16'`）。 |
+| `osVersion` | 必填 | 目录中为该设备列出的操作系统版本。 |
+| `app` | 必填 | TestMu AI 安装的构建产物：`lt://` 应用 ID、`https` URL 或本地路径。 |
+| `deviceType` | `'virtual'` | 模拟器使用 `'virtual'`，真机使用 `'real'`。 |
+| `project` | `'e2e'` | 控制台中用于归组会话的项目。 |
+| `build` | 运行 ID | 控制台中用于归组会话的构建。 |
+| `sessionName` | `e2e-<run id>-<target>-<slot>` | 控制台中的会话名称。存在多个工作进程槽位时，会追加 `-<slot>`。 |
+| `orientation` | 设备默认值 | `'portrait'` 或 `'landscape'`。 |
+| `geoLocation` | TestMu AI 默认值 | 设备 IP 地理位置对应的国家代码（`'US'`）。 |
+| `timezone` | 设备默认值 | 时区（`'UTC+05:30'`）。 |
+| `language` | 设备默认值 | 语言代码（`'fr'`）。 |
+| `locale` | 设备默认值 | 区域设置（`'fr_FR'`）。 |
+| `appiumVersion` | TestMu AI 默认值 | 会话使用的 Appium 版本（`'2.16.2'`）。 |
+
+设备特性在会话开始时设置，并在整个会话期间保持不变。未知选项或无效值会导致配置加载失败，错误为 `INVALID_CONFIG`。
+
+## 浏览器选项
+
+| 选项 | 默认值 | 含义 |
+| ------ | ------- | ------- |
+| `browserName` | `'Chrome'` | `'Chrome'` 或 `'MicrosoftEdge'`。网页端引擎通过 CDP 连接，因此其他浏览器都会导致配置失败。 |
+| `capabilities` | 无 | 与 `browserName` 一同发送的 `browserVersion`，以及 TestMu AI 的 `LT:Options` 字段，例如 `platform`、`geoLocation`、`timezone`、`video`、`network`，或用于 [TestMu AI Tunnel](https://www.lambdatest.com/support/docs/testing-locally-hosted-pages/) 的 `tunnel` 和 `tunnelName`。 |
+
+除非 `capabilities` 已设置相应值，否则提供方会发送 `platform`（`Windows 11`，因为 TestMu AI 不接受未设置该值的会话）、`build`（运行 ID）、`project`（`e2e`）和 `idleTimeout`（600 秒）。除非 `capabilities` 已设置，否则 Edge 会话的 `browserOptions` 会包含 `--user-data-dir=remote-debug-profile-edge`。提供方自行设置 `user`、`accessKey` 和 `name`，因此在 `capabilities` 中设置其中任意一项都会导致配置失败，错误为 `INVALID_CONFIG`。嵌套的 `LT:Options`、`browserName`（请使用对应选项）、JSON 无法表示的值，以及拼写错误的 `testmuBrowsers()` 选项也会导致同样的错误。其他 `capabilities` 键会未经检查直接发送给 TestMu AI。
+
+```ts
+testmuBrowsers({
+  browserName: 'MicrosoftEdge',
+  capabilities: { browserVersion: '140', platform: 'Windows 10', build: `checkout ${process.env.GITHUB_SHA}`, video: true },
+})
+```
+
+## 查找会话和视频
+
+默认情况下，控制台将每个会话命名为 `e2e-<run id>-<target>-<slot>`。
+
+启用[视频](/reference/config#video)录制的尝试会获得：
+
+- **在设备上**，通过 `build` 和 `sessionName` 查找到的 TestMu AI 会话录像链接。录像覆盖整个会话，因此同一个工作进程槽位上的每次尝试都会链接到同一段视频。时间重叠且共用固定 `build` 和 `sessionName` 的运行可能会链接到彼此的视频；使用默认值则不会出现这种情况。
+- **在浏览器中**，与本地运行一样，由网页端引擎录制的页面视频。传入 `capabilities: { video: true }` 时，TestMu AI 会录制会话的屏幕。在 TestMu AI 控制台中观看。
+
+## 限制
+
+- **并行会话。** `workers` 乘以 TestMu AI 测试目标数量，不应超过套餐允许的并行会话数。超出套餐限制的浏览器会话会在 TestMu AI 的队列中等待。
+- **设备会话在租用期间计费。** 设备会话在槽位租用时启动，此过程约需 30 到 75 秒。即使没有测试在设备上运行，也会持续计费，直到运行释放设备。
+- **设备上的运行器被停止。** 如果运行器在释放设备之前被终止，就不会再有命令发送到会话。TestMu AI 的[空闲超时](https://www.lambdatest.com/support/docs/desired-capabilities-in-appium/)（默认为 120 秒）会在最后一条命令后约三分钟结束会话。
+- **无法确认释放会导致运行失败。** 当 agent-device 无法确认已结束设备会话时，即使所有测试都通过，释放操作也会导致运行失败：例如守护进程被强制停止、关闭报告丢失，或守护进程在运行期间退出。通过 `build` 和 `sessionName` 在控制台中查找会话。
+- **设备设置和日志。** 不支持设备设置（权限、位置、网络、外观）、系统提示框、通过 agent-device 录制和读取设备日志，以及端口反向转发。在 TestMu AI 控制台中读取日志，并使用 TestMu AI Tunnel 访问你所在网络上的服务器。
+- **浏览器连接限时 60 秒。** 网页端引擎最多等待 60 秒，让浏览器会话接受 CDP 连接。更短的 `launchTimeout` 会提前结束等待，但更长的值不会延长等待。超过该时间仍在排队或准备中的会话会以 `LAUNCH_TIMEOUT` 失败；当 `launchTimeout` 超过 60 秒时，则以 `ENGINE_FAILURE` 失败。
+- **浏览器连接中断。** 浏览器会话无法恢复，因此连接中断会导致尝试失败。
+- **浏览器下载。** TestMu AI 的浏览器将下载文件保存在其自己的机器上，因此 `browser.waitForDownload` 会以 `ENGINE_FAILURE` 失败。请改为对下载链接或请求进行断言。
+
+## 下一步
+
+<CardGroup cols={2}>
+  <Card title="托管设备" icon="mobile" href="/mobile#hosted-devices">
+    设备提供方如何租用设备。
+  </Card>
+  <Card title="托管浏览器" icon="globe" href="/browser#hosted-browsers">
+    浏览器提供方如何租用浏览器。
+  </Card>
+</CardGroup>

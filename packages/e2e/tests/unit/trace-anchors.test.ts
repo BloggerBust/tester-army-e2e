@@ -240,6 +240,94 @@ describe('describeDelta', () => {
     expect(describeDelta(before, after, false)).toEqual({ appeared: [{ text: 'Item added' }], gone: [{ text: '41 items' }] });
   });
 
+  it.each([
+    ['41件', '42件'],
+    ['41 件', '42 件'],
+    ['41個', '42個'],
+    ['41項目', '42項目'],
+    ['41筆', '42筆'],
+    ['共 41 条', '共 42 条'],
+    ['41个', '42个'],
+    ['41项', '42项'],
+    ['41笔', '42笔'],
+    ['총 41건', '총 42건'],
+    ['41 개', '42 개'],
+    ['41개', '42개'],
+    ['共 41 条记录', '共 42 条记录'],
+    ['41개의 결과', '42개의 결과'],
+    ['41行', '42行'],
+    ['41행', '42행'],
+    ['41 개의 상품', '42 개의 상품'],
+    ['41件 表示中', '42件 表示中'],
+    ['全41件中', '全42件中'],
+    ['41件の結果', '42件の結果'],
+    ['共 41 条结果', '共 42 条结果'],
+    ['41件記録しました', '42件記録しました'],
+    ['共 41 筆結果', '共 42 筆結果'],
+    ['41筆記錄', '42筆記錄'],
+    ['41件を表示', '42件を表示'],
+    ['41件が見つかりました', '42件が見つかりました'],
+    ['41件は削除済み', '42件は削除済み'],
+    ['41件も', '42件も'],
+    ['41건이 검색되었습니다', '42건이 검색되었습니다'],
+    ['41개가 있습니다', '42개가 있습니다'],
+    ['41건을 처리했습니다', '42건을 처리했습니다'],
+    ['41개를 선택', '42개를 선택'],
+    ['41건은 처리되었습니다', '42건은 처리되었습니다'],
+    ['41개는 품절', '42개는 품절'],
+    ['41건도 확인', '42건도 확인'],
+  ])('reads %s becoming %s, a count with a CJK counter, the way it reads an English one', (from, to) => {
+    const before = nodes([heading, node('c0', { text: from })]);
+    const after = nodes([heading, node('c1', { text: to }), node('n', { text: 'Item added' })]);
+    expect(describeDelta(before, after, false)).toEqual({ appeared: [{ text: 'Item added' }], gone: [{ text: from }] });
+  });
+
+  it('skips a CJK count on a screen the step navigated to', () => {
+    const listed = nodes([heading, node('p', { text: '全9件中 1〜9件を表示' }), node('n', { text: 'インポートしたレコード' })]);
+    expect(describeDelta(nodes([heading]), listed, true).appeared).toEqual([{ text: 'インポートしたレコード' }]);
+  });
+
+  it.each([
+    'ThinkPad X1笔记本电脑',
+    'ThinkPad X1 筆記型電腦',
+    'iPhone 15个人版',
+    '3個人版',
+    '3개월 무료 체험이 시작되었습니다',
+    '3个月会员已开通',
+    '3個月會員已開通',
+    '第3条 個人情報の取扱い',
+    '2024 개발자 컨퍼런스',
+    '2025 건강검진 결과',
+    '2024 행사 일정',
+    'iPhone 15 개봉기',
+    '2 行动计划',
+    '2024 行程安排',
+    '3行目を編集',
+    '2024 行业报告',
+    '2024 行業報告',
+    '3 行動計画',
+    '1 个性化设置',
+    '3個性派',
+    '2 条件满足',
+    '3件目の注文',
+    '3個目のボタン',
+    '3 笔记本',
+    'X13个',
+    '2024 项目计划',
+    '2024 筆電',
+    '1 行星',
+    '3条款',
+    '15 個体',
+    '2025건강검진',
+    '2024개발자',
+    '3개국어',
+    '3行で書く',
+    '2024 개도국 지원',
+  ])('keeps %s on a screen the step navigated to, since the digits are not a count', (text) => {
+    const opened = nodes([heading, node('p', { text }), node('n', { text: 'インポートしたレコード' })]);
+    expect(describeDelta(nodes([heading]), opened, true).appeared).toEqual([{ text }, { text: 'インポートしたレコード' }]);
+  });
+
   describe('volatile anchors across both sides of the delta', () => {
     const record = node('row', { role: 'row', name: 'Example record' });
 

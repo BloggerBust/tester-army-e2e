@@ -1,0 +1,1050 @@
+---
+title: test
+description: 测试、准备测试、分组、钩子、选项和测试夹具。
+"og:image": "https://e2e.com/docs/images/og/reference/test.png?v=d1ad3b01c3"
+"twitter:image": "https://e2e.com/docs/images/og/reference/test.png?v=d1ad3b01c3"
+---
+
+`test` 声明测试、准备测试、分组和钩子。声明在导入测试文件时同步执行。使用 `test.extend` 添加测试夹具，使用 `test.skip` 在注册时或测试主体执行期间跳过测试。
+
+```ts title="tests/checkout.e2e.ts"
+import { beforeEach, describe, expect, test } from 'e2e';
+
+describe('checkout', { tags: ['billing'] }, () => {
+  beforeEach(async ({ app }) => {
+    await app.open('/checkout');
+  });
+
+  test('pays with a saved card', { retries: 2 }, async ({ screen }) => {
+    await screen.getByRole('button', 'Pay').tap();
+    await expect(screen.getByText('Payment received')).toBeVisible();
+  });
+});
+```
+
+## 参考
+
+### 成员
+
+| 成员 | 返回值 |
+| --- | --- |
+| [`test`](#test) | `TestCase` |
+| [`test.skip`](#test-skip) | `TestCase \| void` |
+| [`test.skipIf`](#test-skipif) | `TestRegistrar` |
+| [`test.runIf`](#test-runif) | `TestRegistrar` |
+| [`test.fail`](#test-fail) | `TestCase \| void` |
+| [`test.only`](#test-only) | `TestCase` |
+| [`test.setup`](#test-setup) | `TestCase` |
+| [`test.extend`](#test-extend) | `TestAPI` |
+| [`describe`](#describe) | `void` |
+| [钩子](#hooks) | `void` |
+
+`describe` 和四个钩子也作为顶层导出提供，与 `test.describe`、`test.beforeEach` 等是相同的函数：`import { describe, beforeEach, test } from 'e2e'`。
+
+- 从 `e2e` 导入的单测试钩子使用所有引擎都有的[内置测试夹具](#fixtures)类型。
+- `@e2e-dev/web` 和 `@e2e-dev/mobile` 导出 `test`、`describe` 和全部四个钩子，类型包含各自的 `browser` 或 `device` 测试夹具，因此测试文件通过一次导入即可注册。
+- 使用自己的测试夹具扩展的 `test`，可通过 `test.beforeEach` 注册能访问这些测试夹具的钩子。
+
+在模块求值之外注册测试、分组或钩子会抛出 `COLLECTION_ERROR`。完整声明见[类型](#types)。
+
+#### `test`
+
+注册一个测试，可以带或不带[选项](#options)。
+
+```ts
+import { describe, test } from '@e2e-dev/web';
+import { expect } from 'e2e';
+
+test('app opens', async ({ app, browser }) => {
+  await app.open();
+  await expect(browser).toHaveURL('/');
+});
+
+test('checks out', { tags: ['billing'], retries: 2, timeout: 60_000 }, async ({ app }) => {
+  await app.open('/checkout');
+});
+```
+
+测试或分组的标题经 NFC 规范化后为 1 到 512 个 UTF-8 字节，且不含 NUL 字符。
+
+| 抛出 | 条件 |
+| --- | --- |
+| `COLLECTION_ERROR` | 同一文件中的两个测试具有相同标题路径：各层分组标题，最后是测试自身的标题。 |
+
+#### `test.skip`
+
+注册一个跳过的测试，或跳过正在运行的测试。
+
+```ts
+test.skip('exports a PDF', async ({ app }) => {}); // at registration
+test.skip(organizations.length < 2, 'a single organization'); // inside a body
+test.skip('not on this tenant'); // inside a body, always
+```
+
+- 默认情况下，跳过的测试不影响退出码。
+- 要通过选项在收集阶段跳过测试，使用 [`skip`](#skip) 选项。
+- 注册时返回 `TestCase`；在测试主体中返回 `void`。
+
+对于运行时才知道的条件，例如功能开关被禁用，可在测试中调用 `test.skip(condition, reason)`：
+
+```ts
+test('switches organizations', { session: 'admin' }, async ({ app, agent }) => {
+  const organizations = await listOrganizations();
+  test.skip(organizations.length < 2, 'the demo tenant has a single organization');
+  await app.open('/backend');
+  await agent.act(`switch to the organization "${organizations[1].name}"`);
+});
+```
+
+- 条件为真时，该调用会像 Playwright 一样抛出异常。调用之后的内容都不会执行。
+- 如果此前没有失败，测试会报告为 `skipped`，附带 `reason`，且不重试。
+- 此前的步骤按实际执行情况保留在报告中。
+- 与 Playwright 一样，调用前失败的 `expect.soft` 仍会导致本次尝试失败。尝试状态为 `failed`，错误为软断言失败，跳过原因保存在 `skip` 中。它与其他失败一样会重试。
+- 钩子和测试夹具仍会执行清理。
+- 如果条件是前提条件，应在所有步骤之前首先调用。
+- 一次尝试失败后，重试时跳过，会使测试最终状态为 `skipped`。CLI 将其列在 `Skipped After Failure` 下，并显示原始错误。设置 [`failOnSkippedFailure: true`](/reference/config) 可让这种情况以退出码 1 导致运行失败。默认值为 `false`。
+
+| 抛出 | 条件 |
+| --- | --- |
+| `INVALID_ARGUMENT` | 在准备测试中调用。准备测试不能跳过，因为其他测试依赖它的会话。 |
+| `COLLECTION_ERROR` | 在测试主体之外使用条件形式。 |
+
+#### `test.skipIf`
+
+返回一个注册单个测试的函数，类似 `test(title, fn)`，条件为真值时跳过。
+
+```ts
+test.skipIf(process.platform === 'win32')('watches files', async ({ app }) => {});
+test.skipIf(process.env.CI)('opens the system dialog', async ({ app }) => {});
+```
+
+- 条件只在文件收集期间调用时读取一次。使用当时已知的值，例如 `process.platform` 或环境变量。对于运行时才知道的条件，在主体中调用 [`test.skip(condition, reason)`](#test-skip)。
+- 与 Vitest 一样，任何真值都会跳过。
+- 跳过的测试等同于 `test(title, { skip: true }, fn)`：主体永不执行，其他选项保留。
+- 无论条件如何，[`skip`](#skip) 选项都会跳过测试，其原因字符串会作为报告中的原因。
+- 在串行分组之外，假值条件会像 `test` 一样注册测试。
+- 它接受与 [`test`](#test) 相同的两种形式，具有相同测试夹具，对扩展后的 `test` 也一样。
+
+| 抛出 | 条件 |
+| --- | --- |
+| `COLLECTION_ERROR` | 在串行分组内调用，无论条件如何。请改为在串行 `describe` 上设置 [`skip`](#skip)。 |
+| `COLLECTION_ERROR` | 条件为 Promise，这也是类型错误。在调用前先 await 它。 |
+
+#### `test.runIf`
+
+返回一个注册单个测试的函数，类似 `test(title, fn)`，条件为假值时跳过。
+
+```ts
+test.runIf(process.platform === 'linux')('reads inotify events', async ({ app }) => {});
+```
+
+`test.runIf(condition)` 等同于 `test.skipIf(!condition)`。[`test.skipIf`](#test-skipif) 的全部规则都适用。
+
+#### `test.fail`
+
+注册一个预期失败的测试，或标记正在运行的测试。
+
+```ts
+test.fail('shows the cart badge', async ({ app, screen }) => {}); // at registration
+test.fail(platform === 'web', 'tap on a display: contents element'); // inside a body
+test.fail('known gap'); // inside a body, always
+test('exports a PDF', { fail: 'PDF export is broken' }, async ({ app }) => {}); // by option
+```
+
+- 调用后主体继续执行。`beforeEach` 钩子也可以标记测试。
+- 断言失败、操作失败、抛出错误或超时会使测试状态为 `passed`。报告保留原因和错误。
+- 通过则使测试以 `UNEXPECTED_PASS` 变为 `failed`。原因修复后应移除标记。
+- 基础设施错误、中断、失败的 `beforeAll` 或 `afterAll`，以及 `INVALID_ARGUMENT` 等 API 误用，仍会使测试失败。
+- 预期失败不会重试。意外通过会重试。
+- 跳过优先于此标记。
+
+| 抛出 | 条件 |
+| --- | --- |
+| `INVALID_ARGUMENT` | 在准备测试、串行分组成员、`afterEach` 钩子或测试夹具清理中使用真条件。 |
+| `COLLECTION_ERROR` | 在测试主体之外使用条件形式，或在串行分组中使用 `fail` 选项。 |
+
+#### `test.only`
+
+注册一个在本地单独运行的测试。
+
+```ts
+test.only('pays', async ({ app }) => {
+  await app.open('/checkout');
+});
+```
+
+其他测试报告为 `filtered`。CI 运行中包含此类测试时会以 `ONLY_IN_CI` 失败。
+
+#### `test.setup`
+
+注册一个准备测试，声明它保存的会话，并且必须将每个会话恰好保存一次。
+
+```ts
+import { credentials } from 'e2e';
+
+test.setup('authenticate', { sessions: ['member'] }, async ({ app, screen, session }) => {
+  await app.open('/login');
+  await screen.getByLabel('Email').fill(credentials.user('member').username);
+  await screen.getByLabel('Password').fill(credentials.user('member').password);
+  await screen.getByRole('button', 'Sign in').tap();
+  await session.save('member');
+});
+```
+
+- `test.setup` 必须位于顶层，不能放在 `describe` 内。
+- [`sessions`](#sessions) 选项声明名称。
+- 测试通过 [`session`](#session) 选项使用已保存的会话。
+- 准备测试主体会获得一个额外测试夹具 `session`：
+
+```ts
+export interface SetupSession {
+  /** Saves state under a setup-declared name. */
+  save(name: string): Promise<void>;
+}
+```
+
+| 抛出 | 条件 |
+| --- | --- |
+| `SESSION_CONTRACT` | 运行时，某个声明的会话未保存，或保存了两次。 |
+
+#### `test.extend`
+
+返回一个包含更多测试夹具类型的新 `test`。调用它的对象保持不变。
+
+```ts
+import { test as base } from 'e2e';
+import type { Device } from '@e2e-dev/mobile';
+
+export const test = base.extend<{ device: Device }>(); // types only
+```
+
+- 不传参数时，`extend` 只细化类型：返回同一个运行时 `test`，类型包含引擎提供的内置测试夹具。它们在运行时仍从测试目标的引擎解析。这样可为设备端、桌面端或网页端接口提供类型，无需全局 `declare module` 扩展。
+- 传入定义时，添加你自己的测试夹具。参阅[自己的测试夹具](#your-own-fixtures)。
+- 第一个类型参数为测试作用域的测试夹具提供类型。第二个类型参数为[工作进程测试夹具](#worker-fixtures)提供类型，`beforeAll` 和 `afterAll` 也能看到它们。`@e2e-dev/mobile` 在第二个类型参数中为 `device`、`app` 和 `screen` 提供类型。
+
+#### `describe`
+
+声明一组测试，可以带或不带选项。
+
+```ts
+import { describe, test } from 'e2e';
+
+describe('checkout', { tags: ['smoke'], serial: true }, () => {
+  test('adds an item', async ({ screen }) => {});
+  test('pays', async ({ screen }) => {});
+});
+```
+
+- 分组接受测试的[选项](#options)，但不包括 `only`，另外还接受 [`serial`](#serial)。
+- 主体必须同步执行。
+
+| 抛出 | 条件 |
+| --- | --- |
+| `COLLECTION_ERROR` | 主体为 `async`。这也是类型错误。 |
+| `COLLECTION_ERROR` | 主体中包含 `test.setup`。 |
+
+### 钩子
+
+| 钩子 | 执行时机 |
+| --- | --- |
+| [`beforeEach`](#beforeeach) | 每次测试尝试之前 |
+| [`afterEach`](#aftereach) | 每次测试尝试之后 |
+| [`beforeAll`](#beforeall) | 每个测试套件实例一次 |
+| [`afterAll`](#afterall) | 作用域中最后一个测试之后 |
+
+钩子顺序由作用域嵌套决定，而非在文件中的位置，因此在测试之后声明的钩子仍适用于该测试。
+
+#### `beforeEach`
+
+注册测试尝试的准备钩子。
+
+```ts
+test.beforeEach(async ({ app }) => {
+  await app.open('/');
+});
+```
+
+- 先运行最外层分组，同一分组内按声明顺序运行。
+- `beforeEach` 和主体共享测试超时。
+- 接收测试夹具。钩子列出的测试夹具会为它适用的每个测试准备。参阅[自己的测试夹具](#your-own-fixtures)。
+
+#### `afterEach`
+
+注册测试尝试的清理钩子。
+
+```ts
+test.afterEach(async ({ app }) => {
+  await app.screenshot('after');
+});
+```
+
+- 先运行最内层分组，按声明的反向顺序执行，失败或超时后也会运行。
+- 每个 `afterEach` 钩子都有自己的 `cleanupTimeout` 预算，并且测试夹具仍可用，因此主体超时后，清理仍可操作应用。
+- 接收测试夹具。钩子列出的测试夹具会在第一个 `beforeEach` 之前准备，计入测试超时，而不是在钩子开始时准备。
+- 如果钩子列出的测试夹具准备失败，该钩子会被跳过。
+
+#### `beforeAll`
+
+注册测试套件实例的准备钩子。每个测试套件实例在首次进入该作用域时执行一次。
+
+```ts
+test.beforeAll(async ({ database, device }) => {
+  await database.seed();
+  await device.setPermission('camera', 'deny'); // a mobile target
+});
+```
+
+每次重试、每个串行分组和每个准备测试都会重新导入模块，因此 `beforeAll` 在其中都会再次运行。
+
+它只接收[工作进程测试夹具](#worker-fixtures)：
+
+- 在测试目标上作用域为工作进程的[内置测试夹具](#fixtures)：`platform`，以及移动端测试目标上的 `device`、`app` 和 `screen`。
+- 注册它所用的 `test` 的工作进程测试夹具。其中，它列出的测试夹具会被准备，用 `auto: true` 声明的测试夹具也会被准备。
+
+在浏览器测试目标上，`browser`、`app` 和 `screen` 是测试作用域的测试夹具。请把 UI 准备放在 `beforeEach` 中。
+
+在移动端测试目标上：
+
+- 测试进入的各个 `beforeAll` 钩子在它们自己的一次简短引擎尝试中运行，这次尝试不会启动任何内容。测试离开的各个作用域的 `afterAll` 钩子也是如此。
+- 这次尝试会为第一个列出 `device`、`app` 或 `screen` 的钩子打开，或为第一个列出了某个工作进程测试夹具、而该测试夹具又列出其中之一的钩子打开。如果钩子都没有列出它们，就不会打开尝试。
+- 在串行分组中，或在 `e2e mcp` 会话运行的测试中，钩子在已经打开的尝试上运行。
+- 当这次尝试无法打开，或运行被中断时，钩子仍会运行。此时读取 `device`、`app` 或 `screen` 会抛出带有原因的错误。打开失败是 `launch` 阶段的一条运行错误。
+
+测试套件钩子执行的步骤不属于任何测试的记录。失败时会指出钩子的作用域。
+
+| 抛出 | 条件 |
+| --- | --- |
+| `HOOK_FAILED` | 钩子抛出异常。测试套件中的测试以 `hook-failed` 为原因跳过。在串行分组中，会跳过所有剩余成员并使分组失败，且不重试。 |
+| `COLLECTION_ERROR` | 钩子列出了测试作用域的测试夹具。消息会指出该测试夹具和钩子所在的行，并且不会运行任何测试。 |
+
+#### `afterAll`
+
+注册测试套件实例的清理钩子。在执行环境中该作用域的最后一个测试完成后立即执行。
+
+```ts
+afterAll(async () => {
+  await resetDatabase();
+});
+```
+
+因失败而被丢弃的执行环境，会为每个已开始执行 `beforeAll` 的作用域运行 `afterAll`。它接收的测试夹具与 [`beforeAll`](#beforeall) 相同，并且要在 `cleanupTimeout` 内完成。与 `beforeAll` 一样，抛出异常会产生 `HOOK_FAILED`。
+
+#### 事件循环被阻塞
+
+如果测试阻塞了工作进程的事件循环（例如在测试夹具、`beforeEach`、主体或 `afterEach` 中执行 `while (true) {}`），该工作进程的所有计时器都会停止，因此无法自行使测试超时。
+
+- 测试超时后再经过 `cleanupTimeout`（至少 5 s），工作进程仍未响应时，运行器会将其终止。
+- 该次尝试会报告为 `timed-out`，错误为 `TEST_TIMEOUT`，没有产物，排在此前的尝试之后，且不重试。
+- 文件中的其余测试在新的工作进程中运行。在串行分组中，后续成员会被跳过。
+- 阻塞的 `beforeAll` 或 `afterAll` 仍会使运行挂起。
+
+<Note>
+如果工作进程在测试开始时已连接调试器（编辑器自动附加，或 `NODE_OPTIONS=--inspect=0`），就绝不会以这种方式被终止，因此可以保持断点暂停。使用内联配置或内存中测试的编程式运行在运行器自身进程中执行，没有可终止的工作进程：阻塞事件循环会使其挂起。
+</Note>
+
+### 选项
+
+| 选项 | 类型 | 默认值 |
+| --- | --- | --- |
+| [`timeout`](#timeout) | `number` | `config.timeout` |
+| [`retries`](#retries) | `number` | `config.retries` |
+| [`tags`](#tags) | `readonly string[]` | - |
+| [`skip`](#skip) | `boolean \| string` | - |
+| [`fail`](#fail) | `boolean \| string` | - |
+| [`only`](#only) | `boolean` | - |
+| [`platforms`](#platforms) | `readonly string[]` | - |
+| [`requires`](#requires) | `readonly Capability[]` | - |
+| [`session`](#session) | `string` | - |
+| [`agentContext`](#agentcontext) | `string` | - |
+| [`agent`](#agent) | `string \| readonly string[]` | 运行使用的智能体 |
+| [`trace`](#trace) | `RecordingMode` | 运行的设置 |
+| [`video`](#video) | `RecordingMode` | 运行的设置 |
+| [`serial`](#serial) | `boolean` | - |
+| [`sessions`](#sessions) | `readonly string[]` | 必填 |
+
+`test` 接受除 `serial` 和 `sessions` 外的所有选项。`describe` 接受除 `only`、`fail` 和 `sessions` 外的所有选项。`test.setup` 要求提供 `sessions`，且不接受 `session`、`only`、`skip` 或 `fail`。
+
+解析顺序为：测试、最近的分组、外层分组、配置、内置默认值。在[串行分组](#serial)中，使用分组的 `retries`、`trace` 和 `video`。
+
+| 抛出 | 条件 |
+| --- | --- |
+| `COLLECTION_ERROR` | 传入了调用不接受的选项键（`{ timout: 1000 }`）。如果很可能是拼写错误，错误消息会指出最接近的已知键；否则列出该调用接受的所有键。 |
+
+#### `timeout`
+
+尝试的截止时间，以毫秒为单位。最内层设置优先。
+
+```ts
+test('imports a large file', { timeout: 300_000 }, async ({ app }) => {}); // default: config.timeout
+```
+
+`timeout` 必须是正的安全整数，最大为 2147483647（约 24 天）。
+
+#### `retries`
+
+失败测试的重试次数。
+
+```ts
+test('checks out', { retries: 2 }, async ({ app }) => {}); // default: config.retries
+```
+
+取值为 0 到 10 的整数。
+
+#### `tags`
+
+供 `--tag` 选择的标签。各层标签取并集。
+
+```ts
+describe('checkout', { tags: ['billing', 'smoke'] }, () => {});
+```
+
+标签名称必须互不相同、非空白、不含逗号，且没有前导或尾随空白字符。
+
+#### `skip`
+
+在收集阶段跳过测试。字符串表示原因。任意一层为真值都会跳过。跳过原因（包括运行时 `test.skip` 的原因）在报告前会进行机密值脱敏和清理，并限制为 8,192 个 UTF-8 字节。
+
+```ts
+test('exports a PDF', { skip: 'PDF export is off on staging' }, async ({ app }) => {});
+```
+
+#### `fail`
+
+预期测试失败；参阅 [`test.fail`](#test-fail)。字符串表示原因。不允许在串行分组内使用。
+
+```ts
+test('exports a PDF', { fail: 'PDF export is broken' }, async ({ app }) => {});
+```
+
+#### `only`
+
+在本地单独运行该测试。CI 会以 `ONLY_IN_CI` 拒绝。
+
+```ts
+test('pays', { only: true }, async ({ app }) => {});
+```
+
+#### `platforms`
+
+测试运行的平台。其他测试目标跳过该测试。最内层设置优先。
+
+```ts
+test('uses Face ID', { platforms: ['ios'] }, async ({ app }) => {});
+```
+
+#### `requires`
+
+测试目标必须具备的能力。缺少任一能力的测试目标会在选择阶段跳过该测试。最内层设置优先。
+
+```ts
+test('onboarding asks for the camera', { requires: ['native-app'] }, async ({ app, agent }) => {
+  await app.open();
+  await agent.assert('The app asks for camera access');
+});
+```
+
+接受的值：
+
+- 测试目标引擎的测试执行框架能力：`observation`、`actions`、`location`、`pointer`、`keyboard`、`computed-style`、`state`、`artifacts`。
+- 每个引擎提供的内置测试夹具对应一个值：`browser`、`device`。参阅[引擎契约](/reference/engine#engine)。
+- 测试目标声明的应用类型：`app.url` 对应 `browser`，`app.bundleId` 或 `app.appPath` 对应 `native-app`。
+
+#### `session`
+
+准备测试保存的会话，在主体运行前恢复。
+
+```ts
+test('sees the dashboard', { session: 'member' }, async ({ app }) => {});
+```
+
+参阅 [`test.setup`](#test-setup)。
+
+#### `agentContext`
+
+智能体步骤的额外上下文。从最外层开始拼接各层内容。
+
+```ts
+describe('pricing', { agentContext: 'Prices are shown in EUR.' }, () => {});
+```
+
+#### `agent`
+
+此测试或分组使用的已配置智能体（`agents.<name>`），替代运行使用的智能体。
+
+```ts
+test('checks out', { agent: ['fast', 'smart'] }, async ({ agent }) => {}); // one result per agent
+```
+
+- 列表会让测试针对每个命名智能体各运行一次，各自产生一个结果。
+- 最内层设置优先。调用自身的 `agent` 选项优先级更高。
+- `--agent` 将列表缩小到两者共同指定的名称，绝不会覆盖该标志未指定的绑定。
+- 准备测试针对每个测试目标运行一次，因此最多绑定一个智能体。
+
+| 抛出 | 条件 |
+| --- | --- |
+| `COLLECTION_ERROR` | 在任何测试运行之前的选择阶段：名称未在 `agents` 中定义。 |
+
+#### `trace`
+
+测试是否保留追踪页面，替代运行的设置。
+
+```ts
+test('checkout', { trace: 'retain-on-failure' }, async ({ agent }) => {});
+```
+
+- 接受[录制模式](/reference/config#recording)，与配置中的 `trace` 相同：`off`、`on`、`retain-on-failure`、`on-first-retry` 或 `on-all-retries`。
+- 测试或分组自身的值优先于 `--trace`、测试目标和配置的值。单个测试可以在不录制任何内容的运行中开启录制，也可以在录制所有内容的运行中关闭录制。
+
+#### `video`
+
+指定测试的哪些尝试录制视频，替代运行的设置。
+
+```ts
+test('checkout', { video: 'on' }, async ({ agent }) => {
+  await agent.act('Buy the first product in the catalog');
+});
+```
+
+- 接受与 `trace` 和配置中的 `video` 相同的[录制模式](/reference/config#recording)。
+- 测试或分组自身的值优先于 `--video`、测试目标和配置的值。
+
+| 抛出 | 条件 |
+| --- | --- |
+| `UNSUPPORTED_ARTIFACT` | 在任何测试开始之前，错误会指出测试名称：模式要求在某次尝试中录制，但测试目标的引擎无法录制视频。 |
+
+#### `serial`
+
+仅用于 `describe`。将分组作为一个有序重试单元运行，共享应用状态。
+
+```ts
+describe('checkout', { serial: true }, () => {
+  test('adds an item', async ({ screen }) => {});
+  test('pays', async ({ screen }) => {});
+});
+```
+
+- 分组也共享机密值状态：某个成员解析出的值，会在该分组本次尝试的剩余时间中持续脱敏。重试时重新开始。
+- 成员使用串行 `describe` 或其外层分组上的 `trace` 和 `video`。分组每次尝试录制一个视频。
+- 分组尝试可能因文件加载失败或会话启动失败而无法开始。此时第一个成员以该错误失败，其余成员以 `serial-predecessor-failed` 为原因跳过。如果运行在启动期间被中断，则所有成员都会跳过。
+- 如果重试被中断，或从未执行到其成员，这些成员会保留上次实际执行它们的尝试的判定和耗时。
+- 与其他测试一样，退出码由错误类别决定。
+
+| 抛出 | 条件 |
+| --- | --- |
+| `COLLECTION_ERROR` | 成员设置了 `retries`、`trace`、`video`、`session`、`platforms`、`requires`、`skip`、`only` 或嵌套的 `serial`。 |
+| `COLLECTION_ERROR` | 成员通过 `test.skipIf` 或 `test.runIf` 注册。 |
+
+#### `sessions`
+
+仅用于 `test.setup`。准备测试必须保存的会话名称。
+
+```ts
+test.setup('authenticate', { sessions: ['member', 'admin'] }, async ({ session }) => {});
+```
+
+静态、非空且名称唯一的数组。每个名称匹配 `/^[A-Za-z0-9_.-]{1,128}$/`。参阅 [`test.setup`](#test-setup)。
+
+### 测试夹具
+
+内置测试夹具是 `test` 不需要 `test.extend` 就有的测试夹具：所有引擎都有的五个，以及测试目标的引擎提供的测试夹具。每个内置测试夹具在每个引擎上都有一个作用域。
+
+| 内置测试夹具 | 类型 | 网页端 | 移动端 |
+| --- | --- | --- | --- |
+| [`agent`](/reference/agent) | `Agent` | 测试 | 测试 |
+| [`app`](/reference/app) | `App` | 测试 | 工作进程 |
+| [`screen`](/reference/screen) | `Screen` | 测试 | 工作进程 |
+| `platform` | `string` | 工作进程 | 工作进程 |
+| [`session`](#test-setup) | `SetupSession` | 测试 | 测试 |
+| [`browser`](/reference/web) | `Browser` | 测试 | - |
+| [`device`](/reference/mobile#device) | `Device` | - | 工作进程 |
+
+作用域决定哪些代码可以使用内置测试夹具：
+
+- 测试作用域的测试夹具属于一次测试尝试。测试主体、`beforeEach` 和 `afterEach` 可以得到它。
+- 工作进程测试夹具比测试存在得更久。`beforeAll`、`afterAll` 和[工作进程测试夹具](#worker-fixtures)也可以得到它。
+
+浏览器测试会获得新的上下文，因此在网页端，`app`、`screen` 和 `browser` 是测试作用域的测试夹具。设备会在测试之间保留状态，因此在移动端，`app`、`screen` 和 `device` 是工作进程测试夹具。你自己的引擎通过 [`isolation`](/reference/engine#fixture-isolation) 设置它。
+
+`session` 仅用于 `test.setup` 主体。[`TestFixtures`](#testfixtures) 描述了每个核心测试夹具。其余测试夹具都是[你自己的测试夹具](#your-own-fixtures)。
+
+测试主体、钩子和测试夹具函数通过解构第一个参数来列出它们使用的测试夹具：`async ({ app, screen }) => {}`。e2e 从函数的源代码中读取这些名称。
+
+| 抛出 | 条件 |
+| --- | --- |
+| `COLLECTION_ERROR` | 在某个测试目标上运行的测试或它的钩子列出了该测试目标没有的测试夹具。此时不会运行任何测试。声明 `requires: ['browser']`、`platforms` 或 `test.skipIf` 可改为在该测试目标上跳过此类测试。 |
+| `COLLECTION_ERROR` | 测试主体、钩子或测试夹具函数接收整个对象（`async (fixtures) => {}`）、剩余属性（`{ app, ...rest }`）或计算属性，或者是无法读取参数的绑定函数（`fn.bind()`）。 |
+
+<Note>
+内置测试夹具按需获取。在参数列表中解构会在主体第一条语句之前获取它们。[你自己的测试夹具](#your-own-fixtures)会在第一个 `beforeEach` 之前准备。
+</Note>
+
+#### 自己的测试夹具
+
+`test.extend(fixtures)` 定义在列出它的每个测试前准备、测试后清理的资源，失败后也会清理。在每个测试夹具函数中，`await use(value)` 之前的代码准备资源。测试接收 `value`，`use` 之后的代码清理资源。包含完整测试套件的指南见[编写测试夹具](/fixtures)。
+
+```ts
+import { test as base } from '@e2e-dev/web';
+
+export const test = base.extend<{ workspace: Workspace }>({
+  workspace: async ({ browser }, use) => {
+    const workspace = await createWorkspace();
+    await signIn(browser, workspace);
+    await use(workspace); // the hooks and the body run here
+    await workspace.cleanup(); // teardown, after the body even when it failed
+  },
+});
+
+test('renames the workspace', async ({ workspace, screen }) => {
+  await screen.getByLabel('Name').fill(`${workspace.name} (renamed)`);
+});
+```
+
+测试夹具按需准备：只为列出它的测试准备，或为列出了某个依赖它的测试夹具的测试准备。函数在第一个参数中列出的测试夹具就是它的依赖项：
+
+- 定义可以看到它所扩展的 `test` 的测试夹具，以及同一次调用中声明的测试夹具，顺序不限。它看不到之后的 `extend` 声明的测试夹具。
+- 不需要任何测试夹具的定义写成 `({}, use)`。设置 `allowObjectPatternsAsParameters: true` 后，ESLint 的 `no-empty-pattern` 会接受这种写法。
+- `[fn, { auto: true }]` 会为该 `test` 的每个测试准备测试夹具，无论是否被列出。适用于测试需要但从不读取的测试夹具。
+
+每次尝试中：
+
+1. 在运行任何代码之前，先确定要准备哪些测试夹具：主体和所有适用的 `beforeEach`、`afterEach` 钩子列出的测试夹具，这些测试夹具列出的测试夹具，以及 `auto` 测试夹具。没有被列出的测试夹具不会运行。
+2. 它们按声明顺序执行，每个都排在它列出的测试夹具之后，直到各自调用 `use`。准备时间计入测试的 `timeout`。失败会报告在 `beforeEach` 阶段，此时尚未运行任何 `beforeEach` 钩子。
+3. `beforeEach` 钩子、主体，然后是 `afterEach` 钩子，使用同一组测试夹具运行，各自得到它列出的那些。测试夹具集合取决于测试自身的链：对于通过 `base` 注册的测试，其外层钩子若列出 `workspace`，会以 `COLLECTION_ERROR` 失败。
+4. 无论主体是否通过，清理都会在最后一个 `afterEach` 之后按反向顺序运行，各自拥有独立的 `cleanupTimeout` 预算。清理错误会在 `afterEach` 阶段使原本通过的尝试失败；如果主体已失败，则加入 `secondaryErrors`。
+
+在收集阶段失败的错误用法是一条运行错误，其中带有代码所在的文件和行号，并且不会运行任何测试。不在某个测试目标上运行的测试，不会按该测试目标的测试夹具检查。
+
+| 错误用法 | 失败位置和错误 |
+| --- | --- |
+| 值不是由函数或 `[fn, { scope, auto }]` 组成的普通对象、作用域不是 `'test'` 或 `'worker'`、`auto` 不是布尔值、使用 `scope` 和 `auto` 之外的选项，或名称为空 | 导入时抛出 `COLLECTION_ERROR`，指出测试夹具名称 |
+| 函数没有解构第一个参数、在其中使用剩余属性或计算属性，或是绑定函数 | 导入时抛出 `COLLECTION_ERROR`，指出测试夹具名称 |
+| 测试夹具互相列出，形成循环 | 导入时抛出 `COLLECTION_ERROR`，指出该循环 |
+| 在某个测试目标上运行的测试、它的钩子或它们需要的测试夹具，列出了该测试目标没有的名称 | 收集阶段，`COLLECTION_ERROR` |
+| `scope` 或 `auto` 与[被扩展的测试夹具](#extending-a-fixture)不同 | 如果它在所有引擎上都相同，则在导入时，否则在收集阶段，抛出指出两者的 `COLLECTION_ERROR` |
+| 测试夹具列出了之后的 `extend` 声明的测试夹具 | 收集阶段，`COLLECTION_ERROR` |
+| 定义未调用 `use` 就返回 | 尝试的 `beforeEach` 阶段，`TEST_SETUP_FAILED` |
+| 定义调用了两次 `use` | 尝试的清理阶段，`TEST_SETUP_FAILED` |
+| 定义在 `use` 之前抛出异常 | 尝试的 `beforeEach` 阶段，使用该错误。列出该测试夹具的 `afterEach` 钩子会被跳过。 |
+| 定义在 `use` 之后抛出异常 | 尝试的 `afterEach` 阶段，使用该错误 |
+
+<Note>
+达到测试 `timeout` 的主体或钩子会被放弃，而不是取消，因此清理开始时它可能仍在运行。以这种方式被放弃的准备流程如果稍后执行到 `use`，会立即得到已完成的 Promise。其清理脱离本次运行执行，因此已分配的资源仍会释放。被放弃的准备流程或钩子结束后，不会再启动后续测试夹具、钩子和测试主体。
+</Note>
+
+#### 工作进程测试夹具
+
+工作进程测试夹具在每个工作进程和测试目标上只有一个实例。用 `[fn, { scope: 'worker' }]` 声明它，并用 `extend` 的第二个类型参数为它提供类型：
+
+```ts
+export const test = base.extend<{}, { database: Database }>({
+  database: [async ({}, use) => {
+    const database = await startDatabase();
+    await use(database);
+    await database.stop();
+  }, { scope: 'worker' }],
+});
+```
+
+- 测试或测试套件钩子第一次列出它，或第一次列出某个列出了它的测试夹具时，准备就会运行，并计入该测试或钩子的超时。准备失败会使该测试或钩子失败，下一个测试或钩子会重新准备这个测试夹具。
+- `[fn, { scope: 'worker', auto: true }]` 会为通过它的 `test` 注册的第一个测试或测试套件钩子准备它，无论是否被列出。
+- 清理在工作进程结束时、引擎释放之前运行，最后准备的最先清理。每次清理都有 `cleanupTimeout`。抛出异常的清理是 `cleanup` 阶段的一条运行错误。
+- 它只能看到工作进程测试夹具：在测试目标上作用域为工作进程的[内置测试夹具](#fixtures)、它所扩展的 `test` 的工作进程测试夹具，以及同一次调用中声明的工作进程测试夹具。列出测试作用域的测试夹具会产生 `COLLECTION_ERROR`。
+- 在移动端测试目标上，它的 `device`、`app` 和 `screen` 会在它调用它们时正在运行的测试或钩子中执行操作。它的清理仍然可以操作设备：如果该测试夹具列出了其中之一，清理会在一次简短的引擎尝试中运行；如果一个都没有列出，清理就不在引擎尝试中运行。
+- 工作进程为每个定义保留一个实例。测试文件会在测试失败后重新导入，并为每个串行分组和准备测试重新导入，因此该文件声明的工作进程测试夹具每次都会得到一个新实例，旧实例则保持已准备的状态，直到工作进程结束。请在该文件导入的模块中声明工作进程测试夹具。
+- 不带类型参数的 `extend({ ... })` 只会推断出测试作用域的测试夹具。
+
+#### 扩展测试夹具
+
+如果定义的名称与 `test` 已有的测试夹具相同，它就会扩展那个测试夹具。它可以是[内置测试夹具](#fixtures)，也可以是更早的 `extend` 中的测试夹具。
+
+```ts
+export const test = base.extend({
+  app: async ({ app }, use) => {
+    await app.open('/dashboard');
+    await use(app); // tests, hooks, and other fixtures get this value
+  },
+});
+```
+
+- 在函数内部，它自己的名称指被扩展的测试夹具：内置测试夹具，或更早的同名测试夹具。不列出自身名称的函数会替换该测试夹具。
+- 列出该测试夹具的测试、钩子和其他测试夹具，会得到传给 `use` 的值。运行器自身对内置测试夹具的使用不变。
+- 它的准备时机与被扩展的测试夹具相同：通常按需准备，只为列出该测试夹具的代码准备；扩展 `auto` 测试夹具时则为每个测试准备。选项中的 `auto` 必须与被扩展的测试夹具的 `auto` 相同。
+- 它沿用被扩展的测试夹具在测试目标上的作用域，即[内置测试夹具](#fixtures)表格给出的作用域。`device` 是工作进程测试夹具，因此它的扩展在每个工作进程中运行一次，`beforeAll` 也会得到它。选项中的 `scope` 必须与该作用域相同。
+- 它也沿用类型。定义时不要传类型参数：`extend` 的类型参数用于新的测试夹具。
+- 在没有同名测试夹具的测试目标上，只有当在那里运行的代码列出它时才会失败。此时运行会在收集阶段失败，因为该测试目标没有这个测试夹具。
+
+## 类型
+
+### `TestAPI`
+
+```ts
+/** The two call forms of `test`, shared with what `test.skipIf` and `test.runIf` return. */
+export interface TestRegistrar<Fixtures = TestFixtures & WorkerFixtures> {
+  /** Registers one test synchronously during module evaluation. */
+  (title: string, fn: TestFn<Fixtures>): TestCase;
+  /** Registers one configured test synchronously during module evaluation. */
+  (title: string, options: TestOptions, fn: TestFn<Fixtures>): TestCase;
+}
+
+export interface TestAPI<Fixtures = TestFixtures, Worker = WorkerFixtures> extends TestRegistrar<Fixtures & Worker> {
+  /** Registers one skipped test. */
+  skip(title: string, fn: TestFn<Fixtures & Worker>): TestCase;
+  /**
+   * Inside a running test: skips it when `condition` is true (or always,
+   * with no condition) by throwing, so nothing after the call runs. The
+   * attempt is reported `skipped` with `reason`; steps that already ran stay
+   * in the report without deciding the status, and teardown still runs. A
+   * setup test cannot skip: its sessions are owed.
+   * Outside a test body this form is `COLLECTION_ERROR`; use the `skip`
+   * option to skip at collection.
+   */
+  skip(condition: boolean, reason?: string): void;
+  skip(reason?: string): void;
+  /**
+   * Returns a function that registers one test, like `test(title, fn)`:
+   * skipped when `condition` is truthy, as if it had the `skip` option. The
+   * condition is read once, at this call, so it can only depend on what is
+   * known while the file is collected (`process.platform`, `process.env.CI`):
+   *
+   *   test.skipIf(process.platform === 'win32')('file watcher', async () => {});
+   *
+   * A `skip` option skips the test whatever the condition. A serial group
+   * rejects the call: set `skip` on the serial `describe` instead. A Promise
+   * condition also fails the call: await it first.
+   */
+  skipIf<Condition>(condition: SynchronousCondition<Condition>): TestRegistrar<Fixtures & Worker>;
+  /**
+   * Returns a function that registers one test, like `test(title, fn)`:
+   * skipped when `condition` is falsy, `test.skipIf(!condition)`.
+   */
+  runIf<Condition>(condition: SynchronousCondition<Condition>): TestRegistrar<Fixtures & Worker>;
+  /** Registers one test that is expected to fail. */
+  fail(title: string, fn: TestFn<Fixtures & Worker>): TestCase;
+  /**
+   * Inside a running test: marks it expected to fail when `condition` is
+   * true (or always, with no condition). The body keeps running. A test
+   * failure then passes the test, keeping the error and `reason` in the
+   * report; a pass fails it with `UNEXPECTED_PASS`. Infrastructure failures
+   * and interrupts are not covered. A setup test or a serial group member
+   * cannot be marked. Outside a test body this form is `COLLECTION_ERROR`;
+   * use `test.fail(title, fn)` or the `fail` option to mark at collection.
+   */
+  fail(condition: boolean, reason?: string): void;
+  fail(reason?: string): void;
+  /** Registers one focused local test. CI rejects focused tests. */
+  only(title: string, fn: TestFn<Fixtures & Worker>): TestCase;
+  /** Registers one setup test with statically declared session outputs. */
+  setup(title: string, options: SetupOptions, fn: SetupFn<Fixtures & Worker>): TestCase;
+  /**
+   * Returns the same runtime `test`, typed with an engine's contributed
+   * fixtures. A pure type refinement, the fixtures still resolve from the
+   * target's engine at runtime, so a project types its device/desktop/web
+   * surface without a global `declare module` augmentation:
+   *
+   *   export const test = base.extend<{ device: Device }>();
+   */
+  extend<Extra = {}, ExtraWorker = {}>(): TestAPI<Fixtures & Extra, Worker & ExtraWorker>;
+  /**
+   * Returns a new `test` whose registrations extend fixtures it already
+   * has, built-in ones included. Inside the function the fixture's own name
+   * is the fixture it extends; the value it hands to `use` is what tests,
+   * hooks, and other fixtures receive under that name. It keeps the type and
+   * the scope of the fixture it extends:
+   *
+   *   export const test = base.extend({
+   *     app: async ({ app }, use) => {
+   *       await app.open('/dashboard');
+   *       await use(app);
+   *     },
+   *   });
+   */
+  extend(overrides: FixtureOverrides<Fixtures & Worker, Worker>): TestAPI<Fixtures, Worker>;
+  /**
+   * Returns a new `test` whose registrations carry these fixture
+   * definitions on top of the ones it already had. Each attempt sets up the
+   * ones its body and its `beforeEach` and `afterEach` hooks name, and the
+   * ones those fixtures name, in declaration order with each after the
+   * fixtures it names; it runs the hooks and the body with them, and tears
+   * them down in reverse order after `afterEach`. A fixture nothing names is
+   * not set up:
+   *
+   *   export const test = base.extend<{ workspace: Workspace }>({
+   *     workspace: async ({ browser }, use) => {
+   *       const workspace = await createWorkspace();
+   *       await use(workspace);
+   *       await workspace.cleanup();
+   *     },
+   *   });
+   *
+   * A worker fixture (the second type argument, `[fn, { scope: 'worker' }]`)
+   * is set up once per worker and target, the first time a test or suite
+   * hook of the chain names it, and torn down when the worker ends:
+   *
+   *   export const test = base.extend<{}, { database: Database }>({
+   *     database: [async ({}, use) => {
+   *       const database = await startDatabase();
+   *       await use(database);
+   *       await database.stop();
+   *     }, { scope: 'worker' }],
+   *   });
+   *
+   * `auto: true` sets a fixture up whether or not anything names it: for
+   * every test (`[fn, { auto: true }]`), or once per worker
+   * (`[fn, { scope: 'worker', auto: true }]`). A suite hook sets up the auto
+   * worker fixtures of its chain, never a test fixture.
+   */
+  extend<Extra = {}, ExtraWorker = {}>(
+    fixtures: FixtureDefinitions<Fixtures & Worker, Extra, Worker, ExtraWorker>,
+  ): TestAPI<Fixtures & Extra, Worker & ExtraWorker>;
+  /** Declares a group synchronously. */
+  describe<Result>(title: string, body: SynchronousBody<Result>): void;
+  /** Declares a configured group synchronously. */
+  describe<Result>(
+    title: string,
+    options: DescribeOptions,
+    body: SynchronousBody<Result>,
+  ): void;
+  /** Registers a test-attempt setup hook: it runs after the test's fixtures are set up. */
+  beforeEach(fn: TestHookFn<Fixtures & Worker>): void;
+  /** Registers a test-attempt teardown hook: it runs before the test's fixtures are torn down. */
+  afterEach(fn: TestHookFn<Fixtures & Worker>): void;
+  /** Registers a suite setup hook, run once per describe between attempts, with the worker fixtures. */
+  beforeAll(fn: TestHookFn<Worker>): void;
+  /** Registers a suite teardown hook, run once per describe between attempts, with the worker fixtures. */
+  afterAll(fn: TestHookFn<Worker>): void;
+}
+
+export const test: TestAPI;
+export const describe: TestAPI['describe'];
+export const beforeEach: TestAPI['beforeEach'];
+export const afterEach: TestAPI['afterEach'];
+export const beforeAll: TestAPI['beforeAll'];
+export const afterAll: TestAPI['afterAll'];
+```
+
+### `TestOptions`
+
+```ts
+export interface TestOptions {
+  /** Attempt deadline in milliseconds; defaults to `config.timeout`. Innermost wins. */
+  timeout?: number;
+  /** Retries, 0 through 10; defaults to `config.retries`. Inside a serial group the group's value applies. */
+  retries?: number;
+  /** Tags for `--tag`: distinct names, none blank, with no comma and no leading or trailing whitespace; every layer's tags are unioned. */
+  tags?: readonly string[];
+  /** Skips the test; a string is the reason. Any truthy layer skips. */
+  skip?: boolean | string;
+  /**
+   * Expects the test to fail; a string is the reason. A test failure then
+   * passes it, and a pass fails it with `UNEXPECTED_PASS`. Not allowed inside
+   * a serial group.
+   */
+  fail?: boolean | string;
+  /** Focuses the test locally. CI rejects it with `ONLY_IN_CI`. */
+  only?: boolean;
+  /** Platforms the test runs on; other targets skip it. Innermost wins. */
+  platforms?: readonly string[];
+  /** Capabilities the target must have; otherwise the test is skipped at selection. Innermost wins. */
+  requires?: readonly Capability[];
+  /** Session a setup test saved, restored before the body runs. */
+  session?: string;
+  /** Extra context for agent steps; layers are concatenated outermost first. */
+  agentContext?: string;
+  /**
+   * The configured agent (`agents.<name>`) this test or group runs with, in
+   * place of the run's agents. A list runs the test once per agent named, as
+   * one result each. Innermost wins; a call's own `agent` option wins over
+   * it. `--agent` narrows a list to the names both name and never overrides
+   * a pin the flag does not name.
+   */
+  agent?: string | readonly string[];
+  /**
+   * Which of the test's attempts keep a trace, in place of the run's: the
+   * same modes as the config's `trace`. Innermost wins, over `--trace` too;
+   * inside a serial group the group's value applies, since the group runs as
+   * one unit.
+   */
+  trace?: RecordingMode;
+  /**
+   * Which of the test's attempts record a video, in place of the run's:
+   * the same modes as the config's `video`. Innermost wins, over `--video`
+   * too; inside a serial group the group's value applies, since the group
+   * records as one unit. A mode set here is required of the target's engine.
+   */
+  video?: RecordingMode;
+}
+
+export interface DescribeOptions extends Omit<TestOptions, 'only' | 'fail'> {
+  /** Runs the group as one ordered retry unit with shared app state. Nesting one serial group in another is a `COLLECTION_ERROR`. */
+  serial?: boolean;
+}
+
+export interface SetupOptions extends Omit<TestOptions, 'session' | 'only' | 'skip' | 'fail' | 'agent'> {
+  /** Session names this setup test MUST save. */
+  sessions: readonly string[];
+  /** A setup test runs once per target, so it pins at most one agent. */
+  agent?: string;
+}
+```
+
+### `TestFixtures`
+
+```ts
+export interface TestFixtures {
+  /** Agent steps. Acquiring the built-in agent without a configured model is `MODEL_UNAVAILABLE`. */
+  readonly agent: Agent;
+  /** App lifecycle: open, restart, clear state, back, screenshot, recording. */
+  readonly app: App;
+  /** Semantic queries and the actions on their matches. */
+  readonly screen: Screen;
+  /** The target's platform label: `web`, `ios`, `android`, or an engine's own string. */
+  readonly platform: string;
+}
+
+export interface SetupFixtures extends TestFixtures {
+  /** Saves the sessions the setup test declared. */
+  readonly session: SetupSession;
+}
+
+/**
+ * How long one fixture instance lives. `test`, the default, is one instance
+ * per test attempt that names it, shared by its `beforeEach` hooks, its
+ * body, and its `afterEach` hooks. `worker` is one instance per worker and
+ * target, set up the first time a test or suite hook names it and torn down
+ * when the worker ends.
+ */
+export type FixtureScope = 'test' | 'worker';
+
+/**
+ * The fixtures that outlive a test: what `beforeAll`, `afterAll`, and a
+ * worker-scoped `test.extend()` fixture receive. An engine whose state
+ * outlives an attempt (a device keeps permissions and installed apps) adds
+ * its own fixtures, `app`, and `screen` here; on an engine that gives each
+ * attempt a fresh surface (a browser context) they are test fixtures.
+ */
+export interface WorkerFixtures {
+  /** The target's platform label: `web`, `ios`, `android`, or an engine's own string. */
+  readonly platform: string;
+}
+
+/** @deprecated `beforeAll` and `afterAll` receive the worker fixtures: use `WorkerFixtures`. */
+export type SuiteFixtures = WorkerFixtures;
+```
+
+### `FixtureDefinitions`
+
+```ts
+/**
+ * Defines one fixture: everything before `await use(value)` is its setup,
+ * everything after is its teardown. The fixtures it destructures in its
+ * first parameter are the ones it depends on, set up before it; one that
+ * needs none writes `async ({}, use) => {}`. The body, its hooks, and the
+ * fixtures that name it run while `use` is pending; it resolves once they
+ * are done, whether or not the body failed.
+ */
+export type FixtureFn<Fixtures, Value> = (
+  fixtures: Fixtures,
+  use: (value: Value) => Promise<void>,
+) => Promise<void>;
+
+/**
+ * A test fixture: its function, or the function and its options. With
+ * `auto: true` it is set up for every test of its chain, whether or not
+ * anything names it.
+ */
+export type TestFixtureDefinition<Fixtures, Value> =
+  | FixtureFn<Fixtures, Value>
+  | readonly [FixtureFn<Fixtures, Value>, { readonly scope?: 'test'; readonly auto?: boolean }];
+/**
+ * A worker fixture: its function and `{ scope: 'worker' }`. It sees worker
+ * fixtures only. With `auto: true` it is set up once per worker, before the
+ * first test or suite hook of its chain, whether or not anything names it.
+ */
+export type WorkerFixtureDefinition<Worker, Value> = readonly [
+  FixtureFn<Worker, Value>,
+  { readonly scope: 'worker'; readonly auto?: boolean },
+];
+/**
+ * One definition per fixture `test.extend()` adds: `Extra` holds the test
+ * fixtures, `ExtraWorker` the worker fixtures. A definition sees the fixtures
+ * of the `test` it extends and the ones declared beside it, in any order: it
+ * is set up after the ones it names. A test fixture sees every fixture a
+ * test sees; a worker fixture sees worker fixtures only, since it outlives
+ * every test fixture.
+ *
+ * A name the base already has is not a new fixture, so declaring it in
+ * `Extra` or `ExtraWorker` is a type error. Defined beside them, it extends
+ * that fixture, a built-in one included (`FixtureOverrides`): inside its
+ * function its own name is the fixture it extends, and it keeps that
+ * fixture's type and scope:
+ *
+ *   base.extend({ app: async ({ app }, use) => { await app.open('/'); await use(app); } })
+ */
+export type FixtureDefinitions<Base, Extra, Worker = {}, ExtraWorker = {}> = {
+  readonly [K in keyof Extra]: K extends keyof Base
+    ? never
+    : TestFixtureDefinition<Base & NoInfer<Extra> & NoInfer<ExtraWorker>, Extra[K]>;
+} & {
+  // Not inferred: an `extend({ ... })` without type arguments infers its test
+  // fixtures from the definitions, as before worker fixtures; a worker
+  // fixture is declared through the second type argument.
+  readonly [K in keyof NoInfer<ExtraWorker>]: K extends keyof Base | keyof Extra
+    ? never
+    : WorkerFixtureDefinition<Worker & NoInfer<ExtraWorker>, NoInfer<ExtraWorker>[K]>;
+} & FixtureOverrides<Base & NoInfer<Extra> & NoInfer<ExtraWorker>, Worker & NoInfer<ExtraWorker>, Base, Worker>;
+/**
+ * Fixtures that extend ones the base already has, each optional. `Sees` and
+ * `WorkerSees` are what an override's function receives: the base's
+ * fixtures, and the ones declared beside it.
+ */
+export type FixtureOverrides<Sees, WorkerSees, Base = Sees, Worker = WorkerSees> = {
+  readonly [K in keyof Base]?: FixtureOverride<Base, Worker, K, Sees, WorkerSees>;
+};
+/**
+ * A fixture that extends `K`, one the base already has: it hands over the
+ * same type and keeps the scope, so the override of a worker fixture
+ * receives worker fixtures (`WorkerSees`) only.
+ */
+export type FixtureOverride<Base, Worker, K extends keyof Base, Sees, WorkerSees> = K extends keyof Worker
+  ? FixtureFn<WorkerSees, Base[K]> | WorkerFixtureDefinition<WorkerSees, Base[K]>
+  : TestFixtureDefinition<Sees, Base[K]>;
+```
+
+### 函数类型
+
+```ts
+/**
+ * A test body. It names the fixtures it uses by destructuring its first
+ * parameter (`async ({ app, screen }) => {}`), and the runner sets up only
+ * those; a body that takes the whole object (`async (fixtures) => {}`) or a
+ * rest property is a `COLLECTION_ERROR`. The same holds for a hook and for
+ * the first parameter of a `test.extend()` fixture.
+ */
+export type TestFn<Fixtures = TestFixtures> = (fixtures: Fixtures) => void | Promise<void>;
+
+/** A setup test body; `session.save` is the extra fixture. */
+export type SetupFn<Fixtures = TestFixtures> = (
+  fixtures: Fixtures & SetupFixtures,
+) => void | Promise<void>;
+
+/** A hook body: `beforeEach` and `afterEach` get the test's fixtures, `beforeAll` and `afterAll` its worker fixtures. */
+export type TestHookFn<Fixtures = TestFixtures> = (fixtures: Fixtures) => void | Promise<void>;
+
+/** @deprecated use `TestHookFn<WorkerFixtures>`. */
+export type SuiteHookFn = TestHookFn<WorkerFixtures>;
+
+/** A `describe` body. An async body is a type error. */
+export type SynchronousBody<Result> = Extract<Result, PromiseLike<unknown>> extends never
+  ? () => Result
+  : never;
+
+/** A `test.skipIf` or `test.runIf` condition. A Promise is a type error. */
+export type SynchronousCondition<Condition> = Extract<Condition, PromiseLike<unknown>> extends never
+  ? Condition
+  : never;
+
+/** Opaque handle of a registered test. */
+export interface TestCase {
+  readonly [testCaseBrand]: true;
+}
+```

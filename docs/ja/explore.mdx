@@ -1,0 +1,179 @@
+---
+title: テストを書かずに探索する
+description: テストファイルの代わりに目標を渡すと、エージェントが手順を計画し、アプリを操作して、見つけた問題を報告します。
+"og:image": "https://e2e.com/docs/images/og/explore.png?v=8969611dd1"
+"twitter:image": "https://e2e.com/docs/images/og/explore.png?v=8969611dd1"
+---
+
+import { Video } from '../snippets/video.jsx';
+
+`e2e explore` は、テストファイルの代わりに目標を与えて、アプリ上でエージェントを動かします。エージェントはステップを計画して実行し、目標を網羅するか予算に達するまで検出結果を記録した後、評価をまとめます。モデル、ツール、操作ルールは `agent.act()` と同じです。
+
+<Video>
+  <video src="/images/explore.mp4" aria-label="e2e explore が画面を表示したブラウザでアプリを操作し、ターミナルに検出結果を報告します。" muted loop playsInline controls />
+
+  `e2e explore --headed` はアプリを操作しながら、検出結果を随時報告します。
+</Video>
+
+## 探索を始める
+
+フローとユーザーの目標を指定し、必要に応じて制限を加えます。
+
+<CodeGroup>
+```bash npm
+npx e2e explore 'Explore the checkout flow like a first-time buyer and report anything off'
+```
+
+```bash pnpm
+pnpm exec e2e explore 'Explore the checkout flow like a first-time buyer and report anything off'
+```
+
+```bash bun
+bunx e2e explore 'Explore the checkout flow like a first-time buyer and report anything off'
+```
+</CodeGroup>
+
+制限には「注文を確定する前に止める」などを指定できます。目標がない場合は `Explore the app and find bugs` を使います。ステップが失敗しても、実行は止まりません。
+
+`e2e.config.ts` がない場合、explore は先に [`e2e init`](/reference/cli#e2e-init) ウィザードを実行します。手作業が残っていなければ、そのまま探索を開始します。残っている場合は、`npm install` やモデルキーの設定など、必要な手順を init が示します。CI などのターミナルがない環境では、explore は `CONFIG_NOT_FOUND` で失敗します。
+
+## 結果を読む
+
+ターミナルには、検出結果と完了したステップがその都度表示されます。
+
+```text
+ ❯  web  Exploring  Explore this bookshop like a careful first-time buyer: browse the catalog, ...
+   ⚑ medium issue  Home greeting exposes an unresolved userName template (/)
+   ⚑ high issue  Neuromancer shows an impossible negative stock availability (/catalog)
+   ✓ 1  Catalog browsing 31.46s · 7 actions · 4 findings
+   ⚑ high issue  Cart total does not update when Hyperion quantity increases (/cart)
+   ⚑ trivial warning  Checkout newsletter label misspells Receive (/checkout)
+   ✓ 2  Cart quantities and removal 19.47s · 4 actions · 3 findings
+   ended: the agent covered the goal
+```
+
+`issue` があると、実行は終了コード 1 で失敗します。`warning` では失敗しません。最終レポートでは、重大な問題から順に表示します。各検出結果には再現手順と、可能な場合はスクリーンショットが付きます。対応する前に、各結果を証拠と照らし合わせてください。他の終了コード、JSON レポート、アーティファクトのパスについては [CLI リファレンス](/reference/cli#e2e-explore)を参照してください。
+
+## 別の画面サイズを確認する
+
+ターゲットのエンジンがビューポートのサイズ変更に対応している場合（Web エンジンは対応しています）、目標の中で別の幅のレイアウトを確認するよう指示できます。
+
+<CodeGroup>
+```bash npm
+npx e2e explore 'Check the pricing page at desktop, tablet, and phone widths for broken layouts'
+```
+
+```bash pnpm
+pnpm exec e2e explore 'Check the pricing page at desktop, tablet, and phone widths for broken layouts'
+```
+
+```bash bun
+bunx e2e explore 'Check the pricing page at desktop, tablet, and phone widths for broken layouts'
+```
+</CodeGroup>
+
+## ログイン済みの状態から始める
+
+[セットアップテスト](/authentication)が保存するセッション名を、`--session <name>` に指定します。
+
+<CodeGroup>
+```bash npm
+npx e2e explore --session admin 'Explore the admin settings and find bugs'
+```
+
+```bash pnpm
+pnpm exec e2e explore --session admin 'Explore the admin settings and find bugs'
+```
+
+```bash bun
+bunx e2e explore --session admin 'Explore the admin settings and find bugs'
+```
+</CodeGroup>
+
+explore はそのセットアップテストだけを実行し、セッションを復元します。探索エージェントはログイン済みの状態で始まることを把握しているため、ログインのステップを計画しません。
+
+スクリーンショットではパスワードフィールドがマスキングされます。アプリがそれ以外の場所に表示した値はモデルに渡ります。[シークレット入力後のスクリーンショット](/reference/security#screenshots-after-a-secret-fill)を参照してください。
+
+## プルリクエストの変更を探索する
+
+ブランチの変更を探索するには、`--changed-since <ref>` を追加します。プランナーは、その ref とのマージベース以降のコミットメッセージとコミット済み差分を読み、変更の影響を受ける画面にステップを使います。
+
+<CodeGroup>
+```bash npm
+npx e2e explore --changed-since origin/main
+```
+
+```bash pnpm
+pnpm exec e2e explore --changed-since origin/main
+```
+
+```bash bun
+bunx e2e explore --changed-since origin/main
+```
+</CodeGroup>
+
+変更によって生じる可能性のある不具合だけが `issue` になります。アプリの他の部分にある不具合は `warning` となり、実行を失敗させません。
+
+目標を省略した場合は `Explore what this change affects and find bugs in
+it` になります。この場合、ドキュメントやテストだけの変更など、ユーザーから見えない変更をプランナーがスキップできます。実行は `skipped` で終了し、成功します。スキップするのは変更全体を読めた場合だけです。大きな差分、バイナリファイル、未コミットのファイルがあればスキップしません。
+
+ブランチ自身のコミットメッセージやコードが、スキップの判断に影響する可能性があります。スキップと、問題なく完了した探索を区別するには、`run.explore.ended` を確認してください。
+
+モデルが読む情報については、[セキュリティ](/reference/security#mcp-and-explore)を参照してください。
+
+GitHub Actions では、`pull_request` の専用ジョブで実行します。設定に [GitHub レポーター](/github)があると、検出結果は専用のプルリクエストコメントに投稿されます。フォークからの実行では投稿できません。[投稿されない場合](/github#when-nothing-is-posted)を参照してください。
+
+```yaml title=".github/workflows/explore.yml"
+on: pull_request
+
+jobs:
+  explore:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+    # An issue exits 1. Keep the findings as a review aid, not a merge gate.
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      # ...install, browsers
+      - run: npx e2e explore --changed-since origin/${{ github.base_ref }} --max-steps 4
+        env:
+          AI_GATEWAY_API_KEY: ${{ secrets.AI_GATEWAY_API_KEY }}
+          GITHUB_TOKEN: ${{ github.token }}
+```
+
+`fetch-depth: 0` により、ベースブランチがチェックアウトに含まれます。なければ、実行は `INVALID_CHANGED_SINCE` で失敗します。
+
+インストールとビルドの後も作業ツリーをクリーンに保ってください。変更が残ると、実行はスキップされません。`.e2e/` とビルド出力を無視対象にします。e2e は、`pnpm-lock.yaml` を書き換えることがある `pnpm exec` ではなく、`npx` で実行してください。
+
+<Warning>
+`pull_request_target` では絶対に実行しないでください。その実行はシークレットを保持しており、モデルはフォークが書いた差分とコミットメッセージを読みます。
+</Warning>
+
+## 探索が早く終わりすぎる場合
+
+実行は 8 ステップまたは 10 分で停止します。フローをさらに深く調べるには、`--max-steps <n>`（最大 100）または `--timeout <ms>`（最大 `7200000`、2 時間）を増やします。
+
+主要なフローを確認した後に時間が残っている場合は、境界的な入力、フィルターの組み合わせ、再読み込みを試して再訪します。複数のアカウントが設定され、`--session` がなければ、別のアカウントも使います。新たに到達できるものがなくなった場合にだけ、早めに終了します。
+
+## ターゲットとエージェントを選ぶ
+
+explore は、`e2e.config.ts` のターゲット、アプリコマンド、モデル、エージェントを使います。`--target <name>` と `--agent <name>` で選択します。`--target` がなければ、最初のターゲットを使います。
+
+## コードから探索する
+
+自分のコードから、設定値、キャンセル、進捗イベントを扱って探索を開始するには、[`e2e/runner` の `explore`](/reference/runner#explore) を呼び出します。
+
+## 次のステップ
+
+<CardGroup cols={2}>
+  <Card title="バグバッシュ" icon="bug" href="/bug-bash">
+    複数の探索でアプリ全体やブランチを調べ、各バグをテストで確認します。
+  </Card>
+  <Card title="エージェントとペルソナ" icon="users" href="/agents">
+    explore で使えるエージェントを設定します。
+  </Card>
+</CardGroup>

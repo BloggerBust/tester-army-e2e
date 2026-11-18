@@ -1,0 +1,226 @@
+---
+title: 测试过滤器
+description: 只运行拉取请求可能影响的测试。
+"og:image": "https://e2e.com/docs/images/og/filters.png?v=2de53e0ea4"
+"twitter:image": "https://e2e.com/docs/images/og/filters.png?v=2de53e0ea4"
+---
+
+import { Video } from '../snippets/video.jsx';
+
+使用 `--changed-since <ref>` 时，测试过滤器会排除自该引用以来的变更不会影响的测试，并优先启动最可能失败的测试所在的文件。决策过滤器会就每个测试询问一个[决策模型](/decision-models)，例如 Jev。不使用该标志时，例如在 `main` 分支上或本地运行时，会运行所有测试。
+
+<Video>
+  <video src="/images/filters.mp4" aria-label="并排展示两次运行。使用 --changed-since 时，决策过滤器排除了 27 个测试中的 25 个，运行在 12 秒内通过。完整运行在 30 秒后仍未结束。" muted loop playsInline controls />
+
+  使用 `--changed-since origin/main` 时，决策过滤器排除了 27 个测试中的 25 个。
+</Video>
+
+## 添加决策过滤器
+
+<CodeGroup>
+```bash npm
+npm install -D @e2e-dev/decision ai
+```
+
+```bash pnpm
+pnpm add -D @e2e-dev/decision ai
+```
+
+```bash bun
+bun add -d @e2e-dev/decision ai
+```
+</CodeGroup>
+
+```ts title="e2e.config.ts"
+import type { E2EConfig } from 'e2e';
+import { web } from '@e2e-dev/web';
+import { gateway } from 'ai';
+import { decisionFilter } from '@e2e-dev/decision';
+
+export default {
+  targets: [{ engine: web(), app: { url: 'http://localhost:3000' } }],
+  filters: [decisionFilter({ model: gateway.decisionModel('typesafe-ai/jev') })],
+} satisfies E2EConfig;
+```
+
+在 CI 中，为拉取请求传入 `--changed-since`，并为 e2e 步骤提供 AI Gateway 密钥：
+
+```yaml title=".github/workflows/e2e.yml"
+steps:
+  - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+    with:
+      fetch-depth: 0
+  # ...
+  - run: npx e2e run ${{ github.event_name == 'pull_request' && format('--changed-since origin/{0}', github.base_ref) || '' }}
+    env:
+      AI_GATEWAY_API_KEY: ${{ secrets.AI_GATEWAY_API_KEY }}
+```
+
+该标志只用于 `pull_request` 运行，因此推送、合并队列或定时运行不传入它，会运行所有测试。切勿在 `pull_request_target` 上传入它：这种运行持有你的机密值，分叉仓库的差异内容可能诱导模型排除测试。`fetch-depth: 0` 会让检出的仓库包含基准分支和合并基点。缺少它们时，运行会因 `INVALID_CHANGED_SINCE` 失败。
+
+变更包含与该引用和 `HEAD` 的合并基点相比存在差异的所有文件，包括未提交和未跟踪的文件。模型读取提交所改变内容的差异、测试文件，以及保存其会话的准备文件；其中的机密值会脱敏，但机密值提供方返回的值除外。对于仅在工作树中变更的未提交或未跟踪文件，模型只会收到文件名，不会收到内容，因此 CI 步骤写入的文件内容不会传给模型。
+
+如果模型认为测试及其准备测试受影响的概率都低于 20%，过滤器就会排除该测试。模型无法判定的测试会运行，过滤器的说明会给出原因：差异超过 60 kB、测试或准备文件太大，无法随差异一起发送，或部分调用失败。如果所有调用都失败，例如来自分叉仓库的拉取请求没有密钥，过滤器就会失败：运行会发出警告并运行所有测试，优先启动测试文件、准备文件或已存储截图发生变化的测试。如果 git 无法确定变更，因为未安装 git、项目不在仓库中，或引用与 `HEAD` 没有共同历史记录，运行会因 `INVALID_CHANGED_SINCE` 失败。过滤器需要 `ai` 7.0.134 或更高版本。
+
+任何能回答 `boolean` 问题的[决策模型](/decision-models)都可使用，例如直接通过 TypeSafe 使用 Jev：使用 `@ai-sdk/typesafe-ai` 中的 `typeSafeAi.decisionModel('jev-latest')`，并设置 `TYPESAFE_AI_API_KEY`。`providerOptions` 会随每次调用传入，例如 `{ gateway: { zeroDataRetention: true } }`。
+
+## 在本地预览
+
+<CodeGroup>
+```bash npm
+npx e2e list --changed-since origin/main
+```
+
+```bash pnpm
+pnpm exec e2e list --changed-since origin/main
+```
+
+```bash bun
+bunx e2e list --changed-since origin/main
+```
+</CodeGroup>
+
+`e2e list` 会输出过滤器排除的每个测试及原因。它不会启动应用，模型调用与实际运行相同。请先提交：决策过滤器只读取提交所改变的内容。
+
+## 哪些测试始终运行
+
+- 如果运行未指定 `--changed-since`，或自合并基点以来没有文件变化，则运行所有测试。
+- `--last-failed` 重新运行，因此 `e2e run || e2e run --last-failed` 是安全的；以及首次运行后的每次 `--watch` 重新运行。
+
+决策过滤器还会运行：
+
+- 发生变化的测试文件中的测试，或已存储截图发生变化的测试文件中的测试，以及使用此类准备文件所保存会话的测试。
+- 当运行加载的配置发生变化时，无论配置文件名是什么，都会运行所有测试；当项目目录、其子目录或其上级目录（例如工作区根目录）中的 `e2e.config.ts`（`.mts`、`.js`、`.mjs`）、Gradle 的 `libs.versions.toml` 或锁文件发生变化时，也会运行所有测试。锁文件按名称识别，例如 `pnpm-lock.yaml`、`Podfile.lock`、`gradle.lockfile`、`Gemfile.lock`、`go.sum` 或 `Cargo.lock`。其他文件及同级项目中的文件由模型判定。
+
+如果过滤器抛出异常、返回的内容不是 `{ exclude, relevance?, note? }`，或运行超过 5 分钟，它不会排除任何测试，并会发出警告。下一个过滤器仍会判定传给它的每个测试。失败的过滤器也不会评分，除非它抛出的错误携带 `relevance`，如[编写自己的过滤器](#write-your-own)所示。运行超过 5 分钟的过滤器会被放弃，此后它抛出的任何内容都不再生效。
+
+在其他 CI 服务上，仅在拉取请求构建中传入 `--changed-since origin/main`，并获取足够的历史记录以包含合并基点。对于 GitLab，参阅[只运行受影响的测试](/ci/gitlab#run-only-affected-tests)。使用 `--shard` 时，每台机器上的过滤器只判定自己的分片。
+
+## 优先启动最可能失败的测试
+
+决策过滤器会为每个保留的测试评分，每个测试目标都会优先启动最可能失败的测试所在的文件。这样能更早发现失败，配合 `--max-failures` 和单个工作进程（CI 中的默认值）时节省最多时间。
+
+| 测试 | 分数 |
+| --- | --- |
+| 测试文件、准备文件或已存储截图发生变化 | 100% |
+| 其他所有测试 | 测试及其准备测试评分中的较高值，模型未给出的评分按 50% 计算 |
+
+- 文件按四个区间启动：75% 及以上、50% 至低于 75%、25% 至低于 50%，以及低于 25%。文件采用其中最可能失败的测试所在的区间。
+- 有多个工作进程时，同一区间内会优先启动[耗时历史记录](/ci#cache-the-timings-history)中耗时最长的文件。没有耗时数据的文件先于有数据的文件启动。
+- 测试目标按其最高优先级文件的区间排序，相同时按配置顺序排列，每个测试目标按该顺序启动自己的文件。测试目标的准备测试仍会在第一个测试文件启动前完成。
+- 耗时短但更可能失败的文件可能先于耗时长但不太可能失败的文件启动，因此在多个工作进程下，完整运行所有测试可能反而更晚结束。报告保留原有顺序，`e2e list` 不显示该顺序。
+
+你编写的过滤器通过 `relevance` 为测试评分，如[编写自己的过滤器](#write-your-own)所示。
+
+## 你会看到什么
+
+- **终端**：每个过滤器一行，例如 `decision kept 7 of 77 tests, left out 70 (1 call, 17.6k tokens, $0.0007)`。决策过滤器的说明以用量结尾：模型调用次数、token 数，以及提供方报告的费用，例如 AI Gateway 会报告费用。如果分数将测试分入多个区间，后面还会出现类似 `ranked 7 of 7 tests by relevance, likeliest first` 的一行。摘要中随后会有一行 `Left out`。如果过滤器排除了所有测试，运行会通过，且不启动应用。
+- **[拉取请求评论](/github)和 `summary.md`**：标题为 `7 passed, 70 left out by filters`，并提供一张折叠表格，列出测试及其原因。
+- **`junit.xml` 和 `report.json`**：每个被排除的测试都作为跳过的用例，在报告中带有 `skip.filter`，并同时包含 `run.filters` 和 `run.changes`。参阅[报告器](/reference/reporters#test-filters)。
+
+## 调整决策过滤器
+
+包装决策过滤器以改变它判定的内容。下面的过滤器在 `infra/` 变化时运行所有测试，将这些测试不会涉及的 `apps/mobile/` 排除在变更之外，并始终运行 `smoke` 测试：
+
+```ts title="tuned-filter.ts"
+import type { TestFilter } from 'e2e';
+import { gateway } from 'ai';
+import { decisionFilter } from '@e2e-dev/decision';
+
+const decision = decisionFilter({ model: gateway.decisionModel('typesafe-ai/jev') });
+
+export const tuned = {
+  name: 'decision',
+  filter(tests, context) {
+    if (context.changes.files.some((file) => file.startsWith('infra/'))) return { exclude: {}, note: 'infra/ changed' };
+    const judged = tests.filter((test) => !test.tags.includes('smoke'));
+    const files = context.changes.files.filter((file) => !file.startsWith('apps/mobile/'));
+    if (files.length === 0) return { exclude: Object.fromEntries(judged.map((test) => [test.id, 'only apps/mobile/ changed'])) };
+    return decision.filter(judged, { ...context, changes: { ...context.changes, files } });
+  },
+} satisfies TestFilter;
+```
+
+将 `filters` 中的 `decisionFilter(...)` 替换为 `tuned`。要在某个拉取请求上运行所有测试，可在它带有 `all-tests` 标签时省略 `--changed-since`。将 `labeled` 添加到事件中，让添加标签触发运行：
+
+```yaml title=".github/workflows/e2e.yml"
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, labeled]
+# ...
+      - run: npx e2e run ${{ github.event_name == 'pull_request' && !contains(github.event.pull_request.labels.*.name, 'all-tests') && format('--changed-since origin/{0}', github.base_ref) || '' }}
+```
+
+## 编写自己的过滤器
+
+过滤器为 `{ name, filter }`：`filter` 接收测试和变更，并返回要排除的测试及每个测试的原因。它还可以用 `relevance` 为其余测试给出 0 到 1 的评分。下面的过滤器将变更路径映射到测试标签，并优先启动变更所涉及区域的测试：
+
+```ts title="areas-filter.ts"
+import type { TestFilter } from 'e2e';
+
+/** The test tags each part of the app reaches, by path from the repository root. */
+const AREAS: Readonly<Record<string, readonly string[]>> = {
+  'src/todos/': ['todos'],
+  'src/auth/': ['auth', 'smoke'],
+  'src/checkout/': ['checkout'],
+};
+/** Every tag an area reaches; a test without one always runs. */
+const AREA_TAGS: ReadonlySet<string> = new Set(Object.values(AREAS).flat());
+
+export const areas = {
+  name: 'areas',
+  filter(tests, { changes }) {
+    const reached = new Set<string>();
+    let unmapped: string | undefined;
+    for (const file of changes.files) {
+      const area = Object.keys(AREAS).find((prefix) => file.startsWith(prefix));
+      if (area === undefined) unmapped = file;
+      else for (const tag of AREAS[area] ?? []) reached.add(tag);
+    }
+    const exclude: Record<string, string> = {};
+    const relevance: Record<string, number> = {};
+    for (const test of tests) {
+      const tags = test.tags.filter((tag) => AREA_TAGS.has(tag));
+      if (tags.some((tag) => reached.has(tag))) relevance[test.id] = 1;
+      else if (tags.length > 0 && unmapped === undefined) exclude[test.id] = 'the change reaches none of its areas';
+    }
+    if (unmapped === undefined) return { exclude, relevance };
+    return { exclude, relevance, note: `${unmapped} is in no area, so areas leaves nothing out` };
+  },
+} satisfies TestFilter;
+```
+
+将它放在决策过滤器之前，让模型只判定 `areas` 保留的测试：
+
+```ts title="e2e.config.ts"
+import type { E2EConfig } from 'e2e';
+import { web } from '@e2e-dev/web';
+import { gateway } from 'ai';
+import { decisionFilter } from '@e2e-dev/decision';
+import { areas } from './areas-filter.ts';
+
+export default {
+  targets: [{ engine: web(), app: { url: 'http://localhost:3000' } }],
+  filters: [areas, decisionFilter({ model: gateway.decisionModel('typesafe-ai/jev') })],
+} satisfies E2EConfig;
+```
+
+- 你未列出的每个测试都会运行；如果你列出的测试位于串行组中，而该组内另一个测试会运行，那么它也会运行。
+- `relevance` 接受测试 ID 和 0 到 1 的数字。没有过滤器列出的测试按 0 计算，被多个过滤器列出的测试保留最高分。与 `exclude` 一样，其他值都会使过滤器失败。
+- 失败的过滤器仍可以评分。如果它抛出的错误带有 `relevance` 属性，且结构和校验与结果中的属性相同，就会以相同方式为测试评分，同时仍会就失败发出警告，且不排除任何测试。决策过滤器就会这样做，因此没有密钥的运行仍会优先启动变更涉及的测试。未通过校验的分数会被丢弃，警告会说明这一点。
+- 每个过滤器只判定前一个过滤器保留的测试，没有剩余测试时不会调用它。
+- 将 `signal` 传给每次调用，并对发送给模型的内容调用 `redact`。它会替换每个固定值机密值和凭据密码，以及其中任意连续 8 个或更多字符，因此与它们共有 8 个字符的文本也会被遮蔽，例如密码为 `Password123!` 时的 `Password`。机密值提供方返回的值会原样通过。
+- 在 `filter` 内完成工作：工作进程也会加载配置，只有运行器会调用 `filter`。
+
+类型定义请参阅 [`TestFilter`](/reference/config#testfilter)。
+
+## 下一步
+
+<CardGroup cols={2}>
+  <Card title="持续集成" icon="rotate" href="/ci">
+    为拉取请求设置检查门槛、分片和重新运行失败测试。
+  </Card>
+  <Card title="报告器" icon="file-lines" href="/reference/reporters">
+    在自己的报告器中读取 `run.changes`、`run.filters` 和 `skip.filter`。
+  </Card>
+</CardGroup>

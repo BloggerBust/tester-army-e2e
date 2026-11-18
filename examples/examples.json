@@ -1119,6 +1119,33 @@
       }
     },
     {
+      "slug": "lightpanda",
+      "title": "Testing in Lightpanda with e2e",
+      "shortTitle": "Lightpanda",
+      "description": "A store page that loads its product and reviews with JavaScript, tested in a Lightpanda started on your machine, with no Chrome to install, or in Lightpanda Cloud.",
+      "icon": "lightpanda.svg",
+      "source": "partner",
+      "repository": "https://github.com/lightpanda-io/demo/tree/main/e2e",
+      "author": {
+        "name": "Lightpanda",
+        "github": "lightpanda-io",
+        "website": "https://lightpanda.io"
+      },
+      "license": "Apache-2.0",
+      "licenseUrl": "https://github.com/lightpanda-io/demo/blob/main/LICENSE",
+      "tags": {
+        "framework": [
+          "nodejs"
+        ],
+        "useCase": [
+          "cloud-browsers"
+        ],
+        "platform": [
+          "web"
+        ]
+      }
+    },
+    {
       "slug": "pipedash",
       "title": "Testing Pipedash's App Store screenshot editor with e2e",
       "shortTitle": "Pipedash",
@@ -1980,6 +2007,27 @@
         ],
         "useCase": [
           "cloud-browsers"
+        ],
+        "platform": [
+          "web"
+        ]
+      }
+    },
+    {
+      "slug": "openrouter-agent-form",
+      "title": "Testing a service request form with one agent step on OpenRouter",
+      "shortTitle": "OpenRouter agent step",
+      "description": "A synthetic Portuguese service form filled by locators, submitted by one agent.act step on an OpenRouter model you pick, and checked by locators. Offline tests cover provider errors and key redaction.",
+      "source": "community",
+      "repository": "https://github.com/jxnxts/e2e-openrouter-service-form/tree/28498de1599352011097e4b72ddb31caa03f4891",
+      "author": {
+        "name": "Jonatas Soares",
+        "github": "jxnxts"
+      },
+      "license": "Apache-2.0",
+      "tags": {
+        "framework": [
+          "nodejs"
         ],
         "platform": [
           "web"

@@ -1,0 +1,314 @@
+---
+title: 安全规则
+description: 运行器对模型输入、工具调用、机密值、脱敏、会话、回放缓存、产物和网络连接执行的所有规则。
+"og:image": "https://e2e.com/docs/images/og/reference/security.png?v=888009ffe4"
+"twitter:image": "https://e2e.com/docs/images/og/reference/security.png?v=888009ffe4"
+---
+
+[安全](/security)指南解释了信任边界。本页按代码的实际执行方式列出其背后的规则。
+
+## 参考
+
+| 章节 | 涵盖内容 |
+| --- | --- |
+| [模型输入](#model-input) | 模型在每个步骤中读取的内容 |
+| [工具调用](#tool-calls) | 内置工具和项目工具、节点 ID |
+| [策略拒绝](#policy-denials) | 以 `POLICY_DENIED` 失败的调用 |
+| [导航](#navigation) | 各入口允许的 URL 协议 |
+| [请求凭据](#request-credentials) | `headers`、`basicAuth` |
+| [站点检查](#site-check) | 子框架 |
+| [填入机密值](#secret-fills) | `type_secret`、`fill(secret)` |
+| [填入机密值后的截图](#screenshots-after-a-secret-fill) | 遮盖的范围 |
+| [引擎选项中的机密值](#secrets-in-engine-options) | `basicAuth` 和其他引擎选项 |
+| [脱敏](#redaction) | 模型输入、报告、下载、输出 |
+| [脱敏的边界](#where-redaction-stops) | 变换后的值、视频、`command.log` |
+| [下载](#downloads) | 应用提供的文件 |
+| [会话](#sessions) | 保存的身份验证状态 |
+| [缓存信任](#cache-trust) | 回放缓存文件和 `cache.store` |
+| [产物](#artifacts) | 输出目录下的文件 |
+| [出站连接](#outbound-connections) | 运行器连接的目标 |
+| [MCP 和 explore](#mcp-and-explore) | MCP 会话、探索器的登录行为 |
+
+### 模型输入
+
+模型将应用内容作为引用的证据读取，与运行器策略和可信项目上下文分开。应用内容无法授予工具、凭据或更大的预算。[智能体步骤的工作原理](/agent-steps)完整介绍了一个步骤。
+
+| 提示词中的内容 | 形式 |
+| --- | --- |
+| 你的指令和参数 | 引用在 `<instruction>` 中并标记为数据。`Secret` 参数只显示名称和用途。 |
+| 屏幕 | 包含节点 ID、角色、名称、文本、测试 ID、链接目标和状态的无障碍树，按大小上限截断。不包含选择器。链接的查询字符串和片段只显示为 `?…` 和 `#…`。安全字段显示为 `value=<secure>`。 |
+| 位置 | 当前 URL，经过脱敏且不含用户信息。判定在应用源内获取路径，在其他源获取完整 URL，并按大小上限截断。在设备上则为应用和屏幕标题。 |
+| 截图 | 在需要或被请求时提供，且仅在引擎能证明安全字段已遮盖时提供。 |
+| 先前步骤 | `agent.act` 接收来自同一测试或串行组的有限记录。判定只使用当前屏幕、屏幕位置、指令及其参数，以及智能体上下文。 |
+
+### 工具调用
+
+- 内置工具使用封闭的 schema，只有引擎支持时才会出现。声明字段的工具会拒绝未声明的键。不含字段的工具会丢弃额外键并运行。
+- 项目工具必须使用带有 `execute` 的 `defineTool`，且不能替换内置名称。项目工具保留传给 `defineTool` 的 schema，因此是移除还是拒绝未声明的键，由该 schema 决定。
+- 只有只读项目工具可以请求观测。
+- 调用步骤未提供的工具，或向声明字段的内置工具传入未声明参数，都不会执行。模型会将拒绝信息作为调用结果读取并重试。
+- 运行器绝不会将模型文本作为代码、选择器、Shell 命令或配置求值。
+
+| 失败代码 | 触发条件 |
+| --- | --- |
+| `CONFIG_LOAD_FAILED` | 加载配置时发现 `defineTool` 没有 `execute`。 |
+| `INVALID_CONFIG` | 工具不是通过 `defineTool` 创建的，或名称与内置工具或测试执行框架工具相同。 |
+| `LOCATOR_NOT_FOUND` | 节点 ID 不在当前屏幕上。操作失败，模型读取失败信息后再次操作。 |
+
+### 策略拒绝
+
+以下调用会以 `POLICY_DENIED` 失败。
+
+| 被拒绝的操作 | 原因 |
+| --- | --- |
+| 导航到 `http:` 和 `https:` 以外的任何协议，`about:blank` 除外 | `file:`、`data:`、`javascript:` 和 `view-source:file:` 等包装协议会加载本地或内联内容。 |
+| 格式错误的 URL | 不会进行任何修复。 |
+| `Secret` 进入 JSON 输出位置 | 句柄不携带值，任何实际值都不得序列化。 |
+| 使用 getter 或 `toHaveValue`、`toHaveText`、`toContainText`、`toHaveAttribute` 匹配器读取安全字段的值、文本或属性 | 应断言结果，而不是机密值。被隐藏的值经过脱敏，并非空值或不存在。 |
+| `type_secret` 使用未声明的名称 | 只能填入步骤参数中声明的机密值。 |
+| `type_secret` 或 MCP `run_code` 中的 `fill` 填入禁用或不可编辑的节点 | 可接收值的节点为 `textbox`、`searchbox` 和 `combobox`。 |
+| 向非密码字段填入密码 | 用途必须匹配。通用机密值可填入任何可编辑输入框。 |
+| 配置声明了机密值时，MCP `run_code` 定位器通过部分文本查找（正则表达式、非 `true` 的 `exact`、`hasText`） | 引擎会在未脱敏文本上匹配，因此是否匹配可能逐段泄露机密值。`run_code` 匹配器则比较脱敏后的文本。 |
+| 会修改状态的项目工具请求观测 | 请单独调用观测。 |
+| 像素被隐藏时使用 `vision: 'only'` | 没有可回退的内容。 |
+| `browser.setCookies` 使用既非 `http:` 也非 `https:` 的 Cookie URL | 只有网页源可以存储 Cookie。 |
+| 引擎无法证明所有安全字段均已遮盖时调用 `toHaveScreenshot()` | 不会保留截图。 |
+| 智能体、执行器或 MCP `upload` 上传项目根目录外的文件、隐藏文件或隐藏目录下的文件 | 只有项目文件和 e2e 附带的示例文件（`sample:photo.png` 等）可以通过表单离开计算机。 |
+| MCP `screenshot` 的 `path` 位于项目根目录外、是隐藏路径或位于隐藏目录下 | 会话只写入项目文件，绝不覆盖 `.git` 或 `.e2e`。 |
+
+### 导航
+
+| 入口 | 接受 | 拒绝 |
+| --- | --- | --- |
+| `app.open`、`browser.goto`、智能体的 `navigate` 操作 | `http:`、`https:` 和完全匹配的 `about:blank` | 其他所有协议 |
+| 设置了 `app.linkBase` 的设备测试目标上的 `app.open(path)` | 拼接后的链接或绝对链接：应用自定义协议，或 `http:` 和 `https:` | `file:`、`data:`、`javascript:`、`view-source:`、`blob:`、`filesystem:` |
+| `device.openLink` | 任意绝对 URL：应用自定义协议，或 `http:` 和 `https:` | `file:`、`data:`、`javascript:`、`view-source:`、`blob:`、`filesystem:` |
+| `device.openApp`、`open_app` 工具 | 应用 ID | 链接 |
+| `e2e login` 打开的浏览器 | `http:` 和 `https:` | 其他所有协议；改为打印链接，由你自行打开 |
+
+- 运行器不会重新检查重定向，也不会连接弹出页面。注册 `browser.onDialog` 来处理浏览器对话框。
+
+<Warning>
+没有源白名单。智能体可以跟随应用前往其他站点，并在那里使用步骤中的机密值。
+</Warning>
+
+### 请求凭据
+
+浏览器引擎将配置的请求凭据限定到精确的源：`app.url` 的协议、主机和端口，以及 `credentialOrigins` 列出的额外源。
+
+| 选项 | 发送到 |
+| --- | --- |
+| `headers` | 从允许的源发起的每个请求 |
+| `basicAuth` | 对允许的源发出的 `401` 质询的响应 |
+
+- 同一主机的其他端口、子域名，以及 `vercel.app` 等共享域下的同级主机，都属于其他源。除下文说明的情况外，从那里发起的请求不携带 `headers`，来自那里的 `401` 也不会得到响应。
+- `headers` 取决于请求最初发起的源。向允许的源发起的请求会在所有重定向中保留它们，无论重定向到哪个源。从其他源发起的请求不携带它们，即使重定向到允许的源也是如此。
+- `basicAuth` 响应发出 `401` 的源。重定向到其他源，例如从 `http:` 到 `https:`，或从根域名到 `www`，不会得到响应，除非你列出了最终落点的源。
+- 在 WebKit 中，如果允许的源使用其协议的默认端口（`https://staging.example.com`）或 IPv6 主机，`basicAuth` 会响应任何源的 `401`。WebKit 无法将凭据限定到此类源。
+- 额外源必须是没有路径、查询字符串或片段的 `http:` 或 `https:` 源，例如 `https://api.example.com`。其他形式、主机中的 `*` 和端口 `0` 都会在加载配置时触发 `INVALID_CONFIG`。
+
+### 站点检查
+
+浏览器引擎通过比较主机名来判断哪些内容属于测试目标的站点。观测会排除其他站点的子框架和 `data:` 框架。
+
+检查会在不使用公共后缀列表的情况下近似计算可注册域。`vercel.app` 等共享托管域会被视为同一个站点。
+
+### 填入机密值
+
+`Secret` 是不提供明文访问器的不透明句柄。有三处可以接收它：定位器的 `fill`、智能体步骤的参数，以及声明支持它的引擎选项。
+
+```ts title="tests/stripe.e2e.ts"
+import { secrets, test } from 'e2e';
+
+test('connect Stripe', async ({ screen, agent }) => {
+  await screen.getByLabel('Secret key').fill(secrets.get('stripe-key'));
+  await agent.act('Connect Stripe with the given key', {
+    params: { apiKey: secrets.get('stripe-key') },
+  });
+});
+```
+
+| 填入方式 | 解析值之前的检查 |
+| --- | --- |
+| 模型指示的填入（`type_secret`） | 步骤声明了机密值。机密值已配置。目标是最新观测中已启用、可编辑的输入框。密码填入密码字段。回放时重复这些检查。 |
+| 确定性 `fill(secret)` | 不检查字段：测试代码已选择字段。仍会注册该值以进行脱敏。 |
+
+运行器在主机上解析值并将其传给引擎。模型从不会看到或选择实际值。
+
+### 填入机密值后的截图
+
+填入机密值不会关闭截图。填入前后，模型、像素工具和运行器保留的产物都会获得相同的遮盖截图。
+
+<Warning>
+截图只遮盖安全字段。填入普通输入框的通用机密值会出现在图像中，应用在其他任何位置显示的值也一样，例如开启显示密码开关后显示的值。模型提供方也会获得该图像。请使用测试凭据，并像对待[视频](#where-redaction-stops)一样对待截图。
+</Warning>
+
+### 引擎选项中的机密值
+
+引擎选项中的机密值，例如 `web({ basicAuth: { password: secrets.get(name) } })`，不属于填入操作。
+
+```ts title="e2e.config.ts"
+import type { E2EConfig } from 'e2e';
+import { secrets } from 'e2e';
+import { web } from '@e2e-dev/web';
+
+export default {
+  targets: [
+    {
+      engine: web({
+        basicAuth: { username: 'preview', password: secrets.get('previewPassword') },
+      }),
+      app: { url: 'https://staging.example.com' },
+    },
+  ],
+  secrets: { previewPassword: () => process.env.PREVIEW_PASSWORD ?? '' },
+} satisfies E2EConfig;
+```
+
+- 运行器在每次尝试开始时于主机上解析它。
+- 运行器注册该值及引擎从中派生的内容以进行脱敏。对于基本身份验证，派生内容是 `Authorization` 请求头中以 base64 编码的 `user:password`。
+- 报告、`screen-at-failure.txt`、追踪记录页面、模型和 `e2e mcp` 会话读取的内容，以及文本下载中的该值都会脱敏。
+- 截图和模型的像素仍然启用。如果页面在屏幕上显示密码，像素中的密码不会被遮盖。
+
+### 脱敏
+
+运行器会在以下内容中将每个已注册的机密值替换为 `<secret:name>`：
+
+- 模型输入，包括项目工具结果、结构化文本字段，以及工具或引擎错误消息，
+- 报告和追踪记录页面，包括跳过原因和 AI 追踪记录的工具结果，
+- 文本下载，
+- 你的代码在 `e2e run` 期间打印的内容：测试、配置和测试文件的顶层代码、测试过滤器和报告器。
+
+即使以普通字符串而非 `secrets.get()` 句柄传入，以下位置中的值也会脱敏：测试和 `describe` 标题、步骤标签（`app.open` URL、定位器文本）、`fill`、`agent.act` 或 `agent.assert` 指令、`agent.act` 参数中的字符串、`agentContext`，以及 `e2e explore` 目标。
+
+| 规则 | 详情 |
+| --- | --- |
+| 匹配形式 | 原始形式、JSON 转义、HTML 转义和百分号编码形式，不区分字母大小写（因此 CSS `text-transform` 无法隐藏它），以及合并空白后的形式。 |
+| 截断文本 | 按长度上限截断的文本，如果以某个值的前 8 个或更多字符结尾，或以长度不足 16 的值的前半部分结尾，会被遮盖；支持原始形式和合并空白后的形式。 |
+| 观测到的屏幕 | 每个字符串（名称、文本、值、测试 ID、属性、选择器、框架路径）都会在模型、执行器的树、回放缓存描述符或结束锚点读取之前脱敏一次。 |
+| 标题 | 运行器收集测试文件时脱敏。测试 ID、`--grep`、报告器，以及产物和失败页面的文件名看到的都是 `<secret:name>`。两个只在机密值上不同的标题会形成重复的标题路径。 |
+| 执行器 | 自定义执行器的 `ctx.step` 和内置智能体的提示词携带的是标记，因此只有句柄才能输入实际值。 |
+| 配置输出 | 加载配置期间打印的输出在加载完成后才显示。如果加载失败，则不显示。 |
+| 最小长度 | 短于 6 个字符的静态值会触发 `INVALID_CONFIG`。提供方返回此类值会使填入失败。 |
+| 断言 | 不受影响。脱敏只改写运行器报告的内容。 |
+| 缓存条目 | 机密值及其截断部分绝不会进入缓存条目。 |
+
+### 脱敏的边界
+
+脱敏依靠字符串匹配。以下内容不会被拦截：
+
+- 经过变换的值，例如其最后四个字符，
+- 整体编码后的值，例如哈希值，或文本[下载](#downloads)和测试过滤器的 `redact` 以外的 base64 编码值，
+- 使用其他 Unicode 规范化形式的值，例如机密值采用组合重音字符，而文本采用分解重音字符，
+- 删除值内部空白的文本。扩大空白的文本也会通过，但观测到的屏幕除外：如果字段合并空白后的形式包含该值，字段会保持合并空白并遮盖，
+- 分散在多个节点中的值，例如 PIN 键盘上每个单元格一个字符，
+- 关于某个值的“是”或“否”：`e2e mcp` 的 `locate` 计数会说明屏幕是否匹配智能体传入的文本，包括 `exact: false`，就像测试中的断言一样，
+- 对截断文本规则而言，会改变长度的大小写映射（`ß` 显示为 `SS`），
+- 机密值提供方返回的值，如果出现在标题、测试过滤器读取或发送的内容，以及 `e2e explore --changed-since` 简报中，因为这三者都在任何提供方运行之前脱敏，
+- 嵌入宿主在内存中传入配置或测试时，在运行器自身进程中运行的测试的控制台输出，
+- 截图，包括发送给模型的截图：它只遮盖安全字段，因此应用在其他位置显示的值会出现在图像中，
+- 视频：不遮盖任何内容，并标记为 `redaction: "incomplete"`。托管浏览器或设备服务保存的录制留在该服务中，报告只包含其 URL，
+- `e2e explore --changed-since` 简报中，某个值不足 8 个连续字符的片段，例如 git 单独输出一行的多行密钥的较短末行，
+- `command.log`：运行器原样捕获应用输出。
+
+### 下载
+
+下载内容就是应用提供的内容。当会话知道某个机密值时，运行器会改写文本下载（`.txt`、`.csv`、`.json`、`.html` 或 `.htm`），并标记为 `redaction: "complete"`。以下内容会被替换为 `<secret:name>`：
+
+- 该值的每次完整出现，
+- 该值的任意 8 个或更多连续字符，无论是否合并空白，因此与该值有 8 个相同连续字符的无关文本也会被遮盖，
+- 解码后符合上述任一条件的 base64 或 base64url 片段。
+
+其他所有下载都原样保留，并标记为 `redaction: "incomplete"`：
+
+- 任何其他扩展名，
+- 不是有效 UTF-8 或无法改写的文件，
+- 来自不掌握任何机密值的会话的下载。
+
+### 会话
+
+保存的会话包含身份验证状态。它还在同一密文中携带准备测试从提供方解析出的机密值。恢复会话的测试会对这些值脱敏。封装中包含未经加密但经过认证的机密值名称。
+
+| 属性 | 值 |
+| --- | --- |
+| 位置 | [输出目录](/reference/config#output)下的 `sessions/<runId>/`（默认 `.e2e/sessions/<runId>/`），目录权限为 `0700`，文件权限为 `0600` |
+| 加密算法 | AES-256-GCM，每次保存使用新的 12 字节 IV |
+| 密钥 | 每次运行生成 32 个随机字节，仅保存在内存中。工作进程通过 IPC 接收，绝不经过磁盘或环境变量。 |
+| 绑定到 | 运行 ID、测试目标、引擎名称和版本、平台及应用身份，全部作为附加数据进行认证 |
+| 有效期 | 最长 24 小时；如果保存的状态声明了更早的到期时间，则提前过期 |
+| 清理 | 运行结束时删除目录 |
+
+运行器会拒绝无效、过期、缺失或不匹配的会话。参阅[会话错误](/reference/errors)。
+
+### 缓存信任
+
+缓存条目无需模型即可回放操作，且未经签名。
+
+| 规则 | 详情 |
+| --- | --- |
+| 验证 | 每个条目在使用前都会验证。无效条目视为未命中。 |
+| 文件名 | 预期键的哈希值。拒绝大于 1 MiB 的文件。 |
+| 键 | 仅以脱敏文本的哈希形式包含智能体上下文。 |
+| 内容 | 操作和脱敏后的摘要。回放只执行操作。其他输入值原样存储。 |
+| 填入机密值 | 存储名称，并在回放时重新授权填入。 |
+| 智能体 | 一个智能体录制的条目绝不会供另一个智能体回放。 |
+| 起始屏幕 | 不以导航开头的条目只会在录制时的路由上回放：路径和查询字符串相同，忽略生成的 ID。应用自身源上的路由可匹配任何共享 `app.identity` 的部署。其他源上的路由会保留该源。参阅[缓存](/cache)。 |
+| CI | 未显式设置的缓存模式变为 `read-only`，除非配置了 `cache.store`。 |
+| Git | `e2e init` 会忽略 `.e2e/cache/`。如果你[提交录制内容](/cache#commit-the-replay-cache)，请审查其中的操作和输入值。 |
+| `cache.store` | 接收每个录制条目，并提供每个回放条目。返回的内容会再次验证。 |
+
+### 产物
+
+默认情况下，一次运行会写入 `.e2e/` 下。[`output`](/reference/config#output) 选项或 `--output` 可以更改位置。回放缓存仍位于 `cache.dir`，`command.log` 则写入你配置的项目相对路径。
+
+| 路径 | 内容 | 脱敏 |
+| --- | --- | --- |
+| `report.json` | 运行记录。错误、推理摘录和操作摘要均经过脱敏器。 | 完整 |
+| `results/<test>/trace.md` | 根据脱敏后的报告写入的追踪记录页面。 | 完整 |
+| `results/.../*.png` | 安全字段已遮盖的截图。 | 完整 |
+| `results/.../*.webm`、`*.mp4` | 视频，通过 `video` 或 `--video` 启用。 | 不完整 |
+| `results/.../downloads/*` | 应用提供的文件。参阅[下载](#downloads)。 | 完整或不完整 |
+| `results/.../screen-at-failure.txt` | 失败时经过脱敏的树。 | 完整 |
+| `ai-trace.json` | 除测试过滤器之外的每次模型调用，通过 `--ai-trace` 启用。提示词是模型看到的脱敏版本。内联图像字节替换为其大小。 | 与提示词相同 |
+| `sessions/<runId>/` | 加密会话，在清理时删除。 | 已加密 |
+| `videos/<session>/*.webm`、`*.mp4` | `e2e mcp` 会话通过 `start_recording` 录制的视频，保留到你删除为止。绝不交给 `artifacts.store`。 | 无 |
+| `cache.dir`（默认 `.e2e/cache/`） | 回放缓存条目。 | 设计上不含机密值 |
+| `command.log` 中的路径 | 应用的标准输出和标准错误，原样保留。必须位于项目根目录内。 | 无 |
+
+`artifacts.store` 会在每个产物生成时接收其字节内容，下载脱敏已在此之前完成，同时附带报告记录的 `redaction` 标签。
+
+### 出站连接
+
+| 目标 | 时机 |
+| --- | --- |
+| `eu.i.posthog.com` | 每次 CLI 调用，或 `e2e/runner` 中每次返回报告的 `run()` 或 `explore()`，发送一次遥测请求；此外 `e2e mcp` 提供的每个会话最多发送一次，除非你选择退出（[遥测](/telemetry)）。每次发送 `e2e feedback` 报告时发送一次请求；使用 `--dry-run` 或 `E2E_TELEMETRY_DEBUG`、报告缺少 `--repro` 的 Bug，或设置 `E2E_TELEMETRY_DISABLED` 或 `DO_NOT_TRACK` 时不发送。 |
+| 你的模型提供方 | 调用模型的智能体步骤。确定性测试和完全回放的步骤不会调用模型。 |
+| 订阅提供方的登录和模型列表端点 | `e2e login` 和 `e2e models`（[订阅](/subscriptions)）。 |
+| 应用的 `readyUrl` | 对运行器启动的应用进行就绪探测。 |
+| Playwright 浏览器下载 | 浏览器缺失时下载一次。 |
+| `web({ connect })` 中的 DevTools 端点 | 每次运行该测试目标时。 |
+| GitHub API | 仅来自 `@e2e-dev/github` 报告器。 |
+| 你传入的 `model` 的提供方 | 仅来自 [`decisionFilter()`](/filters)：提交更改的差异（只有工作区发生变化的文件仅发送名称）、测试文件，以及保存其会话的准备文件，按[文本下载](#downloads)的方式脱敏，但机密值提供方返回的值除外。 |
+| `registry.npmjs.org` | 终端中运行的 CLI 命令每天最多发送一次请求，检查是否有更新的 e2e 版本。在 CI 中、标准错误被管道重定向时、执行 `e2e mcp` 和 `e2e upgrade` 时，以及设置 `E2E_UPDATE_CHECK_DISABLED`、`NO_UPDATE_NOTIFIER`、`E2E_TELEMETRY_DISABLED` 或 `DO_NOT_TRACK` 时跳过。每次运行 `e2e feedback` 发送一次请求，使用 `--allow-outdated` 或设置 `E2E_TELEMETRY_DISABLED` 或 `DO_NOT_TRACK` 时跳过。每次运行 `e2e upgrade`，为项目中以注册表版本列出的每个 `e2e` 或 `@e2e-dev/*` 包发送一次请求；如果包管理器设置了 `npm_config_registry`，则改为请求该地址；随后包管理器从自己的注册表安装。 |
+| `api.limrun.com`（或 `LIMRUN_BASE_URL`）及其设备 | 仅来自 [`limrun()`](/integrations/limrun)。使用 `LIMRUN_API_KEY` 登录。 |
+| Kernel API 及其托管浏览器 | 仅来自 [`kernel()`](/integrations/kernel)。 |
+| TestMu AI 的 CDP 中心及其托管浏览器 | 仅来自 [`testmuBrowsers()`](/integrations/testmu#run-web-targets-in-browsers)。用户名和访问密钥只通过 CDP URL 传输，绝不出现在日志行中。 |
+| `mobile-hub.lambdatest.com`、`mobile-api.lambdatest.com`（或 `TESTMU_API_ENDPOINT`）和 `manual-api.lambdatest.com` | 仅来自 [`testmu()`](/integrations/testmu#run-mobile-targets-on-devices)。使用 `LT_USERNAME` 和 `LT_ACCESS_KEY` 登录。每个会话中，agent-device 会在 API 目录中查找设备，将本地 `app` 上传到 `manual-api.lambdatest.com`，并在 TestMu AI 的 Appium 中心运行会话。提供方只在某次尝试录制视频时才向 API 请求会话视频。 |
+| `hub-cloud.browserstack.com` 和 `api-cloud.browserstack.com`（或 `BROWSERSTACK_API_ENDPOINT`） | 仅来自 [`browserstack()`](/integrations/browserstack)。使用 `BROWSERSTACK_USERNAME` 和 `BROWSERSTACK_ACCESS_KEY` 登录。每个会话中，agent-device 会在 App Automate API 中查找设备、上传本地 `app`，并在 BrowserStack 的 Appium 中心运行会话。对于 `https` `app`，提供方让 API 每次运行获取一次构建产物，并只在某次尝试录制视频时向 API 请求会话视频。 |
+| `api.e2b.app` 及其沙盒（或 `E2B_DOMAIN`、`E2B_API_URL`、`E2B_SANDBOX_URL`） | 仅来自 [`e2b()`](/integrations/e2b#run-android-targets) 和 [`e2bBrowsers()`](/integrations/e2b#run-web-targets-in-browsers)。使用 `E2B_API_KEY` 登录。引擎通过 `127.0.0.1` 上的隧道访问各沙盒的 agent-device 或 Chromium（[沙盒如何保持私有](/integrations/e2b#how-the-sandboxes-stay-private)），`e2b()` 也通过该隧道发送 `.apk`。每个 Android 沙盒在缺少 Node 时从 `nodejs.org` 下载 Node，并从 npm 安装 agent-device。 |
+| Expo API 和模拟器的 agent-device 守护进程 | 仅来自 [`expoSimulators()`](/integrations/eas) 或其已弃用的别名 `easSimulators()`。使用 `EXPO_TOKEN` 登录，否则使用 `~/.expo/state.json` 中的 eas-cli 登录信息。在 CI 运行器上，设置 `EXPO_TOKEN`，或不要在运行器的主目录中保留该登录信息。 |
+| `mcr.microsoft.com` | 仅来自 [`smol()`](/integrations/smol)，用于拉取 Playwright 镜像。随后机器拥有不受限制的网络访问权限，并可通过 `host.smolvm.internal` 访问你计算机回环地址上的每个端口，而不只是 `hostPorts`（[配置提供方](/integrations/smol#set-up-the-provider)）。 |
+| 包注册表 | `e2e init` 安装依赖项时。 |
+| 被测应用 | 每次运行，以及应用自身加载的任何内容。 |
+
+<Note>
+没有崩溃报告。`--ai-trace` 写入本地文件，不会上传。你的测试代码、插件和应用可能发起更多连接。
+</Note>
+
+### MCP 和 explore
+
+| 命令 | 规则 |
+| --- | --- |
+| `e2e mcp` | 使用 stdio，并采用与测试运行相同的操作授权。默认允许打开四个会话（[`--max-sessions`](/reference/mcp)，范围 1 到 16）。关闭空闲会话。`open_session {engine}` 加载智能体指定的已安装包，并调用指定的导出。与配置中的导入一样，这些代码拥有服务器的全部权限。`engine` 只能指定包，不能指定路径或 URL，服务器不会安装任何内容。 |
+| `e2e explore` | 向每个步骤提供所有已配置的凭据。探索器可以看到账号名称和用户名。密码始终是句柄，需要支持敏感值填入的引擎；没有此类引擎时，探索器会跳过密码。没有凭据时，它可能使用编造的测试凭据登录，并以纯文本输入。 |
+| `e2e explore --changed-since` | 向模型发送从基准提交起的提交消息、已更改文件名和已提交补丁，并截断以适应上下文。未被任何提交更改的文件（例如 CI 写入的文件），以及已提交文件后续的本地修改，只发送名称，不读取内容。配置以字符串形式提供的机密值及其连续 8 个或更多字符的片段会脱敏。机密值提供方返回的值，以及已提交到仓库但未在配置中命名的机密值，会传给模型。 |

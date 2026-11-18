@@ -1,0 +1,156 @@
+---
+title: エージェントとペルソナ
+description: ひとつのスイートに複数のエージェントを設定し、テストに割り当て、同じフローを各ペルソナで実行します。
+"og:image": "https://e2e.com/docs/images/og/agents.png?v=94dc88725f"
+"twitter:image": "https://e2e.com/docs/images/og/agents.png?v=94dc88725f"
+---
+
+import { Video } from '../snippets/video.jsx';
+
+エージェントは `agents` に定義する名前付きのエントリーで、それぞれ独自のモデル、指示、ツールを持ちます。別のエージェントを選ばない限り、テストは `default` を使います。複数のエージェントに名前を付けると、モデルを比較したり、同じフローを複数のペルソナで実行したりできます。
+
+## 名前付きエージェントを定義する
+
+```ts title="e2e.config.ts"
+import type { E2EConfig } from 'e2e';
+import { web } from '@e2e-dev/web';
+import { gateway } from 'ai';
+
+const vocabulary = 'Plans are called tiers. Billing lives under Settings. "Approve" on an order refunds it.';
+
+export default {
+  targets: [{ engine: web(), app: { url: 'http://localhost:3000' } }],
+  agents: {
+    default: { model: gateway('openai/gpt-6-luna-fast'), context: vocabulary },
+    thorough: {
+      model: gateway('anthropic/claude-opus-5'),
+      system: 'Verify every claim on screen before concluding a step.',
+      context: vocabulary,
+    },
+    buyer: { model: gateway('openai/gpt-6-luna-fast'), system: 'You are a first-time buyer.', context: vocabulary },
+    admin: { model: gateway('openai/gpt-6-luna-fast'), system: 'You manage orders and approve refunds.', context: vocabulary },
+  },
+} satisfies E2EConfig;
+```
+
+各エントリーには `model`、任意の [`judge`](/models#a-judge-of-its-own)、`system`、`context`、[ツール](/tools)、予算、`providerOptions` を設定できます。`maxSteps` は 1 ステップの操作数を、`maxModelCalls` はモデル呼び出し回数を制限します。デフォルトはいずれも 25、最大は 100 です。[設定リファレンス](/reference/config#agents)を参照してください。
+
+各エントリーは `default` の設定を継承しません。上の例のように共通の定数を使うなどして、それぞれに必要なモデルとコンテキストを指定します。
+
+[独自のエグゼキューター](/executors)は `executor` に設定します。モデル、ジャッジ、コンテキスト、予算は引き続き適用されます。エグゼキューターが独自のプロンプトとツールを用意するため、`system` と `tools` は指定できません。
+
+## 指示と用語を設定する
+
+| | `system` | `context` |
+|---|---|---|
+| 答える問い | 操作を担当するエージェントはどう振る舞うべきか | このアプリでは何をどう呼ぶか |
+| 読むもの | act ループのみ | すべてのモデル呼び出し。act の各ターンと、`assert`、`waitFor`、`extract` のジャッジ |
+| 設定する内容 | ペルソナ、注意事項、終了前の確認事項、予期しないダイアログへの対処 | 画面やメニューの名前、機能の場所、フォームを送信するボタン、業務用語 |
+| 設定先 | `agents.<name>.system` | `agents.<name>.context`、最大 16 KiB |
+
+ジャッジには `system` が渡らないため、「フォームが閉じたらステップ完了」のような指示で判定基準が緩くなることはありません。このアプリをテストする誰にでも当てはまる情報は `context` に、このテスターがどのアプリでも守る指示は `system` に入れるのが目安です。
+
+テストやグループでは、`agentContext` を使って固有の用語や情報を `context` に追加できます。シードデータや、ラベルを変える機能フラグなど、そのテストだけが知っている事実に使います。
+
+```ts title="tests/billing.e2e.ts"
+import { describe, test } from 'e2e';
+
+describe('billing', { agentContext: 'The seeded workspace is called "Acme Trial".' }, () => {
+  test('upgrades the tier', async ({ agent }) => { /* ... */ });
+});
+```
+
+`agentContext` はジャッジにも渡るため、行動の指示は含めないでください。
+
+`e2e run` では、すべてのプロンプトに `Test: billing > upgrades the tier` のようなテストタイトルの階層も含まれます。ジャッジも読むため、テスト名は期待する判定ではなく、何を検証するかを表す名前にします。
+
+## 実行ごとにエージェントを選ぶ
+
+`--agent` は、エージェントを指定していないテストで使うエージェントを選びます。名前を複数指定すると、各テストをエージェントごとに 1 回ずつ実行します。
+
+<CodeGroup>
+```bash npm
+npx e2e run --agent thorough tests/checkout.e2e.ts
+npx e2e run --agent buyer,admin
+```
+
+```bash pnpm
+pnpm exec e2e run --agent thorough tests/checkout.e2e.ts
+pnpm exec e2e run --agent buyer,admin
+```
+
+```bash bun
+bunx e2e run --agent thorough tests/checkout.e2e.ts
+bunx e2e run --agent buyer,admin
+```
+</CodeGroup>
+
+## スイート内でエージェントを固定する
+
+テスト、describe ブロック、個別の呼び出しでエージェントを指定できます。最も近い設定が優先されます。優先順位は、呼び出し、テスト、外側のグループ、実行全体の順です。
+
+```ts title="tests/checkout.e2e.ts"
+import { describe, test } from 'e2e';
+
+describe('checkout as a first-time buyer', { agent: 'buyer' }, () => {
+  test('pays for one item', async ({ app, agent }) => { /* ... */ });
+
+  describe('refunds', { agent: 'admin' }, () => {
+    test('refunds the order', async ({ agent }) => { /* ... */ });
+  });
+
+  test('reorders, and the admin approves', async ({ app, agent }) => {
+    await app.open('/orders');
+    await agent.act('reorder the most recent order');
+    // The admin's act call sees what the earlier steps of this test did.
+    await agent.act('approve the pending reorder', { agent: 'admin' });
+    await agent.assert('the reorder shows as approved');
+  });
+});
+```
+
+`--agent` は、テストが指定したエージェントを置き換えません。テストやグループに未定義のエージェントを指定すると、テストの収集時に失敗します。個別の呼び出しで指定すると `INVALID_ARGUMENT` になります。レポートにはステップごとのエージェントが記録されます。
+
+## 同じフローを複数のペルソナで実行する
+
+<Video>
+  <video src="/images/personas.mp4" aria-label="それぞれ異なる言語を読む 4 つのペルソナのエージェントが、同じローカライズテストを実行します。アラビア語の実行では、英語のままのボタンで失敗します。" muted loop playsInline controls />
+
+  言語ごとに用意した 4 つのペルソナが、同じローカライズスイートを実行します。
+</Video>
+
+複数のエージェントを指定すると、同じテストをそれぞれで 1 回ずつ実行できます。
+
+```ts title="tests/checkout.e2e.ts"
+import { describe, test } from 'e2e';
+
+describe('checkout', { agent: ['buyer', 'admin'] }, () => {
+  test('pays for one item', async ({ app, agent }) => { /* runs once per persona */ });
+  test('applies a promo code', async ({ app, agent }) => { /* ... */ });
+});
+```
+
+結果とアーティファクトのディレクトリはエージェントごとに分かれます。ターミナルと JUnit のテスト名には、`[admin]` のようにエージェント名が付きます。
+
+`--agent` は固定済みのエージェントから選択し、新しいものを追加しません。この例で `--agent admin` を指定すると、`admin` だけが実行されます。`--agent thorough` はどちらにも一致しないため、両方とも実行されます。
+
+直列実行グループは、エージェントごとにひとつの単位として実行され、グループ内のテストは共通のエージェント指定を使います。セットアップテストで固定できるエージェントは最大 1 つです。
+
+各エージェントは、名前とコンテキストをキーにして独自の[リプレイキャッシュ](/cache)を記録します。`buyer` が `admin` のステップを再生することはありません。`agentContext` が変わると記録し直します。
+
+エージェント自体はログイン済みユーザーではありません。ログイン済みのペルソナを作るには、describe ブロックを分け、それぞれのエージェントと `session` を組み合わせます。[認証](/authentication#several-signed-in-users)を参照してください。
+
+## エージェントを調整する
+
+ステップが失敗する、または呼び出し回数が多すぎる場合は、レポートを開くか、`--debug` で実行してトランスクリプトを確認します。まずは画面上のラベルを使って指示を修正してください。複数のテストに同じ問題がある場合は、エージェント側を調整します。用語は `context`、指示は `system` に設定し、テスト API でカートの初期データを作るような操作には[ツール](/tools)を追加します。モデルや `providerOptions` を比較するには、同じテストを `--agent <name>` で実行します。
+
+## 次のステップ
+
+<CardGroup cols={2}>
+  <Card title="プロジェクトツール" icon="wrench" href="/tools">
+    エージェントにテスト API やデバイス用ツールを渡します。
+  </Card>
+  <Card title="独自のエグゼキューター" icon="gears" href="/executors">
+    エージェントによる操作の選択方法と実行方法を変更します。
+  </Card>
+</CardGroup>

@@ -7,6 +7,7 @@ import { testPattern } from '@e2e-dev/core/lib/internal/regexp';
 import { describeIssue, requireStandardSchema } from '@e2e-dev/core/lib/internal/standard-schema';
 import { toTextPattern } from '@e2e-dev/core/lib/internal/text';
 import type { AsymmetricMatcher, NegatedValueExpectation, PropertyPath, StandardSchemaV1, ValueExpectation } from '@e2e-dev/core/lib/types';
+import { withMessage } from './heading.ts';
 
 function fail(message: string): never {
   throw new TestError('ASSERTION_FAILED', message);
@@ -62,7 +63,7 @@ class ValueExpectationImpl<T> implements ValueExpectation<T> {
   }
 
   private fail(detail: string): never {
-    fail(this.message === undefined ? detail : `${this.message}: ${detail}`);
+    fail(withMessage(this.message, detail));
   }
 
   toBe(expected: T): void {

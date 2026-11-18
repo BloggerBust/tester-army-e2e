@@ -11,7 +11,8 @@ import { testIdentity } from '../collect/collect.ts';
 import type { Selection, TestTargetPair } from '../collect/select.ts';
 import type { SkipInfo } from '@e2e-dev/core/lib/run/records';
 import type { ResolvedTarget } from '@e2e-dev/core/lib/config/resolve';
-import type { ResultRecord } from '@e2e-dev/core/lib/run/records';
+import type { SerializedError } from '@e2e-dev/core/lib/internal/errors';
+import type { AttemptRecord, ResultRecord, ResultStatus } from '@e2e-dev/core/lib/run/records';
 import type { WirePair } from './worker/protocol.ts';
 
 /**
@@ -222,6 +223,27 @@ export function pairResult(
   fields: Omit<ResultRecord, 'test' | 'target' | 'agent' | 'repeat'>,
 ): ResultRecord {
   return { test: testIdentity(pair.test), target: pair.target, agent: pair.agent, repeat: pair.repeat, ...fields };
+}
+
+/**
+ * The result of a test or setup unit that ran. A beforeAll failure before
+ * any attempt ran skips the unit; on a retry the recorded attempts stand,
+ * since the hook failure is already a run error and a failing test must not
+ * be reported as skipped. A unit whose body skipped itself ends on its first
+ * skipped attempt (`runWithRetries`), so that attempt's reason is the
+ * result's.
+ */
+export function unitResult(
+  pair: TestTargetPair,
+  finalStatus: ResultStatus,
+  attempts: AttemptRecord[],
+  hookFailure: Pick<SerializedError, 'message'> | undefined,
+): ResultRecord {
+  if (hookFailure !== undefined && attempts.length === 0) {
+    return pairResult(pair, { status: 'skipped', selected: true, skip: { cause: 'hook-failed', reason: hookFailure.message }, attempts: [] });
+  }
+  const last = attempts.at(-1);
+  return pairResult(pair, { status: finalStatus, selected: true, attempts, ...(last?.status === 'skipped' ? { skip: last.skip } : {}) });
 }
 
 /** The identity of one pair among a unit's: a test runs once per agent it is pinned to, and once per repeat. */

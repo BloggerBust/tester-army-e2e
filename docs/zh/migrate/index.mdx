@@ -1,0 +1,65 @@
+---
+title: 迁移到 e2e
+sidebarTitle: 概览
+description: 将 Playwright、Cypress、Selenium、Appium、Detox、Maestro 或 TesterArmy 测试套件逐个测试迁移到 e2e。
+---
+
+迁移指南将某个测试运行器的配置、API 和命令映射到 e2e。它也会列出 e2e 尚未具备的功能：哪些已有计划、哪些没有时间表、哪些是 e2e 有意不提供的功能，并在存在替代方案时说明。没有替代方案的测试应保留在旧运行器中。逐个迁移测试时，保持旧测试套件已安装，让两个测试套件都始终通过。
+
+## 选择你的运行器
+
+<CardGroup cols={2}>
+  <Card title="Playwright" icon="/images/integrations/playwright.svg" href="/migrate/playwright">
+    网页端。将每个配置键、`page` 调用和 CLI 参数映射到 e2e。
+  </Card>
+  <Card title="Cypress" icon="/images/integrations/cypress.svg" href="/migrate/cypress">
+    网页端。命令链改为异步测试，保留你的 `data-cy` 属性。
+  </Card>
+  <Card title="Selenium" icon="/images/integrations/selenium.svg" href="/migrate/selenium">
+    网页端。用 TypeScript 重写 WebDriver 调用和页面对象。
+  </Card>
+  <Card title="Appium" icon="/images/integrations/appium.png" href="/migrate/appium">
+    移动端。迁移能力配置、选择器和 `mobile:` 命令，无需服务器。
+  </Card>
+  <Card title="Detox" icon="/images/integrations/detox.png" href="/migrate/detox">
+    移动端。保留应用构建和 testID，无需 Detox 框架。
+  </Card>
+  <Card title="Maestro" icon="/images/integrations/maestro.svg" href="/migrate/maestro">
+    移动端。将 YAML 流程改为 TypeScript 测试。
+  </Card>
+  <Card title="TesterArmy" icon="/images/integrations/testerarmy.png" href="/migrate/testerarmy">
+    网页端和移动端。将已保存的测试改为仓库中的智能体步骤。
+  </Card>
+</CardGroup>
+
+## 每次迁移一个测试
+
+<Note>先按[快速开始](/quickstart)安装 e2e。只有智能体步骤需要模型。</Note>
+
+e2e 测试在 Node 中运行，默认使用 TypeScript，也可以使用 [JavaScript](/reference/config#javascript)。对于 Java、Python 或原生测试套件，请在带有独立 `package.json` 的 `e2e/` 文件夹中安装 e2e。
+
+每份指南都遵循相同的步骤：
+
+1. 迁移配置。将旧运行器的基础 URL、应用启动命令和设备转换为 `e2e.config.ts` 中的测试目标。
+2. 将一个测试重写为 `tests/` 下的 `.e2e.ts` 文件。让两个运行器的文件匹配模式相互独立，避免运行彼此的测试。
+3. 使用 `npx e2e run <file>` 运行新测试，直到通过。
+4. 确信新测试可靠后，删除旧测试。
+
+## 让智能体迁移测试套件
+
+要用编码智能体迁移一个测试，请复制对应运行器指南顶部的智能体提示词。如果迁移需要多次会话，使用 [`migrate-to-e2e` 技能](/coding-agents#migrate-an-existing-suite)。它会在 `MIGRATION.md` 文件中记录进度，并保持旧测试套件运行。
+
+## 从没有指南的运行器迁移
+
+网页端 WebdriverIO 没有对应指南。可使用 [Selenium](/migrate/selenium) 指南映射它的 WebDriver 调用。该映射并不完整：没有指南涵盖 WebdriverIO API 本身。对于在移动应用中结合 Appium 使用的 WebdriverIO，参阅[从 Appium 迁移](/migrate/appium)。
+
+## 下一步
+
+<CardGroup cols={2}>
+  <Card title="核心概念" icon="pen-to-square" href="/core-concepts">
+    使用目标、断言和定位器替代脚本化的选择器。
+  </Card>
+  <Card title="编码智能体" icon="robot" href="/coding-agents">
+    e2e 技能、MCP 服务器，以及智能体如何编写测试。
+  </Card>
+</CardGroup>

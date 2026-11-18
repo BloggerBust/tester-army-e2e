@@ -1,0 +1,554 @@
+---
+title: MCP サーバー（e2e mcp）
+description: コーディングエージェントが MCP 経由でアプリを調べ、操作できるようにします。
+"og:image": "https://e2e.com/docs/images/og/reference/mcp.png?v=3d3880edad"
+"twitter:image": "https://e2e.com/docs/images/og/reference/mcp.png?v=3d3880edad"
+---
+
+`e2e mcp` を使うと、Claude Code や Cursor などのコーディングエージェントが、テストを書きながらアプリを調べ、ロケーターやテストの行を試し、マスキングされたスクリーンショットを撮影できます。stdio で動作し、プロジェクトに設定したエンジンを使います。設定方法とエージェントへの依頼例は [MCP サーバーガイド](/mcp-server)を参照してください。
+
+```json title=".mcp.json"
+{
+  "mcpServers": {
+    "e2e": { "command": "npx", "args": ["e2e", "mcp"] }
+  }
+}
+```
+
+4 つの MCP ツールでセッションを管理し、利用可能なアプリのツールを呼び出します。`run_tests` は `e2e run` と同じようにスイートを実行します。アプリのツールカタログは、セッションを開くたびに設定から再読み込みします。
+
+## リファレンス
+
+### フラグ
+
+<CodeGroup>
+```bash npm
+npx e2e mcp [--config <path>] [--target <name>] [--headed] [--max-sessions <n>]
+```
+
+```bash pnpm
+pnpm exec e2e mcp [--config <path>] [--target <name>] [--headed] [--max-sessions <n>]
+```
+
+```bash bun
+bunx e2e mcp [--config <path>] [--target <name>] [--headed] [--max-sessions <n>]
+```
+</CodeGroup>
+
+| フラグ | デフォルト |
+| --- | --- |
+| [`--config <path>`](#config) | `e2e run` と同じ方法で検出 |
+| [`--target <name>`](#target) | 唯一のターゲット |
+| [`--headed`](#headed) | ヘッドレス |
+| [`--max-sessions <n>`](#max-sessions) | `4`、Bun では `1` |
+
+#### `--config`
+
+`open_session` で指定しない場合に、各セッションが読み込む設定です。各セッションは、サーバーの環境を使って新たに読み込みます（[複数のセッション](#several-sessions)を参照）。設定内の `process.env` が読むのは、MCP クライアントが `e2e mcp` を起動したときの環境変数であり、エージェントのシェルのものではありません。
+
+#### `--target`
+
+`open_session` で指定しない場合に、セッションを開くターゲットです。
+
+- フラグも名前も指定しなければ、唯一のターゲットを使います。
+- ターゲットが複数あり名前を指定しない場合は、`TARGET_REQUIRED` になります。
+
+#### `--headed`
+
+エンジンが対応していれば、`open_session` で `headed` を指定しないすべてのセッションで、ブラウザまたはシミュレーターを表示します。
+
+- デフォルトでは、`e2e run` と同じくヘッドレスです。
+
+#### `--max-sessions`
+
+同時に開けるセッション数で、1〜16 を指定できます。[Bun](/reference/cli#bun) では 1 です。[複数のセッション](#several-sessions)を参照してください。
+
+```bash
+e2e mcp --max-sessions 8 # default: 4
+```
+
+### ツール
+
+| ツール | 説明 |
+| --- | --- |
+| [`open_session`](#open_session) | セッションを開きます |
+| [`tools`](#tools-2) | カタログまたは 1 ツールの詳細を返します |
+| [`call`](#call) | カタログのツールを 1 つ実行します |
+| [`close_session`](#close_session) | セッションとエンジンを終了します |
+| [`run_tests`](#run_tests) | `e2e run` と同じようにテストを実行します |
+
+開いているセッションがちょうど 1 つの場合、`session` は省略できます。[複数のセッション](#several-sessions)を参照してください。
+
+#### `open_session`
+
+設定を読み込み、ターゲットのアプリコマンドを起動し、エンジンと 1 回の試行を開始してアプリを開きます。ナビゲーション可能なエンジンではアプリの URL を開き、デバイスでは[指定したアプリ](/mobile#point-at-your-app)を新たに起動します。ビルドはインストールしないため、ローカルデバイスのターゲットには `app.bundleId` が必要です。セッション ID、カタログ、最初の観測を返します。観測の上にあるサマリーは、テストを作成・編集する前に `writing-tests` ガイド（`e2e://guide/writing-tests`）を読むようエージェントに伝えます。サーバーの指示にも同じ内容があります。
+
+サマリーにはアプリの URL を表示し、空きポートを使う `url` には割り当てたポートを反映します。アプリのコマンドについては、実行ファイル、準備完了を確認する URL、`env` と `inheritEnv` の名前、ログファイルを示します。`args`、`env` の値、URL のユーザー情報やクエリは表示しません。e2e はほかのアプリプロセスを起動しないため、アプリが使うデータベースなどは外部で動かします。
+
+```text wrap
+App: http://127.0.0.1:57162/ (port 57162, assigned for the declared port 0).
+Process: app.command "node" (ready at http://127.0.0.1:57162/; env PORT, DATABASE_URL; log .e2e/app.log). e2e starts no other app process for this session; a database or other service the app uses runs outside e2e.
+```
+
+```txt
+open_session {target: "web", headed: true}
+```
+
+| 入力 | 型 | 必須 | 動作 |
+| --- | --- | --- | --- |
+| `target` | string | いいえ | 開くターゲットです。省略時は `--target`、それもなければ唯一のターゲットを使います。 |
+| `config` | string（パス） | いいえ | このセッションの設定です。絶対パスか、サーバーの作業ディレクトリ（クライアントの MCP 設定の `cwd`）からの相対パスを指定します。省略時は `--config`、それもなければ `e2e run` と同じ方法で検出します。 |
+| `headed` | boolean | いいえ | `true` はこのセッションのブラウザやシミュレーターを表示し、`false` は非表示にします。省略時は `--headed` に従います。 |
+| `test` | string | いいえ | 最初に実行する 1 つのテストです。`e2e run` の位置引数と同じ形式で指定します。セッションはテストが止まった場所で停止します。[テストの実行](#running-a-test)を参照してください。 |
+| `engine` | string または object | いいえ | 設定ファイルのないディレクトリで使うセッションのエンジンです。パッケージ名、または `{package, export, options}` を指定します。[設定ファイルなしで使う](#without-a-config)を参照してください。 |
+| `app` | object | いいえ | `engine` セッションのテスト対象アプリです。`url`、`bundleId`、`appPath` で指定します。 |
+
+#### `tools`
+
+カタログを、ツールごとに 1 行で返します。
+
+```txt
+tools {tool: "locate"}
+```
+
+| 入力 | 型 | 必須 | 動作 |
+| --- | --- | --- | --- |
+| `tool` | string | いいえ | カタログのツールです。詳細な説明と引数のスキーマを返します。 |
+| `session` | string | 複数開いている場合 | セッション ID です。 |
+
+#### `call`
+
+カタログのツールを 1 つ実行します。
+
+```txt
+call {tool: "tap", args: {target: "n42"}, session: "<id>"}
+```
+
+| 入力 | 型 | 必須 | 動作 |
+| --- | --- | --- | --- |
+| `tool` | string | はい | カタログのツール名です。 |
+| `args` | object | いいえ | ツールの引数です。 |
+| `session` | string | 複数開いている場合 | セッション ID です。 |
+
+- 最初に、未定義の項目を受け付けないツールのスキーマで引数を検証します。型が誤っている場合や、引数を宣言するツールに未宣言の引数を渡した場合は `INVALID_ARGUMENT` となり、何も実行しません。`back` と `dismiss_keyboard` は引数を取らず、渡されたものをすべて除去して実行します。
+- 操作の失敗はエラー結果になりますが、再観測した画面も含めます。先頭にはツール、対象、コードを示します。例: `navigate file:///etc/passwd failed: POLICY_DENIED: forbidden URL scheme: file:`。
+- プロジェクトのツールは、`execute` が文字列を返す場合も、AI SDK の `toModelOutput` レンダラーに従います。レンダリング後の `error-text` と `error-json` は MCP のエラー結果（`isError: true`）になります。これにより、コーディングエージェントはツール呼び出しの失敗と成功を区別できます。
+
+#### `close_session`
+
+録画中なら保存し、試行を終了してエンジンを破棄します。セッションが起動したアプリのプロセスは、ほかのセッションが使わなくなった時点で停止します。
+
+```txt
+close_session {session: "<id>"}
+```
+
+| 入力 | 型 | 必須 | 動作 |
+| --- | --- | --- | --- |
+| `session` | string | 複数開いている場合 | セッション ID です。 |
+
+#### `run_tests`
+
+独立したプロセスで `e2e run` を実行し、コマンド、終了コードとその意味、実行時の出力を返します。デフォルトの `list` レポーターでは、各テスト、失敗のブロック、サマリーを返します。セッションは不要で、開いているセッションにも影響しません。セッションと並行して使う方法は[セッションを開いたままテストを実行する](/mcp-server#run-tests-next-to-a-session)を参照してください。
+
+```txt
+run_tests {files: ["tests/checkout.e2e.ts:12"]}
+```
+
+```text wrap
+e2e run tests/checkout.e2e.ts:12
+exit 1: a test failed or timed out
+
+ RUN  e2e v0.22.0 /work/shop
+ ...
+```
+
+| 入力 | 型 | 必須 | 動作 |
+| --- | --- | --- | --- |
+| `files` | string[] | いいえ | `e2e run` の位置引数です。ファイル、ディレクトリ、glob、`file:line` を指定します。省略時は設定から検出したすべてのテストです。ファイル名は `-` で始められません。 |
+| `config` | string（パス） | いいえ | `--config` に対応します。省略時はサーバーの `--config` を使います。 |
+| `target` | string[] | いいえ | `--target` に対応し、1 つ以上を指定します。省略時はサーバーの `--target`、それもなければ全ターゲットです。 |
+| `grep`, `grepInvert` | string | いいえ | `--grep`、`--grep-invert` に対応します。 |
+| `tag`, `excludeTag` | string[] | いいえ | `--tag`、`--exclude-tag` に対応します。 |
+| `lastFailed` | boolean | いいえ | `--last-failed` に対応します。 |
+| `changedSince` | string | いいえ | `--changed-since` に対応します。 |
+| `headed` | boolean | いいえ | `--headed` に対応します。省略時はサーバーの `--headed` を使います。 |
+| `workers`, `retries`, `repeatEach`, `maxFailures`, `actionTimeout` | integer | いいえ | `--workers`、`--retries`、`--repeat-each`、`--max-failures`、`--action-timeout` に対応します。 |
+| `noCache` | boolean | いいえ | `--no-cache` に対応します。 |
+| `updateSnapshots` | boolean | いいえ | `--update-snapshots` に対応します。 |
+
+- 終了コード 0 と 1 は通常の結果です。それ以外はエラー結果（`isError: true`）になります。
+- 出力が 60,000 文字を超えた場合、失敗とサマリーがある末尾を残します。テスト実行まで進めば、すべての結果を `<output>/report.json`（デフォルトの出力先は `.e2e`）に保存します。[出力](/reference/cli#output)を参照してください。
+- 進捗トークンがある場合、stdout の空でない各行を、1,000 文字で切り詰めた進捗通知として送ります。
+- 呼び出しをキャンセルすると、Ctrl-C と同じように実行を中断します。15 秒ごとに再び中断を送り、3 回目から 15 秒後に強制終了します。次の `run_tests` は、そのプロセスの終了を待ちます。
+- サーバーの終了時は新しい実行を拒否し、進行中の実行を中断します。サーバーが異常終了した場合、実行側も同じ方法で自身を中断します。
+
+| 投げるエラー | 発生条件 |
+| --- | --- |
+| `RUNNER_BUSY` | すでに実行が進行中の場合。 |
+| `CANCELLED` | 実行開始前に呼び出しをキャンセルした場合、またはサーバーが終了中の場合。 |
+
+### カタログ
+
+`call` で実行できるツールは、セッションのターゲットによって異なります。
+
+| カタログのツール | 説明 |
+| --- | --- |
+| [`observe`](#observe) | 最新の観測を返します |
+| [操作](#actions) | 観測したノードを操作します |
+| [`dismiss_keyboard`](#dismiss_keyboard) | 画面上のキーボードを閉じます |
+| [`locate`](#locate) | セマンティックロケーターを試します |
+| [`run_code`](#run_code) | テストの文を実行します |
+| [`test_lines`](#test_lines) | セッションのテスト行を返します |
+| [`screenshot`](#screenshot) | マスキングしたビューポートを返し、必要に応じてファイルに保存します |
+| [座標ツール](#point-tools) | スクリーンショットの座標を操作します |
+| [`start_recording`, `stop_recording`](#recording) | アプリの動画を録画します |
+| [プロジェクトのツール](#project-tools) | `defineTool` で定義したツールです |
+
+#### `observe`
+
+最新の観測を、`#id role "name" ...` 形式でノードごとに 1 行返します。現在のパスとリビジョンも含めます。引数はありません。
+
+- リンクの `href` は、アプリの URL と同じオリジンならパス、それ以外ならオリジンとパスです。
+- `mailto:`、`tel:`、`blob:` のリンク先はスキームを維持します。
+- `…` は省略箇所を表します。`?…` はクエリ、`#…` はフラグメント、`data:…` と `javascript:…` はインラインのペイロード、末尾の `…` は 256 文字で切り詰めたリンク先です。
+
+#### 操作
+
+`tap`、`double_tap`、`long_press`、`right_click`、`hover`、`type`、`press`、`select`、`check`、`scroll`、`scroll_to`、`drag`、`upload`、`navigate`、`back`、`resize_viewport`、`switch_tab`、`close_tab`、`type_secret` があります。それぞれ、操作の要約、同じ操作を再現する[テスト行](#test_lines)または生成できない理由、画面の変化を返します。
+
+| 入力 | 動作 |
+| --- | --- |
+| ノード ID | 最新の観測から指定します。 |
+| 値、キー、`checked` 状態、方向、ドロップ先、プロジェクト相対または `sample:` の `files`、URL、`width` と `height`、シークレット名 | 各動詞が必要とするものを指定します。 |
+| `modifiers`（省略可能） | エンジンが `tapModifiers` を宣言している場合に、`tap`、`double_tap`、`right_click` で使えます。クリック中に押す `Shift`、`Control`、`Alt`、`Meta`、`ControlOrMeta` のリストです。 |
+
+- エンジンが宣言していない動詞はカタログに含めません。
+- `upload` は、プロジェクト外のパス、隠しファイル、隠しディレクトリ内のファイルを `POLICY_DENIED` で拒否します。`sample:` ファイルではテスト行を生成しません。生成するには、プロジェクト内にファイルを保存してください。
+- `type_secret` は、設定に `credentials` または `secrets` があり、エンジンが `fill` 操作を宣言している場合に表示します。平文がテキストとしてエージェントに渡ることはありません。[シークレット入力後のスクリーンショット](/reference/security#screenshots-after-a-secret-fill)を参照してください。
+
+#### `dismiss_keyboard`
+
+画面上のキーボードを閉じます。引数はありません。デバイスエンジンのように、エンジンのキーボードが `dismiss` を宣言している場合に表示します。
+
+#### `locate`
+
+セマンティックロケーターに一致するノードの数とそのノード、テストに書く `screen.*` の呼び出しを返します。
+
+| 入力 | 動作 |
+| --- | --- |
+| `role`（任意で `name`）、`text`、`label`、`placeholder`、`testId` | いずれか 1 つだけを指定します。 |
+| `exact` | 完全一致です。`false` なら大文字小文字を区別しない部分一致です。 |
+
+- 一致が 0 件または複数件なら、テストで発生するエラーを示します。
+- `name` はアクセシブルネームだけに一致します。`observe` は `status`、`alert`、`listitem` をテキストで表示するため、それらの名前が何にも一致しない場合は、`getByRole(role).filter({ hasText })` と `getByText` も案内します。
+- 表示するノード情報は `observe` と同様にシークレット台帳を通します。入力済みのシークレットは `<secret:name>` と表示します。
+
+#### `run_code`
+
+開いているセッションでテストの文を実行し、各文の成功・失敗、読み取った値、画面の変化を返します。テストに書き込む前に、ここで行を試してください。
+
+```txt
+call {tool: "run_code", args: {code: "await screen.getByLabel('Email').fill('ada@example.com');\nawait expect(screen.getByRole('status')).toHaveText('Saved');"}}
+```
+
+| 入力 | 動作 |
+| --- | --- |
+| `code` | テスト本体に書く形式の文を、`;` または改行で区切って 1 つ以上指定します。 |
+| `timeout` | 省略可能です。各文が待機できる時間を、1〜120000 ミリ秒で指定します。デフォルトは `5000` です。 |
+
+- 文はセッションの `screen` と `app` フィクスチャ上で順番に実行します。待機、一致がちょうど 1 件という規則、マッチャーは、テストと同じです。
+- 最初の失敗で呼び出しを停止します。残りは実行せず、アプリは成功した文の実行後の状態に残します。結果は、テストで発生するコードとメッセージを含むエラー結果です。
+- 成功した文は、読み取りを除き、実行順にそのまま [`test_lines`](#test_lines) の下書きへ追加します。
+- 各文の待機時間は、自身の `timeout` オプションを含め、最大 `timeout` です。設定の [`actionTimeout`](/reference/config#actiontimeout) と [`assertionTimeout`](/reference/config#assertiontimeout) がより短ければ、そちらを適用します。この上限は `app.open`、`app.restart`、`app.clearState` にも適用するため、初回読み込みやデバイス上でのアプリの再起動が遅い場合は増やしてください。
+- `timeout` は正規表現の照合中には停止できません。長い行に対する `/^(\w+\s?)*$/` のようにバックトラックする正規表現は、完了するまでサーバーをブロックします。
+- 読み取りとマッチャーには、シークレットの値の代わりに `<secret:name>` が見えます。
+- シークレットの `fill` は、実際の入力先で `type_secret` と同じ確認を行います。設定済みのシークレットであること、フィールドが有効かつ編集可能であること、パスワードならパスワードフィールドであることが必要です。
+
+コードは構文解析し、JavaScript としては実行しません。文法が受け付けるものは次のとおりです。
+
+| 要素 | 受け付けるもの |
+| --- | --- |
+| 文 | 任意の `await` に続く、操作または読み取りで終わる `screen` または `app` のチェーン。あるいは `expect(locator)` に任意の `.not` と 1 つのマッチャーを続けたもの |
+| ロケーター | `screen.getByRole`、`getByLabel`、`getByText`、`getByPlaceholder`、`getByTestId`、`getByDisplayValue`。`filter`、`or`、`first`、`last`、`nth`、追加の `getBy*` で絞り込めます |
+| 引数 | 文字列、数値、真偽値、`null`、正規表現、`${}` のないテンプレート、配列、オブジェクト、ロケーター、`credentials.user(name).username` |
+| シークレット | `fill` の値としてのみ、`credentials.user(name).password` または `secrets.get(name)` |
+
+対象外は、エンジンが提供する組み込みフィクスチャ（`browser`、`device`）、`expect(screen)`、`toHaveScreenshot`、`app.screenshot`、`screen.debug`、`all`、`setInputFiles`、値のマッチャー（`toBe`、`toEqual`）です。
+
+| 投げるエラー | 発生条件 |
+| --- | --- |
+| `INVALID_ARGUMENT` | 構文解析できないコード、または文法外のコード。別の名前、未対応の呼び出し、代入、関数などです。メッセージに該当部分と行・列を示し、どの文も実行しません。 |
+| `INVALID_ARGUMENT` | `<secret:name>` を期待するマッチャー。テストでは実際の値を比較するためです。どの文も実行しません。 |
+| `POLICY_DENIED` | `type_secret` の確認に通らないフィールドへの、シークレットの `fill`。何も入力しません。 |
+| `POLICY_DENIED` | パスワードフィールドの読み取り。 |
+| `POLICY_DENIED` | 設定にシークレットまたは認証情報があり、テキストの一部で検索するロケーターを使った場合。正規表現、`true` 以外の `exact`、`hasText` が該当します。完全一致のテキストで検索してください。どの文も実行しません。 |
+
+#### `test_lines`
+
+セッションの操作が出力したすべてのテスト行と、[`run_code`](#run_code) で成功したすべての文を、順番にテスト本体の下書きとして返します。引数はありません。
+
+各操作の結果には、要約の後にテスト行を含めます。
+
+```txt
+Tapped #n31.
+Test line: await screen.getByRole("button", "Sign in").tap();
+```
+
+- ロケーターは、操作前の最新の観測に列挙された対象から作成します。ロールと名前、ラベル、プレースホルダー、テキスト、テスト ID の順で試し、[`locate`](#locate) と同じ判定で、実際の画面上の対象だけに一致する最初のものを使います。
+- 同じ特徴を持つほかのノードにも一致するロケーターは、表示中のノード（`{ visible: true }`）、コンテナー内（`getByRole("listitem").filter({ hasText: "Offer B" })`）、位置（`.nth(1)` と、その旨のコメント）の順に絞り込みます。位置を使うのは、実際の画面上の候補が観測に列挙されたものと同じで、それぞれ位置を維持しているか、すべて一緒に移動した場合だけです。
+- 対象ごとに最大 10 個のロケーターを試します。デバイスでは、試すたびに画面全体を読み取ります。
+- 対象だけに一致するものがなければ、`No test line:` と理由を返します。失敗する行を出力することはありません。
+- 失敗した操作の行は出力も記録もしません。行を生成できない操作は、下書き内で `//` コメントとして示します。
+
+| 操作 | テスト行 |
+| --- | --- |
+| [`test`](#running-a-test) なしでセッションを開く | `app.open()` |
+| `tap`、`double_tap`、`long_press`、`right_click`、`hover` | `tap()`、`doubleTap()`、`longPress()`、`secondaryTap()`、`hover()`。指定した `modifiers` も含めます |
+| ノードへの `type` | `fill(value)`。認証情報のユーザー名は `credentials.user(name).username` |
+| `type_secret` | `fill(credentials.user(name).password)` または `fill(secrets.get(name))`。値そのものは含めません |
+| ノードへの 1 回の `press` | `press(key)` |
+| `select`、`check` | `selectOption(label)`、`check()` または `uncheck()` |
+| `drag`、`upload` | `dragTo(locator)`、`setInputFiles(files)` |
+| ノードへの `scroll_to` | `scrollIntoView()` |
+| `navigate`、`back` | `app.open(url)`。アプリのオリジン上の URL はパスで表します。戻る操作は `app.back()` |
+
+行を生成しない操作は、対象のない `type` または `press`、`times` が 1 を超える `press`、`scroll`、テキストへの `scroll_to`、`dismiss_keyboard`、`resize_viewport`（サイズはエンジンの組み込みフィクスチャで設定します。Web では `browser.setViewport`）、`switch_tab` と `close_tab`（Web では `browser.tabs()[tab - 1].activate()` と `.close()`）、ノードがキーボード経由で受け取った `type` です。[座標ツール](#point-tools)も行を出力しません。
+
+#### `screenshot`
+
+マスキングしたビューポートを画像として返します。
+
+| 引数 | 型 | 説明 |
+| --- | --- | --- |
+| `path` | `string` | 省略可能です。プロジェクトルートを基準に解決したパスに PNG ファイルとしても保存し、絶対パスを返します。プロジェクト外のパス、隠しファイル、隠しディレクトリ内のファイルは `POLICY_DENIED` になります。 |
+
+```json
+{ "tool": "screenshot", "args": { "path": "screenshots/checkout.png" } }
+```
+
+- 以後、すべての操作結果に最新のスクリーンショットを含めます。
+- シークレット入力後も含め、マスキングするのはセキュアフィールドだけです。
+- ファイルは、`app.screenshot` と同じマスキングを適用して、フル解像度で別途撮影したものです。添付画像は縮小されることがあります。
+
+#### 座標ツール
+
+各ツールは、最新のスクリーンショット上のピクセル座標 `x` と `y` を受け取ります。`drag_at` は、ドロップ先を `to_x` と `to_y` で受け取ります。
+
+| ツール | 入力 | 動作 | 表示に必要なエンジンの宣言 |
+| --- | --- | --- | --- |
+| `tap_at` | `x`, `y` | エンジンの `performAt` で座標を直接タップします。`performAt` がなければ、座標が一覧にあるコントロール上にある必要があり、その ID でタップします。 | `tap` または `performAt` |
+| `hover_at` | `x`, `y` | 同様にホバーします。`performAt` の `hover` 種類で座標を直接操作し、なければ座標下の一覧にあるコントロールを ID で操作します。 | `hover` 操作またはポインター種類 |
+| `drag_at` | `x`, `y`, `to_x`, `to_y` | `performAt` の `dragTo` 種類で、最初の座標から次の座標へドラッグします。その種類がなければ、2 つの座標が一覧にある別々のコントロール上にある必要があり、ID でドラッグします。条件を満たさなければ `UNSUPPORTED_CAPABILITY` で失敗します。 | `dragTo` 操作またはポインター種類 |
+| `type_at` | `x`、`y`、`value`。キーボードがあるエンジンでは `replace` | 座標下の一覧にある入力欄に、ID で入力します。キーボードがある場合、それ以外の場所はタップしてフォーカスし、`replace` がなければカーソル位置に入力します。キーボードがなく、座標下に一覧の要素もなければ失敗します。 | `type` またはキーボード |
+| `press_at` | `x`, `y`, `key` | 座標下の一覧にあるコントロールに、ID でキーを送ります。キーボードがある場合、それ以外の場所はタップしてフォーカスし、キーボード経由でキーを送ります。 | `press` またはキーボード |
+| `select_at` | `x`、`y`、`value`（選択肢の表示ラベル） | 座標下の一覧にある選択コントロールで、選択肢を選びます。一覧にある要素がなければ失敗します。 | `select` |
+
+<Note>
+セッションで最初の `screenshot` を撮る前は、各座標ツールは撮影を促す 1 行を返すだけで、コストはかかりません。
+</Note>
+
+#### 録画
+
+`start_recording` と `stop_recording` はアプリの動画を録画します。どちらもエンジンが動画を録画できる場合に表示します。
+
+```txt
+call {tool: "start_recording", args: {name: "checkout-flow"}}
+call {tool: "stop_recording"}
+```
+
+| ツール | 入力 | 動作 |
+| --- | --- | --- |
+| `start_recording` | `name`（省略可能）: 英字または数字で始まる、最大 64 文字の英数字、`-`、`_` | 同時に録画できるのは 1 つだけです。2 回目の開始要求には、進行中の録画を報告します。 |
+| `stop_recording` | なし | 動画を保存し、各ファイルの絶対パス、またはプロバイダーが保存する URL を返します。 |
+
+- セッションで録画するのは `start_recording` と `stop_recording` の間だけで、必要な回数繰り返せます。設定の [`video`](/reference/config#video) モードはテスト実行に適用し、セッションには適用しません。セッションは[トレース](/reference/config#trace)も書き込みません。
+- 録画は `<output>/videos/<session>/<n>[-<name>].webm` に保存します。モバイルでは `.mp4`、[`output`](/reference/config#output) のデフォルトは `.e2e` です。`n` はセッション内の録画番号です。
+- 再起動や状態リセットをまたぐ Web の録画は、ページごとに 1 ファイルとなり、再生順に `-part2`、`-part3` などを付けます。
+- リース自体を録画するブラウザやデバイスのプロバイダーでは、セッション全体を録画します。[Kernel](/integrations/kernel) はリプレイをダウンロードし、他のファイルと同様に `<n>[-<name>].mp4` としてここに保存します。録画を自身で保持するプロバイダーでは、ファイルの代わりに URL を示します。
+- `close_session`、アイドルタイムアウト、セッションの TTL では、進行中の録画を保存し、クローズ結果にファイルを列挙します。
+
+<Warning>
+録画はマスキングしません。人が視聴するためのファイルであり、どのツールも動画のピクセルを返しません。録画中に通常の入力欄に入力したシークレットは、動画で読み取れます。
+</Warning>
+
+#### プロジェクトのツール
+
+`agents.default.tools` のプロジェクトツールは、ターゲットのプラットフォームに応じて、それぞれの名前でカタログに続けて表示します。`mobileTools(...)` を渡すモバイルプロジェクトでは、`open_app`、`swipe`、`alert` も使えます。
+
+| 投げるエラー | 発生条件 |
+| --- | --- |
+| `INVALID_CONFIG` | 組み込みツールと同名のプロジェクトツール。設定の読み込み時に発生します。 |
+| `UNKNOWN_TOOL` | カタログにない名前。メッセージに利用できる名前を列挙します。 |
+
+## セットアップ
+
+サーバーは `e2e` に同梱されています。`e2e init` では `.mcp.json`（Claude Code）、`.cursor/mcp.json`（Cursor）、`.codex/config.toml`（Codex）への登録を選べます。依存関係をインストールし、プロジェクトディレクトリで MCP クライアントを起動してください。これにより `npx`（Bun のプロジェクトでは `bunx`）が、インストール済みの e2e バージョンを使います。手動で設定する場合は次のとおりです。
+
+<CodeGroup>
+```bash npm
+claude mcp add --scope project e2e -- npx e2e mcp
+```
+
+```bash pnpm
+claude mcp add --scope project e2e -- pnpm exec e2e mcp
+```
+
+```bash bun
+claude mcp add --scope project e2e -- bunx e2e mcp
+```
+</CodeGroup>
+
+`mcpServers` 設定を使うクライアントには、上記のエントリを追加します。Codex は、信頼済みのプロジェクトの `.codex/config.toml` を読み取ります。登録後は新しいセッションを開始してください。
+
+```toml title=".codex/config.toml"
+[mcp_servers.e2e]
+command = "npx"
+args = ["e2e", "mcp"]
+```
+
+サーバーは [MCP Registry](https://registry.modelcontextprotocol.io) に `io.github.e2e-inc/e2e` としても登録されています。そこからインストールするクライアントは、掲載されたリリースを `npx` で実行し、プロジェクトディレクトリで起動する必要があります。設定がインポートするため、プロジェクト側にも e2e とエンジンのインストールが必要です。掲載リリースとプロジェクトの e2e のバージョンが異なると、未知の設定キーを拒否することがあります。上記の登録方法なら、常にバージョンが一致します。
+
+サーバーにモデルは不要です。省略可能な `ai` パッケージのないプロジェクトでも、セッションを開いて決定論的なツールでアプリを操作できます。セッションが[実行するテスト](#running-a-test)では、リプレイキャッシュで処理できないエージェントステップが、設定したモデルを呼び出します。
+
+サーバーはプロジェクトディレクトリで起動してください。設定の検出方法は `e2e run` と同じです。別の設定を使う場合は [`--config`](#config) と [`open_session`](#open_session) を参照してください。
+
+## 設定ファイルなしで使う
+
+設定ファイルのないディレクトリでは、`open_session` に `engine` が必要です。セッションは、そのエンジン上の 1 つのターゲットを持ちます。その他はすべてデフォルト設定のため、認証情報、シークレット、プロジェクトのツールはありません。
+
+```txt
+open_session {engine: "@e2e-dev/web", app: {url: "http://localhost:3000"}}
+open_session {engine: {package: "@e2e-dev/mobile", options: {platform: "ios"}}, app: {bundleId: "com.example.app"}}
+```
+
+オプションが不要なエンジンなら、パッケージ名だけで指定できます。オプションを渡す場合やエクスポート名を指定する場合は、`engine` をオブジェクトで書きます。
+
+| フィールド | 型 | 動作 |
+| --- | --- | --- |
+| `package` | string | 読み込むパッケージです。`@e2e-dev/testmu/web` のようなサブパスも含められます。 |
+| `export` | string | 呼び出すエクスポートです。デフォルトはデフォルトエクスポートです。 |
+| `options` | object | `e2e.config.ts` と同じ形式で、ファクトリーに渡すオプションです。 |
+
+- **パッケージ名だけ**の場合、オプションなしでそのパッケージのデフォルトエクスポートを呼び出します。`@e2e-dev/web` と `@e2e-dev/mobile` は、この形式でファクトリーを公開しています。[独自のエンジン](/writing-an-engine#open-it-by-name)でも同じようにできます。
+- **オプションに別のファクトリー呼び出しを指定できます。** オプション値が `package` を持ち、それ以外のキーが `export` と `options` だけの場合、サーバーは呼び出しとして解釈します。先にその呼び出しを行い、結果をオプションとして渡します。エンジンにデバイスやブラウザのプロバイダーを渡すときに使えます。
+
+  ```txt
+  open_session {
+    engine: {package: "@e2e-dev/mobile", options: {
+      platform: "ios",
+      device: {package: "@e2e-dev/limrun", export: "limrun", options: {region: "eu"}}
+    }},
+    app: {bundleId: "com.example.app"}
+  }
+  ```
+
+  上記の呼び出しは `mobile({ platform: 'ios', device: limrun({ region: 'eu' }) })` を組み立てます。プロバイダーはサーバーの環境から API キーを読み取ります。
+- **検索先。** サーバーは各パッケージを、プロジェクト、実行中の `e2e` と同じ場所、`~/.e2e/engines` の順に探します。どこにもなければ、全プロジェクトで使えるようにインストールするコマンドをエラーに示します。例: `npm install --prefix ~/.e2e/engines @e2e-dev/web`。ネットワークのないサンドボックス内など、そのコマンドを実行できないエージェントは、ユーザーに実行を依頼します。
+- **`app`** は、ターゲットの [`app`](/reference/config#the-app-under-test) と同様に `url`、`bundleId`、`appPath` を受け取ります。`@e2e-dev/web` には `url`、`@e2e-dev/mobile` には `bundleId` または `appPath` が必要です。
+- **ファイル。** プロジェクトルートはサーバーの作業ディレクトリで、セッションはそこに `.e2e/` を書き込みます。
+- **テスト。** `run_tests` と `open_session {test}` には設定が必要です。セッションのテスト行をテストとして保存するには、[`e2e init`](/reference/cli#e2e-init) で設定を作成してください。
+- **複数のセッション。** `engine` で開いたセッションは並行して動かせます。それらが開いている間は、設定を使うセッションを開けず、`CONFIG_IN_USE` で失敗します。
+
+| 投げるエラー | 発生条件 |
+| --- | --- |
+| `CONFIG_NOT_FOUND` | `engine` なしで `open_session` を呼び、ディレクトリに設定がない場合。 |
+| `ENGINE_NOT_INSTALLED` | `engine` が指定するパッケージが、3 つの検索先のどこにもない場合。 |
+| `INVALID_ARGUMENT` | `package` がパッケージ名でない、`export` がエクスポート名でない、`engine` と `target`、`config`、`test` を併用した、またはディレクトリに設定がある場合。`engine` なしの `app` も該当します。 |
+| `INVALID_CONFIG` | 指定したエクスポートが関数でない、ファクトリーが `options` を拒否した、エンジンのファクトリーがエンジンを返さなかった、またはエンジンが `app` を拒否した場合。エクスポートが関数でなければ、パッケージの関数をメッセージに列挙します。 |
+
+## 出力
+
+- 操作状況の出力は `e2e mcp:` を付けて stderr に送ります。stdout はプロトコル専用です。
+- コードが `console`、`process.stdout`、`process.stderr` に書き込む内容（設定のトップレベルコード、プロジェクトのツール、セッションが実行するテスト）は、シークレットの値を秘匿して stderr に送ります。
+- 設定の読み込み中の出力は、読み込み後に表示します。読み込みに失敗した場合、設定のシークレットが不明なので、その出力は表示しません。
+- セッションのテストが未処理のまま残した Promise の reject は、通常の実行と同様にそのテストを失敗にします。テスト本体の終了後に reject した場合は、`close_session` の結果に `UNHANDLED_REJECTION` 行を含め、セッション終了後なら stderr に警告を出します。どのセッションもまだテストを実行していない段階の reject を含め、それ以外の未処理エラーは秘匿してログに記録し、サーバーを終了します。
+
+<Note>
+サーバーの stdio を継承する子プロセスの出力には、この処理は適用されません。
+</Note>
+
+## セッション
+
+セッションは、1 つのターゲット上の 1 回の試行です。セッションを開く前の `call` は `NO_SESSION` で失敗します。
+
+セッションは次の場合に閉じます。
+
+- `close_session` を呼んだとき。
+- 30 分間操作がなかったとき。
+- 4 時間経過したとき。
+- クライアントが切断したとき。
+- SIGINT または SIGTERM を受けたとき。
+
+クライアントがサーバーの stdin を閉じるか、クライアント自身が終了すると切断されます。その場合、すべてのセッションを閉じ、セッションが起動したアプリのコマンドを停止し、`run_tests` の実行を中断して、サーバーを終了します。
+
+セッションでも、テストと同じ規則を適用します。
+
+- ノード ID が有効なのは、最新の観測に対してだけです。
+- シークレットを入力できるのは `type_secret` または [`run_code`](#run_code) の `fill` だけで、同じ確認を行います。
+- 設定の読み込み後は、ツールが返すすべてのテキスト、`locate` が見つけたノード、操作結果、`open_session` や `close_session` の失敗、クリーンアップの行、サーバー自身のログ行から、設定のシークレットの値を秘匿します。
+- セッション内の操作は、テスト結果としては記録しません。リプレイキャッシュを読み書きするのは、セッションが実行するテストだけです（[テストの実行](#running-a-test)）。成果物は `<output>/results/mcp/<target>-<attemptId>/`、動画は `<output>/videos/` に保存します。後で `e2e run` を実行すると `<output>/results` は消去しますが、動画は残ります。
+- 待機中にクライアントがキャンセルした呼び出しは、順番が来ても実行しません。
+
+## テストの実行
+
+`open_session {test}` は、セッションの試行上でプロジェクトのテストを 1 つ実行し、テストが止まった画面のままセッションを引き渡します。コーディングエージェントはフローをクリックし直すことなく、そこから失敗したテストを修正できます。
+
+```txt
+open_session {test: "tests/checkout.e2e.ts:12"}
+```
+
+- **選択。** `test` は `e2e run` の位置引数と同じものを受け取ります。宣言行を `:line` で指定したファイル、ファイル、ディレクトリ、glob、名前です。セッションのターゲット上で、ちょうど 1 つのテストを選ぶ必要があります。行番号は `test(` 呼び出しの行です。テストの本体内の行では何も選びません。
+- **実行内容。** テストの `beforeAll` フック、`test.extend()` のフィクスチャ、`beforeEach` フック、本体を実行します。フィクスチャ、ロケーター、`expect`、`timeout`、`actionTimeout`、`assertionTimeout` は通常の実行と同じです。セッションは先にアプリの URL を開いたり、指定アプリを起動したりしません。テスト自身がアプリを開きます。
+- **停止位置。** 最初の失敗、または本体の終了で止まります。後処理はしません。最初のテキストには、成功か失敗かを先に示します。失敗時はコード、メッセージ、失敗行と周辺コード、URL、一致しなかったロケーターに最も近いノード、最後の 15 ステップを含めます。その後にセッションのサマリー、カタログ、画面を続けます。
+- **テスト行。** テスト自身のステップは[テスト行](#test_lines)を出力しません。セッションの行はエージェントの最初の操作から始まり、`test_lines` はテストの続きを書く行として返します。
+- **後処理。** `afterEach` フック、フィクスチャの後処理、`afterAll` フックは、`close_session` またはセッションの自動終了時に実行します。失敗は `Cleanup (afterEach)` と `Cleanup (afterAll)` の行で表示します。
+- **再実行。** `close_session` の後、再び `open_session {test}` を呼びます。各セッションは、設定とテストファイル、それらがインポートするファイルも新たに読み込みます。
+- **リプレイキャッシュ。** テストは通常の実行の初回試行と同じようにキャッシュを読み書きします。ステップをリプレイし、その後のチェックが成功すると新しい記録を保存します。失敗時には、どのチェックも確認していないエントリを削除します。キャッシュは本体終了時に確定するため、`afterEach` のチェックは記録を確認済みにしません。[`cache.strict`](/reference/config#cache) も通常の実行と同じように適用します。
+- **対象外。** テスト結果、レポート、トレースページは作りません。リトライと、テストの `trace`、`video` モードは適用しません。失敗時のスクリーンショットと `screen-at-failure.txt` は、セッションの成果物ディレクトリに保存します。
+- **スクリーンショット。** `toHaveScreenshot` では、各セッションを独立した実行として扱います。あるセッションが書き込んだベースラインを、次のセッションで比較に使います。
+- **複数のセッション。** 2 つのセッションのテストコードは交代で実行します。テストまたは後処理を実行するのは一度に 1 セッションだけです。`expect.poll`、`expect.soft`、`test.skip` が、プロセスごとに 1 つのスロットから実行中のテストを見つけるためです。テストが順番待ちの間にオープンをキャンセルした場合、テストのコードは一切実行しません。
+
+| 投げるエラー | 発生条件 |
+| --- | --- |
+| `NO_TESTS` | `test` が実行可能なテストを選ばなかった場合。`e2e run` と同じように理由を示します。 |
+| `TEST_AMBIGUOUS` | `test` が複数のテストを選んだ場合。`file:line` 形式で一覧を示します。 |
+| `SESSION_TEST_UNSUPPORTED` | テストが直列グループに属する、セットアップテストの `session` から開始する、または複数のエージェントとして実行する場合。 |
+| `COLLECTION_ERROR` | `e2e run` と同様に、テストファイルの収集に失敗した場合。 |
+
+## 複数のセッション
+
+`--max-sessions` を上限として、複数のセッションを同時に開けます。それぞれ独自の試行とブラウザまたはデバイスを持ちます。コーディングエージェントのサブエージェントなど、並行して動くエージェントは、この方法で 1 つのサーバーを共有します。各エージェントがセッションを開き、すべての `tools`、`call`、`close_session` にその ID を渡します。[バグバッシュ](/bug-bash)でも使います。再現手順をスクリプトのテストに仕上げる検証用サブエージェントが、自分のセッションを操作します。
+
+| 投げるエラー | 発生条件 |
+| --- | --- |
+| `SESSION_REQUIRED` | 複数のセッションが開いているのに `session` を指定せずに呼び出した場合。開いているセッションをメッセージに列挙します。 |
+| `NO_SESSION` | 開いていない `session` ID。クローズ処理中または終了済みなら、その理由を示します。 |
+| `SESSION_OPEN` | 上限を超える `open_session`、またはサーバー終了中の呼び出し。 |
+| `CONFIG_IN_USE` | セッションが開いている間に別の設定で `open_session` を呼んだ場合、または `engine` で開いたセッションがある状態で設定を使おうとした場合。 |
+| `ENGINE_IN_USE` | パッケージ内で作成したエンジンに対する 2 つ目のセッション。 |
+| `CANCELLED` | `open_session` の途中でクライアントがキャンセルまたは切断した、あるいはサーバーが終了した場合。開始済みのものが停止してから失敗します。 |
+
+- セッションは `open_session` から試行のクローズ完了まで枠を占有するため、起動中やクローズ処理中のセッションも上限に数えます。
+- 同時に開くセッションは、1 つの設定を共有します。認証情報とシークレットを、プロセスごとに 1 つのレジストリで解決するためです。
+- サーバーの終了中は、オープン処理中のセッションをキャンセルして待ち、すべてのセッションを閉じ、新しいセッションを拒否します。キャンセルしたオープンは、`readyUrl` を待っているアプリコマンドなど、開始したものが停止してから失敗します。
+- 各セッションは、スプレッドするベース設定など、パスでインポートするファイルも含めて設定を新たに読み込みます。そのため、それぞれ独自のエンジンインスタンスを持ちます。テストを実行するセッションは、テストファイルも同じように読み込みます。パッケージ内で作成したエンジンは、すべてのセッションが共有する 1 つのインスタンスです。
+- 同じアプリコマンドを使うセッションは、プロセスを共有します。最初のセッションが起動し、最後のセッションが閉じたときに停止します。ポート `0` の URL は各セッションに独自のポートを割り当てるため、プロセスも個別になります。共有する起動を待つセッションがすべて諦めた場合、その起動をキャンセルし、次のセッションで新たに起動します。
+- モバイルでは、各セッションに独自のシミュレーターまたはエミュレーターが必要です。デバイスごとにターゲットを宣言し、それぞれに `device` を指定して、各セッションを別々のターゲットで開いてください。
+
+## リソース
+
+| URI | 内容 |
+| --- | --- |
+| `e2e://guide` | エージェントスキルの概要です。`e2e guide` が表示するテキストと同じです。 |
+| `e2e://guide/{topic}` | 1 つのトピックです。`setup`、`writing-tests`、`agent`、`running`、`explore`、`debugging`、`mcp`、`bug-bash` があります。 |
+
+## 終了コード
+
+| コード | 発生条件 |
+| --- | --- |
+| `0` | セッションの有無にかかわらずクライアントが切断した場合、またはシグナルで終了した場合。 |
+| `1` | 未処理エラーでサーバーが終了した場合。 |
+| `2` | コマンドラインが不正な場合。 |
+| エラーの[分類別コード](/reference/cli#exit-codes) | 起動に失敗した場合。 |
+
+設定とエンジンの失敗は、CLI が表示するものと同じコードのツールエラーとして返します。

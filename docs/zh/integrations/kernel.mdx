@@ -1,0 +1,106 @@
+---
+title: Kernel 浏览器
+sidebarTitle: Kernel
+description: 使用 @e2e-dev/kernel 的 kernel() 浏览器提供方，在 Kernel 托管的 Chromium 中运行网页端测试目标。
+"og:image": "https://e2e.com/docs/images/og/integrations/kernel.png?v=c116b9983d"
+"twitter:image": "https://e2e.com/docs/images/og/integrations/kernel.png?v=c116b9983d"
+---
+
+`@e2e-dev/kernel` 中的 `kernel()` 是 [Kernel](https://kernel.sh) 的[浏览器提供方](/browser#hosted-browsers)。每个工作进程槽位或每次尝试都会获得独立的托管 Chromium。测试无需更改，只需修改测试目标的 `browser`。
+
+## 配置
+
+安装提供方和 Kernel SDK：
+
+<CodeGroup>
+```bash npm
+npm install --save-dev @e2e-dev/kernel @onkernel/sdk
+```
+
+```bash pnpm
+pnpm add -D @e2e-dev/kernel @onkernel/sdk
+```
+
+```bash bun
+bun add -d @e2e-dev/kernel @onkernel/sdk
+```
+</CodeGroup>
+
+将测试目标的 `browser` 设置为 `kernel()`：
+
+```ts title="e2e.config.ts"
+import type { E2EConfig } from 'e2e';
+import { web } from '@e2e-dev/web';
+import { kernel } from '@e2e-dev/kernel';
+
+export default {
+  targets: [
+    {
+      name: 'kernel',
+      engine: web({ browser: kernel() }),
+      app: { url: 'https://staging.example.com' },
+    },
+  ],
+} satisfies E2EConfig;
+```
+
+在启动 `e2e run` 的环境中设置 `KERNEL_API_KEY`，例如通过 CI 机密值设置。`workers` 决定同时运行的浏览器数量。
+
+如果未提供密钥或 Kernel 出错，租约会失败并显示相应消息。在 `worker` 作用域中，运行会在任何测试开始前结束。在 `attempt` 作用域中，只有本次尝试会失败。
+
+## 填满屏幕
+
+通过 Kernel 的 `viewport` 设置屏幕尺寸，并将网页端引擎设置为 `viewport: null`，使页面采用窗口的尺寸：
+
+```ts
+web({
+  browser: kernel({ viewport: { width: 1920, height: 1080 } }),
+  viewport: null,
+})
+```
+
+窗口以最大化状态打开，页面[填满窗口](/web#fill-the-window)：在 1920 × 1080 的屏幕上，页面尺寸为 1920 × 993。如果网页端 `viewport` 使用固定尺寸，实时视图中的页面会被截断，或只占窗口的一部分。
+
+## 选项
+
+`kernel(options)` 原样接受 Kernel 的创建浏览器请求体：`stealth`、`headless`、`timeout_seconds`、`profile`、`proxy_id`、`viewport`、`tags`，以及你使用的 `@onkernel/sdk` 中 `BrowserCreateParams` 的其他字段。它还增加了两个选项：
+
+| 选项 | 默认值 | 含义 |
+| -------- | ---------- | ------- |
+| `scope` | `'worker'` | 每个工作进程槽位或每次尝试使用一个浏览器。参阅[作用域](#scopes)。 |
+| `replay` | `true` | 使用 Kernel 回放或引擎的屏幕录制。参阅[录制](#recordings)。 |
+
+## 作用域
+
+`scope: 'worker'` 在本次运行中为每个工作进程槽位保留一个浏览器。每次尝试都会在其中获得一个新的浏览器上下文，与本地运行相同，因此测试不会看到其他测试的 Cookie、存储或权限。Kernel 的第一个标签页会在后台保持打开。Kernel 的 `profile` 不会生效，因为它只适用于浏览器的默认上下文。
+
+`scope: 'attempt'` 为每次尝试租用一个新浏览器，包括重试。尝试在默认上下文的第一个标签页中运行，因此 `profile` 会生效，实时视图中也只显示一个标签页。每个测试都需要承担浏览器启动的开销，并受到[每次尝试租约的限制](/browser#hosted-browsers)，包括会话方面的限制。
+
+## 录制
+
+录制[视频](/reference/config#video)的尝试会获得浏览器屏幕的 Kernel 回放，保存为产物目录中的 `video/replay.mp4`。回放按 Kernel 的 `viewport` 设置的尺寸显示整个窗口，包括标签页和地址栏。
+
+回放使用 Kernel 默认的 10 fps。要更改帧率，传入 Kernel 的开始回放请求体（`framerate`、`max_duration_in_seconds`、`record_audio`）：`kernel({ replay: { framerate: 20 } })`。如果 `framerate` 大于 20，浏览器需要设置 `gpu: true`。
+
+Kernel 只支持以默认的有头模式运行的浏览器回放。设置 `headless: true` 或 `replay: false` 时，网页端引擎会改为录制页面画面。
+
+## 下载
+
+`browser.waitForDownload` 在两个作用域中的行为都与本地一致。提供方会将每个文件从浏览器磁盘复制到本次尝试的产物中。
+
+## 查看和清理浏览器
+
+报告器会为每个新浏览器记录 `browser <id>, watch at <live view URL>`。除了你的 `tags`，每个浏览器还带有 `e2e_run`、`e2e_target`、`e2e_slot` 标签，在 `'attempt'` 作用域中还会带有 `e2e_attempt`。这样，Kernel 控制台就能标明启动该浏览器的运行。
+
+运行结束时，提供方会删除所有带有本次运行和测试目标标签的活动浏览器，包括已终止工作进程的浏览器。如果运行本身先终止，Kernel 会在每个浏览器空闲 `timeout_seconds` 秒后将其删除；除非你另行设置，否则该值为 600。
+
+## 下一步
+
+<CardGroup cols={2}>
+  <Card title="托管浏览器" icon="globe" href="/browser#hosted-browsers">
+    浏览器提供方如何租用浏览器，以及 `'attempt'` 作用域的限制。
+  </Card>
+  <Card title="持续集成" icon="rotate" href="/ci">
+    在 GitHub Actions 或其他 CI 服务上运行测试套件。
+  </Card>
+</CardGroup>

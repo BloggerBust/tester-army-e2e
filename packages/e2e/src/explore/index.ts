@@ -9,7 +9,8 @@
  */
 
 import { MAX_PARAMS_BYTES } from '@e2e-dev/core/lib/agent/act-validation';
-import type { ModuleRegistration, RegisteredTest } from '../collect/registry.ts';
+import { fixtureNames } from '../collect/fixture-names.ts';
+import type { ModuleRegistration, RegisteredTest, TestBody } from '../collect/registry.ts';
 import { selectTargets } from '../collect/select.ts';
 import { discoverConfig, loadConfigModule, missingConfigError } from '../config/load.ts';
 import { missingModelError, resolveAgentConfig } from '@e2e-dev/core/lib/config/agent';
@@ -346,6 +347,8 @@ function exploreRegistration(
   // planner reads it, the explorer judges against it, and the report and
   // the trace page never copy it; only the opt-in AI trace records prompts.
   const context = [...(session === undefined ? [] : [signedInContext(session)]), ...(brief === undefined ? [] : [changeContext(brief.text)])];
+  // Registered by hand, so typed here the way `test()` types a body: it receives the attempt's fixtures.
+  const body = createExploreBody({ state, stepTimeoutMs: STEP_TIMEOUT_MS, openApp, accounts, session, change: brief === undefined ? undefined : { skippable } }) as TestBody;
   const test: RegisteredTest = {
     kind: 'test',
     title,
@@ -360,7 +363,9 @@ function exploreRegistration(
     },
     sessions: [],
     tags: [],
-    fn: createExploreBody({ state, stepTimeoutMs: STEP_TIMEOUT_MS, openApp, accounts, session, change: brief === undefined ? undefined : { skippable } }),
+    fn: body,
+    // Registered by hand, so parsed here the way `test()` parses a body.
+    names: fixtureNames(body, 'the explore test'),
     fixtures: [],
     group: undefined,
     mode: 'normal',

@@ -134,6 +134,32 @@ describe('e2e/core', { timeout: 60_000 }, () => {
     await expect(session.screen.getByTestId('sale-price').count()).rejects.toMatchObject({ code: 'CANCELLED', message: 'the session is closed' });
   });
 
+  it('cuts the calls still running when a session or its host closes, each by name at its own line, and closes cleanly', async () => {
+    const fake = createFakeEngine({ scene: shop, onNavigate: (url) => (url.endsWith('/slow') ? new Promise(() => undefined) : undefined) });
+    const opened = await host(fake.engine, { app: FAKE_APP });
+    const session = await opened.newSession();
+    await session.app.open('/');
+    const missing = session.screen.getByRole('button', 'Missing');
+    const failed = (call: Promise<unknown>) => call.then(() => undefined, (cause: Error) => cause);
+    // A step that returns its own promise and one an async method wraps end the same way.
+    const tap = failed(missing.tap());
+    const wait = failed(missing.waitFor());
+    // Closing is how a program cancels: what it cut is the caller's to handle, never a failure of the close.
+    await session.close();
+    for (const [failure, api] of [[await tap, 'locator.tap'], [await wait, 'locator.waitFor']] as const) {
+      expect(failure).toMatchObject({ code: 'CANCELLED' });
+      expect(failure?.message.startsWith(`the session closed while ${api} "`), failure?.message).toBe(true);
+      expect(failure?.message.endsWith('" was running'), failure?.message).toBe(true);
+      expect(failure?.stack).toContain(path.basename(import.meta.filename));
+    }
+    const next = await opened.newSession();
+    const open = failed(next.app.open('/slow'));
+    await opened.close();
+    expect(await open).toMatchObject({ code: 'CANCELLED', message: 'the session closed while app.open "/slow" was running' });
+    // A call made after the close has nothing to name.
+    await expect(next.app.open('/')).rejects.toMatchObject({ code: 'CANCELLED', message: 'the session is closed' });
+  });
+
   it('saves state in memory, exports it only encrypted, and restores it on a host of the same engine and app', async () => {
     const fake = createFakeEngine({ scene: shop, state: true });
     const opened = await host(fake.engine, { app: FAKE_APP });

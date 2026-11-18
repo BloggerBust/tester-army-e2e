@@ -1,0 +1,106 @@
+---
+title: Bug Bash
+description: 同时运行多个探索会话，再用失败的测试证实每个缺陷。
+"og:image": "https://e2e.com/docs/images/og/bug-bash.png?v=eb59f8290c"
+"twitter:image": "https://e2e.com/docs/images/og/bug-bash.png?v=eb59f8290c"
+---
+
+import { ShowMore } from '../snippets/show-more.jsx';
+import { Video } from '../snippets/video.jsx';
+
+Bug Bash 会同时运行多个 `e2e explore` 会话，每个会话探索应用的一个区域。随后，编码智能体会为每项发现编写测试，只有测试失败时才将其报告为缺陷。
+
+<Video>
+  <video src="/images/bug-bash.mp4" aria-label="编码智能体在有头模式浏览器中运行 Bug Bash。" muted loop playsInline controls />
+
+  每个浏览器对应一个探索会话。
+</Video>
+
+## 开始之前
+
+- 确保应用能同时服务多个探索智能体。启动一次应用，并在测试目标的 `app.command` 上设置 `reuseExisting: true`；也可以将应用 URL 的端口设为 `0`，让每次运行启动自己的副本。设置了 `CI` 时，e2e 会忽略 `reuseExisting`，此时请使用端口 `0`。参阅[启动应用](/web#starting-your-app)。
+- 在移动端，为每个 iOS 或 Android 模拟器声明一个测试目标。每个探索智能体都需要自己的设备。
+- 每个探索会话都会调用模型。每次运行结束时会显示 token 用量、费用和耗时。
+- 在其他人也在使用的已部署站点上，不要修改数据。
+
+智能体会依据技能完成其余配置，例如预置账号和登录。
+
+## 安装技能
+
+编码智能体按照 [`e2e` 技能](/coding-agents)运行 Bug Bash，`e2e init` 会安装该技能。不使用 `init` 时，可以这样安装：
+
+<CodeGroup>
+```bash npm
+npx skills add e2e-inc/e2e
+```
+
+```bash pnpm
+pnpm dlx skills add e2e-inc/e2e
+```
+
+```bash bun
+bunx skills add e2e-inc/e2e
+```
+</CodeGroup>
+
+## 开始 Bug Bash
+
+给编码智能体提供一条提示词：
+
+```text
+Bug bash the checkout and account settings on this branch.
+```
+
+## 智能体会做什么
+
+<ShowMore id="bug-bash-steps">
+
+1. 读取应用的路由。在分支上运行时，还会读取差异。
+2. 编写 5 到 10 份探索任务书。每份任务书用一句话描述一个区域的目标，并选择一种视角：首次使用的用户、数字和文案、边界输入、重新加载后的状态，或错误路径。
+3. 为每份任务书运行一次 `e2e explore`，同时运行 4 个，每个都有自己的角色（`--agent`）和输出目录（`--output`）。
+4. 合并所有任务书的发现。
+5. 排除原因已知的发现。原因可能是探索智能体的限制（例如打开新标签页的链接）、本地环境、预期设计或预置数据。
+6. 为剩余的每项发现编写复现测试：将发现中的步骤写成 `agent.act` 调用，将预期行为写成最后的 `agent.assert`。它可以为每个区域启动一个子智能体。
+7. 运行复现测试。只有测试因报告的缺陷而失败，该发现才算缺陷：最后的检查返回 `ASSERTION_FAILED`，或 `act` 因缺陷本身而失败。
+8. 按以下顺序报告：已确认的缺陷、无法在本地验证的生产环境风险、按原因分类的已排除发现，以及警告。
+
+</ShowMore>
+
+每个已确认的缺陷都有复现测试和步骤。如果引擎进行了录制，还会包含探索智能体的截图和视频。
+
+<Warning>
+视频不会进行遮挡。如果探索智能体输入过密码，分享前请先检查视频。
+</Warning>
+
+要阅读完整流程，运行 `npx e2e guide bug-bash`。
+
+## 复现测试
+
+在缺陷修复前，复现测试会一直失败。智能体为每个复现测试添加 `bugbash` 标签。在作为合并门禁的运行中排除这些测试：
+
+<CodeGroup>
+```bash npm
+npx e2e run --exclude-tag bugbash
+```
+
+```bash pnpm
+pnpm exec e2e run --exclude-tag bugbash
+```
+
+```bash bun
+bunx e2e run --exclude-tag bugbash
+```
+</CodeGroup>
+
+修复后，测试会通过。移除标签，将测试保留为回归测试。
+
+## 下一步
+
+<CardGroup cols={2}>
+  <Card title="无需测试即可探索" icon="compass" href="/explore">
+    单次 `e2e explore` 运行的行为、预算和报告。
+  </Card>
+  <Card title="MCP 服务器" icon="plug" href="/mcp-server">
+    为编码智能体提供实时会话，支持同时运行多个会话。
+  </Card>
+</CardGroup>

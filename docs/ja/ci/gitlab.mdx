@@ -1,0 +1,242 @@
+---
+title: GitLab CI/CD
+description: GitLab CI/CD で Web、iOS、Android のテストを実行し、マージリクエストに結果を表示します。変更の影響を受けるテストだけの実行もできます。
+---
+
+import { SetupPrompt } from '../../snippets/setup-prompt-card.jsx';
+
+export const setupPrompt = `このプロジェクトの e2e テストを実行する GitLab CI/CD パイプラインを追加してください。ドキュメント: \`https://e2e.com/docs/ci/gitlab.md\` と \`https://e2e.com/docs/ci.md\`
+
+1. 両方のページを読んでください。Web ターゲットには Web ジョブ、モバイルターゲットには iOS と Android のジョブを使ってください。
+2. \`.gitlab-ci.yml\` にジョブを追加してください。既存の設定があれば、そこからインクルードするファイルに追加します。パッケージマネージャー、Node のバージョン、アプリの起動・ビルド方法、パスをこのプロジェクトに合わせてください。
+3. モバイルジョブで使うセルフマネージドランナーのタグを私に確認してください。
+4. モデルのキーなど、ジョブが読む CI/CD 変数を列挙し、追加するよう私に依頼してください。
+5. 私がプッシュしたらジョブのログを読み、パイプラインが成功するまでエラーを修正してください。`;
+
+Web ターゲットは GitLab のホスト型 Linux ランナー、iOS と Android は自分で管理するランナーで実行します。
+CI のデフォルト、モデルのキー、終了コードは [継続的インテグレーション](/ci) を参照してください。
+`e2e init --ci gitlab` は、ターゲットとパッケージマネージャーに合わせてこれらのジョブを生成します。
+Expo や bare React Native アプリのビルドも含まれます。[CI パイプライン](/reference/cli#ci-pipeline) を参照してください。
+
+<SetupPrompt>
+
+<Prompt description={setupPrompt} children={setupPrompt} actions={["copy", "cursor"]} />
+
+</SetupPrompt>
+
+## Web
+
+このジョブは、各マージリクエストとデフォルトブランチへの各プッシュで、決定論的テストとエージェントテストを実行します。
+設定の [command](/web#starting-your-app) でアプリを起動する構成です。
+プロジェクトの Node バージョンに合う `node` イメージを使ってください。
+
+```yaml title=".gitlab-ci.yml" expandable
+e2e:
+  image: node:26
+  interruptible: true
+  timeout: 30 minutes
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+  variables:
+    APP_URL: http://127.0.0.1:3000
+    PLAYWRIGHT_BROWSERS_PATH: $CI_PROJECT_DIR/.cache/ms-playwright
+  cache:
+    key:
+      files:
+        - package-lock.json
+    paths:
+      - .npm/
+      - .cache/ms-playwright/
+  script:
+    - npm ci --cache .npm --prefer-offline
+    - npx @e2e-dev/web install chromium --with-deps
+    - npx e2e run --reporter list,junit
+  artifacts:
+    when: always
+    expire_in: 7 days
+    paths:
+      - .e2e/report.json
+      - .e2e/junit.xml
+      - .e2e/results/
+    reports:
+      junit: .e2e/junit.xml
+```
+
+ルールは `workflow:` ブロックではなくジョブに設定しているため、単独のパイプラインでも
+[他のジョブと一緒でも](#add-it-to-an-existing-pipeline) 使えます。
+
+GitLab がキャッシュできるのはプロジェクト内のパスだけなので、`PLAYWRIGHT_BROWSERS_PATH` で
+[ブラウザ](/reference/web#installing-browsers) の保存先を移します。
+ロックファイルが変わるまでキャッシュを使います。
+
+アプリのコマンドは、`APP_URL` のホストである `127.0.0.1` で待ち受けるようにしてください。
+コンテナー内では、Vite など `localhost` で待ち受ける開発サーバーが `::1` だけにバインドすることがあります。
+その場合、e2e から接続できず `APP_UNREACHABLE` で失敗します。
+
+`reports: junit` は、マージリクエストのウィジェットとパイプラインの **Tests** タブに結果を表示します。
+`when: always` により、テスト失敗時もレポートが残ります。
+
+GitLab.com の新規アカウントは、本人確認を済ませるまでホスト型ランナーを使えません。
+それまではジョブが開始されず、各パイプラインが失敗します。
+
+## 既存のパイプラインに追加する
+
+すでに `.gitlab-ci.yml` がある場合は、`.gitlab/e2e.gitlab-ci.yml` などの別ファイルにジョブを置きます。
+それを `.gitlab-ci.yml` からインクルードします。
+
+```yaml title=".gitlab-ci.yml"
+include:
+  - local: .gitlab/e2e.gitlab-ci.yml
+```
+
+`rules` のないジョブは、ブランチパイプラインでだけ実行されます。
+そのため、マージリクエストのパイプラインでは `e2e` ジョブだけが動き、他のジョブは従来どおりプッシュごとに 1 回実行されます。
+
+## モデルのキー
+
+**Settings > CI/CD > Variables** に `AI_GATEWAY_API_KEY` などのモデルのキーを追加し、
+公開範囲を **Masked and hidden** にします。
+標準入力から値を読み取る [GitLab CLI](https://gitlab.com/gitlab-org/cli) も使えます。
+
+```bash
+printf %s "$AI_GATEWAY_API_KEY" | glab variable set AI_GATEWAY_API_KEY --masked --hidden --raw
+```
+
+`E2E_USER_ADMIN_PASSWORD` などのユーザー認証情報も同じ方法で追加します。
+各ジョブには環境変数として渡されます。
+
+- **Expand variable reference** を無効にします（`--raw` でも設定できます）。
+  有効なままだと、GitLab は `$` など一部の文字を含むマスキング対象の値を拒否します。
+- GitLab がマスキングできるのは、8 文字以上、1 行、空白なしの値だけです。
+  短いユーザー名など、マスキングできない値には **Visible** を使います。
+- 保護されたブランチだけでテストする場合を除き、**Protect variable** を無効にします。
+  保護された変数が渡されるのは、保護されたブランチとタグのパイプラインだけです。
+- フォークからのマージリクエストは、フォーク側のプロジェクトで動くため、こちらの変数は渡されません。
+  メンバーがこちらのプロジェクトで実行すると、そのコードはキーを読めます。信頼できるコードに限って実行してください。
+
+[リプレイキャッシュをコミット](/cache#commit-the-replay-cache) すると、モデル呼び出しを減らせます。
+リプレイされた `agent.act` はモデルを呼び出しませんが、`agent.assert` は毎回呼び出します。
+
+## 影響を受けるテストだけを実行する
+
+[テストフィルター](/filters) で変更の影響を受けないテストを除外するには、
+マージリクエストのベースを `--changed-since` に渡します。
+全履歴を取得するため、ジョブの `variables` に `GIT_DEPTH: 0` を追加してください。
+次に `npx e2e run` の行を以下に置き換えます。マージトレインではフラグを省略します。
+
+```yaml
+  script:
+    # ...
+    - |
+      if [ -n "$CI_MERGE_REQUEST_IID" ] && [ "$CI_MERGE_REQUEST_EVENT_TYPE" != merge_train ]; then
+        set -- --changed-since "${CI_MERGE_REQUEST_TARGET_BRANCH_SHA:-$CI_MERGE_REQUEST_DIFF_BASE_SHA}"
+      fi
+      npx e2e run --reporter list,junit "$@"
+```
+
+マージ結果パイプラインでは `CI_MERGE_REQUEST_TARGET_BRANCH_SHA`、それ以外では
+`CI_MERGE_REQUEST_DIFF_BASE_SHA` が設定されます。デフォルトブランチではスイート全体が動きます。
+[デシジョンフィルターを追加する](/filters#add-the-decision-filter) を参照してください。
+
+## シャーディング
+
+`parallel` は [シャード](/ci#sharding) ごとに 1 ジョブを実行します。
+GitLab は全シャードの JUnit レポートを、マージリクエストのウィジェットでまとめて表示します。
+
+```yaml
+e2e:
+  parallel: 3
+  script:
+    # ...
+    - npx e2e run --shard $CI_NODE_INDEX/$CI_NODE_TOTAL --reporter list,junit
+```
+
+テストがないシャードは `NO_TESTS` で失敗します。
+選ばれるテスト数がシャード数を下回る可能性があれば、`--pass-with-no-tests` を追加してください。
+
+## iOS と Android
+
+モバイルジョブには、shell エグゼキューターを使うセルフマネージドランナーを使います。
+iOS は Xcode がある Mac、Android は KVM、Gradle に必要な JDK、Android SDK がある Linux です。
+GitLab のホスト型 macOS ランナーはヘッドレスで、XCUITest が必要とする `testmanagerd` に対応しません。
+ホスト型 Linux ランナーにも KVM の記載はありません。
+
+これらのジョブは [モバイルのジョブ](/ci#mobile-jobs) のルールに従います。
+`tags` を自分のランナーのタグに置き換えてください。
+Android ジョブは、あらかじめランナーに作成した `e2e` という AVD を起動します。
+
+```yaml title=".gitlab-ci.yml" expandable
+.e2e-mobile:
+  timeout: 60m
+  interruptible: true
+  artifacts:
+    when: always
+    expire_in: 7 days
+    paths:
+      - .e2e/
+    reports:
+      junit: .e2e/junit.xml
+
+e2e-ios:
+  extends: .e2e-mobile
+  tags: [macos]
+  script:
+    - npm ci
+    - (cd ios && pod install)
+    - |
+      xcodebuild -workspace ios/MyApp.xcworkspace -scheme MyApp \
+        -configuration Release -sdk iphonesimulator \
+        -destination 'generic/platform=iOS Simulator' \
+        -derivedDataPath build
+    - export E2E_DEVICE=$(xcrun simctl create e2e "iPhone 17" com.apple.CoreSimulator.SimRuntime.iOS-26-5)
+    - echo "$E2E_DEVICE" > .simulator-udid
+    - xcrun simctl bootstatus "$E2E_DEVICE" -b
+    - xcrun simctl install "$E2E_DEVICE" build/Build/Products/Release-iphonesimulator/MyApp.app
+    - npx e2e run --target ios --reporter list,junit
+  after_script:
+    - xcrun simctl delete "$(cat .simulator-udid)"
+
+e2e-android:
+  extends: .e2e-mobile
+  tags: [linux-kvm]
+  script:
+    - npm ci
+    - (cd android && ./gradlew :app:assembleRelease)
+    - mkdir -p .e2e
+    - PORT=$((5554 + 2 * CI_CONCURRENT_ID))
+    - export E2E_DEVICE=emulator-$PORT
+    - adb -s $E2E_DEVICE emu kill || true
+    - $ANDROID_HOME/emulator/emulator -avd e2e -read-only -port $PORT -no-window -no-audio -no-boot-anim -no-snapshot -gpu swiftshader_indirect > .e2e/emulator.log 2>&1 &
+    - timeout 300 adb -s $E2E_DEVICE wait-for-device
+    - timeout 300 sh -c 'until [ "$(adb -s $E2E_DEVICE shell getprop sys.boot_completed | tr -d "\r")" = 1 ]; do sleep 2; done'
+    - adb -s $E2E_DEVICE install -r android/app/build/outputs/apk/release/app-release.apk
+    - npx e2e run --target android --reporter list,junit
+  after_script:
+    - adb -s emulator-$((5554 + 2 * CI_CONCURRENT_ID)) emu kill
+```
+
+各ターゲットの `mobile()` に `device: process.env.E2E_DEVICE` を指定します。
+これにより、同じマシンの別ジョブが残したデバイスではなく、このジョブが起動したデバイスを操作します。
+
+GitLab はすべての `script` 行を 1 つのシェルで実行するため、後続の行でもエミュレーターと `E2E_DEVICE` を使えます。
+`after_script` は別のシェルで実行され、`script` の失敗後も動きますが、タイムアウト後は動きません。
+そのため、タイムアウトしたジョブがデバイスを起動したまま残すことがあります。
+Android ジョブは `CI_CONCURRENT_ID` からポートを決めるため、同じランナーの同時実行ジョブがそれぞれ専用のエミュレーターを持ちます。
+また、そのポートに前のタイムアウトしたジョブが残したエミュレーターがあれば停止します。
+`-read-only` により、1 つの AVD から複数のエミュレーターを起動できます。
+ログは `.e2e/emulator.log` に保存されるため、起動失敗もアーティファクトで確認できます。
+セルフマネージドランナーはジョブ間で `~/.agent-device` を保持するため、XCUITest ランナーのビルドは初回だけです。
+
+ランナー上でシミュレーターやエミュレーターを動かさない場合は、[ホスト型デバイスサービス](/mobile#hosted-devices) から借りてください。
+
+## 次のステップ
+
+<CardGroup cols={2}>
+  <Card title="継続的インテグレーション" icon="rotate" href="/ci">
+    CI のデフォルト、シャーディング、再実行、終了コードを確認します。
+  </Card>
+  <Card title="テストフィルター" icon="filter" href="/filters">
+    マージリクエストが影響するテストだけを実行します。
+  </Card>
+</CardGroup>

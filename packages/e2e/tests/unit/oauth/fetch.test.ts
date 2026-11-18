@@ -1,7 +1,10 @@
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, onTestFinished } from 'vitest';
+import { type ChildProcess, execFile } from 'node:child_process';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { promisify } from 'node:util';
 import { EnvCredentialStore, FileCredentialStore } from '../../../src/oauth/store.ts';
 import { OAuthError } from '../../../src/oauth/errors.ts';
 import { createOAuthFetch } from '../../../src/oauth/fetch.ts';
@@ -11,6 +14,7 @@ import { json, useServers } from '../../helpers/recording-server.ts';
 import { onFakeTimeouts } from './helpers/time.ts';
 
 const serve = useServers(afterEach);
+const execFileAsync = promisify(execFile);
 
 type CountingProvider = OAuthProvider<OAuthCredentials, never> & { refreshes: string[] };
 
@@ -113,6 +117,34 @@ describe('createOAuthFetch', () => {
     expect(await store.get('test')).toMatchObject({ access: 'fresh-1', refresh: 'rt-1' });
   });
 
+  it('uses the token another process stored while this one waited for the lock, sending no refresh', async () => {
+    const api = await serve((_request, response) => json(response, 200, {}));
+    const store = new MemoryCredentialStore({ test: { access: 'stale', refresh: 'rt-0', expires: 1 } });
+    // Another process refreshed and wrote a fresh token while this one waited for the lock.
+    store.exclusive = async (providerId, refresh) => {
+      await store.set(providerId, { access: 'theirs', refresh: 'rt-1', expires: Date.now() + 3_600_000 });
+      return refresh();
+    };
+    const testProvider = provider();
+    await createOAuthFetch(testProvider, { store, userAgent: 'p' })(api.url);
+    expect(testProvider.refreshes).toEqual([]);
+    expect(api.requests.map((request) => request.headers['authorization'])).toEqual(['Bearer theirs']);
+  });
+
+  it('refreshes a token another process stored when that token is expiring too', async () => {
+    const api = await serve((_request, response) => json(response, 200, {}));
+    const store = new MemoryCredentialStore({ test: { access: 'stale', refresh: 'rt-0', expires: 1 } });
+    // Another process wrote a different token while this one waited for the lock, and that token lapses too.
+    store.exclusive = async (providerId, refresh) => {
+      await store.set(providerId, { access: 'other', refresh: 'rt-1', expires: Date.now() + 1_000 });
+      return refresh();
+    };
+    const testProvider = provider();
+    await createOAuthFetch(testProvider, { store, userAgent: 'p' })(api.url);
+    expect(testProvider.refreshes).toEqual(['rt-1']);
+    expect(api.requests.map((request) => request.headers['authorization'])).toEqual(['Bearer fresh-1']);
+  });
+
   it('shares one refresh between separate file stores over the same file', async () => {
     const dir = mkdtempSync(path.join(tmpdir(), 'e2e-oauth-fetch-'));
     try {
@@ -125,6 +157,53 @@ describe('createOAuthFetch', () => {
       await Promise.all([first(api.url), second(api.url)]);
       expect(testProvider.refreshes).toEqual(['rt-0']);
       expect(api.requests.map((request) => request.headers['authorization'])).toEqual(['Bearer fresh-1', 'Bearer fresh-1']);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('refreshes an expired login once for workers in separate processes', async () => {
+    const dir = mkdtempSync(path.join(tmpdir(), 'e2e-oauth-fetch-'));
+    try {
+      const file = path.join(dir, 'oauth.json');
+      await new FileCredentialStore(file).set('test', { access: 'at-0', refresh: 'rt-0', expires: 1 });
+      let live = { access: 'at-0', refresh: 'rt-0' };
+      let issued = 0;
+      const vendor = await serve(async (request, response) => {
+        if (request.url !== '/token') {
+          json(response, request.headers['authorization'] === `Bearer ${live.access}` ? 200 : 401, {});
+          return;
+        }
+        const presented = new URLSearchParams(request.body).get('refresh_token');
+        if (presented !== live.refresh) {
+          json(response, 400, { error: 'invalid_grant', error_description: 'refresh_token_reused' });
+          return;
+        }
+        issued += 1;
+        live = { access: `at-${issued}`, refresh: `rt-${issued}` };
+        // Long enough for every worker to reach the token endpoint while the first refresh is still out.
+        await new Promise((resolve) => setTimeout(resolve, 500));
+        json(response, 200, { access_token: live.access, refresh_token: live.refresh, expires_in: 3600 });
+      });
+      const worker = [
+        '--import',
+        new URL('../../../src/config/register.ts', import.meta.url).href,
+        fileURLToPath(new URL('./helpers/refresh-worker.ts', import.meta.url)),
+      ];
+      const args = [...worker, file, `${vendor.url}/token`, `${vendor.url}/api`];
+      // Killed when the test ends, even on a timeout, so a worker that hangs is not left running.
+      const children: ChildProcess[] = [];
+      onTestFinished(() => {
+        for (const child of children) child.kill('SIGKILL');
+      });
+      const run = async () => {
+        const pending = execFileAsync(process.execPath, args);
+        children.push(pending.child);
+        return (await pending).stdout;
+      };
+      const statuses = await Promise.all(Array.from({ length: 4 }, run));
+      expect(statuses).toEqual(['200', '200', '200', '200']);
+      expect(vendor.requests.filter((request) => request.url === '/token')).toHaveLength(1);
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
@@ -164,6 +243,73 @@ describe('createOAuthFetch', () => {
       await fetch(api.url);
     });
     expect(api.requests[0]?.headers['authorization']).toBe('Bearer theirs');
+  });
+
+  it('waits for another process to store a rotated token only after releasing the refresh lock', async () => {
+    const store = new MemoryCredentialStore({ test: { access: 'stale', refresh: 'rt-0', expires: 1 } });
+    let held = false;
+    let readsWhileHeld = 0;
+    store.exclusive = async (_providerId, refresh) => {
+      held = true;
+      try {
+        return await refresh();
+      } finally {
+        held = false;
+      }
+    };
+    const get = store.get.bind(store);
+    store.get = async (providerId) => {
+      if (held) readsWhileHeld += 1;
+      return get(providerId);
+    };
+    const testProvider = provider();
+    testProvider.refreshes.push('rt-0');
+    const fetch = createOAuthFetch(testProvider, { store, userAgent: 'p' });
+    await expect(onFakeTimeouts(() => fetch('http://127.0.0.1:1/'))).rejects.toMatchObject({ code: 'LOGIN_REQUIRED' });
+    // The re-read alone; the 2 s poll runs after release, so waiters on a revoked login do not wait it out in turn.
+    expect(readsWhileHeld).toBe(1);
+  });
+
+  it('fails with LOGIN_REQUIRED when the token another process stored is rejected too', async () => {
+    const api = await serve((_request, response) => json(response, 200, {}));
+    const store = new MemoryCredentialStore({ test: { access: 'stale', refresh: 'rt-0', expires: 1 } });
+    store.exclusive = async (providerId, refresh) => {
+      await store.set(providerId, { access: 'other', refresh: 'rt-1', expires: Date.now() + 1_000 });
+      return refresh();
+    };
+    const testProvider = provider({
+      async refresh(credentials) {
+        testProvider.refreshes.push(credentials.refresh);
+        throw new OAuthError('LOGIN_REQUIRED', `refresh token ${credentials.refresh} was revoked`);
+      },
+    });
+    const fetch = createOAuthFetch(testProvider, { store, userAgent: 'p' });
+    await expect(onFakeTimeouts(() => fetch(api.url))).rejects.toMatchObject({ code: 'LOGIN_REQUIRED' });
+    // The poll waits for a token other than the one this refresh sent, not the one it read before the lock.
+    expect(testProvider.refreshes).toEqual(['rt-1']);
+    expect(api.requests).toEqual([]);
+  });
+
+  it('passes on any other refresh failure as it is, without waiting for another process', async () => {
+    const store = new MemoryCredentialStore({ test: { access: 'stale', refresh: 'rt-0', expires: 1 } });
+    let reads = 0;
+    const get = store.get.bind(store);
+    store.get = async (providerId) => {
+      reads += 1;
+      return get(providerId);
+    };
+    const testProvider = provider({
+      async refresh() {
+        throw new OAuthError('FLOW_FAILED', 'the token response is missing refresh_token');
+      },
+    });
+    const fetch = createOAuthFetch(testProvider, { store, userAgent: 'p', loginHint: 'run `npx e2e login test`' });
+    await expect(onFakeTimeouts(() => fetch('http://127.0.0.1:1/'))).rejects.toMatchObject({
+      code: 'FLOW_FAILED',
+      message: 'the token response is missing refresh_token',
+    });
+    // The read before the refresh and the re-read inside the lock; no poll for a rotated token.
+    expect(reads).toBe(2);
   });
 
   it('retries once with a refreshed token after a 401, also for a Request input', async () => {

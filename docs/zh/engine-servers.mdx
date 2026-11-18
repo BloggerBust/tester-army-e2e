@@ -1,0 +1,139 @@
+---
+title: 引擎服务器
+description: 在另一个进程、另一台机器上，或使用另一种语言运行引擎。
+---
+
+引擎服务器在运行器进程之外响应[引擎协议](/reference/engine-protocol)：它可以在子进程、另一台机器或设备上运行，并用任意语言编写。`connectEngine` 将服务器转换为引擎句柄，运行器可以像驱动其他引擎一样驱动它。
+
+## 连接服务器
+
+将 `connectEngine` 句柄设为测试目标的引擎。清单声明服务器响应哪些请求；运行器在加载配置时就需要它，此时服务器尚未启动。
+
+```ts title="e2e.config.ts"
+import type { E2EConfig } from 'e2e';
+import { connectEngine, spawnTransport } from 'e2e/engine';
+
+export default {
+  targets: [
+    {
+      name: 'kiosk',
+      engine: connectEngine({
+        manifest: {
+          name: 'kiosk',
+          version: '1.0.0',
+          spiVersion: 1,
+          platform: 'kiosk',
+          methods: ['engine/observe', 'engine/perform'],
+          actions: ['tap'],
+        },
+        transport: spawnTransport({ command: './kiosk-engine' }),
+        resolveLocators: true,
+      }),
+    },
+  ],
+} satisfies E2EConfig;
+```
+
+- 服务器通过 `initialize` 返回的清单必须与声明的清单一致。如果不同，首次连接会以 `ENGINE_FAILURE` 失败，并列出每个不匹配的字段。
+- 启用 `resolveLocators` 后，客户端会根据每次观察结果解析定位器，因此服务器只需生成树。
+- `spawnTransport` 为每个连接启动一个服务器。`socketTransport` 则连接已经在某个端口上监听的服务器。
+
+<Warning>
+服务器收到的内容与运行器进程内的引擎相同：运行时的环境（包括模型密钥和 `E2E_SECRET_*` 值），以及明文机密值。只通过你信任的通道连接你信任的服务器。`socketTransport` 不提供加密。
+</Warning>
+
+## 在客户端执行主机端工作
+
+有些成员包含函数，或需要使用运行器所在的机器。将它们传给 `connectEngine`，它们会在运行器进程内执行：
+
+| 选项 | 在客户端执行的内容 |
+| --- | --- |
+| `fixtures` | 测试夹具工厂，例如 `device` 测试夹具。它们通过引擎成员访问服务器。 |
+| `validateApp` | 加载配置时的应用检查。 |
+| `secrets` | 服务器可以解析的 `secrets.get()` 句柄。 |
+| `session` | 替代服务器会话钩子的钩子，例如使用 `simctl` 重新启动应用。 |
+
+```ts
+const engine = connectEngine({
+  manifest,
+  transport,
+  session: { restart: (operation) => relaunch(operation) },
+  fixtures: {
+    device: (context) => context.fixture('device', { back: () => engine.session!.back!(context.operation()) }, { back: { kind: 'resource' } }),
+  },
+});
+```
+
+## 提供 TypeScript 引擎服务
+
+`serveEngine` 使用 `defineEngine` 引擎响应协议，默认通过标准输入和标准输出通信。将它作为 `spawnTransport` 的命令运行，并用 `describeEngine` 声明其清单。
+
+```ts title="server.ts"
+import { serveEngine } from 'e2e/engine';
+import { kiosk } from './src/index.ts';
+
+await serveEngine((options) => kiosk(options as { host: string }));
+```
+
+```ts title="e2e.config.ts"
+import type { E2EConfig } from 'e2e';
+import { connectEngine, describeEngine, spawnTransport } from 'e2e/engine';
+import { kiosk } from './src/index.ts';
+
+export default {
+  targets: [
+    {
+      name: 'kiosk',
+      engine: connectEngine({
+        manifest: describeEngine(kiosk({ host: 'localhost' })),
+        transport: spawnTransport({ command: 'node', args: ['server.ts'] }),
+        initializationOptions: { host: 'localhost' },
+      }),
+    },
+  ],
+} satisfies E2EConfig;
+```
+
+服务器自身的日志应写入标准错误：标准输出用于传输协议。
+
+## 使用另一种语言编写服务器
+
+服务器读写 JSON-RPC 2.0 消息，每条消息前都有一个 `Content-Length` 标头，与语言服务器相同。它响应以下请求：
+
+1. `initialize`，返回 `{ protocolVersion: 1, manifest }`。拒绝其他任何协议版本。
+2. 清单列出的每个方法，例如 `engine/observe`。其参数按名称对应成员的参数。
+3. `shutdown`，随后是 `exit` 通知，之后服务器停止。
+
+忽略不认识的通知。报告失败时，使用错误码 `-32000`，并将 e2e 错误放在 `data` 中，让运行器像处理本地引擎错误一样对其分类。[消息参考](/reference/engine-protocol#messages)列出了所有参数和结果的结构。清单的 JSON Schema 随 `e2e` 包提供，位于 `schema/engine-manifest-v1.schema.json`。
+
+## 编写传输层
+
+如果服务器需要先做准备，例如在设备上安装应用并转发端口，就编写一个传输层。`open` 会收到测试目标的应用，因为位于其他位置的服务器无法读取项目文件。由 `e2e doctor` 打开的 `doctor` 连接仅用于检查：此时跳过安装。
+
+```ts
+import type { EngineTransport } from 'e2e/engine';
+
+export function deviceTransport(serial: string): EngineTransport {
+  return {
+    label: `device ${serial}`,
+    async open(context) {
+      if (context.role !== 'doctor' && context.app?.appPath !== undefined) {
+        await install(serial, context.app.appPath);
+      }
+      const socket = await forward(serial, context.signal);
+      return { input: socket, output: socket, close: async () => void socket.destroy() };
+    },
+  };
+}
+```
+
+## 下一步
+
+<CardGroup cols={2}>
+  <Card title="引擎协议" icon="book" href="/reference/engine-protocol">
+    所有函数、消息和错误码。
+  </Card>
+  <Card title="编写引擎" icon="code" href="/writing-an-engine">
+    引擎需要用 TypeScript 实现的成员。
+  </Card>
+</CardGroup>

@@ -1,0 +1,74 @@
+---
+title: 社区包
+description: 查找扩展 e2e 的第三方包，并提交集成。
+---
+
+社区包通过工具、引擎和报告器扩展 e2e。它们由各自的维护者维护并提供支持，而非 e2e 核心团队。收录不代表认可。
+
+请查看各包的文档，了解支持的 e2e 版本和配置要求。下方版本记录的是 2026 年 11 月 12 日核查的已发布包，并非 e2e 团队的兼容性测试结果。
+
+## 查找包
+
+### `e2e-cige`
+
+通过 `agent.act` 和 `agent.assert` 运行 JSON 格式的 [CIGE](https://www.amazon.science/publications/cige-an-agentic-ai-test-case-standard) 测试用例。包含运行摘要，以及用于检查修复失败测试的智能体的功能。
+
+维护者：[Vivek Krishna](https://github.com/vivekkrishna)。版本 `0.1.0` 声明要求 `e2e >=0.21.0 <1`。
+
+[npm](https://www.npmjs.com/package/e2e-cige) · [仓库和配置](https://github.com/vivekkrishna/cige)
+
+### `@appduct/e2e`
+
+通过 MCP 从测试夹具或智能体步骤中调用应用的 Appduct 工具。支持网页端、iOS 模拟器和 Android 模拟器测试目标。
+
+维护者：[Callstack](https://github.com/callstackincubator/appduct)。版本 `0.16.0` 声明要求 `e2e >=0.21.0 <1` 和 `ai ^7.0.0`。
+
+[npm](https://www.npmjs.com/package/@appduct/e2e) · [仓库和配置](https://github.com/callstackincubator/appduct/tree/main/packages/e2e)
+
+### `@mobai-app/e2e`
+
+为 iOS 和 Android 真机、模拟器以及设备集群添加 MobAI 设备引擎和控制面板报告器。
+
+维护者：[MobAI](https://github.com/MobAI-App)。版本 `0.1.3` 声明要求 `e2e >=0.19.0 <1`。
+
+[npm](https://www.npmjs.com/package/@mobai-app/e2e) · [仓库和配置](https://github.com/MobAI-App/mobai-e2e)
+
+### `@testdino/e2e`
+
+将测试用例、重试、步骤、错误、控制台输出、截图和视频报告到 TestDino。
+
+维护者：[TestDino](https://testdino.com)。版本 `1.1.0` 声明要求 `e2e >=0.16.0 <1`。选择和重新运行命令需要 e2e `0.19.0` 或更高版本。
+
+[npm](https://www.npmjs.com/package/@testdino/e2e) · [文档](https://docs.testdino.com/cli/testdino-e2e)
+
+### `@testomatio/reporter`
+
+通过 `@testomatio/reporter/e2e` 适配器将 e2e 结果发送到 Testomat.io。
+
+维护者：[Testomat.io](https://github.com/testomatio)。版本 `2.23.0` 包含该适配器。其示例使用 `e2e ^0.21.0`；该包未声明 e2e 对等依赖项的版本范围。
+
+[npm](https://www.npmjs.com/package/@testomatio/reporter) · [仓库和示例](https://github.com/testomatio/reporter/tree/2.x/example/e2e)
+
+## 查找相关集成
+
+e2e 团队维护[托管浏览器和设备集成](/integrations)、[GitHub 报告器](/github)和[内置报告器](/reference/reporters)。
+
+要查看应用测试套件和提供方示例，请浏览[社区和合作伙伴示例](https://e2e.com/examples)。其中包括 [Limrun 的应用流程示例](https://github.com/limrun-inc/testerarmy-e2e-limrun)和 [Notte 的浏览器提供方示例](https://github.com/nottelabs/notte/tree/main/examples/e2e)。
+
+## 添加你的包
+
+提交拉取请求（PR）来[编辑此页面](https://github.com/e2e-inc/e2e/edit/main/docs/community-packages.mdx)。请包含：
+
+- 包名、已发布包的链接，以及仓库或文档。
+- 简短说明它如何与 e2e 集成，并提供来源或使用示例。
+- 维护者、支持的平台和 e2e 兼容性要求。
+- 添加时核查的版本和发布日期。
+
+描述应以事实为依据。请向包的维护者报告问题。应用示例请通过[示例贡献指南](https://github.com/e2e-inc/e2e/blob/main/examples/CONTRIBUTING.md)提交。
+
+## 下一步
+
+<CardGroup cols={2}>
+  <Card title="自定义工具" href="/tools">向智能体提供应用专用的操作。</Card>
+  <Card title="测试夹具" href="/fixtures">在测试之间共享配置和资源。</Card>
+</CardGroup>

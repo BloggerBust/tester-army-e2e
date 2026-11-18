@@ -172,8 +172,15 @@ is also disposable: `await using` closes it. A cleanup that fails throws an
 | [`setDefaultTimeout`](#setdefaulttimeout) | `void` |
 | `close` | `Promise<void>` |
 
-`close` ends the session, as `await using` does. After it, every operation
-fails with `CANCELLED`.
+`close` ends the session, as `await using` does. A call still running fails
+with `CANCELLED`. An action, a wait, or an `app` or agent call names itself
+in the message: `the session closed while app.open "/" was running`. After
+`close`, every operation fails with `CANCELLED`.
+
+<Note>
+  Await every call. One that nothing awaits rejects unhandled when its
+  session closes, and Node.js ends the program there.
+</Note>
 
 #### `saveState`
 

@@ -1,0 +1,108 @@
+---
+title: Norrix
+description: 使用 Norrix 构建 NativeScript 应用，并在 Norrix 模拟器上运行其 e2e 测试套件。
+---
+
+import { SetupPrompt } from '../../snippets/setup-prompt-card.jsx';
+
+export const setupPrompt = `为这个 NativeScript 应用添加 e2e 测试套件，并在 Norrix 上运行。文档：\`https://e2e.com/docs/ci/norrix.md\` 和 \`https://e2e.com/docs/mobile.md\`
+
+1. 阅读这两个页面。
+2. 创建 \`e2e/\`，包含独立的 \`package.json\`、\`e2e.config.ts\` 和第一个测试。将 \`bundleId\` 设置为 \`nativescript.config.ts\` 中的 id。
+3. 为测试检查的每个元素添加 \`testID\`。
+4. 让我使用 \`norrix env set\` 保存模型密钥，并将作用域限定为这个项目。
+5. 让我运行 \`norrix build ios debug --simulator\`，并在成功后告诉你。然后运行 \`norrix test ios --runner e2e --wait\`，修复错误，直到测试套件通过。`;
+
+[Norrix](https://norrix.net) 在云端构建 NativeScript 应用。`norrix test` 在 Norrix 机器上对模拟器构建运行 e2e 测试套件。Norrix 会安装测试套件的依赖项，将构建安装到已启动的设备上，并针对构建平台上的测试目标运行 `e2e run`。端到端测试需要 Norrix Enterprise 组织。
+
+<Note>
+Norrix 的[端到端测试指南](https://docs.norrix.net/guides/e2e-testing/)介绍了如何为没有测试的 NativeScript 应用创建测试套件，并在本地、Norrix 和 CI 中运行。[`norrix test` 参考](https://docs.norrix.net/cli/test/)列出了所有标志。
+</Note>
+
+<SetupPrompt>
+
+<Prompt description={setupPrompt} children={setupPrompt} actions={["copy", "cursor"]} />
+
+</SetupPrompt>
+
+## 测试套件
+
+将测试套件放在独立目录中，通常为 `e2e/`，并使用独立的 `package.json` 和 `e2e.config.ts`。Norrix 安装测试套件时不会安装应用的依赖项：
+
+```text
+my-app/
+├── app/
+├── nativescript.config.ts
+└── e2e/
+    ├── package.json      # e2e, @e2e-dev/mobile, ai, and your provider package if not the gateway
+    ├── e2e.config.ts
+    └── tests/
+```
+
+```ts title="e2e/e2e.config.ts"
+import type { E2EConfig } from 'e2e';
+import { gateway } from 'ai';
+import { mobile } from '@e2e-dev/mobile';
+
+export default {
+  agents: { default: { model: gateway('openai/gpt-6-luna-fast') } },
+  targets: [
+    { name: 'ios', engine: mobile({ platform: 'ios' }), app: { bundleId: 'org.example.myapp' } },
+    { name: 'android', engine: mobile({ platform: 'android' }), app: { bundleId: 'org.example.myapp' } },
+  ],
+  workers: 1,
+} satisfies E2EConfig;
+```
+
+- Norrix 将每个测试目标的 `app.appPath` 设置为其构建。在 `mobile()` 中省略 `device`，即可使用 Norrix 启动的模拟器。
+- 为测试检查的元素设置 `testID`，并使用 `getByTestId` 查找它们。参阅[各框架的测试 ID](/mobile#test-ids-by-framework)。
+- Norrix 按组织、项目和平台在运行之间保留[回放缓存](/cache)，并向其中写入，尽管 CI 默认为只读。设置了 `cache: 'off'` 或自定义 `store` 的配置仍使用自身设置。
+
+## 在 Norrix 上运行
+
+在应用目录中构建模拟器版本：
+
+```bash
+norrix build ios debug --simulator
+```
+
+`norrix build` 在构建开始后即返回。等待 `norrix build-status <id>` 报告 `success`，然后运行测试套件：
+
+```bash
+norrix test ios --runner e2e --wait
+```
+
+对于 Android，使用 `norrix build android debug --emulator` 构建，然后运行 `norrix test android --runner e2e --wait`。当运行失败、取消或超时时，`--wait` 会以非零退出码退出。
+
+| 标志 | 作用 |
+| --- | --- |
+| `--suite-dir <path>` | 测试套件不在 `.` 或 `./e2e` 时，指定其目录 |
+| `--target <name>` | `e2e.config.ts` 中的一个测试目标。默认运行构建平台上的所有测试目标 |
+| `--tests`、`--grep`、`--tag` | 运行部分测试文件、标题匹配的测试或带有某个标签的测试 |
+| `--junit-output <dir>` | 将 `junit.xml` 下载到指定目录。隐含 `--wait` |
+| `--build <id>`、`-n` | 无提示地测试一个构建，供 CI 使用 |
+
+控制面板中的 **View Report** 会显示报告和每次失败尝试的视频。要查看等待构建完成的 GitHub Actions 工作流，请参阅 Norrix 指南中的[在 CI 中运行](https://docs.norrix.net/guides/e2e-testing/#run-in-ci)。
+
+## 模型密钥
+
+将提供方的密钥（例如 `AI_GATEWAY_API_KEY`）保存为 Norrix 环境变量。从不使用 `agent` 的测试无需密钥：
+
+```bash
+norrix env set AI_GATEWAY_API_KEY "$AI_GATEWAY_API_KEY" --project my-app
+```
+
+在变量作用域内运行的每个测试套件都可以读取它；如果不设置 `--project`，则组织运行的所有测试套件都可以读取。请只在那里运行你信任的代码。参阅[模型凭据](/ci#model-credentials)。
+
+Norrix 环境变量还会通过 `E2E_SECRET_<NAME>` 和 `E2E_USER_<NAME>_PASSWORD` 填充配置中的[机密值和凭据](/authentication)。
+
+## 下一步
+
+<CardGroup cols={2}>
+  <Card title="移动端" icon="mobile-screen" href="/mobile">
+    编写设备测试，并在各 UI 框架中设置测试 ID。
+  </Card>
+  <Card title="持续集成" icon="rotate" href="/ci">
+    CI 默认设置、分片、重新运行和退出码。
+  </Card>
+</CardGroup>

@@ -1,0 +1,210 @@
+---
+title: 从 Detox 迁移
+description: 将现有应用构建和 testID 与 screen、expect 及智能体目标配合使用。
+"og:image": "https://e2e.com/docs/images/og/migrate/detox.png?v=1715664ae0"
+"twitter:image": "https://e2e.com/docs/images/og/migrate/detox.png?v=1715664ae0"
+---
+
+import { SetupPrompt } from '../../snippets/setup-prompt-card.jsx';
+
+export const migrationPrompt = `将这个项目的 Detox 测试迁移到 e2e，每次迁移一个测试文件。文档：\`https://e2e.com/docs/migrate/detox.md\` 和 \`https://e2e.com/docs/mobile.md\`
+
+1. 阅读上面的迁移指南。它列出了 \`.detoxrc.js\` 和 Detox API 到 e2e 的映射，以及 e2e 尚未支持的功能。移动端指南介绍设备和应用构建。
+2. 如果项目没有 e2e 配置（\`e2e.config.ts\`、\`.mts\`、\`.js\` 或 \`.mjs\`），运行 \`npx e2e init --yes --engine mobile\`（或对应的 pnpm 或 bun 命令）。它会写入移动端配置，为本机平台创建一个测试目标，并生成针对“设置”应用的示例测试，暂不安装任何内容。将 \`tests/example.e2e.ts\` 改写为测试你的应用，或删除它。
+3. 阅读 e2e 技能（\`npx e2e guide\` 输出技能内容，\`npx e2e guide <topic>\` 输出指定主题），并在以下每一步中遵循它。
+4. 如果运行了 init，询问我希望为智能体步骤使用哪种模型：ChatGPT、GitHub Copilot、OpenCode Console 或 SuperGrok 订阅、API 密钥，还是本地模型。使用对应提供方的包进行配置。如果需要登录，给我 \`npx e2e login\` 命令，并等待我确认。
+5. 将 \`.detoxrc.js\` 迁移到 e2e 配置：每个平台创建一个使用 \`mobile({ platform })\` 的测试目标，在测试目标上设置应用的 \`bundleId\` 和 \`appPath\`，并通过 \`mobile({ device })\` 设置设备类型。e2e 使用普通的调试或发布构建，无需 Detox 框架。
+6. 安装依赖项，然后运行 \`npx e2e doctor\`（e2e 0.23.0 或更高版本），修复它报告的问题。
+7. 列出 Detox 测试文件，询问我先迁移哪个。建议选择需要频繁维护的流程。
+8. 对照“e2e 尚未支持的功能”检查该文件中的每个 Detox 调用。使用“当前替代方案”或“替代方案”中的方法，或将该测试文件留在 Detox 中并说明原因。然后按指南的映射表，将其改写为 \`tests/\` 下的 \`.e2e.ts\` 文件（e2e 默认运行 \`tests/**/*.e2e.ts\`），不要放在 Detox 文件夹中。以 \`app.open()\` 开始，因为应用不会自动启动。缩小匹配多个节点的查询范围。
+9. 使用 \`app.open()\` 和定位器断言，让启动和最终断言保持确定性。对于经常失效的一系列脚本交互，建议改用 \`agent.act\` 目标。
+10. 构建并安装应用，在每个平台测试目标上用 \`npx e2e run <file>\` 运行新文件，持续修复直到通过。在我确认可以删除之前，保留 Detox 测试文件。
+11. 总结迁移了哪些测试、哪些仍保留在 Detox 中，以及原因。`;
+
+e2e 使用普通的调试或发布构建，在模拟器上测试 React Native 应用，无需在应用中加入 Detox 框架。你的 `testID` 属性在两个平台上都能与 `getByTestId` 配合使用。
+
+<SetupPrompt>
+
+<Prompt description={migrationPrompt} children={migrationPrompt} actions={["copy", "cursor"]} />
+
+</SetupPrompt>
+
+对于跨多个会话的迁移，[`migrate-to-e2e` 技能](/coding-agents#migrate-an-existing-suite)会在进度文件中记录已迁移的内容，并让旧测试套件继续运行，直到你逐一停用旧测试。
+
+## 迁移配置
+
+<Note>按[移动端指南](/mobile)配置测试目标，按[快速开始](/quickstart)配置模型。逐个迁移测试文件时，两个运行器可以使用同一个模拟器。</Note>
+
+| Detox（`.detoxrc.js`） | e2e |
+| --- | --- |
+| `apps.<name>.binaryPath`、`bundleId` | 测试目标上的 `app: { appPath, bundleId }` |
+| `devices.<name>.device.type` | `mobile({ device: 'iPhone 17' })` |
+| `configurations` | `targets`，每个平台一个引擎 |
+| Jest `maxWorkers` | `workers`，每台设备一个工作进程 |
+| `apps.<name>.launchArgs` | 测试目标上的 `app.launchArguments`，为每个平台提供字符串列表 |
+| `launchApp({ permissions })` | 测试目标上的 `app.permissions`：`grant`、`deny`、`reset` 分别对应 `YES`、`NO`、`unset`。更多名称[已计划支持](#planned) |
+
+```ts title="e2e.config.ts"
+import type { E2EConfig } from 'e2e';
+import { mobile } from '@e2e-dev/mobile';
+
+export default {
+  targets: [
+    {
+      name: 'ios',
+      engine: mobile({ platform: 'ios' }),
+      app: { bundleId: 'com.example.app', appPath: 'ios/build/MyApp.app' },
+    },
+    {
+      name: 'android',
+      engine: mobile({ platform: 'android' }),
+      app: { bundleId: 'com.example.app', appPath: 'android/app/build/outputs/apk/debug/app-debug.apk' },
+    },
+  ],
+  workers: 1,
+} satisfies E2EConfig;
+```
+
+## 改写一个测试文件
+
+应用不会自动启动，因此 e2e 测试以 `app.open()` 开始。密码来自[配置的凭据](/authentication)。
+
+```js title="Detox"
+describe('login', () => {
+  beforeAll(async () => { await device.launchApp({ newInstance: true }); });
+
+  it('shows the home screen', async () => {
+    await element(by.id('email')).typeText('ada@example.test');
+    await element(by.id('password')).typeText('hunter2');
+    await element(by.text('Sign in')).tap();
+    await waitFor(element(by.id('home'))).toBeVisible().withTimeout(10000);
+    await expect(element(by.text('Welcome, Ada'))).toBeVisible();
+  });
+});
+```
+
+```ts title="e2e"
+import { test } from '@e2e-dev/mobile';
+import { expect, credentials } from 'e2e';
+
+test('shows the home screen', async ({ agent, app, screen }) => {
+  await app.open();
+  const ada = credentials.user('ada');
+  await agent.act('sign in as {username}', { params: { username: ada.username, password: ada.password } });
+  await expect(screen.getByTestId('home')).toBeVisible({ timeout: 10_000 });
+  await expect(screen.getByText('Welcome, Ada')).toBeVisible();
+});
+```
+
+## 映射每个 Detox 调用
+
+### 匹配器和操作
+
+| Detox | e2e |
+| --- | --- |
+| `by.id('x')`、`by.text('t')`、`by.label('l')` | `screen.getByTestId('x')`、`screen.getByText('t')`、`screen.getByLabel('l')` |
+| `by.id('x').withAncestor(by.id('row'))` | `screen.getByTestId('row').getByTestId('x')` |
+| `.atIndex(n)` | `.nth(n)` |
+| `.tap()`、`.tap({ x, y })`、`.longPress()`、`.multiTap(2)` | `.tap()`、`.tap({ position: { x, y } })`、`.longPress()`、`.doubleTap()` |
+| `.typeText(t)` | `.pressSequentially(t)` |
+| `.replaceText(t)`、`.clearText()`、`.tapReturnKey()` | `.fill(t)`、`.clear()`、`.press('Enter')` |
+| `.swipe('up', 'fast')` | `.swipe({ direction: 'down', momentum: 'fast' })`。Detox 指定手指移动方向，e2e 指定内容滚动方向 |
+| `list.scroll(200, 'down')` | `list.swipe({ direction: 'down' })`，不带偏移量 |
+| `waitFor(el).toBeVisible().whileElement(list).scroll(...)` | `list.scrollUntilVisible(el)`，Detox 向上滚动时使用 `{ direction: 'up' }` |
+
+### 预期检查
+
+| Detox | e2e |
+| --- | --- |
+| `waitFor(el).toBeVisible().withTimeout(ms)` | `await expect(el).toBeVisible({ timeout: ms })` |
+| `.toBeVisible()`、`.toHaveText(t)` | 相同 |
+| `.not.toBeVisible()` | `.toBeHidden()` |
+| `.toExist()`、`.not.toExist()` | `.toBeAttached()`、`.toBeAttached({ attached: false })` |
+| `.toHaveToggleValue(true)` | `.toBeChecked()` |
+| `.toHaveLabel(l)` | `.toHaveAccessibleName(l)` |
+| `.toHaveValue(v)` | `.toHaveValue(v)`，仅用于表单控件 |
+
+### 设备
+
+| Detox | e2e |
+| --- | --- |
+| `device.launchApp({ newInstance: true })` | `app.restart()` |
+| 在 `beforeAll` 中调用 `device.launchApp()` | 在 `beforeAll` 中调用 `app.open()`，它会得到 `device`、`app` 和 `screen` |
+| `device.launchApp({ newInstance: false })` | 不带 `relaunch` 的 `device.openApp(id)` |
+| `device.launchApp({ launchArgs, permissions })` | `device.openApp(id, { relaunch: true, launchArguments, permissions })` |
+| `device.resetAppState()` | `app.clearState()` |
+| `device.launchApp({ delete: true })` | `device.installApp(path, { reinstall: true })`，然后 `app.open()` |
+| `device.launchApp({ url })`、`device.openURL({ url })` | `device.openLink(url)` |
+| `device.terminateApp()`、`sendToHome()`、`pressBack()` | `device.closeApp()`、`home()`、`back()` |
+| `device.setLocation(lat, lon)`、`setOrientation('landscape')` | `device.setLocation({ latitude, longitude })`、`setOrientation('landscape-left')` |
+| `device.setBiometricEnrollment(true)` | `device.enrollBiometrics('faceid', true)` |
+| `device.matchFace()`、`unmatchFace()`、`matchFinger()`、`unmatchFinger()` | `device.setBiometrics('faceid' \| 'touchid', 'match' \| 'nonmatch')` |
+| `device.takeScreenshot()` | `app.screenshot('label')`，或使用 [`toHaveScreenshot`](/visual-testing) 比较 |
+| `device.getPlatform()` | `platform` 测试夹具 |
+| 测试名称中的 `:ios:` / `:android:` | 测试上的 `{ platforms: ['ios'] }` |
+
+## e2e 尚未支持的功能
+
+“已计划”表示已列入路线图，“尚未支持”表示暂无日期。“不计划支持”表示有意不提供。
+
+### 已计划
+
+| Detox | 当前替代方案 |
+| --- | --- |
+| `artifacts.plugins.log`、`--record-logs` | 在 CI 步骤中运行 `adb logcat` 或 `xcrun simctl spawn booted log stream` |
+| `by.id('x').and(by.text('y'))` | `.filter({ hasText })`，或 `device.locator('id=x label="y"')` |
+| `system.element(by.system.label('Allow'))` | `device.alert('accept' \| 'dismiss')`，或通过 `app.permissions` 避免显示提示 |
+| `.longPressAndDrag()`、`.swipe()` 偏移量、`.multiTap(3)` | `.dragTo(target)`、`screen.swipe({ from, to })`、重复调用 `.tap()` |
+| `.scrollTo('bottom')` | `list.scrollUntilVisible(lastRow)`，或对第一行使用 `{ direction: 'up' }` |
+| `.tapBackspaceKey()` | 用 `.fill(t)` 填入缩短后的文本 |
+| `.setDatePickerDate()`、`.setColumnToValue()`、`.adjustSliderToPosition()` | `agent.act` 目标，或在滑块上使用 `screen.swipe({ from, to })` |
+| 在表单控件之外使用 `.toHaveValue(v)` | `expect(device.locator('id=x value="v"')).toBeVisible()` |
+| `health`、`homekit`、`speech`、`faceid`、`userTracking` 的 `permissions`；值 `always`、`inuse`、`limited` | 点击提示中的按钮，或使用 `device.alert('accept')` |
+| `device.sendUserNotification()`、`device.uninstallApp()`、`.pinch()` | [`unstable_raw`](/reference/mobile#unstable_raw) 上的 `client.apps.push()`、`client.apps.uninstall()`、`client.interactions.pinch()` |
+| `launchApp({ languageAndLocale })` | 在 iOS 上使用 `app.launchArguments: ['-AppleLanguages', '(fr)', '-AppleLocale', 'fr_FR']`，参阅[以其他语言运行应用](/mobile#run-the-app-in-another-language) |
+| Jest `globalSetup`、`globalTeardown` | 运行前启动依赖项 |
+| `device.reverseTcpPort()` | 在 CI 步骤中运行 `adb reverse` |
+| `device.shake()` | - |
+| 作为单个键值映射的 `launchArgs` | iOS 使用 `['-key', 'value']`，Android 使用 `['--es', 'key', 'value']` |
+| `.getAttributes()` | `.textContent()`、`.inputValue()`、`.isEnabled()`、`.isVisible()`、`.isChecked()`、`.boundingBox()` |
+| `device.setStatusBar()` | `xcrun simctl status_bar`。`toHaveScreenshot` 会固定状态栏 |
+
+### 尚未支持
+
+| Detox | 当前替代方案 |
+| --- | --- |
+| `.toBeVisible(50)` 以及默认的 75% | `.toBeVisible()` 检查平台标志，而非面积。比较 `.boundingBox()` |
+| `web.element(by.web.cssSelector('x'))` | WebView 的无障碍文本和标签，或 `agent.act` 目标 |
+| `device.resetContentAndSettings()` | `app.clearState()`，iOS 上再加 `device.clearKeychain()` |
+| `device: { type, os }`、`headless`、`bootArgs` | 在 CI 步骤中创建并启动设备 |
+
+### 不计划支持
+
+| Detox | 替代方案 |
+| --- | --- |
+| `device.reloadReactNative()` | `app.restart()`。重新加载需要应用内包含 Detox 框架 |
+| `device.disableSynchronization()`、`enableSynchronization()` | 删除调用。没有需要关闭的同步机制 |
+| `device.setURLBlacklist()` | 删除调用。网络活动不会阻塞操作 |
+| 初始化时安装、`behavior.init.reinstallApp`、`--reuse` | 在设置了 `auto: true` 的工作进程测试夹具中调用 `device.installApp()` |
+| `apps.<name>.build`、`detox build` | 在 `e2e run` 前执行普通构建 |
+| 按精确偏移量 `.scroll()` | `screen.swipe({ from, to })` |
+| `by.type('RCTImageView')` | `device.locator('role=image')` 或 `testID` |
+| Jest 报告器、Allure | `junit` 报告器或自定义报告器 |
+
+## 有意保留的差异
+
+- e2e 不会等待应用空闲。操作会等待，断言会重试。对于尚未出现的控件，提高 [`transition`](/reference/mobile#transition)；对于智能体操作，提高 [`settle`](/reference/mobile#settle)。
+- 引擎不会自动安装任何内容。调用 `device.installApp()`。
+- [定位器](/reference/screen)采用严格匹配。对多个匹配项执行操作会以 `LOCATOR_AMBIGUOUS` 失败。用 `.filter()`、`.first()` 或 `.nth()` 缩小范围。
+- 设备不支持 `test.setup` 或 `{ session }`。参阅[与网页端的差异](/mobile#what-differs-from-the-web)。
+
+## 下一步
+
+<CardGroup cols={2}>
+  <Card title="移动端" icon="mobile-screen" href="/mobile">
+    配置应用和设备。
+  </Card>
+  <Card title="移动端引擎参考" icon="book" href="/reference/mobile">
+    全部选项、`device` 测试夹具和工具包。
+  </Card>
+</CardGroup>

@@ -440,6 +440,35 @@ Each group opens with one table, one row per entry. Keep it to the minimum:
 - Add no claim the old page or the source (`packages/*/src`) does not make.
   Check a default or a "Throws" condition in the source before you write it.
 
+## Translations
+
+`docs/<language>/<path>.mdx` translates `docs/<path>.mdx`: `docs/ja/` is
+Japanese, `docs/zh/` Simplified Chinese. Each language's README
+([`docs/ja/README.md`](../../../docs/ja/README.md),
+[`docs/zh/README.md`](../../../docs/zh/README.md)) has its rules, style, and
+glossary.
+
+Translations are best effort. English is the source of truth and every
+change keeps it current; translations can lag behind, and no contributor is
+expected to update a language they don't speak.
+
+- An English change needs no translated change: not prose, not a heading,
+  `<Tab>`, `<Accordion>`, or `id`, not a new page, and not a new tab or group
+  in `docs.json`. The site serves the stale translation, falls back to the
+  English page where none exists, and to the English label where
+  `docs/<language>/navigation.json` has none.
+- Moving or deleting an English page moves or deletes its translations too,
+  and renaming an anchor fixes the `#anchor` links to it in the translations.
+  Neither needs the language, and `pnpm docs:check` fails on a translation
+  with no English page or a link whose English target is gone.
+- When you do edit a translation, follow its README and bring it in line
+  with the English page: the same outline (the site gives a translated page
+  the English page's heading, tab, and accordion ids by position, and gives
+  one whose outline differs ids of its own, so its `#anchor` links and the
+  language switcher miss until it is back in line) and the same code blocks.
+  `pnpm docs:check` (`scripts/check-docs-translations.ts`) warns, without
+  failing, on every page and label that is behind.
+
 ## Before you commit
 
 - [ ] On a reference page: the first `##` is `## Reference`, every summary
@@ -471,4 +500,6 @@ Each group opens with one table, one row per entry. Keep it to the minimum:
       ([Vendor logos](#vendor-logos)) and a card on its section's
       overview.
 - [ ] Links and anchors resolve. Moved pages have redirects.
+- [ ] A moved or deleted English page took its `docs/ja/` and `docs/zh/`
+      translations with it ([Translations](#translations)).
 - [ ] `pnpm docs:check` passes.

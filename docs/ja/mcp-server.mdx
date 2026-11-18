@@ -1,0 +1,223 @@
+---
+title: MCP サーバー
+description: コーディングエージェントにアプリを操作させ、自分の作業を確認させます。
+"og:image": "https://e2e.com/docs/images/og/mcp-server.png?v=17998906c0"
+"twitter:image": "https://e2e.com/docs/images/og/mcp-server.png?v=17998906c0"
+---
+
+`e2e mcp` は、Claude Code、Codex、Cursor などのコーディングエージェントに、
+Web、iOS、Android アプリのライブセッションを提供します。
+エージェントは画面を見て操作し、自分の作業を確認します。
+
+## できること
+
+| 作業 | `e2e mcp` なし | `e2e mcp` あり |
+| --- | --- | --- |
+| テストを書く | ロケーターを推測し、実行して失敗し、再び推測する | フローをたどりながら、確認済みのテスト行と `run_code` で実行した行からテストを書く |
+| UI を変更する | コンパイルできれば完了 | ページを開いて結果を確認する |
+| バグを再現する | コードから推測する | アプリで手順を実行する |
+| 失敗するテストを直す | フローを最初からクリックし直す | テストを実行し、失敗した場所で止める |
+| スイートを実行する | `e2e run` 用のシェルが必要 | `run_tests` で実行する |
+| PR で変更を示す | 文章で説明する | 動画を記録する |
+
+サーバーにモデルは不要です。実行するテストも、記録のないエージェントステップがある場合だけモデルが必要です。
+
+## セットアップする
+
+[e2e プラグイン](/coding-agents) には、プラグインの e2e リリースに固定された
+`npx -y e2e@<version> mcp` としてサーバーが含まれます。
+プロジェクトに別の e2e バージョンが入っていても、固定されたリリースが動きます。
+プラグインを使わない場合は、プロジェクトに登録します。
+`e2e init` は `.mcp.json`（Claude Code）、`.cursor/mcp.json`（Cursor）、
+`.codex/config.toml`（Codex）へのサーバー登録を提案します。
+プロジェクトの依存関係をインストールし、そのディレクトリで MCP クライアントを起動してください。
+これにより `npx`（Bun プロジェクトでは `bunx`）がインストール済みの e2e を使います。
+手動で設定する場合は次のとおりです。
+
+<Tabs>
+  <Tab title="Claude Code">
+    <CodeGroup>
+    ```bash npm
+    claude mcp add --scope project e2e -- npx e2e mcp
+    ```
+
+    ```bash pnpm
+    claude mcp add --scope project e2e -- pnpm exec e2e mcp
+    ```
+
+    ```bash bun
+    claude mcp add --scope project e2e -- bunx e2e mcp
+    ```
+    </CodeGroup>
+  </Tab>
+  <Tab title="Codex">
+    インストール済み CLI で `e2e init --yes --skills none --mcp .codex/config.toml` を実行するか、
+    以下のエントリーを追加します。プロジェクトを信頼し、新しい Codex セッションを開始してください。
+    プロジェクト内で `codex mcp list` を実行すると、登録を確認できます。
+
+    ```toml title=".codex/config.toml"
+    [mcp_servers.e2e]
+    command = "npx"
+    args = ["e2e", "mcp"]
+    ```
+  </Tab>
+  <Tab title="Cursor">
+    `.cursor/mcp.json` にサーバーを追加します。
+    `mcpServers` マップを読む他のクライアントでも同じブロックを使えます。
+
+    ```json title=".cursor/mcp.json"
+    {
+      "mcpServers": {
+        "e2e": { "command": "npx", "args": ["e2e", "mcp"] }
+      }
+    }
+    ```
+  </Tab>
+  <Tab title="OpenCode">
+    プロジェクトの `opencode.json` にサーバーを追加します。
+    プロジェクトで `opencode mcp list` を実行すると、接続済みと表示されます。
+
+    ```json title="opencode.json"
+    {
+      "$schema": "https://opencode.ai/config.json",
+      "mcp": {
+        "e2e": { "type": "local", "command": ["npx", "e2e", "mcp"] }
+      }
+    }
+    ```
+  </Tab>
+</Tabs>
+
+ターゲットにアプリの起動コマンドがあれば、セッションはそれを実行し、URL とポートを示します。
+設定が読むのはサーバーの環境変数であり、エージェントのシェルのものではありません。
+
+## 設定なしで試す
+
+e2e の設定ファイルがないディレクトリでは、エージェントがセッションを開くときにエンジンを指定します。
+
+```txt
+open_session {engine: "@e2e-dev/web", app: {url: "http://localhost:3000"}}
+```
+
+`run_tests` には引き続き設定が必要です。
+エンジンのオプション、デバイスプロバイダー、エンジンのインストールについては、
+[設定なしで使う](/reference/mcp#without-a-config) を参照してください。
+
+## エージェントに依頼する
+
+- 「ログインフォームに Remember me チェックボックスを追加して。e2e でアプリ上の動作を確認して。」
+- 「アプリでチェックアウトの流れをたどりながら、テストを書いて。」
+- 「アプリで issue #123 を再現して、動画を記録して。」
+
+ローカルのブラウザやシミュレーターを見ながら実行するには、「headed」を付け加えてください。
+
+## テスト行が生成される仕組み
+
+セッション内の各操作は、同じ操作を繰り返せるテスト行を返します。
+その行のロケーターは、ライブ画面上で対象のコントロールだけに一致しています。
+
+```text wrap
+Tapped #n31.
+Test line: await screen.getByRole("button", "Sign in").tap();
+```
+
+エージェントはフローをたどりながら、必要な行をテストへコピーします。
+`test_lines` は、それまでのすべての行を順番どおりにテスト本体の下書きとして返します。
+行の生成方法は [`test_lines`](/reference/mcp#test_lines) を参照してください。
+
+## ロケーターを確認する仕組み
+
+アサーションなど、操作が出力しなかった行では、まずセッション内でロケーターを試します。
+推測が間違っていれば、テスト実行を待たずにその場で失敗します。
+
+```text wrap
+0 nodes match getByLabel("Email").
+A test using this locator would fail with LOCATOR_NOT_FOUND. ...
+
+1 node matches getByRole("button", name: "Sign in").
+Use: screen.getByRole("button", "Sign in")
+```
+
+## テスト行を実行する仕組み
+
+アサーションなど、操作が出力しなかった行は、開いているセッションの `run_code` で実行します。
+成功した行は `test_lines` の下書きに追加されます。
+誤った行は、テストを実行することなく数秒で失敗します。
+
+```text wrap
+Statement 2 of 2 failed; the one before it passed. Each statement waited at most 5000 ms. ...
+1. passed: await screen.getByLabel('Full name').fill('Grace Hopper');
+2. failed: await screen.getByRole('button', 'Save').tap();
+   LOCATOR_NOT_FOUND: locator matched no nodes within getByRole("button", name: "Save")
+```
+
+サーバーは行を解析しますが、JavaScript として評価することはありません。
+[`run_code`](/reference/mcp#run_code) を参照してください。
+
+## 失敗するテストを修正する
+
+`open_session {test: "tests/checkout.e2e.ts:12"}` は、セッション内で 1 つのテストを実行し、
+失敗した画面で停止します。エージェントは失敗内容を読み、画面を確認して、テストを編集します。
+
+```text wrap
+Test "a member checks out" (tests/checkout.e2e.ts:12) failed after 30.25s; 8 steps ran.
+LOCATOR_NOT_FOUND: locator matched no nodes within getByLabel("Name")
+At tests/checkout.e2e.ts:20:3
+On screen, closest to what the locator asked for:
+  #n32 textbox "Full name"
+```
+
+その画面での各操作は [テスト行](#how-it-writes-a-test-line) を出力します。
+修正した行は `run_code` でその場で実行できます。
+エージェントは、失敗した行をそれらの行に置き換えます。
+
+編集したテストを再実行するには、セッションを閉じ、同じ `test` を指定して新しく開きます。
+エージェントステップは `e2e run` と同じようにキャッシュからリプレイされます。
+実行内容と制限は [テストの実行](/reference/mcp#running-a-test) を参照してください。
+
+## セッションと並行してテストを実行する
+
+セッション自体はテスト結果を書き込みません。
+リプレイキャッシュを使うのは、`open_session {test}` で実行したテストだけです。
+スイートは `e2e run` と同じ実行を行う [`run_tests`](/reference/mcp#run_tests) で動かします。
+セッションと並行して実行できる場合は、実行の間もセッションを開いたままにします。
+失敗後は新しいセッションを開かず、そのセッションで失敗した画面へ移動します。
+
+Web で並行実行できるかどうかは、ターゲットの `app` によります。
+
+| ターゲットの `app` | セッションを開いたままのテスト実行 |
+| --- | --- |
+| `command` なし | どちらも自分で起動したアプリを使います。 |
+| ポート [`0`](/web#let-the-runner-pick-the-port) の `url` | それぞれアプリを起動します。`next dev` のように、ディレクトリごとに 1 つしか起動できない開発サーバーでは失敗します。 |
+| [`reuseExisting: true`](/web#starting-your-app) 付きの `command` | セッションが起動したアプリをテスト実行も使います。実行中でも、セッションを閉じるとアプリは停止します。 |
+| 固定ポートの `command`、`reuseExisting` なし | `APP_ALREADY_RUNNING` で失敗します。 |
+
+`CI` が設定されている場合、e2e は `reuseExisting` を無視し、固定ポートの場合と同様に実行が失敗します。
+失敗する構成では、実行前にセッションを閉じてください。
+モバイルでは、どのセッションも使っていないデバイスで実行します。
+
+## 複数のエージェントを実行する
+
+サブエージェントを含め、各エージェントが専用のブラウザやデバイスでセッションを開きます。
+デフォルトの上限は 4 つです。モバイルでは、各セッションに専用のターゲットを割り当ててください。
+
+## シークレット
+
+`type_secret`、または `run_code` 内の `fill` は、エージェントに値を見せずにシークレットを入力します。
+スクリーンショットでマスキングされるのは保護されたフィールドだけです。
+アプリが他の場所に表示したシークレットは写り込みます。
+
+<Warning>
+`start_recording` の動画はマスキングされません。
+</Warning>
+
+## 次のステップ
+
+<CardGroup cols={2}>
+  <Card title="MCP サーバーリファレンス" icon="book" href="/reference/mcp">
+    すべてのツール、フラグ、セッションのルール、エラーコードを確認します。
+  </Card>
+  <Card title="コーディングエージェント" icon="robot" href="/coding-agents">
+    スキル、テストの実行、失敗の調べ方を確認します。
+  </Card>
+</CardGroup>

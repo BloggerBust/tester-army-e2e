@@ -1,0 +1,636 @@
+---
+title: agent
+description: エージェントによる操作、条件の確認、構造化データの抽出を行います。
+"og:image": "https://e2e.com/docs/images/og/reference/agent.png?v=9a239b0466"
+"twitter:image": "https://e2e.com/docs/images/og/reference/agent.png?v=9a239b0466"
+---
+
+`agent` フィクスチャは、自然言語で指定したステップをアプリに対して実行します。`act` はアプリを操作し、`assert` は現在の画面を確認し、`waitFor` は条件が成立するまで待ち、`extract` は構造化データを読み取ります。呼び出しごとにタイムアウトとモデル呼び出し回数の上限があります。
+
+```ts title="tests/team.e2e.ts"
+import { test } from 'e2e';
+
+test('invite a teammate', async ({ agent }) => {
+  await agent.act('invite {email} as an editor', { params: { email: 'ada@example.test' } });
+  await agent.waitFor('the members list shows ada@example.test');
+  await agent.assert('ada@example.test is listed as an editor');
+});
+```
+
+組み込みエージェントにはモデルの設定が必要です。未設定の場合、`agent` フィクスチャを最初に取得した時点で、実行全体のエラーとして `MODEL_UNAVAILABLE` を 1 件記録し、実行を停止します（終了コード 2）。[カスタムエグゼキューター](/executors)はモデルなしで `act` と `assert` を実行できますが、`waitFor` と `extract` にはモデルが必要です。
+
+## リファレンス
+
+| メソッド | 戻り値 |
+| --- | --- |
+| [`agent.act`](#agent-act) | `Promise<ActResult>` |
+| [`agent.assert`](#agent-assert) | `Promise<void>` |
+| [`agent.waitFor`](#agent-waitfor) | `Promise<void>` |
+| [`agent.extract`](#agent-extract) | `Promise<InferOutput<Schema>>` |
+
+シグネチャは[型](#types)にあります。[実行上限](#budgets)では各メソッドのデフォルトタイムアウト、モデル呼び出し回数、アクション数と、それらを引き下げる際のルールを説明します。すべてのメソッドで `agent` を指定できます。設定済みエージェントの名前（`agents.<name>`）を渡すと、その呼び出しだけテストのエージェントに代わって実行します。
+
+### agent.act
+
+上限のある一連の操作を計画して実行します。成功の判定を得ると `ActResult` を返します。失敗またはブロックの判定では [`AgentError`](#agenterror) をスローし、その `code` と `blocked` フラグが理由を示します。
+
+```ts
+await agent.act('invite {email} as an editor', { params: { email: 'ada@example.test' } });
+
+const member = credentials.user('member');
+const { summary, cache } = await agent.act('Sign in', {
+  params: { username: member.username, password: member.password },
+});
+```
+
+- `instruction` は NFC 正規化後の UTF-8 で 1〜8192 バイトです。
+- [`ActResult`](#types) にはステップの `summary`、消費した `modelCalls` と `actions`、[リプレイキャッシュ](/cache)の利用状況を示す `cache` が含まれます。
+- エージェントは[アクションツール](#action-tools)で操作し、[画像ツール](#pixel-tools-screenshot-and-the-point-verbs)で必要なスクリーンショットを自ら要求します。
+
+| オプション | 型 | デフォルト |
+| --- | --- | --- |
+| `params` | `AgentParams` | なし |
+| `timeout` | `number` | `config.timeout`, 120000 |
+| `maxSteps` | `number` | `agents.<name>.maxSteps`, 25 |
+| `maxModelCalls` | `number` | `agents.<name>.maxModelCalls`, 25 |
+| `agent` | `string` | テストのエージェント |
+| `onAction` | [`ActionHook`](#types) | なし |
+| `onBeforeAction` | [`BeforeActionHook`](#types) | なし |
+
+`params` の値は必ずコードから渡し、モデルには生成させません。実行ごとに変わる値は [`unique()`](#unique) で包みます。モデルに見える `Secret` の情報は名前と用途だけです。ランナーは入力前にモデルが選んだフィールドを確認します。有効で編集可能な入力欄である必要があり、パスワードならパスワード欄でなければなりません。`locator.fill` ではコードがフィールドを選ぶため、この確認は行いません。
+
+`onAction` は、ステップが各アクションを完了して画面が安定した後、次のアクションの前に実行されます。[リプレイキャッシュ](/cache)から再生したアクションも対象です。ステップは完了を待ち、その時間は `timeout` に含まれます。観測のために使い、アプリの操作は行わないでください。例外をスローすると、ステップは `agent.act onAction failed` で始まるメッセージで失敗します。この中で行う確認によって、ステップの記録が確定することはありません。
+
+```ts
+await agent.act('open settings and turn on dark mode', {
+  onAction: ({ index, action }) => app.screenshot(`${index} ${action}`),
+});
+```
+
+`event.action` で型を絞り込むと、アクションの詳細を読めます。`tapAt` と `hoverAt` は `point`、`dragAt` は `from` と `to` を持ちます。座標は `screen.tapAt` や `boundingBox()` と同じ座標系で、丸めてビューポート内に収められます。リプレイ時は、現在の画面に送った座標を報告します。モバイルエンジンに `hoverAt` と `dragAt` はありません。
+
+```ts
+await agent.act('move the pin to Warsaw', {
+  onAction: (event) => {
+    if (event.action === 'dragAt') console.log(event.from, event.to);
+  },
+});
+```
+
+`onBeforeAction` は、リプレイを含む各アクションの前に、そのアクションの `onAction` と同じ `index` で実行されます。操作開始時の画面を取得するために使えます。ステップは完了を待ちますが、呼び出す前に画面の安定は待ちません。例外をスローすると、アクションを実行する前にステップが失敗し、メッセージは `agent.act onBeforeAction failed` で始まります。このフックの後にアクションが失敗し、`onAction` が呼ばれないこともあります。
+
+```ts
+await agent.act('open settings and turn on dark mode', {
+  onBeforeAction: ({ index }) => app.screenshot(`before ${index}`),
+});
+```
+
+失敗の判定は、エグゼキューターが `LOCATOR_NOT_FOUND` や `AUTHENTICATION_FAILED` などのより具体的なコードを指定しない限り、`ACTION_FAILED` になります。ブロックの判定は、ステップが製品の合否を判断できなかったことを示し、次のいずれかのコードを伴います。
+
+| ブロックの原因 | コード |
+| --- | --- |
+| 認証情報 | `AUTH_CREDENTIAL_UNAVAILABLE`, `AUTH_CREDENTIAL_INVALID`, `SECRET_UNAVAILABLE` |
+| 環境 | `ENVIRONMENT_UNAVAILABLE`, `APP_UNREACHABLE`, `APP_ALREADY_RUNNING` |
+| 初期データ | `SEED_DATA_MISSING` |
+| テストの準備 | `TEST_SETUP_FAILED`, `APP_NOT_OPEN`, `POLICY_DENIED` |
+| 自動化 | `MODEL_UNAVAILABLE`, `AUTOMATION_UNSUPPORTED`, `STEP_BUDGET_EXHAUSTED`, `STEP_TIMEOUT`, `CONTEXT_OVERFLOW`, `MODEL_REFUSED` |
+
+ランナー自身による停止と、呼び出しに対する検証では、次のエラーが発生します。
+
+| エラー | 発生条件 |
+| --- | --- |
+| `STEP_BUDGET_EXHAUSTED`, `STEP_TIMEOUT` | 回数の上限または期限に達した場合。 |
+| `CANCELLED` | ランナーがステップをキャンセルした場合。 |
+| `STEP_NO_CONCLUSION` | 結論が出ないままターンを使い切った場合。 |
+| `CONTEXT_OVERFLOW` | リクエストがモデルのコンテキストウィンドウを超えた場合。 |
+| `MODEL_REFUSED` | モデルがリクエストを拒否した場合。 |
+| `MODEL_PROVIDER_FAILED` | リトライ後もプロバイダーとの通信に失敗した場合。 |
+| `MODEL_OUTPUT_INVALID` | 判定が文法に従っていない場合。 |
+| `REPLAY_STALE` | 厳密モードのキャッシュで、ステップの記録を再生できなくなった場合。 |
+| `INVALID_ARGUMENT` | 指示の形式が不正、`params` が大きすぎる、未知のオプションがある、`onAction` または `onBeforeAction` が関数ではない、設定済みの上限を超える回数を指定した場合。未知の `agent` 名は、ステップ開始前に失敗します。 |
+| `UNSUPPORTED_CAPABILITY` | `act` が受け付けない `schema` または `vision` を指定した場合。 |
+
+### agent.assert
+
+新たに取得した 1 回の観測結果を確認します。デフォルトではポーリングしません。
+
+```ts
+await agent.assert('the dashboard shows a trial badge');
+await agent.assert('the table lists {name}', { params: { name } });
+```
+
+- ジャッジに渡すのは、アサーション、その `params`、位置情報を含む現在の観測結果、エージェントの `context` です。過去のステップや `act` の要約は渡しません。回答は `holds`、`fails`、`inconclusive` のいずれかです。
+- 確認対象が複数箇所に現れる場合、たとえば合計金額が注文概要と支払いボタンに表示される場合は、すべて一致する必要があります。1 箇所でも矛盾すれば失敗します。特定の箇所だけを判定するには、場所を明示します（`the order summary total is $42.00`）。
+- `a todo is marked done` のように、いずれかの項目について述べる条件は、1 つでも該当すれば成立します。
+
+| オプション | 型 | デフォルト |
+| --- | --- | --- |
+| `explore` | `boolean` | `false` |
+| `maxSteps` | `number`、`explore` が必要 | min(10, 設定の上限) |
+| `maxModelCalls` | `number`、`explore` が必要 | min(6, 設定の上限) |
+| `params` | `AgentParams` | なし |
+| `timeout` | `number` | `agents.<name>.judgmentTimeout`, 30000 |
+| `screenshot` | `boolean` | `true` |
+| `vision` | [`VisionMode`](#vision) | `false` |
+| `agent` | `string` | テストのエージェント |
+
+`screenshot` は、成功・失敗にかかわらず判定後に添付する証跡を制御します。`vision` は、判定前にモデルへ見せる情報を制御します。`screenshot: false` では証跡を撮影しません。
+
+`params` は [`agent.act`](#agent-act) と同じルールに従い、不正な値は `INVALID_ARGUMENT` になります。`Secret` パラメーターは名前だけがジャッジに渡り、値は渡りません。シークレットの値が画面に表示されているかを確認するには、ロケーターアサーションを使ってください。
+
+| エラー | 発生条件 |
+| --- | --- |
+| `ASSERTION_FAILED` | 条件が成立しないと判定された場合。 |
+| `ASSERTION_INCONCLUSIVE` | 画面上の情報だけでは判断できなかった場合。 |
+
+どちらにも説明と、許可される場合はスクリーンショットのパスが含まれます。ツリーだけで判断がつかなかった場合は、メッセージに画像入力のヒントを加えます。
+
+- ヒントは `pass vision: true when the answer is in pixels` です。その試行でまだどのステップも画像を受け取っていない場合は、条件付きの表現になります（`if the engine captures pixels, ...`）。
+- エンジンがスクリーンショットに対応していないと宣言している場合や、以前のステップの画像要求が縮退した場合、ヒントはありません。その状態では `vision: true` にしても証拠が増えないためです。
+
+<Note>
+カスタム `StepExecutor` はアサーションを自ら判定します。`assert` に含まれるのはエグゼキューターの説明だけで、画像入力のヒントは付きません。判定後の証跡はランナーが取得するため、`screenshot` の指定は適用されます。エグゼキューターが `vision: true` を宣言していれば `step.vision` として `vision` を受け取り、それ以外では `vision` の指定は `UNSUPPORTED_CAPABILITY` になります。回数と時間の上限は[実行上限](#budgets)を参照してください。
+</Note>
+
+#### ビューポートの探索
+
+`explore: true` を指定すると、`agent.assert` は現在の画面をスクロールし、複数の表示範囲から得た証拠を組み合わせられます。タブレットでは収まる一覧が、スマートフォンではスクロールを必要とする場合などに役立ちます。
+
+```ts
+await agent.assert('Settings lists HOS Settings, Account, Language and Theme', {
+  explore: true,
+  maxSteps: 10,
+  maxModelCalls: 6,
+});
+```
+
+探索では `observe`、`scroll`、`scroll_to` と、`mutates: false` を宣言したプロジェクトのツールを利用できます。組み込みエグゼキューターでは、`vision` が `true` または `'only'` なら `screenshot` も利用できます。デフォルトはツリーのみです。ほかのアクションは拒否されます。探索後の表示位置は、そのまま残ります。
+
+デフォルトはスクロール操作が 10 回、モデル呼び出しが 6 回で、それぞれ選択したエージェントの設定上限までに制限されます。設定上限の範囲内であれば、10 回・6 回というデフォルトを超えて指定できます。期限のデフォルトは `judgmentTimeout` です。`explore: true` なしで `maxSteps` または `maxModelCalls` を指定すると `INVALID_ARGUMENT` をスローします。組み込みエグゼキューターは、`judge` が設定されていても `agents.<name>.model` を使います。
+
+矛盾が見つかると `ASSERTION_FAILED`、時間・アクション数・モデル呼び出し回数の上限内で十分な証拠が得られないと `ASSERTION_INCONCLUSIVE` になります。
+
+時間とともに変化する条件には `waitFor` を、現在の画面の別の場所にある内容には `explore` を使ってください。
+
+### agent.waitFor
+
+自然言語の条件をポーリングし、成立と判定されるまで待ちます。
+
+```ts
+await agent.waitFor('the upload progress reports completion', { interval: 500 }); // default: 3000
+```
+
+- 直ちに観測と判定を行い、最初に条件が成立した時点で成功します。
+- 不成立または判断不能の判定後は、モデルを呼ばずに 500 ms ごとに観測します（`interval` がそれより短ければ `interval` ごと）。最後に判定した画面または位置情報が変わった場合にだけ、再び判定します。`vision` 使用時は画像の変化も対象です。`vision: 'only'` では位置情報をモデルに見せないため、位置だけの変化は対象になりません。
+- 変化する直前の `interval` の間に画面が変わっていなかった場合、または待機開始から一度も変わっていなかった場合、変化を見つけると直ちに判定します。進捗カウンターや時計などで画面が変わり続ける場合は、前回の判定から `interval` ごとに最大 1 回判定します。
+- 判定は [`agent.assert`](#agent-assert) と同じルールに従います。値が複数箇所に表示される場合は、すべてが一致して初めて成立します。
+
+| オプション | 型 | デフォルト |
+| --- | --- | --- |
+| `params` | `AgentParams` | なし |
+| `timeout` | `number` | `agents.<name>.judgmentTimeout`, 30000 |
+| `interval` | `number` | 3000 |
+| `maxModelCalls` | `number` | `agents.<name>.maxModelCalls`, 25 |
+| `vision` | [`VisionMode`](#vision) | `false` |
+| `agent` | `string` | テストのエージェント |
+
+`interval` は、変わり続ける画面を判定する際の最小間隔です。100〜60000 ms で指定します。`params` は [`agent.assert`](#agent-assert) と同じように動作します。
+
+| エラー | 発生条件 |
+| --- | --- |
+| `STEP_TIMEOUT` | 期限に達した場合。 |
+| `STEP_BUDGET_EXHAUSTED` | 回数の上限に達した場合。 |
+| `INVALID_ARGUMENT` | オプションが範囲外、`params` が不正、または `waitFor` が受け付けないオプションがある場合。 |
+
+`STEP_TIMEOUT` と `STEP_BUDGET_EXHAUSTED` には最後の判定が含まれます。その判定が判断不能だった場合は、`agent.assert` と同じ画像入力のヒントを加えます。
+
+### agent.extract
+
+新たに取得した 1 回の観測結果から構造化された出力を読み取り、`schema` で検証して返します。アプリの操作は行いません。
+
+```ts
+import { z } from 'zod';
+
+const summary = await agent.extract('the workspace name and plan', {
+  schema: z.object({ name: z.string(), plan: z.string() }),
+});
+```
+
+- スキーマが JSON Schema への変換に対応している場合（zod は対応しています）、型、フィールド、必須フィールド、許可するリテラル値という構造をモデルに渡します。`min`、`max`、長さ、パターン、形式などの値のルールはスキーマ側に保持し、モデルが読み取った値を検証します。
+- モデルは、画面にデータが表示されていないと回答できます。その場合、`""` や `0` のような仮の値を返さず、不足している情報とともに `ASSERTION_INCONCLUSIVE` をスローします。データがないことを有効な回答として扱うには、指示とスキーマの両方で指定してください（`'the phone number, or null when none is
+  shown'` と `z.string().nullable()`）。
+
+| オプション | 型 | デフォルト |
+| --- | --- | --- |
+| `schema` | `StandardSchemaV1` | 必須 |
+| `timeout` | `number` | `agents.<name>.judgmentTimeout`, 30000 |
+| `vision` | [`VisionMode`](#vision) | `false` |
+| `agent` | `string` | テストのエージェント |
+
+| エラー | 発生条件 |
+| --- | --- |
+| `INVALID_ARGUMENT` | スキーマが Standard Schema v1 ではない場合。 |
+| `ASSERTION_INCONCLUSIVE` | 画面にデータが表示されていない場合。 |
+| `MODEL_OUTPUT_INVALID` | 修正のための再呼び出し後も検証に失敗する場合。 |
+
+## 実行上限
+
+モデル呼び出し回数には、修正のための再呼び出しを含め、すべてのモデルリクエストを数えます。アクション数は、実行が確定したエンジンのアクションを数えます。すべてのタイムアウトは、テストの残り時間が上限になります。
+
+| メソッド | モデル呼び出し回数 | アクション数 | デフォルトタイムアウト |
+| --- | ---: | ---: | --- |
+| `act` | `agents.<name>.maxModelCalls`, 25 | `agents.<name>.maxSteps`, 25 | `config.timeout`, 120000 ms |
+| `waitFor` | `agents.<name>.maxModelCalls`, 25 | 0 | `agents.<name>.judgmentTimeout`, 30000 ms |
+| `extract` | 2 | 0 | `agents.<name>.judgmentTimeout`, 30000 ms |
+| 探索なしの `assert` | 2 | 0 | `agents.<name>.judgmentTimeout`, 30000 ms |
+| 探索ありの `assert` | min(6, 設定の上限) | min(10, 設定の上限) | `agents.<name>.judgmentTimeout`, 30000 ms |
+
+- `actionTimeout` が制限するのはエンジンの操作であり、モデル呼び出しではありません。
+- 呼び出しごとの上限（`maxSteps`、`maxModelCalls`）は、設定の上限を引き下げる方向にだけ変更できます。設定上限以下の正の整数が必要で、超えると `INVALID_ARGUMENT` になります。
+- 時間はすべてミリ秒です。
+
+探索なしの `assert` の行は、組み込みエージェントについての値です。カスタム `executor` で探索なしのアサーションを実行する場合は、エージェントの `maxSteps` と `maxModelCalls` を使い、期限のデフォルトは `config.timeout` になります。探索ありのアサーションでは、どのエグゼキューターでも設定上限内に制限したデフォルト値と `judgmentTimeout` を使います。その場合の `vision` と `screenshot` は、[`agent.assert`](#agent-assert) の注記を参照してください。
+
+## アクションツール
+
+組み込みエージェントは、ターゲットのエンジンが宣言した操作ごとにツールを 1 つ提供します。宣言していない操作のツールは提供しません。ノードを対象とするツールは、最新の観測結果から ID を取得します。各ツールは画面の変化を返し、対象ノードがあればそれとともに[リプレイキャッシュ](/cache)に記録されます。`tapModifiers` を宣言したエンジンでは、`tap`、`double_tap`、`right_click` に `modifiers`（`Shift`、`Control`、`Alt`、`Meta`、`ControlOrMeta`）を渡せます。Shift クリックで選択範囲を広げるように、キーを押したままクリックできます。
+
+| ツール | エンジンのアクション | 動作 |
+| --- | --- | --- |
+| `tap({ target, modifiers? })` | `tap` | 1 つのノードをタップまたはクリックします。ボタン、リンク、メニュー項目、タブ、チェックボックス、行、フィールドの操作に使います。 |
+| `double_tap({ target, modifiers? })` | `doubleTap` | 1 つのノードをダブルクリックします。2 回目のクリックで開く項目や、編集に入る項目に使います。 |
+| `long_press({ target })` | `longPress` | 1 つのノードを長押しします。長押しメニューや長押し操作に使います。 |
+| `right_click({ target, modifiers? })` | `secondaryTap` | 1 つのノードを右クリックして、コンテキストメニューを開きます。 |
+| `hover({ target })` | `hover` | 押さずに 1 つのノードへポインターを移動します。ホバーメニュー、フライアウト、ツールチップ、マウスを重ねると現れるコントロールに使います。 |
+| `type({ target?, value, replace? })` | `fill`。`target` なしでは `keyboard` | ノードの値を置き換えます。対象がなければ、フォーカスのある場所に入力します。 |
+| `type_secret({ target, name })` | `fill` | ステップのパラメーターに宣言されたシークレットを入力します。宣言がないステップでは何も入力しません。 |
+| `press({ target?, key, times? })` | `press`。`target` なしでは `keyboard` | ノードまたはフォーカス中のコントロールに、1 回の呼び出しで最大 20 回、同じキーを送ります。キーを押すたびに 1 アクションと数えます。対象がある場合、最初のキーはそのノードに、残りはその時点でフォーカスのある場所に送るため、`Tab` の繰り返しで順に移動できます。 |
+| `select({ target, value })` | `selectOption` | 表示ラベルでオプションを選びます。 |
+| `check({ target, checked? })` | `check` と `uncheck` | チェックボックス、スイッチ、ラジオボタンを指定の状態（デフォルトは `true`）にします。すでにその状態なら変更しません。タップのように状態を反転することはありません。 |
+| `scroll({ direction, target?, times? })` | `swipe` | ビューポートまたは 1 つのスクロール可能なノードを、1 回の呼び出しで最大 20 画面分スクロールします。 |
+| `scroll_to({ target })` または `scroll_to({ text, direction?, target? })` | `scrollIntoView`。`text` ありでは `swipe` | `target` のみなら、ツリーに載っている 1 つのノードを表示範囲に入れます。画面の上や下にあるノードに使います。`text` ありなら、一覧（`target`、省略時はビューポート）を `direction` の方向（デフォルトは下）へ 1 画面ずつ送り、そのテキストのノードが現れたら、エンジンが対応していれば表示位置を調整します。長い一覧や仮想化された一覧の奥にあり、まだツリーに描画されていない行に使います。ノードのラベルはテキスト全体と一致するか、前後に単語の続きがない形で含む必要があります。そのため `Row 12` が `Row 120` で止まることはありません。`target` が一覧を指す場合、ノードはその中にある必要があり、別の場所の同名見出しでは止まりません。最大 800 画面まで、移動した画面数にかかわらず 1 アクションです。画面が動かなくなるか上限に達すると `LOCATOR_NOT_FOUND` になります。各形式は、対応するアクション種別がある場合にだけ提供されます。 |
+| `drag({ target, to })` | `dragTo` | 1 つのノードを別のノードへドラッグ＆ドロップします。並べ替え、カンバンの列、ドロップ領域などに使います。 |
+| `upload({ target, files })` | `setInputFiles` | ファイル入力欄、またはネイティブのファイル選択画面を開く可視コントロールにファイルを添付します。パスはプロジェクトからの相対パスか `sample:` のファイル名です。下記のポリシーを参照してください。 |
+| `navigate({ url })` | `session.open` | URL またはアプリからの相対パスを開きます。 |
+| `back()` | `session.back` | 1 つ前に戻ります。ブラウザではページ履歴、デバイスではアプリ内の戻る操作です。 |
+| `resize_viewport({ width, height })` | `session.resize` | 別の幅でレイアウトを確認するため、ビューポートを CSS ピクセル単位で指定します。各辺は 200〜4096 です。次に変更するまでサイズは維持されます。Web など `session.resize` のあるエンジンで利用できます。 |
+| `switch_tab({ tab })` | `session.switchTab` | 別の開いているタブを表示します。タブは開いた順に 1 から番号が付きます。Web など `session.switchTab` のあるエンジンで利用できます。 |
+| `close_tab({ tab })` | `session.closeTab` | 開いているタブを閉じます。番号は `switch_tab` と同じです。最後の 1 タブは開いたままになります。Web など `session.closeTab` のあるエンジンで利用できます。 |
+| `observe()` | | 再度観測し、モデルが最後に受け取った画面からの変化を返します。 |
+| `dismiss_keyboard()` | `keyboard.dismiss` | 画面上のキーボードを閉じます。デバイスエンジン専用です。 |
+
+`scroll_to({ text })` は、明らかにスクロールした画面を 1 回読み取ります。動きが見えない場合は、静止を確認するときと同じ間隔で最大 1 秒間読み直してから、停止したと判断します。末尾に達すると項目を追加する一覧では、そのまま送り続けます。ほかのテキストの横で時刻（`12:05`）が 1 つ変わるだけでは、一覧が動いたとはみなしません。デバイスでは、次の観測で 2 回目のスクロール効果を待たずに安定を確認します。`scrollIntoView` のあるエンジンでは、一致したノードを画面に収める最後の調整を引き続き待ちます。リプレイにも同じルールを適用します。
+
+`upload` はモデルからパスを受け取りますが、許可するかどうかはランナーが判断します。
+
+- 各パスは `locator.setInputFiles` と同じく、プロジェクトのルートを基準に解決します。
+- プロジェクト外のパス（シンボリックリンク経由も含む）、隠しファイル、`.env`、`.git`、`.e2e` などの隠しディレクトリ内のファイルは、`POLICY_DENIED` で拒否します。
+- 通常のファイルを指していないパスは `INVALID_ARGUMENT` になります。モデルが読み取って修正できる、通常のアクション失敗として扱います。
+- `sample:photo.png`、`sample:photo.jpg`、`sample:document.pdf`、`sample:notes.txt`、`sample:table.csv`、`sample:empty.txt` は e2e に同梱された小さなファイルです。プロジェクトに使えるファイルがなくても、アップロードを試せます。ツールに一覧が表示されます。
+- 拒否のたびに、また最終的に許可したときに、ステップへ `upload.path` という `policy` イベントを記録します。すべてのパスが検証を通るまで、エンジンには何も渡しません。
+
+ブラウザやデバイスなど、キーボードに対応したエンジンでは、`type` と `press` の `target` を省略すると、フォーカス中のフィールドを操作します。この場合、`type` はカーソル位置に挿入し、`replace: true` なら先に内容を消去します。ブラウザエンジンは、編集可能なフィールドにフォーカスがないと入力を拒否します。シャドウルートやフレーム内のフォーカス先も確認するため、その中のボタンにフォーカスがあっても拒否します。操作で画面上のキーボードが閉じた場合、結果にその旨を含めます。タッチスクリーンでは、そのタップがキーボードを閉じるだけで終わることが多いため、モデルはコントロールをもう一度操作します。
+
+エンジンがフォーカス中のフィールドの選択テキストを報告すると、モデルが読む画面では、値の後に `selection="..."` として表示します。Web エンジンは input、textarea、`contenteditable` エディターでこれを報告しますが、機密フィールドでは報告しません。ランナーは、値またはテキストに登録済みシークレットを含むフィールドから、この情報を除外します。また、長さの上限で省略されたフィールドでは、選択箇所が表示部分に含まれていなければ除外します。そのため、シークレットの一部を選択しても、モデルには渡りません。`press` で `Shift+ArrowLeft` を送ると選択した内容が表示され、`times` で 1 回の呼び出し内に繰り返せます。エージェントは次の 1 ターンで必要な単語まで選択を広げてから、書式設定や置換を行えます。
+
+タップの種類は、意図的に `tap` のオプションではなく別々のツールにしています。任意の `kind` として提供すると、モデルが通常のボタンにも指定してしまったためです（保存ボタンへのダブルクリックなど）。送信ボタンをダブルクリックすれば 2 回送信します。別のツールなら明示的な選択が必要になり、それぞれの説明にも通常のタップを使うべき対象を示せます。
+
+モバイルエンジンは `hover`、`doubleTap`、`longPress`、`check`、`uncheck`、`dragTo`、`session.back` を宣言しています。そのため、デバイスでは `hover`、`double_tap`、`long_press`、`check`、`drag`、`back` を利用できます。`secondaryTap`、`selectOption`、`scrollIntoView`、`setInputFiles` は宣言していません。
+
+Web でアプリが開いたタブはバックグラウンドに残ります。開いた操作の結果には `The app opened a new tab (tab 2 of 2). The
+screen still shows tab 1; use switch_tab to see it.` と表示されます。複数のタブが開いている間は、各画面のヘッダーにタブ番号が付きます（`tab 1 of 2`）。`switch_tab` は別のタブを表示し、画面全体を送ります。`close_tab` はタブを閉じます。表示中のタブを閉じると、それを開いたタブに戻り、そのタブも閉じていれば、最後に表示していたタブに戻ります。どちらもキャッシュからは同じタブ番号で再生します。番号は最初のページが読み込まれた時点で付くため、1 つの操作で 2 タブが開き、後の実行で読み込み順が変わると、番号が入れ替わります。
+
+## 画像ツール: スクリーンショットと座標操作
+
+`act` はセマンティックツリーを読み取り、必要なときにスクリーンショットを要求します。どちらも同じモデルが読み取ります。canvas のように操作可能なノードが列挙されない画面では、最初からスクリーンショットを付けます。
+
+組み込みエージェントは次のツールを提供します。
+
+| ツール | 動作 |
+| --- | --- |
+| `screenshot()` | マスク済みのビューポートのスクリーンショットを返します。それ以降、このステップの各アクション後にも新しいスクリーンショットを付けます。 |
+| `tap_at({ x, y })` | 指定座標をタップします。座標操作に対応しないエンジンでは、その点にある、ツリーに載ったコントロールをノード ID でタップします。 |
+| `hover_at({ x, y })` | 指定座標へポインターを移動します。座標操作に対応しないエンジンでは、その点にある、ツリーに載ったコントロールをノード ID でホバーします。`hover` アクションまたはポインター操作種別が必要です。 |
+| `drag_at({ x, y, to_x, to_y })` | ある点から別の点へドラッグします。canvas 上の図形や地図のピンに使います。座標操作に対応しないエンジンでは、2 点がツリー内の別々のコントロールに重なる場合に、ノード ID でドラッグします。`dragTo` アクションまたはポインター操作種別が必要です。 |
+| `type_at({ x, y, value, replace? })` | ツリーに載った入力欄の値を置き換えます。載っていない入力欄では、タップしてフォーカスし、`replace` がなければカーソル位置に入力します。ツリーにない入力欄には、キーボード対応が必要です。 |
+| `press_at({ x, y, key })` | その点のコントロールにキーを送ります。ツリーにコントロールがなければ、タップしてフォーカスし、エンジンのキーボードを使います。 |
+| `select_at({ x, y, value })` | その点のコントロールで、表示ラベルを指定してオプションを選びます。 |
+
+- 座標は最新のスクリーンショットを基準にします。座標ツールを使う前に、モデルは必ずスクリーンショットを取得します。ツリーにあるコントロールには、ノード ID を優先します。
+- `type_at`、`press_at`、`select_at` は各点をツリーと照合します。ツリーにあるコントロール上の点には、ID による操作と同じポリシー検証と[リプレイキャッシュ](/cache)の記録を適用します。`tap_at` や `hover_at` の点は、その下にあるノードの内側で再生します。
+- `tap_at` は `actions` または `pointerActions` に `tap` があるエンジン、`hover_at` は `hover`、`drag_at` は `dragTo` があるエンジンで利用できます。対応するポインター操作種別がなければ、点はツリーにあるコントロール上にある必要があり、`drag_at` の 2 点は別々のコントロール上にある必要があります。それ以外は `UNSUPPORTED_CAPABILITY` で失敗します。
+- ノードを直接指定しない座標のタップ、ホバー、ドラッグは、記録時と同じサイズのビューポートか、その点を含んでいたツリー内ノードの同じ相対位置でのみ再生します。ドラッグでは両方の点にこのルールを適用します。
+- スクリーンショットの利用開始後は、操作後の待機で canvas の再描画を含む画像の変化も検出します。
+- スクリーンショットの長辺は最大 768 px です。古い画像はまとめて削除し、最新の 2 枚を残します。
+- 画像を送ったステップは `visionInput: true` と `metrics.pixelBytes` を記録します。
+
+セマンティック情報の取得がタイムアウトした場合、独立してマスク処理を確認できるエンジンは、ツリーが利用不能であることを明示した警告とともに、新しいスクリーンショットを返せます。セマンティック情報が使えない間、`act` のすべての観測にはその画像と警告が付きます。それ以前のノード ID は無効になり、次にセマンティック情報を取得できたときにはツリー全体を再提示します。スクリーンショットが示すのは現在の表示範囲です。ツリーを取得できないことは、コントロールやメッセージが存在しない証拠にはなりません。
+
+セマンティック情報の取得に失敗すると、トレースのリプレイは停止します。後からツリーが復旧しても、そのステップは新しいトレースエントリーを記録できません。
+
+## 画像入力
+
+`assert`、`waitFor`、`extract` は `vision` を受け付けます。`act` は[画像ツール](#pixel-tools-screenshot-and-the-point-verbs)で自らスクリーンショットを要求します。スクリーンショットは要求元のモデルに送るため、そのモデルは画像に対応している必要があります。判定にはジャッジ（未設定なら `model`）、`act` には `model` を使います。
+
+```ts
+await agent.assert('no overlay covers the checkout form', { vision: 'only' }); // default: false
+```
+
+| `vision` | ジャッジに送る証拠 |
+| --- | --- |
+| `false`（デフォルト） | セマンティックツリー |
+| `true` | セマンティックツリーとマスク済みスクリーンショット |
+| `'only'` | マスク済みスクリーンショットのみ。ツリーや位置情報は含みません |
+
+オーバーレイがフォームを覆っているか、グラフの見た目が正しいかなど、視覚的な確認には `'only'` を使います。スクリーンショットに写るのは現在の表示範囲なので、先に対象の内容までスクロールしてください。
+
+ブラウザエンジンのセマンティックツリーには、[別サイトのフレーム](/browser#reach-into-an-iframe)の内容は含まれません。その内容を判定するには `true` または `'only'` を使います。
+
+次の場合は画像を渡さず、ツリーだけを送ります。
+
+- エンジンがマスクした領域の数が、観測した機密フィールドの数より少ない場合（`MASKING_UNPROVEN`）。
+- エンジンが画像を取得できない場合（`UNSUPPORTED_CAPABILITY`）。
+
+`'only'` モードでは、これらの場合は `POLICY_DENIED` で失敗します。
+
+`vision: true` または `'only'` では、セマンティック情報の取得に回復可能な失敗が起きても、エンジンが独立してマスク処理を確認できれば、新しいスクリーンショットを使えます。`vision: false` では、取得の失敗によってモデルを呼ぶ前に判定を停止します。ツリーがないことを根拠に、画面が空だと判断することはできません。
+
+判定前に取得が失敗すると、レポートにはモデル呼び出し 0 回と記録され、`observationRevision` と `explanation` は省略されます。ステップのエラーには取得失敗の内容が入ります。許可された文法に従わない回答は、ステップの `schema` イベントとして記録され、修正のために 1 回再呼び出しします。修正後の回答も拒否された場合、ステップは `MODEL_OUTPUT_INVALID` で失敗し、拒否理由が `explanation` になります。
+
+## 型
+
+```ts
+export interface Agent {
+  /** Plans and executes a bounded multi-action flow; resolves with what the step did. */
+  act(instruction: string, options?: ActOptions): Promise<ActResult>;
+  /** Polls a natural-language condition until true or timed out. */
+  waitFor(condition: string, options?: WaitForOptions): Promise<void>;
+  /** Extracts and validates structured screen data. */
+  extract<Schema extends StandardSchemaV1>(
+    instruction: string,
+    options: ExtractOptions<Schema>,
+  ): Promise<StandardSchemaV1.InferOutput<Schema>>;
+  /** Judges a natural-language assertion against a fresh observation. */
+  assert(assertion: string, options?: AssertOptions): Promise<void>;
+}
+
+/**
+ * Parameters and budgets for one `act` call.
+ */
+export interface ActOptions extends AgentOption {
+  /**
+   * JSON-safe values the instruction refers to, at most 64 KiB and 32 levels
+   * deep. A `Secret` reaches the model by name only; the runner fills it. A
+   * value wrapped in `unique()` is different on every run, and the replay
+   * cache records a slot for it instead of the value.
+   */
+  params?: AgentParams;
+  /** Step deadline in milliseconds; defaults to `config.timeout`. */
+  timeout?: number;
+  /** Action budget; defaults to `agents.<name>.maxSteps` and can only lower it. */
+  maxSteps?: number;
+  /** Model-call budget; defaults to `agents.<name>.maxModelCalls` and can only lower it. */
+  maxModelCalls?: number;
+  /**
+   * Runs after each action the step completes, once the screen settles, and
+   * before the next one. Awaited, and its time counts toward `timeout`.
+   * Observe only: drive nothing from it. A throw fails the step.
+   */
+  onAction?: ActionHook;
+  /**
+   * Runs before each action, replayed ones included, and the step waits for
+   * it. Observe only: drive nothing from it. A throw fails the step before
+   * the action runs.
+   */
+  onBeforeAction?: BeforeActionHook;
+}
+
+/** The `onBeforeAction` hook of an `act` call. */
+export type BeforeActionHook = (event: BeforeActionEvent) => void | Promise<void>;
+
+/** The `onAction` hook of an `act` call. */
+export type ActionHook = (event: ActionEvent) => void | Promise<void>;
+
+/** The configured agent (`agents.<name>`) one call runs with, in place of the test's. */
+export interface AgentOption {
+  agent?: string;
+}
+
+/** `assert` options: one judgment, or opt-in bounded viewport exploration. */
+export interface AssertOptions extends VisionOption, AgentOption {
+  /** Look around by scrolling before judging; defaults to false. */
+  explore?: boolean;
+  /** Scroll budget; requires explore, defaults to min(10, configured maxSteps). */
+  maxSteps?: number;
+  /** Model-call budget; requires explore, defaults to min(6, configured maxModelCalls). */
+  maxModelCalls?: number;
+  /**
+   * Values the assertion refers to as `{name}`, with the same rules as `act`
+   * params. A `Secret` reaches the judge by name only, never its value.
+   */
+  params?: AgentParams;
+  /** Deadline in milliseconds; defaults to the agent's `judgmentTimeout`, 30000. */
+  timeout?: number;
+  /** Attach a redacted screenshot to the step; on by default. */
+  screenshot?: boolean;
+}
+
+/** `waitFor` options: a judgment on each screen change, at most once per `interval` while it keeps changing, until `timeout`. */
+export interface WaitForOptions extends VisionOption, AgentOption {
+  /**
+   * Values the condition refers to as `{name}`, with the same rules as `act`
+   * params. A `Secret` reaches the judge by name only, never its value.
+   */
+  params?: AgentParams;
+  /** Deadline in milliseconds; defaults to the agent's `judgmentTimeout`, 30000. */
+  timeout?: number;
+  /** Least time between two judgments of a screen that keeps changing, in milliseconds; 100 through 60000, default 3000. */
+  interval?: number;
+  /** Judgment budget; defaults to `agents.<name>.maxModelCalls` and can only lower it. */
+  maxModelCalls?: number;
+}
+
+/** `extract` options: one extraction plus one repair round, validated against `schema`. */
+export interface ExtractOptions<Schema extends StandardSchemaV1> extends VisionOption, AgentOption {
+  /** Any Standard Schema v1 validator; the output is validated against it, with one repair round. */
+  schema: Schema;
+  /** Deadline in milliseconds; defaults to the agent's `judgmentTimeout`, 30000. */
+  timeout?: number;
+}
+
+export interface VisionOption {
+  /** What the judge is shown; `false` by default. */
+  vision?: VisionMode;
+}
+
+/**
+ * Evidence for `assert`, `waitFor`, and `extract`.
+ *
+ * - `false`: the tree.
+ * - `true`: the tree and a screenshot, on every call.
+ * - `'only'`: the screenshot, and not the tree.
+ *
+ * When pixels cannot be safely captured, `true` falls back to the tree;
+ * `'only'` fails with `POLICY_DENIED`.
+ */
+export type VisionMode = boolean | 'only';
+
+/** What one passing `act` step did, as the report records it. */
+export interface ActResult {
+  /** The executor's one-line account of the step, or the replay's when the cache finished it. */
+  readonly summary: string;
+  /** How the replay cache took part; absent when caching is off for the step. */
+  readonly cache?: StepCacheInfo;
+  /** Model calls the step spent; 0 when a cached replay finished it. */
+  readonly modelCalls: number;
+  /** Grammar actions and mutating tool calls the step performed. */
+  readonly actions: number;
+}
+
+/** The name `onAction` reports a committed grammar action under, e.g. `tap`, `navigate`, or `dragAt`. */
+export type ActionName =
+  | 'tap' | 'doubleTap' | 'longPress' | 'secondaryTap' | 'hover' | 'scrollTo'
+  | 'type' | 'typeSecret' | 'press' | 'select' | 'check' | 'upload' | 'drag'
+  | 'scroll' | 'scrollUntil' | 'navigate' | 'back' | 'resize' | 'typeText'
+  | 'pressKey' | 'dismissKeyboard' | 'tapAt' | 'hoverAt' | 'dragAt';
+
+/**
+ * The fields `onAction` adds for an action, by action name; other actions add
+ * none. Points are in the same space as `screen.tapAt` and `boundingBox()`,
+ * rounded and clamped to the viewport.
+ */
+export interface ActionDetails {
+  /** The dispatched point. */
+  readonly tapAt: { readonly point: Point };
+  /** The dispatched point. Mobile engines have no `hoverAt`. */
+  readonly hoverAt: { readonly point: Point };
+  /** The dispatched start and end. Mobile engines have no `dragAt`. */
+  readonly dragAt: { readonly from: Point; readonly to: Point };
+}
+
+/** What every `onAction` event carries. */
+interface ActionEventBase {
+  /** 1-based position in the step's action budget; a failed attempt uses a number too. */
+  readonly index: number;
+  /** What the action did, secrets redacted. */
+  readonly summary: string;
+  /** `model` when the executor chose the action, `replay` when the cache replayed it. */
+  readonly source: 'model' | 'replay';
+}
+
+/**
+ * One completed action of an `act` step, as `onAction` receives it. Narrow on
+ * `action` to read its {@link ActionDetails}; a mutating project tool reads
+ * `tool:<name>`.
+ */
+export type ActionEvent = ActionEventBase &
+  (
+    | { readonly action: 'tapAt' | 'hoverAt'; readonly point: Point }
+    | { readonly action: 'dragAt'; readonly from: Point; readonly to: Point }
+    | { readonly action: Exclude<ActionName, keyof ActionDetails> | `tool:${string}` }
+  );
+
+/** One action of an `act` step about to run, as `onBeforeAction` receives it. */
+export interface BeforeActionEvent {
+  /** The same `index` the action's `onAction` event carries. */
+  readonly index: number;
+  /** `model` when the executor chose the action, `replay` when the cache replays it. */
+  readonly source: 'model' | 'replay';
+}
+
+/**
+ * How the replay cache took part in one agent step. `self-finalized` means
+ * the full trace replayed and the step passed with zero model calls;
+ * `agent-concluded` means a replayed prefix handed the step to the executor;
+ * `missed` means the executor ran the step from the top.
+ */
+export interface StepCacheInfo {
+  mode: 'self-finalized' | 'agent-concluded' | 'missed';
+  /** The miss or hand-off reason token; absent on `self-finalized`. */
+  reason?: TraceReplayMissReason | ReplayHandOffReason;
+  /**
+   * On a `gap` at a typed value: the rule that made the value this run's
+   * data rather than the flow's. Absent for a gap at a project tool.
+   */
+  derived?: DerivedReason;
+  /**
+   * Why a passing step that ran live was still not recorded, when the cause
+   * is the call itself: `param-collision` when a `unique()` value equals, is
+   * spelled inside, or is the encoded form of another param's value, so the
+   * recording could not tell which param a recorded input came from.
+   */
+  notRecorded?: 'param-collision';
+  replayedActions: number;
+  totalActions: number;
+  /** The step's cache key, which names its entry file (`<cache.dir>/<entry>.json` in the file store). */
+  entry?: string;
+  /**
+   * Why the replay missed or handed off, past what the reason token says:
+   * the recorded action it stopped at and what went wrong there, or the
+   * screen the recording started on against the one the step did.
+   */
+  detail?: string;
+  /** Configured model when the consulted entry was recorded; absent on older entries. */
+  recordedBy?: { readonly provider: string; readonly model: string };
+}
+
+type TraceReplayMissReason = 'retry' | 'no-entry' | 'invalid-entry' | 'truncated' | 'wrong-context';
+export type ReplayHandOffReason =
+  | 'gap'
+  | 'target-not-found'
+  | 'target-ambiguous'
+  | 'viewport-changed'
+  | 'action-failed'
+  | 'action-uncertain'
+  | 'end-mismatch';
+export type DerivedReason = 'pixels' | 'whole-node' | 'minted-token' | 'date';
+
+/** Values an `act` instruction refers to. */
+export type AgentParams = Readonly<Record<string, AgentParam>>;
+
+/** A JSON-safe value, a `Secret`, or a `Unique` string. */
+export type AgentParam =
+  | JsonPrimitive
+  | Secret
+  | Unique
+  | readonly AgentParam[]
+  | { readonly [key: string]: AgentParam };
+```
+
+各 `StepCacheInfo.reason` の説明は、[ステップがリプレイされなかった理由](/cache#why-a-step-was-not-replayed)にあります。
+
+`Unique` は [`unique()`](#unique) の戻り値です。
+
+## unique
+
+実行ごとに値が変わる `act` のパラメーターに印を付けます。[リプレイキャッシュ](/cache)は値の代わりに差し替え用の枠を記録し、リプレイ時に今回の値を代入します。
+
+```ts
+await agent.act('create a company named {name}', {
+  params: { name: unique(`Acme ${Date.now()}`) },
+});
+```
+
+```ts
+import { unique } from 'e2e';
+
+/** A string param that differs on every run; the model sees `value`, the replay cache a slot. */
+export interface Unique {
+  readonly value: string;
+}
+
+/**
+ * Marks a value that is different on every run. Mark values the flow types
+ * or looks for, not choices that steer it: two runs whose `unique()` values
+ * differ replay the same recording.
+ */
+export function unique(value: string): Unique;
+```
+
+| エラー | 発生条件 |
+| --- | --- |
+| `INVALID_ARGUMENT` | 値が文字列ではない、空または空白のみ、あるいはプレースホルダー文字列 `{{param:` を含む場合。 |
+
+## AgentError
+
+すべての失敗は `AgentError` です。定義済みの `code`、`explanation`、任意の `screenshot` パス、`blocked` フラグを持ちます。判定には `instanceof` ではなく、`e2e` の `isAgentError(error)` を使ってください。クラスとすべてのコードは[エラー](/reference/errors#agenterror)にあります。

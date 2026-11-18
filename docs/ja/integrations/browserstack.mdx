@@ -1,0 +1,132 @@
+---
+title: BrowserStack
+sidebarTitle: BrowserStack
+description: "@e2e-dev/browserstack の browserstack() デバイスプロバイダーを使い、BrowserStack App Automate の Android・iOS 実機でモバイルターゲットを実行します。"
+"og:image": "https://e2e.com/docs/images/og/integrations/browserstack.png?v=e37c085f7a"
+"twitter:image": "https://e2e.com/docs/images/og/integrations/browserstack.png?v=e37c085f7a"
+---
+
+`@e2e-dev/browserstack` の `browserstack()` は、
+[BrowserStack App Automate](https://www.browserstack.com/app-automate) の Android・iOS 実機向けの
+[デバイスプロバイダー](/mobile#hosted-devices)です。
+各ワーカースロットは実行開始時に 1 台のデバイスを借り受け、実行終了時に解放します。
+
+<Tip>
+ホスト型デバイスで e2e を実行する場合、Mac、Xcode、Android SDK は不要です。
+</Tip>
+
+## セットアップ
+
+モバイルエンジンとともに連携パッケージをインストールします。
+
+<CodeGroup>
+```bash npm
+npm install --save-dev e2e @e2e-dev/mobile @e2e-dev/browserstack
+```
+
+```bash pnpm
+pnpm add -D e2e @e2e-dev/mobile @e2e-dev/browserstack
+```
+
+```bash bun
+bun add -d e2e @e2e-dev/mobile @e2e-dev/browserstack
+```
+</CodeGroup>
+
+```ts title="e2e.config.ts"
+import type { E2EConfig } from 'e2e';
+import { mobile } from '@e2e-dev/mobile';
+import { browserstack } from '@e2e-dev/browserstack';
+
+const apk = 'https://www.browserstack.com/app-automate/sample-apps/android/WikipediaSample.apk';
+
+export default {
+  targets: [
+    {
+      name: 'pixel-7',
+      engine: mobile({
+        platform: 'android',
+        device: browserstack({ device: 'Google Pixel 7', osVersion: '13.0', app: apk, appiumVersion: '3.2.0' }),
+      }),
+      app: { bundleId: 'org.wikipedia.alpha' },
+    },
+  ],
+  workers: 1,
+} satisfies E2EConfig;
+```
+
+`device` と `osVersion` は、BrowserStack の App Automate カタログの値と正確に一致させてください。
+[デバイス一覧](https://www.browserstack.com/list-of-browsers-and-platforms/app_automate)の表記に従い、
+たとえば Android は `13.0`、iOS は `18` と指定します。
+
+`app` は、BrowserStack が各セッションにインストールするビルドです。以前アップロードした `bs://` アプリ ID、
+BrowserStack が実行ごとに 1 回取得する `https` URL、またはローカルパスを指定します。
+ローカルパスは `e2e.config.ts` のあるディレクトリを基準に解決され、アップロードされます。
+Android では `.apk` または `.aab`、iOS では署名済みの `.ipa` を使ってください。
+ターゲットの `app.appPath` は指定せず、`app.open()` 用の `app.bundleId` は残します。
+
+`appiumVersion` を設定してください。指定しない場合、BrowserStack はデフォルトの Appium 1.x を使います。
+このバージョンには、ディープリンクやハードウェアボタンが使う `mobile:` コマンドがありません。
+
+テストはローカルデバイスと同じように書けます。
+
+```ts title="tests/home.e2e.ts"
+import { test } from '@e2e-dev/mobile';
+import { expect } from 'e2e';
+
+test('Wikipedia home screen', async ({ app, screen }) => {
+  await app.open();
+  await expect(screen.getByText('Search Wikipedia').first()).toBeVisible();
+});
+```
+
+## 認証
+
+CI のシークレットなどを使い、`e2e run` を起動する環境に `BROWSERSTACK_USERNAME` と `BROWSERSTACK_ACCESS_KEY` を設定します。
+値は **Account & Profile → My profile → Authentication & Security** からコピーしてください。
+ユーザー名にはメールアドレスではなく、そこに表示されている名前を使います。
+どちらか一方でも欠けていると、起動処理に入る前にリースの取得が失敗します。プランには App Automate が必要です。
+
+## オプション
+
+| オプション | デフォルト | 意味 |
+| ---------------- | --------------- | ------- |
+| `device` | 必須 | App Automate カタログに記載されたデバイス名（`'Google Pixel 7'`、`'iPhone 16'`）。 |
+| `osVersion` | 必須 | そのデバイスについてカタログに記載された OS バージョン。 |
+| `app` | 必須 | BrowserStack がインストールするビルド。`bs://` アプリ ID、`https` URL、ローカルパスのいずれか。 |
+| `project` | `'e2e'` | ダッシュボードでセッションをまとめるプロジェクト。 |
+| `build` | 実行 ID | ダッシュボードでセッションをまとめるビルド。 |
+| `sessionName` | `e2e-<run id>-<target>-<slot>` | ダッシュボード上のセッション名。ワーカースロットが複数ある場合は `-<slot>` が付加されます。 |
+| `orientation` | デバイスの設定 | `'portrait'` または `'landscape'`。 |
+| `geoLocation` | BrowserStack の設定 | デバイスの IP アドレスの位置情報に使う国コード（`'US'`）。 |
+| `timezone` | デバイスの設定 | タイムゾーン（`'New_York'`）。 |
+| `language` | アプリの設定 | 言語（`'fr'`）。 |
+| `locale` | デバイスの設定 | ロケール（`'fr_FR'`）。 |
+| `appiumVersion` | BrowserStack の設定（1.x） | セッションの Appium バージョン（`'3.2.0'`）。 |
+| `networkProfile` | なし | 名前付きのネットワーク条件プロファイル（`'4g-lte-advanced-good'`）。`customNetwork` と併用できません。 |
+| `customNetwork` | なし | カスタムのネットワーク条件。`networkProfile` と併用できません。 |
+| `noResignApp` | `false` | iOS のみ。BrowserStack による再署名を行わず、アップロードしたアプリの署名を維持します。再署名するとプッシュ通知などのエンタイトルメントが取り除かれます。 |
+
+デバイスの機能はセッション開始時に設定され、そのセッション全体に適用されます。
+不明なオプションや不正な型のオプションは、設定の読み込み時に `INVALID_CONFIG` で失敗します。
+カタログの値とプラットフォーム固有の制約は、デバイスのリース開始時に検証されます。
+
+[動画](/reference/config#video)を記録する試行には、`build` と `sessionName` から見つけた
+BrowserStack のセッション録画へのリンクが付きます。録画はセッション全体を含むため、同じワーカースロットの各試行は
+同じ動画にリンクします。固定の `build` と `sessionName` を共有する実行が重なると、別の実行の動画にリンクすることがあります。
+デフォルト値ではこの問題は起こりません。
+
+## 制限
+
+- 各セッションは、e2e がターゲットを準備する際に、スロットのデバイスを借り受けた時点で開始します。
+  プロビジョニングには約 20〜50 秒かかり、テストが一度も実行されなくても、実行がデバイスを解放するまで課金されます。
+  `workers` と BrowserStack ターゲット数の積が、プランの並列セッション数を超えないようにしてください。
+- BrowserStack は、最後に使われてから 30 日間アップロードを保持します。
+  `https` の `app` を指定した実行では再アップロードします。これを省くには `bs://` ID を再利用してください。
+- デバイスを解放する前にランナーが強制終了した場合は、最後のコマンドから BrowserStack のアイドルタイムアウトを経過するとセッションが終了します。
+- agent-device がセッション終了を確認できない場合、すべてのテストが成功していても、解放処理によって実行が失敗します。
+  原因としては、セッション終了が agent-device の約 3 秒のシャットダウン猶予を超えた、デーモンが強制停止された、
+  シャットダウンレポートが失われた、実行中にデーモンが終了した、といったケースがあります。
+  ダッシュボードでは `build` と `sessionName` でセッションを探してください。
+- デバイス設定（権限、位置情報、ネットワーク、外観）、システムアラート、agent-device 経由の録画とデバイスログ、
+  ポートリバースは利用できません。ログは BrowserStack ダッシュボードで確認し、ネットワーク内のサーバーへの接続には BrowserStack Local を使ってください。

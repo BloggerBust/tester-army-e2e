@@ -1,0 +1,53 @@
+---
+title: ホスト型ブラウザとデバイス
+sidebarTitle: 概要
+description: ホスト型ブラウザ・デバイスサービスとの公式連携。サービスごとに専用のパッケージを用意しています。
+"og:image": "https://e2e.com/docs/images/og/integrations/index.png?v=324a20a30f"
+"twitter:image": "https://e2e.com/docs/images/og/integrations/index.png?v=324a20a30f"
+---
+
+公式連携パッケージは、エンジンのプロバイダーインターフェースを通じて、
+ホスト型サービスの `browser` または `device` をターゲットに提供します。
+変更するのは、設定内のターゲットの `browser` または `device` だけです。
+
+<CardGroup cols={2}>
+  <Card title="Cloudflare Browser Run" icon="/images/integrations/cloudflare.svg" href="/integrations/browser-run">
+    `@e2e-dev/browser-run`：Web ターゲット用のホスト型 Chromium。ワーカーごと、またはテストごとに利用できます。
+  </Card>
+  <Card title="Kernel" icon="/images/integrations/kernel.svg" href="/integrations/kernel">
+    `@e2e-dev/kernel`：Web ターゲット用のホスト型 Chromium。ワーカーまたはテストごとに 1 つのブラウザを使います。
+  </Card>
+  <Card title="Lightpanda" icon="/images/integrations/lightpanda.svg" href="/integrations/lightpanda">
+    `@e2e-dev/lightpanda`：Chromium を使わないオープンソースのヘッドレスブラウザ。ローカルでワーカースロットごとに起動します。
+  </Card>
+  <Card title="Moli" icon="/images/integrations/moli.png" href="/integrations/moli">
+    `@e2e-dev/moli`：必要に応じてレイアウト計算とスクリーンショット取得を行うローカルの Moli ブラウザ。ワーカースロットごとに起動します。
+  </Card>
+  <Card title="Expo Simulators" icon="/images/integrations/expo.svg" href="/integrations/eas">
+    `@e2e-dev/eas`：モバイルターゲット用のホスト型 iOS シミュレーターと Android エミュレーター。
+  </Card>
+  <Card title="smol machines" icon="/images/integrations/smol.png" href="/integrations/smol">
+    `@e2e-dev/smol`：ローカルの microVM で動く Chromium。起動済みブラウザから分岐させた環境で各テストを実行します。
+  </Card>
+  <Card title="Limrun" icon="/images/integrations/limrun.svg" href="/integrations/limrun">
+    `@e2e-dev/limrun`：アプリのインストールとデバイスのクリーンアップに対応する、ホスト型 iOS シミュレーターと Android エミュレーター。
+  </Card>
+  <Card title="TestMu AI" icon="/images/integrations/testmu.svg" href="/integrations/testmu">
+    `@e2e-dev/testmu`：モバイル用のホスト型 Android エミュレーター、iOS シミュレーター、実機と、Web 用の Chrome、Edge。
+  </Card>
+  <Card title="BrowserStack" icon="/images/integrations/browserstack.svg" href="/integrations/browserstack">
+    `@e2e-dev/browserstack`：モバイルターゲット向けに BrowserStack App Automate の Android・iOS 実機を使います。
+  </Card>
+  <Card title="E2B" icon="/images/integrations/e2b.svg" href="/integrations/e2b">
+    `@e2e-dev/e2b`：モバイル用の Android 16 サンドボックスと、Web 用の Chromium サンドボックス。
+  </Card>
+</CardGroup>
+
+## 連携パッケージのないサービスを使う
+
+他のサービスには、プロジェクト内に小さなプロバイダーを作成します。
+Web エンジンには [`BrowserProvider`](/browser#hosted-browsers)、
+モバイルエンジンには [`DeviceProvider`](/mobile#hosted-devices) を実装します。
+
+GitHub Actions、Expo Workflows、Norrix などの CI サービスで e2e を実行するには、
+[継続的インテグレーション](/ci) を参照してください。

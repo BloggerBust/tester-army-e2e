@@ -1,0 +1,318 @@
+---
+title: Web
+description: Web エンジンにアプリを指定するか、ランナーに起動させ、複数のビューポートサイズでスイートを実行します。
+"og:image": "https://e2e.com/docs/images/og/web.png?v=e860636537"
+"twitter:image": "https://e2e.com/docs/images/og/web.png?v=e860636537"
+---
+
+`@e2e-dev/web` は、アプリの URL に対してブラウザでテストを実行します。
+ルート、Cookie、ダイアログ、ダウンロードについては、[ブラウザの操作](/browser) を参照してください。
+
+## アプリを起動する
+
+ターゲットの `app` にアプリの URL を設定します。`app.open('/path')` は、その URL を基準に解決されます。
+
+```ts title="Target fragment"
+engine: web(),
+app: { url: process.env.APP_URL ?? 'http://localhost:3000' },
+```
+
+スキームのない URL は HTTPS を使います。ループバックホストの場合は HTTP を使います。
+通常の HTTP が使えるのはループバックホストだけです。
+
+### ランナーに起動させる
+
+`app.command` を追加すると、ランナーが開発サーバーを起動します。
+`app.url` が応答するまで待ち、実行の終了、失敗、中断時には、自分が起動したサーバーを停止します。
+
+```ts title="e2e.config.ts"
+import type { E2EConfig } from 'e2e';
+import { web } from '@e2e-dev/web';
+
+export default {
+  targets: [{
+    engine: web(),
+    app: {
+      url: process.env.APP_URL ?? 'http://localhost:3000',
+      command: {
+        executable: 'npm',
+        args: ['run', 'dev'],
+        reuseExisting: true,
+        log: '.e2e/logs/app.log',
+      },
+    },
+  }],
+} satisfies E2EConfig;
+```
+
+```text
+ ✓ target "web" command at http://localhost:3000/ ready 1.20s
+```
+
+コマンドはシェルを介さず実行されます。`executable` は `PATH` から解決され、`args` は記述どおりに渡されます。
+子プロセスが受け取るのは、`PATH`、`HOME`、一時ディレクトリ用の変数、`inheritEnv`、`env` だけです。
+
+| オプション | 用途 |
+| --- | --- |
+| `reuseExisting: true` | [MCP セッション](/mcp-server#run-tests-next-to-a-session) が起動したものなど、既存のサーバーを使います。CI では無視され、応答するサーバーがすでにあると `APP_ALREADY_RUNNING` になります。 |
+| `log` | アプリの stdout と stderr を、プロジェクトからの相対パスのファイルに保存します。起動エラーや `e2e run` 中の予期しない終了では、コマンド開始後にいずれかのプロセスが追記した行を引用します。8 KiB 以内かつ 40 行以内なら全体を引用します。それ以外は先頭と末尾からそれぞれ最大 20 行を残し、間に `[startup output omitted]` を挿入します。8 KiB を超える場合は、先頭と末尾の各 4 KiB から行を取得します。`command.env` と `inheritEnv` の 4 文字以上の値は引用からマスキングされます。ファイル自体はマスキングされません。 |
+| `env` | アプリに渡す環境変数。 |
+| `inheritEnv` | 設定されている場合に渡すホスト側の変数を、名前または接頭辞で指定します。例は `['DATABASE_URL', 'STRIPE_*']` です。`env` が優先されます。 |
+| `startupTimeout` | アプリの応答を待つ時間。デフォルトは 60 秒です。 |
+| `readyUrl` | `command` の中ではなく横に設定します。`app.url` の代わりにヘルスエンドポイントを確認します。 |
+
+すべてのオプションは [command リファレンス](/reference/config#command) を参照してください。
+
+<Note>
+ランナーが起動するのは `app.command` だけです。
+データベース、モック、その他のサービスは実行前に起動するか、
+それらとアプリを起動するスクリプトを `app.command` に指定してください。
+サービス用 API は今後のリリースで再導入されます。
+</Note>
+
+### ランナーにポートを選ばせる
+
+ポート `0` を使うと、複数のチェックアウトをポートの競合なしで実行できます。
+ランナーが空きポートを選び、コマンドの `args` と `env` 内の `{port}` を置き換えます。
+
+```ts title="Target fragment"
+engine: web(),
+app: {
+  url: 'http://127.0.0.1:0',
+  command: { executable: 'pnpm', args: ['dev', '--port', '{port}'], env: { PORT: '{port}' } },
+},
+```
+
+- コマンドがバインドするアドレスに合わせて、`127.0.0.1` または `[::1]` を指定します。
+  `localhost:0` は拒否されます。
+- テストは `app.baseUrl` から実際のポートを含む URL を読み取ります。
+- ポートが変わってもキャッシュのエントリーは有効です。
+- ポート `0` では `reuseExisting` は使えません。
+
+[空きポート](/reference/config#free-ports) を参照してください。
+
+<Accordion title="Next.js の開発サーバーで描画されてもハイドレーションされない">
+Next.js 16 は、開発用リソースへのクロスオリジンリクエストをブロックします。
+ターゲットが `127.0.0.1` や `[::1]` を開いても、`next dev` は自身を `localhost` として扱います。
+ページは描画され、ロケーターも解決され、クリックも届きますが、React のハンドラーが動きません。
+
+ターゲットが開くホストを `allowedDevOrigins` に追加してください。
+`app.url` が `http://[::1]:0` を開く場合は、`'[::1]'` を使います。
+
+```ts title="next.config.ts"
+import type { NextConfig } from 'next';
+
+const nextConfig: NextConfig = {
+  allowedDevOrigins: ['127.0.0.1'],
+};
+
+export default nextConfig;
+```
+
+`localhost` のターゲットや、本番用の `next start` のターゲットには追加不要です。
+</Accordion>
+
+## 保護されたプレビュー
+
+`headers` を使うと、保護されたプレビューを開いたり、トンネルの警告ページをスキップしたりできます。
+たとえば Vercel のプレビューには、保護をバイパスするヘッダーを渡します。
+
+```ts title="Target fragment"
+engine: web({
+  headers: {
+    'x-vercel-protection-bypass': process.env.VERCEL_AUTOMATION_BYPASS_SECRET ?? '',
+  },
+}),
+app: {
+  url: process.env.PREVIEW_URL ?? 'http://localhost:3000',
+  identity: 'storefront',
+},
+```
+
+ブラウザが `headers` を付けるのは、`app.url` と同じスキーム、ホスト、ポートのオリジンから
+始まるリクエストだけです。そのリクエストは、どのオリジンへのリダイレクトでもヘッダーを保持します。
+同じ保護下の API ホストなど、別のオリジンにも付けるには `credentialOrigins` に列挙します。
+[リクエストの認証情報](/reference/security#request-credentials) を参照してください。
+ngrok では `'ngrok-skip-browser-warning': '1'` を使います。
+`app.identity` は、プレビュー URL が変わってもキャッシュ上の識別情報を保ちます。
+
+<Note>
+`headers` を設定すると、ブラウザの HTTP キャッシュが無効になり、Service Worker がブロックされます。
+</Note>
+
+HTTP Basic 認証には `basicAuth` を使います。
+ブラウザは、`app.url` のオリジンと `credentialOrigins` の各オリジンからの `401` チャレンジに応答します。
+WebKit では、そのいずれかがポートを省略した `https://` URL などのデフォルトポートを使うか、
+IPv6 ホストを持つ場合、任意のオリジンに応答します。
+パスワードを `secrets` に宣言し、`secrets.get(name)` で渡してください。
+
+```ts title="e2e.config.ts"
+import type { E2EConfig } from 'e2e';
+import { secrets } from 'e2e';
+import { web } from '@e2e-dev/web';
+
+export default {
+  targets: [
+    {
+      engine: web({
+        basicAuth: { username: 'preview', password: secrets.get('previewPassword') },
+      }),
+      app: { url: 'https://staging.example.com' },
+    },
+  ],
+  secrets: { previewPassword: () => process.env.PREVIEW_PASSWORD ?? '' },
+} satisfies E2EConfig;
+```
+
+エンジンは各試行の開始時にシークレットを解決し、ランナーはレポート、ログ、エージェントの入力からその値を除きます。
+未宣言の名前は、設定の読み込み時に `INVALID_CONFIG` で失敗します。
+通常の文字列のパスワードも使えますが、e2e がマスキングするのは `secrets.get` のパスワードだけです。
+
+## ビューポート
+
+ターゲットにビューポートを設定すると、そのサイズでスイートを実行できます。
+テスト中に `browser.setViewport()` を呼ぶこともできます。
+エージェントは [`resize_viewport`](/reference/agent#action-tools) ツールでサイズを変更します。
+
+### ターゲットごとに 1 つのサイズを設定する
+
+`viewport` は各試行の初期サイズをピクセルで指定します。デフォルトは 1280 × 720 です。
+サイズごとにターゲットを追加します。
+
+```ts title="e2e.config.ts"
+import type { E2EConfig } from 'e2e';
+import { web } from '@e2e-dev/web';
+
+const app = { url: 'http://localhost:3000' };
+
+export default {
+  targets: [
+    { name: 'desktop', engine: web(), app },
+    { name: 'tablet', engine: web({ viewport: { width: 820, height: 1180 } }), app },
+    { name: 'phone', engine: web({ browser: 'webkit', viewport: { width: 390, height: 844 } }), app },
+  ],
+} satisfies E2EConfig;
+```
+
+すべてのテストがすべてのターゲットで実行され、ターゲット名ごとに別の結果が記録されます。
+各リトライはターゲットのサイズで始まります。
+
+- `npx e2e run --target phone` で 1 つのサイズを実行します。
+  `npx e2e list` でテストとターゲットの組み合わせを一覧表示します。
+- 同じ `app.command` を宣言するターゲットは、1 つの開発サーバーを共有します。
+- 同じリストにデバイスのターゲットも含められます。
+  [モバイルエンジンリファレンス](/reference/mobile) を参照してください。
+
+### ウィンドウ全体を使う
+
+`viewport: null` はサイズを指定せず、ページをブラウザウィンドウ全体に広げます。
+エージェント、スクリーンショット、動画もそのサイズを使います。
+headed 実行や、ライブビューの隅に 1280 × 720 のページが表示されてしまうホスト型ブラウザで使います。
+
+```ts title="Target fragment"
+{ name: 'window', engine: web({ viewport: null }), app }
+```
+
+ローカルの headed 起動では、小さなウィンドウが開きます。
+ホスト型ブラウザでは、サービスに要求したウィンドウサイズを使います。
+`browser.setViewport` も引き続き使えます。
+
+### テスト中にサイズを変更する
+
+`browser.setViewport` は、試行の残りの期間でページのサイズを変更します。
+`app.restart()` や `app.clearState()` の後も維持されます。
+1 つのテストでサイズ変更前後のレイアウトを確認するときに使います。
+
+```ts
+import { test } from '@e2e-dev/web';
+import { expect } from 'e2e';
+
+test('the menu collapses on a narrow screen', async ({ app, screen, browser }) => {
+  await app.open('/');
+  await expect(screen.getByRole('navigation')).toBeVisible();
+
+  await browser.setViewport({ width: 390, height: 844 });
+  await expect(screen.getByRole('button', 'Menu')).toBeVisible();
+  await expect(screen.getByRole('navigation')).toBeHidden();
+});
+```
+
+`app.open` の前に呼ぶと、最初にデスクトップサイズで描画せず、指定したサイズで最初のページを読み込めます。
+
+### エージェントに見える内容
+
+エージェントは観測ごとに現在のビューポートサイズを受け取るため、`agent.act` の前にサイズを変更してください。
+スクリーンショットに写るのはビューポートです。
+画面外の要素もツリーに含まれる場合があり、タップすると表示領域までスクロールされます。
+エージェントはスクロールして遅延読み込みのコンテンツを読み込むこともできます。
+
+リンク、強調、コードを含む文は、その全体がエージェントに渡され、リンクはコントロールとしても列挙されます。
+エージェントは各テキストブロックの先頭 512 文字を読みます。
+それより長いブロックでは、リンクと強調テキストも個別に列挙されます。
+
+Element Plus のように、コンポーネントライブラリがラベルの下でサイズをゼロにしたチェックボックスや
+ラジオボタンも、チェック状態とともにエージェントに見えます。タップするとラベルをクリックします。
+ただし、ラベル自体がリンクだったり、リンクや別のコントロールを含んでいたりする場合、
+ラベルのクリックがリンクに届く可能性があるため、チェックボックスは表示されず、ラベルのテキストとそのコントロールが表示されます。
+ロケーターは Playwright と同じくこのチェックボックスを非表示とみなします。
+`toBeVisible()` ではなく `toBeChecked()` で確認してください。
+
+### テストを特定のサイズに限定する
+
+すべてのブラウザターゲットのプラットフォームは `web` なので、`platforms` や `requires` で
+ビューポートを選ぶことはできません。特定のサイズでテストをスキップするには、テスト内で幅を読み取ります。
+
+```ts
+test('the sidebar stays open', async ({ app, screen, browser }) => {
+  await app.open('/');
+  test.skip((await browser.evaluate(() => window.innerWidth)) < 768, 'desktop layout only');
+  await expect(screen.getByRole('complementary')).toBeVisible();
+});
+```
+
+サイズ専用のテスト群を分離するには、専用の設定を作り、`--config` で実行します。
+
+### 制限
+
+狭いビューポートでテストできるのはレスポンシブレイアウトだけです。
+ブラウザは引き続きデスクトップブラウザで、スケール係数は 1、ポインターとユーザーエージェントも通常のデスクトップ用です。
+タッチ操作はエミュレートしません。シミュレーターやエミュレーターでのテストには [モバイルエンジン](/mobile) を使います。
+ダークモードと視差効果の低減については、
+[ダークモードと視差効果の低減をエミュレートする](/browser#emulate-dark-mode-and-reduced-motion) を参照してください。
+
+動画は録画開始時のページサイズを保持します。
+固定サイズにするには `web({ screencast: { size } })` を設定します。
+[Kernel](/integrations/kernel#recordings) など録画機能のあるブラウザプロバイダーは、画面全体を録画します。
+
+## ブラウザの権限を許可する
+
+ヘッドレス Chromium はターゲットが許可していない権限を拒否します。
+そのため、クリック後でも `navigator.clipboard.writeText` は失敗します。
+アプリでクリップボードを使うには、ターゲットで権限を許可してください。
+
+```ts
+{
+  engine: web(),
+  app: {
+    url: 'http://localhost:3000',
+    permissions: { 'clipboard-read': 'grant', 'clipboard-write': 'grant' },
+  },
+}
+```
+
+- すべての試行のすべてのページで、オリジンを問わず許可されます。
+- Web ターゲットで指定できるのは `'grant'` だけです。
+  `'deny'` と `'reset'` は `INVALID_CONFIG` になります。代わりにその権限を指定しないでください。
+- 名前は Playwright のものを使い、許可できる権限はブラウザごとに異なります。
+  [`permissions`](/reference/config#permissions) を参照してください。
+
+## 次のステップ
+
+<CardGroup cols={2}>
+  <Card title="ブラウザの操作" icon="globe" href="/browser">
+    ルートのモック、Cookie の設定、ダイアログの処理、ファイルのダウンロードを行います。
+  </Card>
+  <Card title="Web エンジンリファレンス" icon="masks-theater" href="/reference/web">
+    `web()` の全オプションと `browser` の全メソッドを確認します。
+  </Card>
+</CardGroup>

@@ -110,6 +110,11 @@ export default {
 ```
 
 Keep the server's own logging on stderr: stdout carries the protocol.
+When the server exits during a request, the request fails with
+`ENGINE_FAILURE`, which names its exit code or the signal that stopped it,
+and its last lines of stderr.
+A process the server started that still holds its stdout keeps the request
+open until that process exits too.
 
 ## Write a server in another language
 

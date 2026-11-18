@@ -1,0 +1,196 @@
+---
+title: smol machines のブラウザ
+sidebarTitle: smol machines
+description: "@e2e-dev/smol の smol() ブラウザプロバイダーを使い、手元のコンピューター上の起動済み Chromium microVM を試行ごとに分岐させて Web テストを実行します。"
+"og:image": "https://e2e.com/docs/images/og/integrations/smol.png?v=93b61e0399"
+"twitter:image": "https://e2e.com/docs/images/og/integrations/smol.png?v=93b61e0399"
+---
+
+`@e2e-dev/smol` の `smol()` は、手元のコンピューター上の
+[smol machines](https://smolmachines.com) microVM で Chromium を実行する
+[ブラウザプロバイダー](/browser#hosted-browsers)です。
+各ワーカースロットはブラウザ用のマシンを 1 台起動します。
+デフォルトでは、各テスト試行はそのマシンの コピーオンライトのブランチで実行されます。
+ブランチは約 1 秒で準備でき、どのリトライも同じブラウザ状態から始まります。
+アプリのデータがリセットされるのは、アプリを[マシン内で実行する](#run-the-app-in-the-machine)場合だけです。
+手元のコンピューターや外部サービス上の状態は共有されたままです。
+
+## プロバイダーのセットアップ
+
+<Note>
+smol machines は Apple Silicon 搭載の macOS、または KVM（`/dev/kvm`）を利用できる Linux で動作します。
+アカウントや API キーは不要です。初回起動時は Playwright の Ubuntu イメージを取得するため、時間がかかります。
+</Note>
+
+プロバイダーと smol machines SDK をインストールします。
+
+<CodeGroup>
+```bash npm
+npm install --save-dev @e2e-dev/smol smolmachines
+```
+
+```bash pnpm
+pnpm add -D @e2e-dev/smol smolmachines
+```
+
+```bash bun
+bun add -d @e2e-dev/smol smolmachines
+```
+</CodeGroup>
+
+ターゲットの `browser` に `smol()` を設定します。
+
+```ts title="e2e.config.ts"
+import type { E2EConfig } from 'e2e';
+import { web } from '@e2e-dev/web';
+import { smol } from '@e2e-dev/smol';
+
+export default {
+  targets: [
+    {
+      name: 'web',
+      engine: web({ browser: smol({ hostPorts: [3000] }) }),
+      app: {
+        url: 'http://localhost:3000',
+        command: { executable: 'npm', args: ['run', 'dev'] },
+      },
+    },
+  ],
+  workers: 4,
+} satisfies E2EConfig;
+```
+
+マシン内の `localhost` は、そのマシン自身を指します。
+`hostPorts` に手元のコンピューターのポートを列挙すると、ブラウザはそれらを自身の `localhost` としてアクセスできるため、
+`app.url` を `http://localhost:3000` のまま使えます。
+
+<Warning>
+`hostPorts` は許可リストではありません。マシンは `host.smolvm.internal` 経由で手元のコンピューターの
+任意のループバックポートにアクセスでき、外向きのネットワークアクセスにも制限はありません。
+信頼できないアプリを `smol()` でテストする前に、機密情報を扱うループバックサービスを停止してください。
+</Warning>
+
+## 各テストをログイン済みの状態で始める
+
+`prepare` は、試行用のブランチを作る前に、各起動済みブラウザを一度だけ操作します。
+そのスロットの各試行は、`prepare` が残した Cookie、ストレージ、ページを引き継いで開始します。
+`'attempt'` スコープでは使えない[セッション](/authentication)の代わりになります。
+
+`prepare` はブラウザの DevTools エンドポイントを受け取ります。
+試行が実行されるデフォルトコンテキストで操作してください。
+`prepare` が完了する前に接続を切り、ブラウザ自体は起動したままにします。
+
+<Accordion title="Playwright でログインする">
+`@e2e-dev/web` が固定しているバージョンの `playwright-core` をインストールしてください。
+現在は 1.65.1 です。更新時にもバージョンを合わせます。
+pnpm では、依存パッケージが依存しているだけのパッケージを設定ファイルからインポートできません。
+
+<CodeGroup>
+```bash npm
+npm install --save-dev playwright-core@1.65.1
+```
+
+```bash pnpm
+pnpm add -D playwright-core@1.65.1
+```
+
+```bash bun
+bun add -d playwright-core@1.65.1
+```
+</CodeGroup>
+
+```ts title="Provider options"
+import { chromium } from 'playwright-core';
+
+smol({
+  hostPorts: [3000],
+  prepare: async (cdpEndpoint) => {
+    const browser = await chromium.connectOverCDP(cdpEndpoint);
+    const page = browser.contexts()[0]!.pages()[0]!;
+    await page.goto('http://localhost:3000/login');
+    await page.getByLabel('Email').fill('qa@example.com');
+    await page.getByLabel('Password').fill(process.env.QA_PASSWORD!);
+    await page.getByRole('button', { name: 'Sign in' }).click();
+    await page.waitForURL('**/dashboard');
+    await browser.close();
+  },
+})
+```
+
+`connectOverCDP` で接続したブラウザでは、`browser.close()` は接続を切るだけです。
+</Accordion>
+
+## マシン内でアプリを実行する
+
+`app` を指定すると、テスト対象のアプリは手元のコンピューターではなく、各ブラウザマシン内で実行されます。
+テストやエージェントがアプリに行わせる処理はホスト上では実行されません。
+ただし、[プロバイダーのセットアップ](#set-up-the-provider)で説明したとおり、マシンはホストのループバックポートにアクセスできます。
+`'attempt'` スコープでは、各試行に、実行中のアプリとそのファイル（ローカルデータベースを含む）のコピーが割り当てられます。
+
+```ts title="Provider options"
+smol({
+  app: {
+    source: '.',
+    setup: 'npm ci && npm run db:seed',
+    start: 'npm start',
+    port: 3000,
+    env: { DATABASE_URL: 'file:/app/dev.db' },
+  },
+})
+```
+
+`app.url` を `http://localhost:<port>` に設定し、`app.command` は指定しないでください。
+`setup` と `start` は、各マシンの起動時に `prepare` より先に実行されます。
+
+| `app` のフィールド | 意味 |
+| ----------- | ------- |
+| `start` | 必須。`/app` でバックグラウンド実行される、アプリを配信するシェルコマンド。プロバイダーは、アプリが `port` で応答するまで最大 180 秒待ちます。 |
+| `port` | 必須。マシン内でアプリが待ち受けるポート。ブラウザが使う 80 と 9229、および `hostPorts` に含まれるポートは指定できません。 |
+| `source` | `node_modules`、`.git`、`.e2e` を除いて `/app` にコピーするディレクトリ。実行開始時のディレクトリを基準に解決されます。デフォルトは `.` です。 |
+| `setup` | `start` の前に、`/app` で root として実行するシェルスクリプト。イメージには Node.js と npm が含まれるため、`npm ci` でマシンの Linux 向けの依存関係をインストールできます。 |
+| `env` | `setup` と `start` に渡す環境変数。名前は有効なシェル変数名である必要があります。 |
+
+## スコープの選択
+
+デフォルトの `scope: 'attempt'` は、各試行に、スロットの起動済みブラウザから作った専用のブランチを割り当てます。
+[試行ごとのリース](/browser#hosted-browsers)の制限が適用されます。
+
+`scope: 'worker'` は、実行中、ワーカースロットごとに 1 台のマシンを維持します。
+ローカル実行と同様に、各試行はそのマシン上で新しいブラウザコンテキストを使うため、
+セッションや `headers`、`locale` などのオプションが使えます。
+ブランチは作成されず、`prepare` を指定すると `INVALID_CONFIG` になります。
+
+## オプション
+
+| オプション | デフォルト | 意味 |
+| ----------- | ----------- | ------- |
+| `scope` | `'attempt'` | [スコープの選択](#choose-a-scope)を参照してください。 |
+| `prepare` | なし | [各テストをログイン済みの状態で始める](#start-every-test-signed-in)を参照してください。 |
+| `hostPorts` | `[]` | [プロバイダーのセットアップ](#set-up-the-provider)を参照してください。80 と 9229 は指定できません。 |
+| `app` | なし | [マシン内でアプリを実行する](#run-the-app-in-the-machine)を参照してください。 |
+| `setup` | なし | Chromium の起動前に各マシンで root として実行するシェルスクリプト。たとえば、フォントを追加するには `apt-get update && apt-get install -y fonts-noto-cjk` を使います。 |
+| `cpus` | `2` | マシンごとの vCPU 数。 |
+| `memoryMb` | `2048` | マシンごとのメモリ容量（MiB）。 |
+
+## ローカルブラウザとの違い
+
+ブラウザの 戻る・進むキャッシュ は無効なため、戻る操作でページが再読み込みされます。
+`browser.waitForDownload` はローカルと同じように動作します。
+
+## 残ったマシンの削除
+
+ランナーは実行の終了時に、クラッシュしたワーカーのものも含め、その実行のマシンを削除します。
+CI ジョブのキャンセルなどでランナーが強制終了すると、`'worker'` スコープのマシンは停止した状態で残ります。
+名前は `e2e-` で始まります。[smol CLI](https://smolmachines.com) を使って一覧表示し、削除してください。
+たとえば `smol machine ls` で一覧を表示できます。
+
+## 次のステップ
+
+<CardGroup cols={2}>
+  <Card title="セキュリティ" icon="shield-halved" href="/security">
+    手元のコンピューターで実行される処理と、情報が漏れる可能性について説明します。
+  </Card>
+  <Card title="ホスト型ブラウザ" icon="globe" href="/browser#hosted-browsers">
+    ブラウザプロバイダーのリースの仕組みと、`'attempt'` スコープの制限を説明します。
+  </Card>
+</CardGroup>

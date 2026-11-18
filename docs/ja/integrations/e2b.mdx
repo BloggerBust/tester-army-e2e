@@ -1,0 +1,167 @@
+---
+title: E2B
+sidebarTitle: E2B
+description: "@e2e-dev/e2b の e2b() と e2bBrowsers() プロバイダーを使い、E2B サンドボックスで Android ターゲットと Web ターゲットを実行します。"
+---
+
+`@e2e-dev/e2b` は [E2B](https://e2b.dev) サンドボックスでターゲットを実行します。
+[デバイスプロバイダー](/mobile#hosted-devices)の `e2b()` は Android 16 を、
+`@e2e-dev/e2b/web` の[ブラウザプロバイダー](/browser#hosted-browsers) `e2bBrowsers()` は Chromium を実行します。
+テストを書き換える必要はありません。
+
+## 認証
+
+ e2e を起動する環境に `E2B_API_KEY` を設定します。CI ではシークレットとして保存してください。
+キーは [E2B ダッシュボード](https://e2b.dev/dashboard)からコピーします。
+専用の E2B クラスターを使う場合は、`E2B_DOMAIN` も設定します。
+キーがない場合、プロバイダーは `INVALID_CONFIG` で失敗します。
+
+## Android ターゲットを実行する
+
+各ワーカーには専用の Android サンドボックスが割り当てられ、約 15〜45 秒で `.apk` の準備が整います。
+プロバイダーは `device.installApp()` と同様に agent-device 経由で `.apk` をインストールし、
+実行終了時にサンドボックスを削除します。
+
+<Tip>
+e2e を実行するマシンに Android SDK、エミュレーター、`adb` は不要です。
+</Tip>
+
+モバイルエンジンとともに連携パッケージをインストールします。
+
+<CodeGroup>
+```bash npm
+npm install --save-dev e2e @e2e-dev/mobile @e2e-dev/e2b e2b
+```
+
+```bash pnpm
+pnpm add -D e2e @e2e-dev/mobile @e2e-dev/e2b e2b
+```
+
+```bash bun
+bun add -d e2e @e2e-dev/mobile @e2e-dev/e2b e2b
+```
+</CodeGroup>
+
+ターゲットの `device` に `e2b()` を設定します。
+
+```ts title="e2e.config.ts"
+import type { E2EConfig } from 'e2e';
+import { mobile } from '@e2e-dev/mobile';
+import { e2b } from '@e2e-dev/e2b';
+
+export default {
+  targets: [
+    {
+      name: 'android',
+      engine: mobile({ platform: 'android', device: e2b() }),
+      app: { bundleId: 'com.example.app', appPath: 'build/app-debug.apk' },
+    },
+  ],
+  workers: 4,
+} satisfies E2EConfig;
+```
+
+`bundleId` は省略できます。省略すると、`app.open()` は agent-device が `.apk` について報告するパッケージを開きます。
+
+## ブラウザで Web ターゲットを実行する
+
+各ワーカーには専用の Chromium サンドボックスが割り当てられ、ローカル実行と同様に、各試行はその中の新しいブラウザコンテキストを使います。
+`scope: 'attempt'` の場合は、代わりに各試行に新しいサンドボックスが割り当てられます
+（[このスコープの制限](/browser#pick-a-lease-scope)）。
+
+Web エンジンとともに連携パッケージをインストールします。
+
+<CodeGroup>
+```bash npm
+npm install --save-dev e2e @e2e-dev/web @e2e-dev/e2b e2b
+```
+
+```bash pnpm
+pnpm add -D e2e @e2e-dev/web @e2e-dev/e2b e2b
+```
+
+```bash bun
+bun add -d e2e @e2e-dev/web @e2e-dev/e2b e2b
+```
+</CodeGroup>
+
+Playwright イメージからブラウザテンプレートを一度ビルドします。
+`@e2e-dev/web` が使う Playwright バージョンのイメージタグを使い、次の例のようにテンプレートに 4 GB のメモリを割り当ててください。
+
+```ts title="build-template.ts"
+import { Template, defaultBuildLogger } from 'e2b';
+
+const template = Template().fromImage('mcr.microsoft.com/playwright:v1.65.1-noble');
+await Template.build(template, 'e2e-chromium', {
+  cpuCount: 4,
+  memoryMB: 4096,
+  onBuildLogs: defaultBuildLogger(),
+});
+```
+
+その後、ターゲットの `browser` に `e2bBrowsers()` を設定します。
+テンプレートに別の名前を付けた場合は、その名前を `template` に渡します。
+
+```ts title="e2e.config.ts"
+import type { E2EConfig } from 'e2e';
+import { web } from '@e2e-dev/web';
+import { e2bBrowsers } from '@e2e-dev/e2b/web';
+
+export default {
+  targets: [
+    {
+      name: 'e2b-web',
+      engine: web({ browser: e2bBrowsers() }),
+      app: { url: 'https://staging.example.com' },
+    },
+  ],
+  workers: 4,
+} satisfies E2EConfig;
+```
+
+ブラウザは E2B のクラウドで動作するため、`app.url` は `localhost` だけでなく、インターネットからアクセスできる必要があります。
+
+## Android のオプション
+
+| オプション | デフォルト | 意味 |
+| ----------- | -------------- | ------- |
+| `template` | `'android-16'` | Android を起動するサンドボックステンプレート。 |
+| `timeoutMs` | `3600000`（1 時間） | サンドボックスの存続時間。実行が使用中でも、この時間を過ぎると E2B がサンドボックスを強制終了します。 |
+
+## ブラウザのオプション
+
+| オプション | デフォルト | 意味 |
+| ----------- | ---------------- | ------- |
+| `template` | `'e2e-chromium'` | Playwright の Chromium を含むサンドボックステンプレート。 |
+| `scope` | `'worker'` | `'worker'`: 実行中、ワーカースロットごとに 1 つのサンドボックスを使用。`'attempt'`: 試行ごとに新しいサンドボックスを使用。 |
+| `timeoutMs` | `3600000`（1 時間） | サンドボックスの存続時間。実行が使用中でも、この時間を過ぎると E2B がサンドボックスを強制終了します。 |
+
+不明なオプションや不正な値は、設定読み込み時に `INVALID_CONFIG` で失敗します。
+
+## サンドボックスを非公開に保つ仕組み
+
+サンドボックスは公開トラフィックを拒否します。プロバイダーは、E2B のアクセストークンを付加する
+`127.0.0.1` 上のトンネルを通して各サンドボックスにアクセスします。
+ローカルの Chromium と同様に、実行がリースを保持している間は、マシン上のどのプログラムもそのトンネルを利用できます。
+
+## 制限
+
+- **Android のみ。** E2B には iOS サンドボックスがないため、`e2b()` は iOS ターゲットを拒否します。
+- **Android イメージ。** E2B の Android 16 は x86_64 のみで、Google Play Services は含まれず、ソフトウェアレンダリングを使います。
+  ネイティブライブラリを使うアプリには x86_64 ビルドが必要です。[E2B の Android ページ](https://e2b.dev/docs/use-cases/android)を参照してください。
+  プロバイダーがインストールするのは `.apk` であり、`.aab` ではありません。
+- **課金。** サンドボックスは実行中に課金されます。
+  Android サンドボックスとワーカースコープのブラウザサンドボックスは、テストが使用していない間も含め、実行の開始から終了まで動作します。
+  試行スコープのブラウザサンドボックスは、その試行の間だけ動作します。
+- **実行の停止。** サンドボックスを削除する前にランナーが強制終了した場合、`timeoutMs` を経過すると E2B が削除します。
+
+## 次のステップ
+
+<CardGroup cols={2}>
+  <Card title="ホスト型デバイス" icon="mobile" href="/mobile#hosted-devices">
+    デバイスプロバイダーのリースの仕組みを説明します。
+  </Card>
+  <Card title="ホスト型ブラウザ" icon="globe" href="/browser#hosted-browsers">
+    ブラウザプロバイダーのリースの仕組みを説明します。
+  </Card>
+</CardGroup>

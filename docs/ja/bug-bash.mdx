@@ -1,0 +1,106 @@
+---
+title: バグバッシュ
+description: 複数の探索セッションを同時に実行し、失敗するテストで各バグを確認します。
+"og:image": "https://e2e.com/docs/images/og/bug-bash.png?v=eb59f8290c"
+"twitter:image": "https://e2e.com/docs/images/og/bug-bash.png?v=eb59f8290c"
+---
+
+import { ShowMore } from '../snippets/show-more.jsx';
+import { Video } from '../snippets/video.jsx';
+
+バグバッシュでは、アプリの領域ごとに `e2e explore` セッションを割り当て、複数を同時に実行します。その後、コーディングエージェントが見つかった問題ごとにテストを作成し、そのテストが失敗した場合にだけバグとして報告します。
+
+<Video>
+  <video src="/images/bug-bash.mp4" aria-label="コーディングエージェントが、画面を表示したブラウザでバグバッシュを実行しています。" muted loop playsInline controls />
+
+  各ブラウザが 1 つの探索セッションです。
+</Video>
+
+## 始める前に
+
+- アプリが複数の探索を同時に受け付けられることを確認してください。アプリを一度だけ起動し、ターゲットの `app.command` に `reuseExisting: true` を設定します。または、アプリ URL のポートを `0` にして、実行ごとに別のアプリを起動します。`CI` が設定されている場合、e2e は `reuseExisting` を無視するため、ポート `0` を使ってください。[アプリを起動する](/web#starting-your-app)を参照してください。
+- モバイルでは、シミュレーターまたはエミュレーターごとにターゲットを宣言します。探索セッションには、それぞれ専用のデバイスが必要です。
+- 各探索セッションはモデルを呼び出します。実行終了時にトークン数、コスト、所要時間が表示されます。
+- 他の人も使っている公開済みサイトでは、データを変更しないでください。
+
+アカウントの初期データ作成やログインなど、その他の準備は、エージェントがスキルに従って行います。
+
+## スキルをインストールする
+
+コーディングエージェントは、`e2e init` がインストールする [`e2e` スキル](/coding-agents)に従ってバグバッシュを実行します。`init` を使わずにインストールするには、次を実行します。
+
+<CodeGroup>
+```bash npm
+npx skills add e2e-inc/e2e
+```
+
+```bash pnpm
+pnpm dlx skills add e2e-inc/e2e
+```
+
+```bash bun
+bunx skills add e2e-inc/e2e
+```
+</CodeGroup>
+
+## バグバッシュを始める
+
+コーディングエージェントに次のプロンプトを渡します。
+
+```text
+Bug bash the checkout and account settings on this branch.
+```
+
+## エージェントが行うこと
+
+<ShowMore id="bug-bash-steps">
+
+1. アプリのルートを読み取ります。ブランチ上では差分も確認します。
+2. 5〜10 個のチャーターを作成します。チャーターは、ひとつの領域に対する目標を 1 文で表したものです。初めて使うユーザー、数値と文言、境界的な入力、再読み込み後の状態、エラー経路のいずれかひとつの観点を持たせます。
+3. チャーターごとに `e2e explore` を実行します。同時実行は 4 つで、それぞれ独自のペルソナ（`--agent`）と出力ディレクトリ（`--output`）を使います。
+4. 全チャーターの検出結果をまとめます。
+5. 原因が既知のものを除外します。探索機能の制限（新しいタブを開くリンクなど）、ローカル環境、意図された設計、シードデータが原因の場合が該当します。
+6. 残った問題ごとに再現テストを作成します。再現手順を `agent.act` 呼び出しにし、期待される動作を最後の `agent.assert` にします。領域ごとにサブエージェントを 1 つ起動することもあります。
+7. 再現テストを実行します。報告された不具合によってテストが失敗した場合にだけ、バグとみなします。最後の確認で `ASSERTION_FAILED` が発生するか、不具合そのものによって `act` が失敗することが条件です。
+8. 確認済みのバグ、ローカルでは検証できない本番環境のリスク、理由別にまとめた除外結果、警告の順に報告します。
+
+</ShowMore>
+
+確認済みの各バグには、再現テストと手順が付きます。エンジンが記録に対応していれば、探索時のスクリーンショットと動画も付きます。
+
+<Warning>
+動画はマスキングされません。探索中にパスワードを入力した場合は、共有する前に動画を確認してください。
+</Warning>
+
+手順全体を読むには、`npx e2e guide bug-bash` を実行します。
+
+## 再現テスト
+
+再現テストは、バグを修正するまで失敗します。エージェントは各テストに `bugbash` タグを付けます。マージ可否を判定する実行からは除外してください。
+
+<CodeGroup>
+```bash npm
+npx e2e run --exclude-tag bugbash
+```
+
+```bash pnpm
+pnpm exec e2e run --exclude-tag bugbash
+```
+
+```bash bun
+bunx e2e run --exclude-tag bugbash
+```
+</CodeGroup>
+
+修正後はテストが成功します。タグを外し、リグレッションテストとして残してください。
+
+## 次のステップ
+
+<CardGroup cols={2}>
+  <Card title="テストを書かずに探索する" icon="compass" href="/explore">
+    1 回の `e2e explore` が行うこと、予算、レポートを確認します。
+  </Card>
+  <Card title="MCP サーバー" icon="plug" href="/mcp-server">
+    コーディングエージェント用のライブセッションを複数同時に使います。
+  </Card>
+</CardGroup>

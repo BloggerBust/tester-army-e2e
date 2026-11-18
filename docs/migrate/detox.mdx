@@ -132,6 +132,7 @@ test('shows the home screen', async ({ agent, app, screen }) => {
 | Detox | e2e |
 | --- | --- |
 | `device.launchApp({ newInstance: true })` | `app.restart()` |
+| `device.launchApp()` in `beforeAll` | `app.open()` in `beforeAll`, which gets `device`, `app`, and `screen` |
 | `device.launchApp({ newInstance: false })` | `device.openApp(id)` without `relaunch` |
 | `device.launchApp({ launchArgs, permissions })` | `device.openApp(id, { relaunch: true, launchArguments, permissions })` |
 | `device.resetAppState()` | `app.clearState()` |
@@ -154,7 +155,6 @@ on purpose.
 
 | Detox | Use today |
 | --- | --- |
-| `beforeAll` that launches the app | `app.open()` in `beforeEach` |
 | `artifacts.plugins.log`, `--record-logs` | `adb logcat` or `xcrun simctl spawn booted log stream` in a CI step |
 | `by.id('x').and(by.text('y'))` | `.filter({ hasText })`, or `device.locator('id=x label="y"')` |
 | `system.element(by.system.label('Allow'))` | `device.alert('accept' \| 'dismiss')`, or `app.permissions` so no prompt shows |
@@ -189,7 +189,7 @@ on purpose.
 | `device.reloadReactNative()` | `app.restart()`. A reload needs the Detox framework in the app |
 | `device.disableSynchronization()`, `enableSynchronization()` | Delete the calls. There is no synchronization to switch off |
 | `device.setURLBlacklist()` | Delete the call. Network activity never blocks an action |
-| Install at init, `behavior.init.reinstallApp`, `--reuse` | `device.installApp()` in a fixture |
+| Install at init, `behavior.init.reinstallApp`, `--reuse` | `device.installApp()` in a worker fixture with `auto: true` |
 | `apps.<name>.build`, `detox build` | Your normal build, before `e2e run` |
 | `.scroll()` by an exact offset | `screen.swipe({ from, to })` |
 | `by.type('RCTImageView')` | `device.locator('role=image')`, or a `testID` |

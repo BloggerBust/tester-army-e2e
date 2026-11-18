@@ -1,0 +1,166 @@
+---
+title: Expo Simulators
+sidebarTitle: Expo Simulators
+description: 使用 @e2e-dev/eas 的 expoSimulators() 设备提供方，在 Expo Simulators 托管的 iOS 模拟器和 Android 模拟器上运行移动端测试目标。
+"og:image": "https://e2e.com/docs/images/og/integrations/eas.png?v=d8cb1fd2c5"
+"twitter:image": "https://e2e.com/docs/images/og/integrations/eas.png?v=d8cb1fd2c5"
+---
+
+`@e2e-dev/eas` 的 `expoSimulators()` 是用于 [Expo Simulators](https://expo.dev/services/simulators) 的[设备提供方](/mobile#hosted-devices)，提供托管的 iOS 模拟器和 Android 模拟器。引擎通过 Expo 在每个模拟器旁运行的 agent-device 守护进程来控制它。使用 Expo 托管设备运行 e2e 无需 Mac、Xcode 或 Android SDK。
+
+<Note>
+如果你要在 Expo 的 CI 服务中运行 e2e，请参阅 [Expo Workflows](/ci/eas-workflows)。
+</Note>
+
+## 配置
+
+Expo Simulators 目前仅限部分用户使用。运行 `npx eas-cli@latest simulator:availability` 检查你是否有访问权限。然后安装提供方。它不需要 SDK。
+
+<CodeGroup>
+```bash npm
+npm install --save-dev @e2e-dev/eas
+```
+
+```bash pnpm
+pnpm add -D @e2e-dev/eas
+```
+
+```bash bun
+bun add -d @e2e-dev/eas
+```
+</CodeGroup>
+
+将测试目标的 `device` 设置为 `expoSimulators()`：
+
+```ts title="e2e.config.ts"
+import type { E2EConfig } from 'e2e';
+import { mobile } from '@e2e-dev/mobile';
+import { expoSimulators } from '@e2e-dev/eas';
+
+export default {
+  targets: [
+    {
+      name: 'ios',
+      engine: mobile({
+        platform: 'ios',
+        device: expoSimulators({ buildId: process.env.E2E_IOS_BUILD_ID }),
+        videoTouches: false,
+      }),
+      app: { bundleId: 'com.example.app' },
+    },
+  ],
+  workers: 2,
+} satisfies E2EConfig;
+```
+
+将 `E2E_IOS_BUILD_ID` 设置为模拟器构建的 ID。不要读取 `EAS_BUILD_ID`：在 [Expo Workflows](/ci/eas-workflows) 作业中，Expo 会将其设置为正在运行的作业 ID。在工作流中，通过所依赖的构建作业的输出，在测试作业的 `env` 中设置该变量：
+
+```yaml title=".eas/workflows/e2e.yml"
+jobs:
+  e2e_ios:
+    needs: [build_ios]
+    env:
+      E2E_IOS_BUILD_ID: ${{ needs.build_ios.outputs.build_id }}
+```
+
+<Note>
+`expoSimulators()` 以前名为 `easSimulators()`。旧名称仍可使用，但已弃用。
+</Note>
+
+## 关联 Expo 项目
+
+提供方从 `e2e.config.ts` 旁边的应用配置中读取 `extra.eas.projectId` 作为项目 ID，该值由 `eas init` 写入。如果应用配置位于其他位置，或未关联项目，请传入 `projectId`：使用 ID，而非 slug。
+
+<Accordion title="提供方如何读取应用配置">
+- **`app.json` 或 `app.config.json`**：作为 JSON 读取；如果文件包含 `expo` 键，则从该键下读取。
+- **动态配置**（`app.config.ts`、`.js`、`.mjs`、`.cjs`、`.mts` 或 `.cts`）：由于配置可以计算 ID，因此会在本次运行的环境中，使用项目自身的 `expo config --type public` 求值。项目中需要安装 `expo`。与 eas-cli 一样，不会加载 `.env` 文件（`EXPO_NO_DOTENV=1`）。配置读取的变量必须存在于启动 `e2e run` 的环境中。
+
+如果配置没有关联项目，租用会在任何会话启动之前失败，并指出文件名。如果 `@e2e-dev/mobile` 版本太旧，无法将 `projectRoot` 传给提供方，租用也会失败：请升级它或传入 `projectId`。
+</Accordion>
+
+## 身份验证
+
+提供方使用与 eas-cli 相同的身份验证方式：
+
+- **`EXPO_TOKEN`**：有权访问项目的账户或机器人账户的[访问令牌](https://expo.dev/settings/access-tokens)，需存在于启动 `e2e run` 的环境中。它优先于登录信息。
+- **eas-cli 登录信息**：通过 `eas login` 获取，eas-cli 将其保存在 `~/.expo/state.json` 中（Windows 上使用 `USERPROFILE`）。
+
+会话始终连接到生产环境 `api.expo.dev`，因此 eas-cli 的 `EXPO_STAGING` 和 `EXPO_LOCAL` 登录信息不适用。
+
+<Warning>
+在 CI 运行器或共享机器上，请设置 `EXPO_TOKEN`。如果未设置，其他人留在运行器主目录中的登录信息会以其账户启动计费会话。
+</Warning>
+
+## 安装应用
+
+模拟器启动时没有安装任何应用。选择一种方式安装你的应用：
+
+| 方式 | `expoSimulators()` | 测试目标的 `app` |
+| --- | --- | --- |
+| Expo Build 的构建 | `buildId`：模拟器构建（在 `eas.json` 中设置 `"ios": { "simulator": true }`）或 APK。Expo 会在会话就绪前安装并启动它。构建始终保留在 Expo 内。 | 设置 `bundleId`，让 `app.open()` 知道启动哪个应用。不要设置 `appPath`，否则租用会失败。 |
+| URL | `applicationArchiveUrl`：应用归档文件，Expo 以同样的方式下载并安装。 | 设置 `bundleId`，不设置 `appPath`。 |
+| 本地构建 | 两个选项都不设置。 | 设置 `bundleId`、`appPath`，并提供调用 `device.installApp()` 的测试夹具，与[本地模拟器](/mobile)一样。构建会通过会话的守护进程上传到每个模拟器。 |
+
+## 选项
+
+| 选项 | 默认值 | 含义 |
+| ----------------------- | ----------- | ------- |
+| `projectId` | 应用配置中的值 | 参阅[关联 Expo 项目](#link-the-expo-project)。 |
+| `buildId` | 无 | 参阅[安装应用](#install-the-app)。 |
+| `applicationArchiveUrl` | 无 | 参阅[安装应用](#install-the-app)。 |
+| `device` | 由 Expo 选择 | iOS 设备名称或 UDID（`'iPhone 17 Pro'`），或 Android AVD 硬件配置（`'pixel_9'`）。 |
+| `maxIdleTimeMinutes` | `10` | 未收到 agent-device 命令多少分钟后，Expo 会停止会话；这也会停止已崩溃运行的会话。如果 `maxDurationMinutes` 更短，默认值会降为比它少 1 分钟。 |
+| `maxDurationMinutes` | 账户上限 | 会话就绪后可运行的分钟数。Expo 的上限为 40 分钟，高优先级套餐为 115 分钟。 |
+| `agentDeviceVersion` | 引擎的版本 | 会话守护进程的 agent-device 版本。默认与 `@e2e-dev/mobile` 固定的客户端版本一致。 |
+| `tags` | `[]` | 在运行自身的标签之外，为每个会话添加的标签。 |
+
+未知选项、同时设置 `buildId` 和 `applicationArchiveUrl`，或 `maxIdleTimeMinutes` 不小于同时传入的 `maxDurationMinutes`，都会导致配置加载失败并报 `INVALID_CONFIG`。两个分钟限制都必须是非负整数。
+
+## 会话
+
+每个测试目标最多启动 `workers` 个会话；测试文件较少时，会话也更少。会话会在运行计时开始前并行启动，每个约需 3 分钟（排队、启动、安装构建）。所有会话就绪后，测试才会开始。
+
+一次运行必须能在一个会话时长内完成，因为 Expo 会在会话就绪 `maxDurationMinutes` 分钟后将其停止。较长的测试套件应拆分到更多工作进程或 CI 作业中。
+
+Expo 会将超过账户并发上限的会话加入队列。运行结束之前，会话都不会结束，因此请确保 `workers` 乘以 Expo 测试目标数量不超过该上限：
+
+- 会话排队 2 分钟后仍未启动，会记录 `still queued at Expo after two minutes`。
+- 测试目标依次准备，因此后一个测试目标排队和启动时，前一个测试目标已就绪的会话会处于空闲状态。
+- 如果一个会话仍在排队，而另一个会话已经就绪 `maxIdleTimeMinutes` 分钟，租用会失败，因为 Expo 可能正在停止空闲的会话。随后，本次运行会停止所有会话。
+
+## 观看运行
+
+提供方创建会话时，会记录每个会话的 expo.dev 页面：
+
+```text
+ℹ leasing 2 ios device(s) from expo-simulators
+ℹ expo-simulators (1 of 2): simulator session 01a0…, https://expo.dev/accounts/acme/projects/shop/simulator-sessions/01a0…
+ℹ expo-simulators: leased 01a0…
+```
+
+无需令牌即可打开的浏览器预览会记录为 `watch at <url>`。需要令牌的预览不会写入日志，因为该令牌可以控制模拟器。
+
+会话名为 `e2e <target> <n> of <total>`，并带有 `e2e`、`e2e-run:<run id>` 和 `e2e-target:<target>` 标签。要列出一次运行的会话，请使用 `eas simulator:list --tag e2e-run:<run id>`。
+
+## 录制
+
+录制[视频](/reference/config#video)的尝试会像本地一样通过 agent-device 录制，并将文件保存到该尝试产物目录中的 `video/video.mp4`。
+
+按照[配置](#setup)中的示例，为移动端引擎设置 `videoTouches: false`。agent-device 会在停止录制时将触摸标记绘制到视频中，在 Expo iOS 模拟器上需要几分钟。这会耗尽该尝试的 `cleanupTimeout`，无法保留文件。不绘制触摸标记时，停止录制约需 2 秒。
+
+## 会话无法启动时
+
+当没有 `EXPO_TOKEN` 和 eas-cli 登录信息、账户无权使用 Expo Simulators，或会话启动失败时，租用会失败，运行会在执行任何测试前结束。会话报错、排队时间过长（参阅[会话](#sessions)），或离开队列 15 分钟后仍在启动，都会导致会话失败。
+
+提供方会停止失败的会话和本次运行的其他会话。对于排队中的会话，它会取消对应作业，避免 Expo 稍后启动并向账户计费。
+
+## 下一步
+
+<CardGroup cols={2}>
+  <Card title="托管设备" icon="mobile" href="/mobile#hosted-devices">
+    设备提供方如何租用设备，以及如何编写自己的提供方。
+  </Card>
+  <Card title="Expo Workflows" icon="/images/integrations/expo.svg" href="/ci/eas-workflows">
+    在 Expo 工作流中运行测试套件。
+  </Card>
+</CardGroup>

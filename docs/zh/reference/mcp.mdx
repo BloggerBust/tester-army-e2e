@@ -1,0 +1,554 @@
+---
+title: MCP 服务器（e2e mcp）
+description: 让编码智能体通过 MCP 检查并操作你的应用。
+"og:image": "https://e2e.com/docs/images/og/reference/mcp.png?v=3d3880edad"
+"twitter:image": "https://e2e.com/docs/images/og/reference/mcp.png?v=3d3880edad"
+---
+
+`e2e mcp` 让 Claude Code、Cursor 等编码智能体在编写测试时检查应用、尝试定位器、运行测试代码行并获取经过遮盖的截图。它通过 stdio 运行，使用项目配置的引擎。配置方法和可以向智能体提出的要求，请参阅 [MCP 服务器指南](/mcp-server)。
+
+```json title=".mcp.json"
+{
+  "mcpServers": {
+    "e2e": { "command": "npx", "args": ["e2e", "mcp"] }
+  }
+}
+```
+
+四个 MCP 工具负责管理会话并调用其中可用的应用工具，`run_tests` 则像 `e2e run` 一样运行测试套件。每次打开会话时，都会从配置中重新加载应用工具目录。
+
+## 参考
+
+### 标志
+
+<CodeGroup>
+```bash npm
+npx e2e mcp [--config <path>] [--target <name>] [--headed] [--max-sessions <n>]
+```
+
+```bash pnpm
+pnpm exec e2e mcp [--config <path>] [--target <name>] [--headed] [--max-sessions <n>]
+```
+
+```bash bun
+bunx e2e mcp [--config <path>] [--target <name>] [--headed] [--max-sessions <n>]
+```
+</CodeGroup>
+
+| 标志 | 默认值 |
+| --- | --- |
+| [`--config <path>`](#config) | 与 `e2e run` 一样自动查找 |
+| [`--target <name>`](#target) | 唯一的测试目标 |
+| [`--headed`](#headed) | 无头模式 |
+| [`--max-sessions <n>`](#max-sessions) | `4`，Bun 上为 `1` |
+
+#### `--config`
+
+除非 `open_session` 指定配置，否则每个会话都会加载此配置。每个会话都会使用服务器环境重新加载它（[多个会话](#several-sessions)）：配置中的 `process.env` 读取的是 MCP 客户端启动 `e2e mcp` 时使用的变量，而不是智能体 shell 中的变量。
+
+#### `--target`
+
+`open_session` 未指定名称时，会话所打开的测试目标。
+
+- 未设置此标志且未指定名称时，使用唯一的测试目标。
+- 存在多个测试目标但未指定名称时，返回 `TARGET_REQUIRED`。
+
+#### `--headed`
+
+当引擎支持时，在每个未通过 `open_session` 设置 `headed` 的会话中显示浏览器或模拟器。
+
+- 与 `e2e run` 一样，会话默认使用无头模式。
+
+#### `--max-sessions`
+
+可同时打开的会话数，范围为 1 到 16。在 [Bun](/reference/cli#bun) 上为一个。参阅[多个会话](#several-sessions)。
+
+```bash
+e2e mcp --max-sessions 8 # default: 4
+```
+
+### 工具
+
+| 工具 | 说明 |
+| --- | --- |
+| [`open_session`](#open_session) | 打开会话 |
+| [`tools`](#tools-2) | 列出目录或一个工具 |
+| [`call`](#call) | 运行目录中的一个工具 |
+| [`close_session`](#close_session) | 结束会话及其引擎 |
+| [`run_tests`](#run_tests) | 像 `e2e run` 一样运行测试 |
+
+仅有一个会话打开时，可以省略 `session`。参阅[多个会话](#several-sessions)。
+
+#### `open_session`
+
+加载配置，启动测试目标的应用命令和引擎，开始一次尝试并打开应用：如果引擎支持导航，则打开应用 URL；如果是设备，则重新启动[固定的应用](/mobile#point-at-your-app)。它不会安装构建，因此本地设备测试目标需要 `app.bundleId`。返回会话 ID、目录和首次观察结果。观察结果上方的摘要会要求智能体在编写或编辑测试前阅读 `writing-tests` 指南（`e2e://guide/writing-tests`）；服务器指令也有相同要求。
+
+摘要会列出应用 URL，包括可用端口 `url` 获分配的端口，以及应用命令：可执行文件、就绪 URL、`env` 和 `inheritEnv` 的名称以及日志文件。它不会输出 `args`、`env` 的值，也不会输出 URL 中的用户信息或查询参数。e2e 不会启动其他应用进程，因此应用使用的数据库需要在外部运行。
+
+```text wrap
+App: http://127.0.0.1:57162/ (port 57162, assigned for the declared port 0).
+Process: app.command "node" (ready at http://127.0.0.1:57162/; env PORT, DATABASE_URL; log .e2e/app.log). e2e starts no other app process for this session; a database or other service the app uses runs outside e2e.
+```
+
+```txt
+open_session {target: "web", headed: true}
+```
+
+| 输入 | 类型 | 必填 | 作用 |
+| --- | --- | --- | --- |
+| `target` | string | 否 | 要打开的测试目标。否则使用 `--target`，再否则使用唯一的测试目标。 |
+| `config` | string（路径） | 否 | 此会话的配置，使用绝对路径或相对于服务器工作目录（客户端 MCP 配置中的 `cwd`）的路径。否则使用 `--config`，再否则像 `e2e run` 一样自动查找。 |
+| `headed` | boolean | 否 | `true` 显示此会话的浏览器或模拟器，`false` 隐藏。未设置时，会话遵循 `--headed`。 |
+| `test` | string | 否 | 首先运行的一个测试，命名方式与 `e2e run` 的位置参数相同。会话停在测试停止的位置。参阅[运行测试](#running-a-test)。 |
+| `engine` | string 或 object | 否 | 在没有配置文件的目录中指定会话引擎，可以是包名或 `{package, export, options}`。参阅[没有配置时](#without-a-config)。 |
+| `app` | object | 否 | `engine` 会话的被测应用，使用 `url`、`bundleId` 或 `appPath`。 |
+
+#### `tools`
+
+返回目录，每个工具一行。
+
+```txt
+tools {tool: "locate"}
+```
+
+| 输入 | 类型 | 必填 | 作用 |
+| --- | --- | --- | --- |
+| `tool` | string | 否 | 目录中的工具。返回其完整描述和参数 schema。 |
+| `session` | string | 打开多个会话时 | 会话 ID。 |
+
+#### `call`
+
+运行目录中的一个工具。
+
+```txt
+call {tool: "tap", args: {target: "n42"}, session: "<id>"}
+```
+
+| 输入 | 类型 | 必填 | 作用 |
+| --- | --- | --- | --- |
+| `tool` | string | 是 | 目录中的工具名称。 |
+| `args` | object | 否 | 工具参数。 |
+| `session` | string | 打开多个会话时 | 会话 ID。 |
+
+- 首先按工具的封闭 schema 验证参数。类型错误，或向声明了参数的工具传入未声明的参数，会返回 `INVALID_ARGUMENT`，且不执行任何操作。`back` 和 `dismiss_keyboard` 不接受参数；它们会丢弃收到的所有参数并执行。
+- 失败的操作会返回错误结果，其中仍包含重新观察到的屏幕。结果以工具、操作目标和代码开头：`navigate file:///etc/passwd failed: POLICY_DENIED: forbidden URL scheme: file:`。
+- 项目工具遵循其 AI SDK `toModelOutput` 渲染器，包括 `execute` 返回字符串的情况。渲染后的 `error-text` 和 `error-json` 输出是 MCP 错误结果（`isError: true`）。编码智能体可以区分失败和成功的工具调用。
+
+#### `close_session`
+
+保存仍在进行的录制，结束尝试并释放引擎。当没有其他会话使用本会话启动的应用进程时，会停止这些进程。
+
+```txt
+close_session {session: "<id>"}
+```
+
+| 输入 | 类型 | 必填 | 作用 |
+| --- | --- | --- | --- |
+| `session` | string | 打开多个会话时 | 会话 ID。 |
+
+#### `run_tests`
+
+在独立进程中运行 `e2e run`，并返回命令、退出码及其含义，以及运行输出：使用默认的 `list` 报告器时，包括每个测试、失败详情块和摘要。它不需要会话，也不会影响已打开的会话。要在会话旁运行测试，请参阅[在会话旁运行测试](/mcp-server#run-tests-next-to-a-session)。
+
+```txt
+run_tests {files: ["tests/checkout.e2e.ts:12"]}
+```
+
+```text wrap
+e2e run tests/checkout.e2e.ts:12
+exit 1: a test failed or timed out
+
+ RUN  e2e v0.22.0 /work/shop
+ ...
+```
+
+| 输入 | 类型 | 必填 | 作用 |
+| --- | --- | --- | --- |
+| `files` | string[] | 否 | `e2e run` 位置参数：文件、目录、glob 或 `file:line`。未提供时，运行配置发现的所有测试。文件不能以 `-` 开头。 |
+| `config` | string（路径） | 否 | `--config`。否则使用服务器的 `--config`。 |
+| `target` | string[] | 否 | `--target`，至少一个。否则使用服务器的 `--target`，再否则运行所有测试目标。 |
+| `grep`、`grepInvert` | string | 否 | `--grep`、`--grep-invert`。 |
+| `tag`、`excludeTag` | string[] | 否 | `--tag`、`--exclude-tag`。 |
+| `lastFailed` | boolean | 否 | `--last-failed`。 |
+| `changedSince` | string | 否 | `--changed-since`。 |
+| `headed` | boolean | 否 | `--headed`。否则使用服务器的 `--headed`。 |
+| `workers`、`retries`、`repeatEach`、`maxFailures`、`actionTimeout` | integer | 否 | `--workers`、`--retries`、`--repeat-each`、`--max-failures`、`--action-timeout`。 |
+| `noCache` | boolean | 否 | `--no-cache`。 |
+| `updateSnapshots` | boolean | 否 | `--update-snapshots`。 |
+
+- 退出码 0 和 1 属于正常结果。其他退出码均为错误结果（`isError: true`）。
+- 输出超过 60,000 个字符时，会保留末尾部分，其中包含失败详情和摘要。一旦运行进入测试阶段，所有结果都会写入 `<output>/report.json`（默认目录为 `.e2e`）；参阅[输出](/reference/cli#output)。
+- 提供进度令牌时，stdout 的每个非空行都会作为进度通知，截断为 1,000 个字符。
+- 取消调用会像按 Ctrl-C 一样中断运行，每隔 15 秒再次中断一次，并在第三次中断后的 15 秒强制终止进程。下一个 `run_tests` 会等待它退出。
+- 服务器关闭时会拒绝新运行，并中断正在进行的运行。服务器意外终止时，运行也会以同样方式中断自身。
+
+| 抛出错误 | 何时发生 |
+| --- | --- |
+| `RUNNER_BUSY` | 已有一个运行正在进行。 |
+| `CANCELLED` | 调用在运行开始前被取消，或服务器正在关闭。 |
+
+### 目录
+
+`call` 可运行的内容取决于会话的测试目标。
+
+| 目录工具 | 说明 |
+| --- | --- |
+| [`observe`](#observe) | 返回新的观察结果 |
+| [操作](#actions) | 操作观察到的节点 |
+| [`dismiss_keyboard`](#dismiss_keyboard) | 隐藏屏幕键盘 |
+| [`locate`](#locate) | 尝试语义定位器 |
+| [`run_code`](#run_code) | 运行测试语句 |
+| [`test_lines`](#test_lines) | 返回会话的测试代码行 |
+| [`screenshot`](#screenshot) | 返回经过遮盖的视口，可选择保存到文件 |
+| [坐标工具](#point-tools) | 在截图坐标上操作 |
+| [`start_recording`、`stop_recording`](#recording) | 录制应用视频 |
+| [项目工具](#project-tools) | 你的 `defineTool` 工具 |
+
+#### `observe`
+
+新的观察结果，每行一个节点，格式为 `#id role "name" ...`，并包含当前路径和修订号。不接受参数。
+
+- 链接的 `href` 如果与应用 URL 同源，则为路径，否则为源加路径。
+- `mailto:`、`tel:` 和 `blob:` 目标保留其协议。
+- `…` 标记省略内容：`?…` 表示查询参数，`#…` 表示片段，`data:…` 或 `javascript:…` 表示内联载荷，末尾的 `…` 表示目标在 256 个字符处被截断。
+
+#### 操作
+
+`tap`、`double_tap`、`long_press`、`right_click`、`hover`、`type`、`press`、`select`、`check`、`scroll`、`scroll_to`、`drag`、`upload`、`navigate`、`back`、`resize_viewport`、`switch_tab`、`close_tab`、`type_secret`。每个操作都会返回操作摘要、可重复该操作的[测试代码行](#test_lines)或无法生成代码行的原因，以及屏幕变化。
+
+| 输入 | 作用 |
+| --- | --- |
+| 节点 ID | 来自最新的观察结果。 |
+| 值、按键、`checked` 状态、方向、放置目标、相对于项目的或 `sample:` 的 `files`、URL、`width` 和 `height`，或机密值名称 | 该动作所需的内容。 |
+| `modifiers`（可选） | 用于 `tap`、`double_tap` 和 `right_click`，前提是引擎声明了 `tapModifiers`：点击时按住的 `Shift`、`Control`、`Alt`、`Meta`、`ControlOrMeta` 列表。 |
+
+- 引擎未声明的动作不会出现在目录中。
+- `upload` 会以 `POLICY_DENIED` 拒绝项目之外的路径、隐藏文件或隐藏目录下的文件。`sample:` 文件没有对应的测试代码行：请将文件保存到项目中以生成代码行。
+- 当配置声明了 `credentials` 或 `secrets`，且引擎声明了 `fill` 操作时，会列出 `type_secret`。明文不会作为文本传给智能体；参阅[填入机密值后的截图](/reference/security#screenshots-after-a-secret-fill)。
+
+#### `dismiss_keyboard`
+
+隐藏屏幕键盘。不接受参数。当引擎的键盘声明了 `dismiss` 时列出，设备引擎即如此。
+
+#### `locate`
+
+返回匹配语义定位器的节点数量、具体节点，以及应编写的 `screen.*` 调用。
+
+| 输入 | 作用 |
+| --- | --- |
+| `role`（可带 `name`）、`text`、`label`、`placeholder`、`testId` | 必须且只能选择其中一个。 |
+| `exact` | 精确匹配；`false` 表示子串匹配且不区分大小写。 |
+
+- 匹配零个或多个节点时，会指出测试将遇到的错误。
+- `name` 只匹配无障碍名称。`observe` 按文本显示 `status`、`alert` 或 `listitem`，因此当这些角色使用名称却匹配不到内容时，也会提示使用 `getByRole(role).filter({ hasText })` 和 `getByText`。
+- 与 `observe` 一样，显示的节点内容会经过机密值登记表处理：已填入的机密值显示为 `<secret:name>`。
+
+#### `run_code`
+
+在实时会话中运行测试语句，返回每条语句的通过或失败结果、读取的值以及屏幕变化。将代码行写入测试前，先在这里运行。
+
+```txt
+call {tool: "run_code", args: {code: "await screen.getByLabel('Email').fill('ada@example.com');\nawait expect(screen.getByRole('status')).toHaveText('Saved');"}}
+```
+
+| 输入 | 作用 |
+| --- | --- |
+| `code` | 按测试体写法编写的一条或多条语句，以 `;` 或换行分隔。 |
+| `timeout` | 可选。每条语句可等待的时间，单位为毫秒，范围为 1 到 120000。默认为 `5000`。 |
+
+- 语句在会话的 `screen` 和 `app` 测试夹具上依次运行，使用与测试相同的等待、仅匹配一个节点的规则和匹配器。
+- 首次失败会停止调用。后续语句不再运行，应用保持在已通过语句留下的状态，结果为错误结果，包含测试会返回的代码和消息。
+- 通过的语句（读取操作除外）会按原样、按执行顺序加入 [`test_lines`](#test_lines) 草稿。
+- 每条语句最多等待 `timeout`，包括它自己的 `timeout` 选项。如果配置中的 [`actionTimeout`](/reference/config#actiontimeout) 和 [`assertionTimeout`](/reference/config#assertiontimeout) 更短，则使用更短的值。此上限也涵盖 `app.open`、`app.restart` 和 `app.clearState`，因此首次加载较慢或设备重新启动时应增大它。
+- `timeout` 不会在正则表达式匹配中途停止它。发生回溯的表达式，例如在长行上使用 `/^(\w+\s?)*$/`，会阻塞服务器直到匹配结束。
+- 读取操作和匹配器会在机密值所在位置看到 `<secret:name>`。
+- 机密值 `fill` 会对实际填入的字段执行与 `type_secret` 相同的检查：机密值必须已配置，字段必须已启用且可编辑，密码必须填入密码字段。
+
+代码只会被解析，绝不会作为 JavaScript 执行。语法接受以下内容：
+
+| 部分 | 接受的内容 |
+| --- | --- |
+| 语句 | 可选的 `await`，然后是以操作或读取结束的 `screen` 或 `app` 调用链，或带有可选 `.not` 和一个匹配器的 `expect(locator)` |
+| 定位器 | `screen.getByRole`、`getByLabel`、`getByText`、`getByPlaceholder`、`getByTestId` 或 `getByDisplayValue`，可通过 `filter`、`or`、`first`、`last`、`nth` 和更多 `getBy*` 缩小范围 |
+| 参数 | 字符串、数字、布尔值、`null`、正则表达式、不含 `${}` 的模板、数组、对象、定位器，或 `credentials.user(name).username` |
+| 机密值 | `credentials.user(name).password` 或 `secrets.get(name)`，仅可作为 `fill` 的值 |
+
+不包含：引擎提供的内置测试夹具（`browser`、`device`）、`expect(screen)`、`toHaveScreenshot`、`app.screenshot`、`screen.debug`、`all`、`setInputFiles` 和值匹配器（`toBe`、`toEqual`）。
+
+| 抛出错误 | 何时发生 |
+| --- | --- |
+| `INVALID_ARGUMENT` | 代码无法解析或不符合语法，例如其他名称、未支持的调用、赋值或函数。消息会引用代码及其行列位置，不执行任何语句。 |
+| `INVALID_ARGUMENT` | 匹配器预期 `<secret:name>`，因为测试比较的是真实值。不执行任何语句。 |
+| `POLICY_DENIED` | 向未通过 `type_secret` 检查的字段执行机密值 `fill`。不输入任何内容。 |
+| `POLICY_DENIED` | 读取密码字段。 |
+| `POLICY_DENIED` | 配置声明了机密值或凭据时，定位器通过部分文本查找：使用正则表达式、非 `true` 的 `exact` 或 `hasText`。请按精确文本查找。不执行任何语句。 |
+
+#### `test_lines`
+
+按顺序返回会话操作输出的所有测试代码行，以及 [`run_code`](#run_code) 通过的所有语句，作为测试体草稿。不接受参数。
+
+每个操作的结果都会在摘要后附带对应代码行：
+
+```txt
+Tapped #n31.
+Test line: await screen.getByRole("button", "Sign in").tap();
+```
+
+- 定位器来自最新观察结果中列出的操作目标，在操作执行前生成。依次尝试角色和名称、标签、占位符、文本和测试 ID，选择第一个在实时屏幕上仅匹配目标的定位器，与 [`locate`](#locate) 的报告一致。
+- 同时匹配相同控件的定位器会进一步缩小范围：先限定为已渲染的节点（`{ visible: true }`），再限定到容器内（`getByRole("listitem").filter({ hasText: "Offer B" })`），最后按位置（`.nth(1)`，并添加注释说明）。只有实时屏幕上的相同控件仍是观察结果列出的那些，且各自位置不变或整体一起移动时，才会使用位置。
+- 每个操作目标最多尝试 10 个定位器。在设备上，每次尝试都会读取整个屏幕。
+- 如果没有定位器能单独定位目标，结果会显示 `No test line:` 并说明原因。绝不会输出会失败的代码行。
+- 失败的操作不会输出或记录代码行。草稿会将没有代码行的操作显示为 `//` 注释。
+
+| 操作 | 代码行 |
+| --- | --- |
+| 未使用 [`test`](#running-a-test) 打开会话 | `app.open()` |
+| `tap`、`double_tap`、`long_press`、`right_click`、`hover` | `tap()`、`doubleTap()`、`longPress()`、`secondaryTap()`、`hover()`，包含所有 `modifiers` |
+| 对节点执行 `type` | `fill(value)`；凭据用户名使用 `credentials.user(name).username` |
+| `type_secret` | `fill(credentials.user(name).password)` 或 `fill(secrets.get(name))`，绝不包含值本身 |
+| 对节点执行一次 `press` | `press(key)` |
+| `select`、`check` | `selectOption(label)`、`check()` 或 `uncheck()` |
+| `drag`、`upload` | `dragTo(locator)`、`setInputFiles(files)` |
+| 对节点执行 `scroll_to` | `scrollIntoView()` |
+| `navigate`、`back` | `app.open(url)`，与应用同源的 URL 使用路径；`app.back()` |
+
+没有代码行的操作：未指定目标的 `type` 或 `press`、`times` 大于 1 的 `press`、`scroll`、对文本执行的 `scroll_to`、`dismiss_keyboard`、`resize_viewport`（使用引擎的内置测试夹具设置大小，网页端为 `browser.setViewport`）、`switch_tab` 和 `close_tab`（网页端为 `browser.tabs()[tab - 1].activate()` 和 `.close()`），以及节点通过键盘接收的 `type`。[坐标工具](#point-tools)不输出任何代码行。
+
+#### `screenshot`
+
+以图像形式返回经过遮盖的视口。
+
+| 参数 | 类型 | 说明 |
+| --- | --- | --- |
+| `path` | `string` | 可选。同时将截图保存为 PNG 文件，相对于项目根目录解析，并返回绝对路径。项目之外的路径、隐藏文件或隐藏目录下的文件会返回 `POLICY_DENIED`。 |
+
+```json
+{ "tool": "screenshot", "args": { "path": "screenshots/checkout.png" } }
+```
+
+- 从此之后，每个操作结果都会附带新的截图。
+- 它只遮盖安全字段，填入机密值后也是如此。
+- 文件是第二次全分辨率截取的图像，遮盖方式与 `app.screenshot` 相同。附带的图像可能会缩小。
+
+#### 坐标工具
+
+每个工具都接受最新截图像素坐标中的 `x` 和 `y`。`drag_at` 通过 `to_x` 和 `to_y` 指定放置点。
+
+| 工具 | 输入 | 作用 | 引擎声明以下能力时列出 |
+| --- | --- | --- | --- |
+| `tap_at` | `x`、`y` | 通过引擎的 `performAt` 点按裸坐标。没有 `performAt` 时，该点必须落在已列出的控件上，并按 ID 点按该控件。 | `tap` 或 `performAt` |
+| `hover_at` | `x`、`y` | 以相同方式悬停：通过 `performAt` 的 `hover` 类型操作裸坐标，否则按 ID 操作该点下已列出的控件。 | `hover` 操作或指针类型 |
+| `drag_at` | `x`、`y`、`to_x`、`to_y` | 通过 `performAt` 的 `dragTo` 类型从第一个点拖到第二个点。没有该类型时，两点必须落在两个不同的已列出控件上，并按 ID 拖动，否则调用以 `UNSUPPORTED_CAPABILITY` 失败。 | `dragTo` 操作或指针类型 |
+| `type_at` | `x`、`y`、`value`；支持键盘的引擎还可使用 `replace` | 按 ID 填入该点下已列出的输入框。支持键盘时，对于其他位置，会先点按以聚焦，再输入；除非设置了 `replace`，否则在光标处输入。不支持键盘时，点下没有已列出控件就会失败。 | `type` 或键盘 |
+| `press_at` | `x`、`y`、`key` | 按 ID 将按键发送到该点下已列出的控件。支持键盘时，对于其他位置，会先点按以聚焦，再通过键盘发送按键。 | `press` 或键盘 |
+| `select_at` | `x`、`y`、`value`（选项的可见标签） | 在该点下已列出的类选择控件中选择选项。该处没有已列出控件时会失败。 | `select` |
+
+<Note>
+在会话首次调用 `screenshot` 之前，每个坐标工具都会返回一行提示，要求先截图，不产生开销。
+</Note>
+
+#### 录制
+
+`start_recording` 和 `stop_recording` 用于录制应用视频。引擎支持视频录制时，两者都会列出。
+
+```txt
+call {tool: "start_recording", args: {name: "checkout-flow"}}
+call {tool: "stop_recording"}
+```
+
+| 工具 | 输入 | 作用 |
+| --- | --- | --- |
+| `start_recording` | `name`（可选）：最多 64 个字母、数字、`-` 和 `_`，以字母或数字开头 | 同时只能有一个录制。第二次启动会报告正在进行的录制。 |
+| `stop_recording` | 无 | 保存视频并返回每个文件的绝对路径，或提供方保存视频的 URL。 |
+
+- 会话只在 `start_recording` 和 `stop_recording` 之间录制视频，可按需重复多次。配置的 [`video`](/reference/config#video) 模式适用于测试运行，不适用于会话，会话也不写入[追踪记录](/reference/config#trace)。
+- 每次录制保存到 `<output>/videos/<session>/<n>[-<name>].webm`（移动端为 `.mp4`，[`output`](/reference/config#output) 默认为 `.e2e`），其中 `n` 是会话内的录制序号。
+- 跨越重新启动或状态重置的网页端录制会为每个页面生成一个文件，以 `-part2`、`-part3` 等命名，按播放顺序排列。
+- 如果浏览器或设备提供方自行录制租约，则改为录制整个会话。[Kernel](/integrations/kernel) 会下载其回放，与其他文件一样在此保存为 `<n>[-<name>].mp4`。如果提供方自行保管录制，则列出 URL 而非文件。
+- `close_session`、空闲超时和会话 TTL 都会保存仍在进行的录制，关闭结果会列出其文件。
+
+<Warning>
+录制不会遮盖内容：这些文件供人观看，没有工具会返回它们的像素。录制期间填入普通输入框的机密值在视频中可见。
+</Warning>
+
+#### 项目工具
+
+`agents.default.tools` 中的项目工具会以自身名称追加到目录中，作用域限定为测试目标的平台。传入 `mobileTools(...)` 的移动端项目还会获得 `open_app`、`swipe` 和 `alert`。
+
+| 抛出错误 | 何时发生 |
+| --- | --- |
+| `INVALID_CONFIG` | 加载配置时发现项目工具与内置工具同名。 |
+| `UNKNOWN_TOOL` | 名称不在目录中。消息会列出可用名称。 |
+
+## 配置
+
+服务器随 `e2e` 提供。`e2e init` 会提供选项，将其注册到 `.mcp.json`（Claude Code）、`.cursor/mcp.json`（Cursor）和 `.codex/config.toml`（Codex）。安装依赖项，并在项目目录中启动 MCP 客户端，让 `npx`（Bun 项目中为 `bunx`）使用已安装的 e2e 版本。手动配置：
+
+<CodeGroup>
+```bash npm
+claude mcp add --scope project e2e -- npx e2e mcp
+```
+
+```bash pnpm
+claude mcp add --scope project e2e -- pnpm exec e2e mcp
+```
+
+```bash bun
+claude mcp add --scope project e2e -- bunx e2e mcp
+```
+</CodeGroup>
+
+对于使用 `mcpServers` 配置的客户端，添加上面所示条目。项目受信任后，Codex 会读取项目的 `.codex/config.toml`。注册后启动新会话：
+
+```toml title=".codex/config.toml"
+[mcp_servers.e2e]
+command = "npx"
+args = ["e2e", "mcp"]
+```
+
+服务器也以 `io.github.e2e-inc/e2e` 的名称列在 [MCP Registry](https://registry.modelcontextprotocol.io) 中。从那里安装的客户端会通过 `npx` 运行所列版本，且必须在项目目录中启动。项目仍需安装 e2e 及其引擎，因为配置会导入它们。如果所列版本与项目的 e2e 版本不同，可能会拒绝无法识别的配置键；上面的注册方式则始终匹配。
+
+服务器不需要模型：没有可选 `ai` 包的项目也能打开会话，并通过确定性工具操作应用。会话[运行](#running-a-test)的测试，在遇到回放缓存无法处理的智能体步骤时，会调用配置的模型。
+
+在项目目录中启动服务器。配置查找方式与 `e2e run` 相同。要使用其他配置，请参阅 [`--config`](#config) 和 [`open_session`](#open_session)。
+
+## 没有配置时
+
+在没有配置文件的目录中，`open_session` 需要 `engine`。会话在该引擎上使用一个测试目标。其他所有设置均为默认值，因此会话没有凭据、机密值或项目工具。
+
+```txt
+open_session {engine: "@e2e-dev/web", app: {url: "http://localhost:3000"}}
+open_session {engine: {package: "@e2e-dev/mobile", options: {platform: "ios"}}, app: {bundleId: "com.example.app"}}
+```
+
+对于无需选项的引擎，包名就足够了。要传入选项或指定导出，将 `engine` 写成对象：
+
+| 字段 | 类型 | 作用 |
+| --- | --- | --- |
+| `package` | string | 要加载的包。可以包含子路径，例如 `@e2e-dev/testmu/web`。 |
+| `export` | string | 要调用的导出。默认：默认导出。 |
+| `options` | object | 工厂接受的选项，与 `e2e.config.ts` 中相同。 |
+
+- **仅提供包名**时，会不带选项调用该包的默认导出。`@e2e-dev/web` 和 `@e2e-dev/mobile` 以此方式导出工厂。[你自己的引擎](/writing-an-engine#open-it-by-name)也可以这样做。
+- **选项可以是另一个工厂调用。** 如果选项值包含 `package`，且其他键只有 `export` 和 `options`，服务器就将其视为调用。它会先执行该调用，再将结果作为选项传入。可以用它为引擎提供设备或浏览器提供方：
+
+  ```txt
+  open_session {
+    engine: {package: "@e2e-dev/mobile", options: {
+      platform: "ios",
+      device: {package: "@e2e-dev/limrun", export: "limrun", options: {region: "eu"}}
+    }},
+    app: {bundleId: "com.example.app"}
+  }
+  ```
+
+  上面的调用会构建 `mobile({ platform: 'ios', device: limrun({ region: 'eu' }) })`。提供方从服务器环境中读取 API 密钥。
+- **查找。** 服务器先在项目中查找各个包，再在正在运行的 `e2e` 旁查找，最后在 `~/.e2e/engines` 中查找。如果都不存在，错误会给出供所有项目使用的安装命令：`npm install --prefix ~/.e2e/engines @e2e-dev/web`。无法执行该命令的智能体（例如位于无法联网的沙箱中）会请你执行。
+- **`app`** 接受 `url`、`bundleId` 和 `appPath`，与测试目标的 [`app`](/reference/config#the-app-under-test) 相同。`@e2e-dev/web` 需要 `url`。`@e2e-dev/mobile` 需要 `bundleId` 或 `appPath`。
+- **文件。** 项目根目录是服务器的工作目录，会话会在其中写入 `.e2e/`。
+- **测试。** `run_tests` 和 `open_session {test}` 需要配置。要将会话的测试代码行保留为测试，请使用 [`e2e init`](/reference/cli#e2e-init) 写入配置。
+- **多个会话。** 使用 `engine` 打开的会话可以同时运行。基于配置的会话不能与它们同时打开，否则会以 `CONFIG_IN_USE` 失败。
+
+| 抛出错误 | 何时发生 |
+| --- | --- |
+| `CONFIG_NOT_FOUND` | `open_session` 未提供 `engine`，且目录中没有配置。 |
+| `ENGINE_NOT_INSTALLED` | `engine` 指定的包在三个查找位置中都不存在。 |
+| `INVALID_ARGUMENT` | `package` 不是包名、`export` 不是导出名、`engine` 与 `target`、`config` 或 `test` 同时提供，或目录中存在配置。提供 `app` 却没有 `engine` 也会触发。 |
+| `INVALID_CONFIG` | 指定的导出不是函数、工厂拒绝了 `options`、引擎工厂未返回引擎，或引擎拒绝了 `app`。导出不是函数时，消息会列出包中的函数。 |
+
+## 输出
+
+- 面向操作者的输出写入 stderr，前缀为 `e2e mcp:`。Stdout 只传输协议。
+- 你的代码通过 `console`、`process.stdout` 或 `process.stderr` 写入的内容（配置的顶层代码、项目工具、会话运行的测试）会写入 stderr，并对机密值脱敏。
+- 配置加载期间输出的内容会在加载完成后显示。如果加载失败，则不显示这些输出，因为配置中的机密值尚不明确。
+- 会话测试留下的被拒绝 Promise 会使该测试失败，与正常运行相同。在测试体结束后才被拒绝的 Promise，会在 `close_session` 结果中显示为一行 `UNHANDLED_REJECTION`，并在会话关闭后向 stderr 发出警告。任何其他未捕获错误，包括任何会话运行测试前发生的 Promise 拒绝，都会在脱敏后记录并关闭服务器。
+
+<Note>
+继承服务器 stdio 的子进程会绕过此处理直接写入。
+</Note>
+
+## 会话
+
+一个会话是在一个测试目标上的一次尝试。未打开任何会话前调用 `call` 会以 `NO_SESSION` 失败。
+
+会话会在以下情况下关闭：
+
+- 调用 `close_session`，
+- 空闲 30 分钟后，
+- 4 小时后，
+- 客户端断开连接时，
+- 收到 SIGINT 或 SIGTERM 时。
+
+客户端关闭服务器的 stdin 或终止时，会断开连接。此时所有会话都会关闭，会话启动的应用命令会停止，`run_tests` 运行会被中断，服务器随后退出。
+
+会话执行与测试相同的规则：
+
+- 节点 ID 仅对最新观察结果有效。
+- 机密值只能通过 `type_secret` 或 [`run_code`](#run_code) 的 `fill` 填入，并遵循相同检查。
+- 配置加载后，其机密值会从工具返回的所有文本、`locate` 找到的节点、操作结果、`open_session` 或 `close_session` 失败信息、清理信息行以及服务器自身的日志行中脱敏。
+- 会话执行的任何操作都不会记录为测试结果。只有会话运行的测试才会读写回放缓存（[运行测试](#running-a-test)）。其产物写入 `<output>/results/mcp/<target>-<attemptId>/`，视频写入 `<output>/videos/`。之后的 `e2e run` 会清空 `<output>/results`；视频会保留。
+- 客户端取消的排队调用在轮到它时不会执行。
+
+## 运行测试
+
+`open_session {test}` 会在会话的尝试中运行项目的一个测试，然后在测试停止的屏幕上交出会话。编码智能体可以从那里修复失败的测试，无需重新点击走完整个流程。
+
+```txt
+open_session {test: "tests/checkout.e2e.ts:12"}
+```
+
+- **选择。** `test` 接受与 `e2e run` 位置参数相同的内容：带 `:line` 的文件（选择该行声明的测试）、文件、目录、glob 或名称。它必须在会话的测试目标上精确选中一个测试。行号必须是 `test(` 调用所在的行；测试内部的行不会选中任何测试。
+- **执行内容。** 测试的 `beforeAll` 钩子、`test.extend()` 测试夹具、`beforeEach` 钩子和测试体，使用与正常运行相同的测试夹具、定位器、`expect`、`timeout`、`actionTimeout` 和 `assertionTimeout`。会话不会预先打开应用 URL 或启动固定的应用；测试自行打开应用。
+- **停止位置。** 首次失败处，或测试体末尾。不会执行任何清理。开头文本首先给出结果：通过，或失败并附带代码、消息、失败代码行及周围代码、URL、最接近未匹配定位器的节点，以及最后 15 个步骤。之后依次是会话摘要、目录和屏幕。
+- **测试代码行。** 测试自身的步骤不会输出[测试代码行](#test_lines)。会话的代码行从智能体的第一个操作开始，`test_lines` 会将它们作为接续测试的代码行返回。
+- **清理。** `afterEach` 钩子、测试夹具清理和 `afterAll` 钩子会在 `close_session` 或会话自行关闭时运行。它们的失败会显示为 `Cleanup (afterEach)` 和 `Cleanup (afterAll)` 行。
+- **重新运行。** 先 `close_session`，再调用 `open_session {test}`。每个会话都会重新加载配置和测试文件，包括它们导入的文件。
+- **回放缓存。** 测试像正常运行的首次尝试一样读写缓存：步骤会回放，后续检查通过后会保存新的录制记录。失败会移除未被任何检查确认的条目。缓存在测试体结束时完成处理，因此 `afterEach` 中的检查不会确认任何内容。[`cache.strict`](/reference/config#cache) 与正常运行一样生效。
+- **不包含的内容。** 没有测试结果、报告或追踪记录页面。重试以及测试的 `trace` 和 `video` 模式不适用。失败截图和 `screen-at-failure.txt` 写入会话的产物目录。
+- **截图。** 对于 `toHaveScreenshot`，每个会话都视为独立的一次运行：一个会话写入的基准会在下一个会话中用于比较。
+- **多个会话。** 两个会话中的测试代码会轮流执行：同一时间只有一个会话运行测试或清理，因为 `expect.poll`、`expect.soft` 和 `test.skip` 通过每个进程中的一个槽位查找正在运行的测试。如果打开会话的请求在测试排队期间被取消，就不会执行任何测试代码。
+
+| 抛出错误 | 何时发生 |
+| --- | --- |
+| `NO_TESTS` | `test` 未选中可运行的测试。消息会像 `e2e run` 一样说明原因。 |
+| `TEST_AMBIGUOUS` | `test` 选中了多个测试。消息会以 `file:line` 列出它们。 |
+| `SESSION_TEST_UNSUPPORTED` | 测试位于串行组中、从准备测试的 `session` 开始，或以多个智能体运行。 |
+| `COLLECTION_ERROR` | 测试文件收集失败，与 `e2e run` 相同。 |
+
+## 多个会话
+
+可以同时打开多个会话，最多为 `--max-sessions`，每个会话都有独立的尝试和浏览器或设备。并行智能体（例如编码智能体的子智能体）通过这种方式共享一个服务器：每个智能体打开会话，并在每次 `tools`、`call` 和 `close_session` 调用中传入会话 ID。[Bug Bash](/bug-bash) 使用此方式：将复现过程完善为脚本测试的验证子智能体会操作自己的会话。
+
+| 抛出错误 | 何时发生 |
+| --- | --- |
+| `SESSION_REQUIRED` | 打开多个会话时，调用未提供 `session`。消息会列出已打开的会话。 |
+| `NO_SESSION` | `session` ID 对应的会话未打开。如果会话正在关闭或已结束，消息会说明原因。 |
+| `SESSION_OPEN` | `open_session` 超过上限，或服务器正在关闭。 |
+| `CONFIG_IN_USE` | 已有会话打开时，`open_session` 使用了另一份配置，或试图在通过 `engine` 打开的会话旁打开基于配置的会话。 |
+| `ENGINE_IN_USE` | 第二个会话使用了在包内部创建的引擎。 |
+| `CANCELLED` | `open_session` 被客户端取消、客户端断开连接，或期间服务器关闭；在它启动的内容停止后返回。 |
+
+- 会话从 `open_session` 开始一直占用槽位，直到其尝试关闭，因此仍在启动或仍在关闭的会话都计入上限。
+- 同时打开的会话共享一份配置：凭据和机密值通过每个进程中的同一个注册表解析。
+- 服务器关闭时，会取消并等待仍在打开的会话，关闭所有会话，并拒绝新会话。被取消的打开操作会在其启动的内容停止后失败（例如仍在等待 `readyUrl` 的应用命令）。
+- 每个会话都会重新加载配置，包括通过路径导入的文件，例如展开使用的基础配置，因此各自获得独立的引擎实例。运行测试的会话会以相同方式加载测试文件。在包内部创建的引擎则是所有会话共享的一个实例。
+- 使用同一应用命令的会话共享其进程：第一个会话启动它，最后一个会话关闭时停止它。声明端口为 `0` 的 URL 会在每个会话中获得独立端口，因此也有独立进程。如果所有等待共享启动的会话都放弃了等待，该启动会被取消，下一个会话会重新启动它。
+- 在移动端，每个会话需要独立的模拟器：为每台设备声明一个测试目标，各自指定 `device`，并在各自的测试目标上打开会话。
+
+## 资源
+
+| URI | 内容 |
+| --- | --- |
+| `e2e://guide` | 智能体技能概览，即 `e2e guide` 输出的文本。 |
+| `e2e://guide/{topic}` | 一个主题：`setup`、`writing-tests`、`agent`、`running`、`explore`、`debugging`、`mcp`、`bug-bash`。 |
+
+## 退出码
+
+| 代码 | 何时发生 |
+| --- | --- |
+| `0` | 客户端断开连接，无论是否有会话打开，或信号使其结束。 |
+| `1` | 未捕获错误使服务器关闭。 |
+| `2` | 命令行无效。 |
+| 错误的[类别代码](/reference/cli#exit-codes) | 启动失败。 |
+
+配置和引擎失败会作为工具错误返回，使用与 CLI 输出相同的代码。

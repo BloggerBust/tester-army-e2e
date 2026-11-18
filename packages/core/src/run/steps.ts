@@ -408,12 +408,23 @@ function quoted(label: string): string {
   return `"${label.length > MAX_QUOTED_LABEL_CHARS ? `${label.slice(0, MAX_QUOTED_LABEL_CHARS - 3)}...` : label}"`;
 }
 
+/** A step as an error message names it: its api, and its quoted label when it has one. */
+function callName(step: { readonly api: string; readonly label: string }): string {
+  return step.label === '' ? step.api : `${step.api} ${quoted(step.label)}`;
+}
+
 export class StepRecorder {
   private readonly attempt: { readonly id: string; readonly index: number };
   private readonly steps: StepRecord[] = [];
   private readonly scope = new AsyncLocalStorage<StepRecord>();
   /** The hook steps run in from now on; undefined while the test body runs. */
   phase: StepPhase | undefined = undefined;
+  /**
+   * The code that starts steps from now on, as the error for one it leaves
+   * running names it: it completes "... returned before", as in
+   * `the beforeEach hook`.
+   */
+  owner = 'the test body';
   /** Whether a top-level step started now waits at `hold`: in `beforeEach` and the body, never in launch or teardown. */
   holdable = false;
   /** Step calls waiting at their hold, in call order. */
@@ -424,10 +435,14 @@ export class StepRecorder {
   private readonly pending = new Map<string, Promise<unknown>>();
   /** The stack each running step was started from, for the error a step abandoned by the body carries. */
   private readonly stacks = new Map<string, string>();
+  /** The `owner` each running step was started by. */
+  private readonly owners = new Map<string, string>();
   /** Steps the body returned without awaiting: recorded as failed already, whatever they do next. */
   private readonly abandoned = new Set<string>();
   /** The promises of abandoned steps, for the wait before teardown. */
   private readonly abandonedPromises: Promise<unknown>[] = [];
+  /** What each step named by `nameRunning` fails with, in place of the abort reason it was named for. */
+  private readonly named = new Map<string, { readonly reason: Error; readonly error: Error }>();
   /** The index every step before which a passed verification proves, or -1 when none has passed. */
   private lastVerified = -1;
   /** What the app logged this attempt, within `APP_LOG_LIMITS`. */
@@ -575,11 +590,14 @@ export class StepRecorder {
       artifacts: [],
     };
     this.steps.push(record);
-    // Only a finished step is dropped, and only from the front, so a long-running one keeps its record.
-    while (this.retainSteps !== undefined && this.steps.length > this.retainSteps && !this.running.has(this.steps[0]!.id)) this.steps.shift();
     this.running.add(record.id);
+    // Only a finished step is dropped, and only from the front, so a running
+    // one keeps its record, the one opened here included: with nothing
+    // retained it is still there for `abandonRunning` to fail.
+    while (this.retainSteps !== undefined && this.steps.length > this.retainSteps && !this.running.has(this.steps[0]!.id)) this.steps.shift();
     for (const { line, at } of this.earlyNavigations.splice(0)) this.fileNavigation(record, line, at);
     if (stack !== undefined) this.stacks.set(record.id, stack);
+    this.owners.set(record.id, this.owner);
     this.publish(record, { phase: 'start', kind, api, label });
     return record;
   }
@@ -594,7 +612,10 @@ export class StepRecorder {
       record.durationMs = Date.now() - startedMs;
       if (options.verifies === true) this.lastVerified = Math.max(this.lastVerified, verifiesBefore);
       return result;
-    } catch (cause) {
+    } catch (thrown) {
+      // A step that failed on its own, or that another abort reached first, keeps that failure.
+      const name = this.named.get(record.id);
+      const cause = name !== undefined && thrown === name.reason ? name.error : thrown;
       if (this.abandoned.has(record.id)) {
         markAbandonedRejection(cause);
         throw cause;
@@ -617,6 +638,8 @@ export class StepRecorder {
       this.running.delete(record.id);
       this.pending.delete(record.id);
       this.stacks.delete(record.id);
+      this.owners.delete(record.id);
+      this.named.delete(record.id);
       // An abandoned step reported its end when the body returned; what it did since is not the test's.
       if (this.abandoned.delete(record.id)) {
         this.seenScreens.delete(record.id);
@@ -628,12 +651,13 @@ export class StepRecorder {
   }
 
   /**
-   * Fails every step still running once the test body has settled, and
-   * returns the error that names them, or nothing when every step was
-   * awaited. Each such step is recorded as failed at the line it was called
-   * on, its later outcome is dropped, and its rejection is observed here: a
-   * step the body abandoned must not take the worker down as an unhandled
-   * rejection.
+   * Fails every step still running once the code that started it has
+   * settled (the test body, a hook, a fixture), and returns the error that
+   * names them, or nothing when every step was awaited. The error says
+   * which code left the step running: the `owner` it was started under.
+   * Each such step is recorded as failed at the line it was called on, its
+   * later outcome is dropped, and its rejection is observed here: a step its
+   * code abandoned must not take the worker down as an unhandled rejection.
    */
   abandonRunning(): TestError | undefined {
     // A step still held never ran: it is recorded here, at its call, so it
@@ -651,7 +675,7 @@ export class StepRecorder {
       const more = first === undefined && running.length > 1 ? ` and ${running.length - 1} more` : '';
       const error = new TestError(
         'STEP_NOT_AWAITED',
-        withHint(`the test body returned before ${step.api} ${quoted(step.label)}${more} finished`, 'put `await` in front of every step call'),
+        withHint(`${this.owners.get(step.id) ?? this.owner} returned before ${callName(step)}${more} finished`, 'put `await` in front of every step call'),
       );
       relocateStack(error, this.stacks.get(step.id));
       first ??= error;
@@ -672,8 +696,26 @@ export class StepRecorder {
       this.abandoned.delete(record.id);
       this.pending.delete(record.id);
       this.stacks.delete(record.id);
+      this.owners.delete(record.id);
     }
     return first;
+  }
+
+  /**
+   * Names every step still running in the error it fails with once the
+   * recorder's signal aborts with `reason`: what `error` builds for the call,
+   * at the line that made it. Call it right before that abort. Unlike
+   * `abandonRunning`, nothing is recorded as not awaited and no rejection is
+   * observed: a program closes a session to cancel what runs on it, and the
+   * calls it cut are its own to handle.
+   */
+  nameRunning(reason: Error, error: (call: string) => Error): void {
+    for (const step of this.steps) {
+      if (!this.running.has(step.id)) continue;
+      const named = error(callName(step));
+      relocateStack(named, this.stacks.get(step.id));
+      this.named.set(step.id, { reason, error: named });
+    }
   }
 
   /** Resolves once every abandoned step has settled, however it did; the caller bounds the wait. */

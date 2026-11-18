@@ -6,9 +6,11 @@ import { chmod, mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { describe, expect, it } from 'vitest';
 import { createAgentCacheContext, settleStagedTraces } from '@e2e-dev/core/lib/cache/context';
+import { recordedProvenance } from '@e2e-dev/core/lib/cache/recorder';
 import { FileCacheStore } from '@e2e-dev/core/lib/cache/store';
 import { buildTraceEntry } from '@e2e-dev/core/lib/cache/trace';
 import { readTraceEntry } from '@e2e-dev/core/lib/cache/trace-read';
+import { SecretLedger } from '@e2e-dev/core/lib/internal/redact';
 import { resolveConfig } from '../../src/config/resolve-run.ts';
 import type { ActionTrace, CacheStore } from '@e2e-dev/core/lib/types';
 import type { E2EConfig } from '../../src/run-types.ts';
@@ -358,6 +360,68 @@ describe('settleStagedTraces', () => {
     expect(readTraceEntry(JSON.parse(store.entries.get(KEY_A)!))?.payload).toEqual({ ...recorded, recordedFor: STEP });
   });
 
+  it('writes the identity digest into a confirmed kept entry that cut a long test id before entries kept one', async () => {
+    const store = memoryStore();
+    const long = { ...STEP, testId: `${STEP.testId}${'x'.repeat(400)}` };
+    const recordedFor = recordedProvenance(long, (text) => text);
+    const { identityDigest, ...legacy } = recordedFor;
+    expect(identityDigest).toMatch(/^[a-f0-9]{64}$/u);
+    store.entries.set(KEY_A, JSON.stringify(buildTraceEntry({ ...trace('replayed flow'), recordedFor: legacy })));
+    const context = contextWith(store);
+    context.staged.push({ kind: 'keep', keyHash: KEY_A, stepIndex: 1, recordedFor });
+    await settleStagedTraces(context, { lastVerifiedStepIndex: 2, implicatesUnconfirmed: true });
+    expect(readTraceEntry(JSON.parse(store.entries.get(KEY_A)!))?.payload.recordedFor).toEqual(recordedFor);
+  });
+
+  it('leaves a confirmed kept entry that already keeps the step\'s identity digest exactly as stored', async () => {
+    const store = memoryStore();
+    const recordedFor = recordedProvenance({ ...STEP, testId: `${STEP.testId}${'x'.repeat(400)}` }, (text) => text);
+    expect(recordedFor.identityDigest).toMatch(/^[a-f0-9]{64}$/u);
+    const stored = JSON.stringify(buildTraceEntry({ ...trace('replayed flow'), recordedFor }));
+    store.entries.set(KEY_A, stored);
+    const written: string[] = [];
+    const context = contextWith({
+      ...store,
+      write: async (keyHash, payload) => {
+        written.push(keyHash);
+        return store.write(keyHash, payload);
+      },
+    });
+    context.staged.push({ kind: 'keep', keyHash: KEY_A, stepIndex: 1, recordedFor });
+    const writes = await settleStagedTraces(context, { lastVerifiedStepIndex: 2, implicatesUnconfirmed: true });
+    expect(written).toEqual([]);
+    expect(store.entries.get(KEY_A)).toBe(stored);
+    expect(writes.get(1)).toBe('kept');
+  });
+
+  it('replaces the identity digest of a confirmed kept entry whose names redact differently now', async () => {
+    const store = memoryStore();
+    const step = { ...STEP, testId: `${STEP.testId}${'x'.repeat(400)} as hunter2` };
+    store.entries.set(KEY_A, JSON.stringify(buildTraceEntry({ ...trace('replayed flow'), recordedFor: recordedProvenance(step, (text) => text) })));
+    const secrets = new SecretLedger();
+    secrets.register('password', 'hunter2');
+    const recordedFor = recordedProvenance(step, secrets.redact);
+    const context = contextWith(store);
+    context.staged.push({ kind: 'keep', keyHash: KEY_A, stepIndex: 1, recordedFor });
+    await settleStagedTraces(context, { lastVerifiedStepIndex: 2, implicatesUnconfirmed: true });
+    expect(readTraceEntry(JSON.parse(store.entries.get(KEY_A)!))?.payload.recordedFor).toEqual(recordedFor);
+  });
+
+  it('drops the identity digest of a confirmed kept entry whose names no longer need one', async () => {
+    const store = memoryStore();
+    const step = { ...STEP, testId: `${'x'.repeat(290)}hunter2` };
+    const secrets = new SecretLedger();
+    secrets.register('password', 'hunter2');
+    const recorded = recordedProvenance(step, secrets.redact);
+    expect(recorded.identityDigest).toMatch(/^[a-f0-9]{64}$/u);
+    store.entries.set(KEY_A, JSON.stringify(buildTraceEntry({ ...trace('replayed flow'), recordedFor: recorded })));
+    const recordedFor = recordedProvenance(step, (text) => text);
+    const context = contextWith(store);
+    context.staged.push({ kind: 'keep', keyHash: KEY_A, stepIndex: 1, recordedFor });
+    await settleStagedTraces(context, { lastVerifiedStepIndex: 2, implicatesUnconfirmed: true });
+    expect(readTraceEntry(JSON.parse(store.entries.get(KEY_A)!))?.payload.recordedFor?.identityDigest).toBeUndefined();
+  });
+
   it('writes what was confirmed and leaves every unconfirmed entry as stored when the failure implicates nothing', async () => {
     const KEY_C = 'c'.repeat(64);
     const store = memoryStore();
@@ -397,5 +461,55 @@ describe('settleStagedTraces', () => {
     expect(first).toMatch(/^[a-f0-9]{64}$/);
     expect(repeat).not.toBe(first);
     expect(other).not.toBe(first);
+  });
+});
+
+describe('recorded provenance', () => {
+  it('takes the identity digest over the redacted names, so it never depends on a secret value', () => {
+    const long = `${STEP.testId}${'x'.repeat(400)}`;
+    const digestWith = (value: string) => {
+      const secrets = new SecretLedger();
+      secrets.register('password', value);
+      return recordedProvenance({ ...STEP, testId: `${long} as ${value}` }, secrets.redact).identityDigest;
+    };
+    expect(digestWith('hunter2')).toMatch(/^[a-f0-9]{64}$/u);
+    expect(digestWith('hunter2')).toBe(digestWith('swordfish'));
+  });
+
+  it.each(['targetId', 'agent'] as const)('stores the %s redacted and takes the digest over it redacted', (field) => {
+    const recorded = (value: string) => {
+      const secrets = new SecretLedger();
+      secrets.register('password', value);
+      return recordedProvenance({ ...STEP, testId: `${STEP.testId}${'x'.repeat(400)}`, [field]: `staging-${value}` }, secrets.redact);
+    };
+    expect(recorded('hunter2')[field]).not.toContain('hunter2');
+    expect(recorded('hunter2').identityDigest).toMatch(/^[a-f0-9]{64}$/u);
+    expect(recorded('hunter2').identityDigest).toBe(recorded('swordfish').identityDigest);
+  });
+
+  it('measures the redacted names, so a name a secret makes longer than an entry keeps gets a digest', () => {
+    const secrets = new SecretLedger();
+    secrets.register('password', 'hunter2');
+    // Under 300 characters as written, over 300 once `hunter2` is redacted.
+    const variant = (title: string) => recordedProvenance({ ...STEP, testId: `${'x'.repeat(280)} hunter2 ${title}` }, secrets.redact);
+    const [first, second] = [variant('first'), variant('second')];
+    expect(first.testId).toBe(second.testId);
+    expect(first.identityDigest).toMatch(/^[a-f0-9]{64}$/u);
+    expect(second.identityDigest).toMatch(/^[a-f0-9]{64}$/u);
+    expect(first.identityDigest).not.toBe(second.identityDigest);
+  });
+});
+
+describe('reading recorded provenance', () => {
+  it.each([
+    ['paramsDigest', 'not-a-digest'],
+    ['paramsDigest', 42],
+    ['identityDigest', 'not-a-digest'],
+    ['identityDigest', ['a'.repeat(64)]],
+    ['identityDigest', 42],
+  ])('refuses an entry whose %s is %j', (field, digest) => {
+    const entry = JSON.parse(JSON.stringify(buildTraceEntry({ ...trace('recorded flow'), recordedFor: STEP })));
+    entry.payload.recordedFor[field] = digest;
+    expect(readTraceEntry(entry)).toBeUndefined();
   });
 });

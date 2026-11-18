@@ -70,11 +70,11 @@ test('the test after the hooks is never charged', async () => {
 });
 `;
 
-/** Every test of a file sets up every fixture its `test.extend` defines, so each fixture gets a file. */
+/** One file per fixture, so each file's results tell one teardown's story. */
 const LEAKY_FIXTURE_SUITE = `import { test as base, expect } from 'e2e';
 
 const test = base.extend<{ leaky: number }>({
-  leaky: async (_fixtures, use) => {
+  leaky: async ({}, use) => {
     await use(1);
     expect.poll(() => false, { timeout: 200 }).toBe(true);
   },
@@ -88,7 +88,7 @@ test('owns the fixture teardown poll', async ({ leaky }) => {
 const TIDY_FIXTURE_SUITE = `import { test as base, expect } from 'e2e';
 
 const test = base.extend<{ tidy: number }>({
-  tidy: async (_fixtures, use) => {
+  tidy: async ({}, use) => {
     await use(1);
     await expect.poll(() => true, { timeout: 200 }).toBe(true);
   },

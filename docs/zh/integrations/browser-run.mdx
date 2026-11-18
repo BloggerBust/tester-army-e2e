@@ -1,0 +1,81 @@
+---
+title: Cloudflare Browser Run
+sidebarTitle: Browser Run
+description: 使用 browserRun() 浏览器提供方，在 Cloudflare 托管的 Chromium 中运行网页端测试目标。
+---
+
+`@e2e-dev/browser-run` 中的 `browserRun()` 为每个工作进程槽位或每次测试尝试提供一个由 Cloudflare 托管的 Chromium 浏览器。
+测试使用相同的网页端引擎和测试夹具。
+
+## 连接账户
+
+创建一个对你的账户具有 `Browser Rendering - Edit` 权限的 [Cloudflare API 令牌](https://developers.cloudflare.com/browser-run/cdp/)。
+在启动 `e2e run` 的环境中设置 `CLOUDFLARE_ACCOUNT_ID` 和 `CLOUDFLARE_API_TOKEN`。
+
+在安装了 `e2e` 和 `@e2e-dev/web` 的项目中安装提供方：
+
+<CodeGroup>
+```bash npm
+npm install --save-dev @e2e-dev/browser-run
+```
+
+```bash pnpm
+pnpm add -D @e2e-dev/browser-run
+```
+
+```bash bun
+bun add -d @e2e-dev/browser-run
+```
+</CodeGroup>
+
+设置测试目标的浏览器：
+
+```ts title="e2e.config.ts"
+import type { E2EConfig } from 'e2e';
+import { web } from '@e2e-dev/web';
+import { browserRun } from '@e2e-dev/browser-run';
+
+export default {
+  targets: [{
+    name: 'cloudflare',
+    engine: web({ browser: browserRun() }),
+    app: { url: 'https://staging.example.com' },
+  }],
+  workers: 2,
+} satisfies E2EConfig;
+```
+
+使用公开的 HTTPS 应用 URL。托管浏览器无法访问运行器的 `localhost`；请通过隧道开放本地应用。
+
+## 设置浏览器生命周期
+
+| 选项 | 默认值 | 含义 |
+| --- | --- | --- |
+| `scope` | `'worker'` | 每个工作进程槽位一个浏览器。`'attempt'` 为每次尝试和重试租用一个全新浏览器。 |
+| `keepAlive` | `600000` | 无活动超时时间，单位为毫秒，取值范围为 `10000` 到 `1200000`。 |
+
+即使连接仍然保持，超时也会计算没有 CDP 命令的时间。如果测试可能暂停超过 10 分钟，请增大 `keepAlive`。
+
+工作进程作用域会为每次尝试创建隔离的上下文。
+尝试作用域使用全新浏览器的默认上下文，并支持在传输连接中断后重新连接该浏览器。
+适用[按尝试分配的提供方限制](/browser#hosted-browsers)。
+
+会话在清理阶段删除。如果运行器在清理前退出，无活动超时会终止浏览器。
+
+## 检查兼容性
+
+Chromium、导航、定位器、网络路由、Cookie、截图和网页端引擎的屏幕录制视频均使用 CDP。CDP 授权请求头用于对浏览器连接进行身份验证，不会成为页面请求头。
+
+在 Browser Run 上调用 `browser.back()` 或 `browser.forward()` 后，历史记录导航可能在等待页面的 `load` 事件时超时。
+
+不支持远程文件下载。Browser Run 没有提供可供提供方读取的浏览器文件系统 API。Cloudflare 原生会话录制不会附加到报告中。
+启用[视频](/reference/config#video)后，网页端引擎会为每次尝试录制 WebM 屏幕视频。
+
+确保 `workers` 不超过账户的[并发和获取限制](https://developers.cloudflare.com/browser-run/limits/)。HTTP `401` 或 `403` 会指出需要检查的令牌权限。
+
+## 下一步
+
+<CardGroup cols={2}>
+  <Card title="托管浏览器" href="/browser#hosted-browsers">了解提供方作用域和隔离。</Card>
+  <Card title="网页端引擎" href="/web">配置视口、应用访问和视频。</Card>
+</CardGroup>

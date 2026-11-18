@@ -1,0 +1,199 @@
+---
+title: 决策模型
+description: 使用决策模型和小型文本模型执行受限操作，替代完整的 LLM 智能体。
+"og:image": "https://e2e.com/docs/images/og/decision-models.png?v=bc0d69c206"
+"twitter:image": "https://e2e.com/docs/images/og/decision-models.png?v=bc0d69c206"
+---
+
+`@e2e-dev/decision` 通过决策模型运行 `agent.act` 和 `agent.assert`，替代 LLM 智能体。对于每次操作，决策模型根据目标、最近的操作和最新的语义树，先选择操作，再选择元素。它不会生成自由文本，字段值由一个小型文本模型生成。运行器仍会对每次操作进行授权。
+
+任何以概率回答 `choice` 问题的 AI SDK 决策模型都可以使用，例如 TypeSafe Jev 或 OpenAI `gpt-6-luna`。`evaluationModel()` 实例也适用。如果 `model` 是模型 ID 字符串或语言模型，配置加载会以 `INVALID_CONFIG` 失败。
+
+同一个包中的 `decisionFilter()` 只运行拉取请求（PR）可能影响的测试。参阅[测试过滤器](/filters)。
+
+## 安装和配置
+
+安装该包、决策模型提供方和文本模型提供方。决策模型需要 `ai` 7.0.134 或更高版本。
+
+<CodeGroup>
+```bash npm
+npm install -D @e2e-dev/decision @ai-sdk/typesafe-ai @openrouter/ai-sdk-provider
+```
+
+```bash pnpm
+pnpm add -D @e2e-dev/decision @ai-sdk/typesafe-ai @openrouter/ai-sdk-provider
+```
+
+```bash bun
+bun add -d @e2e-dev/decision @ai-sdk/typesafe-ai @openrouter/ai-sdk-provider
+```
+</CodeGroup>
+
+在 agents 条目上设置执行器：
+
+```ts title="e2e.config.ts"
+import type { E2EConfig } from 'e2e';
+import { web } from '@e2e-dev/web';
+import { decisionExecutor } from '@e2e-dev/decision';
+import { typeSafeAi } from '@ai-sdk/typesafe-ai';
+import { openrouter } from '@openrouter/ai-sdk-provider';
+
+export default {
+  targets: [{ engine: web(), app: { url: 'http://localhost:3000' } }],
+  agents: {
+    default: {
+      executor: decisionExecutor({
+        model: typeSafeAi.decisionModel('jev-latest'),
+        textModel: openrouter('inception/mercury-2.5'),
+      }),
+    },
+  },
+} satisfies E2EConfig;
+```
+
+测试只需照常调用 `agent.act` 和 `agent.assert`：
+
+```ts title="tests/todos.e2e.ts"
+import { test, expect } from 'e2e';
+
+test('adds a todo', async ({ app, screen, agent }) => {
+  await app.open('/todos');
+  await agent.act('Add a todo named Buy coffee.');
+  await expect(screen.getByTestId('todo')).toContainText('Buy coffee');
+  await agent.assert('The todo list contains Buy coffee.');
+});
+```
+
+<Accordion title="使用 OpenAI gpt-6-luna">
+
+使用 `@ai-sdk/openai` 4.0.90 或更高版本，该版本支持[视觉](#vision)截图。设置 `OPENAI_API_KEY`。
+
+<CodeGroup>
+```bash npm
+npm install -D @ai-sdk/openai
+```
+
+```bash pnpm
+pnpm add -D @ai-sdk/openai
+```
+
+```bash bun
+bun add -d @ai-sdk/openai
+```
+</CodeGroup>
+
+```ts title="e2e.config.ts"
+import { openai } from '@ai-sdk/openai';
+
+const executor = decisionExecutor({
+  model: openai.decisionModel('gpt-6-luna'),
+  textModel: openai('gpt-6-luna-fast'),
+  vision: true,
+});
+```
+
+</Accordion>
+
+## 模型可以做什么
+
+每一轮都会提供引擎在最新屏幕元素上支持的操作：`tap`、`type`、`typeSecret`、`submit`、`select`、`check`、`upload`、`hover`、`secondary_tap`（右键单击）、`double_tap`、`long_press`、`drag`、`scroll_to`、`scroll_up`、`scroll_down` 和 `back`。悬停、右键单击、拖动和滚动到指定位置也可以作用于带标签的非控件节点，例如悬停时打开菜单的卡片；拖动也可以将元素放到这些节点上。`tap` 还可以作用于文本字段，以打开日期选择器或建议列表。当移动端引擎等支持关闭屏幕键盘的引擎显示键盘时，即使语义树中没有键盘，执行器也会提供 `dismiss_keyboard`。
+
+每个作用于元素的操作都会询问操作对象，即使只有一个元素符合条件。每个操作对象问题都有一个 `none` 选项，因此，没有合适操作对象时，提供方会回答 `none`，而不是拒绝回答。`none` 会使该步骤受阻。
+
+## 如何输入文本
+
+当决策模型选择 `type` 时，文本模型会根据目标、参数、字段标签和页面文本生成值。执行器会原样输入该字符串。如果目标中没有值，它不会输入任何内容，决策模型会重新选择。对于 `upload`，文本模型会列出目标或参数指定的项目相对路径，运行器对每条路径进行授权。模型输出绝不会用作选择器、URL 或按键。
+
+密码字段不会传给文本模型。只有 `typeSecret` 可以通过已声明的句柄填入机密值。
+
+文本模型还负责回答 `waitFor` 和 `extract`。你也可以在 agents 条目上设置 `model`，替代 `textModel`。如果两者都没有设置，执行器不会提供 `type`、`upload`、`tap_at` 或 `type_at`。
+
+## 完成步骤
+
+当决策模型回答 `done` 或 `failed` 时，执行器会根据最新屏幕，通过一个问题核实该声明：这个步骤的任务完成了吗？该检查不会看到模型的推理过程或机密值。
+
+确认后的 `done` 会使步骤通过，确认后的 `failed` 会使步骤以 `ACTION_FAILED` 失败。未经确认的声明会作为历史记录返回给决策模型。第二次出现未经确认的声明时，步骤会结束：如果屏幕与目标相矛盾，则为 `ACTION_FAILED`；否则为 `blocked`，错误代码为 `AUTOMATION_UNSUPPORTED`。
+
+## 阈值
+
+两个阈值默认均关闭，因此执行器会遵循概率最高的选择。设置 `minProbability` 或 `minConfidence`，可以阻止可信度较低的操作、拒绝可信度较低的完成检查，并让可信度较低的断言以无法确定结果的状态失败：
+
+```ts title="Executor setup"
+const executor = decisionExecutor({ model, minProbability: 0.9, minConfidence: 0.8 });
+```
+
+概率是所选选项在答案分布中所占的比例。置信度是提供方自己的统计值，如果未报告则为 0。OpenAI 会将两者四舍五入到小数点后两位。设置阈值前，请先在你自己的测试上衡量准确率。
+
+## 视觉
+
+`vision: true` 会为每次观察添加一张经过遮罩处理的截图。断言和完成检查都可以看到它，因此模型能判定语义树中没有的绘制内容。操作和操作对象问题只读取语义树。也支持 `agent.assert(..., { vision: true })` 和 `vision: 'only'`。
+
+模型必须接受图像并回答 `score` 问题。TypeSafe Jev 支持这一点，需要 `@ai-sdk/typesafe-ai` 3.0.19 或更高版本，并在 `TYPESAFE_AI_API_KEY` 中设置 TypeSafe API 密钥：
+
+```ts title="e2e.config.ts"
+import { typeSafeAi } from '@ai-sdk/typesafe-ai';
+import { openrouter } from '@openrouter/ai-sdk-provider';
+
+const executor = decisionExecutor({
+  model: typeSafeAi.decisionModel('jev-latest'),
+  textModel: openrouter('inception/mercury-2.5'),
+  vision: true,
+});
+```
+
+`openai.decisionModel('gpt-6-luna')` 也接受图像。Vercel AI Gateway 会拒绝所有决策模型的截图，因此在那里请保持 `vision` 关闭。
+
+如果配置了文本模型，视觉模式还会为语义树中未列出的控件提供 `tap_at`。文本模型描述控件，例如“小键盘上的 3 键”，决策模型先在截图中查找它，再在两张放大的裁剪图中定位。一次坐标点击需要四次决策调用和一次文本调用；在同一页面上重复点击则各需一次。
+
+当引擎支持向当前焦点所在位置输入文本时，视觉模式还会为绘制的字段提供 `type_at`。文本模型根据目标描述字段和值，决策模型在截图中找到字段，然后执行器点击它，在光标处、已有文本之后输入该值。这需要两次决策调用和一次文本调用。
+
+## 提供方选项
+
+执行器的 `providerOptions` 会随每次决策调用一起传入，包括完成检查，并且只传给决策模型。你可以用它设置 Vercel AI Gateway 的零数据保留等选项：
+
+```ts title="Executor setup"
+import { gateway } from 'ai';
+
+const executor = decisionExecutor({
+  model: gateway.decisionModel('typesafe-ai/jev'),
+  textModel: gateway('openai/gpt-6-luna-fast'),
+  providerOptions: { gateway: { zeroDataRetention: true } },
+});
+```
+
+文本模型使用 agents 条目的 `providerOptions`，因此针对一个模型的设置，例如网关回退列表，不会传给另一个模型。
+
+AI Gateway 可以将不确定的决策交给另一个模型重新执行。将条件条目添加到 `gateway.models`，它会传入每次决策调用；触发回退时，两个模型都会计费：
+
+```ts title="Executor setup"
+const executor = decisionExecutor({
+  model: gateway.decisionModel('typesafe-ai/jev'),
+  textModel: gateway('openai/gpt-6-luna-fast'),
+  providerOptions: {
+    gateway: { models: [{ model: 'openai/gpt-6-luna-decisions', when: { confidenceBelow: 0.6 } }] },
+  },
+});
+```
+
+回退到决策模型时，阈值仍然有效：执行器会读取回退模型的概率和置信度。回退到语言模型时，例如 `openai/gpt-6-luna-fast`，返回的只有选择，没有分布。执行器会将该选择视为概率 1、置信度 0，因此 `minConfidence` 阈值会阻止所有升级处理后的回答。
+
+## 限制
+
+- 不支持 `navigate`。应用内导航通过对链接执行 `tap` 完成。URL 应写在测试代码中（`browser.goto`、`app.open`）。
+- 不支持多选 `listbox`，也不支持 `scrollUntil`。`type_at` 不会先清空绘制的字段，因此适合空字段。
+- 描述绘制控件的文本模型看不到像素。它无法遵循仅以绘制文本呈现的指令，例如向导中绘制的“点击圆圈”。
+- 每次决策调用和文本调用都计入 `maxModelCalls`。
+- 连续三次操作失败或未产生变化时，步骤会以 `AUTOMATION_UNSUPPORTED` 受阻。
+- 如果提供方拒绝回答某个问题，步骤会以 `MODEL_OUTPUT_INVALID` 失败。
+- 每个问题最多有 255 个选项，这是 TypeSafe 的限制。在更大的屏幕上，视口中的节点优先，其余节点计为省略，因此模型可以滚动。
+
+## 下一步
+
+<CardGroup cols={2}>
+  <Card title="自定义执行器" icon="gears" href="/executors">
+    执行器如何接入运行器。
+  </Card>
+  <Card title="模型" icon="brain" href="/models">
+    改为使用支持工具调用的 LLM 智能体。
+  </Card>
+</CardGroup>

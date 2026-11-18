@@ -6,7 +6,9 @@ import {
   formatDuration,
   formatTokens,
   matchesSearch,
+  onTarget,
   repeatSuffix,
+  statusTabs,
   type ReportModel,
   type Result,
   type StatusFilter,
@@ -14,34 +16,57 @@ import {
 import { replaceRoute, routeHref } from './route.ts';
 import { Icon, StatusIcon, StatusTag, Tag } from './ui.tsx';
 
-/** The run page: what ran, the status tabs, the search box, and the tests as a tree of files and describe blocks. */
-export function ListView({ model, status, search }: { model: ReportModel; status: StatusFilter; search: string }) {
+/** The run page: what ran, the target and status tabs, the search box, and the tests as a tree of files and describe blocks. */
+export function ListView({ model, status, search, target }: { model: ReportModel; status: StatusFilter; search: string; target: string | undefined }) {
+  const scoped = useMemo(() => onTarget(model.results, target), [model, target]);
   const counts = useMemo(
     () =>
       Object.fromEntries(
-        Object.entries(STATUS_FILTERS).map(([name, matches]) => [name, model.results.filter((result) => matches(result.status)).length]),
+        Object.entries(STATUS_FILTERS).map(([name, matches]) => [name, scoped.filter((result) => matches(result.status)).length]),
       ) as Record<StatusFilter, number>,
-    [model],
+    [scoped],
   );
   const files = useMemo(() => {
-    const shown = model.results.filter((result) => STATUS_FILTERS[status](result.status) && matchesSearch(result, search));
+    const shown = scoped.filter((result) => STATUS_FILTERS[status](result.status) && matchesSearch(result, search));
     return [...Map.groupBy(shown, (result) => result.file)].map(([file, results]) => suiteTree(file, results)).toSorted((a, b) => byStatus(a.worst, b.worst));
-  }, [model, status, search]);
-  const params = { status: status === 'all' ? undefined : status, q: search };
+  }, [scoped, status, search]);
+  const params = { status: status === 'all' ? undefined : status, q: search, target };
+  /** The targets the results ran on, each with how many of them it carries. */
+  const targets = useMemo(() => {
+    const byTarget = Map.groupBy(model.results, (result) => result.targetId);
+    return model.run.targets
+      .filter((runTarget) => model.targetIds.has(runTarget.id))
+      .map((runTarget) => ({ id: runTarget.id, count: byTarget.get(runTarget.id)?.length ?? 0 }));
+  }, [model]);
+  // Once the view is filtered to one target, every row would carry the same tag.
+  const showTarget = model.targetIds.size > 1 && target === undefined;
 
   return (
     <div className="flex flex-col gap-e2e-4">
-      <RunHeader model={model} counts={counts} />
+      <RunHeader model={model} counts={counts} target={target} />
       <div className="flex flex-wrap items-center gap-x-e2e-4 gap-y-e2e-2 border-b border-shade-700 pb-e2e-2">
-        <nav aria-label="Status" className="flex flex-wrap gap-x-e2e-4 gap-y-e2e-2">
-          {(Object.keys(STATUS_FILTERS) as StatusFilter[]).map((name) =>
-            name !== 'all' && counts[name] === 0 ? null : (
-              <a key={name} href={routeHref({ ...params, status: name === 'all' ? undefined : name })} aria-current={name === status ? 'page' : undefined} className="e2e-action group flex items-baseline gap-e2e-1">
-                <span>{name}</span>
-                <span className="text-shade-500 group-aria-[current=page]:text-shade-100">{counts[name]}</span>
+        {targets.length > 1 ? (
+          <nav aria-label="Target" className="flex w-full flex-wrap gap-x-e2e-4 gap-y-e2e-2">
+            {[{ id: undefined as string | undefined, count: model.results.length }, ...targets].map(({ id, count }) => (
+              <a
+                key={id ?? 'all-targets'}
+                href={routeHref({ ...params, target: id })}
+                aria-current={id === target ? 'page' : undefined}
+                className="e2e-action group flex items-baseline gap-e2e-1"
+              >
+                <span>{id ?? 'all targets'}</span>
+                <span className="text-shade-500 group-aria-[current=page]:text-shade-100">{count}</span>
               </a>
-            ),
-          )}
+            ))}
+          </nav>
+        ) : null}
+        <nav aria-label="Status" className="flex flex-wrap gap-x-e2e-4 gap-y-e2e-2">
+          {statusTabs(counts, status).map((name) => (
+            <a key={name} href={routeHref({ ...params, status: name === 'all' ? undefined : name })} aria-current={name === status ? 'page' : undefined} className="e2e-action group flex items-baseline gap-e2e-1">
+              <span>{name}</span>
+              <span className="text-shade-500 group-aria-[current=page]:text-shade-100">{counts[name]}</span>
+            </a>
+          ))}
         </nav>
         <label className="relative ml-auto flex w-full items-center sm:w-80">
           <span className="pointer-events-none absolute left-e2e-2 text-shade-500">
@@ -62,28 +87,34 @@ export function ListView({ model, status, search }: { model: ReportModel; status
           no tests match these filters.
         </p>
       ) : (
-        files.map((file) => <FileGroup key={file.title} file={file} model={model} />)
+        files.map((file) => <FileGroup key={file.title} file={file} model={model} showTarget={showTarget} />)
       )}
     </div>
   );
 }
 
 /** `counts` are the listed tests', so the headline matches the tabs: filtered-out tests count as skipped there. */
-function RunHeader({ model, counts }: { model: ReportModel; counts: Record<StatusFilter, number> }) {
+function RunHeader({ model, counts, target }: { model: ReportModel; counts: Record<StatusFilter, number>; target: string | undefined }) {
   const { run } = model;
   const { usage } = run;
   const duration = Date.parse(run.finishedAt) - Date.parse(run.startedAt);
-  const facts = [
-    new Date(run.startedAt).toLocaleString(),
-    formatDuration(duration),
-    run.targets
-      .filter((target) => model.targetIds.has(target.id))
-      .map((target) => `${target.id} (${target.engine.name})`)
-      .join(', '),
-    usage.modelTokens > 0 ? `${formatTokens(usage.modelTokens)} tokens` : undefined,
-    usage.estimatedCostUsd === undefined ? undefined : formatCost(usage.estimatedCostUsd),
-    `e2e ${run.runner.version}`,
-  ].filter((fact) => fact !== undefined && fact !== '');
+  const scope = run.targets
+    .filter((runTarget) => model.targetIds.has(runTarget.id) && (target === undefined || runTarget.id === target))
+    .map((runTarget) => `${runTarget.id} (${runTarget.engine.name})`)
+    .join(', ');
+  const groups = {
+    when: new Date(run.startedAt).toLocaleString(),
+    duration: formatDuration(duration),
+    spend: [
+      usage.modelTokens > 0 ? `${formatTokens(usage.modelTokens)} tokens` : undefined,
+      usage.estimatedCostUsd === undefined ? undefined : formatCost(usage.estimatedCostUsd),
+    ],
+    version: `e2e ${run.runner.version}`,
+  };
+  // One target picked: its fact leads and the run-wide ones follow a label, so none of them reads as the target's own.
+  const facts = (target === undefined ? [groups.when, groups.duration, scope, ...groups.spend, groups.version] : [scope, 'run totals:', groups.when, groups.duration, ...groups.spend, groups.version]).filter(
+    (fact) => fact !== undefined && fact !== '',
+  );
   // The bar's segments, best first; each grows with its count.
   const segments = [
     { label: 'passed', value: counts.passed, color: 'bg-status-passed' },
@@ -97,7 +128,7 @@ function RunHeader({ model, counts }: { model: ReportModel; counts: Record<Statu
   return (
     <header className="flex flex-col gap-e2e-3">
       <div className="flex items-end justify-between gap-e2e-3">
-        <h1 className="type-h3 lowercase">tests {run.status === 'error' ? 'errored' : run.status}</h1>
+        <h1 className="type-h3 lowercase">{target === undefined ? `tests ${run.status === 'error' ? 'errored' : run.status}` : `tests on ${target}`}</h1>
         <p className="flex shrink-0 flex-col items-end gap-e2e-half">
           <span className="type-caption text-shade-500">passed</span>
           <span className="type-number-l">
@@ -147,7 +178,7 @@ function suiteTree(title: string, results: readonly Result[], depth = 0): Suite 
 }
 
 /** One test file as a tree: nesting shows as indentation, not lines. Its path folds the file's tests away. */
-function FileGroup({ file, model }: { file: Suite; model: ReportModel }) {
+function FileGroup({ file, model, showTarget }: { file: Suite; model: ReportModel; showTarget: boolean }) {
   const [open, setOpen] = useState(true);
   return (
     <section aria-label={file.title} className="flex flex-col">
@@ -162,13 +193,13 @@ function FileGroup({ file, model }: { file: Suite; model: ReportModel }) {
           {file.title}
         </button>
       </h2>
-      {open ? <SuiteItems suite={file} model={model} /> : null}
+      {open ? <SuiteItems suite={file} model={model} showTarget={showTarget} /> : null}
     </section>
   );
 }
 
 /** A suite's tests and nested blocks, indented under its title. */
-function SuiteItems({ suite, model }: { suite: Suite; model: ReportModel }) {
+function SuiteItems({ suite, model, showTarget }: { suite: Suite; model: ReportModel; showTarget: boolean }) {
   // A tag every test here carries names the group, not a test: the rows leave it out.
   const [first, ...rest] = suite.tests;
   const shared = rest.length === 0 ? [] : (first?.tags ?? []).filter((tag) => rest.every((result) => result.tags.includes(tag)));
@@ -176,13 +207,13 @@ function SuiteItems({ suite, model }: { suite: Suite; model: ReportModel }) {
     <ul className="flex flex-col pl-e2e-2 sm:pl-e2e-3">
       {suite.tests.map((result) => (
         <li key={result.id}>
-          <TestRow result={result} model={model} tags={result.tags.filter((tag) => !shared.includes(tag))} />
+          <TestRow result={result} model={model} tags={result.tags.filter((tag) => !shared.includes(tag))} showTarget={showTarget} />
         </li>
       ))}
       {suite.suites.map((child) => (
         <li key={child.title}>
           <span className="type-body-s block px-e2e-1 py-e2e-1 text-shade-400">{child.title}</span>
-          <SuiteItems suite={child} model={model} />
+          <SuiteItems suite={child} model={model} showTarget={showTarget} />
         </li>
       ))}
     </ul>
@@ -190,11 +221,10 @@ function SuiteItems({ suite, model }: { suite: Suite; model: ReportModel }) {
 }
 
 /** One test's line; `tags` are the ones worth showing on it. */
-function TestRow({ result, model, tags }: { result: Result; model: ReportModel; tags: readonly string[] }) {
+function TestRow({ result, model, tags, showTarget }: { result: Result; model: ReportModel; tags: readonly string[]; showTarget: boolean }) {
   const attempts = model.attempts(result);
   const final = attempts.at(-1);
   const retries = attempts.length - 1;
-  const showTarget = model.targetIds.size > 1;
   // Passed and failed say themselves by icon; any other status gets a tag too.
   const tagged = result.status !== 'passed' && result.status !== 'failed';
   return (

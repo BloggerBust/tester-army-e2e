@@ -77,10 +77,10 @@ A page object that uses only `screen` runs on web and mobile targets alike.
 When it needs `browser` (keyboard, CSS selectors, `evaluate`) or `device`,
 it runs on that platform only.
 
-A fixture that reads `browser` or `device` makes every test on that `test`
-need it. On another target, those tests fail in `beforeEach` with
-`UNSUPPORTED_CAPABILITY`. Give those tests `requires: ['browser']` to skip
-them there instead, or keep portable tests on the base `test`.
+A fixture that names `browser` or `device` makes every test that uses it
+need it. On another target, the run fails at collection with
+`COLLECTION_ERROR`. Give those tests `requires: ['browser']` to skip them
+there instead. A test that doesn't name the fixture stays portable.
 
 ## Where agent goals fit
 

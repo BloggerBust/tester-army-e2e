@@ -115,6 +115,10 @@
     },
     "tapModifiers": {
       "type": "boolean"
+    },
+    "isolation": {
+      "description": "What one attempt leaves for the next: present only as worker, when the engine's fixtures, app, and screen outlive an attempt.",
+      "const": "worker"
     }
   },
   "allOf": [

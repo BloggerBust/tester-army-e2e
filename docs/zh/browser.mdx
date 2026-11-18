@@ -1,0 +1,433 @@
+---
+title: 使用浏览器
+description: 模拟 API、处理对话框、下载文件、访问 iframe 内容，以及选择浏览器。
+"og:image": "https://e2e.com/docs/images/og/browser.png?v=9e41078fc1"
+"twitter:image": "https://e2e.com/docs/images/og/browser.png?v=9e41078fc1"
+---
+
+`@e2e-dev/web` 的 `browser` 测试夹具用于模拟请求、处理对话框、下载文件，以及在页面中运行代码。引擎通过 [Playwright](https://github.com/microsoft/playwright) 运行 Chromium、Firefox 和 WebKit。导航、交互和检查请使用 `screen`、`app` 和 `expect`。
+
+从 `@e2e-dev/web` 导入 `test` 即可获得 `browser`：
+
+```ts
+import { test } from '@e2e-dev/web';
+import { expect } from 'e2e';
+
+test('the dashboard loads', async ({ app, screen, browser }) => {
+  await app.open('/dashboard');
+  await expect(browser).toHaveURL('/dashboard');
+  await expect(browser).toHaveTitle(/Dashboard/);
+  await expect(screen.getByRole('heading', 'Overview')).toBeVisible();
+});
+```
+
+在包含设备测试目标的测试套件中，为使用 `browser` 的测试添加 `{ requires: ['browser'] }`，让运行器在设备上跳过它。
+
+## 模拟 API
+
+`browser.route` 会在本次尝试的剩余时间内拦截请求，`app.restart()` 和恢复会话后仍然有效。请在页面打开前注册。
+
+```ts
+await browser.route('**/api/quote', async (route) => {
+  await route.fulfill({ json: { cents: 4200 } });
+});
+
+await app.open('/checkout');
+await expect(screen.getByText('$42.00')).toBeVisible();
+```
+
+- 每个处理函数必须且只能调用 `fulfill`、`continue`、`fallback` 或 `abort` 中的一个。
+- 最新注册的路由先运行。`continue` 将请求发送到网络。`fallback` 将请求交给之前注册的路由。
+- 处理函数中失败的 `expect` 会在下一步骤或测试结束时使测试失败。
+
+在请求发出前启动 `browser.waitForResponse`。这也适用于第一次 `browser.goto` 或 `app.open` 之前：
+
+```ts
+const [response] = await Promise.all([
+  browser.waitForResponse('**/api/orders'),
+  screen.getByRole('button', 'Place order').tap(),
+]);
+expect(response.status).toBe(201);
+```
+
+## 处理对话框
+
+未处理的 `alert`、`confirm` 或 `prompt` 会使下一步骤失败。请先注册处理函数：
+
+```ts
+const off = await browser.onDialog('accept');
+await screen.getByRole('button', 'Delete').tap();
+await off();
+```
+
+函数形式的处理器会收到对话框，并且必须调用 `accept(text?)` 或 `dismiss()`。
+
+## 下载文件
+
+```ts
+import { readFile } from 'node:fs/promises';
+
+const file = await browser.waitForDownload(() =>
+  screen.getByRole('link', 'Export CSV').tap(),
+);
+const csv = await readFile(file.absolutePath, 'utf8');
+expect(csv).toContain('Invoice');
+```
+
+e2e 将文件保存为 `download` 产物。通过 `file.absolutePath` 读取文件，托管浏览器也适用。`file.path` 相对于本次尝试的产物目录，而非项目目录。
+
+## 访问 iframe 内容
+
+`browser.frameLocator` 将查询的作用域限制在某个框架内：
+
+```ts
+const payment = browser.frameLocator('#payment-frame');
+await payment.getByLabel('Card number').fill('4242424242424242');
+```
+
+在框架中，`locator` 接受 CSS 或 XPath 选择器，`frameLocator` 则进入嵌套框架：
+
+```ts
+const editor = browser.frameLocator('#result');
+await editor.locator('#upload').setInputFiles('fixtures/photo.png');
+await expect(editor.frameLocator('#preview').getByRole('heading', 'Uploaded')).toBeVisible();
+```
+
+`browser.locator('css or xpath')` 在页面上执行相同的操作。仅在角色、标签和测试 ID 查询都无法找到元素时使用选择器。如果隐藏的重复元素造成匹配歧义，请先尝试 `{ visible: true }`。
+
+智能体的语义树会将其他站点的框架（例如托管的银行卡字段）显示为不含内部内容的 `iframe` 元素（[站点检查](/reference/security#site-check)）。智能体只能通过截图访问这些内容。框架内的步骤请使用 `frameLocator`。要用 `agent.assert` 判定其内容，请传入 [`vision`](/reference/agent#vision)。如果 `agent.act` 的唯一变化发生在该框架内，就不会录制[回放](/cache#when-a-recording-is-written)。
+
+## 从页面读取内容
+
+`browser.evaluate` 在页面中运行函数。e2e 会序列化函数，因此它不能使用测试中的变量。请通过第二个参数传递数据：
+
+```ts
+const count = await browser.evaluate(() => document.querySelectorAll('li').length);
+const flag = await browser.evaluate((name: string) => window.localStorage.getItem(name), 'featureFlags');
+```
+
+仅对 `screen` 无法读取的状态使用 `evaluate`。
+
+## 在页面脚本之前运行脚本
+
+初始化脚本会在每个文档自身的脚本之前运行。可以用它模拟浏览器 API、为 `Math.random` 设置种子，或设置应用启动时读取的标志。要应用到每个测试：
+
+```ts
+web({ initScripts: [{ path: 'tests/init.js' }] })
+```
+
+要应用到单个测试，在页面打开前调用：
+
+```ts
+await browser.addInitScript((value) => { Math.random = () => value; }, 0.5);
+await app.open('/raffle');
+```
+
+参阅[初始化脚本](/reference/web#init-scripts)。
+
+## 模拟深色模式和减少动态效果
+
+`colorScheme` 和 `reducedMotion` 从首次绘制起就设置页面的 `@media` 规则和 `matchMedia` 读取的值。要应用到每个测试：
+
+```ts
+web({ colorScheme: 'dark', reducedMotion: 'reduce' })
+```
+
+要应用到单个测试，调用 `browser.emulateMedia`。在页面打开前调用，可以让页面以这些值加载：
+
+```ts
+await browser.emulateMedia({ reducedMotion: 'reduce' });
+await app.open('/');
+```
+
+设置的值在测试剩余时间内有效，`app.restart()` 和 `app.clearState()` 后也会保留。参阅[媒体模拟](/reference/web#media-emulation)。
+
+## Cookie
+
+```ts
+await browser.setCookies([{ url: 'http://localhost:3000', name: 'tz', value: 'UTC' }]);
+```
+
+无法解析的 Cookie URL、`about:blank`，或 `http:`、`https:` 以外的协议都会触发 `POLICY_DENIED`。域 Cookie 会按其将发送到的源进行检查。只要一个条目被拒绝，e2e 就不会设置任何条目。
+
+## 选择浏览器
+
+浏览器是引擎的一个选项，默认为 `chromium`。同一个应用上的两个浏览器对应两个测试目标，如[每个测试目标一种尺寸](/web#one-size-per-target)所示：
+
+```ts title="Target fragment"
+{ name: 'webkit', engine: web({ browser: 'webkit' }), app },
+```
+
+在 CI 中，通过[安装命令](/reference/web#installing-browsers)安装额外的浏览器：
+
+<CodeGroup>
+```bash npm
+npx @e2e-dev/web install webkit --with-deps
+```
+
+```bash pnpm
+pnpm exec e2e-web install webkit --with-deps
+```
+
+```bash bun
+bunx @e2e-dev/web install webkit --with-deps
+```
+</CodeGroup>
+
+`connect` 通过 CDP 连接到远程 Chromium，而不启动新实例；也可以连接到支持 CDP 的其他浏览器，例如正在运行的 [Lightpanda](/integrations/lightpanda) 或 [Moli](/integrations/moli)。设置尺寸请参阅[视口](/web#viewports)。
+
+## 托管浏览器
+
+浏览器提供方从服务租用浏览器，并向引擎提供其 CDP 端点。将它作为 `browser` 传入。在所有退出路径中，引擎都会在作用域结束时归还每个浏览器，因此按分钟计费的会话会在本次运行不再使用它时停止。
+
+| 服务 | 提供方 |
+| --- | --- |
+| [Kernel](/integrations/kernel) | `@e2e-dev/kernel` 中的 `kernel()` |
+| 在你自己的电脑上运行的 [smol machines](/integrations/smol) microVM | `@e2e-dev/smol` 中的 `smol()` |
+| 在你自己的机器上运行的开源无头模式浏览器 [Lightpanda](/integrations/lightpanda) | `@e2e-dev/lightpanda` 中的 `lightpanda()` |
+| [Moli](/integrations/moli)，支持按需布局和截图的本地浏览器 | `@e2e-dev/moli` 中的 `moli()` |
+| [TestMu AI](/integrations/testmu#run-web-targets-in-browsers) | `@e2e-dev/testmu/web` 中的 `testmuBrowsers()` |
+| [E2B](/integrations/e2b#run-web-targets-in-browsers) 沙箱 | `@e2e-dev/e2b/web` 中的 `e2bBrowsers()` |
+| 其他任何服务 | 你自己的提供方，在项目中编写几十行代码即可 |
+
+如果服务提供窗口的实时视图，请添加 `viewport: null`，让页面[填满窗口](/web#fill-the-window)。
+
+使用提供方意味着引擎通过 CDP 将浏览器作为 Chromium 驱动，该浏览器可以是 Chromium 本身、Lightpanda 或 Moli；提供方不能与 `connect` 同时使用。没有内容需要运行的测试目标不会租用任何浏览器。
+
+### 编写提供方
+
+提供方实现以下接口：
+
+```ts
+export interface BrowserProvider {
+  /** Label in progress lines and error messages. */
+  readonly name: string;
+  /** `worker` (default): one browser per worker slot for the run. `attempt`: a fresh browser per attempt. */
+  readonly scope?: 'worker' | 'attempt';
+  acquire(request: BrowserRequest): Promise<BrowserLease>;
+  release(lease: BrowserLease, context: BrowserReleaseContext): Promise<void>;
+  /** Optional: resolves CDP handshake headers from the worker's environment. */
+  cdpHeaders?(lease: BrowserLease, context: BrowserRequest): Readonly<Record<string, string>> | Promise<Readonly<Record<string, string>>>;
+  /** Optional: the service's own recording of the browser, in the worker, for an attempt that records video. */
+  record?(lease: BrowserLease, context: ProviderRecordContext): Promise<ProviderRecording>;
+  /** Optional: serves `browser.waitForDownload` for a browser on another machine. */
+  readonly downloads?: BrowserProviderDownloads;
+  /** Optional: releases the run's leases a dead worker left open, once the run ends; resolves to their ids. */
+  sweep?(context: BrowserReleaseContext): Promise<readonly string[]>;
+}
+
+export interface BrowserProviderDownloads {
+  /** Absolute directory on the browser's machine the browser saves downloads to. */
+  readonly dir: string;
+  /** The bytes of one finished download, `file` a path under `dir`, read off the leased browser. */
+  read(lease: BrowserLease, file: string, context: BrowserDownloadContext): Promise<Uint8Array>;
+}
+
+export interface BrowserLease {
+  /** The provider's handle (a session id), handed back to `release`. */
+  readonly id: string;
+  /** `ws://`, `wss://`, or `http://` DevTools endpoint to attach to over CDP. */
+  readonly cdpEndpoint: string;
+  /** Endpoint to reattach to the same browser after a transport drop; per-attempt leases only. */
+  readonly reconnectEndpoint?: string;
+}
+```
+
+`acquire` 会收到运行 ID、测试目标、工作进程槽位及槽位数、每次尝试独立租约的尝试 ID、本次运行的环境、中止信号，以及可将日志传递给报告器的 `log`。从 `request.env` 读取令牌，而非 `process.env`。
+
+租约是 JSON 数据。`release` 会收到 `acquire` 返回的对象，因此提供方可以在其中保留自己的字段。只有 `id`、`cdpEndpoint` 和 `reconnectEndpoint` 会传递给工作进程，所以工作进程使用的任何内容（例如录制）都应以 `lease.id` 为键。
+
+对于需要身份验证的 CDP 连接，实现 `cdpHeaders(lease, request)`，并在工作进程中从 `request.env` 读取凭据。请求头不会通过租约 JSON 传递，也不会成为页面请求的请求头。
+
+对于典型的会话 API，提供方发送三个请求：创建会话、轮询直到它提供 DevTools 端点，以及停止会话。
+
+<Accordion title="提供方和配置示例">
+
+```ts title="browser-provider.ts"
+import type { BrowserProvider } from '@e2e-dev/web';
+
+/**
+ * Leases browsers from a service that starts a Chromium per session and
+ * exposes its DevTools endpoint. Replace the three requests with your
+ * service's API.
+ */
+export function hostedBrowsers(options: { serviceUrl: string; scope?: 'worker' | 'attempt' }): BrowserProvider {
+  return {
+    name: 'hosted-browsers',
+    scope: options.scope ?? 'worker',
+    async acquire(request) {
+      const token = request.env['BROWSER_SERVICE_TOKEN'];
+      if (token === undefined || token === '') throw new Error('BROWSER_SERVICE_TOKEN is not set');
+      const headers = { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' };
+      // 1. Ask for a browser; name the session after the run so it can be found later.
+      const created = await fetch(`${options.serviceUrl}/sessions`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          name: `e2e ${request.runId} ${request.targetName} ${request.attemptId ?? `slot ${request.slot + 1} of ${request.slots}`}`,
+        }),
+        signal: request.signal,
+      });
+      if (!created.ok) throw new Error(`browser service: HTTP ${created.status}`);
+      const { id } = (await created.json()) as { id: string };
+      // 2. Wait until the session exposes its DevTools endpoint.
+      for (;;) {
+        const response = await fetch(`${options.serviceUrl}/sessions/${id}`, { headers, signal: request.signal });
+        const session = (await response.json()) as { status: string; cdpUrl?: string; viewerUrl?: string };
+        if (session.status === 'ready' && session.cdpUrl !== undefined) {
+          if (session.viewerUrl !== undefined) request.log(`watch at ${session.viewerUrl}`);
+          return { id, cdpEndpoint: session.cdpUrl };
+        }
+        if (session.status !== 'starting') throw new Error(`browser service: session ${id} is ${session.status}`);
+        await new Promise((resolve) => setTimeout(resolve, 2_000));
+      }
+    },
+    async release(lease, context) {
+      // 3. Stop the session; the run waits for this within cleanupTimeout.
+      const token = context.env['BROWSER_SERVICE_TOKEN'] ?? '';
+      await fetch(`${options.serviceUrl}/sessions/${lease.id}/stop`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+        signal: context.signal,
+      });
+    },
+  };
+}
+```
+
+```ts title="e2e.config.ts"
+import type { E2EConfig } from 'e2e';
+import { web } from '@e2e-dev/web';
+import { hostedBrowsers } from './browser-provider.ts';
+
+export default {
+  targets: [
+    {
+      name: 'hosted',
+      engine: web({
+        browser: hostedBrowsers({ serviceUrl: 'https://browsers.example.com' }),
+      }),
+      app: { url: 'https://staging.example.com' },
+    },
+  ],
+  workers: 2,
+} satisfies E2EConfig;
+```
+
+两个工作进程并行租用两个会话，并在本次运行期间保留它们。
+
+</Accordion>
+
+### 选择租约作用域
+
+默认的 `scope: 'worker'` 在整个运行期间为每个工作进程槽位保留一个浏览器。`scope: 'attempt'` 为每次尝试（包括重试）提供一个之前的测试从未使用过的全新浏览器，代价是每次尝试都需要启动会话。托管会话在运行期间会产生费用，因此 `workers` 应设置为测试套件能充分利用的数量。
+
+异常终止的工作进程（崩溃、`process.exit`、被终止）无法释放自己获取的资源。实现 `sweep`，让运行器在运行结束时为每个测试目标释放这些租约一次：通过服务标签，或限定在本次运行和测试目标范围内的共享本地租约日志查找租约，并解析返回其 ID，供报告器使用。清扫失败只会显示一行消息，不会导致任何失败。没有 `sweep` 时，这类浏览器会一直运行，直到服务将其结束。
+
+<Accordion title="工作进程作用域：租约的开始与结束">
+- 运行开始时，引擎并行租用所有槽位的浏览器。如果一个槽位失败，运行会在任何测试开始前结束，并释放已成功获取的租约。
+- 最后一个工作进程退出后，引擎会在 `cleanupTimeout` 内释放租约，覆盖所有退出路径：失败、中断，以及 `prepare` 抛出错误。
+- 工作进程的浏览器断开后，工作进程会在下一次尝试开始时租用替代浏览器，并在退出时释放它。因此 `acquire` 也会在工作进程中运行：不要依赖运行器进程中建立的状态。其 `log` 仍会传递给报告器，并以测试目标和槽位为前缀。
+- 获取租约的一方负责释放它，且只释放一次。
+</Accordion>
+
+<Accordion title="尝试作用域：限制">
+尝试在浏览器的持久化默认上下文中、在第一个标签页上运行，因此远程浏览器必须只包含这个上下文。[`connect.reconnectEndpoint`](/reference/web#recovering-a-cdp-transport) 的限制同样适用：
+
+- 不支持 `headers`、`basicAuth`、`userAgent`、`locale` 或 `timezoneId`。每一项都会触发 `INVALID_CONFIG`。
+- 不支持 `app.clearState()`。调用会触发 `UNSUPPORTED_CAPABILITY`，并注明作用域。
+- 不支持捕获或恢复会话状态。如果本次运行的测试在该测试目标上使用[会话](/authentication)，则会在准备测试登录之前以 `COLLECTION_ERROR` 失败。
+
+传输连接断开后，下一个操作会通过租约的 `reconnectEndpoint`（不存在时使用 `cdpEndpoint`）重新连接，并检查是否仍为同一个浏览器。
+</Accordion>
+
+### 提供方上的下载
+
+实现 `downloads` 后，`browser.waitForDownload` 的用法就与本地相同。托管浏览器将下载文件保存到自己的磁盘上，运行器无法直接打开。设置 `downloads` 后，它会将文件保存到 `dir` 下，引擎再把下载完成的文件路径传给 `read`。`read` 在工作进程中通过服务的文件 API 获取字节数据，受该次调用的超时限制。[Kernel](/integrations/kernel#downloads) 就以这种方式提供下载。
+
+未实现 `downloads` 时，在另一台机器的浏览器上下载会以 `ENGINE_FAILURE` 失败，并注明提供方名称。如果提供方的浏览器运行在运行器所在机器上，则无需额外实现。
+
+### 提供方上的录制
+
+实现 `record`，即可使用服务自身的录制作为本次尝试的视频。当尝试录制[视频](/reference/config#video)时，工作进程会在页面打开后调用 `record`，而非启动引擎录屏。录制覆盖整个浏览器窗口，包括标签页和地址栏。
+
+`record` 返回 `e2e/engine` 中的 `ProviderRecording`。本次尝试收集视频时，其 `stop` 会执行以下两种操作之一：
+
+- 将文件写入收到的目录并返回 `{ file }`。e2e 将其保存为 `video/<file>`，与本次尝试的其他产物放在一起。
+- 对于由服务保管的录制，返回 `{ url, mediaType }`。报告会链接到该录制。
+
+<Accordion title="record 方法示例">
+
+```ts title="browser-provider.ts"
+import type { ProviderRecording } from 'e2e/engine';
+
+// In hostedBrowsers(), beside acquire and release.
+async record(lease, context): Promise<ProviderRecording> {
+  const headers = { Authorization: `Bearer ${context.env['BROWSER_SERVICE_TOKEN'] ?? ''}` };
+  const startedAt = new Date().toISOString();
+  const started = await fetch(`${options.serviceUrl}/sessions/${lease.id}/recordings`, {
+    method: 'POST',
+    headers,
+    signal: context.signal,
+  });
+  if (!started.ok) throw new Error(`browser service: HTTP ${started.status}`);
+  const { id } = (await started.json()) as { id: string };
+  return {
+    startedAt,
+    async stop({ signal }) {
+      const stopped = await fetch(`${options.serviceUrl}/recordings/${id}/stop`, { method: 'POST', headers, signal });
+      if (!stopped.ok) throw new Error(`browser service: HTTP ${stopped.status}`);
+      // The service keeps the recording; the report links to its player page.
+      return { url: `${options.serviceUrl}/recordings/${id}`, mediaType: 'text/html' };
+    },
+  };
+},
+```
+
+</Accordion>
+
+`record` 失败会导致本次尝试启动失败，并注明提供方和租约。`stop` 失败后，会在尝试结束时再运行一次，避免录制在共享浏览器上持续运行。如果服务无法录制某个浏览器（例如无头模式浏览器），则不要提供 `record`，让引擎进行录屏。[Kernel](/integrations/kernel#recordings) 就以这种方式录制。
+
+## 图标字体和生成内容
+
+样式表通过 `::before` 或 `::after` 添加的文本是控件名称的一部分，与屏幕阅读器的读取方式一致：带有 `.next::before { content: "→" }` 的按钮名称为 `button "→ Next"`。`getByLabel` 读取的标签文本从不包含生成内容。
+
+图标字体是例外。Font Awesome 和类似字体用私用区字符（`\f090`）绘制每个图标，引擎会从所有名称中去掉这些字符：
+
+- `<button><i class="fa fa-sign-in"> Login</i></button>` 的名称为 `button "Login"`，`getByRole('button', 'Login')` 可以找到它。
+- 两个单词之间的字形会读取为空格。
+- 只有图标的控件如果有 `title`，就会读取为该值。浏览器仍使用字形命名，因此通过该标题调用 `getByRole` 找不到它。请添加 `aria-label`，或使用 `browser.locator('[title="Sign out"]')`。
+- `RegExp` 名称匹配的是浏览器中的名称，包含字形，因此不要添加首尾锚定符：`/Login/`。
+
+## 惰性内容
+
+智能体看不到惰性内容，因此不会将无法接收输入的控件作为操作对象：
+
+- 带有 `inert` 属性的元素及其所有后代。
+- 通过 `showModal()` 或 `show-modal` 命令打开的模态 `<dialog>` 之外的所有内容。如果打开了多个，只保留最后显示的一个。如果 e2e 无法判断最后显示的是哪一个，就不会省略任何内容。
+
+与 Playwright 一样，定位器仍然可以找到惰性内容，`toBeVisible` 仍然会通过。
+
+## Shadow DOM
+
+`screen` 查询、作用域和 `has` 过滤器可以进入开放和封闭的影子根，智能体也能看到其中的内容。`first`、`last` 和 `nth` 先计算封闭影子根之外的匹配项，再依次计算各个影子根内的匹配项。
+
+```ts
+// The input and the button live in a closed shadow root a widget attached.
+await screen.getByPlaceholder('Access code').fill('SHADOW-42');
+await screen.getByRole('button', 'Submit').tap();
+await expect(screen.getByText('Access granted')).toBeVisible();
+```
+
+`browser.locator`、`frameLocator` 和 `filter({ hasText })` 会停在封闭影子根处。请改为查询影子根中的文本，或使用 `has` 过滤。无法访问在 HTML 中声明的封闭影子根（`<template shadowrootmode="closed">`）。
+
+## 下一步
+
+<CardGroup cols={2}>
+  <Card title="网页端引擎参考" icon="masks-theater" href="/reference/web">
+    所有 `browser` 方法、超时时间和抛出的错误。
+  </Card>
+  <Card title="网页端" icon="play" href="/web">
+    启动开发服务器、访问受保护的预览环境，以及测试视口。
+  </Card>
+</CardGroup>

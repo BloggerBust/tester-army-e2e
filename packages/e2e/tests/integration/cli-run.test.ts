@@ -234,6 +234,53 @@ test('fails once', async ({ app }) => {
     expect(report.run.results).toHaveLength(titles.length);
   });
 
+  it('prints dot verdicts, failure diagnostics, and counts with one mark per selected result', () => {
+    const { exitCode, stdout } = cli(
+      {
+        'e2e.config.ts': fakeConfig('{}', "reporters: ['dot'],"),
+        'tests/dot.e2e.ts': `import { existsSync, writeFileSync } from 'node:fs';
+import { test } from 'e2e';
+test('selected pass', () => {});
+test('selected retry', { retries: 1 }, () => {
+  const marker = new URL('./first-attempt', import.meta.url);
+  if (!existsSync(marker)) {
+    writeFileSync(marker, '');
+    throw new Error('retry this test');
+  }
+});
+test('selected failure', () => { throw new Error('fails'); });
+test.skip('selected skip', () => {});
+test('left out', () => {});
+`,
+      },
+      ['run', '--grep', 'selected'],
+    );
+    expect(exitCode).toBe(1);
+    const marks = stdout.split('\n').filter((line) => /^[.~FTI-]+$/u.test(line)).join('');
+    expect([...marks].toSorted()).toEqual(['-', '.', 'F', '~']);
+    expect(stdout).toContain('Failed Tests');
+    expect(stdout).toContain('selected failure');
+    expect(stdout).toContain('fails');
+    expect(stdout).toMatch(/tests\/dot\.e2e\.ts:\d+/u);
+    expect(stdout).toMatch(/Tests\s+1 failed.*1 passed.*1 flaky.*1 skipped/u);
+  });
+
+  it('keeps dot progress and test logs on stderr when the CLI also requests JSON', () => {
+    const { exitCode, stdout, stderr } = cli(
+      {
+        'e2e.config.ts': fakeConfig(),
+        'tests/dot.e2e.ts': `import { test } from 'e2e';
+test('first', () => {});
+test('second', () => { console.log('test log'); });
+`,
+      },
+      ['run', '--reporter', 'dot,json'],
+    );
+    expect(exitCode).toBe(0);
+    assertValidReport(JSON.parse(stdout));
+    expect(stderr).toContain('.\ntest log\n.\n');
+  });
+
   it('prints a run error on stderr once, whichever reporters run, and keeps the json document whole', () => {
     const project = fixture({
       'e2e.config.ts': fakeConfig(),
@@ -257,5 +304,62 @@ test('fails once', async ({ app }) => {
     expect(list.exitCode).toBe(2);
     expect(list.stdout).toMatch(reason);
     expect(timesNamed(list.output)).toBe(1);
+  });
+});
+
+describe('fixture rules through the CLI', () => {
+  const SUPPORT = `import { test as base } from 'e2e';
+
+export const test = base.extend<{ workspace: string }>({
+  workspace: async ({}, use) => {
+    await use('w');
+  },
+});
+`;
+
+  /** The run's one error for `files`, through `e2e run`. */
+  function collectionError(files: Record<string, string>): string {
+    const ran = cli({ 'e2e.config.ts': fakeConfig('{ fixtures: true }'), 'tests/support.ts': SUPPORT, ...files }, ['run', '--reporter', 'json']);
+    expect(ran.exitCode).toBe(2);
+    const report = JSON.parse(ran.stdout) as Report1Document;
+    assertValidReport(report);
+    expect(report.run.results).toEqual([]);
+    expect(report.run.errors.map((error) => error.code)).toEqual(['COLLECTION_ERROR']);
+    return report.run.errors[0]!.message;
+  }
+
+  it('names the file and line of the code that breaks a rule', () => {
+    const header = "import { test } from './support.ts';\n\n";
+    expect(collectionError({ 'tests/a.e2e.ts': `${header}test('fine', async ({ workspace }) => void workspace);\n\ntest('whole', async (fixtures) => {\n  void fixtures;\n});\n` })).toMatch(
+      /^tests\/a\.e2e\.ts:5: test "whole" must destructure its first parameter/,
+    );
+    expect(collectionError({ 'tests/a.e2e.ts': `${header}test.describe('group', () => {\n  test.afterEach(async ({ workspace, ...rest }) => void [workspace, rest]);\n  test('one', () => {});\n});\n` })).toMatch(
+      /^tests\/a\.e2e\.ts:4: afterEach hook takes the rest property "\.\.\.rest"/,
+    );
+    expect(collectionError({ 'tests/a.e2e.ts': `${header}test('one', () => {});\n\ntest('typo', async ({ workspce }) => void workspce);\n` })).toMatch(
+      /^tests\/a\.e2e\.ts:5: test "typo" names "workspce": target "fake" has no "workspce" fixture; available: agent, app, gadget, platform, screen, session, workspace \(engine fake contributes gadget\); did you mean "workspace"\?$/,
+    );
+    expect(collectionError({ 'tests/a.e2e.ts': `${header}test.beforeAll(({ platform }) => void platform);\n\ntest.beforeAll(({ gadget }) => void gadget);\ntest('one', () => {});\n` })).toMatch(
+      /^tests\/a\.e2e\.ts:5: beforeAll hook names "gadget", a test fixture on target "fake"/,
+    );
+    // Declared in a module the test file imports: the error points there.
+    const cyclic = `import { test as base } from 'e2e';\n\nexport const test = base.extend({\n  a: async ({ b }, use) => use(b),\n  b: async ({ a }, use) => use(a),\n});\n`;
+    expect(collectionError({ 'tests/cyclic.ts': cyclic, 'tests/a.e2e.ts': `import { test } from './cyclic.ts';\ntest('one', () => {});\n` })).toMatch(
+      /^tests\/cyclic\.ts:3: fixtures depend on each other in a cycle: "a" -> "b" -> "a"/,
+    );
+    const late = `import { test as base } from 'e2e';\n\nexport const test = base\n  .extend({\n    early: async ({ gadget, nope }, use) => use(String(gadget) + String(nope)),\n  });\n`;
+    expect(collectionError({ 'tests/late.ts': late, 'tests/a.e2e.ts': `import { test } from './late.ts';\ntest('unused is fine', () => {});\ntest('one', ({ early }) => void early);\n` })).toMatch(
+      /^tests\/late\.ts:\d: fixture "early" names "nope": target "fake" has no "nope" fixture/,
+    );
+  });
+
+  it('lists a file whose fixture names a target does not have while no test there uses it', () => {
+    const late = `import { test as base } from 'e2e';\n\nexport const test = base.extend({\n  early: async ({ nope }, use) => use(String(nope)),\n});\n`;
+    const listed = cli(
+      { 'e2e.config.ts': fakeConfig(), 'tests/late.ts': late, 'tests/a.e2e.ts': `import { test } from './late.ts';\ntest('unused is fine', () => {});\ntest('elsewhere', { platforms: ['other'] }, ({ early }) => void early);\n` },
+      ['list'],
+    );
+    expect(listed.exitCode).toBe(0);
+    expect(listed.stdout).toContain('unused is fine');
   });
 });

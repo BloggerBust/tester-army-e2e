@@ -17,6 +17,7 @@ import { outcome } from '../../src/report/outcome.ts';
 import { RealmManager } from '../../src/run/realm.ts';
 import type { AttemptRecord, ResultRecord, SerialAttemptRecord, SerialGroupRecord } from '@e2e-dev/core/lib/run/records';
 import { runSerialUnit, type SerialHost } from '../../src/run/serial.ts';
+import { plainSuiteHooks } from '../helpers/suite-hooks.ts';
 
 const OPTIONS: ResolvedTestOptions = {
   timeout: 30_000,
@@ -91,6 +92,7 @@ function serialPairs(target: ResolvedTarget): TestTargetPair[] {
       kind: 'test',
       title,
       titlePath: [title],
+      names: [],
       declarationIndex,
       options: {},
       sessions: [],
@@ -115,7 +117,7 @@ describe('serial attempt record provenance', () => {
     const target = makeTarget('web', 0);
     const pairs = serialPairs(target).slice(0, 1).map((pair) => ({ ...pair, options: { ...pair.options, retries: 1 } }));
     const file = { file: pairs[0]!.test.file, absolutePath: `/project/${pairs[0]!.test.file}` };
-    const realms = new RealmManager({ targetName: target.name, platform: target.platform, timeout: 1000, cleanupTimeout: 1000, runErrors: [], redactTitle: (title) => title });
+    const realms = new RealmManager({ targetName: target.name, openSuiteHooks: plainSuiteHooks(target.platform), timeout: 1000, cleanupTimeout: 1000, runErrors: [], redactTitle: (title) => title });
     const controller = new AbortController();
     let created = 0;
     vi.spyOn(realms, 'create').mockImplementation(async () => {

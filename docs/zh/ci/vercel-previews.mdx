@@ -1,0 +1,222 @@
+---
+title: Vercel 预览部署
+description: 使用 GitHub Actions 测试 Vercel 预览部署和生产部署，并在 e2e 通过前阻止生产发布。
+---
+
+import { SetupPrompt } from '../../snippets/setup-prompt-card.jsx';
+import { Video } from '../../snippets/video.jsx';
+
+export const setupPrompt = `针对 Vercel 部署运行这个项目的 e2e 测试。文档：\`https://e2e.com/docs/ci/vercel-previews.md\`
+
+1. 阅读该页面，根据这个应用的本地命令、URL 和模型提供方调整其中的配置。
+2. 添加用于 vercel.deployment.ready 的 repository_dispatch 工作流。保留对已部署提交的检出操作和按环境区分的状态。
+3. 让我启用 Vercel 仓库 dispatch 事件，并将自动化绕过机密值和模型密钥存储到 GitHub 中。
+4. 说明工作流必须进入默认分支，Vercel 才能触发它。
+5. 在我部署后，检查工作流结果并修复错误，直到测试套件通过。然后指导我添加 e2e - production Deployment Check。`;
+
+[Vercel](https://vercel.com) 为每次应用部署提供独立的 URL。GitHub Actions 针对该 URL 运行 e2e。[Deployment Check](https://vercel.com/docs/deployment-checks) 会在测试通过前阻止生产发布。
+
+[e2e-vercel 示例](https://github.com/e2e-inc/e2e-vercel)提供了一个包含定位器测试和智能体测试的 Next.js 应用。
+
+<Video>
+  <video src="/images/vercel-previews.mp4" aria-label="一个导致问候表单崩溃的拉取请求在 Vercel 预览部署上未通过 e2e 检查。拉取请求评论显示智能体失败的步骤和应用未捕获的错误，录制的视频展示了崩溃过程。" muted loop playsInline controls />
+
+  e2e 在 Vercel 预览部署上检测到拉取请求中的故障并使检查失败。评论由 [GitHub 报告器](#post-results-on-the-pull-request)生成。
+</Video>
+
+<SetupPrompt>
+
+<Prompt description={setupPrompt} children={setupPrompt} actions={["copy", "cursor"]} />
+
+</SetupPrompt>
+
+## 手动配置
+
+先准备一个[网页端测试套件](/web)，以及一个已连接到其 GitHub 仓库的 Vercel 项目。以下工作流使用 npm 和已提交的 `package-lock.json`。
+
+### 配置部署 URL
+
+读取 `APP_URL` 来测试部署。没有该变量时，此配置会启动你的本地应用。请调整命令和端口：
+
+```ts title="e2e.config.ts"
+import type { E2EConfig } from 'e2e';
+import { web } from '@e2e-dev/web';
+import { gateway } from 'ai';
+
+const appUrl = process.env.APP_URL;
+const bypassSecret = process.env.VERCEL_AUTOMATION_BYPASS_SECRET;
+
+export default {
+  agents: { default: { model: gateway('openai/gpt-6-luna-fast') } },
+  targets: [
+    {
+      engine: web(bypassSecret ? { headers: { 'x-vercel-protection-bypass': bypassSecret } } : {}),
+      app: {
+        identity: 'my-app',
+        environment: process.env.DEPLOYMENT_ENVIRONMENT === 'production' ? 'production' : 'test',
+        ...(appUrl
+          ? { url: appUrl }
+          : {
+              url: 'http://localhost:3000',
+              command: { executable: 'npm', args: ['run', 'dev'], reuseExisting: true },
+            }),
+      },
+    },
+  ],
+} satisfies E2EConfig;
+```
+
+在测试中使用 `app.open('/')`，让导航遵循配置的 URL。
+
+### 启用事件和部署访问
+
+在 Vercel 项目的 **Settings → Git** 中，启用 [`repository_dispatch` 事件](https://vercel.com/docs/git/vercel-for-github#repository-dispatch-events)。在 **Settings → Deployment Protection** 下，创建一个 [Protection Bypass for Automation](https://vercel.com/docs/deployment-protection/methods-to-bypass-deployment-protection/protection-bypass-automation) 机密值。配置会将它作为 `x-vercel-protection-bypass` 请求头发送。
+
+在 GitHub 的 **Settings → Secrets and variables → Actions** 中添加：
+
+| 机密值 | 用途 |
+| --- | --- |
+| `VERCEL_AUTOMATION_BYPASS_SECRET` | 打开受保护的预览部署和尚未发布的生产部署 |
+| `AI_GATEWAY_API_KEY` | 使用上述配置调用模型；只使用定位器的测试套件无需此密钥 |
+
+<Note>
+示例会在未设置模型凭据时显式跳过智能体测试。e2e 不会自动跳过它们。请为 CI 提供密钥，以运行整个测试套件。
+</Note>
+
+### 添加工作流
+
+使用 `vercel.deployment.ready`，它在构建完成后、Deployment Checks 开始前触发。将 `APP_URL` 设置为事件中的部署 URL，让测试访问等待提升的构建。
+
+```yaml title=".github/workflows/e2e.yml" expandable
+name: e2e
+
+on:
+  repository_dispatch:
+    types: [vercel.deployment.ready]
+
+run-name: e2e - ${{ github.event.client_payload.environment }} - ${{ github.event.client_payload.git.shortSha }}
+
+permissions:
+  contents: read
+  actions: read
+  statuses: write
+
+jobs:
+  e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: vercel/repository-dispatch/actions/status@30f760c6640485cd92f8c785ef361382555fb712 # v1
+        with:
+          name: e2e - ${{ github.event.client_payload.environment }}
+      - uses: vercel/repository-dispatch/actions/checkout@30f760c6640485cd92f8c785ef361382555fb712 # v1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('package-lock.json') }}
+      - run: npx e2e-web install chromium --with-deps
+
+      - name: Run e2e against the deployment
+        run: npx e2e run --reporter list,junit --video on
+        env:
+          APP_URL: ${{ github.event.client_payload.url }}
+          DEPLOYMENT_ENVIRONMENT: ${{ github.event.client_payload.environment }}
+          AI_GATEWAY_API_KEY: ${{ secrets.AI_GATEWAY_API_KEY }}
+          VERCEL_AUTOMATION_BYPASS_SECRET: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
+
+      - name: Upload the report
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: e2e-report-${{ github.event.client_payload.environment }}
+          path: |
+            .e2e/report.json
+            .e2e/junit.xml
+            .e2e/results
+          if-no-files-found: warn
+          retention-days: 7
+```
+
+Vercel 的 checkout action 会选中已部署的提交。其 status action 会在该提交上报告作业结果。将状态分为 `e2e - preview` 和 `e2e - production`，可防止一个环境的结果覆盖另一个环境的结果。
+
+<Note>
+测试部署前，先将工作流放到默认分支。拉取请求中的工作流修改不会改变 Vercel 触发的工作流。
+</Note>
+
+只对可信的部署代码运行此工作流。它会使用仓库机密值和具有写入权限的令牌安装并运行该提交。参阅[模型凭据](/ci#model-credentials)。
+
+### 根据结果控制生产发布
+
+首次生产运行后，打开 Vercel 的 **Settings → Build and Deployment → Deployment Checks**。选择 **Add Checks**，选择 **GitHub**，然后选择 `e2e - production`。
+
+此后的生产构建会等待检查通过，Vercel 才会为它们分配生产域名。检查失败时，之前的部署会继续在线。确保 Vercel 与工作流中的状态名称相同。参阅 [Deployment Checks](https://vercel.com/docs/deployment-checks#adding-github-checks)。
+
+## 复用智能体录制
+
+提交 [`.e2e/cache`](/cache#commit-the-replay-cache)，即可在 CI 中回放已录制的 `agent.act` 步骤。配置中固定的 `app.identity` 和 `test` 环境让本地运行和预览运行能够跨 URL 共享录制。生产环境不同，因此使用自己的缓存条目。
+
+CI 默认读取录制，并在缓存未命中时调用模型。`agent.assert`、`agent.waitFor` 和 `agent.extract` 始终实时运行，因此有了录制仍然需要模型密钥。
+
+## 在拉取请求中发布结果
+
+dispatch 载荷不包含拉取请求编号。为 [`@e2e-dev/github` 报告器](/github)根据已部署的提交查找该编号。
+
+<Accordion title="为工作流添加拉取请求评论">
+
+按照报告器的[配置说明](/github#setup)安装 `@e2e-dev/github`，并将 `github()` 添加到配置的 `reporters` 中。CLI 的 `--reporter list,junit` 会保持自定义报告器启用。
+
+在工作流权限中添加 `pull-requests: write`。在 **Run e2e against the deployment** 之前插入此步骤：
+
+```yaml
+      - name: Find the pull request
+        id: pull-request
+        run: |
+          number=$(gh api "repos/$GITHUB_REPOSITORY/commits/$SHA/pulls" \
+            --jq '[.[] | select(.state == "open")][0].number // empty')
+          echo "number=$number" >> "$GITHUB_OUTPUT"
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SHA: ${{ github.event.client_payload.git.sha }}
+```
+
+替换运行步骤。临时事件文件会为报告器提供拉取请求编号和已部署的提交，用于生成源码链接：
+
+```yaml
+      - name: Run e2e against the deployment
+        run: |
+          export GITHUB_SHA="$SHA"
+          if [ -n "$PULL_REQUEST" ]; then
+            jq -n --argjson number "$PULL_REQUEST" --arg sha "$SHA" \
+              '{pull_request: {number: $number, head: {sha: $sha}}}' > "$RUNNER_TEMP/pull-request.json"
+            export GITHUB_EVENT_PATH="$RUNNER_TEMP/pull-request.json"
+          fi
+          npx e2e run --reporter list,junit --video on
+        env:
+          PULL_REQUEST: ${{ steps.pull-request.outputs.number }}
+          SHA: ${{ github.event.client_payload.git.sha }}
+          GITHUB_TOKEN: ${{ github.token }}
+          APP_URL: ${{ github.event.client_payload.url }}
+          DEPLOYMENT_ENVIRONMENT: ${{ github.event.client_payload.environment }}
+          AI_GATEWAY_API_KEY: ${{ secrets.AI_GATEWAY_API_KEY }}
+          VERCEL_AUTOMATION_BYPASS_SECRET: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
+```
+
+重新运行时，报告器会更新同一条评论，并写入作业摘要。如果没有打开的拉取请求，则只写入摘要。
+
+</Accordion>
+
+## 下一步
+
+<CardGroup cols={2}>
+  <Card title="拉取请求评论" icon="code-pull-request" href="/github">
+    在拉取请求中查看失败信息、截图和追踪记录。
+  </Card>
+  <Card title="持续集成" icon="rotate" href="/ci">
+    CI 默认值、产物和模型凭据。
+  </Card>
+</CardGroup>

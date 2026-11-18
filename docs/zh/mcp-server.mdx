@@ -1,0 +1,185 @@
+---
+title: MCP 服务器
+description: 让编码智能体使用你的应用，并检查自己的工作。
+"og:image": "https://e2e.com/docs/images/og/mcp-server.png?v=17998906c0"
+"twitter:image": "https://e2e.com/docs/images/og/mcp-server.png?v=17998906c0"
+---
+
+`e2e mcp` 为 Claude Code、Codex 或 Cursor 等编码智能体提供应用的实时会话，支持网页端、iOS 和 Android。智能体可以查看屏幕、执行操作，并检查自己的工作。
+
+## 为什么需要它
+
+| 任务 | 不使用 `e2e mcp` | 使用 `e2e mcp` |
+| --- | --- | --- |
+| 编写测试 | 猜测定位器，运行，失败，再次猜测 | 一边走通流程，一边根据已检查的测试代码行和通过 `run_code` 执行过的代码行编写测试 |
+| 修改 UI | 编译通过就算完成 | 打开页面并检查结果 |
+| 复现 Bug | 根据代码猜测 | 在应用中按步骤操作 |
+| 修复失败的测试 | 再次点击走完整个流程 | 运行测试并在失败处停止 |
+| 运行测试套件 | 需要通过 Shell 执行 `e2e run` | 使用 `run_tests` 运行 |
+| 在 PR 中展示变更 | 用文字描述 | 录制视频 |
+
+服务器本身不需要模型。它运行的测试只有在智能体步骤没有录制记录时才需要模型。
+
+## 配置
+
+[e2e 插件](/coding-agents)通过 `npx -y e2e@<version> mcp` 提供服务器，固定使用插件对应的 e2e 发布版本。即使项目安装了另一个 e2e 版本，它也会运行该固定版本。不使用插件时，在项目中注册服务器。`e2e init` 会提供将服务器注册到 `.mcp.json`（Claude Code）、`.cursor/mcp.json`（Cursor）和 `.codex/config.toml`（Codex）的选项。安装项目依赖项，并在项目目录中启动 MCP 客户端，让 `npx`（Bun 项目中为 `bunx`）使用已安装的 e2e 版本。手动配置如下：
+
+<Tabs>
+  <Tab title="Claude Code">
+    <CodeGroup>
+    ```bash npm
+    claude mcp add --scope project e2e -- npx e2e mcp
+    ```
+
+    ```bash pnpm
+    claude mcp add --scope project e2e -- pnpm exec e2e mcp
+    ```
+
+    ```bash bun
+    claude mcp add --scope project e2e -- bunx e2e mcp
+    ```
+    </CodeGroup>
+  </Tab>
+  <Tab title="Codex">
+    使用已安装的 CLI 运行 `e2e init --yes --skills none --mcp .codex/config.toml`，或添加以下条目。信任该项目，然后启动新的 Codex 会话。在项目中运行 `codex mcp list` 可查看注册信息：
+
+    ```toml title=".codex/config.toml"
+    [mcp_servers.e2e]
+    command = "npx"
+    args = ["e2e", "mcp"]
+    ```
+  </Tab>
+  <Tab title="Cursor">
+    将服务器添加到 `.cursor/mcp.json`。其他读取 `mcpServers` 映射的客户端也使用同一配置块。
+
+    ```json title=".cursor/mcp.json"
+    {
+      "mcpServers": {
+        "e2e": { "command": "npx", "args": ["e2e", "mcp"] }
+      }
+    }
+    ```
+  </Tab>
+  <Tab title="OpenCode">
+    将服务器添加到项目的 `opencode.json`。在项目中运行 `opencode mcp list`，会显示它已连接：
+
+    ```json title="opencode.json"
+    {
+      "$schema": "https://opencode.ai/config.json",
+      "mcp": {
+        "e2e": { "type": "local", "command": ["npx", "e2e", "mcp"] }
+      }
+    }
+    ```
+  </Tab>
+</Tabs>
+
+如果测试目标配置了应用命令，会话会启动它，并通过 URL 和端口标识它。配置读取的是服务器的环境，不是智能体 Shell 的环境。
+
+## 无需配置即可尝试
+
+在没有 e2e 配置文件的目录中，智能体在打开会话时指定引擎：
+
+```txt
+open_session {engine: "@e2e-dev/web", app: {url: "http://localhost:3000"}}
+```
+
+`run_tests` 仍然需要配置。关于引擎选项、设备提供方和引擎安装，请参阅[不使用配置](/reference/mcp#without-a-config)。
+
+## 向智能体提要求
+
+- “在登录表单中添加一个‘记住我’复选框。使用 e2e 在应用中检查它。”
+- “一边在应用中走通结账流程，一边为它编写测试。”
+- “在应用中复现 issue #123，并录制视频。”
+
+添加“headed”即可观看本地浏览器或模拟器。
+
+## 如何生成测试代码行
+
+会话中的每次操作都会返回可重复该操作的测试代码行。代码行中的定位器在实时屏幕上只匹配到该控件：
+
+```text wrap
+Tapped #n31.
+Test line: await screen.getByRole("button", "Sign in").tap();
+```
+
+智能体在走通流程时，将所需代码行复制到测试中。`test_lines` 会按顺序返回截至目前的所有代码行，作为测试体草稿。关于代码行的生成方式，请参阅 [`test_lines`](/reference/mcp#test_lines)。
+
+## 如何检查定位器
+
+对于操作未输出的代码行，例如断言，智能体会先在会话中尝试定位器。猜测错误会在会话中失败，而不是在测试运行时才失败：
+
+```text wrap
+0 nodes match getByLabel("Email").
+A test using this locator would fail with LOCATOR_NOT_FOUND. ...
+
+1 node matches getByRole("button", name: "Sign in").
+Use: screen.getByRole("button", "Sign in")
+```
+
+## 如何运行测试代码行
+
+智能体通过 `run_code` 在已打开的会话中运行操作未输出的代码行，例如断言。通过的代码行会加入 `test_lines` 草稿。错误的代码行会在几秒内失败，无需运行测试：
+
+```text wrap
+Statement 2 of 2 failed; the one before it passed. Each statement waited at most 5000 ms. ...
+1. passed: await screen.getByLabel('Full name').fill('Grace Hopper');
+2. failed: await screen.getByRole('button', 'Save').tap();
+   LOCATOR_NOT_FOUND: locator matched no nodes within getByRole("button", name: "Save")
+```
+
+服务器会解析这些代码行，绝不会将它们作为 JavaScript 求值。参阅 [`run_code`](/reference/mcp#run_code)。
+
+## 修复失败的测试
+
+`open_session {test: "tests/checkout.e2e.ts:12"}` 在会话中运行一个测试，并停留在失败时的屏幕上。智能体读取失败信息、检查屏幕，然后编辑测试：
+
+```text wrap
+Test "a member checks out" (tests/checkout.e2e.ts:12) failed after 30.25s; 8 steps ran.
+LOCATOR_NOT_FOUND: locator matched no nodes within getByLabel("Name")
+At tests/checkout.e2e.ts:20:3
+On screen, closest to what the locator asked for:
+  #n32 textbox "Full name"
+```
+
+从该屏幕执行的每次操作都会输出对应的[测试代码行](#how-it-writes-a-test-line)，`run_code` 则会在那里运行修复后的代码行。智能体将这些代码行放入测试，替换失败的代码行。
+
+要重新运行编辑后的测试，智能体会关闭会话，再使用相同的 `test` 打开新会话。智能体步骤会像 `e2e run` 一样从缓存回放。关于执行内容和限制，请参阅[运行测试](/reference/mcp#running-a-test)。
+
+## 在会话旁运行测试
+
+会话不会写入测试结果，只有通过 `open_session {test}` 运行的测试才会使用回放缓存。智能体通过 [`run_tests`](/reference/mcp#run_tests) 运行测试套件，其运行方式与 `e2e run` 相同。如果测试可以与会话同时运行，智能体会在两次运行之间保持会话打开。运行失败后，它会在该会话中进入失败时的屏幕，而不是打开新会话。
+
+在网页端，能否与会话同时运行测试取决于测试目标的 `app`：
+
+| 测试目标的 `app` | 会话打开时运行测试 |
+| --- | --- |
+| 没有 `command` | 两者使用你启动的应用。 |
+| `url` 使用端口 [`0`](/web#let-the-runner-pick-the-port) | 两者各自启动一份应用。像 `next dev` 这样每个目录只能运行一份实例的开发服务器会导致测试运行失败。 |
+| `command` 配置了 [`reuseExisting: true`](/web#starting-your-app) | 测试运行使用会话启动的应用。会话关闭时，应用也会停止，即使测试仍在运行。 |
+| `command` 使用固定端口，且未设置 `reuseExisting` | 以 `APP_ALREADY_RUNNING` 失败。 |
+
+设置 `CI` 时，e2e 会忽略 `reuseExisting`，测试运行会像使用固定端口时一样失败。如果同时运行会导致失败，请先关闭会话。在移动端，请在没有会话占用的设备上运行测试。
+
+## 运行多个智能体
+
+每个智能体，包括子智能体，都会打开自己的会话，使用独立的浏览器或设备，默认最多四个。在移动端，请为每个会话分配独立的测试目标。
+
+## 机密值
+
+`type_secret` 或 `run_code` 中的 `fill` 可以填入机密值，而不向智能体展示它。截图只会遮罩安全字段，因此应用在其他位置显示的机密值仍会出现在截图中。
+
+<Warning>
+`start_recording` 生成的视频不会进行遮罩处理。
+</Warning>
+
+## 下一步
+
+<CardGroup cols={2}>
+  <Card title="MCP 服务器参考" icon="book" href="/reference/mcp">
+    所有工具、标志、会话规则和错误代码。
+  </Card>
+  <Card title="编码智能体" icon="robot" href="/coding-agents">
+    技能、运行测试，以及读取失败信息。
+  </Card>
+</CardGroup>

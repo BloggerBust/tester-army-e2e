@@ -40,8 +40,8 @@ import type { TargetProvenance } from '@e2e-dev/core/lib/run/provision';
 import { agentStepTable } from '../report/debug-steps.ts';
 import { writeTracePages, type TracePages } from '../report/traces.ts';
 import { STATELESS_REPORTERS } from '../report/builtin.ts';
+import { createReporters } from '../report/terminal.ts';
 import { failureLine } from '../report/format.ts';
-import { ListReporter } from '../report/list.ts';
 import { writeJsonReport } from '../report/write.ts';
 import { createRunEventEmitter, toEventResult, type RunEventSink, type RunExitCode, type RunStatus, type RunEventFact, type SetupOutcome, type SetupStep } from './events.ts';
 import { allocateAppPorts } from './app-ports.ts';
@@ -515,24 +515,14 @@ export async function run(options: RunOptions = {}): Promise<RunOutcome> {
   // the CLI asked for, so the failure renders through them.
   const reporterIds = loaded.config?.reporters ?? options.reporters ?? ['list'];
   keepStdoutFor(reporterIds);
-  const listReporter =
-    options.quiet === true || !reporterIds.includes('list')
-      ? undefined
-      : new ListReporter(processOutput?.listOutput, { stepping: options.beforeStep !== undefined });
-  // Without the list reporter to print it under a heading, a test's output
-  // goes to the terminal as written.
-  const printsTestOutput = options.quiet !== true && listReporter === undefined;
-  // Until the run is over, what user code prints lands above the live window.
-  processOutput?.showThrough(
-    listReporter === undefined
-      ? undefined
-      : { show: (stream, text) => listReporter.processOutput(stream, text), end: () => listReporter.endProcessOutput() },
-  );
-  const activeReporters: readonly Reporter[] = [
-    ...(listReporter === undefined ? [] : [listReporter]),
-    ...reporterIds.filter((id) => id !== 'list').map((id) => STATELESS_REPORTERS[id]),
-    ...(loaded.config?.customReporters ?? []),
-  ];
+  const { terminal, reporters: activeReporters, view } = createReporters(reporterIds, loaded.config?.customReporters ?? [], {
+    quiet: options.quiet === true,
+    stepping: options.beforeStep !== undefined,
+    output: processOutput,
+  });
+  // Without a terminal reporter, test output goes to the terminal as written.
+  const printsTestOutput = options.quiet !== true && terminal === undefined;
+  processOutput?.showThrough(view);
   const emit = createRunEventEmitter([
     ...activeReporters.map((reporter) =>
       reporter.onEvent === undefined ? undefined : { name: reporter.name, onEvent: reporter.onEvent.bind(reporter) },
@@ -774,12 +764,12 @@ export async function run(options: RunOptions = {}): Promise<RunOutcome> {
       ...(aiTracePath === undefined ? {} : { aiTracePath }),
       ...(traces.size === 0 ? {} : { traces: Object.fromEntries(traces) }),
     });
-    // The list reporter has printed its summary and stopped its window; a
+    // The terminal reporter has printed its summary and stopped its window; a
     // line another reporter left unfinished on `run-finished` prints too.
     processOutput?.showThrough(undefined);
-    // Only the list reporter prints run errors, and a run that stopped before
+    // The terminal reporter prints run errors, and a run that stopped before
     // its tests writes no file to read them in, so without it they go to stderr.
-    if (listReporter === undefined && options.quiet !== true) {
+    if (terminal === undefined && options.quiet !== true) {
       for (const error of report.run.errors) process.stderr.write(failureLine(error));
     }
     if (debug.enabled) {
@@ -809,7 +799,7 @@ export async function run(options: RunOptions = {}): Promise<RunOutcome> {
       options.reporterTimeout ?? REPORTER_TIMEOUT_MS,
       forceController.signal,
     );
-    listReporter?.rows(rows);
+    terminal?.rows(rows);
     return { exitCode, status, report, reportPath, aiTracePath, results, config: loaded.config };
   };
 
@@ -1119,13 +1109,13 @@ export async function run(options: RunOptions = {}): Promise<RunOutcome> {
             envFor: workerEnvFor(plans, env),
           });
 
-    // The list reporter shows the prompt under its test; without it, the
+    // The terminal reporter shows the step prompt; without it, the
     // prompt goes to stderr as one line, where a person still reads it.
     const beforeStep = options.beforeStep;
     let promptLine: string | undefined;
     const showStep = (prompt: StepPrompt | undefined): void => {
-      if (listReporter !== undefined) {
-        listReporter.showStepPrompt(prompt);
+      if (terminal !== undefined) {
+        terminal.showStepPrompt(prompt);
         return;
       }
       // Printed once per prompt: `h` lists nothing more on a plain line.

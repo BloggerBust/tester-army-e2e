@@ -8,7 +8,7 @@ import type { Report1Document } from './report/build.ts';
 import type { ProjectConfig } from '@e2e-dev/core/lib/types';
 
 /** The reporters the runner ships, named by id; each is a `Reporter` on the same contract. */
-export type BuiltinReporter = 'list' | 'json' | 'junit' | 'markdown';
+export type BuiltinReporter = 'list' | 'dot' | 'json' | 'junit' | 'markdown';
 
 /**
  * The run's report document, the one `.e2e/report.json` holds. Its
@@ -58,7 +58,7 @@ export interface FinishedRun {
 export type ReporterSummary = readonly { readonly label: string; readonly text: string }[];
 
 /**
- * A reporter in `reporters`, the contract the built-in `list`, `json`,
+ * A reporter in `reporters`, the contract the built-in `list`, `dot`, `json`,
  * `junit`, and `markdown` reporters implement too. `onEvent` sees every run event as it
  * happens, exactly what the `list` reporter renders, and must not block: a
  * throw quarantines it for the rest of the run. Event types are added over
@@ -175,7 +175,8 @@ export interface TestFilterResult {
 /** The config an `e2e.config.ts` default-exports, through `defineConfig`. */
 export interface E2EConfig extends ProjectConfig {
   /**
-   * Output renderers and reporter objects. `junit` writes `<output>/junit.xml`,
+   * Output renderers and reporter objects. `dot` prints one mark per selected result
+   * (on stderr beside `json`). `junit` writes `<output>/junit.xml`,
    * `markdown` writes `<output>/summary.md`, `json` prints the report and
    * excludes `list`; a `Reporter` object runs
    * beside them and `--reporter` never removes it.

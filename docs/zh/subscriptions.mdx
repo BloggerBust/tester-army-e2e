@@ -1,0 +1,329 @@
+---
+title: 订阅
+description: 使用 ChatGPT、GitHub Copilot、OpenCode Console 或 SuperGrok 订阅、Claude Max 或 Team 套餐的 API 额度，或 Claude Code、Codex 登录信息运行智能体步骤。
+"og:image": "https://e2e.com/docs/images/og/subscriptions.png?v=174d49a0e9"
+"twitter:image": "https://e2e.com/docs/images/og/subscriptions.png?v=174d49a0e9"
+---
+
+使用你已付费的套餐运行智能体步骤。登录一次，然后在 `e2e.config.ts` 中使用套餐的模型。
+
+| 套餐 | 连接方式 |
+| --- | --- |
+| ChatGPT Plus 或 Pro | `npx e2e login openai` |
+| GitHub Copilot | `npx e2e login github-copilot` |
+| OpenCode Console（OpenCode Zen 和 OpenCode Go） | `npx e2e login opencode-console` |
+| SuperGrok 或 X Premium+ | `npx e2e login spacexai` |
+| Claude Max 或 Team（Claude Code） | API 密钥，费用从套餐每月 API 额度中扣除，不占用套餐使用限额 |
+| Claude Code 或 Codex 登录信息 | [使用编码智能体运行步骤](#use-your-coding-agent) |
+
+## 配置
+
+新项目运行 `e2e init` 并选择你的套餐（[快速开始](/quickstart)）。已有项目则安装包、登录，并在 `e2e.config.ts` 中设置 `agents: { default: agent }`。
+
+<Tabs>
+  <Tab title="ChatGPT">
+<CodeGroup>
+```bash npm
+npm install -D ai @ai-sdk/openai
+npx e2e login openai
+```
+
+```bash pnpm
+pnpm add -D ai @ai-sdk/openai
+pnpm exec e2e login openai
+```
+
+```bash bun
+bun add -d ai @ai-sdk/openai
+bunx e2e login openai
+```
+</CodeGroup>
+
+```ts title="Model setup"
+import { chatgpt } from 'e2e/oauth/chatgpt';
+
+const agent = { model: chatgpt('gpt-6-luna') };
+```
+  </Tab>
+  <Tab title="GitHub Copilot">
+<CodeGroup>
+```bash npm
+npm install -D ai @ai-sdk/openai-compatible @ai-sdk/openai
+npx e2e login github-copilot
+```
+
+```bash pnpm
+pnpm add -D ai @ai-sdk/openai-compatible @ai-sdk/openai
+pnpm exec e2e login github-copilot
+```
+
+```bash bun
+bun add -d ai @ai-sdk/openai-compatible @ai-sdk/openai
+bunx e2e login github-copilot
+```
+</CodeGroup>
+
+```ts title="Model setup"
+import { copilot } from 'e2e/oauth/copilot';
+
+const agent = { model: copilot('claude-sonnet-5') };
+```
+
+套餐提供哪些模型由 GitHub 决定；参阅[选择模型](#pick-a-model)。
+  </Tab>
+  <Tab title="OpenCode Console">
+<CodeGroup>
+```bash npm
+npm install -D ai @ai-sdk/openai-compatible @ai-sdk/openai @ai-sdk/anthropic @ai-sdk/google
+npx e2e login opencode-console
+```
+
+```bash pnpm
+pnpm add -D ai @ai-sdk/openai-compatible @ai-sdk/openai @ai-sdk/anthropic @ai-sdk/google
+pnpm exec e2e login opencode-console
+```
+
+```bash bun
+bun add -d ai @ai-sdk/openai-compatible @ai-sdk/openai @ai-sdk/anthropic @ai-sdk/google
+bunx e2e login opencode-console
+```
+</CodeGroup>
+
+```ts title="Model setup"
+import { opencodeConsole } from 'e2e/oauth/opencode-console';
+
+// OpenCode Zen, billed to the workspace's credits
+const agent = { model: opencodeConsole('deepseek-v4.1-flash') };
+// OpenCode Go, billed to your Go subscription
+const goAgent = { model: opencodeConsole('go/deepseek-v4.1-flash') };
+```
+
+在 Anthropic 路由上，未设置 `maxOutputTokens` 的调用会请求 8192：Anthropic SDK 不认识 OpenCode 在该路由提供的 ID，自行处理时会将请求限制为 4096 个 token，并仅发出警告。
+  </Tab>
+  <Tab title="SuperGrok">
+<CodeGroup>
+```bash npm
+npm install -D ai @ai-sdk/xai
+npx e2e login spacexai
+```
+
+```bash pnpm
+pnpm add -D ai @ai-sdk/xai
+pnpm exec e2e login spacexai
+```
+
+```bash bun
+bun add -d ai @ai-sdk/xai
+bunx e2e login spacexai
+```
+</CodeGroup>
+
+```ts title="Model setup"
+import { grok } from 'e2e/oauth/grok';
+
+const agent = { model: grok('grok-4') };
+```
+  </Tab>
+  <Tab title="Claude Max 或 Team">
+Claude 套餐不提供供其他应用使用的登录方式。要使用 Claude Code 自身的登录信息，在 Claude Code 上运行智能体步骤，参阅[使用编码智能体](#use-your-coding-agent)。要在新项目中使用套餐的 API 额度，在 `e2e init` 中将模型网关选为 `None`。然后：
+
+1. 在 claude.ai 中关联一个 Claude Console 组织。Max 用户前往 Settings > Billing。Team 套餐的 Owner 或 Primary Owner 前往 Organization settings > Billing。参阅 [Anthropic 指南](https://support.claude.com/en/articles/17154008-monthly-api-credits-for-max-and-team-plans)。
+2. 在该组织中创建 API 密钥，将其设为 `ANTHROPIC_API_KEY`。
+3. 安装包并设置模型：
+
+<CodeGroup>
+```bash npm
+npm install -D ai @ai-sdk/anthropic
+```
+
+```bash pnpm
+pnpm add -D ai @ai-sdk/anthropic
+```
+
+```bash bun
+bun add -d ai @ai-sdk/anthropic
+```
+</CodeGroup>
+
+```ts title="Model setup"
+import { anthropic } from '@ai-sdk/anthropic';
+
+const agent = { model: anthropic('claude-sonnet-5-5') };
+```
+
+在 `e2e.config.ts` 中设置 `agents: { default: agent }`。
+
+未使用的额度会在每个计费周期结束时过期。其他 Claude 套餐没有 API 额度。使用这些套餐时，请选择 [API 提供方](/models)，或通过 Copilot 套餐使用 Claude 模型。
+  </Tab>
+</Tabs>
+
+## 选择模型
+
+`e2e models` 列出你的登录账号可用的模型 ID：
+
+<CodeGroup>
+```bash npm
+npx e2e models            # every stored login
+npx e2e models openai     # one provider
+```
+
+```bash pnpm
+pnpm exec e2e models            # every stored login
+pnpm exec e2e models openai     # one provider
+```
+
+```bash bun
+bunx e2e models            # every stored login
+bunx e2e models openai     # one provider
+```
+</CodeGroup>
+
+ID 不一定与厂商应用中显示的名称相同。
+
+设置 `OPENCODE_API_KEY` 后，`e2e models opencode-console` 会列出该密钥提供的模型 ID，`opencodeConsole()` 也会使用同一密钥替代登录信息。
+
+- **Copilot** 会标记 `not enabled`（在 GitHub 上的 Copilot 设置中启用模型，或联系管理你席位的管理员）和 `no chat
+  or responses`（使用其他模型）。它无法查看你的套餐实际提供哪些模型：在 Copilot Free 上，GitHub [仅通过自动模型选择](https://docs.github.com/en/copilot/get-started/plans)提供模型，因此按 ID 调用模型通常会被拒绝。此时运行会以 `MODEL_UNAVAILABLE` 停止，并指出该模型；请选择其他 ID 或 [API 提供方](/models)。
+- **OpenCode Console** 仅在你拥有 Go 时列出 `go/` 模型。它会省略工作区关闭的模型和 Zen 的免费模型。对于 chat completions 模型，在 `providerOptions` 中使用 `opencode` 作为键；其他模型则使用 `openai`、`anthropic` 或 `google`。
+
+## 登录帮助
+
+- ChatGPT 会打开浏览器。要使用设备代码，添加 `--device`。
+- Copilot 使用你的 GitHub CLI 登录信息。如果没有 `gh`，通过 `--client-id` 指定你自己的 GitHub OAuth 应用，该应用需已启用设备流程。GitHub Enterprise 用户添加 `--enterprise-url`。
+- OpenCode Console 会显示设备代码。批准并选择工作区。页面将 e2e 显示为未知客户端。要更换工作区，运行 `npx e2e logout opencode-console` 后重新登录。
+- SuperGrok 会显示设备代码和输入该代码的 URL。
+
+不指定提供方运行 `npx e2e login`，会打开选择器并显示已登录的账号。`npx e2e logout` 移除登录信息。当已保存的登录信息失效时，步骤会以 `MODEL_PROVIDER_FAILED` 失败，消息会给出需要运行的 `npx e2e login <provider>` 命令。所有标志见 [CLI 参考](/reference/cli#e2e-login)。
+
+等待令牌刷新期间也支持取消模型调用。
+
+## CI
+
+在 CI 中使用 API 密钥。Claude Max 或 Team 已经使用 API 密钥。对于 OpenCode Console，将 `OPENCODE_API_KEY` 设为 OpenCode Go 订阅 API 密钥，或在 Console 中创建的服务账号 API 密钥（先进入 Service Accounts，再进入 API Keys）。对于 ChatGPT、Copilot 和 SuperGrok，使用 [API 提供方](/models)。
+
+[`E2E_OAUTH_CREDENTIALS`](/reference/environment) 可以将已保存的登录信息提供给 CI，但 e2e 不会将刷新后的令牌写回其中。使用轮换刷新令牌的登录信息只能在 CI 中短期使用。
+
+## 使用编码智能体
+
+`@e2e-dev/acp` 通过 [Agent Client Protocol](https://agentclientprotocol.com) 在 Claude Code 或 Codex 上运行 `agent.act` 和 `agent.assert`。智能体使用自己的登录信息或 API 密钥登录，因此 e2e 无需模型提供方。
+
+智能体获得 `complete_step`，以及针对测试目标引擎支持的动作所提供的内置智能体操作工具。运行器记录每个操作，因此步骤可在不调用智能体的情况下从[缓存](/cache)回放。测试无需修改。
+
+<Tabs>
+  <Tab title="Claude Code">
+安装该包和 Zed 的 Claude Code 适配器。通过 `claude` 登录，或设置 `ANTHROPIC_API_KEY`。
+
+<CodeGroup>
+```bash npm
+npm install -D @e2e-dev/acp @agentclientprotocol/claude-agent-acp
+```
+
+```bash pnpm
+pnpm add -D @e2e-dev/acp @agentclientprotocol/claude-agent-acp
+```
+
+```bash bun
+bun add -d @e2e-dev/acp @agentclientprotocol/claude-agent-acp
+```
+</CodeGroup>
+
+```ts title="e2e.config.ts"
+import type { E2EConfig } from 'e2e';
+import { web } from '@e2e-dev/web';
+import { claudeCode } from '@e2e-dev/acp';
+
+export default {
+  targets: [{ engine: web(), app: { url: 'http://localhost:3000' } }],
+  agents: { default: { executor: claudeCode({ model: 'sonnet' }) } },
+} satisfies E2EConfig;
+```
+  </Tab>
+  <Tab title="Codex">
+安装该包和 Codex 适配器。通过 `codex login` 登录。
+
+<CodeGroup>
+```bash npm
+npm install -D @e2e-dev/acp @agentclientprotocol/codex-acp
+```
+
+```bash pnpm
+pnpm add -D @e2e-dev/acp @agentclientprotocol/codex-acp
+```
+
+```bash bun
+bun add -d @e2e-dev/acp @agentclientprotocol/codex-acp
+```
+</CodeGroup>
+
+```ts title="e2e.config.ts"
+import type { E2EConfig } from 'e2e';
+import { web } from '@e2e-dev/web';
+import { codex } from '@e2e-dev/acp';
+
+export default {
+  targets: [{ engine: web(), app: { url: 'http://localhost:3000' } }],
+  agents: { default: { executor: codex() } },
+} satisfies E2EConfig;
+```
+  </Tab>
+</Tabs>
+
+`claudeCode()` 和 `codex()` 接受以下选项：
+
+| 选项 | 作用 |
+| --- | --- |
+| `model` | 智能体提供的模型，例如 `sonnet`。如果智能体不提供该模型，会话会启动失败，错误会列出可用模型。省略时使用智能体的默认模型。 |
+| `env` | 添加到智能体环境中的变量。 |
+| `system` | 追加到智能体在第一个步骤收到的规则中的文本。 |
+| `name` | 报告中的执行器名称。 |
+
+意外的转发失败会停止 ACP 会话，并出现在运行器已进行机密值脱敏的失败输出中。HTTP 客户端会收到通用错误或已关闭的流，不含异常文本。
+
+### 智能体可以使用什么
+
+智能体用自身工具执行的操作不会被记录、无法回放，而且可能访问文件或网络。因此 e2e 将智能体限制为只能使用步骤工具：
+
+- 智能体进程在你的项目中启动。其会话在空的临时目录中打开，e2e 不向它提供文件系统或终端访问权限。
+- e2e 允许步骤工具的权限请求，拒绝其他所有请求。
+- 当智能体自身的工具未经询问就运行时，e2e 会停止该轮交互，并使步骤以 `POLICY_DENIED` 失败。之后的步骤工具调用不会执行任何操作。会话会关闭，因此下个步骤会启动全新的智能体，它从未看到该工具读取的内容。
+
+每种预设还会关闭智能体自身无需询问就能运行的工具：
+
+- **Claude Code**：不提供内置工具，不加载用户、项目或本地设置，不连接步骤工具之外的 MCP 服务器，不使用已保存的会话，也不绕过权限提示。
+- **Codex**：只读模式，禁用 shell、网页搜索、应用、插件、浏览器和计算机操作。仅在这些会话中关闭 Codex 配置里的所有 MCP 服务器。Codex 仍可启动子智能体，但这会像使用任何自身工具一样导致步骤失败。
+
+### 机密值
+
+机密值参数仅以名称传给智能体。当测试目标引擎支持填入机密值时，智能体调用 `type_secret`，由运行器输入实际值，与内置智能体相同。
+
+智能体进程接收你的环境，但不包含 `E2E_SECRET_*` 和 `E2E_USER_*` 变量。
+
+<Warning>
+其他变量中的机密值会传给智能体。例如 `secrets: { apiKey: process.env.API_KEY }` 背后的 `API_KEY`，或某个 `E2E_SECRET_*` 值复制来源的变量。仅将机密值保存在 `E2E_SECRET_*` 和 `E2E_USER_*` 中。
+</Warning>
+
+<AccordionGroup>
+  <Accordion title="测试如何运行">
+一个智能体会话服务于一次测试尝试。第一个无法从缓存回放的智能体步骤会启动会话。之后每个步骤都是同一对话中的一条新消息，会话在尝试结束时关闭，或在出现 `POLICY_DENIED` 步骤时提前关闭。
+
+每条消息包含步骤、非机密值参数、此前完成的步骤，以及当前屏幕。操作结果说明屏幕发生了哪些变化，`screenshot` 则以图像形式传给智能体。
+
+断言不能改变屏幕。`observe`、`screenshot`、滚动和悬停仍可使用。与内置智能体一样，智能体通过 `complete_step` 结束每个步骤：结果为 `passed`、`failed`，或附带错误码的 `blocked`。
+  </Accordion>
+  <Accordion title="限制">
+  - Agent Client Protocol 不报告模型请求。每轮提示词按一次模型调用计入 `maxModelCalls`；智能体提供 token 用量和费用时，也会记录。`maxSteps` 和步骤超时限制该轮交互。
+  - `waitFor` 和 `extract` 使用内置判定，因此需要 agents 条目的 `model`。
+  - 包含 `executor` 的 agents 条目不接受 `tools`，因此智能体无法获得通过 `defineTool` 定义的项目工具。
+  </Accordion>
+</AccordionGroup>
+
+## 下一步
+
+<CardGroup cols={2}>
+  <Card title="模型" icon="brain" href="/models">
+    改用 API 密钥、网关或本地模型。
+  </Card>
+  <Card title="智能体与角色" icon="users" href="/agents">
+    为测试提供不同的模型和指令。
+  </Card>
+</CardGroup>

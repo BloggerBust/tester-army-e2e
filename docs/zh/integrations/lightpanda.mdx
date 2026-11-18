@@ -1,0 +1,142 @@
+---
+title: Lightpanda
+sidebarTitle: Lightpanda
+description: 使用 @e2e-dev/lightpanda 的 lightpanda() 浏览器提供方，在开源无头浏览器 Lightpanda 中运行网页端测试目标。
+"og:image": "https://e2e.com/docs/images/og/integrations/lightpanda.png?v=b97a3ebae4"
+"twitter:image": "https://e2e.com/docs/images/og/integrations/lightpanda.png?v=b97a3ebae4"
+---
+
+[Lightpanda](https://lightpanda.io) 是从零编写的开源无头浏览器，不依赖 Chromium。它在几毫秒内启动，内存占用仅为 Chrome 的一小部分，并支持 Chrome DevTools Protocol。`@e2e-dev/lightpanda` 中的 `lightpanda()` 是它的[浏览器提供方](/browser#hosted-browsers)：每个工作进程槽位都有自己的 `lightpanda serve`，在运行开始时通过空闲端口启动，运行结束时停止。测试和 CI 保持不变；配置中只需修改测试目标的 `browser`。
+
+Lightpanda 没有布局引擎。它构建 DOM、运行 JavaScript，并暴露引擎读取的无障碍树，供定位器、断言和[智能体步骤](/agent-steps)使用。依赖节点绘制位置的功能会有不同的行为；迁移测试套件前，请参阅[不支持的功能](#what-does-not-work)。
+
+## 配置
+
+安装包：
+
+<CodeGroup>
+```bash npm
+npm install --save-dev @e2e-dev/lightpanda
+```
+
+```bash pnpm
+pnpm add -D @e2e-dev/lightpanda
+```
+
+```bash bun
+bun add -d @e2e-dev/lightpanda
+```
+</CodeGroup>
+
+然后安装提供方要启动的 Lightpanda nightly 二进制文件：
+
+<CodeGroup>
+```bash macOS
+brew install lightpanda-io/browser/lightpanda
+```
+
+```bash Linux
+curl -L -o lightpanda https://github.com/lightpanda-io/browser/releases/download/nightly/lightpanda-x86_64-linux
+install -D -m 755 lightpanda ~/.local/bin/lightpanda
+```
+</CodeGroup>
+
+```ts title="e2e.config.ts"
+import type { E2EConfig } from 'e2e';
+import { web } from '@e2e-dev/web';
+import { lightpanda } from '@e2e-dev/lightpanda';
+
+export default {
+  targets: [
+    {
+      name: 'lightpanda',
+      engine: web({ browser: lightpanda() }),
+      app: { url: 'http://localhost:3000' },
+    },
+  ],
+} satisfies E2EConfig;
+```
+
+提供方会运行 `PATH`、`~/.lightpanda/lightpanda` 或 `~/.local/bin/lightpanda` 中的 `lightpanda`，这些也是 [agent-browser](https://agent-browser.dev/engines/lightpanda) 查找的位置；也可以使用启动 `e2e run` 时环境中的 `LIGHTPANDA_PATH` 或选项中的 `binary` 指定二进制文件。如果都找不到，运行会在执行任何测试之前失败，并给出安装页面。
+每个工作进程都有自己的服务器，因此 `workers` 决定同时运行多少个服务器，运行日志会列出每个服务器：
+
+```text
+ℹ lightpanda (1 of 2): lightpanda 1.1.0-nightly at ws://127.0.0.1:51165/
+```
+
+## 连接正在运行的服务器
+
+对于已经运行的 Lightpanda（例如 CI 中的 Docker 镜像），应使用 [`connect`](/reference/web#options) 测试目标，而不是提供方：引擎会连接到其 CDP 端点，结束后保留服务器运行。
+
+```ts title="e2e.config.ts"
+web({ connect: { cdpEndpoint: () => process.env.LIGHTPANDA_URL ?? 'ws://127.0.0.1:9222/' } })
+```
+
+```bash
+docker run -d --name lightpanda -p 127.0.0.1:9222:9222 lightpanda/browser:nightly
+```
+
+这样所有工作进程都会共享该服务器。一个 `lightpanda serve` 默认接受 16 个连接；运行更多工作进程时，将它的 `--cdp-max-connections` 调整为大于 `workers` 的值。
+
+## 选项
+
+| 选项 | 默认值 | 含义 |
+| --------------- | ------------------------------- | ------- |
+| `binary` | `LIGHTPANDA_PATH`，否则自动查找 | 要启动的二进制文件：路径或 `PATH` 中的名称。 |
+| `loadResources` | `[]` | 服务器获取的子资源：`iframe`、`image`、`stylesheet`。参阅[获取更多页面资源](#fetch-more-of-the-page)。 |
+| `args` | `[]` | 额外的 `lightpanda serve` 标志，放在提供方设置的标志之后。 |
+
+提供方在本次运行中为每个工作进程槽位租用一个服务器；它不支持 `scope: 'attempt'`，因为 Lightpanda 不暴露按尝试租用时重新连接所需的默认上下文标识。如果服务器在十秒内未在其端口上响应，或二进制文件提前退出，租用会失败，并在消息中附上标准错误输出。
+
+## 获取更多页面资源
+
+`lightpanda serve` 默认不请求任何子资源：没有图片、外部样式表或 iframe。使用 `loadResources` 可以逐项启用，对应服务器的 `--load-resources`：
+
+```ts
+web({ browser: lightpanda({ loadResources: ['stylesheet', 'iframe'] }) })
+```
+
+内联样式、`<style>` 块和 `hidden` 属性已经会影响可见性；`stylesheet` 会让外部文件中的规则也生效，因此链接样式表隐藏的节点在查询时也会被视为隐藏。`image` 会获取图片头部，使 `load` 和 `error` 反映真实状态。
+
+## 支持的功能
+
+使用 2026 年 10 月中旬的 Lightpanda nightly 运行 e2e testbed 的本地测试套件时，以下功能无需修改即可通过：
+
+- `app.open`、`app.back`，以及 `expect(browser).toHaveURL` 和 `toHaveTitle`。
+- 所有 `screen` 查询（`getByRole`、`getByLabel`、`getByText`、`getByTestId`、过滤器、`nth`）及其操作：`tap`、`fill`、`check`、`select`、`press` 和键盘输入。
+- 对文本、值、数量和状态的轮询断言。
+- `browser.route` 模拟和请求等待。
+- 打开页面后，在测试中调用 `browser.setCookies`。
+- `app.screenshot` 和失败时的截图。Lightpanda 生成的是 DOM 的简化渲染图，并非 Chrome 中的页面效果。
+- 智能体步骤：`agent.act`、`agent.assert`、`agent.extract` 和 `agent.waitFor` 读取屏幕树，Lightpanda 完整提供该树。testbed 智能体测试套件中依靠树的流程（待办事项、向导、登录、悬停、上下文菜单、长按、上传）能够通过；失败的部分涉及 canvas 绘制、拖动或首屏之外的内容。基于像素的判定看到的是简化渲染图，因此应让智能体使用树。
+
+如果测试断言的是用户看到的内容，而非内容的绘制位置，就可以原样迁移。
+
+## 不支持的功能
+
+以下情况都会让测试以引擎通常使用的错误失败，不会挂起。这些原因来自 Lightpanda，其 [Playwright 兼容性问题](https://github.com/lightpanda-io/browser/issues/3076)跟踪了其中的大多数。
+
+| 功能 | 实际行为 | 原因 |
+| ------- | ------------ | --- |
+| [会话](/authentication)（在 `test.setup` 中使用 `session.save`，在测试上设置 `session:`） | 初始化通过且会话已保存，但恢复会话的测试打开后处于未登录状态。 | 在上下文的首个页面创建之前设置的 Cookie 会被丢弃。改为在测试中调用 `app.open` 后，通过 `browser.setCookies` 设置。 |
+| [对话框](/browser#handle-a-dialog) | `browser.onDialog` 执行后，测试以 `ENGINE_FAILURE` 失败：`Page.handleJavaScriptDialog` 报告没有对话框。 | Lightpanda 在客户端有机会响应之前，自行响应了 `alert`、`confirm`（`false`）和 `prompt`（`null`）。 |
+| [下载](/browser#download-a-file) | `browser.waitForDownload` 超时。 | CDP 不发送下载事件。 |
+| [Iframe](/browser#reach-into-an-iframe) | `frameLocator` 找不到任何内容。 | 默认不加载 iframe。`loadResources: ['iframe']` 会加载它们，之后查询和填充可以工作，但主页面中监听 iframe 所创建元素的监听器不会触发。 |
+| 拖动：`screen.swipe`、`locator.swipeTo`，以及按住按钮时的 `browser.mouse` 移动 | `ENGINE_FAILURE`，指出 `Input.setInterceptDrags`。 | Playwright 拖动时需要此命令，而 Lightpanda 尚未实现。 |
+| `browser.setViewport` | 页面测量到新尺寸，但 `resize` 监听器始终不运行。 | 没有分发 `resize` 事件。 |
+| [媒体模拟](/reference/web#media-emulation)：`colorScheme`、`reducedMotion`、`browser.emulateMedia` | 页面始终报告 `light` 和完整动画。 | `Emulation.setEmulatedMedia` 不会改变 `matchMedia` 的返回值。 |
+| 滚动：`scrollIntoView`、`scrollUntilVisible`，以及对“视口之外”节点的操作 | 滚动没有效果，等待元素可操作时可能超时。 | 没有布局，就没有可移动的滚动位置。简化渲染会将所有块堆叠成一列，因此比 Chrome 有更多页面内容位于首屏之外，而这些内容无法访问。 |
+| `<canvas>` 内容：通过 2D 上下文绘制的标记、键盘或图表 | 截图中没有绘制内容，canvas 也不占空间。智能体的像素层（`tap_at`、`type_at`、视觉判定）看不到任何内容。 | `getContext('2d')` 返回的上下文不会记录绘制器绘制的任何内容。 |
+
+当 Lightpanda 的某个版本修复了其中一个问题，上面的对应行就可以移除，e2e 无需改动；引擎发送的 CDP 命令与发送给 Chrome 的相同。
+
+## 适用场景
+
+Lightpanda 适合大量依靠智能体读取屏幕、较少依赖几何布局的测试套件：冒烟流程、表单、导航、基于 API 的页面，以及检查文本和状态的 `agent.act` 步骤。它能在未安装 Chrome 的机器上运行这类测试套件，耗时和内存占用仅为 Chrome 的一小部分。
+
+为其他测试保留 Chromium 测试目标；两者放在同一个配置中时，可以按测试目标选择：
+
+```bash
+e2e run --target lightpanda
+e2e run --target chromium
+```

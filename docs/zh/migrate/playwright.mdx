@@ -1,0 +1,370 @@
+---
+title: 从 Playwright 迁移
+description: 让 e2e 与 Playwright 并行运行，逐个文件迁移测试。
+"og:image": "https://e2e.com/docs/images/og/migrate/playwright.png?v=e01f34cedb"
+"twitter:image": "https://e2e.com/docs/images/og/migrate/playwright.png?v=e01f34cedb"
+---
+
+import { SetupPrompt } from '../../snippets/setup-prompt-card.jsx';
+
+export const migrationPrompt = `将这个项目的 Playwright 测试迁移到 e2e，每次迁移一个测试文件。文档：\`https://e2e.com/docs/migrate/playwright.md\`
+
+1. 阅读上面的迁移指南。它列出了 Playwright 配置键、API 和 CLI 标志在 e2e 中的对应项，以及 e2e 尚未提供的功能。
+2. 如果项目没有 e2e 配置（\`e2e.config.ts\`、\`.mts\`、\`.js\` 或 \`.mjs\`），运行 \`npx e2e init --yes\`（或对应的 pnpm 或 bun 命令）。它会写入配置和示例测试，此时还不会安装任何内容。
+3. 阅读 e2e 技能（\`npx e2e guide\` 输出技能内容，\`npx e2e guide <topic>\` 输出指定主题），并在以下每个步骤中遵循它。
+4. 如果运行了 init，询问我希望为智能体步骤使用哪种模型来源：ChatGPT、GitHub Copilot、OpenCode Console 或 SuperGrok 订阅、API 密钥，还是本地模型。使用对应提供方的包进行配置。如果需要登录，给我 \`npx e2e login\` 命令，并等待我确认。
+5. 根据指南中的配置表，将 \`playwright.config.ts\` 迁移到 e2e 配置。保留已安装的 \`@playwright/test\`，并确保两套文件匹配模式互不重叠。
+6. 安装依赖项。
+7. 列出 Playwright 测试文件，询问我先迁移哪一个。建议选择步骤经常变化的流程，例如向导或结账。
+8. 对照“e2e 尚未提供的功能”检查该文件中的每个 Playwright API。使用“目前可用的方式”或“替代方式”中的对应项，或将该测试保留在 Playwright 中并说明原因。然后将测试文件改写为 \`tests/\` 下的 \`.e2e.ts\` 文件（e2e 默认运行 \`tests/**/*.e2e.ts\`）。根据指南将每次 \`page\` 调用映射到 \`screen\`、\`app\` 或 \`browser\`。如果 Playwright 查询匹配的是文本片段，添加 \`{ exact: false }\` 或 RegExp。
+9. 使用 \`app.open()\` 和定位器断言，让导航和最终断言保持确定性。对于经常失效的一连串脚本交互，建议用一个 \`agent.act\` 目标替代。
+10. 使用 \`npx e2e run <file>\` 运行新文件，修复直到通过。在我确认可以删除前，保留 Playwright 测试文件。
+11. 总结哪些测试已迁移、哪些仍保留在 Playwright 中，以及原因。`;
+
+e2e 可以在同一个项目中与 Playwright 并行运行，让你逐个文件迁移测试。`@e2e-dev/web` 自带固定版本的 `playwright-core`，因此你的 `@playwright/test` 版本不受影响。e2e 默认读取 `e2e.config.ts` 并查找 `tests/**/*.e2e.ts`，因此请确保两套文件匹配模式互不重叠。
+
+<SetupPrompt>
+
+<Prompt description={migrationPrompt} children={migrationPrompt} actions={["copy", "cursor"]} />
+
+</SetupPrompt>
+
+如果迁移跨越多个会话，[`migrate-to-e2e` 技能](/coding-agents#migrate-an-existing-suite)会在进度文件中记录已迁移的内容，并让旧测试套件继续运行，直到你逐个停用其中的测试。
+
+## 迁移配置
+
+<Note>按照[快速开始](/quickstart)安装 e2e 并配置模型。</Note>
+
+使用 `testDir`、`baseURL`、`use`、`webServer` 或 `projects` 等 Playwright 配置键会失败，错误消息会指出应该使用的 e2e 配置键。[配置参考](/reference/config)列出了所有键。
+
+| Playwright | e2e |
+| --- | --- |
+| `use.baseURL`, `webServer` | 测试目标上的 `app: { url, command }`，参阅[启动应用](/web#starting-your-app) |
+| `webServer.reuseExistingServer` | `app.command: { reuseExisting: true }`；CI 会忽略它 |
+| `projects` | `targets`，每项一个引擎实例 |
+| `testDir`, `testMatch`, `testIgnore` | `tests`，相对于项目根目录的 glob 模式；前缀 `!` 表示排除 |
+| `retries`, `workers`, `timeout` | 名称相同，但[默认值不同](#defaults-that-differ)；`workers` 为整数 |
+| `expect.timeout`, `use.actionTimeout`, `globalTimeout` | `assertionTimeout`、`actionTimeout`、`maxDuration`；`maxDuration` 从测试开始时计时，不包含应用启动 |
+| `maxFailures`, `use.headless: false` | CLI 上的 `--max-failures <n>` 和 `--headed` |
+| `reporter`, `outputDir` | `reporters: ['list', 'junit', htmlReporter()]`，其中 `htmlReporter` 来自 `@e2e-dev/html-reporter`；也支持 `dot`、`json` 和 `markdown`；`output` 默认为 `.e2e` |
+| `use.viewport`, `locale`, `timezoneId`, `colorScheme`, `reducedMotion`, `userAgent`, `testIdAttribute` | `web({ ... })` 中的同名键 |
+| `use.browserName`, `httpCredentials`, `extraHTTPHeaders` | `web({ browser, basicAuth, headers })`；`basicAuth` 和 `headers` 仅作用于应用的源，可通过 [`credentialOrigins`](/reference/web#credentialorigins) 添加更多源 |
+| `chromium.connectOverCDP(url)` | `web({ connect: { cdpEndpoint: () => url } })`，仅限 chromium |
+| `use.trace`, `use.video` | `trace`、`video`：在配置、测试目标或测试上设置模式。`web({ screencast: { size } })` 设置视频尺寸 |
+| `use.permissions` | 测试目标上的 `app.permissions`，参阅[授予浏览器权限](/web#granting-browser-permissions) |
+| 来自 `setup` 项目的 `use.storageState` | 使用带有 `session.save(name)` 的 `test.setup`，然后在测试上设置 `{ session }`，参阅[身份验证](/authentication) |
+| 带有固定值的 `use.storageState: { cookies }` | 测试夹具中的 `browser.setCookies(cookies)` |
+
+## 改写一个测试文件
+
+从步骤经常变化的流程开始，例如向导或结账。稳定的 Playwright 测试可以保持原样。
+
+```ts title="Playwright"
+import { test, expect } from '@playwright/test';
+
+test('checkout', async ({ page }) => {
+  await page.goto('/cart');
+  await page.getByRole('button', { name: 'Checkout' }).click();
+  await page.getByLabel('Card number').fill('4242424242424242');
+  await page.getByLabel('Expiry').fill('12/30');
+  await page.getByLabel('CVC').fill('123');
+  await page.getByRole('button', { name: 'Pay' }).click();
+  await expect(page.getByRole('heading')).toHaveText('Order confirmed');
+});
+```
+
+```ts title="e2e"
+import { test } from '@e2e-dev/web';
+import { expect } from 'e2e';
+
+test('checkout', async ({ app, agent, screen }) => {
+  await app.open('/cart');
+  await agent.act('pay with the test card 4242 4242 4242 4242, expiry 12/30, CVC 123');
+  await expect(screen.getByRole('heading')).toHaveText('Order confirmed');
+});
+```
+
+智能体执行结账步骤，并在表单变化时进行适应。测试也可以保持完全确定性，为每一行 `page.getBy*` 对应一行 `screen.getBy*`。
+
+## 映射每个 API
+
+下表中的每一项目前都可用。未列出的 API 请查看 [e2e 尚未提供的功能](#what-e2e-doesnt-have-yet)。`browser` 上的调用只能在浏览器中运行，因此使用它的测试应声明 `requires: ['browser']`，其他测试目标会跳过该测试。
+
+<AccordionGroup>
+<Accordion title="定位器">
+
+| Playwright | e2e |
+| --- | --- |
+| `page.getByRole`, `getByLabel`, `getByText`, `getByTestId`, `getByPlaceholder` | `screen` 上的同名方法；字符串匹配[完整文本](#what-differs-on-purpose) |
+| `getByAltText(alt)` | `getByRole('image', alt)` |
+| `filter({ hasText, hasNotText, has, hasNot })`, `first()`, `last()`, `nth(i)`, `count()`, `or()`, `all()` | 相同 |
+| `page.locator(selector)`, `page.frameLocator(selector)` | `browser` 上的同名方法；支持 CSS、`xpath=` 和 `>>` 链 |
+| `page.click(selector)`, `page.fill(selector, value)`, `page.waitForSelector(selector)` | `browser.locator(selector).tap()`、`.fill(value)`、`.waitFor()` |
+
+</Accordion>
+<Accordion title="操作">
+
+| Playwright | e2e |
+| --- | --- |
+| `click()`, `dblclick()` | `tap()`、`doubleTap()`；`click()` 和 `dblclick()` 是别名 |
+| `click({ button: 'right' })`, `click({ delay })` | `secondaryTap()`、`longPress({ duration })` |
+| `click({ position })`, `click({ modifiers })` | `tap({ position })`、`tap({ modifiers })` |
+| `fill()`, `pressSequentially()`, `clear()`, `focus()`, `hover()`, `check()`, `uncheck()`, `dragTo()`, `setInputFiles(path)`, `selectOption({ label })` 或 `{ value }` | 相同，但不支持 `force`、`trial` 或 `position` |
+| `press(key)` | 单个字符或[命名按键](/reference/engine#keys)的用法相同；按键代码则在 `focus()` 后使用 `browser.keyboard.press` |
+| `innerText()`, `allInnerTexts()`, `scrollIntoViewIfNeeded()` | `textContent()`、`allTextContents()`、`scrollIntoView()` |
+| `textContent()`, `allTextContents()`, `inputValue()`, `getAttribute()`, `boundingBox()`, `isVisible()`, `isHidden()`, `isEnabled()`, `isDisabled()`, `isChecked()`, `waitFor({ state })` | 相同 |
+| `page.keyboard.press`, `type`, `down`, `up`; `page.mouse.move`, `wheel`, `down`, `up` | `browser.keyboard` 和 `browser.mouse` 上的同名方法 |
+| `page.mouse.click(x, y)`, `page.mouse.dblclick(x, y)`, `page.dragAndDrop(source, target)` | `screen.tapAt({ x, y })`、`screen.doubleTapAt({ x, y })`、`source.dragTo(target)` |
+
+</Accordion>
+<Accordion title="断言">
+
+| Playwright | e2e |
+| --- | --- |
+| `toBeVisible()`, `toBeHidden()`, `toBeEnabled()`, `toBeDisabled()`, `toBeChecked()`, `toBeFocused()`, `toBeAttached()`, `toHaveText()`, `toContainText()`, `toHaveValue()`, `toHaveAttribute()`, `toHaveCount()`, `toHaveAccessibleName()`, `toHaveRole()` | 相同，支持 `{ visible }`、`{ enabled }`、`{ checked }`、`{ attached }` 和 `{ ignoreCase }` |
+| `toHaveId(id)`, `toContainClass(name)` | `toHaveAttribute('id', id)`、`toHaveAttribute('class', RegExp)` |
+| `expect(page).toHaveURL()`, `toHaveTitle()` | `expect(browser).toHaveURL()`、`toHaveTitle()` |
+| `expect(page).toHaveScreenshot()`, `expect(locator).toHaveScreenshot()` | `expect(screen).toHaveScreenshot()` 及定位器形式，参阅[视觉比较](/visual-testing) |
+| `expect(value)` 配合 `toBe()`、`toEqual()`、`toMatchObject()`、`toContain()`、`toHaveLength()`、`toHaveProperty()`、`toMatch()`，以及真值和数值匹配器 | 相同，参阅[值匹配器](/reference/expect#value-matchers) |
+| `expect(locator, 'message')`, `expect(page, 'message').toHaveScreenshot()`, `expect(value, 'message')` | 相同，页面使用 `expect(screen, 'message')`；消息出现在失败信息的开头，参阅[定位器匹配器](/reference/expect#locator-matchers) |
+| `expect.any()`, `anything()`, `objectContaining()`, `arrayContaining()`, `stringMatching()`, `stringContaining()`, `expect.poll()`, `expect.soft()` | 相同；`poll` 接受一个 `interval` |
+
+</Accordion>
+<Accordion title="导航和应用">
+
+| Playwright | e2e |
+| --- | --- |
+| `page.goto(path)` | `app.open(path)`；需要选项时使用 `browser.goto(url, { waitUntil, timeout })` |
+| `page.goBack()`, `goForward()`, `reload()`, `url()`, `title()`, `setViewportSize()` | `browser.back()`、`forward()`、`reload()`、`url()`、`title()`、`setViewport()` |
+| `page.waitForURL(url)` | `browser.waitForURL(url)`，使用 `RegExp` 或精确 URL，不支持 glob |
+| `page.screenshot()` | `app.screenshot(label)`，截取视口并附加到报告 |
+| 每个测试使用全新的 `context` | 每次尝试同样如此；`app.restart()` 重新创建上下文，`app.clearState()` 还会清除存储 |
+
+</Accordion>
+<Accordion title="网络和浏览器">
+
+| Playwright | e2e |
+| --- | --- |
+| `page.route(pattern, handler)`, `unroute()`, `unrouteAll()` | `browser` 上的同名方法；模式是匹配完整 URL 的 `RegExp` 或 glob |
+| `route.fulfill()`, `continue()`, `fallback()`, `abort()`, `fetch()` | 相同，各方法接受的选项见 [`route`](/reference/web#route) |
+| `page.waitForResponse(pattern)` | `browser.waitForResponse(pattern)`；使用 `'**/api/orders'`，而非 `'/api/orders'` |
+| `page.on('dialog')`, `page.waitForEvent('download')` | `browser.onDialog('accept')` 或处理函数；`browser.waitForDownload(() => trigger)` |
+| `page.waitForEvent('popup')` | `browser.waitForPopup(() => trigger)`，会激活新标签页，参阅[标签页](/reference/web#tabs) |
+| `context.pages()`, `context.newPage()`, `page.bringToFront()` | `browser.tabs()`、`browser.newTab()`、`tab.activate()`；没有 `context.on('page')` 事件 |
+| `page.evaluate(fn, arg)` | `browser.evaluate(fn, arg)`，输入和输出均为 JSON |
+| `page.addInitScript()`, `page.emulateMedia({ colorScheme, reducedMotion })` | `browser.addInitScript()` 或 `web({ initScripts })`；`browser.emulateMedia()` |
+| `context.addCookies()`, `cookies()`, `clearCookies()` | `browser.setCookies()`、`browser.cookies()`、`browser.clearCookies()` |
+
+</Accordion>
+<Accordion title="测试结构">
+
+| Playwright | e2e |
+| --- | --- |
+| `import { test, expect } from '@playwright/test'` | `import { test } from '@e2e-dev/web'` 和 `import { expect } from 'e2e'` |
+| 测试中的 `{ page }` | `{ screen, app, browser }` |
+| `test()`, `test.describe()`, `test.only`, `test.fail()`, `test.skip(title, fn)`, `test.skip(condition, reason)` | 相同；条件式 `skip` 可用于测试体或 `beforeEach` 中 |
+| `beforeEach`, `afterEach`, `beforeAll`, `afterAll` | 相同，但不带标题；`beforeAll` 和 `afterAll` 得到工作进程测试夹具，而不是 `browser`、`app` 或 `screen` |
+| `test.describe.skip`, `test.describe.serial`, `describe.configure({ mode: 'serial', retries, timeout })` | `test.describe(title, { skip, serial, retries, timeout }, fn)` |
+| `{ tag: '@smoke' }` | 测试或组上的 `{ tags: ['smoke'] }` |
+| `test.extend({ fixture })` | 结构相同，按需准备：测试、钩子或测试夹具会得到它在第一个参数中列出的测试夹具 |
+| `[fn, { scope: 'worker' }]` 测试夹具 | 相同，用 `extend` 的第二个类型参数提供类型 |
+| `[fn, { auto: true }]` 测试夹具 | 相同，两种作用域都可以 |
+| 覆盖测试夹具，`page: async ({ page }, use) => {}` | 对 `app`、`screen`、`browser` 和你自己的测试夹具同样适用，参阅[扩展测试夹具](/reference/test#extending-a-fixture) |
+
+</Accordion>
+<Accordion title="CLI">
+
+| Playwright | e2e |
+| --- | --- |
+| `npx playwright test tests/login.spec.ts:12` | `npx e2e run tests/login.e2e.ts:12`；也可以通过目录、单独的名称或 glob 选择 |
+| `--project web`, `--list` | `--target web`、`npx e2e list` |
+| `--grep`, `--grep-invert`, `--headed`, `--retries`, `--workers`, `--config`, `--output`, `--reporter`, `--trace`, `--shard`, `--repeat-each`, `--max-failures`, `--last-failed`, `--pass-with-no-tests`, `-u` | 相同；短标志中仅支持 `-u` |
+| `npx playwright install` | `npx @e2e-dev/web install`；运行时也会安装缺失的浏览器 |
+
+</Accordion>
+</AccordionGroup>
+
+## 迁移页面对象
+
+页面对象接收 `screen` 以执行查询和操作，接收 `browser` 以使用键盘、鼠标、CSS 选择器和 `evaluate`。将它作为测试夹具提供：
+
+```ts title="tests/page-models/account-page.ts"
+import type { Locator, Screen } from 'e2e';
+import type { Browser } from '@e2e-dev/web';
+
+export class AccountPage {
+  readonly accountName: Locator;
+
+  constructor(
+    readonly screen: Screen,
+    readonly browser: Browser,
+  ) {
+    this.accountName = screen.getByTestId('account-name');
+  }
+
+  async filterByNote(note: string) {
+    await this.screen.getByRole('button', 'Filter').click();
+    await this.screen.getByRole('button', 'Note').click();
+    await this.browser.keyboard.type(note);
+  }
+}
+```
+
+```ts title="tests/fixtures.ts"
+import { test as base } from '@e2e-dev/web';
+import { AccountPage } from './page-models/account-page.ts';
+
+export const test = base.extend<{ accountPage: AccountPage }>({
+  accountPage: async ({ screen, browser }, use) => {
+    await use(new AccountPage(screen, browser));
+  },
+});
+```
+
+列出 `browser` 的测试夹具会让使用它的每个测试仅限网页端，参阅[保持可移植性](/page-object-model#keep-it-portable)。从钩子中移除 `newPage()` 和 `page.close()`：每次尝试都在全新的上下文中开始。
+
+## e2e 尚未提供的功能
+
+“已计划”表示已纳入路线图。“尚未实现”表示没有确定日期。“不计划支持”表示有意不提供。请使用替代方案，或将测试保留在 Playwright 中。
+
+### 已计划
+
+<AccordionGroup>
+<Accordion title="定位器和操作">
+
+| Playwright | 目前可用的方式 |
+| --- | --- |
+| `locator.locator(selector)`, `locator.and()`, `filter({ visible })` | 一个 `browser.locator` 选择器，例如 `'.card >> .close'`，或作用域内的 `screen` 查询 |
+| `locator.evaluate()`, `expect(locator).toHaveClass()`, `toHaveCSS()`, `dispatchEvent()` | `browser.evaluate(fn, selector)`；`expect(browser).toHaveClass(locator, cls)` |
+| `setInputFiles({ buffer })`, `selectOption([...])`, `click({ clickCount })`, `hover({ position })` | 临时文件路径；多选使用 `browser.evaluate`；`browser.mouse` 配合 `boundingBox()` |
+
+</Accordion>
+<Accordion title="断言">
+
+| Playwright | 目前可用的方式 |
+| --- | --- |
+| `expect(fn).toPass()`, `expect.poll(fn, { intervals })` | `expect.poll(async () => { ...; return true }).toBe(true)` |
+| `toBeEmpty()`, `toBeEditable()`, `toBeInViewport()` | 表单控件上使用 `toHaveValue('')`，其他元素上使用 `toHaveText('')`；`toBeEnabled()` 和 `.not.toHaveAttribute('readonly')`；通过 `expect.poll` 检查 `boundingBox()` |
+| `locator.screenshot()`, `{ fullPage, clip }`, `snapshotPathTemplate`, `ignoreSnapshots` | 对视口或单个定位器使用 `toHaveScreenshot`；通过标签和 `--exclude-tag` 跳过视觉测试 |
+| `expect.configure()` | 每次调用上设置 `{ timeout }` |
+| `@axe-core/playwright` | 通过 `browser.addInitScript({ path: 'node_modules/axe-core/axe.min.js' })` 加载 axe-core，然后在 `browser.evaluate` 中调用 `axe.run()` |
+| `.resolves`, `.rejects`, `toThrow()`, `toStrictEqual()`, `toContainEqual()`, `toBeInstanceOf()`, `expect.closeTo()` | 先 `await`，或捕获错误并对其断言；`toEqual`；按深度相等比较的 `toContain`；`toBeCloseTo` |
+| 首次读取即可通过的 `.not` 定位器匹配器 | 条件持续成立 1 s 后才会通过。对应的正向反义匹配器首次读取即可通过：`toBeHidden()`、`toBeDisabled()`、`toBeChecked({ checked: false })` |
+| `expect.extend()` | 调用 `expect` 的异步辅助函数 |
+
+</Accordion>
+<Accordion title="导航、网络和浏览器">
+
+| Playwright | 目前可用的方式 |
+| --- | --- |
+| `devices['iPhone 15']`, `isMobile`, `hasTouch`, `deviceScaleFactor` | `web({ viewport, userAgent })`；真实触摸使用移动端测试目标 |
+| `waitForURL(glob)`, `waitForFunction()` | `RegExp`；通过 `expect.poll` 检查 `browser.evaluate` |
+| `waitForResponse(predicate)`, `waitForRequest()`, `page.on('request')`, `response.ok()` | `browser.waitForResponse(pattern)`，然后在测试中检查响应，以 `status` 代替 `ok()`。对于请求，使用 `browser.route` 处理函数记录 `route.request`，然后调用 `route.fallback()` |
+| `route.fulfill({ response })`, `route.abort(code)`, `route.fetch(options)`, `request.postDataJSON()` | `route.fetch()` 返回的 `status`、`headers` 和 `body`；`JSON.parse(route.request.postData)` |
+| `page.addLocatorHandler()` | 在 `beforeEach` 中关闭覆盖层，或通过 `browser.setCookies` 设置其同意 Cookie |
+| `page.on('console')`, `page.on('pageerror')`, `page.clock` | 用 `browser.addInitScript` 记录到 `window` 数组，或替换 `Date` 实现 |
+| `context.setOffline()`, `setGeolocation()`, `grantPermissions()` | 中止所有请求的路由；`browser.addInitScript` 桩实现；测试目标上的 `app.permissions` |
+| `ignoreHTTPSErrors`, `proxy`, `channel`, `launchOptions` | 通过 `http` 提供应用；自行启动浏览器并通过 `web({ connect })` 连接 |
+| `request` 测试夹具、`page.request`、`expect(response).toBeOK()` | Node 的 `fetch` 配合 `app.baseUrl`，参阅 [API](/api-testing)；`expect(response.status).toBe(200)` |
+
+</Accordion>
+<Accordion title="测试结构、报告和 CLI">
+
+| Playwright | 目前可用的方式 |
+| --- | --- |
+| `test.step()`, `testInfo.attach()` | 每次调用已是报告中有名称的步骤；`app.screenshot(label)` 附加截图 |
+| `test.info()`、钩子和测试夹具中的 `testInfo`、`annotations` | 自己的测试夹具或模块状态；标题中的问题 ID 或标签 |
+| `fullyParallel`, `describe.configure({ mode: 'parallel' })` | 拆分文件。文件并行运行，同一文件中的测试按顺序运行 |
+| `mergeTests()` | 一条 `extend` 调用链 |
+| `globalSetup`, `globalTeardown`, `webServer` 数组 | 在运行前后执行的脚本，或启动所有进程的一个 `app.command` |
+| `projects[].testMatch`, `testDir`, `testIgnore`, `grep` | 测试上的 `platforms` 或标签，或为每个测试目标单独运行 |
+| `--ui`, `npx playwright show-report`, `--reporter html` | `--watch --headed`；`npx e2e report`（打开 `htmlReporter()` 写入的 `<output>/report.html`） |
+| `test.setTimeout()`、`test.slow()`、`test.fixme()`、`test.describe.only()`、describe 上的 `test.fail()` | 测试或组上的 `{ timeout }` 或 `{ skip: 'reason' }`；每个测试上的 `test.only` 和 `test.fail()` |
+| `failOnFlakyTests`, `use.navigationTimeout`, `--timeout`, `--quiet` | `report.json` 中的 `run.summary.flaky`；`browser.goto(url, { timeout })`；配置中的 `timeout` |
+| `blob` 报告器和 `merge-reports` | 每个分片一份报告 |
+| Playwright Docker 镜像 | 与 `@e2e-dev/web` 固定的 `playwright-core` 版本对应的镜像，或 `npx @e2e-dev/web install chromium --with-deps` |
+| 文件或 describe 中的 `test.use({ ... })` | 组上的运行器选项、测试目标上的引擎选项、运行时的 `browser.setViewport` |
+| `projects[].dependencies`, `teardown` | 用于登录的顶层 `test.setup`；在运行前后执行的脚本 |
+| `page.pause()` | `--step --headed` 在每个步骤等待按键后继续 |
+| `line` 和 `github` 报告器 | `list`；`github()` 发布拉取请求（PR）评论 |
+
+</Accordion>
+</AccordionGroup>
+
+### 尚未实现
+
+| Playwright | 目前可用的方式 |
+| --- | --- |
+| `projects[].retries`, `projects[].timeout` | 组上的选项 |
+| `--debug`、VS Code 扩展 | `--step --headed` 在每个步骤等待按键后继续；`screen.debug()` 输出语义树 |
+| 选项测试夹具，在 `extend` 中覆盖 `page` 或 `context` | 测试夹具中的 `process.env`；使用独立名称的新测试夹具 |
+| `const response = await page.goto()` | 在导航前启动 `browser.waitForResponse` |
+| Playwright `Reporter` 类、第三方报告器 | 带有 `onEvent` 和 `onRunFinished` 的[自定义报告器](/reference/reporters#custom-reporters)；供仪表盘使用的 `junit.xml` |
+| 为第二个用户使用 `browser.newContext()` | 使用 `fetch` 通过 API 操作第二个用户 |
+| `page.exposeFunction()`, `addStyleTag()`, `innerHTML()`, `page.viewportSize()` | `browser.evaluate` |
+| `routeFromHAR()`, `routeWebSocket()`, `page.setExtraHTTPHeaders()` | 为每个端点或请求头设置 `browser.route`；通过 `browser.addInitScript` 替换 `WebSocket` 实现 |
+| `emulateMedia({ media, forcedColors, contrast })` | - |
+| `npx playwright show-trace`, `trace.zip`, `context.tracing` | `.e2e/results/` 下测试目录中的 `trace.md`。追踪记录是 Markdown 页面，没有 zip 文件，也没有查看器 |
+
+### 不计划支持
+
+| Playwright | 替代方式 |
+| --- | --- |
+| 按值选择的 `selectOption('pro')` | `selectOption({ value: 'pro' })`。单独的字符串只匹配标签 |
+| `use.storageState: 'file.json'`, `context.storageState({ path })` | `test.setup` 和 `{ session }`。[会话仅持续一次运行](#what-differs-on-purpose)，因此没有文件 |
+| `page.waitForTimeout(ms)`, `page.waitForNavigation()` | 对等待的状态使用定位器断言；`browser.waitForURL(url)` |
+| 路由 glob 中作为字面量的 `?` 和 `{a,b}` | `RegExp`。在 glob 中，`?` 是通配符，`{a,b}` 是字面量 |
+| `--only-changed` | `--changed-since <ref>` 配合 `filters` 中的[测试过滤器](/filters) |
+| `page.$()`、`$eval()`、`elementHandle()`、非 JSON 的 `evaluate` 值、`locator.page()` | 定位器，以及输入输出为 JSON 的 `browser.evaluate`，报告会记录并脱敏。向页面对象传入 `browser` |
+| 没有处理函数时静默关闭的对话框 | `browser.onDialog('dismiss')`。未处理的对话框会使下一步骤失败 |
+| `page.goto('data:...')`, `'file://...'` | 在应用 URL 上使用 `route.fulfill({ body, contentType: 'text/html' })`。只能打开 `http` 和 `https` |
+| `getByRole(role, { includeHidden })` | `browser.locator('role=button[include-hidden=true]')`。角色查询遵循无障碍树 |
+| 用于标签的 `--grep @smoke`、正则表达式位置参数、`file:line:column` | `--tag smoke`；glob 或单独的名称；`file:line` |
+| `getByTitle()` | `browser.locator('[title="Close"]')`。标题是 DOM 属性，因此没有对应的 `screen` 查询 |
+| `page.waitForLoadState()` | 对下一页面显示的内容进行断言。导航等待 `load`，每个操作和断言等待各自的节点 |
+| `npx playwright codegen`、Inspector | [`npx e2e mcp`](/mcp-server) 让编码智能体在编写测试时操作应用；`screen.debug()` 输出语义树 |
+| `{ force: true }`, `{ trial: true }` | `tap({ position })` 跳过可操作性检查；试运行使用 `toBeVisible()` 和 `toBeEnabled()` |
+| `ariaSnapshot()`, `toMatchAriaSnapshot()`, `toMatchSnapshot()` | `expect(await screen.tree()).toContain(...)`；测试夹具文件和 `toEqual` |
+| `keyboard.insertText()`、`<label>` 上的 `inputValue()` | `fill()`；通过 `getByLabel` 定位控件本身 |
+| `use.connectOptions`、追踪记录模式 `retain-on-first-failure` 和 `retain-on-failure-and-retries` | 通过 CDP 的 `web({ connect })`，仅限 chromium；`retain-on-failure` |
+
+## 有意保留的差异
+
+- 字符串匹配完整文本，且区分大小写。Playwright 的 `getByRole` 名称、`getByLabel`、`getByPlaceholder` 和 `getByText` 匹配不区分大小写的子字符串。匹配片段时传入 `{ exact: false }` 或 `RegExp`。参阅[查询](/reference/screen#queries)。
+
+  ```ts
+  // <button>Save changes</button>, <label>Email address <input></label>
+  screen.getByRole('button', 'Save');                  // no match
+  screen.getByRole('button', { name: 'Save', exact: false });    // matches
+  screen.getByRole('button', 'save changes');          // no match, case differs
+  screen.getByLabel('Email');                                    // no match
+  ```
+- 文本读取的是渲染后的文本。`textContent()`、`toHaveText` 和 `toContainText` 读取 `innerText` 返回的内容，因此会忽略隐藏文本，并应用 `text-transform`。参阅[定位器读取](/reference/screen#locator-reads)。
+- `toHaveRole` 接受 `getByRole` 使用的角色集合，因此 `paragraph`、`generic` 及其他未包含的角色会导致类型错误，`img` 则读取为 `image`。它比较的是语义树读取的角色，其中 `contenteditable` 编辑器是 `textbox`。
+- 定位器采用严格匹配。对多个匹配项执行操作、读取或正向匹配器会触发 `LOCATOR_AMBIGUOUS`，而 Playwright 的 `page.click(selector)` 和 `isVisible()` 会取第一个。使用 `filter` 或 `first()` 缩小范围。
+- `.not.toBeChecked()` 在按钮或标题上会通过。按角色查询控件，让断言在控件类型改变时失败。
+- 会话仅持续一次运行。`test.setup` 以指定名称保存状态，`{ session }` 恢复状态。文件会加密，并在清理时删除，因此没有可复用的 `.auth/user.json`。
+- 测试无法获取原始 `Page`，因为其上的任何操作都不会被记录、脱敏或遮蔽。`surfaceOf(engine)` 用于[自定义执行器](/executors#driving-the-page-yourself)，不用于测试代码。
+
+## 不同的默认值
+
+| 设置 | Playwright | e2e |
+| --- | --- | --- |
+| 测试超时 | 30 s | 120 s，`timeout` |
+| 操作超时 | 无 | 30 s，`actionTimeout` |
+| 断言超时 | 5 s | 5 s，`assertionTimeout` |
+| 导航超时 | 无 | 120 s，测试预算 |
+| 重试 | 0 | CI 中为 1，本地为 0 |
+| 工作进程 | CPU 核心数的一半 | CI 中为 1，本地为 CPU 核心数的一半 |
+| 追踪记录 | `off`（生成的配置中为 `on-first-retry`） | `retain-on-failure` |
+
+## 下一步
+
+<CardGroup cols={2}>
+  <Card title="核心概念" icon="pen-to-square" href="/core-concepts">
+    使用目标、断言和定位器，替代选择器脚本。
+  </Card>
+  <Card title="网页端引擎参考" icon="masks-theater" href="/reference/web">
+    所有选项和所有 `browser` 方法。
+  </Card>
+</CardGroup>

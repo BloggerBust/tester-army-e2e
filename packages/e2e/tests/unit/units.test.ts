@@ -66,6 +66,7 @@ function makeTest(
     kind: 'test',
     title,
     titlePath: [title],
+    names: [],
     declarationIndex,
     options: {},
     sessions: [],

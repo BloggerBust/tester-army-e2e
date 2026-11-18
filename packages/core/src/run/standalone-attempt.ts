@@ -31,8 +31,17 @@ export interface StandaloneSessionOptions {
   readonly timeoutMs: number;
   readonly agent?: string | undefined;
   readonly onProgress?: (progress: StepProgress) => void;
-  /** What an operation fails with once the session has closed; a bare cancellation when absent. */
-  readonly closed?: () => E2EError;
+  /**
+   * Makes closing the way the session's owner cancels what runs on it.
+   * Absent, a step still running at close was not awaited and fails the
+   * attempt as `STEP_NOT_AWAITED`.
+   */
+  readonly cancelsOnClose?: {
+    /** What an operation started after the close fails with. */
+    readonly closed: () => E2EError;
+    /** What a step still running at the close fails with; `call` is its api and, when it has one, its quoted label. */
+    readonly cut: (call: string) => E2EError;
+  };
   /** Classifies and redacts the errors the session's operations throw; see `StepRecorderOptions.redactThrown`. */
   readonly redactThrown?: boolean;
   /** How many finished steps the session keeps; see `StepRecorderOptions.retainSteps`. */
@@ -193,6 +202,7 @@ export async function launchAttempt<Sessions extends EngineSessions, Extra>(
     ...(options.redactThrown === true ? { redactThrown: true } : {}),
     ...(options.retainSteps === undefined ? {} : { retainSteps: options.retainSteps }),
   });
+  steps.owner = 'the hosted session';
   const artifacts = createAttemptArtifacts({
     artifactsRoot: worker.resultsDir, segments: identity.segments, attemptId, currentStepId: () => steps.currentStepId,
     ...(config.artifactStore === undefined ? {} : { store: config.artifactStore }),
@@ -267,8 +277,15 @@ export async function launchAttempt<Sessions extends EngineSessions, Extra>(
       // The deadline decides the outcome, not whether the timer ran before close.
       if (deadline.expired()) expire();
       const abandonedPoll = polls.close();
-      const abandonedStep = steps.abandonRunning();
-      end.abort(options.closed?.());
+      let reason: E2EError | undefined;
+      let abandonedStep: E2EError | undefined;
+      if (options.cancelsOnClose === undefined) {
+        abandonedStep = steps.abandonRunning();
+      } else {
+        reason = options.cancelsOnClose.closed();
+        steps.nameRunning(reason, options.cancelsOnClose.cut);
+      }
+      end.abort(reason);
       for (const error of [abandonedStep, abandonedPoll, reservation.publication?.close()]) if (error !== undefined) recordFailure(error, 'body');
       try {
         await withTimeout(steps.settleAbandoned(), config.cleanupTimeout, () => new InfrastructureError('CLEANUP_TIMEOUT', 'abandoned session steps did not settle'));

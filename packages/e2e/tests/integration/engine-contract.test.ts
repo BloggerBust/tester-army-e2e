@@ -645,11 +645,16 @@ test('needs browser', async ({ app, browser }) => {
         { 'tests/no-browser.e2e.ts': file },
         { appUrl: APP_URL, config: engineConfig(fake.engine) },
       );
-      const result = resultByTitle(outcome, 'needs browser');
-      expect(result.status).toBe('failed');
-      expect(result.attempts[0]!.error?.code).toBe('UNSUPPORTED_CAPABILITY');
-      expect(result.attempts[0]!.error?.category).toBe('configuration');
-      expect(result.attempts[0]!.error?.message).toContain('has no "browser" fixture');
+      // Named in the test's parameter, so it is refused at collection, before the engine starts.
+      expect(outcome.report.run.errors.map(({ code, category, message }) => ({ code, category, message }))).toEqual([
+        {
+          code: 'COLLECTION_ERROR',
+          category: 'configuration',
+          message: expect.stringContaining('test "needs browser" names "browser": target "fake" has no "browser" fixture'),
+        },
+      ]);
+      expect(outcome.results).toEqual([]);
+      expect(fake.events).toEqual([]);
       project.cleanup();
     },
     60_000,
@@ -920,8 +925,7 @@ test('consumes session', { session: 'acct' }, async ({ app }) => {
       const fake = createFakeEngine({ fixtures: true });
       const file = `import { test, expect } from 'e2e';
 
-test('drives the gadget', async (fixtures) => {
-  const gadget = (fixtures as any).gadget;
+test('drives the gadget', async ({ gadget }) => {
   await gadget.poke('once');
   await gadget.knobs.turn('volume');
   if (gadget.describe() !== 'gadget on fake') throw new Error('accessor was wrapped');
@@ -939,16 +943,16 @@ test('drives the gadget', async (fixtures) => {
   await expect(gadget).toBePoked(1);
 });
 
-test('bounds a hanging fixture call', async (fixtures) => {
-  await (fixtures as any).gadget.hang({ timeout: 200 });
+test('bounds a hanging fixture call', async ({ gadget }) => {
+  await gadget.hang({ timeout: 200 });
 });
 
-test('waits for the test deadline with timeout 0', { timeout: 3_000 }, async (fixtures) => {
-  await (fixtures as any).gadget.hang({ timeout: 0 });
+test('waits for the test deadline with timeout 0', { timeout: 3_000 }, async ({ gadget }) => {
+  await gadget.hang({ timeout: 0 });
 });
 
-test('refuses a negative timeout', async (fixtures) => {
-  await (fixtures as any).gadget.hang({ timeout: -1 });
+test('refuses a negative timeout', async ({ gadget }) => {
+  await gadget.hang({ timeout: -1 });
 });
 `;
       const { outcome, project } = await runProject(

@@ -1,0 +1,60 @@
+---
+title: 示例项目
+description: 运行使用 Vite、Next.js、Astro、Angular、Expo、SwiftUI、Jetpack Compose、Kotlin Multiplatform、Flutter 和 .NET MAUI 的独立 e2e 示例。
+"og:image": "https://e2e.com/docs/images/og/example-projects.png?v=dc027fe862"
+"twitter:image": "https://e2e.com/docs/images/og/example-projects.png?v=dc027fe862"
+---
+
+每个示例都是独立的问候应用，包含三个定位器测试和两个智能体测试。一个智能体测试根据姓名获取问候语，另一个检查姓名为空时的错误。每个示例都从 npm 安装已发布的 e2e 包。
+
+## 选择示例
+
+<CardGroup cols={2}>
+  <Card title="Vite" icon="/images/examples/vite.svg" href="https://github.com/e2e-inc/e2e/tree/main/examples/with-vite" cta="查看示例" arrow>
+    使用 Vite 的 React 应用，在 Chromium 中测试。
+  </Card>
+  <Card title="Next.js" icon="/images/examples/nextjs.svg" href="https://github.com/e2e-inc/e2e/tree/main/examples/with-next" cta="查看示例" arrow>
+    Next.js App Router 应用，由运行器启动并在 Chromium 中测试。
+  </Card>
+  <Card title="Astro" icon="/images/examples/astro.svg" href="https://github.com/e2e-inc/e2e/tree/main/examples/with-astro" cta="查看示例" arrow>
+    不使用 UI 框架的 Astro 页面，由运行器启动并在 Chromium 中测试。
+  </Card>
+  <Card title="Angular" icon="/images/examples/angular.svg" href="https://github.com/e2e-inc/e2e/tree/main/examples/with-angular" cta="查看示例" arrow>
+    独立的 Angular 组件，由运行器启动并在 Chromium 中测试。
+  </Card>
+  <Card title="Expo" icon="/images/integrations/expo.svg" href="https://github.com/e2e-inc/e2e/tree/main/examples/with-expo" cta="查看示例" arrow>
+    使用 Expo 的 React Native 应用，在网页端、iOS 和 Android 上测试。
+  </Card>
+  <Card title="SwiftUI" icon="/images/examples/swiftui.png" href="https://github.com/e2e-inc/e2e/tree/main/examples/with-swiftui" cta="查看示例" arrow>
+    原生 iOS 应用，在 iPhone 模拟器上测试。
+  </Card>
+  <Card title="Jetpack Compose" icon="/images/examples/jetpack-compose.svg" href="https://github.com/e2e-inc/e2e/tree/main/examples/with-compose" cta="查看示例" arrow>
+    原生 Android 应用，在模拟器上测试。
+  </Card>
+  <Card title="Kotlin Multiplatform" icon="/images/examples/kotlin.svg" href="https://github.com/e2e-inc/e2e/tree/main/examples/with-kotlin-multiplatform" cta="查看示例" arrow>
+    单个 Compose Multiplatform 界面，在 Android 和 iOS 上测试。
+  </Card>
+  <Card title="Flutter" icon="/images/examples/flutter.svg" href="https://github.com/e2e-inc/e2e/tree/main/examples/with-flutter" cta="查看示例" arrow>
+    Flutter 应用，在 Android 和 iOS 上测试。
+  </Card>
+  <Card title=".NET MAUI" icon="/images/examples/dotnet.svg" href="https://github.com/e2e-inc/e2e/tree/main/examples/with-maui" cta="查看示例" arrow>
+    .NET MAUI 应用，在 Android 和 iOS 上测试。
+  </Card>
+</CardGroup>
+
+## 运行示例
+
+按照项目的 README 安装、构建并运行它。配置和测试与应用放在一起；原生、Flutter 和 .NET MAUI 项目将它们放在 `e2e/` 文件夹中。
+
+定位器测试无需模型。智能体测试使用 Vercel AI Gateway，未设置 `AI_GATEWAY_API_KEY` 时会跳过。
+
+## 下一步
+
+<CardGroup cols={2}>
+  <Card title="快速开始" icon="rocket" href="/quickstart">
+    将 e2e 添加到你自己的应用中。
+  </Card>
+  <Card title="模型" icon="brain" href="/models">
+    使用其他提供方、订阅或本地模型。
+  </Card>
+</CardGroup>

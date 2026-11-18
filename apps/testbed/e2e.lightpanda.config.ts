@@ -11,5 +11,5 @@ import base from './e2e.config.ts';
  */
 export default {
   ...base,
-  targets: base.targets.map((target) => ({ ...target, name: 'lightpanda', engine: web({ browser: lightpanda({ loadResources: ['iframe'] }) }) })),
+  targets: base.targets.map((target) => ({ ...target, name: 'lightpanda', engine: web({ browser: lightpanda({ loadResources: ['stylesheet', 'iframe'] }) }) })),
 } satisfies E2EConfig;

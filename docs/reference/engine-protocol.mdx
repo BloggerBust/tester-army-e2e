@@ -146,6 +146,10 @@ export function spawnTransport(options: {
 
 Closing a connection ends stdin, sends `SIGTERM`, and sends `SIGKILL` when
 the cleanup budget runs out.
+When the server's stdout ends, the connection closes once the server has
+exited and its stderr has closed, or 2 seconds later.
+The error names what the transport has seen by then: the exit code or
+signal, and the last stderr lines.
 
 ### `socketTransport`
 
@@ -206,6 +210,8 @@ export interface EngineManifest {
   /** Required with `engine/performAt`. */
   readonly pointerActions?: readonly PointerActionKind[];
   readonly tapModifiers?: boolean;
+  /** See `Engine.isolation`; left out for `attempt`. */
+  readonly isolation?: 'worker';
 }
 ```
 
