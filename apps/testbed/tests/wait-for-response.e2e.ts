@@ -35,9 +35,11 @@ test.describe('page wait for response', { requires: ['browser'], tags: ['playwri
 
   test('should log the url', async ({ browser }) => {
     await browser.goto(EMPTY_PAGE);
-    const error1 = await browser.waitForResponse('foo.css', { timeout: 1000 }).catch((caught: Error) => caught);
-    expect((error1 as Error).message).toContain('"foo.css"');
+    const error1 = await browser.waitForResponse('**/foo.css', { timeout: 1000 }).catch((caught: Error) => caught);
+    expect(error1).toHaveProperty('code', 'ACTION_FAILED');
+    expect((error1 as Error).message).toContain('"**/foo.css"');
     const error2 = await browser.waitForResponse(/foo.css/i, { timeout: 1000 }).catch((caught: Error) => caught);
+    expect(error2).toHaveProperty('code', 'ACTION_FAILED');
     expect((error2 as Error).message).toContain('/foo.css/i');
   });
 

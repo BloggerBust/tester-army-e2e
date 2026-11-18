@@ -62,15 +62,24 @@ export function parseRoutePattern(
 ): TextPattern {
   const wire = toTextPattern(pattern);
   if (wire.kind !== 'string') return wire;
-  const raw = wire.value.match(/^(?:\\[\s\S]?|[^\\*?])*/)?.[0] ?? '';
-  const text = raw.replace(/\\([\s\S]?)/g, '$1').toLowerCase();
-  const accepted = wire.value.startsWith('**')
-    || (wire.value.startsWith('*')
-      ? wire.value.startsWith('*:') || wire.value.startsWith('*\\:')
-      : ['http://', 'https://'].some(
-          (scheme) => text.startsWith(scheme) || (raw.length < wire.value.length && scheme.startsWith(text)),
-        ));
-  if (accepted) return wire;
+  if (wire.value.startsWith('**')) return wire;
+  // A leading `*` cannot match `/`, so the remaining prefix must align with a URL scheme.
+  const single = wire.value.startsWith('*');
+  const rest = single ? wire.value.slice(1) : wire.value;
+  const raw = /^(?:\\[\s\S]?|[^\\*?])*/.exec(rest)![0];
+  const literalPrefix = raw.replace(/\\([\s\S]?)/g, '$1');
+  const hasWildcard = raw.length < rest.length;
+  const agrees = (candidate: string) =>
+    literalPrefix.startsWith(candidate) || (hasWildcard && candidate.startsWith(literalPrefix));
+  for (const scheme of ['http://', 'https://']) {
+    if (!single) {
+      if (agrees(scheme)) return wire;
+      continue;
+    }
+    for (let index = 0; index <= scheme.indexOf('/'); index += 1) {
+      if (agrees(scheme.slice(index))) return wire;
+    }
+  }
   const hint = wire.value.startsWith('/')
     ? `Use ${JSON.stringify(`**${wire.value}`)} to match that path on any origin, or a regular expression`
     : 'Use a glob on the full URL, such as "**/api/orders" or "http://localhost:3000/**", or a regular expression';

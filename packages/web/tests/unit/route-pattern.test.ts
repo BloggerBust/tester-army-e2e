@@ -83,6 +83,8 @@ describe('parseRoutePattern', () => {
     'orders*',
     'web:3000/api/orders',
     'tel:123',
+    '*:3000/**',
+    'HTTP://x.test/**',
   ])('rejects invalid route pattern %s', (value) => {
     expect(() => parseRoutePattern('route', value)).toThrowError(
       expect.objectContaining({
@@ -104,6 +106,10 @@ describe('parseRoutePattern', () => {
   it.each([
     ['**', 'https://x.test/api/orders'],
     ['*://*/api/orders', 'https://x.test/api/orders'],
+    ['*//*/api/orders', 'http://x.test/api/orders'],
+    ['*tp://x.test:*/api/orders', 'http://x.test:3000/api/orders'],
+    ['*?://x.test/api/orders', 'http://x.test/api/orders'],
+    ['*s://x.test/**', 'https://x.test/a'],
     ['*\\://*/api/orders', 'https://x.test/api/orders'],
     ['http???x.test/api/orders', 'http://x.test/api/orders'],
     ['???????x.test/api/orders', 'http://x.test/api/orders'],

@@ -664,11 +664,10 @@ It does not follow redirects, which could take it past the navigation rule.
   a string, `*` matches within a path segment, `**` across `/`, `?` any one
   character, and `\` escapes the next. `unroute` and `waitForResponse` take
   the same patterns.
-- `route`, `unroute`, and `waitForResponse` reject common path-only or
-  schemeless patterns, such as `/api/orders` and
-  `localhost:3000/api/orders`, with `INVALID_ARGUMENT`. Use `**/api/orders`
-  to match the path on any origin, or `http://localhost:3000/api/orders`
-  to match a specific URL. Regular expressions are also supported.
+- `route`, `unroute`, and `waitForResponse` reject common string patterns that cannot
+  match an HTTP or HTTPS URL, returning `INVALID_ARGUMENT`. Use `**/api/orders` to
+  match the path on any origin or `http://localhost:3000/api/orders` to match a
+  specific URL. Regular expressions are also supported.
 - A route survives `app.restart()`, `app.clearState()`, and session restore.
 - Routes run newest first.
 - The handler must decide exactly once, with `fulfill`, `continue`,
@@ -688,7 +687,7 @@ It does not follow redirects, which could take it past the navigation rule.
 
 | Throws | When |
 | --- | --- |
-| `INVALID_ARGUMENT` | A path-only or host-only pattern passed to `route`, `unroute`, or `waitForResponse`, or a predicate function passed to `route`. Also an option a decision does not take (Playwright's `abort(errorCode)`, a misspelled key): the request is aborted and the next step fails. |
+| `INVALID_ARGUMENT` | A string pattern with an invalid URL prefix, or a predicate function passed to `route`. Also an option a decision does not take (Playwright's `abort(errorCode)`, a misspelled key): the request is aborted and the next step fails. |
 | `ACTION_FAILED` | The handler decided twice or not at all. |
 | `POLICY_DENIED` | A `continue` URL with a forbidden scheme. |
 | `CLEANUP_TIMEOUT` | A handler outlived the cleanup budget. It fails the attempt. |
@@ -756,7 +755,7 @@ await browser.unroute('**/api/quote');
 
 | Throws | When |
 | --- | --- |
-| `INVALID_ARGUMENT` | A path-only or host-only string, or a predicate function. |
+| `INVALID_ARGUMENT` | A string pattern with an invalid URL prefix, or a predicate function. |
 
 #### `unrouteAll`
 
@@ -787,7 +786,7 @@ expect(response.status).toBe(201);
 
 | Throws | When |
 | --- | --- |
-| `INVALID_ARGUMENT` | A path-only or host-only string, or a predicate function. |
+| `INVALID_ARGUMENT` | A string pattern with an invalid URL prefix, or a predicate function. |
 | `ACTION_FAILED` | Nothing matches inside the deadline. From `body()`, `text()`, and `json()`: a body still streaming when their budget runs out, or a body the browser could not read (a connection reset short of the declared `Content-Length`, a request the page aborted, or a redirect, whose body the browser never keeps), instead of an empty string. |
 
 ```ts
