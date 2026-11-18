@@ -28,6 +28,7 @@ export default {
 | --- | --- |
 | [`list`](#list) | Terminal progress and run summary |
 | [`dot`](#dot) | Compact progress and run summary |
+| [`line`](#line) | Single-row progress and run summary |
 | [`json`](#json) | Report document to stdout |
 | [`junit`](#junit) | Writes `<output>/junit.xml` |
 | [`markdown`](#markdown) | Writes `<output>/summary.md` |
@@ -37,10 +38,11 @@ export default {
 | Throws | When |
 | --- | --- |
 | `INVALID_CONFIG` | `reporters` is not an array. |
-| `INVALID_CONFIG` | An id other than `list`, `dot`, `json`, `junit`, or `markdown`. |
+| `INVALID_CONFIG` | An id other than `list`, `dot`, `line`, `json`, `junit`, or `markdown`. |
 | `INVALID_CONFIG` | An entry that is neither an id nor an object with a `name` and at least one handler. |
 | `INVALID_CONFIG` | `json` together with `list`. |
 | `INVALID_CONFIG` | `dot` together with `list`. |
+| `INVALID_CONFIG` | `line` together with `list` or `dot`. |
 
 #### `list`
 
@@ -80,6 +82,23 @@ human-readable output goes to stderr so stdout holds the JSON report.
 
 Unlike Playwright, e2e uses ASCII marks and prints only the final result
 after retries, with no mark for each retried attempt.
+
+#### `line`
+
+The `line` reporter shows the latest completed test on a single progress row,
+including its count, target, file, title, and final result. Retried tests appear
+only once, after their final attempt.
+
+```ts
+reporters: ['line'],
+```
+
+On an interactive terminal, each completed test updates the same row. The
+reporter clears it before printing logs or the final summary to keep the output
+readable. When output is redirected or `TERM=dumb`, each result prints on a
+separate line instead. The reporter retains the existing `list` diagnostics and
+summary. With `--reporter line,json`, human-readable output goes to stderr, leaving
+stdout for the JSON report.
 
 #### `json`
 
@@ -346,8 +365,8 @@ a reporter it abandoned, cutting off what it still does; under
 
 ##### Summary rows
 
-The rows a reporter resolves with print under the `list` or `dot` summary, in the
-same layout as its own rows. The `json` reporter does not carry them.
+Rows returned by a reporter use the same layout as other summary rows in
+`list`, `dot`, and `line`, but are not included in `json`.
 
 ```
    Test Files  2 passed (2)

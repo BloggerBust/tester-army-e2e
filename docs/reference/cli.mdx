@@ -662,7 +662,7 @@ Test files, directories, or globs relative to the project root:
 
 | Option | Description |
 | --- | --- |
-| `--reporter <ids>` | Replaces the built-in IDs in `config.reporters`, comma-separated: `list`, `dot`, `json`, `junit`, `markdown`. Default: the config. `json` or `dot` with `list` is `INVALID_CONFIG`. [Reporter objects](/reference/reporters) in the config keep running. |
+| `--reporter <ids>` | Overrides the built-in reporters in `config.reporters` using comma-separated IDs: `list`, `dot`, `line`, `json`, `junit`, or `markdown`. Configured [reporter objects](/reference/reporters) still run. `list` cannot be combined with `dot`, `line`, or `json`, and `line` cannot be combined with `dot` (`INVALID_CONFIG`). When omitted, the configured reporters are used. |
 | `--output <dir>` | The results directory for this run, over the config's [`output`](/reference/config#output): the report, the reporter files, the AI trace, `results/`, and `sessions/`. Default: the config, else `.e2e`. Resolved from the project root, and must be a directory inside it, not the root itself; that and the other directories the run cannot own (listed there) are `INVALID_CONFIG`. `results/` is cleared once the tests start; a `--last-failed` rerun keeps what the previous report names. |
 | `--cache-dir <dir>` | The replay cache directory for this run, over [`E2E_CACHE_DIR`](/reference/environment#replay-cache) and [`cache.dir`](/reference/config#cache). Default: `E2E_CACHE_DIR`, else `cache.dir`, else `.e2e/cache`. Resolved from the project root; `~` or a leading `~/` is the home directory. The cache mode stays as configured. With a custom `cache.store` it is `INVALID_CONFIG`. |
 | `--timings <file>` | The [timings history](/ci#cache-the-timings-history) to update when the run ends, over `<output>/timings.json`. With more than one worker, files with no recorded time start first, then the rest longest first. Resolved from the project root. A missing or invalid file is no history, never an error. |
@@ -765,6 +765,7 @@ cache, `-` when it reports no split. The report records the same per step
 | --- | --- |
 | `list` | Terminal progress, failures with code frames, and a run summary. On a TTY, live progress shows the current agent step, model turns, tool calls, and reasoning excerpts; when stdout is not a terminal (piped, redirected, most CI), each test prints as it finishes. The output ends with each failed test's file and line, first error line, and trace page when one was written. Untrusted fields are capped at 8 KiB and stripped of control characters. |
 | `dot` | One mark per selected test result, followed by failure details and a run summary. See [`dot`](/reference/reporters#dot) for marks, colors, and wrapping. With `dot,json`, all terminal output goes to stderr. |
+| `line` | [Shows the latest completed test on one updating line](/reference/reporters#line), followed by failure details and a run summary. With `line,json`, human-readable output goes to stderr. |
 | `json` | The report document to stdout, and nothing else there, so `e2e run --reporter json \| jq` works. It is the `<output>/report.json` document, described by `schema/report-v1.schema.json` in the package. The shape changes only with the `schemaVersion` field (`report-1` today). |
 | `junit` | `junit.xml` beside the report. One `<testsuite>` per file, one `<testcase>` per test-target pair named `title > path [target]`. A test-class error is a `<failure>`, any other an `<error>`, a skip a `<skipped>` with its reason. An interrupted test reached no verdict, so it is a `<skipped>` whose message starts `interrupted:`. A test a [test filter](/filters) left out is a `<skipped>` whose message starts `left out by filter <name>:`; other tests the run did not select are not listed. Run-level errors form a `run` suite. |
 | `markdown` | `summary.md` beside the report: counts, cost, errors, and failure details, each naming its trace page when one was kept. Exploration runs show findings. [`@e2e-dev/github`](/github) uses this summary for pull request comments. |
@@ -784,8 +785,9 @@ an interrupt. Its errors are on the terminal and in the exit code. A
 `junit.xml` or `summary.md` that could not be written is a line on stderr,
 never a run error.
 
-The `list` and `dot` reporters print run errors under `Run Errors`. Without either,
-each run error prints on stderr as `CODE: message`, with `json` too.
+The `list`, `dot`, and `line` reporters print run errors under `Run Errors`.
+When none of these reporters runs, each run error prints on stderr as
+`CODE: message`, with `json` too.
 
 `run.summary` in the report counts the results:
 

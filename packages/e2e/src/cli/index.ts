@@ -935,29 +935,35 @@ function createProgram(version: string, telemetry: Telemetry, updateCheck: Updat
         command: Command,
       ) => {
         if (options.config === undefined && !(await initBeforeExplore(telemetry, command))) return;
-        await runToOutcome(telemetry, command, async (signals) => {
-          const { explore } = await import('../explore/index.ts');
-          return explore({
-            goal,
-            configPath: options.config,
-            target: options.target,
-            agent: options.agent,
-            session: options.session,
-            changedSince: options.changedSince,
-            maxSteps: options.maxSteps,
-            timeoutMs: options.timeout,
-            headed: options.headed,
-            reporters: options.reporter,
-            output: options.output,
-            debug: options.debug,
-            aiTrace: options.aiTrace,
-            trace: recordingOption(options.trace),
-            video: recordingOption(options.video),
-            interruptSignal: signals.interruptSignal,
-            forceSignal: signals.forceSignal,
-            notice: (message) => process.stderr.write(`e2e explore: ${message}\n`),
+        const output = claimRunnerOutput();
+        try {
+          await runToOutcome(telemetry, command, async (signals) => {
+            const { explore } = await import('../explore/index.ts');
+            return explore({
+              processOutput: output,
+              goal,
+              configPath: options.config,
+              target: options.target,
+              agent: options.agent,
+              session: options.session,
+              changedSince: options.changedSince,
+              maxSteps: options.maxSteps,
+              timeoutMs: options.timeout,
+              headed: options.headed,
+              reporters: options.reporter,
+              output: options.output,
+              debug: options.debug,
+              aiTrace: options.aiTrace,
+              trace: recordingOption(options.trace),
+              video: recordingOption(options.video),
+              interruptSignal: signals.interruptSignal,
+              forceSignal: signals.forceSignal,
+              notice: (message) => process.stderr.write(`e2e explore: ${message}\n`),
+            });
           });
-        });
+        } finally {
+          output.end();
+        }
       },
     );
 

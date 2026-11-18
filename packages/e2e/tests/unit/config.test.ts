@@ -553,6 +553,16 @@ describe('resolveConfig', () => {
     expect(() => resolve({ reporters: [first, second] })).toThrow(/list.*dot|dot.*list/u);
   });
 
+  it.each([
+    ['line', 'list', 'the line reporter cannot be combined with list'],
+    ['line', 'dot', 'the line reporter cannot be combined with dot'],
+  ] as const)('rejects %s combined with %s reporters, in the config and under --reporter', (first, second, message) => {
+    expect(() => resolve({ reporters: [first, second] })).toThrow(expect.objectContaining({ code: 'INVALID_CONFIG', message }));
+    expect(() =>
+      resolveConfig({ targets: TARGETS }, { projectRoot: ROOT, env: BASE_ENV, cli: { reporters: [first, second] } }),
+    ).toThrow(expect.objectContaining({ code: 'INVALID_CONFIG', message }));
+  });
+
   it('accepts the junit reporter beside list or json, and rejects unknown ids', () => {
     expect(resolve({ reporters: ['junit'] }).reporters).toEqual(['junit']);
     expect(resolve({ reporters: ['list', 'junit'] }).reporters).toEqual(['list', 'junit']);

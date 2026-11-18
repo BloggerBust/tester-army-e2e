@@ -6,6 +6,7 @@ import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vites
 import { resultId } from '@e2e-dev/core/lib/internal/ids';
 import { visibleWidth } from '../../src/report/format.ts';
 import { ListReporter } from '../../src/report/list.ts';
+import { LineProgress } from '../../src/report/line.ts';
 import { userFrame } from '../../src/report/code-frame.ts';
 import type { CacheWrite } from '@e2e-dev/core/lib/cache/context';
 import type { RunEventFact, RunEventOf, RunEventResult } from '../../src/run/events.ts';
@@ -2278,5 +2279,54 @@ describe('screenshots row', () => {
       ...Array.from({ length: 9 }, (_, index) => `             .e2e/artifacts/s/${index + 1}.png`),
       '             and 2 more (the report lists every artifact)',
     ]);
+  });
+});
+
+describe('line progress through ListReporter', () => {
+  it('replaces progress in completion order and clears it before logs and the summary', () => {
+    const out: string[] = [];
+    const erase = '\r\u001b[2K';
+    let columns = 80;
+    const progress = new LineProgress({ write: (text) => out.push(text), interactive: true, columns: () => columns });
+    const reporter = new ListReporter(
+      { write: (line) => out.push(`${line}\n`) },
+      { colors: false, line: progress },
+    );
+    reporter.handle(runStarted());
+    reporter.handle(plan([{ file: 'tests/case.e2e.ts', tests: 3 }]));
+    reporter.handle(finished(result({ status: 'passed', title: ['second'], id: 'second', declarationIndex: 1 })));
+    reporter.handle(finished(result({ status: 'passed', title: ['first'], id: 'first' })));
+    const rows = out.filter((chunk) => chunk.startsWith(erase) && chunk.length > erase.length);
+    expect(rows).toEqual([
+      `${erase}[1/3] [chromium] tests/case.e2e.ts > second (passed)`,
+      `${erase}[2/3] [chromium] tests/case.e2e.ts > first (passed)`,
+    ]);
+
+    const beforeLog = out.length;
+    reporter.processOutput('stdout', 'app says hi\n');
+    const permanent = out.slice(beforeLog);
+    expect(permanent[0]).toBe(erase);
+    expect(permanent.filter((chunk) => chunk === erase)).toHaveLength(1);
+    expect(permanent.join('')).toContain('app says hi');
+
+    columns = 60;
+    reporter.handle(finished(result({
+      status: 'failed',
+      title: ['third\nwide 漢字漢字漢字漢字漢字漢字漢字'],
+      id: 'third',
+      declarationIndex: 2,
+      attempts: [failedAttempt('wrong value')],
+    })));
+    const narrow = out.at(-1) ?? '';
+    expect(narrow.startsWith(erase)).toBe(true);
+    expect(narrow).not.toContain('\n');
+    expect(narrow).toMatch(/\(failed\)$/u);
+    expect(narrow).toContain('third wide');
+    expect(visibleWidth(narrow.slice(erase.length))).toBeLessThanOrEqual(59);
+
+    const beforeFinish = out.length;
+    reporter.handle(runFinished({ status: 'failed', exitCode: 1 }));
+    expect(out[beforeFinish]).toBe(erase);
+    expect(out.slice(beforeFinish + 1).join('')).toContain('Tests');
   });
 });

@@ -21,6 +21,7 @@ import type { Reporter, ReporterSummary } from '../run-types.ts';
 import { projectSource } from './build.ts';
 import { codeFrame, userFrame } from './code-frame.ts';
 import type { DotProgress } from './dot.ts';
+import type { LineProgress } from './line.ts';
 import { appErrorsOf, type AppErrors } from './failure-text.ts';
 import {
   addCacheTally,
@@ -104,6 +105,8 @@ export interface ListReporterOptions {
   stepping?: boolean;
   /** Print compact dot progress in place of the live tree and per-test rows. */
   dots?: DotProgress;
+  /** Show test progress on a single line. */
+  line?: LineProgress;
 }
 
 /**
@@ -295,8 +298,9 @@ const DEFAULT_OUTPUT: ListReporterOutput = {
  * what every other sink receives.
  */
 export class ListReporter implements Reporter {
-  readonly name: 'list' | 'dot';
+  readonly name: 'list' | 'dot' | 'line';
   private readonly dots: DotProgress | undefined;
+  private readonly line: LineProgress | undefined;
   private readonly pc: Colors;
   private readonly window: LiveWindow;
   private readonly tree: RunningTree;
@@ -395,8 +399,9 @@ export class ListReporter implements Reporter {
     options: ListReporterOptions = {},
   ) {
     this.dots = options.dots;
-    this.name = this.dots === undefined ? 'list' : 'dot';
-    const live = this.dots === undefined && (options.live ?? process.stdout.isTTY === true) && output.raw !== undefined;
+    this.line = options.line;
+    this.name = this.dots !== undefined ? 'dot' : this.line !== undefined ? 'line' : 'list';
+    const live = this.name === 'list' && (options.live ?? process.stdout.isTTY === true) && output.raw !== undefined;
     this.live = live;
     this.stepping = options.stepping ?? false;
     this.pc = picocolors.createColors(options.colors ?? (live || picocolors.isColorSupported));
@@ -420,6 +425,8 @@ export class ListReporter implements Reporter {
         break;
       case 'plan':
         this.plan(event);
+        // Count only selected tests so progress reflects the work being run.
+        this.line?.plan(event.files.reduce((count, file) => count + file.tests, 0));
         break;
       case 'notice':
         if (this.inFlight !== undefined) this.inFlight.narrated = true;
@@ -437,10 +444,20 @@ export class ListReporter implements Reporter {
       case 'output':
         this.testOutput(event);
         break;
-      case 'test-finished':
-        this.testFinished(event.result);
-        if (event.result.selected) this.dots?.result(event.result.status);
+      case 'test-finished': {
+        const { result } = event;
+        this.testFinished(result);
+        if (result.selected) {
+          this.dots?.result(result.status);
+          this.line?.result({
+            target: result.target.name,
+            file: result.test.file,
+            title: this.titledAs(result.test.titlePath.join(' > '), result.agent, result.repeat),
+            status: result.status,
+          });
+        }
         break;
+      }
       case 'serial-group':
         this.serialGroup(event.group);
         break;
@@ -484,6 +501,7 @@ export class ListReporter implements Reporter {
   /** Writes one permanent line without disturbing the live window. */
   private print(line: string): void {
     this.dots?.end();
+    this.line?.clear();
     this.lastOutput = undefined;
     this.window.erase();
     this.output.write(line);
@@ -527,6 +545,7 @@ export class ListReporter implements Reporter {
   /** Prints what `processOutput` left unfinished: the runner hands nothing more once the run's events are all dispatched. */
   endProcessOutput(): void {
     this.dots?.end();
+    this.line?.clear();
     this.flushOutput();
   }
 
@@ -781,7 +800,7 @@ export class ListReporter implements Reporter {
         if (this.live) {
           running.steps.push(step);
           this.window.redraw();
-        } else if (this.dots === undefined) {
+        } else if (this.name === 'list') {
           const context = `${this.pc.dim(running.title)}${this.separator}`;
           this.print(`${TEST_INDENT}${stepLine(this.pc, step, { context })}`);
         }
@@ -859,7 +878,7 @@ export class ListReporter implements Reporter {
       replays,
     };
     group.lines.push(line);
-    if (!this.live && this.dots === undefined) this.printTestRows(line, `${this.badge(group.target)} ${bounded(group.file)}${this.separator}`);
+    if (!this.live && this.name === 'list') this.printTestRows(line, `${this.badge(group.target)} ${bounded(group.file)}${this.separator}`);
     this.runs.push({
       key: `${result.test.id}@${result.agent}@${result.target.name}`,
       label: `${this.badge(group.target)} ${bounded(group.file)}${this.separator}${this.titledAs(result.test.titlePath.join(' > '), result.agent, 0)}`,
@@ -906,7 +925,7 @@ export class ListReporter implements Reporter {
   private printGroup(group: FileGroup): void {
     if (group.printed) return;
     group.printed = true;
-    if (this.dots !== undefined) return;
+    if (this.name !== 'list') return;
     const { pc } = this;
     const counts = tally(group.lines);
     const outcome = fileOutcome(counts);
@@ -1150,7 +1169,7 @@ export class ListReporter implements Reporter {
   private exploreProgress(progress: RunEventOf<'explore'>['progress']): void {
     if (progress.phase === 'started') {
       this.explore = new ExploreView(this.pc, progress);
-      if (!this.live && this.dots === undefined) {
+      if (!this.live && this.name === 'list') {
         this.print(this.explore.header(this.exploreBadge(), 'Exploring'));
       }
       this.window.redraw();
@@ -1159,7 +1178,7 @@ export class ListReporter implements Reporter {
     const view = this.explore;
     if (view === undefined) return;
     view.progress(progress);
-    if (!this.live && this.dots === undefined) {
+    if (!this.live && this.name === 'list') {
       if (progress.phase === 'step-finished' && view.lastStep !== undefined) {
         for (const line of view.stepLines(view.lastStep)) this.print(line);
       } else if (progress.phase === 'finding') {
@@ -1177,7 +1196,7 @@ export class ListReporter implements Reporter {
   private printExplore(): void {
     const view = this.explore;
     if (view === undefined) return;
-    for (const line of view.record(this.exploreBadge(), this.live || this.dots !== undefined)) this.print(line);
+    for (const line of view.record(this.exploreBadge(), this.live || this.name !== 'list')) this.print(line);
     for (const line of view.findingsSection((target) => this.displayPath(target), this.artifactsRoot)) this.print(line);
     for (const line of view.assessment()) this.print(line);
   }
@@ -1321,6 +1340,7 @@ export class ListReporter implements Reporter {
   private runFinished(event: RunEventOf<'run-finished'>): void {
     const { pc } = this;
     this.dots?.end();
+    this.line?.clear();
     if (event.status === 'interrupted') this.interrupted = true;
     this.window.stop();
     this.flushOutput();

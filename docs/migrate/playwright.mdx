@@ -51,7 +51,7 @@ A Playwright key such as `testDir`, `baseURL`, `use`, `webServer`, or
 | `retries`, `workers`, `timeout` | the same names, with [other defaults](#defaults-that-differ); `workers` is an integer |
 | `expect.timeout`, `use.actionTimeout`, `globalTimeout` | `assertionTimeout`, `actionTimeout`, `maxDuration`; the `maxDuration` clock starts with the tests, not app startup |
 | `maxFailures`, `use.headless: false` | `--max-failures <n>` and `--headed` on the CLI |
-| `reporter`, `outputDir` | `reporters: ['list', 'junit', htmlReporter()]`, with `htmlReporter` from `@e2e-dev/html-reporter`; also `dot`, `json`, and `markdown`; `output`, default `.e2e` |
+| `reporter`, `outputDir` | `reporters: ['list', 'junit', htmlReporter()]`, with `htmlReporter` from `@e2e-dev/html-reporter`; also `dot`, `line`, `json`, and `markdown`; `output`, default `.e2e` |
 | `use.viewport`, `locale`, `timezoneId`, `colorScheme`, `reducedMotion`, `userAgent`, `testIdAttribute` | the same keys in `web({ ... })` |
 | `use.browserName`, `httpCredentials`, `extraHTTPHeaders` | `web({ browser, basicAuth, headers })`; `basicAuth` and `headers` apply to the app's origin only, [`credentialOrigins`](/reference/web#credentialorigins) adds more |
 | `chromium.connectOverCDP(url)` | `web({ connect: { cdpEndpoint: () => url } })`, chromium only |
@@ -301,7 +301,7 @@ purpose. Use the workaround, or keep the test in Playwright.
 | `test.use({ ... })` in a file or describe | Runner options on the group, engine options on a target, `browser.setViewport` at runtime |
 | `projects[].dependencies`, `teardown` | A top-level `test.setup` for sign-in; a script around the run |
 | `page.pause()` | `--step --headed` holds each step until a key |
-| The `line` and `github` reporters | `list`; `github()` posts a pull request comment |
+| The `github` reporter | `github()` posts a pull request comment |
 
 </Accordion>
 </AccordionGroup>

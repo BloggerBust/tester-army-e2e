@@ -86,6 +86,12 @@ function resolveReporters(
   if (reporters.includes('dot') && reporters.includes('list')) {
     throw new ConfigurationError('INVALID_CONFIG', 'the dot reporter cannot be combined with list');
   }
+  if (reporters.includes('line') && reporters.includes('list')) {
+    throw new ConfigurationError('INVALID_CONFIG', 'the line reporter cannot be combined with list');
+  }
+  if (reporters.includes('line') && reporters.includes('dot')) {
+    throw new ConfigurationError('INVALID_CONFIG', 'the line reporter cannot be combined with dot');
+  }
   return { reporters, customReporters };
 }
 

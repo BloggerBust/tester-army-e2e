@@ -248,6 +248,7 @@ reporters: ['list', 'junit'], // default: ['list']
 | --- | --- |
 | `'list'` | Terminal progress, failures, and a run summary. |
 | `'dot'` | Compact terminal progress, failures, and a run summary. Excludes `list`: the two together are `INVALID_CONFIG`. |
+| `'line'` | [Single-row progress](/reference/reporters#line). Excludes `list` and `dot`. |
 | `'junit'` | Writes `<output>/junit.xml`. |
 | `'markdown'` | Writes `<output>/summary.md`. |
 | `'json'` | Prints the report. Excludes `list`: the two together are `INVALID_CONFIG`. |

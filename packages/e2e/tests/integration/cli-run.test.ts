@@ -281,6 +281,66 @@ test('second', () => { console.log('test log'); });
     expect(stderr).toContain('.\ntest log\n.\n');
   });
 
+  it('prints one progress row per selected result', () => {
+    const { exitCode, stdout } = cli(
+      {
+        'e2e.config.ts': fakeConfig('{}', "reporters: ['line'],"),
+        'tests/line.e2e.ts': `import { existsSync, writeFileSync } from 'node:fs';
+import { test } from 'e2e';
+test('selected pass', () => {});
+test('selected retry', { retries: 1 }, () => {
+  const marker = new URL('./first-attempt', import.meta.url);
+  if (!existsSync(marker)) {
+    writeFileSync(marker, '');
+    throw new Error('retry this test');
+  }
+});
+test.skip('selected skip', () => {});
+test('left out', () => {});
+`,
+      },
+      ['run', '--grep', 'selected'],
+    );
+    expect(exitCode).toBe(0);
+    const rows = stdout.split('\n').filter((line) => /^\[\d+\/\d+\] \[/u.test(line));
+    expect(rows.map((row) => row.slice(0, 6))).toEqual(['[1/3] ', '[2/3] ', '[3/3] ']);
+    const verdicts = rows.map((row) => row.replace(/^\[\d\/3\] \[fake\] tests\/line\.e2e\.ts > /u, ''));
+    expect(verdicts.toSorted()).toEqual(['selected pass (passed)', 'selected retry (flaky)', 'selected skip (skipped)']);
+    expect(stdout.split('\n').filter((line) => line.includes('selected pass'))).toEqual(rows.filter((row) => row.includes('selected pass')));
+    expect(stdout).toMatch(/Tests\s+1 passed.*1 flaky.*1 skipped/u);
+  });
+
+  it('keeps line progress, failures, and logs on stderr with JSON', () => {
+    const { exitCode, stdout, stderr } = cli(
+      {
+        'e2e.config.ts': fakeConfig(),
+        'tests/line.e2e.ts': `import { expect, test } from 'e2e';
+test('wrong', () => {
+  console.log('test log');
+  expect(1).toBe(2);
+});
+`,
+      },
+      ['run', '--reporter', 'line,json'],
+    );
+    expect(exitCode).toBe(1);
+    const report = JSON.parse(stdout) as Report1Document;
+    assertValidReport(report);
+    expect(report.run.exitCode).toBe(1);
+    expect(report.run.results).toHaveLength(1);
+    const [result] = report.run.results;
+    expect(result?.titlePath).toEqual(['wrong']);
+    expect(result?.status).toBe('failed');
+    expect(result?.attempts.at(-1)?.error?.code).toBe('ASSERTION_FAILED');
+    const rows = stderr.split('\n').filter((line) => /^\[\d+\/\d+\] \[/u.test(line));
+    const row = '[1/1] [fake] tests/line.e2e.ts > wrong (failed)';
+    expect(rows).toEqual([row]);
+    expect(stderr.indexOf(row)).toBeLessThan(stderr.indexOf('Failed Tests'));
+    expect(stderr).toMatch(/^test log$/mu);
+    expect(stderr).toMatch(/tests\/line\.e2e\.ts:\d+/u);
+    expect(stderr).toContain('expected 1 to be 2');
+  });
+
   it('prints a run error on stderr once, whichever reporters run, and keeps the json document whole', () => {
     const project = fixture({
       'e2e.config.ts': fakeConfig(),
@@ -304,7 +364,40 @@ test('second', () => { console.log('test log'); });
     expect(list.exitCode).toBe(2);
     expect(list.stdout).toMatch(reason);
     expect(timesNamed(list.output)).toBe(1);
+    const line = rerun(project, ['run', '--reporter', 'line']);
+    expect(line.exitCode).toBe(2);
+    expect(line.stdout).toContain('Run Errors');
+    expect(line.stdout).toMatch(reason);
+    expect(timesNamed(line.output)).toBe(1);
+    expect(line.stdout).not.toMatch(/^\[[^\n/]+\/[^\n]+\] \[/mu);
   });
+});
+
+it('keeps explore logs on stderr with line and JSON reporters', () => {
+  const config = `import { extracted, installFakeModel } from '../../helpers/fake-model.ts';
+console.log('config log');
+` + fakeConfig('{}', `
+  agents: {
+    default: { model: installFakeModel(() => extracted({ decision: 'finish', title: '', instruction: '', summary: 'Finished' })) },
+  },
+  reporters: [{
+    name: 'progress logger',
+    onEvent(event) {
+      if (event.type === 'test-finished') console.log('custom reporter log');
+    },
+  }],
+`);
+  const { exitCode, stdout, stderr } = cli(
+    { 'e2e.config.ts': config },
+    ['explore', 'Check the app', '--config', 'e2e.config.ts', '--reporter', 'line,json'],
+  );
+  expect(exitCode, stdout + stderr).toBe(0);
+  const report = JSON.parse(stdout) as Report1Document;
+  assertValidReport(report);
+  expect(report.run.results.map((result) => result.status)).toEqual(['passed']);
+  expect(stderr).toMatch(/^\[1\/1\] \[fake\] explore > Check the app \(passed\)$/mu);
+  expect(stderr).toMatch(/^config log$/mu);
+  expect(stderr).toMatch(/^custom reporter log$/mu);
 });
 
 describe('fixture rules through the CLI', () => {

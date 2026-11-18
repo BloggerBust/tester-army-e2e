@@ -142,6 +142,8 @@ export async function explore(options: ExploreOptions = {}): Promise<ExploreOutc
     const { raw, projectRoot } = await loadRawConfig(options, cwd);
     const resolved = resolveConfig(raw, { projectRoot, env, cli: options.agent === undefined ? {} : { agents: [options.agent] } });
     registerStaticSecrets(resolved.allSecrets);
+    // Reserve stdout for JSON before flushing buffered configuration output.
+    if ((options.reporters ?? resolved.reporters).includes('json')) options.processOutput?.keepStdoutForReport();
     return { raw, projectRoot, resolved };
   };
   const { raw, projectRoot, resolved } = await (options.processOutput === undefined
