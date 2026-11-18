@@ -373,7 +373,7 @@ describe('browser.route decisions', () => {
       expect(await fetchText(`${origin}/api/quote`)).toBe('absolute');
       await expect(browser.route('/api/quote', route => route.fulfill({ body: 'never' }))).rejects.toMatchObject({
         code: 'INVALID_ARGUMENT',
-        message: expect.stringMatching(/^browser\.route pattern .*full URL.*"\*\*\/api\/quote".*regular expression/),
+        message: expect.stringMatching(/full HTTP\(S\) URL.*"\*\*\/api\/quote".*regular expression/),
       });
       expect(registered).toHaveBeenCalledTimes(1);
       expect(await fetchText(`${origin}/api/quote`)).toBe('absolute');

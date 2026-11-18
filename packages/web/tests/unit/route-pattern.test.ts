@@ -76,7 +76,14 @@ describe('parseRoutePattern', () => {
     '127.0.0.1:8080',
     'LOCALHOST:3000/api/orders',
     'http\\\\*://x.test/',
-  ])('rejects pattern %s, a common missing-scheme mistake', (value) => {
+    '*',
+    '*/api/orders',
+    '*.x.test/api',
+    'api*',
+    'orders*',
+    'web:3000/api/orders',
+    'tel:123',
+  ])('rejects invalid route pattern %s', (value) => {
     expect(() => parseRoutePattern('route', value)).toThrowError(
       expect.objectContaining({
         code: 'INVALID_ARGUMENT',
@@ -97,12 +104,13 @@ describe('parseRoutePattern', () => {
   it.each([
     ['**', 'https://x.test/api/orders'],
     ['*://*/api/orders', 'https://x.test/api/orders'],
+    ['*\\://*/api/orders', 'https://x.test/api/orders'],
     ['http???x.test/api/orders', 'http://x.test/api/orders'],
+    ['???????x.test/api/orders', 'http://x.test/api/orders'],
     ['http*//x.test/api/orders', 'http://x.test/api/orders'],
     ['http://localhost:3000/**', 'http://localhost:3000/api/orders'],
     ['http://x.test:*/api/**', 'http://x.test:3000/api/orders'],
     ['http\\://x.test/a\\*b', 'http://x.test/a*b'],
-    ['tel:123', 'tel:123'],
   ])('accepts pattern %s and matches %s', (value, url) => {
     expect(routePatternMatches(parseRoutePattern('route', value), url)).toBe(true);
   });
