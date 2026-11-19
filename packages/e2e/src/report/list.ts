@@ -311,7 +311,7 @@ export function list(options: ListReporterOptions = {}): Reporter {
  * `--watch` hands one reporter every run and a run whose config fails to
  * load starts without `run-started`.
  */
-export function runView(id: 'list' | TerminalProgress['name'], stream: 'stdout' | 'stderr', asId: boolean, create: (output: Required<ListReporterOutput>) => ListReporter): Reporter {
+export function runView(id: 'list' | 'dot' | 'line', stream: 'stdout' | 'stderr', asId: boolean, create: (output: Required<ListReporterOutput>) => ListReporter): Reporter {
   const output = {
     write: (line: string) => void process[stream].write(`${line}\n`),
     raw: (text: string) => void process[stream].write(text),
@@ -1267,14 +1267,10 @@ export class ListReporter {
     this.printVideos(videos);
   }
 
-  /**
-   * `line` prints the failure details as soon as the final result arrives.
-   * Keep the failure for the closing `Failed` rows, which can include its
-   * trace path once the run has written it.
-   */
+  /** Keep each failure for the closing `Failed` rows, which include its trace path if one was written. */
   private recordFailure(failure: Failure): void {
     this.failures.push(failure);
-    if (this.progress?.name !== 'line') return;
+    if (this.progress?.failureTiming !== 'immediate') return;
     this.print('');
     this.printFailure(failure, undefined);
     this.print('');
@@ -1398,7 +1394,7 @@ export class ListReporter {
     }
     this.printExplore();
     const pages = event.traces ?? {};
-    if (this.progress?.name !== 'line') this.printFailures('Failed Tests', this.failures, pages);
+    if (this.progress?.failureTiming !== 'immediate') this.printFailures('Failed Tests', this.failures, pages);
     this.printFailures('Skipped After Failure', this.skippedFailures, pages);
     this.printErrors();
     this.print('');

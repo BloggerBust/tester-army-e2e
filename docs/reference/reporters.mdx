@@ -118,7 +118,8 @@ available diagnostics immediately. The final `Failed` summary lists the paths
 to any trace pages for those failures.
 
 Playwright counts test starts, including retries. Its row includes the
-`file:line:col` location and can show the current step.
+`file:line:col` location and can show the current step. Playwright also prints
+failure details immediately for `flaky` and `interrupted` results.
 
 If you omit `stream`, `line` prints to stdout, or to stderr when used with
 `json`. You can also choose stderr explicitly with `line({ stream: 'stderr' })`.

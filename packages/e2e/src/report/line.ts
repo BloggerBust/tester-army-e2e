@@ -33,7 +33,7 @@ interface LineProgressOutput {
 const ERASE_ROW = '\r\u001b[2K';
 
 export class LineProgress implements TerminalProgress {
-  readonly name = 'line';
+  readonly failureTiming = 'immediate';
   private total: number | undefined;
   private completed = 0;
   private visible = false;

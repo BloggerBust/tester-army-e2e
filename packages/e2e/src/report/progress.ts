@@ -14,11 +14,11 @@ export interface TerminalProgressResult extends TerminalProgressTest {
 }
 
 export interface TerminalProgress {
-  readonly name: 'dot' | 'line';
+  readonly failureTiming: 'immediate' | 'at-end';
   plan?(total: number): void;
   /** The runner announced a selected test start. */
   start?(row: TerminalProgressTest): void;
-  /** Returns a permanent row for the view to print when the renderer needs one. */
+  /** Return a permanent row so the view can reset the log heading, or write progress directly and return nothing. */
   result(result: TerminalProgressResult): string | void;
   /** Handles redacted user output when the mode prints it without headings. */
   show?(stream: OutputStream, text: string): void;

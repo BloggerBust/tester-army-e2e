@@ -2378,6 +2378,21 @@ describe('screenshots row', () => {
   });
 });
 
+describe('compact progress failure reporting', () => {
+  it.each(['immediate', 'at-end'] as const)('prints the failure block once with %s timing', (failureTiming) => {
+    const { lines, output } = capture();
+    const progress = { failureTiming, result() {}, settle() {} };
+    const reporter = new ListReporter(output, { colors: false, progress });
+    reporter.handle(runStarted());
+    reporter.handle(finished(result({ status: 'failed', attempts: [failedAttempt('wrong value')] })));
+
+    const diagnostic = 'ASSERTION_FAILED: wrong value';
+    expect(lines.filter((line) => line === diagnostic)).toHaveLength(failureTiming === 'immediate' ? 1 : 0);
+    reporter.handle(runFinished({ status: 'failed', exitCode: 1 }));
+    expect(lines.filter((line) => line === diagnostic)).toHaveLength(1);
+  });
+});
+
 describe('line progress through ListReporter', () => {
   it('restores the output heading after another test finishes', () => {
     const rows: string[] = [];

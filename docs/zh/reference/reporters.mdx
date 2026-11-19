@@ -91,7 +91,7 @@ reporters: ['line'],
 
 如果最终结果为失败或超时，`line` 会立即输出错误和可用的诊断信息。最后的 `Failed` 摘要会列出这些失败对应的追踪记录页面路径。
 
-Playwright 统计测试的开始次数，包括重试的开始次数。它的进度行包含 `file:line:col` 位置信息，也可以显示当前步骤。
+Playwright 统计测试的开始次数，包括重试的开始次数。它的进度行包含 `file:line:col` 位置信息，也可以显示当前步骤。测试结果为 `flaky` 或 `interrupted` 时，Playwright 也会立即输出失败详情。
 
 未指定 `stream` 时，`line` 默认输出到 stdout，与 `json` 一起使用时则输出到 stderr。也可以用 `line({ stream: 'stderr' })` 直接指定 stderr。
 

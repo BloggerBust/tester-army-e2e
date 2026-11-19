@@ -28,7 +28,7 @@ export function dot(options: DotReporterOptions = {}): Reporter {
 
 /** The marks of the `dot` reporter, and the user output it prints between them. */
 export class DotProgress implements TerminalProgress {
-  readonly name = 'dot';
+  readonly failureTiming = 'at-end';
   private readonly marks: Record<ResultStatus, string>;
   private columns = 0;
   private readonly unfinished = new Set<OutputStream>();
