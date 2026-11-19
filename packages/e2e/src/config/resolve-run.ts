@@ -6,7 +6,7 @@
 
 import { ConfigurationError } from '@e2e-dev/core/lib/internal/errors';
 import { didYouMean } from '@e2e-dev/core/lib/internal/suggest';
-import { BUILTIN_REPORTER_LIST, BUILTIN_REPORTERS, isBuiltinReporter } from '../report/builtin.ts';
+import { BUILTIN_REPORTER_LIST, BUILTIN_REPORTERS, isBuiltinReporter, TERMINAL_REPORTERS } from '../report/builtin.ts';
 import { ellipsize } from '../report/format.ts';
 import type { BuiltinReporter, E2EConfig, Reporter, TestFilter } from '../run-types.ts';
 import { resolveProjectConfig, type CliOverrides, type ResolvedConfig } from '@e2e-dev/core/lib/config/resolve';
@@ -83,14 +83,9 @@ function resolveReporters(
   if (reporters.includes('json') && reporters.includes('list')) {
     throw new ConfigurationError('INVALID_CONFIG', 'the json renderer cannot be combined with list');
   }
-  if (reporters.includes('dot') && reporters.includes('list')) {
-    throw new ConfigurationError('INVALID_CONFIG', 'the dot reporter cannot be combined with list');
-  }
-  if (reporters.includes('line') && reporters.includes('list')) {
-    throw new ConfigurationError('INVALID_CONFIG', 'the line reporter cannot be combined with list');
-  }
-  if (reporters.includes('line') && reporters.includes('dot')) {
-    throw new ConfigurationError('INVALID_CONFIG', 'the line reporter cannot be combined with dot');
+  const [firstTerminal, secondTerminal] = TERMINAL_REPORTERS.filter((id) => reporters.includes(id));
+  if (secondTerminal !== undefined) {
+    throw new ConfigurationError('INVALID_CONFIG', `the ${secondTerminal} reporter cannot be combined with ${firstTerminal}`);
   }
   return { reporters, customReporters };
 }

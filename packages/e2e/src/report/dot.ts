@@ -3,9 +3,12 @@
 import picocolors from 'picocolors';
 import type { ResultStatus } from '@e2e-dev/core/lib/run/records';
 import type { Colors } from './format.ts';
-import { writeTerminal, type OutputStream, type OutputView } from '../run/process-output.ts';
+import { writeTerminal, type OutputStream } from '../run/process-output.ts';
 
-export class DotProgress implements OutputView {
+import type { TerminalProgress, TerminalProgressResult } from './progress.ts';
+
+export class DotProgress implements TerminalProgress {
+  readonly name = 'dot';
   private readonly marks: Record<ResultStatus, string>;
   private columns = 0;
   private readonly unfinished = new Set<OutputStream>();
@@ -27,7 +30,7 @@ export class DotProgress implements OutputView {
   }
 
   /** A retry contributes just the one mark its final verdict calls for. */
-  result(status: ResultStatus): void {
+  result({ status }: Pick<TerminalProgressResult, 'status'>): void {
     const prefix = this.unfinished.delete(this.stream) ? '\n' : '';
     this.output(this.stream, prefix + this.marks[status]);
     this.columns += 1;
@@ -44,8 +47,8 @@ export class DotProgress implements OutputView {
     else this.unfinished.add(destination);
   }
 
-  /** Releases any pending text in the destination view once the run is over. */
-  end(): void {
+  /** Finishes progress and any partial user output before the next permanent line. */
+  settle(): void {
     this.finishMarks();
     for (const stream of this.unfinished) this.output(stream, '\n');
     this.unfinished.clear();

@@ -310,14 +310,18 @@ test('left out', () => {});
     expect(stdout).toMatch(/Tests\s+1 passed.*1 flaky.*1 skipped/u);
   });
 
-  it('keeps line progress, failures, and logs on stderr with JSON', () => {
-    const { exitCode, stdout, stderr } = cli(
+  it('prints line failures as they finish and recaps each with its trace', () => {
+    const { project, exitCode, stdout, stderr } = cli(
       {
         'e2e.config.ts': fakeConfig(),
         'tests/line.e2e.ts': `import { expect, test } from 'e2e';
 test('wrong', () => {
   console.log('test log');
   expect(1).toBe(2);
+});
+test('later', () => {
+  console.log('later test log');
+  expect(3).toBe(4);
 });
 `,
       },
@@ -327,18 +331,37 @@ test('wrong', () => {
     const report = JSON.parse(stdout) as Report1Document;
     assertValidReport(report);
     expect(report.run.exitCode).toBe(1);
-    expect(report.run.results).toHaveLength(1);
-    const [result] = report.run.results;
-    expect(result?.titlePath).toEqual(['wrong']);
-    expect(result?.status).toBe('failed');
-    expect(result?.attempts.at(-1)?.error?.code).toBe('ASSERTION_FAILED');
+    expect(report.run.results.map((result) => [result.titlePath, result.status, result.attempts.at(-1)?.error?.code])).toEqual([
+      [['wrong'], 'failed', 'ASSERTION_FAILED'],
+      [['later'], 'failed', 'ASSERTION_FAILED'],
+    ]);
     const rows = stderr.split('\n').filter((line) => /^\[\d+\/\d+\] \[/u.test(line));
-    const row = '[1/1] [fake] tests/line.e2e.ts > wrong (failed)';
-    expect(rows).toEqual([row]);
-    expect(stderr.indexOf(row)).toBeLessThan(stderr.indexOf('Failed Tests'));
+    expect(rows).toEqual([
+      '[1/2] [fake] tests/line.e2e.ts > wrong (failed)',
+      '[2/2] [fake] tests/line.e2e.ts > later (failed)',
+    ]);
+    const blocks = [...stderr.matchAll(/^ FAIL .+ > (.+)$/gmu)];
+    expect(blocks.map(([, title]) => title)).toEqual(['wrong', 'later']);
+    const laterLog = stderr.indexOf('\nlater test log\n');
+    const recapStart = stderr.search(/^ +Failed +×/mu);
+    expect(laterLog).toBeGreaterThan(stderr.indexOf(rows[0]!));
+    expect(recapStart).toBeGreaterThan(stderr.indexOf(rows[1]!));
+    const firstDetails = stderr.slice(stderr.indexOf(rows[0]!), laterLog);
+    const secondDetails = stderr.slice(stderr.indexOf(rows[1]!), recapStart);
+    expect(firstDetails).toMatch(/^ FAIL .*wrong$/mu);
+    expect(firstDetails).toContain('ASSERTION_FAILED: expected 1 to be 2');
+    expect(firstDetails).toMatch(/\d+\|\s+expect\(1\)\.toBe\(2\)/u);
+    expect(secondDetails).toMatch(/^ FAIL .*later$/mu);
+    expect(secondDetails).toContain('ASSERTION_FAILED: expected 3 to be 4');
+    expect(secondDetails).toMatch(/\d+\|\s+expect\(3\)\.toBe\(4\)/u);
     expect(stderr).toMatch(/^test log$/mu);
-    expect(stderr).toMatch(/tests\/line\.e2e\.ts:\d+/u);
-    expect(stderr).toContain('expected 1 to be 2');
+
+    const recap = stderr.slice(recapStart);
+    const traces = [...recap.matchAll(/^ *(?:Failed +)?× \|fake\| tests\/line\.e2e\.ts:\d+ > (.+)\n +ASSERTION_FAILED: [^\n]+\n +trace (\S+\/trace\.md)$/gmu)];
+    expect(traces.map(([, title]) => title)).toEqual(['wrong', 'later']);
+    for (const [, title, trace] of traces) {
+      expect(readFileSync(path.join(project.dir, trace!), 'utf8')).toMatch(`# ✗ ${title}\n`);
+    }
   });
 
   it('prints a run error on stderr once, whichever reporters run, and keeps the json document whole', () => {

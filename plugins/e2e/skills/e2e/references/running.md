@@ -166,7 +166,7 @@ hosted service's video by URL.
   run: a signal, `--max-failures`, `--max-duration`, a run-level error; not a failure), `flaky`, and `skipped` add up
   to `selected`; `discovered - selected` were left out.
 - `dot`: one ASCII mark per selected test's final result after retries, wrapped at 80 marks; colors follow terminal settings and `NO_COLOR`. It shares `list`'s header, failure details, summary, run errors, and step prompts. Use `--reporter dot,json` for all terminal output on stderr and the JSON report on stdout.
-- `line`: Shows each selected test's final result on one updating line in an interactive terminal. When output is redirected, each result prints on its own line. Tests that retry appear only once, and the reporter retains the same diagnostics and summary as `list`. With `--reporter line,json`, human-readable output goes to stderr and the JSON report goes to stdout.
+- `line`: Shows each test as it starts and displays its final result on the same row in an interactive terminal. The count advances only on final results. Redirected output and `TERM=dumb` print one progress line per result. Failure details print as failures settle, and trace links appear in the final recap. With `--reporter line,json`, terminal output goes to stderr and the JSON report goes to stdout.
 - `junit`: `junit.xml` for CI summaries; `--reporter list,junit` keeps the
   terminal output. A case with a failure screenshot links it as
   `<system-out>[[ATTACHMENT|<path>]]</system-out>`, relative to

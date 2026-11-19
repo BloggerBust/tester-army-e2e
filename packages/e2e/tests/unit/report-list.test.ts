@@ -2283,21 +2283,27 @@ describe('screenshots row', () => {
 });
 
 describe('line progress through ListReporter', () => {
-  it('replaces progress in completion order and clears it before logs and the summary', () => {
+  it('starts at zero, replaces progress in completion order, and clears it before permanent output', () => {
     const out: string[] = [];
     const erase = '\r\u001b[2K';
     let columns = 80;
     const progress = new LineProgress({ write: (text) => out.push(text), interactive: true, columns: () => columns });
     const reporter = new ListReporter(
       { write: (line) => out.push(`${line}\n`) },
-      { colors: false, line: progress },
+      { colors: false, progress },
     );
     reporter.handle(runStarted());
     reporter.handle(plan([{ file: 'tests/case.e2e.ts', tests: 3 }]));
+    reporter.handle({ type: 'setup', step: { kind: 'app', label: 'probe' }, state: 'finished', durationMs: 10 });
+    reporter.handle(testStarted('first', 'first', 'chromium'));
+    expect(out.at(-1)).toBe(`${erase}[0/3] [chromium] tests/case.e2e.ts > first (running)`);
+    reporter.handle(testStarted('second', 'second', 'chromium'));
     reporter.handle(finished(result({ status: 'passed', title: ['second'], id: 'second', declarationIndex: 1 })));
     reporter.handle(finished(result({ status: 'passed', title: ['first'], id: 'first' })));
     const rows = out.filter((chunk) => chunk.startsWith(erase) && chunk.length > erase.length);
     expect(rows).toEqual([
+      `${erase}[0/3] [chromium] tests/case.e2e.ts > first (running)`,
+      `${erase}[0/3] [chromium] tests/case.e2e.ts > second (running)`,
       `${erase}[1/3] [chromium] tests/case.e2e.ts > second (passed)`,
       `${erase}[2/3] [chromium] tests/case.e2e.ts > first (passed)`,
     ]);
@@ -2310,6 +2316,7 @@ describe('line progress through ListReporter', () => {
     expect(permanent.join('')).toContain('app says hi');
 
     columns = 60;
+    const beforeFailure = out.length;
     reporter.handle(finished(result({
       status: 'failed',
       title: ['third\nwide 漢字漢字漢字漢字漢字漢字漢字'],
@@ -2317,7 +2324,9 @@ describe('line progress through ListReporter', () => {
       declarationIndex: 2,
       attempts: [failedAttempt('wrong value')],
     })));
-    const narrow = out.at(-1) ?? '';
+    const [narrow = '', cleared] = out.slice(beforeFailure);
+    expect(cleared).toBe(erase);
+    expect(out.slice(beforeFailure + 2).join('')).toContain('ASSERTION_FAILED: wrong value');
     expect(narrow.startsWith(erase)).toBe(true);
     expect(narrow).not.toContain('\n');
     expect(narrow).toMatch(/\(failed\)$/u);
@@ -2326,7 +2335,9 @@ describe('line progress through ListReporter', () => {
 
     const beforeFinish = out.length;
     reporter.handle(runFinished({ status: 'failed', exitCode: 1 }));
-    expect(out[beforeFinish]).toBe(erase);
-    expect(out.slice(beforeFinish + 1).join('')).toContain('Tests');
+    const summary = out.slice(beforeFinish).join('');
+    expect(summary).not.toContain(' FAIL ');
+    expect(summary).not.toContain(erase);
+    expect(summary).toContain('Tests');
   });
 });
