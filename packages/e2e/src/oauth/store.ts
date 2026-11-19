@@ -44,27 +44,25 @@ export class FileCredentialStore implements CredentialStore {
   }
 
   async get(providerId: string): Promise<OAuthCredentials | undefined> {
-    return this.read()[providerId];
+    const all = this.read();
+    return all[storedKey(all, providerId)];
   }
 
   async set(providerId: string, credentials: OAuthCredentials): Promise<void> {
-    await this.update((all) => ({ ...all, [providerId]: credentials }));
+    await this.update((all) => ({ ...all, [storedKey(all, providerId)]: credentials }));
   }
 
   async remove(providerId: string): Promise<void> {
-    await this.update((all) => {
-      const { [providerId]: _removed, ...rest } = all;
-      return rest;
-    });
+    await this.update((all) => Object.fromEntries(Object.entries(all).filter(([key]) => currentId(key) !== providerId)));
   }
 
   async list(): Promise<string[]> {
-    return Object.keys(this.read());
+    return storedIds(this.read());
   }
 
   /** Runs `refresh` holding this login's lock file, so worker processes refresh it one at a time. */
   async exclusive<T>(providerId: string, refresh: () => Promise<T>): Promise<T> {
-    return withFileLock(`${this.path}.${providerId}.refresh.lock`, REFRESH_LOCK_WAIT_MS, () => {
+    return withFileLock(`${this.path}.${storedKey(this.read(), providerId)}.refresh.lock`, REFRESH_LOCK_WAIT_MS, () => {
       const waited = `${REFRESH_LOCK_WAIT_MS / 1000} s`;
       const message = `another e2e process is still refreshing the ${providerId} login after ${waited}`;
       return new OAuthError('TIMEOUT', `${message}; run again once it finishes`);
@@ -111,7 +109,7 @@ export class EnvCredentialStore implements CredentialStore {
     this.entries = parseCredentials(json, source);
   }
   async get(providerId: string): Promise<OAuthCredentials | undefined> {
-    return this.entries[providerId];
+    return this.entries[storedKey(this.entries, providerId)];
   }
   assertWritable(): never {
     throw new OAuthError('MISCONFIGURED', `${CREDENTIALS_ENV} is set, so logins come from the environment and cannot be changed here; unset it to sign in on this machine`);
@@ -123,12 +121,28 @@ export class EnvCredentialStore implements CredentialStore {
     return this.set();
   }
   async list(): Promise<string[]> {
-    return Object.keys(this.entries);
+    return storedIds(this.entries);
   }
   /** Each process holds its own copy of the variable, so there is nothing to share a refresh with. */
   async exclusive<T>(_providerId: string, refresh: () => Promise<T>): Promise<T> {
     return refresh();
   }
+}
+
+/** Keys an earlier release stored a login under, to the provider id that reads it now. Kept as is so that release still finds the login. */
+const LEGACY_KEYS: ReadonlyMap<string, string> = new Map([['spacexai', 'spacexsi']]);
+
+function currentId(key: string): string {
+  return LEGACY_KEYS.get(key) ?? key;
+}
+
+function storedKey(all: CredentialsFile, providerId: string): string {
+  if (Object.hasOwn(all, providerId)) return providerId;
+  return Object.keys(all).find((key) => currentId(key) === providerId) ?? providerId;
+}
+
+function storedIds(all: CredentialsFile): string[] {
+  return [...new Set(Object.keys(all).map(currentId))];
 }
 
 /** The file's entries; one damaged entry is dropped rather than taking every login down with it. */

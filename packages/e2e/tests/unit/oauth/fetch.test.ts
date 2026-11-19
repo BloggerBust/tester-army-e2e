@@ -18,7 +18,7 @@ const execFileAsync = promisify(execFile);
 
 type CountingProvider = OAuthProvider<OAuthCredentials, never> & { refreshes: string[] };
 
-/** Refreshes rotate the refresh token and reject a token that was already rotated, like SpaceXAI and ChatGPT do. */
+/** Refreshes rotate the refresh token and reject a token that was already rotated, like SpaceXSI and ChatGPT do. */
 function provider(overrides: Partial<OAuthProvider<OAuthCredentials, never>> = {}): CountingProvider {
   const self: CountingProvider = {
     id: 'test',

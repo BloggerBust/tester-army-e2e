@@ -101,6 +101,16 @@ describe('e2e/core', { timeout: 60_000 }, () => {
     await expect(opened.newSession()).rejects.toMatchObject({ code: 'WORKER_PROTOCOL' });
   });
 
+  it('runs past screen.pause() right away in a program', async () => {
+    const fake = createFakeEngine({ scene: shop });
+    const opened = await host(fake.engine, { app: FAKE_APP });
+    const session = await opened.newSession();
+    await session.app.open('/');
+    await session.screen.pause();
+    expect(await session.screen.getByTestId('sale-price').textContent()).toBe('39,000');
+    await session.close();
+  });
+
   it('refuses a second host on the engine instance another host owns', async () => {
     const fake = createFakeEngine();
     await host(fake.engine);

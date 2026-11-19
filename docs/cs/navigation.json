@@ -1,0 +1,23 @@
+{
+  "tabs": {
+    "Documentation": "Dokumentace",
+    "Reference": "Reference",
+    "Examples": "Příklady"
+  },
+  "groups": {
+    "Get started": "Začínáme",
+    "Platforms": "Platformy",
+    "Features": "Funkce",
+    "Models and agents": "Modely a agenti",
+    "Run in CI": "Spuštění v CI",
+    "Hosted browsers and devices": "Hostované prohlížeče a zařízení",
+    "Extend": "Rozšíření",
+    "Engines": "Enginy",
+    "Deep dive": "Do hloubky",
+    "Migrate": "Migrace",
+    "Test API": "Testovací API",
+    "Project": "Projekt",
+    "Web": "Web",
+    "Mobile": "Mobilní"
+  }
+}

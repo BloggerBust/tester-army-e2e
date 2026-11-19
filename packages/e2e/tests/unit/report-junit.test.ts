@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { serializeError, TestError } from '@e2e-dev/core/lib/internal/errors';
 import type { FinishedRun } from '../../src/run-types.ts';
 import type { Report1Document, ReportSerialGroup } from '../../src/report/build.ts';
-import { junitReporter, renderJunitReport, type JunitReportOptions } from '../../src/report/junit.ts';
+import { junit, renderJunitReport, type JunitReportOptions } from '../../src/report/junit.ts';
 import { REPORT_AT as AT, reportAttempt, reportDocument, reportError, reportResult, reportStep } from '../helpers/report.ts';
 
 /** XML 1.0 `Char`, over code points: a lone surrogate is a code point of its own and falls outside every range. */
@@ -709,7 +709,7 @@ function failedWithShot(
   });
 }
 
-describe('junitReporter', () => {
+describe('junit', () => {
   const tmpDirs: string[] = [];
 
   /** A fresh directory removed after each test. */
@@ -732,13 +732,15 @@ describe('junitReporter', () => {
       projectRoot,
       artifactsRoot,
       reportPath: path.join(artifactsRoot, 'report.json'),
+      outputDir: artifactsRoot,
       aiTracePath: undefined,
       report: failedWithShot(),
       traces: new Map(),
       redact: (text) => text,
     };
-    await junitReporter.onRunFinished!(run, new AbortController().signal);
-    const xml = fs.readFileSync(path.join(artifactsRoot, 'junit.xml'), 'utf8');
+    const files = await junit().reportFiles!(run, new AbortController().signal);
+    expect(files).toMatchObject([{ path: path.join(artifactsRoot, 'junit.xml'), label: 'JUnit' }]);
+    const xml = files[0]!.content;
     assertWellFormed(xml);
     return /\[\[ATTACHMENT\|([^\]]*)\]\]/.exec(xml)?.[1];
   }

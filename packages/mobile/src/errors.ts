@@ -95,6 +95,19 @@ const STALE_REF_REASONS: ReadonlySet<string> = new Set([
 ]);
 
 /**
+ * The snapshot warning agent-device 0.21.37 adds, word for word, when a
+ * capture could not place its window on the screen. It refuses its own ref
+ * actions on that capture with `window-origin-unknown`, but takes points a
+ * caller sends, so a gesture aimed from the capture's rects is checked here.
+ */
+export const ORIGIN_WARNING =
+  'This snapshot cannot establish the window origin on screen. Coordinate-derived element interactions are unavailable until a capture measures the viewport.';
+
+/** What that capture means for a caller, after "The " or "the ": the one wording a refused tap and a refused node swipe share. */
+export const ORIGIN_UNKNOWN_BOUNDS =
+  "app's window has no known position on the screen, so node bounds, boundingBox() included, may be offset from screen coordinates.";
+
+/**
  * The `details.reason` values agent-device refuses an action with, nothing
  * sent, on a healthy device, each with the hint the failure carries:
  * `undefined` keeps agent-device's own, and a string replaces it.
@@ -115,7 +128,7 @@ const NOT_ACTIONABLE_REASONS: ReadonlyMap<string, string | undefined> = new Map(
   ['tap_keyboard_occludes_target', undefined],
   [
     'window-origin-unknown',
-    "Nothing was sent. The app's window has no known position on the screen, so node bounds, boundingBox() included, may be offset from screen coordinates. For a tap, tap a screen point with screen.tapAt(), not one taken from those bounds.",
+    `Nothing was sent. The ${ORIGIN_UNKNOWN_BOUNDS} For a tap, tap a screen point with screen.tapAt(), not one taken from those bounds.`,
   ],
 ]);
 

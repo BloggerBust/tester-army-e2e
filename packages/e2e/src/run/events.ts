@@ -96,6 +96,8 @@ export type RunEventFact =
        * form; absent when judgments use `model`.
        */
       readonly judge?: string;
+      /** Present when the run holds each step for a person to let through (`e2e run --step`). */
+      readonly stepping?: true;
     }
   | {
       /**

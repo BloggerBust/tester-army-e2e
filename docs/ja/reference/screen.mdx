@@ -429,8 +429,9 @@ await screen.getByTestId('feed').scrollUntilVisible(row);
 | --- | --- |
 | [`screen.tree`](#screen-tree) | `Promise<string>` |
 | [`screen.debug`](#screen-debug) | `Promise<void>` |
+| [`screen.pause`](#screen-pause) | `Promise<void>` |
 
-どちらも待機せずに画面全体を 1 回読み取り、すべてのエンジンで使えます。ステップとして実行します。ロケーターにはなく、フレームから呼ぶと `INVALID_ARGUMENT` をスローします。
+`tree` と `debug` は待機せずに画面全体を 1 回読み取り、すべてのエンジンで使えます。ステップとして実行します。ロケーターにはなく、フレームから呼ぶと `INVALID_ARGUMENT` をスローします。
 
 #### `screen.tree`
 
@@ -471,6 +472,43 @@ debug(options?: ActionOptions): Promise<void>;
 ```ts
 await screen.debug();
 ```
+
+#### `screen.pause`
+
+アプリを開いたまま、再開されるまでテストをこの行で一時停止します。キーとコマンドは[テストを一時停止する](/debugging#pause-a-test)を参照してください。
+
+```ts
+/**
+ * Pauses the test at this line, with the app open, until it is resumed with
+ * Enter in the terminal or with `e2e run --step next` from another shell in
+ * the same directory. In `e2e run`, the test is paused each time the line
+ * runs. Paused time doesn't count toward the test's timeout. Call it with
+ * `await` on `screen`, between steps in fixture setup, a `beforeEach` hook,
+ * or the test body. Anywhere else, or with `CI` set, the test isn't paused
+ * and the call fails.
+ */
+pause(): Promise<void>;
+```
+
+```ts
+await screen.pause();
+```
+
+- リトライやセットアップテストを含め、すべての試行でテストは一時停止します。
+- `--step` 実行では、`n`、`a`、`e2e run --step rest` の後も、テストは `screen.pause()` で一時停止します。
+- 一時停止の時間はどのタイムアウトにも加算しません。
+- [MCP](/mcp-server) の `open_session {test}` が開くセッション、`@e2e-dev/core` や `openHost` を使うプログラム、`e2e/runner` の `run()` では、テストは一時停止しません。`CI` が設定されている場合、`run()` でも `e2e run` と同様に、テストは `PAUSE_UNAVAILABLE` で失敗します。
+- `e2e run --watch` では、一時停止中に `q` を押すか `e2e run --step stop` を実行すると、現在の実行だけがキャンセルされます。
+- ロケーターにはありません。
+
+| エラー | 発生条件 |
+| --- | --- |
+| `PAUSE_UNAVAILABLE` | `CI` が設定されている場合。コミット前に呼び出しを削除するか、ターミナルで `e2e run` を使ってテストを実行してください。一時停止が許可されない場所での呼び出しは、代わりに下記のそれぞれのエラーで失敗します。 |
+| `INVALID_ARGUMENT` | ロケーターやフレーム、[`afterEach`](/reference/test#aftereach) フック、フィクスチャの後処理、または本体が戻った後に実行される await されていないコードで呼び出した場合。`screen` で、フィクスチャのセットアップ、`beforeEach` フック、またはテスト本体のステップの間に呼び出してください。 |
+| `ACTION_FAILED` | [`onAction`](/reference/agent#agent-act) フックや[カスタムエグゼキューター](/executors)など、エージェントステップ内で呼び出した場合。ステップは一時停止のメッセージで失敗し、テストは一時停止しません。組み込みエージェントの[プロジェクトツール](/tools)では、拒否は失敗したツール結果としてモデルに返り、ステップは続行します。代わりにステップの間に呼び出してください。 |
+| `ASSERTION_FAILED` | [`expect.poll`](/reference/expect#polling-a-value) の読み取り内で呼び出した場合。ポーリングがタイムアウトするまで読み取りを再試行します。読み取りの外で呼び出してください。 |
+| `STEP_NOT_AWAITED` | await していない `screen.pause()` が待機中のまま、テスト本体が戻った場合。テストは一時停止の行で失敗します。呼び出しの前に `await` を付けてください。 |
+| `RUNNER_BUSY` | 実行にターミナルがなく、ディレクトリ内の別の実行がすでに `e2e run --step` で操作されている場合。`e2e run --step stop` でその実行を終了するか、このテストをターミナルで実行してください。別の実行が終わると、この実行の次の `screen.pause()` でテストは一時停止します。 |
 
 ### ロケーターのアクション
 

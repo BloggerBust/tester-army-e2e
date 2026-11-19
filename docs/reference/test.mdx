@@ -34,6 +34,8 @@ describe('checkout', { tags: ['billing'] }, () => {
 | [`test.skip`](#test-skip) | `TestCase \| void` |
 | [`test.skipIf`](#test-skipif) | `TestRegistrar` |
 | [`test.runIf`](#test-runif) | `TestRegistrar` |
+| [`test.each`](#test-each) | `EachRegistrar` |
+| [`test.for`](#test-for) | `EachRegistrar` |
 | [`test.fail`](#test-fail) | `TestCase \| void` |
 | [`test.only`](#test-only) | `TestCase` |
 | [`test.setup`](#test-setup) | `TestCase` |
@@ -167,6 +169,82 @@ test.runIf(process.platform === 'linux')('reads inotify events', async ({ app })
 
 `test.runIf(condition)` is `test.skipIf(!condition)`.
 Everything in [`test.skipIf`](#test-skipif) applies.
+
+#### `test.each`
+
+Returns a function that registers one test per row, like `test(title, fn)`,
+in row order. Use it for the same steps with different data.
+
+```ts
+test.each([{ user: 'Ada' }, { user: 'Grace' }])('signs in as $user', async ({ user }, { app }) => {
+  await app.open();
+  // ...
+});
+
+test.each([
+  ['standard', '5.00'],
+  ['express', '15.00'],
+])('ships %s for %s', async (speed, price, { screen }) => {});
+```
+
+- The body gets the row first and the fixtures last. When every row is an
+  array, each row is spread, so `[speed, price]` arrives as
+  `(speed, price, fixtures)`. When any row is not an array, every row
+  arrives whole, as `(row, fixtures)`, as in Vitest and Jest.
+- The body names the [fixtures](#fixtures) it uses by destructuring the
+  parameter after the row, and e2e sets up only those. A body that uses none
+  can leave the parameter out.
+- The title is formatted from the row:
+
+  | In the title | Becomes |
+  | --- | --- |
+  | `$name`, `$name.path` | That key of an object row. A string shows as written, any other value as Node's `inspect` shows it. |
+  | `%s` | The next item, shown the same way. |
+  | `%o` | The next item as Node's `inspect` shows it, so a string is quoted. |
+  | `%d` | The next item as a number (`Number(item)`), except a `BigInt` keeps its `n` suffix and a `Symbol` shows as `NaN`. |
+  | `%i`, `%f` | The next item read as an integer or a float, like `parseInt` / `parseFloat`: `'42px'` becomes `42`. A `BigInt` keeps its `n` suffix under `%i`. |
+  | `%j` | The next item as JSON. A circular value shows as `[Circular]`; a function, a `Symbol`, or `undefined` as `undefined`. |
+  | `%#`, `%$` | The row index, from 0, and the row number, from 1. |
+  | `%%` | A percent sign. |
+
+  The items are an array row's items in order; any other row is the one
+  item. A placeholder with no item left, or `$name` on a row that is not an
+  object, stays as written. A value other than a string always shows on one
+  line; a string shows as written, line breaks included. An `Error` shows
+  as its name and message, without its stack.
+- A title is part of the test id. `%#` and `%$` change when rows are added or
+  moved, so prefer `$name` or a value placeholder for ids that stay stable.
+- Titles differ from Vitest in a few places: `$0` and `$1` do not read an
+  array row, `$name` is not read from an array row's first item, `%s` shows
+  an object with `inspect`, not its own `toString` (a `URL` is not shown as
+  its href), `%O` and `%c` are not placeholders, and a table written as a template
+  literal is not read. The body differs too:
+  Vitest's `test.each` body gets only the row, while here the fixtures
+  come after it.
+- Each row is a separate test, with its own id, report entry, and retries.
+  Options apply to every row, so a [`skip`](#skip) or [`tags`](#tags)
+  option skips or tags them all.
+- It takes the same two forms as [`test`](#test) and has the same fixtures,
+  on an extended `test` too.
+
+| Throws | When |
+| --- | --- |
+| `COLLECTION_ERROR` | The rows are not an array, the array is empty, or the rows are a template literal table. |
+| `COLLECTION_ERROR` | Two rows format to the same title. Put a placeholder in the title that tells the rows apart. |
+| `COLLECTION_ERROR` | A `%j` item cannot be turned into JSON for a reason other than a cycle, such as a `BigInt`. The message names the row. |
+| `COLLECTION_ERROR` | The body takes the fixtures whole (`async (row, fixtures) => {}`) or in a rest parameter (`async (...args) => {}`), or breaks another [fixture naming rule](#fixtures). |
+
+#### `test.for`
+
+[`test.each`](#test-each), except an array row is not spread: the body
+always takes `(row, fixtures)`. Titles are formatted the same way.
+
+```ts
+test.for([
+  ['standard', '5.00'],
+  ['express', '15.00'],
+])('ships %s for %s', async ([speed, price], { screen }) => {});
+```
 
 #### `test.fail`
 
@@ -679,7 +757,8 @@ describes each core one. Every other fixture is one of
 
 A test body, a hook, and a fixture function name the fixtures they use by
 destructuring their first parameter: `async ({ app, screen }) => {}`. e2e
-reads the names from the function's source.
+reads the names from the function's source. A [`test.each`](#test-each) or
+[`test.for`](#test-for) body names them in the parameter after its row.
 
 | Throws | When |
 | --- | --- |
@@ -858,6 +937,17 @@ export interface TestRegistrar<Fixtures = TestFixtures & WorkerFixtures> {
   (title: string, options: TestOptions, fn: TestFn<Fixtures>): TestCase;
 }
 
+/**
+ * The two call forms of `test` for `test.each` and `test.for`: one test per
+ * row, each titled from the row. `Args` are the body's arguments.
+ */
+export interface EachRegistrar<Args extends readonly unknown[]> {
+  /** Registers one test per row synchronously during module evaluation. */
+  (title: string, fn: EachFn<Args>): readonly TestCase[];
+  /** Registers one configured test per row synchronously during module evaluation. */
+  (title: string, options: TestOptions, fn: EachFn<Args>): readonly TestCase[];
+}
+
 export interface TestAPI<Fixtures = TestFixtures, Worker = WorkerFixtures> extends TestRegistrar<Fixtures & Worker> {
   /** Registers one skipped test. */
   skip(title: string, fn: TestFn<Fixtures & Worker>): TestCase;
@@ -890,6 +980,30 @@ export interface TestAPI<Fixtures = TestFixtures, Worker = WorkerFixtures> exten
    * skipped when `condition` is falsy, `test.skipIf(!condition)`.
    */
   runIf<Condition>(condition: SynchronousCondition<Condition>): TestRegistrar<Fixtures & Worker>;
+  /**
+   * Returns a function that registers one test per row, like `test(title,
+   * fn)`, in row order. The title is formatted from the row: `$name` and
+   * `$name.path` read an object row, and `%s`, `%d`, `%i`, `%f`, `%j`, `%o`
+   * take an array row's items in order (any other row is the one item). `%#`
+   * is the row index, `%$` the row number, `%%` a percent sign. When every
+   * row is an array, each row is spread into the body's arguments; otherwise
+   * every row is the first one. The fixtures come last:
+   *
+   *   test.each([{ user: 'Ada' }, { user: 'Grace' }])('signs in as $user', async ({ user }, { app }) => {});
+   *   test.each([[1, 2, 3]])('%i + %i = %i', async (a, b, sum, { app }) => {});
+   *
+   * Rows must be a non-empty array. Two rows that format to the same title
+   * fail as duplicate titles. As in a test body, destructure the fixtures
+   * (`{ app }`): e2e sets up only the ones named there.
+   */
+  each<Row extends readonly unknown[] | [unknown]>(rows: readonly Row[]): EachRegistrar<[...Row, Fixtures & Worker]>;
+  each<Row>(rows: readonly Row[]): EachRegistrar<EachArgs<Row, Fixtures & Worker>>;
+  /**
+   * `test.each` that never spreads: the body takes `(row, fixtures)` for
+   * every row, an array row included. Titles format as in `test.each`.
+   */
+  for<Row extends readonly unknown[] | [unknown]>(rows: readonly Row[]): EachRegistrar<[Row, Fixtures & Worker]>;
+  for<Row>(rows: readonly Row[]): EachRegistrar<[Row, Fixtures & Worker]>;
   /** Registers one test that is expected to fail. */
   fail(title: string, fn: TestFn<Fixtures & Worker>): TestCase;
   /**
@@ -1209,6 +1323,21 @@ export type SuiteHookFn = TestHookFn<WorkerFixtures>;
 export type SynchronousBody<Result> = Extract<Result, PromiseLike<unknown>> extends never
   ? () => Result
   : never;
+
+/**
+ * The `test.each` body arguments for the rows' type: array rows spread, then
+ * the fixtures. Rows that are not all arrays are passed whole. Not
+ * distributive, so a mixed table is decided once, as at run time. An
+ * `unknown` row may be either at run time, so only the fixtures, last, are known.
+ */
+export type EachArgs<Row, Fixtures> = [Row] extends [readonly unknown[]]
+  ? [...Row, Fixtures]
+  : unknown extends Row
+    ? [...unknown[], Fixtures]
+    : [Row, Fixtures];
+
+/** A `test.each` or `test.for` body: the row's arguments, then the fixtures. */
+export type EachFn<Args extends readonly unknown[]> = (...args: Args) => void | Promise<void>;
 
 /** A `test.skipIf` or `test.runIf` condition. A Promise is a type error. */
 export type SynchronousCondition<Condition> = Extract<Condition, PromiseLike<unknown>> extends never

@@ -1,6 +1,6 @@
 {
   "name": "@e2e-dev/web",
-  "version": "0.16.0",
+  "version": "0.16.1",
   "description": "Web engine for e2e agentic end-to-end testing, built on Playwright",
   "keywords": [
     "e2e",
@@ -15,8 +15,8 @@
   ],
   "license": "Apache-2.0",
   "contributors": [
-    "Oskar Kwaśniewski <oskar@tester.army>",
-    "Szymon Rybczak <szymon@tester.army>"
+    "Oskar Kwaśniewski <oskar@e2e.com>",
+    "Szymon Rybczak <szymon@e2e.com>"
   ],
   "repository": {
     "type": "git",
@@ -76,7 +76,7 @@
     "@types/node": "26.6.6",
     "e2e": "workspace:*",
     "typescript": "7.0.2",
-    "vitest": "5.1.0"
+    "vitest": "5.1.1"
   },
   "engines": {
     "node": "^22.22.3 || >=24.8.0"

@@ -5,8 +5,16 @@ description: Drive a browser or a native app from plain code, with an optional a
 
 `@e2e-dev/core` drives a browser or an iOS or Android app from plain code. It
 uses the e2e engines, `screen`, and the agent, without the test runner: there
-is no config file, no report, and no `expect`. Use it for scripts,
-automation, scrapers, and bots.
+is no config file, no report, and no `expect`.
+
+## When to use it
+
+| You want to | Use |
+| --- | --- |
+| Write tests and run them locally and in CI, with reports | `e2e`. See the [quickstart](/quickstart). |
+| Give a coding agent a live session on your app | The [MCP server](/mcp-server) |
+| Drive an app from your own program: a script, a scraper, a bot, test data setup | `@e2e-dev/core` |
+| Open a second browser or device inside a test | `@e2e-dev/core`. See [Open a host inside a test](#open-a-host-inside-a-test). |
 
 ## Install
 
@@ -28,6 +36,7 @@ bun add @e2e-dev/core @e2e-dev/web
 
 Install `@e2e-dev/mobile` instead of, or beside, `@e2e-dev/web` to drive a
 device. `@e2e-dev/core` needs no `e2e`, the test runner, which is built on it.
+It needs Node.js 22.22.3 or later on 22.x, or 24.8 or later.
 
 <Note>
 Import an engine from its `/engine` entry, as the examples do. The main entry
@@ -55,6 +64,9 @@ for (const sku of ['A-1001', 'B-2040']) {
   console.log(sku, price);
 }
 ```
+
+Run it with `node prices.ts`. Node.js runs a `.ts` file without a build
+step.
 
 `screen` and `app` are the same API as in a test: see
 [screen](/reference/screen) and [app](/reference/app). `await using` closes

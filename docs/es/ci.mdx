@@ -1,0 +1,306 @@
+---
+title: Integración continua
+sidebarTitle: Configurar CI
+description: Ejecuta e2e en GitHub Actions, despliegues de Vercel, GitLab CI/CD, Expo Workflows, Bitrise, Codemagic, Norrix o cualquier servicio de CI que ejecute Node.
+"og:image": "https://e2e.com/docs/images/og/ci.png?v=01be716140"
+"twitter:image": "https://e2e.com/docs/images/og/ci.png?v=01be716140"
+---
+
+e2e funciona en cualquier servicio de CI que ejecute Node 24.8 o posterior
+(22.22.3 o posterior en Node 22), o [Bun](/reference/cli#bun) 1.4.3 o posterior
+para los tests web. Cada trabajo instala las dependencias, inicia la app o un
+dispositivo, ejecuta los tests y sube `.e2e/`.
+
+## Elige tu servicio de CI
+
+<CardGroup cols={2}>
+  <Card title="GitHub Actions" icon="/images/integrations/github-actions.svg" href="/ci/github-actions">
+    Workflows web y móviles. Publica los resultados como comentario del pull request.
+  </Card>
+  <Card title="Vercel Previews" icon="/images/integrations/vercel.svg" href="/ci/vercel-previews">
+    Prueba cada despliegue y retén las versiones de producción hasta que los tests pasen.
+  </Card>
+  <Card title="GitLab CI/CD" icon="/images/integrations/gitlab.svg" href="/ci/gitlab">
+    Trabajos web y móviles. Muestra los resultados en el merge request.
+  </Card>
+  <Card title="Expo Workflows" icon="/images/integrations/expo.svg" href="/ci/eas-workflows">
+    Compila una app de Expo con Expo Build y ejecuta tests de iOS y Android sobre ella.
+  </Card>
+  <Card title="Bitrise" icon="/images/integrations/bitrise.svg" href="/ci/bitrise">
+    Workflows de iOS y Android con los pasos de Bitrise para simuladores y emuladores.
+  </Card>
+  <Card title="Codemagic" icon="/images/integrations/codemagic.svg" href="/ci/codemagic">
+    Workflows de iOS y Android en instancias Mac mini y Linux.
+  </Card>
+  <Card title="Norrix" icon="/images/integrations/norrix.png" href="/ci/norrix">
+    Compila una app de NativeScript con Norrix y ejecuta su suite en un simulador o emulador de Norrix.
+  </Card>
+</CardGroup>
+
+Para otro servicio de CI, copia el workflow de [GitHub Actions](/ci/github-actions).
+Para alquilar navegadores o dispositivos a un servicio alojado, consulta
+[Navegadores y dispositivos alojados](/integrations).
+
+## Sube los informes
+
+Sube `.e2e/` al final de cada trabajo, también cuando un test falle. Contiene:
+
+| Ruta | Qué contiene |
+| --- | --- |
+| `report.json` | El informe de la ejecución, de cada ejecución que llega a sus tests |
+| `junit.xml` | Con el generador de informes `junit` (`--reporter list,junit`): los resultados, los tests que un [filtro de tests](/filters) dejó fuera como omitidos y los fallos de arranque, como `APP_UNREACHABLE` en una suite `run` |
+| `results/` | Las páginas de traza, las capturas de pantalla y los volcados de pantalla de cada test. Con `--video`, también un vídeo por cada destino cuyo motor pueda grabar |
+
+Apunta la integración de informes de tests de tu servicio de CI a `.e2e/junit.xml`.
+En GitLab, `junit.xml` también enlaza la captura de pantalla de cada fallo, de modo que aparece en el informe de tests.
+La opción [`output`](/reference/config#output) mueve `.e2e/`.
+
+## Credenciales del modelo
+
+Dale al trabajo la credencial que necesite tu proveedor, como
+`AI_GATEWAY_API_KEY` (consulta [Modelos](/models)). Los tests que nunca usan
+`agent` no necesitan ninguna.
+
+<Warning>
+Cada trabajo que tiene la clave se la entrega al código que ejecuta: tests,
+configuración y dependencias. Da la clave solo a las compilaciones de ramas de
+confianza. Ejecuta el código de pull requests no confiables sin secretos y sin
+tokens de escritura. Consulta [Seguridad](/security).
+</Warning>
+
+Guarda las claves en los secretos del CI y define límites de gasto donde
+puedas. GitHub no entrega secretos a los pull requests de forks.
+
+## Qué cambia el CI
+
+El modo CI se activa cuando `CI` tiene un valor distinto de una cadena vacía,
+`0` o `false`. Para obtener estos valores por defecto en local, ejecuta
+`CI=1 npx e2e run`:
+
+| Ajuste | Local | CI |
+| --- | --- | --- |
+| `retries` | `0` | `1` |
+| `workers` | la mitad de tus núcleos | `1` |
+| `cache` si no se define | `read-write` | `read-only` |
+| `.only` | permitido | rechazado con `ONLY_IN_CI` |
+| `command.reuseExisting` | se respeta | se ignora, con un aviso |
+
+Para cambiar los valores por defecto de workers y reintentos, usa banderas:
+
+<CodeGroup>
+```bash npm
+npx e2e run --workers 4 --retries 0
+```
+
+```bash pnpm
+pnpm exec e2e run --workers 4 --retries 0
+```
+
+```bash bun
+bunx e2e run --workers 4 --retries 0
+```
+</CodeGroup>
+
+Para no enviar [telemetría](/telemetry#in-ci) desde el CI, añade
+`E2E_TELEMETRY_DISABLED: '1'` al `env` del trabajo.
+
+## Trabajos móviles
+
+Sin un [servicio de dispositivos alojados](/mobile#hosted-devices), cada
+plataforma necesita su propia máquina, compilación y dispositivo:
+
+| | iOS | Android |
+| --- | --- | --- |
+| Máquina | macOS con Xcode y un runtime de simulador | Linux con KVM (virtualización anidada) |
+| Compilación | `.app` de simulador en Release, sin firma | `.apk` en Release |
+| Dispositivo | Un simulador arrancado | Un emulador arrancado |
+
+Haz una compilación Release en ambas plataformas. Una compilación de debug de
+React Native o Expo carga su JavaScript desde Metro, que estos trabajos no inician,
+así que se abre en una pantalla de error. Los ejemplos usan un proyecto de
+React Native con `ios/` y `android/` en el repositorio. Para un proyecto de
+Expo sin ellos, ejecuta primero `npx expo prebuild`.
+
+Instala la compilación y ejecuta la suite:
+
+<CodeGroup>
+```bash npm
+# iOS
+xcrun simctl install booted path/to/MyApp.app
+npx e2e run --target ios --reporter list,junit
+
+# Android
+adb install -r path/to/app.apk
+npx e2e run --target android --reporter list,junit
+```
+
+```bash pnpm
+# iOS
+xcrun simctl install booted path/to/MyApp.app
+pnpm exec e2e run --target ios --reporter list,junit
+
+# Android
+adb install -r path/to/app.apk
+pnpm exec e2e run --target android --reporter list,junit
+```
+
+```bash bun
+# iOS
+xcrun simctl install booted path/to/MyApp.app
+bunx e2e run --target ios --reporter list,junit
+
+# Android
+adb install -r path/to/app.apk
+bunx e2e run --target android --reporter list,junit
+```
+</CodeGroup>
+
+Los comandos suponen dos destinos llamados `ios` y `android`, cada uno un
+motor `mobile()` con el `bundleId` de la app. Consulta
+[Apunta a tu app](/mobile#point-at-your-app). Para que la suite instale la
+compilación, define `app.appPath` y llama a `device.installApp()`.
+
+Estas reglas se aplican en cada servicio:
+
+- **Un trabajo por plataforma.** Ejecuta `--target ios` en un Mac y
+  `--target android` en Linux con KVM. Los Mac alojados usan Apple Silicon,
+  que no admite virtualización anidada, así que el emulador de Android no
+  arranca en ellos.
+- **Arranca el dispositivo en su propio paso.** Si no hay ningún dispositivo
+  arrancado, el motor le pide a agent-device que arranque uno, pero un ejecutor
+  de Linux nuevo no tiene imagen de emulador. Un paso aparte también distingue
+  un arranque fallido de un test fallido.
+- **Fija el runtime de iOS.** Un simulador elegido por nombre (`iPhone 17`)
+  usa el iOS por defecto de la imagen, y el árbol de accesibilidad cambia
+  entre versiones de iOS. Una actualización de la imagen del ejecutor puede
+  entonces hacer fallar una aserción de localizador sin que cambie tu código.
+  Los ejemplos crean un simulador con un runtime concreto y lo arrancan por
+  UDID. Sustituye `iOS-26-5` por un runtime que tenga la imagen
+  (`xcrun simctl list runtimes`).
+- **Guarda en caché `~/.agent-device/apple-runner/derived`.** agent-device
+  compila ahí su ejecutor de XCUITest la primera vez que controla un simulador.
+  No guardes en caché todo `~/.agent-device`. El resto es el estado del último
+  daemon, y una copia restaurada puede detener la siguiente ejecución con
+  `Failed to communicate with daemon`.
+- **Reproduce las grabaciones locales.** La clave de la caché de reproducción
+  contiene la app, no el dispositivo, así que un paso grabado en tu simulador
+  se reproduce en el del CI.
+  [Sube la caché de reproducción al repositorio](/cache#commit-the-replay-cache).
+
+## Bloquea los pull requests
+
+Cada salida distinta de cero hace fallar el trabajo, incluido un paso del agente
+fallido. Para bloquear las fusiones cuando una ejecución falla, convierte el
+trabajo de e2e en una comprobación obligatoria.
+[Depurar una ejecución](/debugging#read-the-failure) enumera cada código de
+salida y si volver a ejecutar el trabajo puede ayudar.
+
+Para que las comprobaciones sean predecibles:
+
+- Dale a cada `agent.act` un [objetivo atómico](/core-concepts#goals). Luego
+  comprueba su resultado con una aserción de localizador o con `agent.assert`.
+- [Sube la caché de reproducción al repositorio](/cache#commit-the-replay-cache).
+  Un `agent.act` reproducido no hace ninguna llamada al modelo. Con el agente
+  integrado, un fallo de caché, un traspaso y cada juicio del agente
+  (`agent.assert`, `agent.waitFor`, `agent.extract`) llaman al modelo.
+- Vigila los tests inestables. El informe marca como inestable un test que
+  solo pasa en el reintento del CI.
+- Añade `--max-failures <n>` para detener la ejecución tras ese número de
+  tests fallidos, de modo que un despliegue roto no gaste una llamada al
+  modelo en cada paso restante. El trabajo termina con código 1.
+- Añade `--max-duration <ms>` para limitar el tiempo de ejecución de tests;
+  el reloj empieza cuando empiezan los tests, no durante el arranque de la
+  app. El trabajo termina con código 1.
+
+## Ejecuta solo los tests afectados
+
+En un pull request, pasa `--changed-since` para que un
+[filtro de tests](/filters) pueda dejar fuera los tests que el cambio
+probablemente no afecte. Cuando el filtro puntúa los tests, como hace el
+filtro de decisión, cada destino empieza por los archivos de los tests con
+más probabilidad de fallar. Sin la bandera, como en `main`, se ejecuta toda la
+suite. Consulta [Añade el filtro de decisión](/filters#add-the-decision-filter).
+
+Con el worker único que usa el CI por defecto, solo las bandas de relevancia
+ordenan los archivos y el orden de recolección desempata: e2e lee el
+[historial de tiempos](#cache-the-timings-history) solo con más de un worker.
+Consulta [Empieza por las más probables](/filters#start-the-likeliest-first).
+
+## Guarda en caché el historial de tiempos
+
+Con más de un worker, `e2e run` empieza por los archivos más largos, después de
+cualquier archivo del que no tenga tiempo, según `<output>/timings.json`
+(`.e2e/timings.json` por defecto): unos pocos KB que una ejecución actualiza
+cuando ha ejecutado al menos un archivo completo. Un checkout nuevo de CI no
+lo tiene, así que restáuralo desde la caché de tu CI antes de la ejecución y
+guárdalo después.
+[GitHub Actions](/ci/github-actions#cache-the-timings-history) tiene el paso.
+
+- El archivo es orientativo. Uno que falta, está corrupto o no es válido cuenta
+  como sin historial, y la ejecución recurre al `report.json` anterior. Un
+  archivo restaurado puede cambiar el orden de los archivos, nunca un
+  resultado.
+- Una ejecución mide el tiempo de un archivo solo cuando lo ejecutó entero. Una
+  ejecución con `--grep` o `--last-failed` deja como estaba la entrada de un
+  archivo que ejecutó en parte.
+- El CI usa un worker por defecto. Define [`workers`](/reference/config#workers)
+  o pasa `--workers` para aprovecharlo.
+- Usa la rama como clave de la caché, con `main` como alternativa, para que un
+  pull request nuevo parta del historial de `main`. Con
+  [particiones](#sharding), añade el índice de la partición a la clave.
+- `--timings <file>` lee y escribe otra ruta.
+
+## Particiones
+
+`--shard <index/total>` ejecuta una porción de la suite. Cada trabajo ejecuta el
+mismo comando con su propio índice, y todas las máquinas dividen la suite de la
+misma manera. Una partición sin ningún test falla con `NO_TESTS`. Si una
+matriz puede tener más particiones que tests, añade `--pass-with-no-tests`.
+La [referencia de la CLI](/reference/cli#flags) tiene las reglas de división.
+
+En GitHub Actions, una matriz ejecuta un trabajo por cada partición:
+
+```yaml
+jobs:
+  e2e:
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3]
+    steps:
+      # ...
+      - run: npx e2e run --shard ${{ matrix.shard }}/3 --reporter list,junit
+```
+
+Sube el `report.json` y el `junit.xml` de cada partición con un nombre que
+incluya el índice de la partición. e2e todavía no puede combinar informes de
+particiones.
+
+## Repetir los fallos
+
+`--last-failed` ejecuta solo los tests que no pasaron en la ejecución
+anterior, según el `report.json` del directorio de salida. Ejecútalo en el
+mismo paso que la primera ejecución:
+
+```yaml
+      - run: npx e2e run || npx e2e run --last-failed
+```
+
+La repetición conserva los artefactos de la primera ejecución y escribe los
+suyos en `rerun-<n>/` dentro del directorio de cada test, de modo que una
+sola subida contiene ambos. La [referencia de la CLI](/reference/cli#flags)
+enumera qué cuenta como no superado.
+
+Un trabajo aparte no tiene ningún informe en su ejecutor. Descárgalo primero al
+directorio de salida, o vuelve a ejecutar el trabajo fallido.
+
+## Siguiente
+
+<CardGroup cols={2}>
+  <Card title="Comentarios en pull requests" icon="code-pull-request" href="/github">
+    Un comentario por ejecución, editado en el mismo lugar al repetirla.
+  </Card>
+  <Card title="Referencia de la CLI" icon="terminal" href="/reference/cli">
+    Banderas, generadores de informes y todos los códigos de salida.
+  </Card>
+</CardGroup>

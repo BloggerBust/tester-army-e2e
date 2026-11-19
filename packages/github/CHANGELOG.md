@@ -1,5 +1,11 @@
 # @e2e-dev/github
 
+## 0.4.6
+
+### Patch Changes
+
+- [#1965](https://github.com/e2e-inc/e2e/pull/1965) [`60d29cf`](https://github.com/e2e-inc/e2e/commit/60d29cfe4c9d88b00659e0d0e00b8973d61e7391) Thanks [@szymonrybczak](https://github.com/szymonrybczak)! - List the maintainers' `@e2e.com` addresses in `contributors`.
+
 ## 0.4.5
 
 ### Patch Changes

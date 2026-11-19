@@ -4,6 +4,7 @@
   <a href="https://www.npmjs.com/package/e2e"><img alt="npm version" src="https://img.shields.io/npm/v/e2e.svg?style=for-the-badge&labelColor=000000" /></a>
   <a href="https://www.npmjs.com/package/e2e"><img alt="npm monthly downloads" src="https://img.shields.io/npm/dm/e2e.svg?style=for-the-badge&labelColor=000000" /></a>
   <a href="./LICENSE"><img alt="License: Apache-2.0" src="https://img.shields.io/badge/license-Apache--2.0-green.svg?style=for-the-badge&labelColor=000000" /></a>
+  <a href="https://www.skills.sh/e2e-inc/e2e"><img alt="skills.sh installs" src="https://www.skills.sh/b/e2e-inc/e2e?style=for-the-badge&labelColor=000000" /></a>
   <a href="https://e2e.com/discord"><img alt="Join the community on Discord" src="https://img.shields.io/badge/Join%20the%20community-5865F2.svg?style=for-the-badge&logo=discord&logoColor=white&labelColor=000000" /></a>
 </p>
 
@@ -75,6 +76,7 @@ every tool.
 | Package | What it does |
 | --- | --- |
 | [`e2e`](https://www.npmjs.com/package/e2e) | The SDK, runner, and CLI. |
+| [`@e2e-dev/core`](https://e2e.com/docs/core) | Drives a browser or a device from your own program, with an optional agent and no test runner. `e2e` is built on it. |
 | [`@e2e-dev/web`](https://www.npmjs.com/package/@e2e-dev/web) | Browser engine: Chromium, Firefox, and WebKit through Playwright. |
 | [`@e2e-dev/mobile`](https://www.npmjs.com/package/@e2e-dev/mobile) | iOS and Android engine: simulators and emulators through agent-device. |
 | [`@e2e-dev/decision`](https://e2e.com/docs/decision-models) | Decision-model executors for bounded semantic actions and assertions, and `decisionFilter()`, which leaves out the tests a pull request is unlikely to affect. |

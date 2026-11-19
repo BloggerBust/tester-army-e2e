@@ -1,0 +1,296 @@
+---
+title: Kódovací agenti
+description: Dej kódovacímu agentovi skill, živou relaci s aplikací a reporty, se kterými může psát a ladit testy.
+"og:image": "https://e2e.com/docs/images/og/coding-agents.png?v=c6990935d7"
+"twitter:image": "https://e2e.com/docs/images/og/coding-agents.png?v=c6990935d7"
+---
+
+Kódovací agent, jako je Claude Code, Codex nebo Cursor, umí psát, spouštět
+a ladit testy e2e. Naučí se e2e ze skillu, aplikaci ovládá přes server
+`e2e mcp` a u neúspěšného testu čte jeho trace stránku.
+
+## Instalace skillu
+
+<CodeGroup>
+```bash npm
+npx e2e init
+```
+
+```bash pnpm
+pnpm dlx e2e init
+```
+
+```bash bun
+bunx e2e init
+```
+</CodeGroup>
+
+| Cesta | Používá |
+| --- | --- |
+| `.agents/skills/e2e/` | Codex, Cursor, OpenCode a další agenti, kteří čtou `.agents/skills` |
+| `.claude/skills/e2e/` | Claude Code. Když jsou nainstalované obě varianty, jde o symlink na `.agents/skills/e2e/`. |
+
+Kopie obsahuje `SKILL.md` a referenční materiály k jednotlivým tématům.
+[`e2e upgrade`](/reference/cli#e2e-upgrade) ji aktualizuje, a to i poté, co
+upgraduješ e2e správcem balíčků. Bez `init` nainstaluje skill příkaz
+`npx skills add e2e-inc/e2e` a `npx e2e guide [topic]` ho vypíše
+z nainstalovaného balíčku. Plugin popsaný níže nainstaluje všechny tři
+skilly e2e pro každý projekt.
+
+`init` nechává instrukce tvého projektu beze změny. Pro agenty, kteří
+potřebují odkaz, přidej tento řádek:
+
+```md title="AGENTS.md"
+End-to-end tests use e2e; read .agents/skills/e2e/SKILL.md before writing or running one.
+```
+
+Balíček obsahuje i tuto dokumentaci jako stránky `.mdx` pro čtení offline,
+v projektu s jedním balíčkem v `node_modules/e2e/docs`. Odkazu jako
+`/reference/cli` odpovídá soubor `docs/reference/cli.mdx`.
+
+<Accordion title="Instalace pluginu pro Claude Code, Codex nebo Cursor">
+
+Repozitář e2e slouží jako marketplace pluginů pro Claude Code a Codex
+a také pro Grok Build, který čte soubory Claude Code. Cursor načítá plugin
+ze své lokální složky s pluginy:
+
+<CodeGroup>
+```bash Claude
+claude plugin marketplace add e2e-inc/e2e
+claude plugin install e2e@e2e
+```
+
+```bash Codex
+codex plugin marketplace add e2e-inc/e2e
+codex plugin add e2e@e2e
+```
+
+```bash Cursor
+repo=$(mktemp -d)
+git clone --depth 1 https://github.com/e2e-inc/e2e "$repo"
+mkdir -p ~/.cursor/plugins/local
+rm -rf ~/.cursor/plugins/local/e2e
+cp -R "$repo/plugins/e2e" ~/.cursor/plugins/local/
+```
+</CodeGroup>
+
+Spusť novou relaci. V Cursoru spusť **Developer: Reload Window**. V Cursoru
+Teams a Enterprise potřebují lokální pluginy administrátorské nastavení
+**Allow Local Plugin Imports**, nebo administrátor naimportuje `e2e-inc/e2e`
+jako týmový marketplace. Plugin přidá skilly
+`e2e`, `create-verification-skill` a `migrate-to-e2e` a
+[MCP server](/mcp-server), ne balíček npm. Další dva skilly vyvoláš pod
+názvem pluginu: `/e2e:<skill>` v Claude Code, `$e2e:<skill>` v Codexu
+a `/<skill>` v Cursoru.
+
+Verze pluginu sleduje vydání e2e. Pro aktualizaci spusť tyto příkazy
+a začni novou relaci. V Cursoru znovu spusť příkazy uvedené výše.
+
+<CodeGroup>
+```bash Claude
+claude plugin marketplace update e2e
+claude plugin update e2e@e2e
+```
+
+```bash Codex
+codex plugin marketplace upgrade e2e
+```
+</CodeGroup>
+
+</Accordion>
+
+<Accordion title="Instalace v OpenClaw nebo Hermes Agent">
+
+Všechny tři skilly jsou zveřejněné na [ClawHub](https://clawhub.ai/) pod
+`@e2e`. Hermes Agent čte repozitář jako tap:
+
+<CodeGroup>
+```bash OpenClaw
+openclaw skills install @e2e/e2e
+openclaw skills install @e2e/create-verification-skill
+openclaw skills install @e2e/migrate-to-e2e
+```
+
+```bash Hermes
+hermes skills tap add e2e-inc/e2e
+hermes skills install e2e-inc/e2e/e2e
+```
+</CodeGroup>
+
+</Accordion>
+
+## Nech agenta používat aplikaci
+
+`e2e mcp` dá agentovi živou relaci s tvou aplikací. Agent si v ní ověří
+lokátory proti obrazovce dřív, než je zapíše, a zkontroluje i vlastní změny
+UI. Příkaz `init` zaregistruje server. Nastavení a ukázkové prompty najdeš na
+stránce [MCP server](/mcp-server).
+
+## Jak agent píše a spouští test
+
+Skill agentovi říká, aby si nejdřív přečetl konfiguraci a některý
+existující test. S `e2e mcp` projde postup v relaci a každý krok zapíše
+hned, jak ho provede. Známá pole a přesné hodnoty dostanou volání `screen`
+s lokátory, které odpovídaly jedinému uzlu:
+
+```ts title="tests/checkout.e2e.ts"
+import { test, expect, credentials } from 'e2e';
+
+test('a signed-in user reaches checkout', async ({ screen, app, agent }) => {
+  const user = credentials.user('customer');
+  await app.open('/login');
+  await screen.getByLabel('Email').fill(user.username);
+  await screen.getByLabel('Password').fill(user.password);
+  await screen.getByRole('button', 'Sign in').click();
+  await expect(screen.getByRole('heading', 'Welcome back')).toBeVisible();
+
+  await agent.act('Add the cheapest item on the page to the cart');
+  await expect(screen.getByRole('status', 'Cart')).toHaveText('1 item');
+  await agent.act('Open the cart');
+  await expect(screen.getByRole('heading', 'Your cart')).toBeVisible();
+});
+```
+
+- **Jeden `agent.act` na každý [atomický úkol](/core-concepts#goals), po něm
+  `expect`.** `expect` selže, když agent udělal něco jiného. Matcher
+  lokátoru nebo jiná
+  [ověřovací kontrola](/cache#when-a-recording-is-written) navíc umožní
+  cache krok přehrát.
+- **Žádné uspávání.** Lokátory se dotazují opakovaně, akce čekají na svůj
+  cíl a `expect` to zkouší znovu až do vypršení timeoutu.
+- **Tajné klíče přes `credentials.user(name)`.** Deklaruj je v konfiguraci.
+  Nikdy je nepiš do testu.
+
+Během iterací agent spouští jen test, na kterém pracuje, podle řádku, na
+kterém začíná jeho `test(`. S `--action-timeout 5000` selže špatný lokátor
+po 5 s místo 30 s:
+
+<CodeGroup>
+```bash npm
+npx e2e run tests/checkout.e2e.ts:3 --action-timeout 5000
+```
+
+```bash pnpm
+pnpm exec e2e run tests/checkout.e2e.ts:3 --action-timeout 5000
+```
+
+```bash bun
+bunx e2e run tests/checkout.e2e.ts:3 --action-timeout 5000
+```
+</CodeGroup>
+
+Chyby CLI, konfigurace a načítání testů agent opraví, než test spustí znovu.
+Nahrávky v cache neupravuje.
+
+Agent nechává replay cache zapnutou, takže úkol, jehož kontrola prošla, se
+přehraje bez volání modelu. Opakování vypne, protože opakovaný pokus spouští
+všechny úkoly naživo. Když test projde, agent odebere `--action-timeout`
+a spustí ho jednou s `--no-cache`, aby ověřil, že živý agent splní
+každý úkol. Viz
+[Opakované spuštění testu během opravy](/cache#rerun-a-test-while-you-fix-it).
+
+## Jak agent čte selhání
+
+Ve výchozím nastavení ([`trace`](/reference/config#trace)) běh zapíše trace
+stránku pro každý neúspěšný, časově vypršelý, přerušený nebo nestabilní
+(flaky) test, a to do adresáře testu v `.e2e/results/`. `.e2e` je výchozí
+`output`. Terminál uvede stránku pod každým neúspěšným testem jako
+`❯ trace .e2e/results/<test>/trace.md`.
+
+Agent čte tuto stránku, ne `.e2e/report.json`, který obsahuje stejná fakta
+pro [skripty](/debugging). Stránka obsahuje řádek, na kterém test selhal,
+a každý krok s tím, co udělal: uzel, na který akce zamířila, hodnoty, které
+aserce přečetla, rozhodnutí cache, chyby z konzole a neúspěšné požadavky.
+Najdeš v ní také poslední tahy agenta a obrazovku v okamžiku selhání.
+
+Agent test opraví na základě těchto důkazů. Opraví každý řádek, ke kterému
+důkazy vedou, nejen ten, který selhal. Test se zastaví na prvním neúspěšném
+kroku, takže agent před dalším během zkontroluje i řádky za ním.
+
+Pokud potřebuje vidět obrazovku, kterou stránka neukazuje, otevře ji
+v relaci MCP nejkratší cestou, na webu třeba přes její URL. Celý postup
+znovu od začátku neprochází.
+
+Pro podrobnosti o voláních modelu přidá agent `--ai-trace` a trace si
+přečte pomocí [unbox-ai](/debugging#agent-steps). V kombinaci
+s `--no-cache` zachytí všechna volání modelu v celém postupu. Surovou trace
+neotevírej v kontextu agenta. Opakuje prompty a může mít i několik
+megabajtů.
+
+## Vygeneruj ověřovací skill pro svou aplikaci
+
+Skill e2e učí runner, ne tvou aplikaci. Skill
+`create-verification-skill` napíše lokální skill projektu
+`.agents/skills/verify-<app>/`, který tvou aplikaci zná, a jednou ho
+otestuje, než ho předá.
+
+<CodeGroup>
+```bash npm
+npx skills add e2e-inc/e2e --skill create-verification-skill
+```
+
+```bash pnpm
+pnpm dlx skills add e2e-inc/e2e --skill create-verification-skill
+```
+
+```bash bun
+bunx skills add e2e-inc/e2e --skill create-verification-skill
+```
+</CodeGroup>
+
+Potom agenta požádej o `/create-verification-skill`.
+
+<Accordion title="Co vygenerovaný skill obsahuje">
+- Příkazy pro spuštění a diagnostiku (doctor) z tvé konfigurace.
+- Dva způsoby, jak aplikaci ovládat: živou relaci `e2e mcp` a test.
+- Důkazy, které si ověření uchovává.
+- Mapu funkcí s jedním zadáním `e2e explore` pro každou funkci, aby se
+  [bug bash](/bug-bash) mohl z mapy rozvětvit.
+
+Vygenerovaný skill uvádí jen to, co o tvé aplikaci skutečně platí, a pro
+všechno ostatní odkazuje na skill e2e. Vychází ze skillu
+[create-verification-skill](https://github.com/cursor/plugins/tree/main/pstack/skills/create-verification-skill)
+z pstacku od poteta, jen místo ručně psaného harnessu používá e2e.
+</Accordion>
+
+## Migrace existující sady testů
+
+Skill `migrate-to-e2e` převádí sadu testů z Playwrightu, Cypressu,
+Selenia, Appia, Detoxu, Maestra nebo TesterArmy na e2e po částech, jednu
+část za relaci. Stará sada běží dál vedle nových testů, takže můžeš
+skončit po kterékoli relaci.
+
+<CodeGroup>
+```bash npm
+npx skills add e2e-inc/e2e --skill migrate-to-e2e
+```
+
+```bash pnpm
+pnpm dlx skills add e2e-inc/e2e --skill migrate-to-e2e
+```
+
+```bash bun
+bunx skills add e2e-inc/e2e --skill migrate-to-e2e
+```
+</CodeGroup>
+
+Potom agenta požádej o `/migrate-to-e2e`. Převede část, kterou vybereš,
+a každý převedený test spustí třikrát na každém cíli. Soubor `MIGRATION.md`
+zaznamenává postup pro další relaci. Volitelně agent zanese do aplikace
+dočasnou chybu, například špatnou celkovou částku v pokladně, a ověří, jestli
+na ní selžou obě sady. Starý test smaže jen tehdy, když to potvrdíš. Nejdřív
+si přečte průvodce migrací pro tvůj runner:
+[Playwright](/migrate/playwright), [Cypress](/migrate/cypress),
+[Selenium](/migrate/selenium), [Appium](/migrate/appium), [Detox](/migrate/detox),
+[Maestro](/migrate/maestro) nebo [TesterArmy](/migrate/testerarmy).
+
+## Co dál
+
+<CardGroup cols={2}>
+  <Card title="Reference CLI" icon="terminal" href="/reference/cli">
+    init, guide, mcp a run, přepínač po přepínači.
+  </Card>
+  <Card title="Ladění běhu" icon="bug" href="/debugging">
+    Report, artefakty a přepínače pro agenta.
+  </Card>
+</CardGroup>

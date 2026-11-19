@@ -13,11 +13,12 @@ import type { SkipInfo } from '@e2e-dev/core/lib/run/records';
 import type { SerializedError } from '@e2e-dev/core/lib/internal/errors';
 import { resultId } from '@e2e-dev/core/lib/internal/ids';
 import { packageVersion } from '@e2e-dev/core/lib/internal/package-version';
-import type { RunEvent, RunEventFact, RunEventOf, RunEventResult, SetupStep } from '../run/events.ts';
+import type { RunEventFact, RunEventOf, RunEventResult, SetupStep } from '../run/events.ts';
 import type { StepPrompt } from '../run/step-hold.ts';
 import type { AppLogRecord, StepRecord } from '@e2e-dev/core/lib/run/steps';
 import { cleanupErrorsOf, expectedFailureOf, failureBeforeSkip, type ArtifactRecord, type AttemptRecord, type AttemptStatus, type FailureEvidence, type ResultStatus, type SerialGroupRecord } from '@e2e-dev/core/lib/run/records';
 import type { Reporter, ReporterSummary } from '../run-types.ts';
+import { builtin } from './builtin-id.ts';
 import { projectSource } from './build.ts';
 import { codeFrame, userFrame } from './code-frame.ts';
 import type { TerminalProgress } from './progress.ts';
@@ -95,13 +96,11 @@ export interface ListReporterOutput {
   raw?(text: string): void;
 }
 
-export interface ListReporterOptions {
+export interface ListViewOptions {
   /** Paint the live window; defaults to whether stdout is a TTY. */
   live?: boolean;
   /** Emit ANSI colors; defaults to picocolors' detection (TTY, CI, FORCE_COLOR). */
   colors?: boolean;
-  /** The run holds its steps (`e2e run --step`): the live window lists every finished step, not only agent ones. */
-  stepping?: boolean;
   /** The compact progress renderer that replaces the live tree and per-test rows. */
   progress?: TerminalProgress;
 }
@@ -289,13 +288,63 @@ const DEFAULT_OUTPUT: ListReporterOutput = {
   raw: (text) => process.stdout.write(text),
 };
 
+/** Options of the built-in `list` reporter. */
+export interface ListReporterOptions {
+  /** The terminal stream it prints to; without it, `stdout`, or `stderr` beside `json`, as the `list` id. */
+  readonly stream?: 'stdout' | 'stderr';
+}
+
 /**
- * Renders the run's event stream as the CLI's human-readable output. The
- * reporter is one sink on the run's single event spine, so it can only show
- * what every other sink receives.
+ * The built-in `list` reporter: the run for a person in the terminal, with a
+ * live window of what is running on a TTY. It prints what user code writes,
+ * a test's under its title and the runner's under `runner`, the `--step`
+ * prompt, and, last, every reporter's summary rows.
  */
-export class ListReporter implements Reporter {
-  readonly name: 'list' | TerminalProgress['name'];
+export function list(options: ListReporterOptions = {}): Reporter {
+  const stream = options.stream ?? 'stdout';
+  return runView('list', stream, options.stream === undefined, (output) => new ListReporter(output, { live: process[stream].isTTY === true }));
+}
+
+/**
+ * The terminal reporters share one view of the run's events and output.
+ * A run's first event starts a fresh view, since
+ * `--watch` hands one reporter every run and a run whose config fails to
+ * load starts without `run-started`.
+ */
+export function runView(id: 'list' | TerminalProgress['name'], stream: 'stdout' | 'stderr', asId: boolean, create: (output: Required<ListReporterOutput>) => ListReporter): Reporter {
+  const output = {
+    write: (line: string) => void process[stream].write(`${line}\n`),
+    raw: (text: string) => void process[stream].write(text),
+  };
+  let view: ListReporter | undefined;
+  const current = (): ListReporter => (view ??= create(output));
+  return builtin(id, {
+    name: id,
+    printsTo: stream,
+    onEvent: (event) => {
+      // A test's output arrives through `onOutput`, with the runner's, in the order it was printed.
+      if (event.type !== 'output') current().handle(event);
+    },
+    onOutput: ({ stream: from, text, target, pair }) => {
+      if (target === undefined) current().processOutput(from, text);
+      else current().handle({ type: 'output', target, pair, stream: from, text });
+    },
+    onStepPrompt: (prompt) => current().showStepPrompt(prompt),
+    onSummary: (rows) => {
+      const finished = current();
+      view = undefined;
+      finished.endProcessOutput();
+      finished.rows(rows);
+    },
+  }, asId);
+}
+
+/**
+ * The `list` reporter's view of one run: renders the run's event stream as
+ * the CLI's human-readable output. It is one sink on the run's single event
+ * spine, so it can only show what every other sink receives.
+ */
+export class ListReporter {
   private readonly progress: TerminalProgress | undefined;
   private readonly pc: Colors;
   private readonly window: LiveWindow;
@@ -319,7 +368,8 @@ export class ListReporter implements Reporter {
   private readonly pairs = new Map<string, RunningTest>();
   /** Whether a live window paints; without one, finished steps stream permanently. */
   private readonly live: boolean;
-  private readonly stepping: boolean;
+  /** The run holds its steps (`e2e run --step`), as `run-started` says: the live window lists every finished step, not only agent ones. */
+  private stepping = false;
   /** The `e2e run --step` prompt up now, shown under its test. */
   private prompt: StepPrompt | undefined;
   /** The prompt line printed last without a live window, so `h`, which changes nothing there, prints nothing. */
@@ -392,21 +442,15 @@ export class ListReporter implements Reporter {
 
   constructor(
     private readonly output: ListReporterOutput = DEFAULT_OUTPUT,
-    options: ListReporterOptions = {},
+    options: ListViewOptions = {},
   ) {
     this.progress = options.progress;
-    this.name = this.progress?.name ?? 'list';
     const live = this.progress === undefined && (options.live ?? process.stdout.isTTY === true) && output.raw !== undefined;
     this.live = live;
-    this.stepping = options.stepping ?? false;
     this.pc = picocolors.createColors(options.colors ?? (live || picocolors.isColorSupported));
     this.separator = this.pc.dim(' > ');
     this.tree = new RunningTree(this.pc, (target) => this.badge(target));
     this.window = new LiveWindow(live ? output.raw?.bind(output) : undefined, (room) => this.renderWindow(room));
-  }
-
-  onEvent(event: RunEvent): void {
-    this.handle(event);
   }
 
   /**
@@ -607,6 +651,7 @@ export class ListReporter implements Reporter {
     this.projectRoot = event.projectRoot;
     this.artifactsRoot = event.artifactsRoot;
     this.targets = event.targets;
+    if (event.stepping === true) this.stepping = true;
     this.launchedAt = new Date();
     const version = packageVersion(import.meta.url, '../../package.json', '0.0.0');
     this.print('');
@@ -836,7 +881,8 @@ export class ListReporter implements Reporter {
     const title = this.titledAs(result.test.titlePath.join(' > '), result.agent, result.repeat);
     const declared = projectSource(this.projectRoot, result.test.source, result.test.file);
     const declaredLine = declared?.file === result.test.file ? declared.line : undefined;
-    this.progress?.result({ target: result.target.name, file: result.test.file, title, status: result.status });
+    const row = this.progress?.result({ target: result.target.name, file: result.test.file, title, status: result.status });
+    if (row !== undefined) this.print(row);
     if (cleanupErrors.length > 0) {
       this.cleanupFailures.push({ title, error: cleanupErrors[0]! });
     }

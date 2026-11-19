@@ -177,6 +177,31 @@ describe('planning', () => {
     expect(log).toEqual(['setup:owner', 'setup:member', 'setup:other']);
   });
 
+  it('sets up a fixture written later before the one that names it after an engine fixture', async () => {
+    const log: string[] = [];
+    const seen: unknown[] = [];
+    const reading = (name: string, uses: readonly string[], options: FixtureOptions = {}) =>
+      fixture(name, async (fixtures, use) => {
+        log.push(`setup:${name}`);
+        seen.push(fixtures.owner);
+        await use(name);
+      }, { ...options, uses });
+    const chain = [
+      reading('afterBuiltIn', ['app', 'owner']),
+      reading('afterEngineFixture', ['gadget', 'owner']),
+      reading('afterEngineUser', ['afterBuiltIn', 'late']),
+      logged(log, 'owner', 'O'),
+      logged(log, 'late', 'L'),
+    ];
+    const names = ['afterBuiltIn', 'afterEngineFixture', 'afterEngineUser'];
+    const plan = planAttempt(toyTarget(), testNaming(chain, names), []);
+    expect(plannedNames(plan)).toEqual(['owner', 'afterBuiltIn', 'afterEngineFixture', 'late', 'afterEngineUser']);
+    expect(plan.usesEngine).toBe(true);
+    await attempt(chain, names, { builtIns: { app: {}, gadget: {}, platform: 'toy' } }).setUp();
+    expect(log).toEqual(['setup:owner', 'setup:afterBuiltIn', 'setup:afterEngineFixture', 'setup:late', 'setup:afterEngineUser']);
+    expect(seen).toEqual(['O', 'O', undefined]);
+  });
+
   it('resolves the attempt as one unit: what its beforeEach and afterEach hooks name is set up with what the body names', async () => {
     const log: string[] = [];
     const chain = [logged(log, 'a', 'A'), logged(log, 'b', 'B'), logged(log, 'c', 'C'), logged(log, 'd', 'D')];

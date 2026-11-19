@@ -3,9 +3,11 @@
  * Copilot, and Devin plugin. Each skill's agents/openai.yaml and the plugin's assets belong
  * to the plugin; every other skill file, the license, every manifest's version
  * (the runner's, so plugin installs update with each release), the Claude,
- * Cursor, Devin, and Agent Plugins manifests (from Codex's), and .mcp.json and
- * mcp.json, which pin the MCP server's `npx` launcher to that version, are
- * generated here. `version-packages`
+ * Cursor, Devin, and Agent Plugins manifests (from Codex's), and mcp.json,
+ * which pins the MCP server's `npx` launcher to that version, are generated
+ * here. The Claude plugin carries no MCP server, so there is no .mcp.json:
+ * Claude Code (and Codex without a path) loads one from the plugin root by
+ * default. `version-packages`
  * runs it after `changeset version`. Use --check in CI to report missing,
  * stale, or removed generated files.
  */
@@ -95,20 +97,21 @@ const json = (value: unknown) => Buffer.from(`${JSON.stringify(value, null, 2)}\
 
 const versioned = { ...codexManifest, version: runner.version };
 generated.set(join(plugin, '.codex-plugin/plugin.json'), json(versioned));
-// Claude reads the same top-level fields plus its directory listing's name and links; JSON.stringify
-// drops Codex's `interface` block.
+// Claude reads the same top-level fields plus its directory listing's name and links, without
+// the MCP server; JSON.stringify drops the undefined fields.
 generated.set(
   join(plugin, '.claude-plugin/plugin.json'),
   json({
     ...versioned,
     interface: undefined,
+    mcpServers: undefined,
     displayName: codexManifest.interface.displayName,
     documentationUrl: 'https://e2e.com/docs',
     privacyPolicyUrl: codexManifest.interface.privacyPolicyURL,
     supportUrl: codexManifest.interface.supportURL,
   }),
 );
-// Cursor adds a display name and one logo.
+// Cursor adds a display name and one logo, and shares Codex's path to mcp.json.
 generated.set(
   join(plugin, '.cursor-plugin/plugin.json'),
   json({
@@ -135,7 +138,7 @@ generated.set(
   }),
 );
 generated.set(join(plugin, 'LICENSE'), readFileSync(join(root, 'LICENSE')));
-// Claude's plugin directory refuses a launcher that fetches an unpinned package.
+// Pinned so the plugin's server runs the e2e release the plugin version matches.
 const server = { command: 'npx', args: ['-y', `e2e@${runner.version}`, 'mcp'] };
 // Devin's marketplace card (https://github.com/CognitionAI/devin-marketplace): a description
 // without a trailing period, a short one of 40 characters or fewer, a logo path inside the
@@ -155,8 +158,8 @@ generated.set(
     mcpServers: { e2e: server },
   }),
 );
-generated.set(join(plugin, '.mcp.json'), json({ mcpServers: { e2e: server } }));
-// The Agent Plugins MCP config Copilot reads: its own $schema and an explicit transport type.
+// The Agent Plugins MCP config Copilot finds by convention and Codex and Cursor reach by path:
+// its own $schema and an explicit transport type, both of which Codex ignores.
 generated.set(
   join(plugin, 'mcp.json'),
   json({
@@ -181,6 +184,9 @@ for (const [path, content] of generated) {
   }
 }
 
+if (existsSync(join(plugin, '.mcp.json'))) {
+  problems.push('plugins/e2e/.mcp.json would give the Claude plugin an MCP server; delete it');
+}
 if (check && stale.length > 0) {
   problems.push(`Plugin files are out of date; run pnpm plugins:sync:\n${stale.join('\n')}`);
 }

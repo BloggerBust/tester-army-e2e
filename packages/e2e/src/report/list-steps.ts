@@ -73,22 +73,38 @@ export function stepLine(pc: Colors, step: FinishedStep, options: StepLineOption
   return `${head}${quotedLabel(step.label, room)} ${tail}`;
 }
 
-/** What Enter does at an `e2e run --step` prompt: it runs every step on it. */
+/** What Enter does at an `e2e run --step` prompt: it runs every step on it, or resumes the test at a pause. */
 function enterDoes(prompt: StepPrompt): string {
+  if (prompt.steps[0].step.kind === 'pause') {
+    return 'resume';
+  }
+
   return prompt.steps.length === 1 ? 'run this step' : `run these ${prompt.steps.length} steps`;
 }
 
 /** The prompt's other keys, in `--watch`'s words. */
 const STEP_KEYS = [
-  ['n', 'run to the next test'],
-  ['a', 'run all without stopping'],
+  ['n', 'run this test without holding steps'],
+  ['a', 'run all without holding steps'],
   ['q', 'quit'],
 ] as const;
+
+/** Returns the keys offered besides Enter. `n` and `a` require held steps. */
+function promptKeys(prompt: StepPrompt): readonly (readonly [key: string, does: string])[] {
+  return prompt.holdSteps ? STEP_KEYS : STEP_KEYS.filter(([key]) => key === 'q');
+}
 
 /** Where a held step was called from, as `file:line`, or nothing. */
 function promptSource(step: HeldStep): string {
   const { source } = step;
   return source === undefined ? '' : `${bounded(source.file)}:${source.line}`;
+}
+
+/** Formats a held step or pause with its call site for a plain text prompt. */
+function heldCall(step: HeldStep): string {
+  const source = promptSource(step);
+  const call = step.kind === 'pause' ? `${step.api}()` : `${step.api} ${quotedLabel(step.label)}`;
+  return source === '' ? call : `${call} (${source})`;
 }
 
 /**
@@ -102,13 +118,16 @@ export function stepPromptRows(pc: Colors, prompt: StepPrompt, options: { readon
     const head = `${pc.bold(pc.cyan(`▶ step ${number}`))}  ${pc.dim(step.api)} `;
     const source = promptSource(step);
     const tail = source === '' ? '' : `  ${pc.dim(source)}`;
+    if (step.kind === 'pause') {
+      return `${pc.bold(pc.cyan('▶ paused'))}  ${pc.dim(`${step.api}()`)}${tail}`;
+    }
     const room = options.maxWidth - visibleWidth(head) - visibleWidth(tail) - LABEL_CHROME;
     return `${head}${quotedLabel(step.label, room)}${tail}`;
   });
   const press = (key: string, does: string): string => `${pc.dim('press')} ${pc.bold(key)} ${pc.dim(`to ${does}`)}`;
   const enter = press('enter', enterDoes(prompt));
   const keys = prompt.help
-    ? [enter, ...STEP_KEYS.map(([key, does]) => press(key, does)), press('h', 'hide help')]
+    ? [enter, ...promptKeys(prompt).map(([key, does]) => press(key, does)), press('h', 'hide help')]
     : [`${enter}${pc.dim(',')} ${press('h', 'show help')}${pc.dim(',')} ${press('q', 'quit')}`];
   return [...rows, ...keys.map((line) => `  ${line}`)];
 }
@@ -117,32 +136,39 @@ export function stepPromptRows(pc: Colors, prompt: StepPrompt, options: { readon
 export function stepPromptLine(prompt: StepPrompt): string {
   const [first] = prompt.steps;
   const numbers = prompt.steps.map(({ number }) => number).join(', ');
-  const steps = prompt.steps.map(({ step }) => {
-    const source = promptSource(step);
-    return `${step.api} ${quotedLabel(step.label)}${source === '' ? '' : ` (${source})`}`;
-  });
-  const keys = [`enter to ${enterDoes(prompt)}`, ...STEP_KEYS.map(([key, does]) => `${key} to ${does}`)].join(', ');
-  const at = prompt.steps.length === 1 ? 'step' : 'steps';
-  return `paused at ${at} ${numbers} of ${bounded(first.step.title)} [${bounded(first.step.target)}]: ${steps.join('; ')} · press ${keys}`;
+  const steps = prompt.steps.map(({ step }) => heldCall(step));
+  const keys = [`enter to ${enterDoes(prompt)}`, ...promptKeys(prompt).map(([key, does]) => `${key} to ${does}`)].join(', ');
+  const at = first.step.kind === 'pause' ? 'in' : `at ${prompt.steps.length === 1 ? 'step' : 'steps'} ${numbers} of`;
+  return `paused ${at} ${bounded(first.step.title)} [${bounded(first.step.target)}]: ${steps.join('; ')} · press ${keys}`;
 }
 
 /**
  * A held step's prompt as plain lines for a reader with no terminal
- * (`e2e run --step` driven by later commands): the test, the steps waiting
- * with their call sites, the screen they wait on, and the commands that go on.
+ * (`e2e run --step`, or a pause, driven by later commands): the test, the
+ * steps waiting with their call sites, the screen they wait on, and the
+ * commands that go on. `screen` is undefined if it couldn't be read or the
+ * wait ended.
  */
-export function stepPromptText(prompt: StepPrompt): string {
+export function stepPromptText(prompt: StepPrompt, screen: string | undefined): string {
   const [first] = prompt.steps;
+  const pause = first.step.kind === 'pause';
   const numbers = prompt.steps.map(({ number }) => number).join(', ');
-  const lines = [`Paused before ${prompt.steps.length === 1 ? 'step' : 'steps'} ${numbers} of ${bounded(first.step.title)} [${bounded(first.step.target)}]:`];
+  const at = pause ? 'in' : `before ${prompt.steps.length === 1 ? 'step' : 'steps'} ${numbers} of`;
+  const lines = [`Paused ${at} ${bounded(first.step.title)} [${bounded(first.step.target)}]:`];
   for (const { step } of prompt.steps) {
-    const source = promptSource(step);
-    lines.push(`  ${step.api} ${quotedLabel(step.label)}${source === '' ? '' : ` (${source})`}`);
+    lines.push(`  ${heldCall(step)}`);
   }
-  const { screen } = first.step;
   if (screen === undefined) lines.push('Screen: could not be read.');
   else lines.push('Screen:', ...screen.split('\n').map((line) => `  ${bounded(line)}`));
-  lines.push(`Next: e2e run --step next runs ${prompt.steps.length === 1 ? 'it' : 'them'}, e2e run --step rest runs the rest, e2e run --step stop ends the run.`);
+
+  const next = pause ? 'to resume the test' : `to run ${prompt.steps.length === 1 ? 'it' : 'them'}`;
+  let rest = '';
+
+  if (prompt.holdSteps) {
+    rest = pause ? 'e2e run --step rest to resume it without holding any more steps, ' : 'e2e run --step rest to run the rest, ';
+  }
+
+  lines.push(`Next: e2e run --step next ${next}, ${rest}or e2e run --step stop to end the run.`);
   return `${lines.join('\n')}\n`;
 }
 

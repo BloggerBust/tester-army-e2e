@@ -15,7 +15,7 @@ description: 让编码智能体通过 MCP 检查并操作你的应用。
 }
 ```
 
-四个 MCP 工具负责管理会话并调用其中可用的应用工具，`run_tests` 则像 `e2e run` 一样运行测试套件。每次打开会话时，都会从配置中重新加载应用工具目录。
+四个 MCP 工具负责管理会话并调用其中可用的应用工具。每次打开会话时，都会从配置中重新加载应用工具目录。
 
 ## 参考
 
@@ -75,7 +75,6 @@ e2e mcp --max-sessions 8 # default: 4
 | [`tools`](#tools-2) | 列出目录或一个工具 |
 | [`call`](#call) | 运行目录中的一个工具 |
 | [`close_session`](#close_session) | 结束会话及其引擎 |
-| [`run_tests`](#run_tests) | 像 `e2e run` 一样运行测试 |
 
 仅有一个会话打开时，可以省略 `session`。参阅[多个会话](#several-sessions)。
 
@@ -145,47 +144,6 @@ close_session {session: "<id>"}
 | 输入 | 类型 | 必填 | 作用 |
 | --- | --- | --- | --- |
 | `session` | string | 打开多个会话时 | 会话 ID。 |
-
-#### `run_tests`
-
-在独立进程中运行 `e2e run`，并返回命令、退出码及其含义，以及运行输出：使用默认的 `list` 报告器时，包括每个测试、失败详情块和摘要。它不需要会话，也不会影响已打开的会话。要在会话旁运行测试，请参阅[在会话旁运行测试](/mcp-server#run-tests-next-to-a-session)。
-
-```txt
-run_tests {files: ["tests/checkout.e2e.ts:12"]}
-```
-
-```text wrap
-e2e run tests/checkout.e2e.ts:12
-exit 1: a test failed or timed out
-
- RUN  e2e v0.22.0 /work/shop
- ...
-```
-
-| 输入 | 类型 | 必填 | 作用 |
-| --- | --- | --- | --- |
-| `files` | string[] | 否 | `e2e run` 位置参数：文件、目录、glob 或 `file:line`。未提供时，运行配置发现的所有测试。文件不能以 `-` 开头。 |
-| `config` | string（路径） | 否 | `--config`。否则使用服务器的 `--config`。 |
-| `target` | string[] | 否 | `--target`，至少一个。否则使用服务器的 `--target`，再否则运行所有测试目标。 |
-| `grep`、`grepInvert` | string | 否 | `--grep`、`--grep-invert`。 |
-| `tag`、`excludeTag` | string[] | 否 | `--tag`、`--exclude-tag`。 |
-| `lastFailed` | boolean | 否 | `--last-failed`。 |
-| `changedSince` | string | 否 | `--changed-since`。 |
-| `headed` | boolean | 否 | `--headed`。否则使用服务器的 `--headed`。 |
-| `workers`、`retries`、`repeatEach`、`maxFailures`、`actionTimeout` | integer | 否 | `--workers`、`--retries`、`--repeat-each`、`--max-failures`、`--action-timeout`。 |
-| `noCache` | boolean | 否 | `--no-cache`。 |
-| `updateSnapshots` | boolean | 否 | `--update-snapshots`。 |
-
-- 退出码 0 和 1 属于正常结果。其他退出码均为错误结果（`isError: true`）。
-- 输出超过 60,000 个字符时，会保留末尾部分，其中包含失败详情和摘要。一旦运行进入测试阶段，所有结果都会写入 `<output>/report.json`（默认目录为 `.e2e`）；参阅[输出](/reference/cli#output)。
-- 提供进度令牌时，stdout 的每个非空行都会作为进度通知，截断为 1,000 个字符。
-- 取消调用会像按 Ctrl-C 一样中断运行，每隔 15 秒再次中断一次，并在第三次中断后的 15 秒强制终止进程。下一个 `run_tests` 会等待它退出。
-- 服务器关闭时会拒绝新运行，并中断正在进行的运行。服务器意外终止时，运行也会以同样方式中断自身。
-
-| 抛出错误 | 何时发生 |
-| --- | --- |
-| `RUNNER_BUSY` | 已有一个运行正在进行。 |
-| `CANCELLED` | 调用在运行开始前被取消，或服务器正在关闭。 |
 
 ### 目录
 
@@ -273,7 +231,7 @@ call {tool: "run_code", args: {code: "await screen.getByLabel('Email').fill('ada
 | 参数 | 字符串、数字、布尔值、`null`、正则表达式、不含 `${}` 的模板、数组、对象、定位器，或 `credentials.user(name).username` |
 | 机密值 | `credentials.user(name).password` 或 `secrets.get(name)`，仅可作为 `fill` 的值 |
 
-不包含：引擎提供的内置测试夹具（`browser`、`device`）、`expect(screen)`、`toHaveScreenshot`、`app.screenshot`、`screen.debug`、`all`、`setInputFiles` 和值匹配器（`toBe`、`toEqual`）。
+不包含：引擎提供的内置测试夹具（`browser`、`device`）、`expect(screen)`、`toHaveScreenshot`、`app.screenshot`、`screen.debug`、`screen.pause`、`all`、`setInputFiles` 和值匹配器（`toBe`、`toEqual`）。
 
 | 抛出错误 | 何时发生 |
 | --- | --- |
@@ -446,7 +404,7 @@ open_session {engine: {package: "@e2e-dev/mobile", options: {platform: "ios"}}, 
 - **查找。** 服务器先在项目中查找各个包，再在正在运行的 `e2e` 旁查找，最后在 `~/.e2e/engines` 中查找。如果都不存在，错误会给出供所有项目使用的安装命令：`npm install --prefix ~/.e2e/engines @e2e-dev/web`。无法执行该命令的智能体（例如位于无法联网的沙箱中）会请你执行。
 - **`app`** 接受 `url`、`bundleId` 和 `appPath`，与测试目标的 [`app`](/reference/config#the-app-under-test) 相同。`@e2e-dev/web` 需要 `url`。`@e2e-dev/mobile` 需要 `bundleId` 或 `appPath`。
 - **文件。** 项目根目录是服务器的工作目录，会话会在其中写入 `.e2e/`。
-- **测试。** `run_tests` 和 `open_session {test}` 需要配置。要将会话的测试代码行保留为测试，请使用 [`e2e init`](/reference/cli#e2e-init) 写入配置。
+- **测试。** `e2e run` 和 `open_session {test}` 需要配置。要将会话的测试代码行保留为测试，请使用 [`e2e init`](/reference/cli#e2e-init) 写入配置。
 - **多个会话。** 使用 `engine` 打开的会话可以同时运行。基于配置的会话不能与它们同时打开，否则会以 `CONFIG_IN_USE` 失败。
 
 | 抛出错误 | 何时发生 |
@@ -479,7 +437,7 @@ open_session {engine: {package: "@e2e-dev/mobile", options: {platform: "ios"}}, 
 - 客户端断开连接时，
 - 收到 SIGINT 或 SIGTERM 时。
 
-客户端关闭服务器的 stdin 或终止时，会断开连接。此时所有会话都会关闭，会话启动的应用命令会停止，`run_tests` 运行会被中断，服务器随后退出。
+客户端关闭服务器的 stdin 或终止时，会断开连接。此时所有会话都会关闭，会话启动的应用命令会停止，服务器随后退出。
 
 会话执行与测试相同的规则：
 

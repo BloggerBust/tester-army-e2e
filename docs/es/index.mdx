@@ -1,0 +1,73 @@
+---
+title: Introducción
+description: Tests con IA de código abierto para apps web y móviles. Dedica menos tiempo a los tests y más a construir.
+---
+
+import { VideoCard } from '../snippets/video-card.jsx';
+
+e2e es un framework de tests de código abierto para apps web y móviles. Un
+test puede usar [localizadores](/core-concepts#locators) y
+[aserciones](/reference/expect#locator-matchers) exactos, [objetivos](/core-concepts#goals)
+en lenguaje natural que completa un agente, o ambos en el mismo test.
+
+<VideoCard
+  id="NEawZb6Hssw"
+  title="Mira e2e explicado en 2 minutos"
+  subtitle="Encadena objetivos del agente con comprobaciones de localizadores, ejecuta un mismo test en web, iOS y Android, y configura un proyecto en un minuto."
+/>
+
+```ts title="tests/checkout.e2e.ts"
+import { test, expect } from 'e2e';
+
+test('a member upgrades to Pro', async ({ app, agent, screen }) => {
+  await app.open('/settings/billing');
+
+  await agent.act('upgrade the workspace to the Pro plan');
+  await agent.assert('the invoice preview shows a prorated amount');
+
+  await expect(screen.getByRole('status')).toContainText('Pro');
+});
+```
+
+## Por qué e2e
+
+- **Menos tiempo en tests.** Escribe un objetivo en lugar de un guion de
+  selectores y esperas. Cuando cambia la UI, el agente se adapta y corriges
+  menos tests.
+- **Ejecuciones baratas.** e2e registra un paso `agent.act` cuando una
+  comprobación posterior pasa. La siguiente ejecución lo [reproduce](/cache)
+  sin llamadas al modelo y devuelve el control al agente cuando la app cambió.
+  Con el agente integrado, `assert`, `waitFor` y `extract` siempre llaman al
+  modelo.
+
+## Cómo funciona
+
+- **Destinos.** Cada test se ejecuta una vez por destino, como Chromium o un
+  simulador de iPhone. El [motor web](/web) controla navegadores mediante
+  Playwright. El [motor móvil](/mobile) controla simuladores de iOS y
+  emuladores de Android mediante agent-device. También puedes
+  [escribir el tuyo](/writing-an-engine).
+- **Pasos del agente.** `agent.act` completa un objetivo. `agent.assert`,
+  `agent.waitFor` y `agent.extract` juzgan la pantalla. Usa tu propia
+  [suscripción](/subscriptions), [clave de API o modelo local](/models). Los
+  tests sin pasos del agente no necesitan modelo.
+- **Informes.** El ejecutor [oculta los secretos registrados](/security) en la
+  entrada del modelo. Registra pasos, fallos y artefactos en un
+  [informe](/debugging) que puedes leer tú o tu agente de programación.
+
+## Primeros pasos
+
+<CardGroup cols={2}>
+  <Card title="Inicio rápido" icon="rocket" href="/quickstart">
+    Un prompt para tu agente de programación, o configuración manual.
+  </Card>
+  <Card title="Proyectos de ejemplo" icon="folder-open" href="/example-projects">
+    Ejecuta una app web o móvil independiente que ya tiene tests e2e.
+  </Card>
+  <Card title="Conceptos básicos" icon="pen-to-square" href="/core-concepts">
+    Objetivos, aserciones y localizadores.
+  </Card>
+  <Card title="Agentes de programación" icon="robot" href="/coding-agents">
+    Deja que tu agente de programación escriba, ejecute y depure tests.
+  </Card>
+</CardGroup>

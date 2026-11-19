@@ -22,7 +22,9 @@ This sketch assumes a `connect` adapter for the platform:
 import { defineEngine, resolveExpression, type EngineHandle } from 'e2e/engine';
 import { connect } from './client.ts';
 
-export function kiosk(options: { host: string }): EngineHandle {
+export interface KioskEngine extends EngineHandle {}
+
+export function kiosk(options: { host: string }): KioskEngine {
   const client = connect(options.host);
   return defineEngine({
     name: 'kiosk',
@@ -88,6 +90,10 @@ fixture it names, returning that fixture; `screen`, `app`, and `platform` need
 none, since every session holds them. Nothing checks it at runtime. With it, `launch` from [`@e2e-dev/core`](/core) types a session's fixtures
 without a hand-written argument: return `defineEngine<{ device: Device }>(...)`
 from the factory.
+
+Return your own interface from the factory, as `KioskEngine` does above. A
+config that infers its type then names your package. A bare `EngineHandle` can
+fail with TS2883 in a pnpm project that sets `declaration: true`.
 
 `defineEngine` throws `INVALID_CONFIG` when the spec breaks one of these
 rules:

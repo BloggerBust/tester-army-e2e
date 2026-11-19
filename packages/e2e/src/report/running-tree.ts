@@ -98,7 +98,8 @@ export class RunningTree {
    * into one `more running` marker. `room` is the screen under the permanent
    * log; the block pads out to it so the summary sits at the bottom. A test
    * `paused` at the `--step` prompt says so in place of its clock and shows
-   * the prompt under its steps.
+   * the prompt under its steps. The paused test appears first, with enough
+   * rows reserved for its prompt before other tests use the remaining space.
    */
   render(
     running: readonly RunningTest[],
@@ -109,18 +110,19 @@ export class RunningTree {
   ): string[] {
     const { pc } = this;
     const active = new Map<FileGroup, RunningTest[]>();
-    for (const test of running) {
+    for (const test of running.toSorted((a, b) => Number(b === paused?.test) - Number(a === paused?.test))) {
       const tests = active.get(test.group);
       if (tests === undefined) active.set(test.group, [test]);
       else tests.push(test);
     }
     const capacity = terminalRows() - summary.length - CHROME_ROWS;
     let budget = capacity;
+    const maxWidth = terminalColumns() - WIDTH_MARGIN - DETAIL_INDENT.length;
+    const promptRows = paused === undefined ? 0 : stepPromptRows(pc, paused.prompt, { maxWidth }).length;
     const perTest = Math.max(
       0,
-      Math.floor((budget - active.size - running.length) / Math.max(1, running.length)),
+      Math.floor((budget - promptRows - active.size - running.length) / Math.max(1, running.length)),
     );
-    const maxEvents = Math.min(MAX_EVENTS, perTest);
     const lines: string[] = [];
     let hidden = 0;
     if (setup !== undefined && budget > 0) {
@@ -149,7 +151,8 @@ export class RunningTree {
         const state = held === undefined ? this.clock(now - test.startedMs) : pc.bold(pc.cyan('paused'));
         lines.push(`${pc.bold(pc.yellow(`   ${glyph} `))}${test.title} ${state}`);
         budget -= 1;
-        const detail = this.detailRows(test, maxEvents, Math.min(perTest, budget), now, held);
+        const rows = held === undefined ? perTest : perTest + promptRows;
+        const detail = this.detailRows(test, Math.min(MAX_EVENTS, rows), Math.min(rows, budget), now, held);
         lines.push(...detail);
         budget -= detail.length;
       });

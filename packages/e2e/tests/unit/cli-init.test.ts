@@ -355,7 +355,7 @@ describe('e2e init', () => {
       model: "model: opencodeConsole('deepseek-v4.1-flash'),",
       sdk: ['@ai-sdk/openai-compatible', '@ai-sdk/openai', '@ai-sdk/anthropic', '@ai-sdk/google'],
     },
-    { gateway: 'grok', provider: 'spacexai', line: "import { grok } from 'e2e/oauth/grok';", model: "model: grok('grok-4'),", sdk: ['@ai-sdk/xai'] },
+    { gateway: 'grok', provider: 'spacexsi', line: "import { grok } from 'e2e/oauth/grok';", model: "model: grok('grok-4'),", sdk: ['@ai-sdk/xai'] },
   ] as const)('writes a $gateway subscription model and names the sign-in as the next step', async ({ gateway, provider, line, model, sdk }) => {
     answers.engines = ['web'];
     vi.mocked(clack.select).mockResolvedValueOnce(gateway);

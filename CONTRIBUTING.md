@@ -88,7 +88,8 @@ Fix the prose when you find it stale.
 This project is a pnpm monorepo. `packages/` holds what publishes to npm,
 `apps/` the private apps and suites that consume the built packages:
 
-- `packages/e2e`: the published `e2e` package (SDK, runner, CLI, engine contract)
+- `packages/core`: the published `@e2e-dev/core` package: engines, locators, agent, and replay cache without the test runner, and the engine contract
+- `packages/e2e`: the published `e2e` package (SDK, runner, CLI), built on `@e2e-dev/core`
 - `packages/web`: the published `@e2e-dev/web` browser engine
 - `packages/mobile`: the published `@e2e-dev/mobile` mobile engine
 - `packages/decision`: the decision-model executor and test filter on the public `StepExecutor` and `TestFilter` contracts
@@ -174,8 +175,8 @@ We use [changesets](https://github.com/changesets/changesets) to publish new
 versions. It handles bumping the version based on semver, writing the
 changelog, and creating tags and GitHub releases.
 
-If your change affects `e2e`, `@e2e-dev/web`, `@e2e-dev/mobile`,
-`@e2e-dev/decision`, or `@e2e-dev/acp`, add a changeset:
+If your change affects `e2e`, `@e2e-dev/core`, `@e2e-dev/web`,
+`@e2e-dev/mobile`, `@e2e-dev/decision`, or `@e2e-dev/acp`, add a changeset:
 
 ```sh
 pnpm changeset

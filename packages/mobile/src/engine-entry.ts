@@ -5,6 +5,7 @@
  */
 
 export { mobile } from './engine.ts';
+export type { MobileEngine } from './engine.ts';
 /** The engine factory again, as the default export: what `e2e mcp` calls when `open_session` names this package as its `engine`. */
 export { mobile as default } from './engine.ts';
 export type { DevicePermission, LaunchPermissions, MobileOptions, MobilePlatform, PermissionState } from './options.ts';

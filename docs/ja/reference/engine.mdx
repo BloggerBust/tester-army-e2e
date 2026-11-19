@@ -13,7 +13,9 @@ description: 観測、操作、ライフサイクルフック、フィクスチ�
 import { defineEngine, resolveExpression, type EngineHandle } from 'e2e/engine';
 import { connect } from './client.ts';
 
-export function kiosk(options: { host: string }): EngineHandle {
+export interface KioskEngine extends EngineHandle {}
+
+export function kiosk(options: { host: string }): KioskEngine {
   const client = connect(options.host);
   return defineEngine({
     name: 'kiosk',
@@ -71,6 +73,8 @@ export interface EngineHandle<Fixtures extends object = {}> extends Engine {
 ハンドルの各関数は元の仕様に束縛されるため、オブジェクトリテラルだけでなく、クラスインスタンスも本体として使えます。
 
 `Fixtures` は、`{ browser: Browser }` のように、エンジンの [`fixtures`](#contributed-fixtures) が提供するものを型付けします。コンパイラーは、そこで名前を挙げた各フィクスチャに対して、同じ型を返すファクトリーが `fixtures` にあることを要求します。`screen`、`app`、`platform` は全セッションにあるため不要です。実行時の検査はありません。これにより、[`@e2e-dev/core`](/core) の `launch` は、型引数を手書きしなくてもセッションのフィクスチャを型付けできます。ファクトリーから `defineEngine<{ device: Device }>(...)` を返してください。
+
+ファクトリーからは、上の `KioskEngine` のように独自のインターフェースを返してください。型を推論する設定ファイルは、その型をあなたのパッケージ名で参照できます。`EngineHandle` をそのまま返すと、`declaration: true` を設定した pnpm プロジェクトが TS2883 で失敗することがあります。
 
 仕様が次のルールに違反すると、`defineEngine` は `INVALID_CONFIG` を投げます。
 

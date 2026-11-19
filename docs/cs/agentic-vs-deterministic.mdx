@@ -1,0 +1,129 @@
+---
+title: Agentní nebo deterministické
+description: Vyber si pro end-to-end testy agentní nebo deterministické akce a aserce.
+---
+
+Agentní testování ti umožní popsat záměr uživatele a očekávaný výsledek
+přirozeným jazykem. Agent sám zvolí akce, které provede, a posoudí, jestli
+obrazovka odpovídá tvému očekávání. Test se soustředí na výsledek a ty
+nemusíš udržovat selektory, když se mění UI.
+
+Deterministické testování určuje akce a kontroly v kódu. Oba přístupy
+umějí testovat to, čeho uživatel dosáhne, a e2e ti je dovolí kombinovat
+v jednom testu.
+
+## Kdy použít agentní testy?
+
+Agentní testy použij, když tě změny v UI neustále nutí upravovat selektory
+v testech. Hodí se také pro postupy, které vyžadují mnoho interakcí, ale
+dají se snadno popsat přirozeným jazykem, například vyplnění a odeslání
+formuláře.
+
+`agent.act` ti umožní popsat záměr uživatele, třeba uplatnění slevového
+kódu. Agent sám zjistí, které ovládací prvky použít a co s nimi udělat.
+`agent.assert` ověří, jestli obrazovka ukazuje popsaný výsledek, například
+slevu započtenou do celkové částky.
+
+Například uvnitř testu s fixtures `app` a `agent`:
+
+```ts
+await app.open('/checkout');
+await agent.act('apply the discount code SUMMER');
+await agent.assert('the checkout shows code SUMMER applied with a 10% discount');
+```
+
+Nemusíš pojmenovávat pole pro slevový kód, tlačítko, které ho uplatní,
+ani prvek, který zobrazuje výsledek.
+
+Testy vázané na CSS třídy nebo testovací ID je potřeba upravit, kdykoli se
+tyto identifikátory změní. Když přesuneš tlačítko nebo předěláš formulář,
+agent dokáže záměr uživatele provést i tak, podle toho, co je na obrazovce.
+
+Agentní testy umožňují monitorování se skutečnými daty na stagingu nebo
+v produkci bez přípravy deterministických dat, protože se agenti přizpůsobí
+tvé aplikaci. Používej tam testovací účet: model vidí, co je na obrazovce.
+Viz [Zabezpečení](/security).
+
+Pro složitější průchod aplikací napiš posloupnost úkolů přirozeným jazykem.
+Každý úkol omez na jeden výsledek a před pokračováním ho ověř. Jak rozdělit
+průchod na kroky, najdeš v části [Úkoly](/core-concepts#goals).
+
+## Kdy použít agentní aserce?
+
+Agentní aserce se hodí, když stejný požadavek splňuje více různých
+formulací nebo rozvržení. Validační zpráva například může vysvětlit, co je
+špatně, aniž by odpovídala jedné přesné větě:
+
+```ts
+await agent.assert('the error message explains that an email address is required');
+```
+
+Pro vizuální kontrolu přidej `vision: true`, aby model viděl i snímek
+obrazovky:
+
+```ts
+await agent.assert('the chart trends upward', { vision: true });
+```
+
+`agent.assert` ověří aktuální obrazovku a selže, pokud tvrzení neplatí nebo
+nejsou k dispozici dostatečné důkazy. Když UI ještě potřebuje čas, aby se
+dostalo do očekávaného stavu, použij `agent.waitFor`. Obě metody popisuje
+část [Aserce](/core-concepts#assertions).
+
+## Kdy použít deterministické testy?
+
+Pro krátké a stabilní postupy, u kterých už víš, které ovládací prvky
+použít, sáhni po lokátorech. Každé pole a tlačítko určíš v kódu, jako
+v tomto testu slevy:
+
+```ts
+await app.open('/checkout');
+await screen.getByLabel('Discount code').fill('SUMMER');
+await screen.getByRole('button', 'Apply').tap();
+await expect(screen.getByRole('status')).toHaveText('10% off');
+```
+
+Tyto akce a kontroly nevolají žádný model. Dávej přednost rolím a popiskům,
+aby test odkazoval na ovládací prvky, které uživatel zná. Deterministické
+testy nemusí záviset na CSS třídách ani testovacích ID.
+
+Deterministické aserce použij, když umíš očekávaný výsledek vyjádřit jako
+přesnou hodnotu, počet nebo stav. Ověří ho bez úsudku modelu. Pokud musí
+validační zpráva obsahovat konkrétní znění, ověř tento text pomocí
+`expect`.
+
+## Kombinace agentních a deterministických testů
+
+Akce a aserce volíš nezávisle na sobě. Můžeš nechat agenta, aby si našel
+cestu měnícím se UI, a pak ověřit přesnou hodnotu pomocí `expect`:
+
+```ts
+await agent.act('apply the discount code SUMMER');
+await expect(screen.getByRole('status')).toHaveText('10% off');
+```
+
+Můžeš také pomocí lokátorů vyplnit a odeslat formulář a potom pomocí
+`agent.assert` ověřit, jestli jeho validační zpráva vysvětluje problém.
+
+Přizpůsobení se řídí úkolem, který napíšeš. Vágní instrukce může připustit
+výsledek, který jsi nezamýšlel. Pokud záleží na konkrétní cestě, pojmenuj
+ji v úkolu, nebo pro tyto akce použij lokátory. `expect` za `agent.act`
+zachytí úkol, který prošel nesprávným způsobem.
+
+Akce a aserce řízené modelem zvyšují latenci i náklady a mohou se mýlit.
+[Replay cache](/cache) dokáže zopakovat nahrané akce `agent.act` bez
+volání modelu. Aserce se spouštějí znovu při každém běhu testu. Když
+nahrávka přestane odpovídat, agent se může přizpůsobit změněnému UI, pokud
+není zapnutý striktní režim cache. Jak to funguje, popisuje stránka
+[Samoopravné testy](/self-healing).
+
+## Co dál
+
+<CardGroup cols={2}>
+  <Card title="Základní koncepty" icon="lightbulb" href="/core-concepts">
+    Piš úkoly, aserce a kroky s lokátory.
+  </Card>
+  <Card title="Samoopravné testy" icon="bandage" href="/self-healing">
+    Podívej se, jak se agent zotaví, když se nahraný postup změní.
+  </Card>
+</CardGroup>

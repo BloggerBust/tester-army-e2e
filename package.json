@@ -39,8 +39,8 @@
     "bench:ab": "node scripts/bench-ab.ts"
   },
   "contributors": [
-    "Oskar Kwaśniewski <oskar@tester.army>",
-    "Szymon Rybczak <szymon@tester.army>"
+    "Oskar Kwaśniewski <oskar@e2e.com>",
+    "Szymon Rybczak <szymon@e2e.com>"
   ],
   "devDependencies": {
     "@changesets/changelog-github": "1.0.1",

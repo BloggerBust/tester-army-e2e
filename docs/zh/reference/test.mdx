@@ -32,6 +32,8 @@ describe('checkout', { tags: ['billing'] }, () => {
 | [`test.skip`](#test-skip) | `TestCase \| void` |
 | [`test.skipIf`](#test-skipif) | `TestRegistrar` |
 | [`test.runIf`](#test-runif) | `TestRegistrar` |
+| [`test.each`](#test-each) | `EachRegistrar` |
+| [`test.for`](#test-for) | `EachRegistrar` |
 | [`test.fail`](#test-fail) | `TestCase \| void` |
 | [`test.only`](#test-only) | `TestCase` |
 | [`test.setup`](#test-setup) | `TestCase` |
@@ -139,6 +141,61 @@ test.runIf(process.platform === 'linux')('reads inotify events', async ({ app })
 ```
 
 `test.runIf(condition)` 等同于 `test.skipIf(!condition)`。[`test.skipIf`](#test-skipif) 的全部规则都适用。
+
+#### `test.each`
+
+返回一个函数，像 `test(title, fn)` 一样按行的顺序为每一行注册一个测试。用于以不同数据执行相同步骤。
+
+```ts
+test.each([{ user: 'Ada' }, { user: 'Grace' }])('signs in as $user', async ({ user }, { app }) => {
+  await app.open();
+  // ...
+});
+
+test.each([
+  ['standard', '5.00'],
+  ['express', '15.00'],
+])('ships %s for %s', async (speed, price, { screen }) => {});
+```
+
+- 主体先接收行，最后接收测试夹具。当所有行都是数组时，每一行都会展开，因此 `[speed, price]` 以 `(speed, price, fixtures)` 传入。只要有一行不是数组，所有行都会整体传入，即 `(row, fixtures)`，与 Vitest 和 Jest 一致。
+- 主体通过解构行之后的那个参数来列出它使用的[测试夹具](#fixtures)，e2e 只准备这些。不使用测试夹具的主体可以省略该参数。
+- 标题根据行生成：
+
+  | 标题中 | 替换为 |
+  | --- | --- |
+  | `$name`、`$name.path` | 对象行的该键。字符串原样显示，其他值按 Node 的 `inspect` 显示。 |
+  | `%s` | 下一项，以同样方式显示。 |
+  | `%o` | 下一项按 Node 的 `inspect` 显示，因此字符串带引号。 |
+  | `%d` | 下一项转为数字（`Number(item)`）；但 `BigInt` 保留 `n` 后缀，`Symbol` 显示为 `NaN`。 |
+  | `%i`、`%f` | 下一项像 `parseInt` / `parseFloat` 一样读作整数或浮点数：`'42px'` 变为 `42`。在 `%i` 下 `BigInt` 保留 `n` 后缀。 |
+  | `%j` | 下一项的 JSON。循环值显示为 `[Circular]`；函数、`Symbol` 或 `undefined` 显示为 `undefined`。 |
+  | `%#`、`%$` | 从 0 开始的行索引，以及从 1 开始的行号。 |
+  | `%%` | 百分号。 |
+
+  对数组行，各项依次为其元素；其他行本身就是唯一的一项。没有剩余项的占位符，或用于非对象行的 `$name`，保持原样。字符串以外的值始终显示在一行内；字符串按原样显示，包括换行。`Error` 显示为名称和消息，不含堆栈。
+- 标题是测试 ID 的一部分。添加或移动行时 `%#` 和 `%$` 会变化，因此要让 ID 保持稳定，请使用 `$name` 或值占位符。
+- 标题在几处与 Vitest 不同：`$0` 和 `$1` 不读取数组行，`$name` 不从数组行的第一项读取，`%s` 用 `inspect` 而不是对象自己的 `toString` 显示对象（`URL` 不会显示为其 href），`%O` 和 `%c` 不是占位符，也不读取用模板字符串写的表格。函数体也不同：Vitest 的 `test.each` 函数体只接收行，而这里测试夹具跟在行之后。
+- 每一行都是独立的测试，有自己的 ID、报告条目和重试。选项应用于每一行，因此 [`skip`](#skip) 或 [`tags`](#tags) 选项会跳过或标记所有行。
+- 它接受与 [`test`](#test) 相同的两种形式，具有相同测试夹具，对扩展后的 `test` 也一样。
+
+| 抛出 | 条件 |
+| --- | --- |
+| `COLLECTION_ERROR` | 行不是数组、数组为空，或行是模板字符串表格。 |
+| `COLLECTION_ERROR` | 两行生成相同的标题。请在标题中放入能区分各行的占位符。 |
+| `COLLECTION_ERROR` | `%j` 的项因循环以外的原因（例如 `BigInt`）无法转为 JSON。消息会指出是哪一行。 |
+| `COLLECTION_ERROR` | 主体整体接收测试夹具（`async (row, fixtures) => {}`）、用剩余参数接收（`async (...args) => {}`），或违反其他[测试夹具规则](#fixtures)。 |
+
+#### `test.for`
+
+与 [`test.each`](#test-each) 相同，但不展开数组行：主体始终接收 `(row, fixtures)`。标题以相同方式生成。
+
+```ts
+test.for([
+  ['standard', '5.00'],
+  ['express', '15.00'],
+])('ships %s for %s', async ([speed, price], { screen }) => {});
+```
 
 #### `test.fail`
 
@@ -567,7 +624,7 @@ test.setup('authenticate', { sessions: ['member', 'admin'] }, async ({ session }
 
 `session` 仅用于 `test.setup` 主体。[`TestFixtures`](#testfixtures) 描述了每个核心测试夹具。其余测试夹具都是[你自己的测试夹具](#your-own-fixtures)。
 
-测试主体、钩子和测试夹具函数通过解构第一个参数来列出它们使用的测试夹具：`async ({ app, screen }) => {}`。e2e 从函数的源代码中读取这些名称。
+测试主体、钩子和测试夹具函数通过解构第一个参数来列出它们使用的测试夹具：`async ({ app, screen }) => {}`。e2e 从函数的源代码中读取这些名称。[`test.each`](#test-each) 或 [`test.for`](#test-for) 的主体在行之后的那个参数中列出它们。
 
 | 抛出 | 条件 |
 | --- | --- |
@@ -686,6 +743,17 @@ export interface TestRegistrar<Fixtures = TestFixtures & WorkerFixtures> {
   (title: string, options: TestOptions, fn: TestFn<Fixtures>): TestCase;
 }
 
+/**
+ * The two call forms of `test` for `test.each` and `test.for`: one test per
+ * row, each titled from the row. `Args` are the body's arguments.
+ */
+export interface EachRegistrar<Args extends readonly unknown[]> {
+  /** Registers one test per row synchronously during module evaluation. */
+  (title: string, fn: EachFn<Args>): readonly TestCase[];
+  /** Registers one configured test per row synchronously during module evaluation. */
+  (title: string, options: TestOptions, fn: EachFn<Args>): readonly TestCase[];
+}
+
 export interface TestAPI<Fixtures = TestFixtures, Worker = WorkerFixtures> extends TestRegistrar<Fixtures & Worker> {
   /** Registers one skipped test. */
   skip(title: string, fn: TestFn<Fixtures & Worker>): TestCase;
@@ -718,6 +786,30 @@ export interface TestAPI<Fixtures = TestFixtures, Worker = WorkerFixtures> exten
    * skipped when `condition` is falsy, `test.skipIf(!condition)`.
    */
   runIf<Condition>(condition: SynchronousCondition<Condition>): TestRegistrar<Fixtures & Worker>;
+  /**
+   * Returns a function that registers one test per row, like `test(title,
+   * fn)`, in row order. The title is formatted from the row: `$name` and
+   * `$name.path` read an object row, and `%s`, `%d`, `%i`, `%f`, `%j`, `%o`
+   * take an array row's items in order (any other row is the one item). `%#`
+   * is the row index, `%$` the row number, `%%` a percent sign. When every
+   * row is an array, each row is spread into the body's arguments; otherwise
+   * every row is the first one. The fixtures come last:
+   *
+   *   test.each([{ user: 'Ada' }, { user: 'Grace' }])('signs in as $user', async ({ user }, { app }) => {});
+   *   test.each([[1, 2, 3]])('%i + %i = %i', async (a, b, sum, { app }) => {});
+   *
+   * Rows must be a non-empty array. Two rows that format to the same title
+   * fail as duplicate titles. As in a test body, destructure the fixtures
+   * (`{ app }`): e2e sets up only the ones named there.
+   */
+  each<Row extends readonly unknown[] | [unknown]>(rows: readonly Row[]): EachRegistrar<[...Row, Fixtures & Worker]>;
+  each<Row>(rows: readonly Row[]): EachRegistrar<EachArgs<Row, Fixtures & Worker>>;
+  /**
+   * `test.each` that never spreads: the body takes `(row, fixtures)` for
+   * every row, an array row included. Titles format as in `test.each`.
+   */
+  for<Row extends readonly unknown[] | [unknown]>(rows: readonly Row[]): EachRegistrar<[Row, Fixtures & Worker]>;
+  for<Row>(rows: readonly Row[]): EachRegistrar<[Row, Fixtures & Worker]>;
   /** Registers one test that is expected to fail. */
   fail(title: string, fn: TestFn<Fixtures & Worker>): TestCase;
   /**
@@ -1037,6 +1129,21 @@ export type SuiteHookFn = TestHookFn<WorkerFixtures>;
 export type SynchronousBody<Result> = Extract<Result, PromiseLike<unknown>> extends never
   ? () => Result
   : never;
+
+/**
+ * The `test.each` body arguments for the rows' type: array rows spread, then
+ * the fixtures. Rows that are not all arrays are passed whole. Not
+ * distributive, so a mixed table is decided once, as at run time. An
+ * `unknown` row may be either at run time, so only the fixtures, last, are known.
+ */
+export type EachArgs<Row, Fixtures> = [Row] extends [readonly unknown[]]
+  ? [...Row, Fixtures]
+  : unknown extends Row
+    ? [...unknown[], Fixtures]
+    : [Row, Fixtures];
+
+/** A `test.each` or `test.for` body: the row's arguments, then the fixtures. */
+export type EachFn<Args extends readonly unknown[]> = (...args: Args) => void | Promise<void>;
 
 /** A `test.skipIf` or `test.runIf` condition. A Promise is a type error. */
 export type SynchronousCondition<Condition> = Extract<Condition, PromiseLike<unknown>> extends never

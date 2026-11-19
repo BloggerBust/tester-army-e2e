@@ -1,5 +1,6 @@
 import { generateText } from 'ai';
 import { afterEach, describe, expect, it } from 'vitest';
+import { USER_AGENT } from '@e2e-dev/core/lib/internal/client-identity';
 import { createOAuthFetch } from '../../../src/oauth/fetch.ts';
 import { createXaiProvider } from '../../../src/oauth/providers/xai.ts';
 import { MemoryCredentialStore } from './helpers/store.ts';
@@ -11,7 +12,7 @@ import { onFakeTimeouts } from './helpers/time.ts';
 const serve = useServers(afterEach);
 const vendor = useVendor(afterEach);
 
-describe('SpaceXAI login', () => {
+describe('SpaceXSI login', () => {
   it('runs the RFC 8628 device flow against auth.x.ai and reads expiry from the JWT', async () => {
     const exp = Math.floor(Date.now() / 1000) + 900;
     let polls = 0;
@@ -25,7 +26,7 @@ describe('SpaceXAI login', () => {
       }
       expect(form.get('grant_type')).toBe('urn:ietf:params:oauth:grant-type:device_code');
       polls += 1;
-      // SpaceXAI answers pending with 400 and an error field.
+      // SpaceXSI answers pending with 400 and an error field.
       if (polls === 1) json(response, 400, { error: 'authorization_pending', error_description: 'User has not yet authorized' });
       else if (polls === 2) json(response, 400, { error: 'slow_down' });
       else json(response, 200, { access_token: fakeJwt({ exp }), refresh_token: 'rt-1', expires_in: 900 });
@@ -35,6 +36,7 @@ describe('SpaceXAI login', () => {
     const credentials = await onFakeTimeouts(() => provider.login({ onAuth: (info) => (shown = info), onPrompt: async () => '' }));
     expect(shown).toMatchObject({ url: 'https://accounts.x.ai/oauth2/device?user_code=ABCD-EFGH', userCode: 'ABCD-EFGH' });
     expect(credentials).toEqual({ access: fakeJwt({ exp }), refresh: 'rt-1', expires: exp * 1000 });
+    expect(issuer.requests.map((request) => request.headers['user-agent'])).toEqual([USER_AGENT, USER_AGENT, USER_AGENT, USER_AGENT]);
   });
 
   it('refreshes with rotation and keeps the old refresh token when none is returned', async () => {
@@ -50,9 +52,10 @@ describe('SpaceXAI login', () => {
     expect(second).toMatchObject({ access: 'a2', refresh: 'rt-2' });
     rotate = false;
     expect(await provider.refresh(second)).toMatchObject({ access: 'a3', refresh: 'rt-2' });
+    expect(issuer.requests.map((request) => request.headers['user-agent'])).toEqual([USER_AGENT, USER_AGENT]);
   });
 
-  it('serves generateText with the bearer token against the SpaceXAI API', async () => {
+  it.each(['spacexsi', 'spacexai'])('serves generateText with the bearer token against the SpaceXSI API, the login stored under %s', async (stored) => {
     let seen: Received | undefined;
     const api = await serve((request, response) => {
       seen = request;
@@ -76,7 +79,7 @@ describe('SpaceXAI login', () => {
         usage: { prompt_tokens: 3, completion_tokens: 1, total_tokens: 4 },
       });
     });
-    vendor(api, { spacexai: { access: 'xai-tok', refresh: 'rt', expires: 0 } });
+    vendor(api, { [stored]: { access: 'xai-tok', refresh: 'rt', expires: 0 } });
     const model = grok('grok-4');
     expect(model).toMatchObject({ modelId: 'grok-4' });
     expect(model.provider).toMatch(/^xai/);
@@ -97,7 +100,7 @@ describe('SpaceXAI login', () => {
         ],
       });
     });
-    const store = new MemoryCredentialStore({ spacexai: { access: 'xai-tok', refresh: 'rt', expires: 0 } });
+    const store = new MemoryCredentialStore({ spacexsi: { access: 'xai-tok', refresh: 'rt', expires: 0 } });
     const provider = createXaiProvider({ modelsUrl: `${api.url}/v1/language-models` });
     const models = await provider.models!(createOAuthFetch(provider, { store, userAgent: 'test' }));
     expect(seen!.headers['authorization']).toBe('Bearer xai-tok');
@@ -110,7 +113,7 @@ describe('SpaceXAI login', () => {
   it('lists past an entry it cannot read, and fails on a list that is not one', async () => {
     const list = (body: string) => createXaiProvider().models!(async () => new Response(body));
     expect(await list(JSON.stringify({ models: [null, { id: 'grok-4', aliases: 'grok', input_modalities: ['image'] }] }))).toEqual([{ id: 'grok-4', detail: 'vision' }]);
-    await expect(list(JSON.stringify({ models: 'grok-4' }))).rejects.toMatchObject({ code: 'FLOW_FAILED', message: 'the SpaceXAI model list is malformed' });
-    await expect(list('<html>')).rejects.toMatchObject({ code: 'FLOW_FAILED', message: 'the SpaceXAI model list is not JSON' });
+    await expect(list(JSON.stringify({ models: 'grok-4' }))).rejects.toMatchObject({ code: 'FLOW_FAILED', message: 'the SpaceXSI model list is malformed' });
+    await expect(list('<html>')).rejects.toMatchObject({ code: 'FLOW_FAILED', message: 'the SpaceXSI model list is not JSON' });
   });
 });

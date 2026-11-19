@@ -1,0 +1,328 @@
+---
+title: Rychlý start
+description: Nastav e2e jedním promptem pro svého kódovacího agenta, nebo krok za krokem.
+"og:image": "https://e2e.com/docs/images/og/quickstart.png?v=4a3569d569"
+"twitter:image": "https://e2e.com/docs/images/og/quickstart.png?v=4a3569d569"
+---
+
+import { ModelProvider } from '../snippets/model-provider.jsx';
+import { SetupPrompt } from '../snippets/setup-prompt-card.jsx';
+import { Video } from '../snippets/video.jsx';
+import { VideoCard } from '../snippets/video-card.jsx';
+
+export const setupPrompt = `Nastav v tomto projektu end-to-end testy e2e. Dokumentace: \`https://e2e.com/docs/quickstart.md\`
+
+1. Spusť \`npx e2e init --yes\` (nebo odpovídající příkaz pro pnpm či bun, pokud je projekt používá). Vytvoří webovou konfiguraci s Vercel AI Gateway, ukázkový test, skill e2e a konfiguraci MCP. Zatím nic neinstaluje.
+2. Přečti si skill e2e (\`npx e2e guide\` ho vypíše, \`npx e2e guide <topic>\` vypíše jedno téma) a řiď se jím ve všech následujících krocích.
+3. Nasměruj cíl na tuto aplikaci. U webové aplikace nastav její URL a příkaz, který spouští vývojový server. U aplikace pro iOS nebo Android nahraď @e2e-dev/web za @e2e-dev/mobile a přepiš ukázkový test pro mobilní engine.
+4. Zeptej se mě, jaký model použít pro agentní kroky: předplatné ChatGPT, GitHub Copilot, OpenCode Console nebo SuperGrok, API klíč, nebo lokální model. Nastav ho pomocí balíčku jeho poskytovatele. Pokud vyžaduje přihlášení, dej mi příkaz \`npx e2e login\` a počkej, dokud to nepotvrdím.
+5. Nainstaluj závislosti, spusť ukázkový test a opravuj chyby v nastavení, dokud neprojde.
+6. Napiš jeden test pro nejdůležitější uživatelský tok v této aplikaci, spusť ho a uprav ho, dokud neprojde.`;
+
+<VideoCard
+  id="4_9z6QWShLc"
+  title="Začínáme s agentním e2e za 4 minuty"
+  subtitle="V tomto videu Kacper provede jednoduchou aplikaci v Next.js od nuly až k funkční sadě agentních testů."
+/>
+
+## Nastavení s kódovacím agentem
+
+Vlož tento prompt do Claude Code, Codexu, Cursoru nebo jiného kódovacího
+agenta v adresáři své aplikace:
+
+<SetupPrompt>
+
+<Prompt description={setupPrompt} children={setupPrompt} actions={["copy", "cursor"]} />
+
+</SetupPrompt>
+
+Agent nainstaluje [skill e2e](/coding-agents), takže další prompty, například
+„přidej test pro checkout“, už žádné další nastavení nepotřebují.
+
+<Note>
+Použij Node.js 24.8 nebo novější (na Node.js 22 verzi 22.22.3 nebo novější), případně pro webové testy [Bun](/reference/cli#bun) 1.4.3 nebo novější. Ve Windows spouštěj e2e uvnitř WSL. Mobilní testy navíc
+potřebují Xcode s runtimem simulátoru iOS, nebo Android SDK s emulátorem.
+</Note>
+
+## Ruční nastavení
+
+### Spusť svůj první test
+
+<Steps>
+  <Step title="Vytvoř testovací projekt">
+  V adresáři své aplikace spusť:
+
+  <CodeGroup>
+  ```bash npm
+  npx e2e init
+  ```
+
+  ```bash pnpm
+  pnpm dlx e2e init
+  ```
+
+  ```bash bun
+  bunx e2e init
+  ```
+  </CodeGroup>
+
+  Zvol **Web (Playwright)** nebo **Mobile (iOS/Android)**, potom předplatné,
+  poskytovatele modelu, nebo **None** pro testy bez AI. Průvodce vytvoří
+  konfiguraci a ukázkový test, přidá závislosti a nabídne nastavení tvého
+  kódovacího agenta. Existující soubory ponechá.
+
+  <Tabs>
+    <Tab title="Web">
+    Spusť vývojový server své aplikace na `http://localhost:3000`, nebo nastav
+    jeho adresu v `e2e.config.ts`. Můžeš ho také [nechat spustit přes e2e](/web#starting-your-app).
+
+    <Accordion title="Ukázková webová konfigurace a test">
+    Tato konfigurace používá Vercel AI Gateway. Průvodce nastaví poskytovatele, kterého zvolíš.
+
+```ts title="e2e.config.ts"
+import type { E2EConfig } from 'e2e';
+import { web } from '@e2e-dev/web';
+import { gateway } from 'ai';
+
+export default {
+  agents: { default: { model: gateway('openai/gpt-6-luna-fast') } },
+  targets: [{ engine: web(), app: { url: 'http://localhost:3000' } }],
+} satisfies E2EConfig;
+```
+
+```ts title="tests/example.e2e.ts"
+import { test } from '@e2e-dev/web';
+import { expect } from 'e2e';
+
+test('app opens', async ({ app, browser }) => {
+  await app.open('/');
+  await expect(browser.locator('body')).toBeVisible();
+});
+```
+    </Accordion>
+    </Tab>
+    <Tab title="Mobilní">
+    Spusť `npx e2e doctor` a zkontroluj své nastavení. Průvodce zvolí na macOS
+    iOS a jinde Android. Ukázka otevře aplikaci Nastavení.
+
+    <Accordion title="Ukázková konfigurace a test pro iOS">
+    Tato konfigurace používá Vercel AI Gateway. Pro Android průvodce nastaví
+    `platform: 'android'` a `app: { bundleId: 'com.android.settings' }`.
+
+```ts title="e2e.config.ts"
+import type { E2EConfig } from 'e2e';
+import { mobile } from '@e2e-dev/mobile';
+import { gateway } from 'ai';
+
+export default {
+  agents: { default: { model: gateway('openai/gpt-6-luna-fast') } },
+  targets: [{ name: 'ios', engine: mobile({ platform: 'ios' }), app: { bundleId: 'Settings' } }],
+  workers: 1,
+} satisfies E2EConfig;
+```
+
+```ts title="tests/example.e2e.ts"
+import { test } from '@e2e-dev/mobile';
+import { expect } from 'e2e';
+
+test('Settings opens', async ({ app, screen }) => {
+  await app.open();
+  await expect(screen.getByRole('button', 'General')).toBeVisible();
+});
+```
+    </Accordion>
+
+    Jak použít vlastní aplikaci, najdeš v části [Mobilní aplikace](/mobile).
+    </Tab>
+  </Tabs>
+  </Step>
+  <Step title="Spusť ukázku">
+  <CodeGroup>
+  ```bash npm
+  npx e2e run
+  ```
+
+  ```bash pnpm
+  pnpm exec e2e run
+  ```
+
+  ```bash bun
+  bunx e2e run
+  ```
+  </CodeGroup>
+
+  e2e stáhne prohlížeč nebo spustí simulátor či emulátor, ověří, že se
+  aplikace otevře, a vypíše výsledek. Ukázka nevolá žádný model, takže
+  nepotřebuje přihlášení ani API klíč.
+  </Step>
+</Steps>
+
+<Video>
+  <video src="/images/init.mp4" aria-label="npx e2e init se ptá na engine, bránu pro modely a nastavení kódovacího agenta a potom vypíše soubory, které vytvoří." muted loop playsInline controls />
+
+  `npx e2e init` položí několik otázek a před zápisem čehokoli ukáže všechny změny.
+</Video>
+
+### Použij předplatné nebo API klíč
+
+<Tabs>
+  <Tab title="Předplatné">
+  | Tarif | Jak se připojit |
+  | --- | --- |
+  | ChatGPT Plus nebo Pro | `npx e2e login openai` |
+  | GitHub Copilot | `npx e2e login github-copilot` |
+  | OpenCode Console (OpenCode Zen a OpenCode Go) | `npx e2e login opencode-console` |
+  | SuperGrok nebo X Premium+ | `npx e2e login spacexai` |
+  | Claude Max nebo Team (Claude Code) | API klíč z měsíčních API kreditů tarifu. Viz [Claude Max nebo Team](/subscriptions#claude-max-or-team). |
+
+  Copilot použije tvé přihlášení do GitHub CLI, pokud ho máš. Viz
+  [Předplatná](/subscriptions).
+  </Tab>
+  <Tab title="API klíč">
+  Vyber svého poskytovatele. Nainstaluj jeho balíček a v terminálu, kde
+  spouštíš e2e, nastav proměnné, které čte (pokud nějaké).
+
+  <ModelProvider show="select" />
+
+  <ModelProvider show="install" />
+
+  <ModelProvider show="env" />
+
+  Průvodce vytvoří konfiguraci pro Vercel AI Gateway, OpenRouter a endpointy
+  kompatibilní s OpenAI. U jiného poskytovatele nahraď import modelu
+  a hodnotu `model` v `e2e.config.ts` a použij `agent` jako `agents.default`:
+
+  <ModelProvider show="model" />
+
+  Lokální modely a další možnosti najdeš v části [Modely](/models).
+  </Tab>
+</Tabs>
+
+### Přidej agentní krok
+
+Dej `agent.act` při každém volání jeden [atomický úkol](/core-concepts#goals)
+a potom zkontroluj výsledek. Uprav ukázku podle toku ve své aplikaci:
+
+<Tabs>
+  <Tab title="Web">
+```ts title="tests/agent.e2e.ts"
+import { test } from '@e2e-dev/web';
+import { expect } from 'e2e';
+
+test('a visitor signs up for a trial', async ({ app, agent, screen }) => {
+  await app.open('/');
+
+  await agent.act('sign up for a free trial as {name} with email {email}', {
+    params: { name: 'Ada Lovelace', email: 'ada@example.test' },
+  });
+
+  await agent.assert('the welcome screen greets Ada by name');
+  await expect(screen.getByRole('status')).toContainText('trial');
+});
+```
+  </Tab>
+  <Tab title="Mobilní (iOS)">
+```ts title="tests/agent.e2e.ts"
+import { test } from '@e2e-dev/mobile';
+import { expect } from 'e2e';
+
+test('the agent opens General', async ({ agent, app, device }) => {
+  await app.open();
+  await agent.act('open {section} settings', { params: { section: 'General' } });
+
+  await agent.assert('the General settings screen is showing');
+  await expect(device.locator('role=navigation-bar id=General')).toBeVisible();
+});
+```
+
+  `app.open()` spustí aplikaci načisto. Bez něj test začíná tam, kde
+  zařízení nechal předchozí test. `device.locator` přijímá
+  [selektory agent-device](/mobile#the-device-fixture).
+  </Tab>
+</Tabs>
+
+`params` doplní zástupné symboly v úkolu. `agent.assert` posuzuje obrazovku.
+`expect` kontroluje přesnou hodnotu.
+
+<CodeGroup>
+```bash npm
+npx e2e run tests/agent.e2e.ts
+```
+
+```bash pnpm
+pnpm exec e2e run tests/agent.e2e.ts
+```
+
+```bash bun
+bunx e2e run tests/agent.e2e.ts
+```
+</CodeGroup>
+
+Pokud jsi v průvodci zvolil **None**, nejdřív [přidej model](/models). Přidej
+`--headed`, pokud chceš webový test sledovat. Přidej `--no-cache`, pokud chceš
+místo přehrávání akcí z cache volat model.
+
+### Nakonfiguruj projekt
+
+Možnosti najdeš v `e2e.config.ts`. Většina projektů po `init` mění
+tyto:
+
+| Chceš | Nastav | Viz |
+| --- | --- | --- |
+| nasměrovat testy na svou aplikaci | `app.url`, na mobilu `app.bundleId` | [Testovaná aplikace](/reference/config#the-app-under-test) |
+| spouštět aplikaci spolu s během testů | `app.command` | [Spuštění aplikace](/web#starting-your-app) |
+| použít model | `agents.default.model` | [Modely](/models) |
+| testovat více prohlížečů nebo zařízení | pro každý jednu položku `targets` s `name` | [targets](/reference/config#targets) |
+| dát testům více času | `timeout`, `actionTimeout`, `assertionTimeout` | [timeout](/reference/config#timeout) |
+| opakovat neúspěšné testy | `retries`, v CI `1` | [retries](/reference/config#retries) |
+| spouštět testy paralelně | `workers`, v CI `1` | [workers](/reference/config#workers) |
+| vybrat testovací soubory | `tests` | [tests](/reference/config#tests) |
+| uchovávat trace a videa | `trace`, `video` | [Nahrávání](/reference/config#recording) |
+| vytvářet report JUnit | `reporters: ['list', 'junit']` | [reporters](/reference/config#reporters) |
+| přihlašovat se a předávat API klíče | `credentials`, `secrets` | [Autentizace](/authentication) |
+| zapisovat replay cache v CI | `cache: 'read-write'` | [Cache](/cache) |
+
+<Accordion title="Ukázková konfigurace s běžnými možnostmi">
+```ts title="e2e.config.ts"
+import type { E2EConfig } from 'e2e';
+import { web } from '@e2e-dev/web';
+import { gateway } from 'ai';
+
+const app = {
+  url: process.env.APP_URL ?? 'http://localhost:3000',
+  command: { executable: 'npm', args: ['run', 'dev'], reuseExisting: true },
+};
+
+export default {
+  agents: { default: { model: gateway('openai/gpt-6-luna-fast') } },
+  targets: [
+    { name: 'chromium', engine: web({ viewport: { width: 1440, height: 900 } }), app },
+    { name: 'firefox', engine: web({ browser: 'firefox' }), app },
+  ],
+  timeout: 180_000,
+  workers: 4,
+  reporters: ['list', 'junit'],
+  video: 'retain-on-failure',
+} satisfies E2EConfig;
+```
+
+`--target firefox` spustí jeden cíl. Cíle se stejným `command` sdílejí
+jeden serverový proces.
+</Accordion>
+
+## Co dál
+
+<CardGroup cols={2}>
+  <Card title="Základní koncepty" icon="pen-to-square" href="/core-concepts">
+    Úkoly, aserce a lokátory.
+  </Card>
+  <Card title="Autentizace" icon="key" href="/authentication">
+    Znovu použij přihlášení do aplikace a drž hesla mimo vstup modelu.
+  </Card>
+  <Card title="Ladění" icon="bug" href="/debugging">
+    Čti selhání, snímky obrazovky a trace.
+  </Card>
+  <Card title="Průběžná integrace" icon="code-branch" href="/ci">
+    Spouštěj testy v GitHub Actions, Expo Workflows, Bitrise nebo Codemagic.
+  </Card>
+</CardGroup>

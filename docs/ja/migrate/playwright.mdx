@@ -170,6 +170,7 @@ test('checkout', async ({ app, agent, screen }) => {
 | `[fn, { scope: 'worker' }]` のフィクスチャ | 同じ。`extend` の 2 番目の型引数で型を指定 |
 | `[fn, { auto: true }]` のフィクスチャ | 同じ。どちらのスコープでも利用可能 |
 | フィクスチャのオーバーライド、`page: async ({ page }, use) => {}` | `app`、`screen`、`browser`、独自のフィクスチャで同じ。[フィクスチャの拡張](/reference/test#extending-a-fixture)を参照 |
+| `page.pause()` | `screen.pause()`。ブラウザを見るには `--headed` を付ける |
 
 </Accordion>
 <Accordion title="CLI">
@@ -285,7 +286,6 @@ export const test = base.extend<{ accountPage: AccountPage }>({
 | Playwright の Docker イメージ | `@e2e-dev/web` が固定する `playwright-core` バージョンのイメージ、または `npx @e2e-dev/web install chromium --with-deps` |
 | ファイルや describe 内の `test.use({ ... })` | ランナーのオプションはグループ、エンジンのオプションはターゲット、実行時の変更は `browser.setViewport` |
 | `projects[].dependencies`, `teardown` | サインインはトップレベルの `test.setup`。実行の前後を囲むスクリプト |
-| `page.pause()` | `--step --headed` で、キー入力まで各ステップを停止 |
 | `github` レポーター | `github()` はプルリクエストにコメントを投稿 |
 
 </Accordion>

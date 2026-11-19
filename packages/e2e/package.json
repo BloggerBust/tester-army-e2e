@@ -1,6 +1,6 @@
 {
   "name": "e2e",
-  "version": "0.23.1",
+  "version": "0.24.0",
   "description": "SDK, runner, and CLI for agentic end-to-end testing",
   "mcpName": "io.github.e2e-inc/e2e",
   "keywords": [
@@ -21,8 +21,8 @@
   ],
   "license": "Apache-2.0",
   "contributors": [
-    "Oskar Kwaśniewski <oskar@tester.army>",
-    "Szymon Rybczak <szymon@tester.army>"
+    "Oskar Kwaśniewski <oskar@e2e.com>",
+    "Szymon Rybczak <szymon@e2e.com>"
   ],
   "repository": {
     "type": "git",
@@ -55,6 +55,10 @@
     "./runner": {
       "types": "./dist/runner.d.ts",
       "default": "./dist/runner.js"
+    },
+    "./reporters": {
+      "types": "./dist/reporters.d.ts",
+      "default": "./dist/reporters.js"
     },
     "./oauth/chatgpt": {
       "types": "./dist/oauth/chatgpt.d.ts",
@@ -99,13 +103,13 @@
     "test:unit": "vitest run tests/unit"
   },
   "dependencies": {
-    "@ai-sdk/provider": "4.0.38",
+    "@ai-sdk/provider": "4.0.39",
     "@clack/prompts": "1.9.0",
     "@e2e-dev/core": "workspace:*",
     "@jridgewell/remapping": "2.3.5",
     "@modelcontextprotocol/server": "2.4.0",
     "@oxc-project/runtime": "0.159.0",
-    "@vitest/expect": "5.1.0",
+    "@vitest/expect": "5.1.1",
     "commander": "15.1.0",
     "exsolve": "1.2.0",
     "get-tsconfig": "4.14.3",
@@ -145,21 +149,21 @@
     }
   },
   "devDependencies": {
-    "@ai-sdk/anthropic": "4.0.105",
-    "@ai-sdk/google": "4.0.121",
-    "@ai-sdk/openai": "4.0.118",
-    "@ai-sdk/openai-compatible": "3.0.92",
-    "@ai-sdk/xai": "5.0.46",
+    "@ai-sdk/anthropic": "4.0.106",
+    "@ai-sdk/google": "4.0.122",
+    "@ai-sdk/openai": "4.0.121",
+    "@ai-sdk/openai-compatible": "3.0.93",
+    "@ai-sdk/xai": "5.0.47",
     "@e2e-dev/web": "workspace:*",
     "@modelcontextprotocol/client": "2.4.0",
     "@napi-rs/image": "1.16.0",
     "@openrouter/ai-sdk-provider": "3.1.0",
     "@types/node": "26.6.6",
-    "ai": "7.0.173",
+    "ai": "7.0.177",
     "ajv": "8.20.0",
     "ajv-formats": "3.0.1",
     "typescript": "7.0.2",
-    "vitest": "5.1.0"
+    "vitest": "5.1.1"
   },
   "engines": {
     "node": "^22.22.3 || >=24.8.0"

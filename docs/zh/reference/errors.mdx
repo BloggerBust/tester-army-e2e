@@ -92,7 +92,7 @@ export class AgentError extends Error {
 | `APP_UNREACHABLE` | 无法访问应用 URL，或应用命令退出或超过 `startupTimeout`。在 `e2e run` 期间，就绪后的退出只会影响仍有未完成工作的依赖测试目标：中断其活动测试，并跳过排队的测试。诊断信息请参阅[应用命令](/reference/config#command)。在智能体下，还包括没有更具体错误码的任何引擎故障。在设备上，消息可能指出繁忙或卡死的 iOS 自动化运行器及其恢复方法。参阅[移动端](/mobile#troubleshooting)。 | infrastructure | 3 |
 | `APP_ALREADY_RUNNING` | 在生成测试目标的 `app.command` 进程之前，`readyUrl` 已有响应，且 `reuseExisting` 未生效。停止该进程，或在本地设置 `reuseExisting: true` | infrastructure | 3 |
 | `MODEL_PROVIDER_FAILED` | 适配器完成传输重试后，提供方仍出现传输失败（网络错误、5xx、速率限制或 120 秒内无响应）：每次模型调用最多重试 5 次，遵循 `retry-after`，且不超过步骤剩余超时时间。停滞的请求会在 120 秒时中止并重新发送；`agent.act` 步骤的 `--debug` 交互记录会注明这一点。120 秒覆盖整个请求，因此单次回答需要更久的模型也会在此失败。如果提供方的包无法读取错误响应体，则显示 HTTP 状态和响应体，机密值会脱敏，内容截断到 1 KB。也包括提供方以 `error` 结束原因终止的调用，无论附带什么文本，以及 1 分钟内未得到回答的 `e2e doctor --check-model` 调用。不会逐出任何[录制](/cache) | infrastructure | 3 |
-| `CANCELLED` | 运行器在没有进程信号的情况下取消了操作：`e2e mcp` 的 `open_session` 被客户端取消、连接关闭或服务器关闭打断，并已停止它启动的内容；或 `run_tests` 在启动前被取消，或在服务器关闭期间被调用。在 `@e2e-dev/core` 中，也包括被 `signal` 中止的操作，或对已关闭会话的操作 | infrastructure | 3 |
+| `CANCELLED` | 运行器在没有进程信号的情况下取消了操作：`e2e mcp` 的 `open_session` 被客户端取消、连接关闭或服务器关闭打断，并已停止它启动的内容。在 `@e2e-dev/core` 中，也包括被 `signal` 中止的操作，或对已关闭会话的操作 | infrastructure | 3 |
 | `MODEL_OUTPUT_INVALID` | 修复预算耗尽后，结构化输出仍未通过校验。在[决策模型](/decision-models)下：回答没有有效的选项分布、选择了请求未提供的选项，或提供方拒绝了问题。决策不会进行修复 | test | 1 |
 | `APP_NOT_OPEN` | 操作需要已打开的应用：尚未运行 `app.open()`，或引擎报告状态无效 | test | 1 |
 | `LOCATOR_NOT_FOUND` | 截止时间内没有匹配节点，或智能体操作引用了已不可用的节点。对于经过过滤的定位器，如果失败后的诊断过程能读取过滤链，消息还可能列出每个过滤步骤留下的候选项数量，数量在失败后统计 | test | 1 |
@@ -137,7 +137,7 @@ export class AgentError extends Error {
 | `UNSUPPORTED_ARTIFACT` | 测试目标或将在该目标上运行的测试设置的 [`video` 模式](/reference/config#recording)要求在某次尝试中录制，但该目标的引擎无法录制视频。消息会指出测试目标；如果模式来自测试，也会指出测试。配置根级别或 `--video` 的模式绝不会触发此错误：它们只适用于能录制的测试目标，并以提示列出其余目标 | configuration | 2 |
 | `UNSUPPORTED_CAPABILITY` | 测试目标的引擎未声明某个测试夹具、操作或层级：没有测试或钩子在运行时工作进程测试夹具使用了内置测试夹具（测试目标没有的测试夹具为 `COLLECTION_ERROR`）、没有 `locate` 时使用 `screen`、没有 `state` 时恢复状态、没有 `artifacts` 时截图、在持久浏览器上下文上调用 `app.clearState()`（消息会指出模式）、执行器未声明 `vision: true` 时使用 `agent.assert` 的 `vision`，或测试视频正在录制时调用 `app.startRecording()` | configuration | 2 |
 | `NO_TESTS` | 可运行的普通测试与测试目标组合数为零。消息会指出原因：没有文件匹配 `tests` glob（会列出相似文件）、位置参数没有匹配项（会指出排除位置参数所指文件的 `!` 条目）、文件未注册测试，或过滤条件排除了全部测试。使用 `--pass-with-no-tests` 可抑制此错误。如果[测试过滤器](/filters)排除了所有可运行测试，运行会通过（退出码 0）。也适用于 `e2e mcp` 的 `open_session` 中 `test` 未选中任何可运行测试的情况。 | configuration | 2 |
-| `RUNNER_BUSY` | 测试套件与另一个测试套件、正在打开或已打开的宿主，或活动尝试重叠；或测试套件运行期间打开宿主；或另一个 `e2e mcp` 的 `run_tests` 正在运行时启动新的调用；或在没有终端时启动 `e2e run --step`，而该目录中已有单步运行，或某次运行在启动时被终止并遗留了锁（消息会指出要删除的文件）。重试前等待测试套件结束并关闭现有宿主；使用 `e2e run --step stop` 结束单步运行，或删除消息指定的锁文件。 | configuration | 2 |
+| `RUNNER_BUSY` | 测试套件与另一个测试套件、正在打开或已打开的宿主，或活动尝试重叠；或测试套件运行期间打开宿主；或在没有终端时启动 `e2e run --step`，而该目录中已有另一个运行受 `e2e run --step` 控制；或在没有终端的运行中，测试到达 `screen.pause()` 时，该目录中的另一个运行已以这种方式受控制；或某次运行在取得目录控制权时被终止并遗留了锁（消息会指出要删除的文件）。重试前等待测试套件结束并关闭现有宿主；使用 `e2e run --step stop` 结束单步运行，或删除消息指定的锁文件。 | configuration | 2 |
 | `RUNNER_NOT_INSTALLED` | 在未安装 `e2e` 的位置调用了 `@e2e-dev/web` 或 `@e2e-dev/mobile` 中的 `test`、`describe` 或钩子，例如仅基于 `@e2e-dev/core` 的程序。同一入口导出的引擎工厂仍然可用。要编写测试，请安装 `e2e` | configuration | 2 |
 | `NO_LAST_RUN` | `--last-failed` 在运行写入报告的位置未找到 `report.json`，或该处文件不是 `report-1` 文档。请先不带该标志运行一次。 | configuration | 2 |
 | `INVALID_CHANGED_SINCE` | `--changed-since`（`changedSince`）不是字符串、为空或以 `-` 开头。或者，当运行调用测试过滤器或 `e2e explore` 探索变更时，该值在检出的仓库中未指向任何提交，或与 HEAD 没有共同历史记录（浅克隆时消息会提示获取更多历史，否则会说明历史不相关）；或项目不在 git 仓库中、未安装 git，或 git 未在 30 秒内响应 | configuration | 2 |
@@ -149,6 +149,7 @@ export class AgentError extends Error {
 | `SESSION_UNAVAILABLE` | 测试要求的会话没有任何所选准备测试生成 | configuration | 2 |
 | `SESSION_CONTRACT` | 准备测试保存同一会话两次、保存了未声明的名称，或结束时未保存某个已声明的会话 | test | 1 |
 | `TEST_TIMEOUT` | 尝试超过了解析后的测试 `timeout`。测试体不会被停止：它当前执行的测试执行框架操作会被取消，其测试夹具随尝试结束而失效，因此无法影响下一个测试。如果测试阻塞事件循环，在超时后再经过 `cleanupTimeout`（至少 5 秒），其工作进程会被终止。参阅[钩子](/reference/test#hooks) | test | 1 |
+| `PAUSE_UNAVAILABLE` | 测试在没有人能恢复它的运行中调用了 `screen.pause()`：设置了 `CI` 的运行。测试会在调用所在行失败。请删除该调用，或在不设置 `CI` 的情况下使用 `e2e run` 运行测试 | test | 1 |
 | `STEP_NOT_AWAITED` | 测试体已结束，但它启动的步骤仍在运行：步骤调用缺少 `await`。该步骤会在调用所在行失败并被取消，消息会指出启动该步骤的代码：测试体、`beforeEach` 钩子或测试夹具的准备。如果测试体正常返回，尝试会以此错误码失败；如果测试体抛出异常，尝试保留测试体的错误，并将此错误记录在 `secondaryErrors` 下。如果测试体、`afterEach` 钩子或测试夹具清理已返回，而 `expect.poll` 匹配器仍在运行，该阶段也会以相同方式在调用行失败，匹配器会被取消。由 `beforeAll` 或 `afterAll` 钩子遗留的匹配器或仍在运行的步骤会使钩子因 `HOOK_FAILED` 失败 | test | 1 |
 | `UNHANDLED_REJECTION` | 没有测试运行时发生 Promise 拒绝。Node 无法确定哪个测试创建了 Promise，因此未处理的拒绝归于它出现时正在运行的测试。如果发生在测试之间，则成为此运行错误，并将该工作进程中最后完成的测试列为可能来源。如果工作进程中尚无测试完成，则会终止工作进程：拒绝成为运行错误，即将执行的测试因 `WORKER_CRASH` 失败。遗留该 Promise 的测试体会像超过 `TEST_TIMEOUT` 的测试体一样继续运行。在 `e2e mcp` 中，会话运行的测试在其代码执行期间也按相同方式归责；测试体结束后，拒绝使用此错误码，由 `close_session` 报告，或在会话关闭后作为警告写入 stderr | test | 1 |
 | `HOOK_FAILED` | `beforeAll` 或 `afterAll` 抛出异常。跳过测试套件中的测试。 | test | 1 |

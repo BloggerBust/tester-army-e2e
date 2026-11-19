@@ -1,6 +1,8 @@
 ---
 name: unbox-ai
 description: Analyze AI agent trace files (*.trace.json - gateway or opencode exports, or .devtools/generations.json AI SDK devtools databases, even mid-run while the app writes them) without reading the raw JSON. Use when asked to inspect an agent run, find why it was slow or expensive, check cache efficiency, debug tool calls, or summarize what an agent did. All commands are read-only with bounded output - safe to run freely.
+metadata:
+  internal: true
 ---
 
 # unbox-ai: explore AI traces from the CLI

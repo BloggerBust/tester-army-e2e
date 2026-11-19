@@ -29,6 +29,7 @@ describe('derivedReason', () => {
     expect(derivedReason('12/31/2026', 'pick the last day', undefined)).toBe('date');
     expect(derivedReason('19-09-2026', 'pick tomorrow', undefined)).toBe('date');
     expect(derivedReason('09:30', 'book the morning slot', undefined)).toBe('date');
+    expect(derivedReason('9:30am', 'book the morning slot', undefined)).toBe('date');
     expect(derivedReason('September 19, 2026', 'schedule this for tomorrow', undefined)).toBe('date');
     expect(derivedReason('Sept. 19', 'schedule this for tomorrow', undefined)).toBe('date');
     expect(derivedReason('19 Sep 2026', 'schedule this for tomorrow', undefined)).toBe('date');

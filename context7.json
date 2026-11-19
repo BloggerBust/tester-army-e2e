@@ -5,7 +5,7 @@
   "projectTitle": "e2e",
   "description": "Agentic end-to-end testing framework for web and mobile apps. Tests mix natural-language agent steps (agent.act, agent.assert) with locators and assertions. Web tests run in a browser, mobile tests on iOS simulators, Android emulators, and real phones. Verified agent steps are replayed without model calls until the app changes.",
   "folders": ["docs", "skills/e2e"],
-  "excludeFolders": ["docs/images", "docs/ja", "docs/zh", "plugins"],
+  "excludeFolders": ["docs/images", "docs/ja", "docs/zh", "docs/cs", "docs/es", "plugins"],
   "excludeFiles": ["AGENTS.md", "CONTRIBUTING.md", "SECURITY.md", "CODE_OF_CONDUCT.md"],
   "rules": [
     "Set up a project with npx e2e init (pnpm: pnpm dlx e2e init, bun: bunx e2e init). It writes e2e.config.ts and an example test, and keeps existing files.",

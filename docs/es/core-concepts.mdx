@@ -1,0 +1,242 @@
+---
+title: Conceptos básicos
+description: Objetivos, aserciones y localizadores, y cómo estructurar y ejecutar tests con ellos.
+"og:image": "https://e2e.com/docs/images/og/core-concepts.png?v=e4829aef06"
+"twitter:image": "https://e2e.com/docs/images/og/core-concepts.png?v=e4829aef06"
+---
+
+Un test combina tres tipos de paso:
+
+| Paso | API | Llamada al modelo |
+| --- | --- | --- |
+| [Objetivo](#goals) | `agent.act` | Sí, salvo que la [caché](/cache) lo reproduzca |
+| [Aserción](#assertions) | `agent.assert`, `agent.waitFor`, `agent.extract` | Sí |
+| [Localizador](#locators) | `screen` y `expect` | No |
+
+Con un [ejecutor de pasos personalizado](/executors), `act` y `assert` no necesitan modelo.
+
+```ts title="tests/todos.e2e.ts"
+import { describe, test, expect } from 'e2e';
+
+describe('todos', () => {
+  test('the Done filter shows only completed todos', async ({ app, agent, screen }) => {
+    await app.open('/todos');
+    await agent.act('add todos "Buy milk" and "Walk the dog"');
+    await agent.act('complete "Buy milk"');
+    await agent.waitFor('"Buy milk" is completed and "Walk the dog" is open');
+
+    await screen.getByRole('tab', 'Done').tap();
+
+    await expect(screen.getByTestId('todo')).toHaveCount(1);
+    await agent.assert('the only todo listed is "Buy milk"');
+  });
+});
+```
+
+Cada test comprueba un comportamiento en tres bloques: prepara el estado
+inicial, actúa sobre el comportamiento y verifica el resultado.
+
+Usa `await` en cada llamada al agente, a `screen` y a `expect.poll`. Si un
+test termina mientras un paso sigue en ejecución, falla con `STEP_NOT_AWAITED`.
+
+## Objetivos
+
+`agent.act` recibe un objetivo y realiza las acciones que necesita. Retorna
+cuando el objetivo se completa y lanza un error cuando falla.
+
+```ts
+await agent.act('complete checkout with the test card');
+await agent.act('invite {email} as an editor', { params: { email: 'ada@example.test' } });
+```
+
+Mantén cada objetivo atómico: un resultado que una sola comprobación confirma.
+Cuando dos partes de una instrucción dejan cada una un estado que vale la pena
+comprobar, son dos objetivos. Un test puede tener muchos objetivos.
+
+```ts title="Bad: three goals in one call, no check between them"
+await agent.act('open the Pro plan, set the seats to {seats}, and check out', {
+  params: { seats: 3 },
+});
+```
+
+```ts title="Good: one atomic goal per call, arrange, act, assert"
+test('checks out the Pro plan', async ({ app, agent, screen }) => {
+  await app.open('/plans');
+  await agent.act('open the Pro plan');
+  await agent.act('set the seats to {seats}', { params: { seats: 3 } });
+  await agent.waitFor('the cart shows the Pro plan with 3 seats');
+
+  await agent.act('check out');
+
+  await expect(screen.getByText('Order confirmed')).toBeVisible();
+});
+```
+
+Los objetivos de preparación van primero y terminan con una espera del estado
+al que llegan. El objetivo bajo prueba va después. Las aserciones sobre su
+resultado van al final. Así, un fallo señala el objetivo que se rompió. Cada
+objetivo se reproduce desde su propia grabación y recibe sus propios
+[presupuestos](/reference/agent#budgets) de llamadas al modelo y de acciones.
+Las acciones para lograr un resultado no son objetivos: abrir la pantalla o el
+menú que contiene un control, desplazarse hasta él, cerrar un banner o rellenar
+los campos de un formulario.
+
+- Tú controlas el orden de los objetivos. El agente elige las acciones.
+- Termina el test con un `expect` sobre el resultado. La [caché de reproducción](/cache)
+  registra un objetivo solo después de que pasa una comprobación o espera posterior.
+- Usa las palabras que muestra la pantalla.
+- Da los datos de test en `params`. Para una contraseña, da un `Secret`. El
+  modelo nunca recibe su valor como texto. Consulta [Autenticación](/authentication).
+- Para un valor que cambia en cada ejecución, usa `unique()` para que la
+  [caché pueda reproducir el paso](/cache#what-must-match):
+
+```ts
+import { unique } from 'e2e';
+
+const email = `ada+${Date.now()}@example.test`;
+await agent.act('sign up with email {email}', { params: { email: unique(email) } });
+```
+
+`act` recibe capturas de pantalla cuando las necesita. En algunos motores,
+puede tocar y escribir en puntos de la imagen.
+
+Si un objetivo falla, lee el informe y haz la instrucción más específica.
+Pon las palabras que usan muchos objetivos en el [`context`](/agents) del agente.
+
+## Aserciones
+
+Una aserción juzga la pantalla. El modelo ve el enunciado, un snapshot de texto
+censurado de la pantalla actual, su ubicación y el contexto del agente. No ve
+los pasos anteriores ni los resúmenes de `act`.
+
+- `agent.assert` examina la pantalla en ese momento. Un enunciado falso falla con
+  `ASSERTION_FAILED`. Cuando la evidencia no basta, falla con
+  `ASSERTION_INCONCLUSIVE`.
+- `agent.waitFor` espera hasta que una condición es verdadera. Solo llama al
+  modelo cuando cambia la pantalla o su ubicación.
+- `agent.extract` lee datos de la pantalla en un tipo de
+  [Standard Schema](https://standardschema.dev), por ejemplo Zod.
+
+```ts
+import { expect } from 'e2e';
+import { z } from 'zod';
+
+await agent.assert('the dashboard shows a trial badge');
+await agent.waitFor('a download link appears', { timeout: 120_000 });
+await agent.assert('the chart trends upward', { vision: true });
+
+const data = await agent.extract('every todo title', {
+  schema: z.object({ titles: z.array(z.string()) }),
+});
+expect(data.titles).toContain('Buy milk');
+```
+
+Para texto que escribió el modelo, examina el significado, no la frase completa.
+Cuando el texto exacto importa, usa un [localizador](#locators).
+
+Para una comprobación visual, como un gráfico o un diseño, añade `vision: true`.
+Para juzgar solo la captura de pantalla, usa `vision: 'only'`. Las imágenes
+añaden tokens de entrada. Consulta la [referencia del agente](/reference/agent#vision).
+
+## Localizadores
+
+Un localizador encuentra un control conocido, sin llamar al modelo. Úsalo
+cuando conoces la acción exacta o el valor exacto.
+
+```ts
+// Role and name first, label second, test ID last.
+await screen.getByRole('button', 'Sign in').tap();
+await screen.getByLabel('Email').fill('ada@example.test');
+
+// Scope into a row.
+const row = screen.getByRole('listitem').filter({ hasText: 'Design review' });
+await row.getByRole('button', 'Archive').tap();
+
+// Gestures and coordinates.
+await screen.swipe({ direction: 'up' });
+await screen.getByRole('image', 'Seat map').tap({ position: { x: 120, y: 48 } });
+
+// Assertions retry until they pass or time out.
+await expect(screen.getByRole('status')).toHaveText('2 remaining');
+```
+
+- Una acción, una lectura o una aserción sobre un solo nodo falla cuando su
+  consulta encuentra más de un nodo. Usa `.filter()`, `.first()` o `.nth()` para
+  encontrar un solo nodo.
+- Una lectura directa, como `textContent()`, espera a su coincidencia, lee una
+  vez y no reintenta para obtener un valor.
+
+Consulta la [referencia de screen](/reference/screen) y la
+[referencia de expect](/reference/expect#locator-matchers). Para rutas, cookies,
+diálogos y descargas, consulta [Trabajar con el navegador](/browser).
+
+## Organiza los tests
+
+```ts
+import { beforeEach, describe, test } from 'e2e';
+
+describe('billing', { tags: ['billing'] }, () => {
+  beforeEach(async ({ app }) => { await app.open('/billing'); });
+
+  test('upgrades', { retries: 2, timeout: 60_000 }, async ({ agent }) => {
+    await agent.act('upgrade to Pro');
+  });
+});
+
+test('needs two organizations', async ({ app }) => {
+  test.skip((await countOrganizations()) < 2, 'nothing to switch to');
+  await app.open('/organizations');
+});
+```
+
+- Cada test se ejecuta en su propio intento. Empieza cerca de la pantalla que
+  comprueba, para que cada ejecución se salte los clics que llevan hasta ella.
+  Crea sus datos en fixtures o hooks. En un navegador, restaura una
+  [sesión guardada](/authentication) y abre la pantalla por su ruta. En un
+  dispositivo, abre un [enlace profundo](/mobile#the-device-fixture).
+- `test.skip(condition, reason)` detiene el test como `skipped` cuando la
+  condición es verdadera.
+- Para un flujo que abarca varios tests, establece `{ serial: true }` en el
+  grupo. Los tests se ejecutan en secuencia en un mismo worker y se
+  reintentan juntas.
+- Para preparación y limpieza, usa `test.extend`. Consulta
+  [Escribir fixtures](/fixtures).
+- Importa `test` desde `@e2e-dev/web` o `@e2e-dev/mobile` para tipar el
+  fixture `browser` o `device`.
+
+La [referencia de test](/reference/test) muestra todas las opciones.
+
+## Ejecuta un test
+
+<CodeGroup>
+```bash npm
+npx e2e run tests/signup.e2e.ts:12   # the test at line 12
+npx e2e run --grep checkout          # tests with a matching title
+npx e2e run --target web             # one target
+```
+
+```bash pnpm
+pnpm exec e2e run tests/signup.e2e.ts:12   # the test at line 12
+pnpm exec e2e run --grep checkout          # tests with a matching title
+pnpm exec e2e run --target web             # one target
+```
+
+```bash bun
+bunx e2e run tests/signup.e2e.ts:12   # the test at line 12
+bunx e2e run --grep checkout          # tests with a matching title
+bunx e2e run --target web             # one target
+```
+</CodeGroup>
+
+La [referencia de la CLI](/reference/cli#e2e-run) muestra todas las banderas.
+
+## Siguientes pasos
+
+<CardGroup cols={2}>
+  <Card title="Caché" icon="box-archive" href="/cache">
+    Reproduce los objetivos que pasaron sin llamadas al modelo.
+  </Card>
+  <Card title="Cómo funcionan los pasos del agente" icon="list-check" href="/agent-steps">
+    Veredictos, códigos de salida y qué ve el modelo.
+  </Card>
+</CardGroup>

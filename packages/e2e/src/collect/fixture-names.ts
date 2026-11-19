@@ -87,15 +87,20 @@ function splitTopLevel(text: string): string[] {
 }
 
 /**
- * The first parameter of a function, as written: `{ app, screen }`. Undefined
- * for a function that takes none, and for source with no parameter list to
- * read.
+ * The parameter at `position` of a function, as written: `{ app, screen }`.
+ * Undefined for a function that takes fewer, and for source with no
+ * parameter list to read. A rest parameter at or before `position` is
+ * returned as written (`...args`), since it takes that argument too.
  */
-function firstParameter(source: string): string | undefined {
+function parameterAt(source: string, position: number): string | undefined {
   let index = skipTrivia(source, 0);
   while (index < source.length) {
     const char = source[index]!;
-    if (char === '(') return splitTopLevel(source.slice(index + 1, skipGroup(source, index) - 1))[0];
+    if (char === '(') {
+      const parameters = splitTopLevel(source.slice(index + 1, skipGroup(source, index) - 1));
+      const rest = parameters.findIndex((parameter) => parameter.startsWith('...'));
+      return rest !== -1 && rest < position ? parameters[rest] : parameters[position];
+    }
     // A method's name may be computed or quoted: `['a b']({ app }) {}`.
     if (char === '[') index = skipGroup(source, index);
     else if (QUOTES.has(char)) index = skipQuoted(source, index);
@@ -105,7 +110,7 @@ function firstParameter(source: string): string | undefined {
       while (end < source.length && WORD.test(source[end]!)) end += 1;
       const after = skipTrivia(source, end);
       // An arrow function with one bare parameter has no parentheses: `fixtures => {}`.
-      if (source.startsWith('=>', after)) return source.slice(index, end);
+      if (source.startsWith('=>', after)) return position === 0 ? source.slice(index, end) : undefined;
       index = end;
     } else return undefined;
     index = skipTrivia(source, index);
@@ -124,29 +129,36 @@ const WHY = 'e2e sets up only the fixtures a function names there';
 const NATIVE = /\{\s*\[native code\]\s*\}\s*$/;
 
 /**
- * The fixtures `fn` names in its first parameter. Registration calls it once
- * per function and keeps the result beside the function (`names`). A
- * function with no parameter names none. One that takes the whole fixture
+ * The fixtures `fn` names in its first parameter, or in the parameter at
+ * `position` for a `test.each` body, which takes the row first. Registration
+ * calls it once per function and keeps the result beside the function
+ * (`names`). A function with no parameter there names none. One that takes the whole fixture
  * object (`(fixtures) => {}`), a rest property (`{ app, ...rest }`), or a
  * computed property fails with a `COLLECTION_ERROR` that opens with `what`
  * (`test "signs in"`, `beforeEach hook`, `fixture "database"`) and carries
  * `source`, the line the function was registered at.
  */
-export function fixtureNames(fn: FixtureUserFn, what: string, source?: SourceLocation): readonly string[] {
+export function fixtureNames(fn: FixtureUserFn, what: string, source?: SourceLocation, position = 0): readonly string[] {
+  const where = position === 0 ? 'its first parameter' : `parameter ${position + 1}, where it takes the fixtures`;
   const refuse = (problem: string): FixtureUseError => new FixtureUseError(`${what} ${problem}. ${WHY}`, source);
   const text = Function.prototype.toString.call(fn);
   // A bound or built-in function prints no parameters, so it would be handed no fixtures at all.
-  if (NATIVE.test(text)) throw refuse('is a bound or native function, whose parameters cannot be read; pass the function itself, or wrap it: ({ app }) => bound({ app })');
-  const parameter = firstParameter(text);
+  if (NATIVE.test(text)) {
+    // One argument per item of a spread row comes before the fixtures.
+    const row = position === 1 ? ['row'] : Array.from({ length: position }, (_, index) => `item${index + 1}`);
+    const taken = [...row, '{ app }'].join(', ');
+    throw refuse(`is a bound or native function, whose parameters cannot be read; pass the function itself, or wrap it: (${taken}) => bound(${taken})`);
+  }
+  const parameter = parameterAt(text, position);
   if (parameter === undefined) return [];
   if (!parameter.startsWith('{')) {
     const shown = parameter.length > 40 ? `${parameter.slice(0, 40)}...` : parameter;
-    throw refuse(`must destructure its first parameter, as in ({ app, screen }) => {}; it takes "${shown}"`);
+    throw refuse(`must destructure ${where}, as in ({ app, screen }) => {}; it takes "${shown}"`);
   }
   const names: string[] = [];
   for (const property of splitTopLevel(parameter.slice(1, skipGroup(parameter, 0) - 1))) {
-    if (property.startsWith('...')) throw refuse(`takes the rest property "${property}" in its first parameter; list the fixtures it uses by name`);
-    if (property.startsWith('[')) throw refuse(`takes the computed property "${property}" in its first parameter; write the fixture's name`);
+    if (property.startsWith('...')) throw refuse(`takes the rest property "${property}" in ${where}; list the fixtures it uses by name`);
+    if (property.startsWith('[')) throw refuse(`takes the computed property "${property}" in ${where}; write the fixture's name`);
     names.push(propertyName(property));
   }
   return [...new Set(names)];

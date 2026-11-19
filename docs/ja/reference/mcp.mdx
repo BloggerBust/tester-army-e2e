@@ -15,7 +15,7 @@ description: コーディングエージェントが MCP 経由でアプリを�
 }
 ```
 
-4 つの MCP ツールでセッションを管理し、利用可能なアプリのツールを呼び出します。`run_tests` は `e2e run` と同じようにスイートを実行します。アプリのツールカタログは、セッションを開くたびに設定から再読み込みします。
+4 つの MCP ツールでセッションを管理し、利用可能なアプリのツールを呼び出します。アプリのツールカタログは、セッションを開くたびに設定から再読み込みします。
 
 ## リファレンス
 
@@ -75,7 +75,6 @@ e2e mcp --max-sessions 8 # default: 4
 | [`tools`](#tools-2) | カタログまたは 1 ツールの詳細を返します |
 | [`call`](#call) | カタログのツールを 1 つ実行します |
 | [`close_session`](#close_session) | セッションとエンジンを終了します |
-| [`run_tests`](#run_tests) | `e2e run` と同じようにテストを実行します |
 
 開いているセッションがちょうど 1 つの場合、`session` は省略できます。[複数のセッション](#several-sessions)を参照してください。
 
@@ -145,47 +144,6 @@ close_session {session: "<id>"}
 | 入力 | 型 | 必須 | 動作 |
 | --- | --- | --- | --- |
 | `session` | string | 複数開いている場合 | セッション ID です。 |
-
-#### `run_tests`
-
-独立したプロセスで `e2e run` を実行し、コマンド、終了コードとその意味、実行時の出力を返します。デフォルトの `list` レポーターでは、各テスト、失敗のブロック、サマリーを返します。セッションは不要で、開いているセッションにも影響しません。セッションと並行して使う方法は[セッションを開いたままテストを実行する](/mcp-server#run-tests-next-to-a-session)を参照してください。
-
-```txt
-run_tests {files: ["tests/checkout.e2e.ts:12"]}
-```
-
-```text wrap
-e2e run tests/checkout.e2e.ts:12
-exit 1: a test failed or timed out
-
- RUN  e2e v0.22.0 /work/shop
- ...
-```
-
-| 入力 | 型 | 必須 | 動作 |
-| --- | --- | --- | --- |
-| `files` | string[] | いいえ | `e2e run` の位置引数です。ファイル、ディレクトリ、glob、`file:line` を指定します。省略時は設定から検出したすべてのテストです。ファイル名は `-` で始められません。 |
-| `config` | string（パス） | いいえ | `--config` に対応します。省略時はサーバーの `--config` を使います。 |
-| `target` | string[] | いいえ | `--target` に対応し、1 つ以上を指定します。省略時はサーバーの `--target`、それもなければ全ターゲットです。 |
-| `grep`, `grepInvert` | string | いいえ | `--grep`、`--grep-invert` に対応します。 |
-| `tag`, `excludeTag` | string[] | いいえ | `--tag`、`--exclude-tag` に対応します。 |
-| `lastFailed` | boolean | いいえ | `--last-failed` に対応します。 |
-| `changedSince` | string | いいえ | `--changed-since` に対応します。 |
-| `headed` | boolean | いいえ | `--headed` に対応します。省略時はサーバーの `--headed` を使います。 |
-| `workers`, `retries`, `repeatEach`, `maxFailures`, `actionTimeout` | integer | いいえ | `--workers`、`--retries`、`--repeat-each`、`--max-failures`、`--action-timeout` に対応します。 |
-| `noCache` | boolean | いいえ | `--no-cache` に対応します。 |
-| `updateSnapshots` | boolean | いいえ | `--update-snapshots` に対応します。 |
-
-- 終了コード 0 と 1 は通常の結果です。それ以外はエラー結果（`isError: true`）になります。
-- 出力が 60,000 文字を超えた場合、失敗とサマリーがある末尾を残します。テスト実行まで進めば、すべての結果を `<output>/report.json`（デフォルトの出力先は `.e2e`）に保存します。[出力](/reference/cli#output)を参照してください。
-- 進捗トークンがある場合、stdout の空でない各行を、1,000 文字で切り詰めた進捗通知として送ります。
-- 呼び出しをキャンセルすると、Ctrl-C と同じように実行を中断します。15 秒ごとに再び中断を送り、3 回目から 15 秒後に強制終了します。次の `run_tests` は、そのプロセスの終了を待ちます。
-- サーバーの終了時は新しい実行を拒否し、進行中の実行を中断します。サーバーが異常終了した場合、実行側も同じ方法で自身を中断します。
-
-| 投げるエラー | 発生条件 |
-| --- | --- |
-| `RUNNER_BUSY` | すでに実行が進行中の場合。 |
-| `CANCELLED` | 実行開始前に呼び出しをキャンセルした場合、またはサーバーが終了中の場合。 |
 
 ### カタログ
 
@@ -273,7 +231,7 @@ call {tool: "run_code", args: {code: "await screen.getByLabel('Email').fill('ada
 | 引数 | 文字列、数値、真偽値、`null`、正規表現、`${}` のないテンプレート、配列、オブジェクト、ロケーター、`credentials.user(name).username` |
 | シークレット | `fill` の値としてのみ、`credentials.user(name).password` または `secrets.get(name)` |
 
-対象外は、エンジンが提供する組み込みフィクスチャ（`browser`、`device`）、`expect(screen)`、`toHaveScreenshot`、`app.screenshot`、`screen.debug`、`all`、`setInputFiles`、値のマッチャー（`toBe`、`toEqual`）です。
+対象外は、エンジンが提供する組み込みフィクスチャ（`browser`、`device`）、`expect(screen)`、`toHaveScreenshot`、`app.screenshot`、`screen.debug`、`screen.pause`、`all`、`setInputFiles`、値のマッチャー（`toBe`、`toEqual`）です。
 
 | 投げるエラー | 発生条件 |
 | --- | --- |
@@ -446,7 +404,7 @@ open_session {engine: {package: "@e2e-dev/mobile", options: {platform: "ios"}}, 
 - **検索先。** サーバーは各パッケージを、プロジェクト、実行中の `e2e` と同じ場所、`~/.e2e/engines` の順に探します。どこにもなければ、全プロジェクトで使えるようにインストールするコマンドをエラーに示します。例: `npm install --prefix ~/.e2e/engines @e2e-dev/web`。ネットワークのないサンドボックス内など、そのコマンドを実行できないエージェントは、ユーザーに実行を依頼します。
 - **`app`** は、ターゲットの [`app`](/reference/config#the-app-under-test) と同様に `url`、`bundleId`、`appPath` を受け取ります。`@e2e-dev/web` には `url`、`@e2e-dev/mobile` には `bundleId` または `appPath` が必要です。
 - **ファイル。** プロジェクトルートはサーバーの作業ディレクトリで、セッションはそこに `.e2e/` を書き込みます。
-- **テスト。** `run_tests` と `open_session {test}` には設定が必要です。セッションのテスト行をテストとして保存するには、[`e2e init`](/reference/cli#e2e-init) で設定を作成してください。
+- **テスト。** `e2e run` と `open_session {test}` には設定が必要です。セッションのテスト行をテストとして保存するには、[`e2e init`](/reference/cli#e2e-init) で設定を作成してください。
 - **複数のセッション。** `engine` で開いたセッションは並行して動かせます。それらが開いている間は、設定を使うセッションを開けず、`CONFIG_IN_USE` で失敗します。
 
 | 投げるエラー | 発生条件 |
@@ -479,7 +437,7 @@ open_session {engine: {package: "@e2e-dev/mobile", options: {platform: "ios"}}, 
 - クライアントが切断したとき。
 - SIGINT または SIGTERM を受けたとき。
 
-クライアントがサーバーの stdin を閉じるか、クライアント自身が終了すると切断されます。その場合、すべてのセッションを閉じ、セッションが起動したアプリのコマンドを停止し、`run_tests` の実行を中断して、サーバーを終了します。
+クライアントがサーバーの stdin を閉じるか、クライアント自身が終了すると切断されます。その場合、すべてのセッションを閉じ、セッションが起動したアプリのコマンドを停止して、サーバーを終了します。
 
 セッションでも、テストと同じ規則を適用します。
 

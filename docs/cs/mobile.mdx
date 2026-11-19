@@ -1,0 +1,931 @@
+---
+title: Mobilní zařízení
+description: Nastav simulátor, emulátor nebo připojený telefon jako cíl, napiš test pro zařízení a zjisti, čím se liší od webu.
+"og:image": "https://e2e.com/docs/images/og/mobile.png?v=0a8bfea0a3"
+"twitter:image": "https://e2e.com/docs/images/og/mobile.png?v=0a8bfea0a3"
+---
+
+import { Video } from '../snippets/video.jsx';
+
+`@e2e-dev/mobile` spouští testy na simulátorech iOS, emulátorech Androidu a
+telefonech připojených k tvému počítači. Je postavený na
+[agent-device](https://github.com/callstack/agent-device). Testy používají
+stejná API `agent`, `screen` a `expect` jako testy v prohlížeči.
+
+## Nastavení
+
+Nainstaluj Xcode s runtime simulátoru iOS, nebo Android SDK s emulátorem.
+Pak postupuj podle [rychlého startu](/quickstart) a zvol **Mobile
+(iOS/Android)**. Průvodce na macOS vybere iOS a jinde Android a jako cíl
+nastaví aplikaci Nastavení s jedním workerem, takže test proběhne dřív, než
+ho nasměruješ na svou aplikaci. Zařízení se spouští ještě před začátkem
+měření času testu a do `launchTimeout` se nepočítá. Hotová nastavení najdeš
+v [ukázkových projektech](/example-projects).
+
+Ověř si nastavení:
+
+<CodeGroup>
+```bash npm
+npx e2e doctor
+```
+
+```bash pnpm
+pnpm exec e2e doctor
+```
+
+```bash bun
+bunx e2e doctor
+```
+</CodeGroup>
+
+Zkontroluje agent-device, Xcode nebo Android SDK, každé zařízení, které cíl
+uvádí, a sestavení v `appPath`. Bez `appPath` ověří, že je nainstalované
+`bundleId`, pokud je spuštěné jedno zařízení. Viz
+[`e2e doctor`](/reference/cli#e2e-doctor).
+
+## Nasměrování na tvou aplikaci
+
+Nastav v cíli `app.bundleId` na bundle id nebo název balíčku tvé aplikace.
+`app.open()`, `app.restart()` a `app.clearState()` spouštějí právě tuto
+aplikaci. Přidej `appPath`, chceš-li určit sestavení: bundle `.app` pro iOS,
+nebo `.apk` pro Android:
+
+```ts
+{
+  name: 'ios',
+  engine: mobile({ platform: 'ios' }),
+  app: {
+    bundleId: 'com.example.app',
+    appPath: './build/MyApp.app', // the iOS .app bundle
+  },
+}
+```
+
+Cíl pro zařízení potřebuje `bundleId`, `appPath`, nebo obojí. Engine sám nic
+neinstaluje. Zavolej `device.installApp()` jednou pro každé zařízení, ve
+[fixture workeru](/fixtures#share-a-fixture-across-a-worker) s
+[`auto: true`](/fixtures#run-a-fixture-for-every-test). Bez cesty nainstaluje
+`app.appPath`. Bez `bundleId` spustí `app.open()` aplikaci, kterou
+sestavení nainstalovalo.
+
+Spouštění sady testů v CI popisuje [Mobilní joby](/ci#mobile-jobs).
+
+### Spouštěcí argumenty a oprávnění
+
+`app.launchArguments` a `app.permissions` platí pro každé nové spuštění.
+
+```ts
+app: {
+  bundleId: 'com.example.app',
+  launchArguments: ['-e2e', 'YES'],
+  permissions: { camera: 'grant', notifications: 'deny', location: 'reset' },
+},
+```
+
+- Spouštěcí argumenty jsou na iOS argumenty procesu a na Androidu argumenty
+  `am start`.
+- Oprávnění se nastaví před spuštěním, takže se neobjeví žádný systémový
+  dotaz. `app.clearState()` je resetuje spolu s daty a pak je nastaví znovu.
+- `deny` na iOS aplikaci odmítne bez dotazu. Na Androidu oprávnění odebere,
+  takže se systém zeptá znovu.
+- Zahřívací spuštění před během nepředává ani jedno, proto každý test začni
+  voláním `app.open()`.
+- Argumenty, které volí režim sestavení, mění, čím aplikace je. Dej každému
+  režimu vlastní `app.identity`, aby se jeho nahrávky držely odděleně.
+
+Chceš-li spustit jeden test s vlastními hodnotami, použij `device.openApp`.
+Každá volba, kterou předá, nahradí celou hodnotu cíle:
+`permissions: { camera: 'deny' }` zahodí ostatní oprávnění cíle. Při
+opětovném spuštění aplikace cíle si volby, které nepředá, ponechají hodnoty
+cíle:
+
+```ts
+await device.openApp('com.example.app', { relaunch: true, permissions: { camera: 'deny' } });
+```
+
+### Spuštění aplikace v jiném jazyce
+
+Na iOS nastavují spouštěcí argumenty jazyk a region aplikace pro dané
+spuštění. Zařízení si ponechá vlastní jazyk. Přidej jeden cíl pro každý
+jazyk:
+
+```ts
+{
+  name: 'ios-fr',
+  engine: mobile({ platform: 'ios' }),
+  app: {
+    bundleId: 'com.example.app',
+    launchArguments: ['-AppleLanguages', '(fr)', '-AppleLocale', 'fr_FR'],
+  },
+}
+```
+
+- Aplikace musí daný jazyk obsahovat. Pokud ho neobsahuje, iOS zobrazí její
+  vývojový jazyk.
+- Android žádný spouštěcí argument pro jazyk nemá. Na hostovaném zařízení
+  nastav `language` a `locale` v `browserstack()` nebo `testmu()`. Na
+  lokálním zařízení nastav jazyk zařízení před během.
+
+### Vývojová sestavení Expo
+
+Vývojové sestavení (`expo-dev-client`) se otevře v dev launcheru a svůj
+JavaScript načítá z vývojového serveru. Na simulátoru iOS tyto spouštěcí
+argumenty otevřou server přímo a vypnou vývojářské menu, jeho úvodní panel
+i plovoucí tlačítko. Server spouští `app.command`:
+
+```ts title="e2e.config.ts"
+import type { E2EConfig } from 'e2e';
+import { mobile } from '@e2e-dev/mobile';
+
+export default {
+  targets: [
+    {
+      engine: mobile({ platform: 'ios' }),
+      app: {
+        bundleId: 'com.example.app',
+        launchArguments: [
+          '--initialUrl', 'http://localhost:8081',
+          '-EXDevMenuShowsAtLaunch', 'NO',
+          '-EXDevMenuIsOnboardingFinished', 'YES',
+          '-EXDevMenuShowFloatingActionButton', 'NO',
+        ],
+        command: { executable: 'npx', args: ['expo', 'start', '--port', '8081'] },
+        readyUrl: 'http://localhost:8081/status',
+      },
+    },
+  ],
+} satisfies E2EConfig;
+```
+
+- Zahřívací spuštění nechá aplikaci v dev launcheru. Každý test začni
+  voláním `app.open()`.
+- První spuštění čeká, než vývojový server aplikaci zabalí. Dej první
+  kontrole v testu delší timeout.
+- Na Androidu expo-dev-launcher `--initialUrl` nečte. Otevři server pomocí
+  `device.openLink` a odkazu sestavení
+  `exp+<slug>://expo-development-client/?url=<encoded server URL>`.
+
+## Psaní testu pro zařízení
+
+`screen` mapuje nativní ovládací prvky na běžné role, jako jsou `button`,
+`textbox`, `listitem` a `switch`. Pro nativní identifikátory prvků použij
+`getByTestId`.
+
+```ts
+import { test } from '@e2e-dev/mobile';
+import { expect } from 'e2e';
+
+test('shows the version in dark mode', async ({ agent, app, device, screen }) => {
+  await device.setAppearance('dark');
+  await app.open();
+  await agent.act('go to General, then About');
+  await expect(screen.getByRole('button', /^iOS Version/)).toBeVisible();
+  await expect(device.locator('role=navigation-bar id=About')).toBeVisible();
+});
+```
+
+Mezi testy zůstává aplikace tam, kde ji poslední test nechal. Zařízení
+nepodporují `selectOption`, `setInputFiles`, `scrollIntoView`,
+`secondaryTap` ani `modifiers` u `tap` a `doubleTap`. Na nativních
+ovládacích prvcích používej klepnutí a přejetí.
+
+### Test id podle frameworku
+
+`getByTestId` čte na iOS identifikátor přístupnosti (accessibility
+identifier) a na Androidu resource id. Každý UI framework je nastavuje po
+svém:
+
+| Framework | Id nastavíš pomocí | Příklad |
+| --- | --- | --- |
+| React Native | `testID` | [with-expo](https://github.com/e2e-inc/e2e/tree/main/examples/with-expo) |
+| SwiftUI | `.accessibilityIdentifier()` | [with-swiftui](https://github.com/e2e-inc/e2e/tree/main/examples/with-swiftui) |
+| UIKit | `view.accessibilityIdentifier`, nebo Identifier v inspektoru Identity v Interface Builderu | - |
+| Jetpack Compose | `Modifier.testTag()` | [with-compose](https://github.com/e2e-inc/e2e/tree/main/examples/with-compose) |
+| Compose Multiplatform | `Modifier.testTag()` | [with-kotlin-multiplatform](https://github.com/e2e-inc/e2e/tree/main/examples/with-kotlin-multiplatform) |
+| Flutter | `Semantics(identifier:)` | [with-flutter](https://github.com/e2e-inc/e2e/tree/main/examples/with-flutter) |
+| .NET MAUI | `AutomationId` | [with-maui](https://github.com/e2e-inc/e2e/tree/main/examples/with-maui) |
+| NativeScript | `testID` | [Návod od Norrixu](https://docs.norrix.net/guides/e2e-testing/#3-write-a-first-test) |
+
+- Na Androidu se nativní `android:id` a `AutomationId` z .NET MAUI čtou jako
+  `<package>:id/<id>`. `getByTestId('greet')` je najde bez balíčku
+  aplikace, stejně jako na iOS. Id frameworku, například
+  `android:id/content`, se shodují jen v plném znění.
+- Na Androidu Compose skrývá test tagy, dokud kořenový composable nenastaví
+  `Modifier.semantics { testTagsAsResourceId = true }`. Bez toho
+  `getByTestId` nic nenajde. iOS čte tag z Compose Multiplatform tak, jak
+  je, takže sdílená obrazovka nastaví příznak ve své androidí aktivitě.
+- Ve SwiftUI nahradí `.accessibilityIdentifier()` na kontejneru, například
+  na `VStack`, id všech prvků uvnitř. `getByTestId` pak u id kontejneru
+  selže s `LOCATOR_AMBIGUOUS` a pro id potomků nic nenajde. Abys zachoval
+  obojí, dej před identifikátor `.accessibilityElement(children: .contain)`.
+- Ve Flutteru obal `Semantics` tlačítka do `MergeSemantics`, aby id i role
+  tlačítka skončily na jednom uzlu.
+- V NativeScriptu nastavují `testID` a `accessibilityIdentifier` totéž id:
+  `getByTestId('login-button')` najde
+  `<Button text="Login" testID="login-button" />` na obou platformách.
+  `accessibilityLabel` nastavuje název, ne id. Na Androidu ho NativeScript
+  vkládá před text, takže `<Button text="Help" accessibilityLabel="Open help" />`
+  má název `Open help. Help`. Najdeš ho pomocí
+  `getByRole('button', /^Open help/)`.
+
+## Fixture device
+
+`device` mění nastavení zařízení bez volání modelu: síť, oprávnění, vzhled,
+instalace aplikací a další. Každé volání je v reportu krokem
+`device.<method>`. Všechny metody uvádí
+[reference mobilního enginu](/reference/mobile#device).
+
+`device.locator` přijímá selektor agent-device, jako v testu výše, pro
+ovládací prvky, které dotazy `screen` neumějí pojmenovat.
+
+`device.installApp` testuje i upgrady a čisté instalace:
+
+```ts
+const { app } = await device.installApp('./build/MyApp.app', { reinstall: true });
+await device.openApp(app);
+```
+
+`device.openApp` přijímá bundle id, balíček nebo zobrazovaný název, nikdy
+odkaz. `device.openLink` otevře deep link nebo webový odkaz v připnuté
+aplikaci, případně v `app` z voleb, třeba pro přihlášení magickým odkazem
+nebo pro deep-link trasy:
+
+```ts
+await device.openLink('myapp://orders/42');
+await expect(screen.getByText('Order #42')).toBeVisible();
+```
+
+`device.setNetwork('offline')` a `device.setAirplaneMode(true)` fungují jen
+na Androidu. Simulátor iOS sdílí síť Macu a simctl umí změnit jen jeho
+stavový řádek, takže na iOS obě volání selžou s `UNSUPPORTED_CAPABILITY`.
+`setNetwork('online')` a `setAirplaneMode(false)` na iOS nedělají nic, takže
+úklidový hook, který spouštějí obě platformy, stále projde.
+
+Na Androidu `setNetwork('offline')` vypne jen Wi-Fi a aplikace může zůstat
+online přes mobilní data. Chceš-li aplikaci odpojit, použij
+`setAirplaneMode(true)`. Vyžaduje Android 11 nebo novější. Engine po testu
+síť neobnovuje, takže ji znovu zapni v `afterEach`, který běží i tehdy, když
+test selže:
+
+```ts
+import { afterEach, test } from '@e2e-dev/mobile';
+import { expect } from 'e2e';
+
+afterEach(async ({ device }) => {
+  await device.setAirplaneMode(false);
+});
+
+test('shows the offline banner', { platforms: ['android'] }, async ({ app, device, screen }) => {
+  await app.open();
+  await device.setAirplaneMode(true);
+  await expect(screen.getByText('You are offline')).toBeVisible();
+});
+```
+
+`device.clearKeychain()` resetuje klíčenku simulátoru, které se
+`app.clearState()` nedotkne, takže uložený token relace při dalším spuštění
+zmizí. Funguje jen na iOS.
+
+Pro vše, co `device` nepokrývá, nabízí `device.unstable_raw` klienta
+[agent-device](https://github.com/callstack/agent-device) navázaného na
+relaci testu, k tomu název relace, id a název zařízení a `selection`, který
+rozbalíš do volání klienta. Je nestabilní a v kterémkoli vydání se může
+změnit nebo zmizet:
+
+```ts
+const { client, deviceId } = device.unstable_raw;
+const { nodes } = await client.capture.snapshot({});
+```
+
+Volání klienta nejsou kroky: report ani trace je neobsahují, cache agenta je
+nepřehrává, tajné klíče, které jim předáš, se neredigují a po žádném z nich
+se nečeká, až se obrazovka ustálí.
+
+<Accordion title="Velikost textu a animace">
+`device` nemá metodu pro systémovou velikost textu ani animace, takže je
+nastav přes `unstable_raw`. Velikost textu změň před `app.open()`. Běžící
+aplikace si může ponechat starou velikost až do dalšího spuštění, takže po
+změně uprostřed testu zavolej `app.restart()`:
+
+```ts
+import { afterEach, test } from '@e2e-dev/mobile';
+import { expect } from 'e2e';
+
+afterEach(async ({ app, device }) => {
+  const { client, selection } = device.unstable_raw;
+  await client.settings.update({ ...selection, setting: 'text-size', state: 'large' });
+});
+
+test('the checkout button shows at the largest text size', async ({ app, device, screen }) => {
+  const { client, selection } = device.unstable_raw;
+  await client.settings.update({ ...selection, setting: 'text-size', state: 'accessibility-extra-extra-extra-large' });
+  await app.open();
+  await expect(screen.getByRole('button', 'Checkout')).toBeVisible();
+});
+```
+
+`text-size` funguje na simulátorech iOS i na Androidu; výchozí hodnota je na
+obou `large`. `setting: 'animations'` se `state: 'off'` nebo `'on'` funguje
+jen na Androidu a na iOS selže. Na Androidu nastaví měřítka oken, přechodů
+a animátoru na 0 nebo 1. Obě nastavení přetrvají i po testu, takže je vrať v
+`afterEach`. `app.open()` v dalším testu aplikaci znovu spustí, takže stačí
+nastavení obnovit.
+</Accordion>
+
+<Accordion title="Fotky pro test výběru fotek">
+`device` neumí přidat fotky do knihovny, takže je přidej z hostitele před
+`app.open()`. Na simulátoru iOS to udělá `xcrun simctl addmedia` a
+`deviceId` je UDID simulátoru. `addmedia` přidá kopii při každém volání a
+krok agenta nerozliší stejné fotky, takže ukázka nechá ve vlastním datovém
+adresáři simulátoru soubor se značkou a fotku přidá jen jednou. Značka
+zmizí spolu s knihovnou, když simulátor vymažeš:
+
+```ts
+import { execFileSync } from 'node:child_process';
+import { existsSync, writeFileSync } from 'node:fs';
+import { resolve } from 'node:path';
+import { test, type Device } from '@e2e-dev/mobile';
+import { expect } from 'e2e';
+
+// Put a JPEG named receipt.jpg beside this test.
+const receipt = resolve(import.meta.dirname, 'receipt.jpg');
+
+function addPhotoOnce(device: Device, file: string): void {
+  const { deviceId } = device.unstable_raw;
+  const listing = execFileSync('xcrun', ['simctl', 'list', 'devices', '-j'], { encoding: 'utf8' });
+  const { devices } = JSON.parse(listing) as {
+    devices: Record<string, { udid: string; dataPath: string }[]>;
+  };
+  const simulator = Object.values(devices).flat().find((d) => d.udid === deviceId);
+  if (!simulator) throw new Error(`No simulator ${deviceId}`);
+  const marker = resolve(simulator.dataPath, 'tmp', 'receipt-photo-added');
+  if (existsSync(marker)) return;
+  execFileSync('xcrun', ['simctl', 'addmedia', deviceId, file]);
+  writeFileSync(marker, file);
+}
+
+test('attaches the receipt from the photo library', { platforms: ['ios'] }, async ({ app, device, screen }) => {
+  addPhotoOnce(device, receipt);
+  await app.open();
+  await screen.getByLabel('Choose photo').tap();
+  await screen.getByRole('image', /^Photo, /).first().tap();
+  await expect(screen.getByText(/^Receipt attached/)).toBeVisible();
+});
+```
+
+Systémový výběr fotek běží mimo aplikaci, ale jeho fotky jsou ve stromu
+obrazovky, každá jako `image` s názvem `Photo, ` a datem pořízení. Výběr
+řadí podle tohoto data od nejnovějších, a to je datum z EXIF dat fotky,
+ne den, kdy jsi ji přidal.
+
+Emulátor Androidu potřebuje soubor nahrát přes `adb` a spustit skenování
+médií a jeho výběr fotek je jiná aplikace s vlastními názvy. Tato stránka
+nebyla na Androidu ověřena, takže si strom výběru přečti v trace dřív, než
+ten lokátor napíšeš.
+</Accordion>
+
+<Accordion title="Skládací simulátory a emulátory">
+`device.fold(pose)` nastaví simulátor iPhone Duo nebo skládací emulátor
+Androidu (profil Pixel Fold nebo obecný „7.6in Foldable“) do polohy pantu.
+`closed` rozsvítí vnější displej, `half-open` a `open` vnitřní. Na Duu se
+volání vrátí, až pant polohy dosáhne, obvykle po 10 až 16 sekundách, takže
+nech `actionTimeout` alespoň na 20 sekundách; `half-open` je tam kniha
+otevřená na 130°. Na emulátoru Androidu se vrátí během několika sekund,
+jakmile Android potvrdí odpovídající stav zařízení; `half-open` je vlastní
+úhel profilu (90° u skládacích Pixelů) a složení na vnější displej zavře
+zamykací obrazovku „Swipe up to continue“, kterou emulátor zobrazí. Další
+pozorování čte aplikaci na druhém displeji.
+
+Engine polohu nikdy neresetuje, takže opakování i další test začnou tam,
+kde ji poslední test nechal. Zařízení zase slož v `afterEach`, který běží
+i tehdy, když test selže:
+
+```ts
+import { afterEach, test } from '@e2e-dev/mobile';
+
+afterEach(async ({ device }) => {
+  await device.fold('closed');
+});
+
+test('the list and the detail split across the fold', async ({ agent, app, device }) => {
+  await app.open();
+  await device.fold('half-open');
+  await agent.assert('the list and the detail sit on either side of the fold', { vision: true });
+});
+```
+</Accordion>
+
+### Nahrávání přechodu
+
+[`app.startRecording()` a `app.stopRecording()`](/reference/app#startrecording)
+nahrají jeden úsek obrazovky jako `.mp4`. `boundingBox()` lokátoru vrací
+rámec prvku v bodech (na Androidu ve fyzických pixelech).
+
+```ts
+test('the sheet slides up', { video: 'off' }, async ({ app, screen }) => {
+  await app.open();
+  await app.startRecording({ name: 'sheet' });
+  await screen.getByRole('button', 'Open sheet').tap();
+  await expect(screen.getByText('Sheet title')).toBeVisible();
+  const [video] = await app.stopRecording();
+});
+```
+
+Nahrávání spusť až po `app.open()`. Nahrávání spuštěné po
+`device.closeApp()` po zastavení ukončí relaci zařízení, takže potom
+aplikaci znovu otevři. Klepnutí jsou vidět, pokud
+[`videoTouches`](/reference/mobile#videotouches) není `false`.
+
+## Více zařízení
+
+<Video>
+  <video src="/images/cross-platform.mp4" aria-label="Jedna sada testů běží současně na webu, iOS a Androidu." muted loop playsInline controls />
+
+  Jedna sada testů běží na webu, iOS a Androidu.
+</Video>
+
+Přidej cíl pro každou platformu:
+
+```ts title="e2e.config.ts"
+import type { E2EConfig } from 'e2e';
+import { mobile } from '@e2e-dev/mobile';
+
+const app = { bundleId: 'com.example.app' };
+
+export default {
+  targets: [
+    { name: 'iphone', engine: mobile({ platform: 'ios' }), app },
+    { name: 'pixel', engine: mobile({ platform: 'android' }), app },
+  ],
+  workers: 1,
+} satisfies E2EConfig;
+```
+
+Testy běží na obou cílech. U testu s popisky nebo chováním specifickým pro
+platformu nastav `platforms: ['ios']` nebo `platforms: ['android']`.
+
+Chceš-li spouštět soubory paralelně, zadej sadu zařízení a nastav `workers`
+alespoň na její velikost. Každé zařízení dostane jeden worker:
+
+```ts
+mobile({ platform: 'ios', device: ['iPhone 17', 'iPhone 17 Pro'] })
+```
+
+Bez `device` použije engine spuštěná zařízení, až do limitu workerů.
+Spárovaný iPhone nebo iPad, který je dosažitelný (přes USB nebo síť), se
+počítá jako spuštěný. Pokud žádné spuštěné není, spustí vypnuté: na iOS
+iPhone před iPadem a ten před Apple TV, na Androidu telefon nebo tablet
+před TV, pak podle nejnovějšího OS a nakonec podle názvu. Dva workery nikdy
+neovládají stejné zařízení.
+
+## Nástroje agenta
+
+Agent už má základní akce jako `tap`, `type` a `scroll`. Přidej
+`mobileTools` pro přepínání aplikací, volná přejetí a systémová upozornění.
+Předej všechny enginy zařízení z konfigurace jednomu volání:
+
+```ts title="e2e.config.ts"
+import type { E2EConfig } from 'e2e';
+import { mobile } from '@e2e-dev/mobile';
+import { mobileTools } from '@e2e-dev/mobile/tools';
+import { gateway } from 'ai';
+
+const app = { bundleId: 'com.example.app' };
+const iphone = mobile({ platform: 'ios' });
+const pixel = mobile({ platform: 'android' });
+
+export default {
+  targets: [
+    { name: 'iphone', engine: iphone, app },
+    { name: 'pixel', engine: pixel, app },
+  ],
+  agents: { default: { model: gateway('openai/gpt-6-luna-fast'), tools: mobileTools(iphone, pixel) } },
+} satisfies E2EConfig;
+```
+
+Volání jdou do enginu, který spouští aktuální pokus. `open_app`, `swipe` a
+`alert` mění stav zařízení, takže je agent při přehrávání z cache spouští
+naživo. Každý nástroj popisuje
+[reference mobilního enginu](/reference/mobile#agent-tools). Jak vedle nich
+přidat vlastní, popisuje [Nástroje projektu](/tools).
+
+## Fyzická zařízení
+
+agent-device ovládá telefon připojený k tvému počítači stejně jako
+simulátor, bez dalšího enginu nebo volby. Vypiš zařízení, která vidí:
+
+<CodeGroup>
+```bash npm
+npx agent-device devices --platform ios
+```
+
+```bash pnpm
+pnpm exec agent-device devices --platform ios
+```
+
+```bash bun
+bunx agent-device devices --platform ios
+```
+</CodeGroup>
+
+Pak telefon uveď v `device` tak, jak je ve výpisu:
+
+```ts
+mobile({ platform: 'ios', device: 'QA iPhone' })
+```
+
+Použij název, ne id. Engine čte řetězec v `device` jako id jen u UDID
+simulátoru nebo sériového čísla `emulator-<port>`. Vyhrává první zařízení
+s odpovídajícím názvem, takže dej každému telefonu jedinečný název. Bez
+`device` se spárovaný iPhone nebo iPad, který je dosažitelný (přes USB nebo
+síť), nebo připojený telefon s Androidem počítá jako spuštěný a přidá se do
+sady vedle spuštěných simulátorů.
+
+Telefon jednou nastav:
+
+<Tabs>
+  <Tab title="iOS">
+  - Spáruj telefon a označ ho jako důvěryhodný, odemkni ho a zapni režim
+    vývojáře (Developer Mode).
+  - agent-device sestaví a podepíše svůj runner XCTest do telefonu. Nastav
+    `AGENT_DEVICE_IOS_TEAM_ID` na id svého týmu a
+    `AGENT_DEVICE_IOS_BUNDLE_ID` na jedinečné id v obráceném DNS zápisu,
+    například `com.example.agentdevice.runner`. Podpisový profil musí
+    povolovat toto id i `<id>.uitests`. První běh runner sestavuje a trvá
+    déle.
+  - Po změně těchto proměnných spusť `npx agent-device daemon stop`.
+    Běžící daemon si ponechává prostředí, se kterým se spustil.
+  - `app.appPath` musí být podepsané sestavení pro zařízení, ne `.app` pro
+    simulátor.
+
+  Podepisování pro iOS podrobně popisuje `npx agent-device help physical-device`.
+  </Tab>
+  <Tab title="Android">
+  - Zapni ladění přes USB a telefon autorizuj. `adb devices` ho vypíše
+    jako `device`.
+  - `app.appPath` je stejný `.apk` jako na emulátoru.
+  </Tab>
+</Tabs>
+
+Na telefonu je `localhost` v aplikaci samotný telefon. Nasměruj aplikaci na
+síťovou adresu svého počítače, nebo na Androidu přesměruj port pomocí
+`adb reverse tcp:<port> tcp:<port>`.
+
+<Accordion title="Co na telefonu nefunguje">
+Některé ovládací prvky zařízení potřebují simulátor nebo emulátor. Na
+telefonu selžou se zprávou od agent-device.
+
+- Na iPhonu jsou všechna nastavení zařízení jen pro simulátor:
+  `app.permissions`, `device.setPermission`, `app.clearState()`,
+  `device.setLocation`, `device.clearLocation`, `device.setAppearance`,
+  biometrické metody a `device.clearKeychain`. Totéž platí pro
+  `device.clipboard`, `device.setClipboard` a `device.fold`.
+- Pro čistý start na iPhonu aplikaci přeinstaluj pomocí
+  `device.installApp(path, { reinstall: true })`. Nastav `app.bundleId` nebo
+  volbu `app`, aby agent-device věděl, kterou aplikaci odebrat.
+- Starší iPhone bez CoreDevice ovládá agent-device tehdy, když ho
+  `xcrun devicectl list devices` nevypíše. Klepnutí, psaní a obrazovka
+  fungují. Instalace, `--video`, `device.openLink` a
+  `app.launchArguments` selžou. Nainstaluj sestavení z Xcode a připni
+  `app.bundleId`.
+- Na telefonu s Androidem je `device.setLocation` jen pro emulátor.
+  `device.setBiometrics('fingerprint', ...)` funguje jen tam, kde telefon
+  zpřístupňuje `cmd fingerprint`.
+- `--video` se na iPhonu skládá ze snímků obrazovky s frekvencí asi 15
+  snímků za sekundu a vynechává snímky.
+</Accordion>
+
+## Hostovaná zařízení
+
+Pro hostované simulátory iOS a emulátory Androidu s automatickou instalací
+aplikace a úklidem zařízení použij [Limrun](/integrations/limrun).
+
+Chceš-li běžet na zařízeních, která hostuje nějaká služba, nastav `device`
+na `DeviceProvider`. Funguje jakákoli služba, která spouští daemon
+agent-device vedle simulátoru, emulátoru nebo telefonu. Poskytovatel si na
+začátku běhu pronajme jedno zařízení pro každý slot workeru a na konci běhu
+ho uvolní.
+
+Pro [Expo Simulators](/integrations/eas) použij `expoSimulators()` z
+`@e2e-dev/eas`. Pro [TestMu AI](/integrations/testmu) použij `testmu()` z
+`@e2e-dev/testmu`. Pro [BrowserStack](/integrations/browserstack) použij
+`browserstack()` z `@e2e-dev/browserstack`. Pro Android na [E2B](/integrations/e2b) použij `e2b()` z
+`@e2e-dev/e2b`. Pro [Revyl](/integrations/revyl) použij `revyl()` z
+`@e2e-dev/revyl`. Pro jinou službu napiš poskytovatele o pár desítkách
+řádků, jako je `hostedDevices` v příkladu níže:
+
+```ts
+mobile({
+  platform: 'ios',
+  device: hostedDevices({ serviceUrl: 'https://devices.example.com', image: 'ios-18-iphone-17' }),
+})
+```
+
+- Každý worker si pronajímá vlastní relaci a služba účtuje relaci po celou
+  dobu, kdy běží. Drž `workers` na počtu, který sada testů dokáže vytížit.
+- Replay cache používá jako klíč `app.bundleId`, takže nahrávky pořízené
+  lokálně se přehrají i na hostovaných zařízeních.
+- Pronajatá zařízení se zahřívají stejně jako lokální, ještě před začátkem
+  měření času testu.
+
+<Accordion title="Kontrakt DeviceProvider">
+```ts
+export interface DeviceProvider {
+  /** Label in progress lines and error messages. */
+  readonly name: string;
+  acquire(request: DeviceRequest): Promise<DeviceLease>;
+  release(lease: DeviceLease, context: DeviceReleaseContext): Promise<void>;
+  record?(lease: DeviceLease, context: ProviderRecordContext): Promise<ProviderRecording>;
+}
+
+export interface DeviceLease {
+  /** The provider's handle (a session id), handed back to `release`. */
+  readonly id: string;
+  /** The agent-device daemon the worker connects to; a lease names this, `client`, or both. */
+  readonly daemon?: { readonly baseUrl: string; readonly authToken?: string };
+  /** agent-device client configuration the worker's client is created with: a lease scope, a `stateDir`. */
+  readonly client?: DeviceClientConfig;
+  /** Device to select inside that daemon, when it hosts more than one. */
+  readonly device?: string;
+  /** Device to select inside that daemon by the id agent-device lists it under: a simulator UDID or an Android serial. */
+  readonly deviceId?: string;
+  /** Bundle id or package the provider installed itself; skips the target's `app.appPath`. */
+  readonly installedApp?: string;
+}
+```
+
+**`acquire`** běží pro všechny sloty workerů najednou, v procesu runneru.
+Požadavek nese `platform`, `runId`, `targetName`, `slot`, `slots`, `app`
+(`app.bundleId` cíle), vyhodnocenou `appPath`, `agentDeviceVersion` (pro
+službu, která spouští daemon zvolené verze), `projectRoot`, `env`, signál
+přerušení `signal` a `log`, který se dostane k reporteru.
+
+- Tokeny čti z `request.env`, ne z `process.env`. Soubory projektu čti
+  v `request.projectRoot`, ne v `process.cwd()`.
+- Cíl, který nemá co spustit, si nic nepronajímá.
+- `installedApp` nastav jen tehdy, když požadavek obsahuje `appPath`. Jinak
+  běh selže.
+
+**`release`** běží po skončení posledního workeru, v rámci
+`cleanupTimeout`, na každé cestě ukončení: při selhání, přerušení nebo
+výjimce v `prepare`. Dostane objekt, který vrátil `acquire`, takže si na
+něm poskytovatel může držet vlastní pole. K workerům se dostanou jen pole
+`DeviceLease`. Když se pronájem pro jeden slot nezdaří, běh skončí ještě
+před prvním testem a engine přesto uvolní všechny pronájmy, které získal.
+
+**`client`** je konfigurace klienta agent-device jako data JSON, použitá
+nad názvem relace a adresou `daemon`. Pronájem, který nastavuje `session`,
+`daemonBaseUrl`, `daemonAuthToken` nebo `daemonTransport`, je odmítnut. Pro
+vlastní runtime device cloudů v agent-device nese `client` rozsah pronájmu,
+který vrátilo `leases.allocate`: `tenant`, `runId`, `leaseId`,
+`leaseBackend` a `leaseProvider`. Příkaz bez rozsahu se vrátí k lokálním
+zařízením. `stateDir` v `client` nasměruje worker na daemon, který spustil
+poskytovatel, takže adresa `daemon` není potřeba.
+
+**`record`** je volitelné. Když pokus nahrává video, worker ho zavolá místo
+nahrávání obrazovky v agent-device. Worker může být jiný proces, takže
+`record` dostane jen pole pronájmu, ne stav, který si držel `acquire`.
+Vrací `ProviderRecording` (typ z `e2e/engine`), jehož `stop` buď zapíše
+soubor do adresáře, který dostane, a vrátí `{ file }`, uložený jako
+`video/<file>`, nebo vrátí `{ url, mediaType }` pro nahrávku, kterou si
+ponechá služba a na kterou report odkáže. Selhání `record` způsobí selhání
+spuštění pokusu. Selhaný `stop` se zkusí ještě jednou na konci pokusu.
+</Accordion>
+
+<Accordion title="Příklad: poskytovatel pro API relací">
+Typické API relací potřebuje tři požadavky: vytvořit relaci, dotazovat se
+na ni, dokud není daemon dosažitelný, a zastavit ji.
+
+```ts title="device-provider.ts" expandable
+import type { DeviceProvider } from '@e2e-dev/mobile';
+
+/**
+ * Leases devices from a service that starts an agent-device daemon per
+ * session. Replace the three requests with your service's API.
+ */
+export function hostedDevices(options: { serviceUrl: string; image: string }): DeviceProvider {
+  return {
+    name: 'hosted-devices',
+    async acquire(request) {
+      const token = request.env['DEVICE_SERVICE_TOKEN'];
+      if (token === undefined || token === '') throw new Error('DEVICE_SERVICE_TOKEN is not set');
+      const headers = { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' };
+      // 1. Ask for a device; name the session after the run so it can be found later.
+      const created = await fetch(`${options.serviceUrl}/sessions`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          platform: request.platform,
+          image: options.image,
+          name: `e2e ${request.runId} ${request.targetName} ${request.slot + 1}/${request.slots}`,
+        }),
+        signal: request.signal,
+      });
+      if (!created.ok) throw new Error(`device service: HTTP ${created.status}`);
+      const { id } = (await created.json()) as { id: string };
+      // 2. Wait until the session exposes its agent-device daemon.
+      for (;;) {
+        const response = await fetch(`${options.serviceUrl}/sessions/${id}`, { headers, signal: request.signal });
+        const session = (await response.json()) as { status: string; daemonUrl?: string; daemonToken?: string; viewerUrl?: string };
+        if (session.status === 'ready' && session.daemonUrl !== undefined) {
+          if (session.viewerUrl !== undefined) request.log(`watch at ${session.viewerUrl}`);
+          return { id, daemon: { baseUrl: session.daemonUrl, authToken: session.daemonToken } };
+        }
+        if (session.status !== 'starting') throw new Error(`device service: session ${id} is ${session.status}`);
+        await new Promise((resolve) => setTimeout(resolve, 5_000));
+      }
+    },
+    async release(lease, context) {
+      // 3. Stop the session; the run waits for this within cleanupTimeout.
+      const token = context.env['DEVICE_SERVICE_TOKEN'] ?? '';
+      await fetch(`${options.serviceUrl}/sessions/${lease.id}/stop`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+        signal: context.signal,
+      });
+    },
+  };
+}
+```
+</Accordion>
+
+<Accordion title="Příklad: device cloud, který agent-device podporuje">
+Device cloud, se kterým agent-device komunikuje sám, nepotřebuje žádné
+vlastní API relací. `agentDeviceLeases()` z `@e2e-dev/mobile/lease` spustí
+pro každý slot workeru daemon agent-device s přihlašovacími údaji z `env`,
+alokuje pronájem podle `selectors`, udržuje ho naživu, dokud ho běh drží,
+a při uvolnění selže, pokud agent-device nepotvrdí, že relace skončila.
+Stejně funguje `testmu()` z `@e2e-dev/testmu` pro
+[TestMu AI](/integrations/testmu), `browserstack()` z
+`@e2e-dev/browserstack` pro [BrowserStack](/integrations/browserstack) a
+`revyl()` z `@e2e-dev/revyl` pro [Revyl](/integrations/revyl).
+
+Když cloud potřebuje plugin poskytovatele pro agent-device, přidej ho jako
+závislost a předej
+`agentDevicePlugin(import.meta.resolve('@agent-device/<plugin>'))`: v
+`acquire` zavolej jeho `assertVersion(request.agentDeviceVersion)` a s
+pronájmem předej jeho `prepareHome`, který plugin zaregistruje v domovském
+adresáři daemonu.
+
+```ts title="device-cloud-provider.ts" expandable
+import type { DeviceProvider } from '@e2e-dev/mobile';
+import { agentDeviceLeases } from '@e2e-dev/mobile/lease';
+
+/**
+ * Leases devices from a device cloud agent-device itself speaks to. Each
+ * worker slot gets its own agent-device daemon, whose runtime for the cloud
+ * starts the session when the lease is allocated and ends it on release.
+ * `provider` is agent-device's name for the cloud.
+ */
+export function cloudDevices(options: { provider: string; device: string; osVersion: string; app: string }): DeviceProvider {
+  const leases = agentDeviceLeases({ provider: options.provider, label: options.provider });
+  return {
+    name: options.provider,
+    async acquire(request) {
+      const token = request.env['CLOUD_TOKEN'];
+      if (token === undefined || token === '') throw new Error('CLOUD_TOKEN is not set');
+      return leases.acquire(request, {
+        // The daemon's runtime reads the credentials from its environment.
+        env: { CLOUD_TOKEN: token },
+        selectors: { device: options.device, providerOsVersion: options.osVersion, providerApp: options.app },
+        summary: `${options.device}, ${request.platform} ${options.osVersion}`,
+      });
+    },
+    release: (lease, context) => leases.release(lease, context),
+  };
+}
+```
+</Accordion>
+
+## Rozdíly oproti webu
+
+| Na webu | Na zařízení |
+| --- | --- |
+| `app.open('/path')` a agentovo sloveso `navigate` | Žádná URL aplikace a žádné `navigate`. `app.open()` spustí `app.bundleId` načisto a `device.openLink(url)` v ní otevře odkaz. S [`app.linkBase`](/reference/config#linkbase) otevře `app.open('/path')` cestu jako odkaz |
+| `test.setup` uloží relaci, `session:` ji obnoví | Není k dispozici. Simulátor nemá přenositelný snímek relace; přihlas se v každém testu, nebo aplikaci předvyplň daty |
+| Zadávání tajných klíčů | `type_secret` a `screen.getByLabel(...).fill(secret)` vyplní deklarované tajné klíče do zabezpečených polí |
+| `--video` zapíše záznam obrazovky ve formátu WebM | `--video` zapíše MP4 obrazovky zařízení se zobrazenými klepnutími (`videoTouches: false` je skryje), nebo ponechá vlastní nahrávku poskytovatele zařízení |
+| Cache se ukotvuje na cestě stránky | Cache se ukotvuje na umístění `<bundle id> / <screen title>`, kde titulek se čte z navigační lišty na iOS a z panelu nástrojů na Androidu |
+
+### Známá omezení zařízení
+
+- `placeholder` je jediný atribut, který uzel zařízení má.
+- Záložka React Native (`accessibilityRole="tab"`) má na iOS roli `other`.
+  Vyhledej ji podle test id nebo popisku a ověř `toBeSelected`. Zaškrtávací
+  políčka, přepínače a `toBeChecked` fungují na obou platformách.
+- Na iOS nemá obyčejný `View` z React Native ve stromu žádné potomky, takže
+  `filter({ has })` na něm a dotazy omezené na něj nic nenajdou, zatímco
+  `filter({ hasNot })` ponechá každý takový řádek, včetně toho, který jsi
+  chtěl vyloučit. Omez dotaz na `ScrollView` obrazovky
+  (`device.locator('role=scroll-area')`), nebo dej potomkům test id.
+- Klikatelný prvek v Jetpack Compose vykreslený menší než 48dp se ve stromu
+  zobrazí jako dvě tlačítka a klepnutí selže s `has no parent-owned touch point`.
+  Udělej ovládací prvek alespoň 48dp, což je minimální dotyková plocha
+  Androidu.
+- Prvek skrytý pomocí `display: none` ve stromu není, takže
+  `toBeAttached` selže. Ověř `toHaveCount(0)` nebo `toBeHidden`.
+- Uzel, jehož střed zakrývá softwarová klávesnice, je skrytý, stejně jako
+  uzel odscrollovaný mimo obrazovku. Klávesy, lišta návrhů a dok klávesnice
+  zůstávají viditelné, stejně jako pole s fokusem. Kontejner zůstává
+  viditelný, dokud se některý z jeho potomků zobrazuje nad klávesnicí.
+  `toBeVisible()` na ostatních zakrytých uzlech selže a klepnutí na takový
+  uzel selže s `ACTION_FAILED`. Nejdřív zavolej `device.dismissKeyboard()`
+  nebo uzel odscrolluj. Viz [Viditelnost](/reference/mobile#visibility).
+- `doubleTap()` a `screen.doubleTapAt()` jsou na iOS dvě klepnutí zhruba
+  285 až 335 ms od sebe. Dej detektoru dvojitého klepnutí okno 350 ms nebo
+  delší.
+- Na iOS `device.foregroundApp()` i po `device.home()` stále uvádí aplikaci
+  relace. Místo toho zkontroluj obrazovku.
+- Na sestavení Androidu bez shellového příkazu pro službu schránky (jedním z
+  nich je emulátor Androidu 16) vyhodí `device.clipboard()` a
+  `device.setClipboard()` chybu `UNSUPPORTED_CAPABILITY`. Chceš-li ověřit
+  kopírování, vlož obsah do pole a pole přečti zpět.
+- Na iPhonu Duo nahrává `--video` displej, který svítil při spuštění
+  nahrávání. Jakmile `device.fold` přesune aplikaci na druhý displej, zbytek
+  videa je černý.
+
+## Řešení problémů
+
+Selhání zařízení zobrazí vlastní zprávu agent-device. Pod agentem se chyba
+enginu bez konkrétnějšího kódu hlásí jako `APP_UNREACHABLE`, takže si
+přečti zprávu dřív než kód: často neselhala aplikace.
+
+**Automatizační runner iOS je zaneprázdněný, zaseknutý nebo nedokáže
+předložit snímek.** Náročná nebo animovaná obrazovka může runner přetížit
+a běh zastavený pomocí Ctrl-C ho může nechat zaneprázdněný. Zpráva uvádí
+runner a první krok, obvykle opětovné spuštění. Pokud na to narazí i další
+běh, zastav daemon a restartuj simulátor příkazy níže.
+
+**`device.installApp()` na Androidu hlásí, že chybí bundle id nebo
+balíček.** agent-device nedokázal určit, o jaký balíček v sestavení jde,
+takže `app.open()` nemá co spustit. Když nedokáže přečíst manifest APK,
+použije záložně `aapt` z Android SDK, který hledá v `ANDROID_SDK_ROOT`,
+`ANDROID_HOME`, `~/Library/Android/sdk` na macOS nebo `~/Android/Sdk`.
+Nastav v cíli `app.bundleId`. Nebo exportuj `ANDROID_HOME` a pak zastav
+daemon agent-device, aby ho další běh spustil už s touto proměnnou.
+
+**Android hlásí nedostatečný obsah aplikace v popředí, nebo iOS hlásí, že
+aplikace neběží.** agent-device zatím nedokázal přečíst obrazovku, často
+proto, že se aplikace po studeném startu ještě načítá. Na iOS to platí jen
+do první čitelné obrazovky po `app.open()`, `app.restart()` nebo
+`device.openLink()`, stejně jako na fyzickém iPhonu, který aplikaci ještě
+spouští; aplikace, která skončí později, selže okamžitě. Čekající akce
+lokátoru nebo `expect` tímto stavem čeká, stejně jako na prvek, který tam
+ještě není. Pokud je obrazovka po vypršení čekání stále nečitelná, krok
+selže s touto zprávou. Okamžitá čtení jako `count()` a `isVisible()` místo
+toho nevidí žádné shody, takže `not.toBeVisible()` může projít, i když je
+obrazovka nečitelná, a to i u aplikace, která spadla dřív, než se
+vykreslila. Pozorování, například další tah agenta, na tom selže okamžitě.
+
+**Timeout na zařízení.** Spuštění simulátoru, připojení runneru nebo
+spuštění aplikace, které na zařízení vyprší, je `ENGINE_FAILURE` se zprávou
+a nápovědou od agent-device, nikdy `LAUNCH_TIMEOUT`, `ACTION_FAILED` ani
+`STEP_TIMEOUT`.
+
+**Akce, která přesáhne svůj timeout.** Klepnutí, vyplnění, klávesa,
+přejetí nebo `back` dostane svůj `timeout` (výchozí je `actionTimeout`).
+Pokud zařízení neodpoví včas, krok selže s `ACTION_FAILED` a neopakuje se:
+vstup už mohl dorazit. Čekající klepnutí, dvojité klepnutí, fokus,
+zaškrtnutí nebo zrušení zaškrtnutí se zruší, když krok přestane čekat nebo
+když se běh přeruší. Vstup už odeslaný do zařízení může i tak doběhnout.
+`longPress`, který drží alespoň tak dlouho, jako je zbývající čas, se
+odmítne ještě před odesláním; zvyš jeho `timeout`. Snímky stromu a snímky
+obrazovky běží v rámci timeoutu volání, které je pořizuje, takže zařízení,
+které přestane odpovídat, nechá krok selhat s `ACTION_FAILED`, místo aby ho
+drželo až do timeoutu testu. `locator.waitFor`, `expect` a
+`toHaveScreenshot` dávají svému poslednímu snímku čas navíc, nejvýše tolik,
+kolik trval jejich dosud nejpomalejší, a v rámci timeoutu testu, takže
+obrazovka, která se během toho objeví, stále projde. Prvek, který se nikdy
+neobjeví, selže jako `LOCATOR_NOT_FOUND`, nebo u `expect` jako
+`ASSERTION_FAILED`.
+
+<CodeGroup>
+```bash npm
+npx e2e doctor                   # agent-device, the toolchain, the devices, the app
+npx agent-device daemon stop     # after a wedge: drops every session, the next run starts the daemon
+xcrun simctl shutdown <udid> && xcrun simctl boot <udid>
+```
+
+```bash pnpm
+pnpm exec e2e doctor                   # agent-device, the toolchain, the devices, the app
+pnpm exec agent-device daemon stop     # after a wedge: drops every session, the next run starts the daemon
+xcrun simctl shutdown <udid> && xcrun simctl boot <udid>
+```
+
+```bash bun
+bunx e2e doctor                   # agent-device, the toolchain, the devices, the app
+bunx agent-device daemon stop     # after a wedge: drops every session, the next run starts the daemon
+xcrun simctl shutdown <udid> && xcrun simctl boot <udid>
+```
+</CodeGroup>
+
+## Co dál
+
+<CardGroup cols={2}>
+  <Card title="Reference mobilního enginu" icon="mobile-screen" href="/reference/mobile">
+    Všechny volby, fixture `device` a sada nástrojů.
+  </Card>
+  <Card title="Lokátory" icon="crosshairs" href="/core-concepts#locators">
+    Přesná klepnutí, přejetí a kontroly pomocí `screen` a `expect` na jakékoli platformě.
+  </Card>
+</CardGroup>

@@ -7,8 +7,8 @@ const TOKEN = 'runner-output-token-1';
 function output() {
   const ledger = new SecretLedger();
   const terminal: Record<OutputStream, string[]> = { stdout: [], stderr: [] };
-  const write = (stream: OutputStream) => (text: string, callback?: () => void): boolean => {
-    terminal[stream].push(text);
+  const write = (stream: OutputStream) => (text: string | Uint8Array, callback?: () => void): boolean => {
+    terminal[stream].push(Buffer.from(text).toString());
     callback?.();
     return true;
   };
@@ -63,10 +63,11 @@ describe('RunnerOutput', () => {
     let called = 0;
     out.write('stderr', `reporter: ${TOKEN}\n`, () => (called += 1));
     out.write('stdout', `unfinished ${TOKEN}`, () => (called += 1));
+    out.printLine('a line of the runner');
     out.showThrough(undefined);
     out.write('stdout', 'after\n', () => (called += 1));
     await new Promise((resolve) => process.nextTick(resolve));
-    expect(shown).toEqual(['stderr:reporter: <secret:apiToken>\n', 'stdout:unfinished <secret:apiToken>', 'end']);
+    expect(shown).toEqual(['stderr:reporter: <secret:apiToken>\n', 'stdout:a line of the runner\n', 'stdout:unfinished <secret:apiToken>', 'end']);
     expect(stdout()).toBe('after\n');
     expect(called).toBe(3);
   });

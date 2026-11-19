@@ -4,7 +4,7 @@ import path from 'node:path';
 import type { FinishedRun, Report } from 'e2e';
 import { afterEach, describe, expect, it } from 'vitest';
 import { PAYLOAD_PLACEHOLDER, embedPayload, type ReportPayload } from '../../src/payload.ts';
-import { writeReport } from '../../src/reporter.ts';
+import { htmlReporter, renderReport } from '../../src/reporter.ts';
 
 const REPORT = JSON.parse(
   await readFile(new URL('../../../e2e/schema/fixtures/report-v1.valid.json', import.meta.url), 'utf8'),
@@ -35,7 +35,7 @@ describe('embedPayload', () => {
   });
 });
 
-describe('writeReport', () => {
+describe('renderReport', () => {
   let root: string | undefined;
   afterEach(async () => {
     if (root !== undefined) await rm(root, { recursive: true, force: true });
@@ -48,6 +48,7 @@ describe('writeReport', () => {
       exitCode: 0,
       projectRoot,
       reportPath: path.join(projectRoot, '.e2e', 'report.json'),
+      outputDir: path.join(projectRoot, '.e2e'),
       artifactsRoot: path.join(projectRoot, '.e2e', 'results'),
       aiTracePath: undefined,
       traces: new Map(),
@@ -55,20 +56,28 @@ describe('writeReport', () => {
     };
   }
 
-  it('writes the page beside the results directory by default', async () => {
+  it('puts the page beside the results directory by default', async () => {
     root = await mkdtemp(path.join(tmpdir(), 'e2e-html-'));
     const trace = path.join('.e2e', 'results', 'checkout-1a2b', 'trace.md');
-    const rows = await writeReport({ ...finishedRun(root), traces: new Map([['result-1', trace]]) }, {}, TEMPLATE);
-    const page = await readFile(path.join(root, '.e2e', 'report.html'), 'utf8');
+    const file = await renderReport({ ...finishedRun(root), traces: new Map([['result-1', trace]]) }, {}, TEMPLATE);
 
-    expect(parsePayload(page)).toEqual({
+    expect(file).toMatchObject({ path: path.join(root, '.e2e', 'report.html'), label: 'HTML report' });
+    expect(file.note).toBeUndefined();
+    expect(parsePayload(file.content)).toEqual({
       report: REPORT,
       media: { mode: 'link', base: 'results' },
       resultsDir: '.e2e/results',
       traces: { 'result-1': '.e2e/results/checkout-1a2b/trace.md' },
       sources: {},
     });
-    expect(rows).toEqual([{ label: 'HTML report', text: expect.stringMatching(/report\.html$/u) }]);
+  });
+
+  it('writes no page when the run wrote no report', async () => {
+    root = await mkdtemp(path.join(tmpdir(), 'e2e-html-'));
+    // A run that stopped before its tests (NO_TESTS, a config error, an app that never started) has no reportPath.
+    const files = await htmlReporter().reportFiles?.({ ...finishedRun(root), reportPath: undefined }, new AbortController().signal);
+
+    expect(files).toEqual([]);
   });
 
   it('keeps the test file lines around each source location, redacted, and no file outside the project', async () => {
@@ -80,8 +89,8 @@ describe('writeReport', () => {
     const outside = structuredClone(REPORT);
     outside.run.results[2]!.source.file = '../secret.ts';
     const redact = (text: string) => text.replaceAll('hunter2-staging', '[secret]');
-    await writeReport({ ...finishedRun(project), report: outside, redact }, {}, TEMPLATE);
-    const { sources } = parsePayload(await readFile(path.join(project, '.e2e', 'report.html'), 'utf8'));
+    const { content } = await renderReport({ ...finishedRun(project), report: outside, redact }, {}, TEMPLATE);
+    const { sources } = parsePayload(content);
 
     // The fixture points at lines 1, 3, 9, and 16; each frame keeps two lines either side.
     expect(Object.keys(sources)).toEqual(['tests/example.e2e.ts']);
@@ -92,10 +101,10 @@ describe('writeReport', () => {
 
   it('links artifacts from wherever outputFile puts the page', async () => {
     root = await mkdtemp(path.join(tmpdir(), 'e2e-html-'));
-    await writeReport(finishedRun(root), { outputFile: 'reports/e2e/index.html' }, TEMPLATE);
-    const page = await readFile(path.join(root, 'reports', 'e2e', 'index.html'), 'utf8');
+    const file = await renderReport(finishedRun(root), { outputFile: 'reports/e2e/index.html' }, TEMPLATE);
 
-    expect(parsePayload(page).media).toEqual({ mode: 'link', base: '../../.e2e/results' });
+    expect(file.path).toBe(path.join(root, 'reports', 'e2e', 'index.html'));
+    expect(parsePayload(file.content).media).toEqual({ mode: 'link', base: '../../.e2e/results' });
   });
 
   /** The fixture report with these artifacts on its first attempt. */
@@ -125,8 +134,8 @@ describe('writeReport', () => {
       { ...artifact, id: 'unscanned', mediaType: 'application/pdf', path: 'a/export.pdf', redaction: 'incomplete' },
     ]);
 
-    const rows = await writeReport({ ...finishedRun(root), report }, { media: 'embed' }, TEMPLATE);
-    const { media } = parsePayload(await readFile(path.join(root, '.e2e', 'report.html'), 'utf8'));
+    const file = await renderReport({ ...finishedRun(root), report }, { media: 'embed' }, TEMPLATE);
+    const { media } = parsePayload(file.content);
 
     expect(media).toEqual({
       mode: 'embed',
@@ -135,14 +144,14 @@ describe('writeReport', () => {
         'a/page.html': `data:application/octet-stream;base64,${Buffer.from('<script>alert(1)</script>').toString('base64')}`,
       },
     });
-    expect(rows[0]?.text).toMatch(/report\.html \(one file, \d+ KB\)$/u);
+    expect(file.note).toMatch(/^\(one file, \d+ KB\)$/u);
   });
 
   it('leaves media out for text only', async () => {
     root = await mkdtemp(path.join(tmpdir(), 'e2e-html-'));
-    const rows = await writeReport(finishedRun(root), { media: 'none' }, TEMPLATE);
+    const file = await renderReport(finishedRun(root), { media: 'none' }, TEMPLATE);
 
-    expect(parsePayload(await readFile(path.join(root, '.e2e', 'report.html'), 'utf8')).media).toEqual({ mode: 'none' });
-    expect(rows[0]?.text).toMatch(/\(text only\)$/u);
+    expect(parsePayload(file.content).media).toEqual({ mode: 'none' });
+    expect(file.note).toBe('(text only)');
   });
 });

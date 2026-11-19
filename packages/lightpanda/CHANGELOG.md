@@ -1,5 +1,13 @@
 # @e2e-dev/lightpanda
 
+## 0.0.3
+
+### Patch Changes
+
+- [#1965](https://github.com/e2e-inc/e2e/pull/1965) [`60d29cf`](https://github.com/e2e-inc/e2e/commit/60d29cfe4c9d88b00659e0d0e00b8973d61e7391) Thanks [@szymonrybczak](https://github.com/szymonrybczak)! - List the maintainers' `@e2e.com` addresses in `contributors`.
+
+- [#1923](https://github.com/e2e-inc/e2e/pull/1923) [`bc41a25`](https://github.com/e2e-inc/e2e/commit/bc41a25c7d7e6d6f62c5b78b516c0a1f71c2b45c) Thanks [@cdebled](https://github.com/cdebled)! - `lightpanda()` loads linked stylesheets by default: `loadResources` defaults to `['stylesheet']` instead of `[]`. Without them, a node an external stylesheet hides counts as visible, so a visible query or an agent step can find a closed menu. A list still replaces the default, and `loadResources: []` fetches none, as before.
+
 ## 0.0.2
 
 ### Patch Changes

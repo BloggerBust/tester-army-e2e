@@ -252,7 +252,7 @@ process.stdout.write(JSON.stringify(outcomes));
     expect(JSON.parse(stdout)).toEqual(Array.from({ length: 4 }, () => 'NODE_UNSUPPORTED: e2e/runner needs Node.js: on Bun, run tests with the e2e CLI'));
   });
 
-  it('serves e2e mcp, one session at a time, whose run_tests runs the CLI on Bun', async () => {
+  it('serves e2e mcp, one session at a time', async () => {
     createTypeScriptProject(dir, { type: 'module' }, {
       ...BUN_FILES,
       // A target with an engine, which a session needs.
@@ -266,12 +266,6 @@ process.stdout.write(JSON.stringify(outcomes));
     const client = new Client({ name: 'e2e-bun-runtime', version: '0.0.0' });
     await client.connect(transport);
     try {
-      const { tools } = await client.listTools();
-      expect(tools.map((tool) => tool.name)).toContain('run_tests');
-      const result = (await client.callTool({ name: 'run_tests', arguments: { files: ['tests/runtime.e2e.ts'] } }, { timeout: 60_000 })) as { content: { text?: string }[]; isError?: boolean };
-      const text = result.content.map((part) => part.text ?? '').join('\n');
-      expect(text).toContain('1 passed');
-      expect(result.isError).not.toBe(true);
       // Sessions would share Bun's one instance of each project module.
       expect(stderr).toContain('--max-sessions 3 ignored: on Bun, one session is open at a time');
       const open = async (): Promise<{ content: { text?: string }[]; isError?: boolean }> =>

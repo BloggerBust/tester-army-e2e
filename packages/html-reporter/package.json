@@ -1,6 +1,6 @@
 {
   "name": "@e2e-dev/html-reporter",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "description": "HTML reporter for e2e: one self-contained page per run, steps, screenshots, and video",
   "keywords": [
     "e2e",
@@ -11,8 +11,8 @@
   ],
   "license": "Apache-2.0",
   "contributors": [
-    "Oskar Kwaśniewski <oskar@tester.army>",
-    "Szymon Rybczak <szymon@tester.army>"
+    "Oskar Kwaśniewski <oskar@e2e.com>",
+    "Szymon Rybczak <szymon@e2e.com>"
   ],
   "repository": {
     "type": "git",
@@ -51,7 +51,7 @@
     "test:unit": "vitest run tests/unit"
   },
   "peerDependencies": {
-    "e2e": ">=0.23.1 <1"
+    "e2e": ">=0.23.2 <1"
   },
   "devDependencies": {
     "@tailwindcss/vite": "4.3.5",
@@ -60,14 +60,14 @@
     "@types/react-dom": "19.3.0",
     "@vitejs/plugin-react": "6.3.0",
     "e2e": "workspace:*",
-    "lucide-react": "1.74.0",
+    "lucide-react": "1.76.0",
     "react": "19.3.1",
     "react-dom": "19.3.1",
     "tailwindcss": "4.3.5",
     "typescript": "7.0.2",
     "vite": "8.3.8",
     "vite-plugin-singlefile": "2.3.4",
-    "vitest": "5.1.0"
+    "vitest": "5.1.1"
   },
   "engines": {
     "node": "^22.22.3 || >=24.8.0"

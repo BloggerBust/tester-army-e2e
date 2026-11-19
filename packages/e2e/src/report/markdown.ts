@@ -21,6 +21,7 @@
 
 import path from 'node:path';
 import { collapseText } from '@e2e-dev/core/lib/internal/text';
+import { builtin } from './builtin-id.ts';
 import type { Report1Document, ReportChanges, ReportError, ReportExplore, ReportExploreFinding, ReportFilter, ReportResult, ReportStep, ReportTarget } from './build.ts';
 import { ENDED_TEXT, orderFindings, SEVERITY_WORDS, stepCountParts } from './explore-text.ts';
 import { filterDecision, formatCost, formatTokens, repeatSuffix, shortCommit, statusBucket, tally, type Counters } from './format.ts';
@@ -44,8 +45,8 @@ import {
 import { cell, code, formatDuration, link, MAX_ID_CHARS, MAX_PATH_CHARS, MAX_TITLE_CHARS, plural } from './markdown-text.ts';
 import { outcome, type Outcome } from './outcome.ts';
 import { isExploreVerdict } from './traces.ts';
-import { posixRelative, writeTextReport } from './write.ts';
-import type { Reporter, ReporterSummary } from '../run-types.ts';
+import { posixRelative } from './write.ts';
+import type { Reporter } from '../run-types.ts';
 
 type ReportRun = Report1Document['run'];
 type ReportArtifact = ReportResult['attempts'][number]['artifacts'][number];
@@ -642,22 +643,33 @@ export function renderMarkdownReport(report: Report1Document, options: MarkdownR
   return fit(head, body.length === 0 ? [] : [...body, ''], footer(run, targets, options));
 }
 
+/** Options of the built-in `markdown` reporter. */
+export interface MarkdownReporterOptions {
+  /** Where the page goes, from the project root; `summary.md` in the output directory by default. */
+  readonly outputFile?: string;
+}
+
 /**
  * The built-in `markdown` reporter: the report as one markdown page in
  * `summary.md` beside `report.json`, with evidence listed as paths from the
  * project root, for a reader with the checkout in front of it: a pull
  * request description, a coding agent's handoff, a wiki page. Each failure
  * block links to the trace page the runner wrote for it in the test's
- * directory under `results/`.
+ * directory under `results/`. Writes nothing when the report itself was not
+ * written.
  */
-export const markdownReporter: Reporter = {
-  name: 'markdown',
-  async onRunFinished(run) {
-    if (run.reportPath === undefined) return;
-    const artifactsDir = posixRelative(run.projectRoot, run.artifactsRoot);
-    const summary = path.join(path.dirname(run.reportPath), 'summary.md');
-    await writeTextReport(summary, renderMarkdownReport(run.report, { artifactsDir, traces: run.traces }));
-    const rows: ReporterSummary = [{ label: 'Markdown', text: path.relative(run.projectRoot, summary) || summary }];
-    return rows;
-  },
-};
+export function markdown(options: MarkdownReporterOptions = {}): Reporter {
+  return builtin('markdown', {
+    name: 'markdown',
+    reportFiles: (run) =>
+      run.reportPath === undefined
+        ? []
+        : [
+            {
+              path: options.outputFile ?? path.join(run.outputDir, 'summary.md'),
+              content: renderMarkdownReport(run.report, { artifactsDir: posixRelative(run.projectRoot, run.artifactsRoot), traces: run.traces }),
+              label: 'Markdown',
+            },
+          ],
+  });
+}

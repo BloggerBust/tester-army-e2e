@@ -34,7 +34,7 @@ const read = (min: number, max: number): Member => ({ kind: 'read', args: [min, 
 const matcher = (min: number, max: number): Member => ({ kind: 'matcher', args: [min, max] });
 
 /** Public members `run_code` leaves out on purpose; `LEFT_OUT` says why for each. */
-type LeftOutName = 'debug' | 'all' | 'setInputFiles' | 'screenshot' | 'toHaveScreenshot' | 'startRecording' | 'stopRecording';
+type LeftOutName = 'debug' | 'pause' | 'all' | 'setInputFiles' | 'screenshot' | 'toHaveScreenshot' | 'startRecording' | 'stopRecording';
 
 /** Public members that are not calls: `expect(...).not` the grammar reads itself, `app.baseUrl` a statement has no use for. */
 type NotCalled = 'not' | 'baseUrl';
@@ -159,6 +159,7 @@ export const RECEIVER_LABELS: Readonly<Record<Receiver, string>> = {
 export const LEFT_OUT: ReadonlyMap<string, string> = new Map(
   Object.entries({
     debug: "prints to the server's own output; read the screen with screen.tree() or the observe tool",
+    pause: 'pauses a test until someone resumes it; a session already keeps the app open between calls',
     all: 'returns locators, not a result; use count() or nth(i)',
     setInputFiles: 'reads files from disk; attach files with the upload tool, which checks the paths',
     screenshot: 'writes into the test attempt; use the screenshot tool with path to save a file',

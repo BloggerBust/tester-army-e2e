@@ -9,8 +9,8 @@ const DAY = String.raw`\d{1,2}(?:st|nd|rd|th)?`;
 /** An ISO 8601 calendar date (`YYYY-MM-DD`). */
 export const ISO_DATE = /\b\d{4}-\d{2}-\d{2}\b/;
 
-/** A clock time (`HH:MM` or `HH:MM:SS`). */
-export const CLOCK_TIME = /\b\d{1,2}:\d{2}(?::\d{2})?\b/;
+/** A clock time (`HH:MM` or `HH:MM:SS`), also with am or pm written against it (`5:42pm`); the match is the digits alone. */
+export const CLOCK_TIME = /\b\d{1,2}:\d{2}(?::\d{2})?(?=\b|[ap]\.?m\b)/i;
 
 /** A month followed by day with optional year (e.g. `October 26th`, `Sep 8, 2026`). */
 export const MONTH_DAY_DATE = new RegExp(String.raw`\b${MONTH}\s+${DAY}(?:,?\s+\d{4})?\b`, 'i');

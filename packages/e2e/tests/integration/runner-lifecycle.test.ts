@@ -239,6 +239,60 @@ test('plain', async () => {});
   );
 
   it(
+    'runs one test per test.each and test.for row with the row and the fixtures, each located at its call',
+    async () => {
+      const file = `import { test } from 'e2e';
+
+test.each([{ user: 'Ada' }, { user: 'Grace' }])('signs in as $user', async ({ user }, { platform }) => {
+  if (platform !== 'fake') throw new Error('unexpected platform ' + platform);
+  if (user !== 'Ada' && user !== 'Grace') throw new Error('unexpected row ' + user);
+});
+test.each([[1, 2, 3]])('%i + %i = %i', async (a, b, sum, { platform }) => {
+  if (a + b !== sum || platform !== 'fake') throw new Error('bad arguments');
+});
+test.for([[2, 2]])('pair %i and %i', async ([a, b], { platform }) => {
+  if (a !== b || platform !== 'fake') throw new Error('bad arguments');
+});
+test.each(['left', 'right'])('fails on %s', { skip: 'not this one' }, async () => {
+  throw new Error('a skipped row must never run');
+});
+test.each([{ ok: false }])('row $ok fails', async ({ ok }) => {
+  if (!ok) throw new Error('row says fail');
+});
+test('plain', async () => {});
+`;
+      const { outcome, project } = await runProject({ 'tests/each.e2e.ts': file }, {});
+      const plain = resultByTitle(outcome, 'plain').test.source!;
+      expect(plain.file).toMatch(/tests\/each\.e2e\.ts$/);
+      const rows: Array<[string, string]> = [
+        ['signs in as Ada', 'passed'],
+        ['signs in as Grace', 'passed'],
+        ['1 + 2 = 3', 'passed'],
+        ['pair 2 and 2', 'passed'],
+        ['fails on left', 'skipped'],
+        ['fails on right', 'skipped'],
+        ['row false fails', 'failed'],
+        ['plain', 'passed'],
+      ];
+      expect(outcome.results.map((result) => result.test.title).toSorted()).toEqual(rows.map(([title]) => title).toSorted());
+      const line = (title: string): number => {
+        const result = resultByTitle(outcome, title);
+        expect([title, result.status, result.test.source?.file]).toEqual([title, rows.find(([row]) => row === title)![1], plain.file]);
+        return result.test.source!.line;
+      };
+      // Every row of one call is located at that call; the calls keep their order in the file.
+      expect(line('signs in as Grace')).toBe(line('signs in as Ada'));
+      expect(line('fails on right')).toBe(line('fails on left'));
+      const calls = ['signs in as Ada', '1 + 2 = 3', 'pair 2 and 2', 'fails on left', 'row false fails', 'plain'].map(line);
+      expect(calls).toEqual([...new Set(calls)].toSorted((a, b) => a - b));
+      expect(resultByTitle(outcome, 'fails on left').skip).toEqual({ cause: 'explicit', reason: 'not this one' });
+      expect(outcome.exitCode).toBe(1);
+      project.cleanup();
+    },
+    120_000,
+  );
+
+  it(
     'rejects test.skip(condition) outside a test body at collection',
     async () => {
       const file = `import { test } from 'e2e';

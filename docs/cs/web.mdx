@@ -1,0 +1,334 @@
+---
+title: Web
+description: Nasměruj webový engine na svou aplikaci nebo ji nech spustit runner a spusť sadu testů v několika velikostech viewportu.
+"og:image": "https://e2e.com/docs/images/og/web.png?v=e860636537"
+"twitter:image": "https://e2e.com/docs/images/og/web.png?v=e860636537"
+---
+
+`@e2e-dev/web` spouští testy v prohlížeči proti URL tvé aplikace. Routy,
+cookies, dialogy a stahování popisuje stránka [Práce s prohlížečem](/browser).
+
+## Spuštění aplikace
+
+Nastav URL aplikace v poli `app` cíle. `app.open('/path')` se vůči ní
+vyhodnocuje relativně:
+
+```ts title="Target fragment"
+engine: web(),
+app: { url: process.env.APP_URL ?? 'http://localhost:3000' },
+```
+
+URL bez schématu použije HTTPS, u loopback adresy HTTP. Čisté HTTP funguje
+jen na loopback adrese.
+
+### Nech aplikaci spustit runner
+
+Přidej `app.command` a runner spustí vývojový server. Počká, dokud
+`app.url` neodpoví, a server, který sám spustil, zastaví, když běh skončí,
+selže nebo je přerušen:
+
+```ts title="e2e.config.ts"
+import type { E2EConfig } from 'e2e';
+import { web } from '@e2e-dev/web';
+
+export default {
+  targets: [{
+    engine: web(),
+    app: {
+      url: process.env.APP_URL ?? 'http://localhost:3000',
+      command: {
+        executable: 'npm',
+        args: ['run', 'dev'],
+        reuseExisting: true,
+        log: '.e2e/logs/app.log',
+      },
+    },
+  }],
+} satisfies E2EConfig;
+```
+
+```text
+ ✓ target "web" command at http://localhost:3000/ ready 1.20s
+```
+
+Příkaz běží bez shellu: `executable` se hledá v `PATH` a `args` se předají
+tak, jak jsou zapsané. Podřízený proces dostane jen `PATH`, `HOME`, proměnné
+pro dočasný adresář, `inheritEnv` a `env`.
+
+| Volba | Účel |
+| --- | --- |
+| `reuseExisting: true` | Použije server, který už běží, například ten, který spustila [relace MCP](/mcp-server#run-tests-next-to-a-session). V CI to e2e ignoruje, a pokud server už odpovídá, běh skončí chybou `APP_ALREADY_RUNNING`. |
+| `log` | Uloží stdout a stderr aplikace do souboru s cestou relativní k projektu. Chyba při startu nebo nečekané ukončení během `e2e run` cituje řádky, které do souboru od spuštění příkazu připsal jakýkoli proces. Log do 40 řádků a 8 KiB se cituje celý; jinak citace ponechá nejvýš 20 řádků z každého konce a mezi ně vloží `[startup output omitted]`. U logu nad 8 KiB se tyto řádky berou z jeho prvních a posledních 4 KiB. Hodnoty z `command.env` a `inheritEnv` dlouhé aspoň čtyři znaky se v citaci zamaskují. Samotný soubor se nemaskuje. |
+| `env` | Proměnné prostředí pro aplikaci. |
+| `inheritEnv` | Proměnné hostitele, které se předají, pokud jsou nastavené, podle názvu nebo prefixu: `['DATABASE_URL', 'STRIPE_*']`. `env` má před nimi přednost. |
+| `startupTimeout` | Jak dlouho čekat, než aplikace odpoví. Výchozí hodnota je 60 sekund. |
+| `readyUrl` | Nastav vedle `command`, ne uvnitř, pokud chceš místo `app.url` testovat health endpoint. |
+
+Všechny volby najdeš v [referenci příkazu](/reference/config#command).
+
+<Note>
+Runner spouští jen `app.command`. Databáze, mocky a další služby spusť
+před během, nebo z `app.command` udělej skript, který je spustí a zároveň
+obslouží aplikaci. API pro služby se vrátí v některé z dalších verzí.
+</Note>
+
+### Nech port vybrat runner
+
+Port `0` použij, když chceš spouštět několik checkoutů bez konfliktu portů.
+Runner vybere volný port a dosadí ho za `{port}` v `args` a `env` příkazu:
+
+```ts title="Target fragment"
+engine: web(),
+app: {
+  url: 'http://127.0.0.1:0',
+  command: { executable: 'pnpm', args: ['dev', '--port', '{port}'], env: { PORT: '{port}' } },
+},
+```
+
+- Zapiš `127.0.0.1` nebo `[::1]`, tedy adresu, na které příkaz naslouchá.
+  `localhost:0` se odmítne.
+- Testy si URL se skutečným portem přečtou z `app.baseUrl`.
+- Záznamy v cache zůstanou platné i po změně portu.
+- `reuseExisting` s portem `0` nefunguje.
+
+Viz [volné porty](/reference/config#free-ports).
+
+<Accordion title="Vývojový server Next.js stránku vykreslí, ale nikdy ji nehydratuje">
+Next.js 16 blokuje cross-origin požadavky na své vývojové prostředky. Když
+cíl otevře `127.0.0.1` nebo `[::1]`, `next dev` se pořád hlásí jako
+`localhost`. Stránka se vykreslí, lokátory se najdou a kliknutí dopadnou,
+ale žádný handler Reactu se nespustí.
+
+Přidej host, který cíl otevírá, do `allowedDevOrigins`. Když `app.url`
+otevírá `http://[::1]:0`, použij `'[::1]'`:
+
+```ts title="next.config.ts"
+import type { NextConfig } from 'next';
+
+const nextConfig: NextConfig = {
+  allowedDevOrigins: ['127.0.0.1'],
+};
+
+export default nextConfig;
+```
+
+Cíl na `localhost` a cíl s produkčním `next start` žádný záznam nepotřebují.
+</Accordion>
+
+## Chráněné náhledy
+
+Pomocí `headers` otevřeš chráněný náhled nebo přeskočíš varovnou stránku
+tunelu. Například náhled na Vercelu přijímá hlavičku pro obejití ochrany:
+
+```ts title="Target fragment"
+engine: web({
+  headers: {
+    'x-vercel-protection-bypass': process.env.VERCEL_AUTOMATION_BYPASS_SECRET ?? '',
+  },
+}),
+app: {
+  url: process.env.PREVIEW_URL ?? 'http://localhost:3000',
+  identity: 'storefront',
+},
+```
+
+Prohlížeč přidává `headers` jen k požadavkům, které začínají na originu
+`app.url`, tedy se stejným schématem, hostem a portem. Požadavek si je
+ponechá i při přesměrováních, na jakýkoli origin. Pokud je chceš přidat pro
+jiný origin, například API host za stejnou ochranou, uveď ho v
+`credentialOrigins`. Viz
+[přihlašovací údaje požadavků](/reference/security#request-credentials). Pro ngrok
+použij `'ngrok-skip-browser-warning': '1'`.
+`app.identity` udrží identitu cache stabilní, i když se URL náhledu změní.
+
+<Note>
+Nastavení `headers` vypne HTTP cache prohlížeče a zablokuje service
+workery.
+</Note>
+
+Pro HTTP basic autentizaci použij `basicAuth`. Prohlížeč odpoví na výzvu
+`401` z originu `app.url` a z každého originu v `credentialOrigins`. WebKit
+odpoví jakémukoli originu, pokud některý z nich používá výchozí port (třeba
+URL `https://` bez portu) nebo má IPv6 host. Heslo deklaruj v `secrets`
+a předej `secrets.get(name)`:
+
+```ts title="e2e.config.ts"
+import type { E2EConfig } from 'e2e';
+import { secrets } from 'e2e';
+import { web } from '@e2e-dev/web';
+
+export default {
+  targets: [
+    {
+      engine: web({
+        basicAuth: { username: 'preview', password: secrets.get('previewPassword') },
+      }),
+      app: { url: 'https://staging.example.com' },
+    },
+  ],
+  secrets: { previewPassword: () => process.env.PREVIEW_PASSWORD ?? '' },
+} satisfies E2EConfig;
+```
+
+Engine tajný klíč vyhodnotí na začátku každého pokusu a runner ho drží mimo
+reporty, logy i to, co čte agent. Nedeklarovaný název způsobí, že načtení
+konfigurace selže s chybou `INVALID_CONFIG`. Funguje i heslo zadané jako
+obyčejný řetězec, ale e2e maskuje jen heslo předané přes `secrets.get`.
+
+## Viewporty
+
+Nastav viewport na cíli, aby se sada testů spustila v dané velikosti, nebo
+během testu zavolej `browser.setViewport()`. Agent mění velikost svým
+nástrojem [`resize_viewport`](/reference/agent#action-tools).
+
+### Jedna velikost na cíl
+
+`viewport` nastavuje počáteční velikost každého pokusu v pixelech. Výchozí
+je 1280 × 720. Pro každou velikost přidej jeden cíl:
+
+```ts title="e2e.config.ts"
+import type { E2EConfig } from 'e2e';
+import { web } from '@e2e-dev/web';
+
+const app = { url: 'http://localhost:3000' };
+
+export default {
+  targets: [
+    { name: 'desktop', engine: web(), app },
+    { name: 'tablet', engine: web({ viewport: { width: 820, height: 1180 } }), app },
+    { name: 'phone', engine: web({ browser: 'webkit', viewport: { width: 390, height: 844 } }), app },
+  ],
+} satisfies E2EConfig;
+```
+
+Každý test běží na každém cíli a pro každý název cíle má samostatný
+výsledek. Každé opakování začíná ve velikosti cíle.
+
+- Jednu velikost spustíš příkazem `npx e2e run --target phone`. Dvojice
+  testu a cíle vypíšeš příkazem `npx e2e list`.
+- Cíle, které deklarují stejný `app.command`, sdílejí jeden vývojový server.
+- Ve stejném seznamu může být i cíl se zařízením. Viz
+  [referenci mobilního enginu](/reference/mobile).
+
+### Vyplnění okna
+
+`viewport: null` nenastavuje žádnou velikost, takže stránka vyplní okno
+prohlížeče a agent, snímky obrazovky i videa používají tuto velikost. Použij
+to při běhu s viditelným oknem nebo s hostovaným prohlížečem, jehož živý
+náhled by jinak ukázal stránku 1280 × 720 v jednom rohu:
+
+```ts title="Target fragment"
+{ name: 'window', engine: web({ viewport: null }), app }
+```
+
+Lokální spuštění s viditelným oknem otevře malé okno. Hostovaný prohlížeč
+použije velikost okna, kterou sis u služby vyžádal. `browser.setViewport`
+funguje i nadále.
+
+### Změna velikosti uvnitř testu
+
+`browser.setViewport` změní velikost stránky po zbytek pokusu, a to i po
+`app.restart()` a `app.clearState()`. Použij ho, když jeden test kontroluje
+rozvržení před změnou velikosti a po ní:
+
+```ts
+import { test } from '@e2e-dev/web';
+import { expect } from 'e2e';
+
+test('the menu collapses on a narrow screen', async ({ app, screen, browser }) => {
+  await app.open('/');
+  await expect(screen.getByRole('navigation')).toBeVisible();
+
+  await browser.setViewport({ width: 390, height: 844 });
+  await expect(screen.getByRole('button', 'Menu')).toBeVisible();
+  await expect(screen.getByRole('navigation')).toBeHidden();
+});
+```
+
+Když ho zavoláš před `app.open`, první stránka se načte rovnou v této
+velikosti, bez předchozího vykreslení pro desktop.
+
+### Co agent vidí
+
+Agent dostává aktuální velikost viewportu s každým pozorováním, takže
+velikost změň ještě před `agent.act`. Snímky obrazovky pokrývají viewport.
+Prvky mimo obrazovku mohou být stále ve stromu, klepnutí je posune do
+zobrazení a agent může scrollovat, aby načetl líně načítaný obsah.
+
+Věta s odkazem, zvýrazněním nebo kódem se k agentovi dostane celá a odkaz
+je navíc uveden jako ovládací prvek. Agent čte prvních 512 znaků každého
+textového bloku. U delšího bloku e2e vypíše jeho odkazy a zvýrazněný text
+i samostatně.
+
+Agent také vidí checkbox nebo přepínač (radio), který knihovna komponent
+zmenší na nulovou velikost pod jeho vlastním popiskem, jak to dělá Element
+Plus, včetně stavu zaškrtnutí. Klepnutí na něj klikne na popisek. Když
+popisek je odkazem nebo jiným ovládacím prvkem, nebo ho obsahuje, agent
+vidí text popisku a tento prvek, ale ne checkbox, protože kliknutí na
+popisek by mohlo trefit odkaz. Lokátory takový prvek dál považují za skrytý,
+stejně jako Playwright, takže ho ověřuj pomocí `toBeChecked()`, ne
+`toBeVisible()`.
+
+### Omezení testu na jednu velikost
+
+`platforms` a `requires` viewport vybrat neumí, protože každý cíl
+s prohlížečem má platformu `web`. Pokud chceš test v některých velikostech
+přeskočit, přečti v testu šířku:
+
+```ts
+test('the sidebar stays open', async ({ app, screen, browser }) => {
+  await app.open('/');
+  test.skip((await browser.evaluate(() => window.innerWidth)) < 768, 'desktop layout only');
+  await expect(screen.getByRole('complementary')).toBeVisible();
+});
+```
+
+Skupinu testů pro konkrétní velikost můžeš oddělit vlastní konfigurací,
+kterou spustíš s `--config`.
+
+### Omezení
+
+Úzký viewport testuje jen responzivní rozvržení. Prohlížeč je pořád
+desktopový: měřítko 1, desktopový ukazatel a jeho obvyklý user agent.
+Dotykové ovládání neemuluje. Pro testování na simulátoru nebo emulátoru
+použij [mobilní engine](/mobile). Tmavý režim a omezený pohyb popisuje
+[Emulace tmavého režimu a omezeného pohybu](/browser#emulate-dark-mode-and-reduced-motion).
+
+Video si ponechá velikost, kterou stránka měla na začátku nahrávání. Pro
+jednu pevnou velikost nastav `web({ screencast: { size } })`. Poskytovatel
+prohlížeče, který nahrává sám, například
+[Kernel](/integrations/kernel#recordings), místo toho nahrává celou
+obrazovku.
+
+## Udělení oprávnění prohlížeči
+
+Headless Chromium odmítne každé oprávnění, které cíl neudělí, takže
+`navigator.clipboard.writeText` selže i po kliknutí. Pokud má aplikace
+používat schránku, uděl to oprávnění na cíli:
+
+```ts
+{
+  engine: web(),
+  app: {
+    url: 'http://localhost:3000',
+    permissions: { 'clipboard-read': 'grant', 'clipboard-write': 'grant' },
+  },
+}
+```
+
+- Oprávnění platí pro každou stránku každého pokusu, na jakémkoli originu.
+- Webový cíl přijímá jen `'grant'`. `'deny'` a `'reset'` skončí chybou
+  `INVALID_CONFIG`: místo toho oprávnění vynech.
+- Názvy jsou převzaté z Playwrightu a každý prohlížeč uděluje vlastní sadu
+  oprávnění. Viz [`permissions`](/reference/config#permissions).
+
+## Co dál
+
+<CardGroup cols={2}>
+  <Card title="Práce s prohlížečem" icon="globe" href="/browser">
+    Mockování rout, nastavení cookies, obsluha dialogů a stahování souborů.
+  </Card>
+  <Card title="Reference webového enginu" icon="masks-theater" href="/reference/web">
+    Všechny volby `web()` a všechny metody `browser`.
+  </Card>
+</CardGroup>

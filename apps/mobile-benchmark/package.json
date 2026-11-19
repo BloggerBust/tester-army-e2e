@@ -41,7 +41,7 @@
     "@expo/repack-app": "0.10.4",
     "@types/node": "26.6.6",
     "@types/react": "19.3.0",
-    "ai": "7.0.173",
+    "ai": "7.0.177",
     "e2e": "workspace:*",
     "typescript": "7.0.2"
   }

@@ -4,12 +4,13 @@ import path from 'node:path';
 import { envValue } from '@e2e-dev/core/lib/internal/env';
 import { sanitizeRecordedText } from '@e2e-dev/core/lib/internal/errors';
 import { realpathOfExisting, relativeToProjectRoot } from '@e2e-dev/core/lib/internal/paths';
-import type { FinishedRun } from '../run-types.ts';
+import { builtin } from './builtin-id.ts';
+import type { FinishedRun, Reporter } from '../run-types.ts';
 import type { Report1Document, ReportError, ReportResult, ReportSerialGroup } from './build.ts';
 import { repeatSuffix } from './format.ts';
 import { failedStepOf, failureScreenshot, toldAttempt } from './failure-text.ts';
 import { outcome, type AttemptView } from './outcome.ts';
-import { fileReporter, toPosixPath } from './write.ts';
+import { toPosixPath } from './write.ts';
 
 interface SuiteCounts {
   tests: number;
@@ -285,10 +286,29 @@ function attachmentBase(run: FinishedRun): string | undefined {
   return relative === undefined ? undefined : toPosixPath(relative);
 }
 
+/** Options of the built-in `junit` reporter. */
+export interface JunitReporterOptions {
+  /** Where the XML goes, from the project root; `junit.xml` in the output directory by default. */
+  readonly outputFile?: string;
+}
+
 /**
  * The built-in `junit` reporter: the report as JUnit XML in `junit.xml`
- * beside `report.json`, for CI test summaries.
+ * beside `report.json`, for CI test summaries. Writes nothing when the
+ * report itself was not written.
  */
-export const junitReporter = fileReporter('junit', 'JUnit', 'junit.xml', (run) =>
-  renderJunitReport(run.report, { artifactsDir: attachmentBase(run) }),
-);
+export function junit(options: JunitReporterOptions = {}): Reporter {
+  return builtin('junit', {
+    name: 'junit',
+    reportFiles: (run) =>
+      run.reportPath === undefined
+        ? []
+        : [
+            {
+              path: options.outputFile ?? path.join(run.outputDir, 'junit.xml'),
+              content: renderJunitReport(run.report, { artifactsDir: attachmentBase(run) }),
+              label: 'JUnit',
+            },
+          ],
+  });
+}

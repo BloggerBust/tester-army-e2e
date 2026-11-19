@@ -1,0 +1,294 @@
+---
+title: Průběžná integrace
+sidebarTitle: Nastavení CI
+description: Spouštěj e2e na GitHub Actions, nasazeních Vercelu, GitLab CI/CD, Expo Workflows, Bitrise, Codemagicu, Norrixu nebo v jakékoli CI službě, která spouští Node.
+"og:image": "https://e2e.com/docs/images/og/ci.png?v=01be716140"
+"twitter:image": "https://e2e.com/docs/images/og/ci.png?v=01be716140"
+---
+
+e2e běží v každé CI službě, která umí spustit Node 24.8 nebo novější (na Node 22
+verzi 22.22.3 nebo novější), nebo pro webové testy [Bun](/reference/cli#bun) 1.4.3
+nebo novější. Každý job nainstaluje závislosti, spustí aplikaci nebo zařízení,
+spustí testy a nahraje `.e2e/`.
+
+## Vyber si CI službu
+
+<CardGroup cols={2}>
+  <Card title="GitHub Actions" icon="/images/integrations/github-actions.svg" href="/ci/github-actions">
+    Workflow pro web i mobil. Výsledky publikuj jako komentář v pull requestu.
+  </Card>
+  <Card title="Vercel Previews" icon="/images/integrations/vercel.svg" href="/ci/vercel-previews">
+    Otestuj každé nasazení a zadrž produkční vydání, dokud testy neprojdou.
+  </Card>
+  <Card title="GitLab CI/CD" icon="/images/integrations/gitlab.svg" href="/ci/gitlab">
+    Joby pro web i mobil. Výsledky zobraz v merge requestu.
+  </Card>
+  <Card title="Expo Workflows" icon="/images/integrations/expo.svg" href="/ci/eas-workflows">
+    Sestav aplikaci Expo pomocí Expo Build a pak na ní spusť testy pro iOS a Android.
+  </Card>
+  <Card title="Bitrise" icon="/images/integrations/bitrise.svg" href="/ci/bitrise">
+    Workflow pro iOS a Android s kroky Bitrise pro simulátory a emulátory.
+  </Card>
+  <Card title="Codemagic" icon="/images/integrations/codemagic.svg" href="/ci/codemagic">
+    Workflow pro iOS a Android na instancích Mac mini a Linux.
+  </Card>
+  <Card title="Norrix" icon="/images/integrations/norrix.png" href="/ci/norrix">
+    Sestav aplikaci v NativeScriptu pomocí Norrixu a pak spusť její sadu testů na simulátoru nebo emulátoru Norrix.
+  </Card>
+</CardGroup>
+
+Pro jinou CI službu zkopíruj workflow pro [GitHub Actions](/ci/github-actions).
+Pokud si chceš pronajímat prohlížeče nebo zařízení z hostované služby, přečti si
+[Hostované prohlížeče a zařízení](/integrations).
+
+## Nahrání reportů
+
+Na konci každého jobu nahraj `.e2e/`, i když nějaký test selže. Obsahuje:
+
+| Cesta | Co obsahuje |
+| --- | --- |
+| `report.json` | Report běhu z každého běhu, který se dostane až k testům |
+| `junit.xml` | S reporterem `junit` (`--reporter list,junit`): výsledky, testy vynechané [filtrem testů](/filters) jako přeskočené a selhání při startu, například `APP_UNREACHABLE` v sadě `run` |
+| `results/` | Stránky trasování, snímky obrazovky a výpisy obrazovky každého testu. S `--video` také video pro každý cíl, jehož engine umí nahrávat |
+
+Nasměruj integraci testovacích reportů ve své CI službě na `.e2e/junit.xml`.
+Na GitLabu `junit.xml` navíc odkazuje na snímek obrazovky každého selhání, takže se zobrazí v reportu testů.
+Umístění `.e2e/` změníš volbou [`output`](/reference/config#output).
+
+## Přihlašovací údaje k modelu
+
+Dej jobu přihlašovací údaj, který tvůj poskytovatel potřebuje, například
+`AI_GATEWAY_API_KEY` (viz [Modely](/models)). Testy, které nikdy nepoužívají
+`agent`, žádný nepotřebují.
+
+<Warning>
+Každý job, který má klíč, ho předává kódu, který spouští: testům, konfiguraci
+a závislostem. Klíč dávej jen buildům větví, kterým důvěřuješ. Nedůvěryhodný
+kód z pull requestů spouštěj bez tajných klíčů a bez tokenů s právem zápisu.
+Viz [Zabezpečení](/security).
+</Warning>
+
+Klíče drž v CI secrets a kde to jde, nastav limity útraty. GitHub nepředává
+secrets pull requestům z forků.
+
+## Co se v CI mění
+
+Režim CI je zapnutý, když má `CI` jinou hodnotu než prázdný řetězec, `0` nebo
+`false`. Pokud chceš tyto výchozí hodnoty lokálně, spusť `CI=1 npx e2e run`:
+
+| Nastavení | Lokálně | CI |
+| --- | --- | --- |
+| `retries` | `0` | `1` |
+| `workers` | polovina tvých jader | `1` |
+| `cache`, pokud není nastaveno | `read-write` | `read-only` |
+| `.only` | povoleno | odmítnuto s `ONLY_IN_CI` |
+| `command.reuseExisting` | respektováno | ignorováno, s upozorněním |
+
+Výchozí počet workerů a opakování změníš přepínači:
+
+<CodeGroup>
+```bash npm
+npx e2e run --workers 4 --retries 0
+```
+
+```bash pnpm
+pnpm exec e2e run --workers 4 --retries 0
+```
+
+```bash bun
+bunx e2e run --workers 4 --retries 0
+```
+</CodeGroup>
+
+Pokud nechceš z CI odesílat žádnou [telemetrii](/telemetry#in-ci), přidej
+`E2E_TELEMETRY_DISABLED: '1'` do `env` jobu.
+
+## Mobilní joby
+
+Bez [služby s hostovanými zařízeními](/mobile#hosted-devices) potřebuje
+každá platforma vlastní stroj, build a zařízení:
+
+| | iOS | Android |
+| --- | --- | --- |
+| Stroj | macOS s Xcode a runtimem simulátoru | Linux s KVM (vnořená virtualizace) |
+| Build | Release `.app` pro simulátor, bez podepisování | Release `.apk` |
+| Zařízení | Spuštěný simulátor | Spuštěný emulátor |
+
+Na obou platformách udělej Release build. Debug build React Native nebo Expo
+načítá JavaScript z Metra, které tyto joby nespouštějí, takže se otevře
+na chybové obrazovce. Příklady používají projekt React Native se složkami `ios/`
+a `android/` v repozitáři. U projektu Expo bez nich nejdřív spusť
+`npx expo prebuild`.
+
+Nainstaluj build a pak spusť sadu testů:
+
+<CodeGroup>
+```bash npm
+# iOS
+xcrun simctl install booted path/to/MyApp.app
+npx e2e run --target ios --reporter list,junit
+
+# Android
+adb install -r path/to/app.apk
+npx e2e run --target android --reporter list,junit
+```
+
+```bash pnpm
+# iOS
+xcrun simctl install booted path/to/MyApp.app
+pnpm exec e2e run --target ios --reporter list,junit
+
+# Android
+adb install -r path/to/app.apk
+pnpm exec e2e run --target android --reporter list,junit
+```
+
+```bash bun
+# iOS
+xcrun simctl install booted path/to/MyApp.app
+bunx e2e run --target ios --reporter list,junit
+
+# Android
+adb install -r path/to/app.apk
+bunx e2e run --target android --reporter list,junit
+```
+</CodeGroup>
+
+Příkazy předpokládají dva cíle s názvy `ios` a `android`, každý s enginem
+`mobile()` a `bundleId` aplikace. Viz
+[Nasměrování na aplikaci](/mobile#point-at-your-app). Pokud má build instalovat
+sada testů, nastav `app.appPath` a zavolej `device.installApp()`.
+
+Tato pravidla platí v každé službě:
+
+- **Jeden job pro každou platformu.** Spouštěj `--target ios` na Macu
+  a `--target android` na Linuxu s KVM. Hostované Macy používají Apple Silicon,
+  který neumí vnořenou virtualizaci, takže se na nich emulátor Androidu
+  nespustí.
+- **Spusť zařízení v samostatném kroku.** Když žádné zařízení neběží, engine
+  požádá agent-device, aby nějaké spustil, ale nový linuxový runner nemá
+  žádný obraz emulátoru. Samostatný krok navíc odliší selhání startu zařízení
+  od selhání testu.
+- **Připni runtime iOS.** Simulátor vybraný podle názvu (`iPhone 17`) běží
+  na výchozí verzi iOS daného obrazu a strom přístupnosti se mezi verzemi iOS
+  mění. Aktualizace obrazu runneru pak může shodit aserci lokátoru, aniž by
+  ses dotkl kódu. Příklady vytvoří simulátor na pojmenovaném runtimu a spustí
+  ho podle UDID. Nahraď `iOS-26-5` runtimem, který obraz obsahuje
+  (`xcrun simctl list runtimes`).
+- **Ukládej do cache `~/.agent-device/apple-runner/derived`.** agent-device
+  tam při prvním ovládání simulátoru sestaví svůj XCUITest runner. Neukládej
+  do cache celé `~/.agent-device`. Zbytek je stav posledního démona
+  a obnovená kopie může další běh zastavit chybou
+  `Failed to communicate with daemon`.
+- **Přehrávej lokální nahrávky.** Klíč replay cache obsahuje aplikaci, ne
+  zařízení, takže krok nahraný na tvém simulátoru se přehraje i na tom v CI.
+  [Commitni replay cache](/cache#commit-the-replay-cache).
+
+## Blokování pull requestů
+
+Každý nenulový návratový kód shodí job, včetně selhaného agentního kroku.
+Pokud chceš při neúspěšném běhu blokovat merge, nastav job s e2e jako
+povinnou kontrolu. [Ladění běhu](/debugging#read-the-failure) uvádí všechny
+návratové kódy a jestli pomůže job spustit znovu.
+
+Aby byly kontroly předvídatelné:
+
+- Dej každému `agent.act` jeden [atomický úkol](/core-concepts#goals). Pak
+  jeho výsledek ověř asercí lokátoru nebo `agent.assert`.
+- [Commitni replay cache](/cache#commit-the-replay-cache). Přehraný
+  `agent.act` nevolá model. S vestavěným agentem volá model chybějící záznam
+  v cache, předání řízení i každé hodnocení agenta (`agent.assert`,
+  `agent.waitFor`, `agent.extract`).
+- Hlídej nestabilní (flaky) testy. Report označí test, který projde jen
+  při opakování v CI, jako nestabilní.
+- Přidej `--max-failures <n>`, aby se běh zastavil po daném počtu selhaných
+  testů a rozbité nasazení neutrácelo volání modelu za každý zbývající krok.
+  Job skončí s kódem 1.
+- Přidej `--max-duration <ms>`, abys omezil dobu běhu testů; čas se začne
+  počítat se startem testů, ne během startu aplikace. Job skončí s kódem 1.
+
+## Spouštění jen dotčených testů
+
+V pull requestu předej `--changed-since`, aby [filtr testů](/filters) mohl
+vynechat testy, které změna pravděpodobně neovlivní. Když filtr testy
+boduje, jako to dělá rozhodovací filtr, každý cíl spustí nejdřív soubory
+s nejvyšší pravděpodobností selhání. Bez tohoto přepínače, například na `main`,
+běží celá sada testů. Viz [Přidání rozhodovacího filtru](/filters#add-the-decision-filter).
+
+S výchozím jedním workerem v CI určují pořadí souborů jen pásma relevance
+a při shodě rozhoduje pořadí sběru: e2e čte
+[historii časů](#cache-the-timings-history) jen s více než jedním workerem.
+Viz [Nejpravděpodobnější napřed](/filters#start-the-likeliest-first).
+
+## Cache historie časů
+
+S více než jedním workerem spouští `e2e run` nejdřív nejdelší soubory, hned
+po souborech, pro které nemá žádný čas, a řídí se přitom `<output>/timings.json` (ve výchozím nastavení `.e2e/timings.json`): pár KB, které
+běh aktualizuje, když aspoň jeden soubor proběhl celý. Čerstvý checkout v CI
+ho nemá, takže ho před během obnov z CI cache a po běhu ho ulož.
+Krok najdeš u [GitHub Actions](/ci/github-actions#cache-the-timings-history).
+
+- Soubor je jen doporučující. Chybějící, poškozený nebo neplatný soubor se
+  bere jako žádná historie a běh se vrátí k předchozímu `report.json`.
+  Obnovený soubor může změnit pořadí souborů, nikdy výsledek.
+- Běh změří čas souboru, jen když ho spustil celý. Běh s `--grep` nebo
+  `--last-failed` nechá záznam souboru, který spustil jen zčásti, beze změny.
+- CI má ve výchozím nastavení jeden worker. Aby to mělo přínos, nastav
+  [`workers`](/reference/config#workers) nebo předej `--workers`.
+- Jako klíč cache použij větev, s `main` jako záložní hodnotou, aby nový
+  pull request začínal z historie `main`. Se [shardingem](#sharding) přidej do klíče
+  index shardu.
+- `--timings <file>` čte a zapisuje jinou cestu.
+
+## Sharding
+
+`--shard <index/total>` spustí jednu část sady testů. Každý job spouští stejný
+příkaz s vlastním indexem a každý stroj dělí sadu stejným způsobem. Shard bez
+testu selže s `NO_TESTS`. Pokud matice může mít víc shardů než testů, přidej
+`--pass-with-no-tests`. Pravidla dělení najdeš v
+[referenci CLI](/reference/cli#flags).
+
+Na GitHub Actions spustí matice jeden job pro každý shard:
+
+```yaml
+jobs:
+  e2e:
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3]
+    steps:
+      # ...
+      - run: npx e2e run --shard ${{ matrix.shard }}/3 --reporter list,junit
+```
+
+`report.json` a `junit.xml` každého shardu nahraj pod názvem s indexem
+shardu. e2e zatím reporty shardů slučovat neumí.
+
+## Opakované spuštění selhání
+
+`--last-failed` spustí jen testy, které v předchozím běhu neprošly, podle
+`report.json` ve výstupním adresáři. Spusť ho ve stejném kroku jako
+první běh:
+
+```yaml
+      - run: npx e2e run || npx e2e run --last-failed
+```
+
+Opakovaný běh ponechá artefakty prvního běhu a své vlastní zapíše do
+`rerun-<n>/` v adresáři každého testu, takže jeden upload obsahuje obojí.
+Co se počítá jako neprošlé, uvádí [reference CLI](/reference/cli#flags).
+
+Samostatný job nemá na svém runneru žádný report. Nejdřív ho stáhni do
+výstupního adresáře, nebo spusť znovu job, který selhal.
+
+## Co dál
+
+<CardGroup cols={2}>
+  <Card title="Komentáře v pull requestech" icon="code-pull-request" href="/github">
+    Jeden komentář na běh, při opakovaném běhu upravený na místě.
+  </Card>
+  <Card title="Reference CLI" icon="terminal" href="/reference/cli">
+    Přepínače, reportery a všechny návratové kódy.
+  </Card>
+</CardGroup>

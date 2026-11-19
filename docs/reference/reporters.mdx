@@ -20,6 +20,13 @@ export default {
 } satisfies E2EConfig;
 ```
 
+To pass a built-in reporter options, call its factory from `e2e/reporters`
+in place of the id: `junit({ outputFile: 'reports/junit.xml' })`. An id is
+its factory called with no options.
+
+The built-in reporters use only the [`Reporter`](#custom-reporters) contract,
+so a reporter of your own can do anything they do.
+
 ## Reference
 
 ### Built-in reporters
@@ -39,10 +46,9 @@ export default {
 | --- | --- |
 | `INVALID_CONFIG` | `reporters` is not an array. |
 | `INVALID_CONFIG` | An id other than `list`, `dot`, `line`, `json`, `junit`, or `markdown`. |
-| `INVALID_CONFIG` | An entry that is neither an id nor an object with a `name` and at least one handler. |
-| `INVALID_CONFIG` | `json` together with `list`. |
-| `INVALID_CONFIG` | `dot` together with `list`. |
-| `INVALID_CONFIG` | `line` together with `list` or `dot`. |
+| `INVALID_CONFIG` | A factory not called, such as `junit` for `junit()`. |
+| `INVALID_CONFIG` | An entry that is neither an id nor an object with a `name` and at least one hook. |
+| `INVALID_CONFIG` | Two reporters that [print to](#printsto) one stream, such as `list` and `dot`. |
 
 #### `list`
 
@@ -52,11 +58,17 @@ Renders terminal progress, failures, and the run summary.
 reporters: ['list'], // default
 ```
 
-- It renders the same events [`onEvent`](#onevent) receives.
+- `list({ stream })` sets the terminal stream it [prints to](#printsto):
+  `'stdout'` or `'stderr'`. Without it, `list` prints to stdout, or to
+  stderr beside `json`.
+- It renders the same events
+  [`onEvent`](#onevent) receives, with what your code prints
+  ([`onOutput`](#onoutput)) and the `--step` prompt
+  ([`onStepPrompt`](#onstepprompt)).
 - On a TTY a live view shows the running tests. When stdout is not a
   terminal (piped, redirected, most CI), each test prints as it finishes.
-- The [summary rows](#onrunfinished) reporters return print under its
-  summary.
+- Its [`onSummary`](#onsummary) prints every reporter's summary rows under
+  its summary.
 - The output ends with a `Failed` row per failed test: its file and line,
   its error's first line, and its trace page when one was written, so `e2e run | tail` still
   names what broke.
@@ -77,8 +89,9 @@ Rows wrap after 80 marks. Colors follow the terminal settings; `NO_COLOR`
 disables them. The run header, failure details and locations, summary, and
 step prompts use the same format as `list`.
 
-Reporter output goes to stdout by default. With `--reporter dot,json`, all
-human-readable output goes to stderr so stdout holds the JSON report.
+It prints to stdout by default; `dot({ stream: 'stderr' })` moves it. Beside
+`json`, as in `--reporter dot,json`, `dot` prints all of it to stderr, so
+stdout holds the JSON report.
 
 Unlike Playwright, e2e uses ASCII marks and prints only the final result
 after retries, with no mark for each retried attempt.
@@ -94,9 +107,8 @@ reporters: ['line'],
 ```
 
 On an interactive terminal, the row names each test as it starts and shows
-how many selected tests have finished. A retry can update the running test
-without changing that count. Completed tests update the row with their
-final verdict. The reporter clears the row before printing logs, failure
+how many selected tests have finished. Retries do not advance the count.
+Completed tests update the row with their final verdict. The reporter clears the row before printing logs, failure
 details, or the summary. Redirected output and `TERM=dumb` print one
 progress line per final result.
 
@@ -108,6 +120,7 @@ e2e identifies tests as `file > title` and counts completed results.
 Playwright includes a `file:line:col` location, counts starts, and can show
 the current step.
 
+Use `line({ stream: 'stderr' })` to choose stderr explicitly.
 With `--reporter line,json`, human-readable output goes to stderr and the
 JSON report goes to stdout.
 
@@ -119,6 +132,9 @@ Prints the report document to stdout.
 reporters: ['json'],
 ```
 
+It [prints to stdout](#printsto) and takes no output, so what your code
+prints goes to stderr.
+
 #### `junit`
 
 Writes `junit.xml` beside the report.
@@ -127,16 +143,17 @@ Writes `junit.xml` beside the report.
 reporters: ['list', 'junit'],
 ```
 
-- It reads `run.report`, writes `junit.xml` beside `run.reportPath`, and
-  returns one row naming the file. It is the smallest complete example of a
-  reporter.
+- `junit({ outputFile: 'reports/junit.xml' })` from `e2e/reporters` writes
+  it elsewhere, as a path from the project root. Default: `junit.xml` in the
+  [output directory](/reference/config#output).
+- Its [`reportFiles`](#reportfiles) renders `run.report` as one file with a
+  `JUnit` row. It is the smallest complete example of a reporter, and it
+  writes nothing when the report was not written.
 - When a test that failed, timed out, passed only on a retry, or failed as
   [`test.fail`](/reference/test#fail) expected recorded a failure screenshot, its `<testcase>` links it as
   `<system-out>[[ATTACHMENT|<path>]]</system-out>`, which GitLab CI shows in
   the pipeline test report. The path is relative to `$CI_PROJECT_DIR`, or to
   the project root when that is unset; screenshots outside it get no link.
-- A second Ctrl-C still lets it write its file, so no file from the previous
-  run is left beside the new report.
 
 #### `markdown`
 
@@ -146,8 +163,9 @@ Writes `summary.md` beside the report.
 reporters: ['list', 'markdown'],
 ```
 
-It does what `junit` does, second Ctrl-C included, with `summary.md` and
-through [`renderMarkdownReport`](#rendermarkdownreport).
+It does what `junit` does with `summary.md`, through
+[`renderMarkdownReport`](#rendermarkdownreport), and takes the same
+`outputFile`: `markdown({ outputFile: 'reports/summary.md' })`.
 
 <a id="rendermarkdownreport" />
 
@@ -206,9 +224,11 @@ import { htmlReporter } from '@e2e-dev/html-reporter';
 const reporter = htmlReporter({ media: 'embed' });
 ```
 
-- It writes `report.html` beside the report, with the report document
-  embedded. The page opens from disk with no server, or with
+- Its [`reportFiles`](#reportfiles) writes `report.html` beside the report,
+  with the report document embedded. The page opens from disk with no server, or with
   [`npx e2e report`](/reference/cli#e2e-report).
+- A run that writes no report writes no page either, so the previous run's
+  page stays, as `junit.xml` does. See [Output](/reference/cli#output).
 - `media` decides what happens to screenshots, videos, and downloads:
 
   | `media` | The page | To share it |
@@ -253,8 +273,10 @@ const reporter = htmlReporter({ media: 'embed' });
 
 ### Custom reporters
 
-A reporter object has a `name` and at least one handler. Use `onEvent` for
-live progress and `onRunFinished` to process the final report and artifacts.
+A reporter object has a `name` and at least one hook. Each hook goes to
+every reporter that has it. Use `onEvent` for live progress, `reportFiles`
+for files beside the report, and `onRunFinished` to send the final report
+somewhere.
 
 ```ts title="e2e.config.ts"
 import type { E2EConfig, Reporter } from 'e2e';
@@ -281,14 +303,24 @@ export default {
 | Member | Type |
 | --- | --- |
 | [`name`](#name) | `string` |
+| [`printsTo`](#printsto) | `'stdout' \| 'stderr'` |
 | [`onEvent`](#onevent) | `(event: RunEvent) => void` |
+| [`onOutput`](#onoutput) | `(output: ReporterOutput) => void` |
+| [`onStepPrompt`](#onstepprompt) | `(prompt) => void` |
+| [`reportFiles`](#reportfiles) | `(run, signal) => ReportFile[]` |
 | [`onRunFinished`](#onrunfinished) | `(run, signal) => Promise<…>` |
+| [`onSummary`](#onsummary) | `(rows: ReporterSummary) => void` |
 
 ```ts
 interface Reporter {
   readonly name: string;
+  readonly printsTo?: 'stdout' | 'stderr';
   onEvent?(event: RunEvent): void;
+  onOutput?(output: ReporterOutput): void;
+  onStepPrompt?(prompt: StepPrompt | undefined): void;
+  reportFiles?(run: FinishedRun, signal: AbortSignal): readonly ReportFile[] | Promise<readonly ReportFile[]>;
   onRunFinished?(run: FinishedRun, signal: AbortSignal): Promise<ReporterSummary | void>;
+  onSummary?(rows: ReporterSummary): void;
 }
 ```
 
@@ -300,11 +332,35 @@ runs and for pinned agents whose model is not in the run header.
 
 #### `name`
 
-The reporter's label in diagnostics. Required and non-empty.
+The reporter's label in diagnostics. Required and non-empty. It may match a
+built-in's name: a reporter named `json` is still yours, and `--reporter`
+never replaces it.
 
 ```ts
 name: 'upload',
 ```
+
+#### `printsTo`
+
+The terminal stream the reporter prints to, as [`list`](#list) and
+[`json`](#json) print to stdout. One reporter per stream can set it, since
+two would garble each other.
+
+```ts
+printsTo: 'stdout',
+```
+
+- Its hooks write to `process.stdout` or `process.stderr` directly. The
+  runner doesn't redact that output, so print only what the events and the
+  report hold: those are redacted already.
+- When the reporter printing to stdout has no [`onOutput`](#onoutput), as
+  `json`, what the runner prints itself goes to stderr, so stdout holds only
+  what that reporter prints.
+- `--step` needs the reporter printing to stdout to have
+  [`onStepPrompt`](#onstepprompt), as `list` does.
+- A second Ctrl-C never stops its `onRunFinished`: its output is local.
+- A run embedded through [`e2e/runner`](/reference/runner) skips a
+  reporter that sets `printsTo` and has `onOutput`, such as `list` and `dot`.
 
 #### `onEvent`
 
@@ -330,10 +386,85 @@ prints one line on stderr naming the reporter, the event type, and the error.
 The run's outcome is unchanged.
 </Note>
 
+#### `onOutput`
+
+Receives what your code prints, as it prints it, redacted: a test's
+output, and what the runner process prints while the run is underway (a test
+file while it loads, a test filter, other reporters).
+
+```ts
+onOutput({ stream, text, target, pair }) {
+  socket.send(JSON.stringify({ source: target === undefined ? 'runner' : pair?.testId, stream, text }));
+},
+```
+
+```ts
+interface ReporterOutput {
+  readonly stream: 'stdout' | 'stderr';
+  readonly text: string;   // one write, which may end mid-line
+  readonly target?: string; // the target of a test's output; absent for the runner's
+  readonly pair?: { testId: string; agent: string; repeat: number }; // the test running then
+}
+```
+
+- Unless a reporter that [prints to the terminal](#printsto) has
+  `onOutput`, as `list` and `dot` do, the runner also prints output and run errors
+  to the terminal as written. A reporter that only records output never
+  silences the terminal.
+- A reporter that prints to the terminal and has `onOutput` prints run
+  errors too: handle the `run-error` [event](#events), or a run that stops
+  early, such as on `NO_TESTS`, prints nothing.
+- Once its `onOutput` throws or rejects, the runner prints output and run
+  errors itself for the rest of the run.
+- A test's output is also an `output` [event](#events).
+- What a reporter prints from inside `onOutput`, or from work it starts
+  there, goes to the terminal as written, never back to `onOutput`.
+
+#### `onStepPrompt`
+
+Receives the [`--step`](/debugging#step-through-a-test) prompt to show on
+the terminal, or `undefined` to take it down. `--step` in the background
+answers each prompt over its socket instead and calls no reporter.
+
+```ts
+onStepPrompt(prompt) {
+  overlay.show(prompt === undefined ? '' : `Step ${prompt.steps[0].number}: ${prompt.steps[0].step.label}`);
+},
+```
+
+Unless a reporter that [prints to the terminal](#printsto) has it, the
+prompt also prints on stderr as one line. So does every prompt after that
+reporter's `onStepPrompt` throws or rejects, the one the run waits on
+included.
+
+#### `reportFiles`
+
+Returns the files to write for the finished run. The runner writes each one
+atomically, creating its directory.
+
+```ts
+reportFiles: (run) => [{ path: 'reports/status.txt', content: run.report.run.status, label: 'Status' }],
+```
+
+```ts
+interface ReportFile {
+  readonly path: string;    // absolute, or from the project root
+  readonly content: string;
+  readonly label?: string;  // the summary row's label; its text is the path
+  readonly note?: string;   // printed after the path, such as `(one file, 2.1 MB)`
+}
+```
+
+- It has the same one-minute deadline and `signal` as `onRunFinished`, but a
+  second Ctrl-C never stops it. A file from the previous run is never left
+  beside the new report.
+- A file at `report.json`'s path, a file that can't be written, or a return
+  value that isn't a list of files is one line on stderr.
+
 #### `onRunFinished`
 
-Runs once the report is written and the terminal summary prints, with the
-finished run and an `AbortSignal`.
+Runs once the report and every report file are written and the terminal
+summary prints, with the finished run and an `AbortSignal`.
 
 ```ts
 async onRunFinished(run, signal) {
@@ -348,7 +479,8 @@ interface FinishedRun {
   readonly status: RunStatus;              // report.run.status
   readonly exitCode: RunExitCode;
   readonly projectRoot: string;            // what the terminal shows paths relative to
-  readonly reportPath: string | undefined; // absent when the write failed
+  readonly reportPath: string | undefined; // absent when the run stopped before its tests or the write failed
+  readonly outputDir: string;              // the output directory, .e2e by default
   readonly artifactsRoot: string;          // what the report's artifact paths are relative to
   readonly aiTracePath: string | undefined;
   readonly traces: ReadonlyMap<string, string>;      // result id -> its trace page, from the project root
@@ -363,7 +495,7 @@ type ReporterSummary = readonly { label: string; text: string }[];
 - A timeout, exception, or invalid return value is reported on stderr. The
   run's status, exit code, and report do not change.
 - One Ctrl-C still lets reporters finish. A second Ctrl-C stops waiting for
-  them, except [`junit`](#junit) and [`markdown`](#markdown).
+  them, except those that set [`printsTo`](#printsto).
 - `signal` aborts when the budget runs out or the run is forced to stop.
 - The runner writes the trace pages, `results/<test>/trace.md`, before it
   calls `onRunFinished`.
@@ -376,8 +508,10 @@ a reporter it abandoned, cutting off what it still does; under
 
 ##### Summary rows
 
-Rows returned by a reporter use the same layout as other summary rows in
-`list`, `dot`, and `line`, but are not included in `json`.
+The rows a reporter resolves with, and the rows of its labeled report files,
+reach every [`onSummary`](#onsummary). `list`, `dot`, and `line` print them under
+their summary, in the same layout as their own rows. The `json` reporter
+does not carry them.
 
 ```
    Test Files  2 passed (2)
@@ -433,6 +567,21 @@ Rows returned by a reporter use the same layout as other summary rows in
   ref that names no commit, is in `run.errors` with `phase` `filter`. A
   malformed `changedSince` has `phase` `config`.
 
+#### `onSummary`
+
+Receives the summary rows of every reporter, the built-ins first, then the
+others in `reporters` order: each labeled report file's, then what its
+`onRunFinished` returned.
+
+```ts
+onSummary(rows) {
+  for (const row of rows) console.log(`${row.label}: ${row.text}`);
+},
+```
+
+It runs last, once every `onRunFinished` is done or given up on, and also
+after a second Ctrl-C.
+
 ## Events
 
 `onEvent` receives one of these facts. Each event also has a sequence
@@ -440,7 +589,7 @@ number, `seq`, and an ISO timestamp, `at`.
 
 ```ts
 type RunEventFact =
-  | { type: 'run-started'; runId; projectId; projectRoot; artifactsRoot; ci; targets; agents?; model?; judge? }
+  | { type: 'run-started'; runId; projectId; projectRoot; artifactsRoot; ci; targets; agents?; model?; judge?; stepping? }
   | { type: 'plan'; total; files: { file; target; tests }[] }
   | { type: 'notice'; target; message }
   | { type: 'output'; target; pair; stream: 'stdout' | 'stderr'; text }
@@ -464,7 +613,8 @@ type RunEventFact =
   `UNKNOWN_TARGET`. The report's `run.targets` still lists every configured
   target.
 - `judge` on `run-started` is the run agent's judge model, present only when
-  judgments use a model other than `model`.
+  judgments use a model other than `model`. `stepping` is `true` when the
+  run holds each step for `--step`.
 - `setup` brackets the work before the tests start. Its `step.kind` is
   `collect`, `filter` (one [test filter](/filters), by its `name`),
   `prepare`, `service`, or `app`. An `app` step's `url` is the URL its
@@ -555,8 +705,9 @@ Every step phase the runner emits includes `progress.identity`:
 
 ## What `--reporter` does to reporter objects
 
-`--reporter` replaces only the built-in reporters; configured reporter
-objects still run.
+`--reporter` replaces only the built-in reporters; your own reporters and
+those of packages still run. A built-in the flag names keeps the options the
+config gave it.
 
 <CodeGroup>
 ```bash npm
@@ -572,22 +723,30 @@ bunx e2e run --reporter list,junit
 ```
 </CodeGroup>
 
-- A config with only reporter objects has no built-in terminal output.
-  Run errors still print on stderr, each as `CODE: message`.
+- With `reporters: ['list', junit({ outputFile: 'reports/junit.xml' })]`,
+  `--reporter junit` runs that `junit` alone, still writing
+  `reports/junit.xml`.
+- A config with no reporter that prints to the terminal with
+  [`onOutput`](#onoutput) has no run view. Run errors still print on
+  stderr, each as `CODE: message`.
 
 ## Where a reporter runs
 
-Handlers run in the runner process. Workers also load the config, so
-reporter construction must have no side effects.
+Hooks run in the runner process. Workers also load the config, so
+reporter construction must have no side effects. `--watch` hands one
+reporter every run, each starting with its first event.
 
 - Read tokens and start requests inside handlers.
 - Adding a reporter leaves [cached traces](/cache#what-must-match) valid.
 
 ## Types
 
-`Reporter`, `FinishedRun`, `ReporterSummary`, `Report`, `RunEvent`, and
-`RunEventOf` are exported from the main entrypoint, and so is
-`renderMarkdownReport(report, options)`.
+`Reporter`, `FinishedRun`, `ReportFile`, `ReporterOutput`, `ReporterSummary`, `StepPrompt`,
+`Report`, `RunEvent`, and `RunEventOf` are exported from the main
+entrypoint, and so is `renderMarkdownReport(report, options)`. `e2e/reporters`
+exports `list`, `dot`, `line`, `json`, `junit`, and `markdown`, with
+`ListReporterOptions`, `DotReporterOptions`, `LineReporterOptions`, `JunitReporterOptions`, and
+`MarkdownReporterOptions`.
 
 ## Related
 

@@ -3,7 +3,16 @@ title: "@e2e-dev/core"
 description: 通过普通代码操作浏览器或原生应用，可选用智能体，无需测试运行器。
 ---
 
-`@e2e-dev/core` 通过普通代码操作浏览器或 iOS、Android 应用。它使用 e2e 引擎、`screen` 和智能体，但不使用测试运行器：没有配置文件、报告或 `expect`。适用于脚本、自动化、爬虫和机器人。
+`@e2e-dev/core` 通过普通代码操作浏览器或 iOS、Android 应用。它使用 e2e 引擎、`screen` 和智能体，但不使用测试运行器：没有配置文件、报告或 `expect`。
+
+## 何时使用
+
+| 你想要 | 使用 |
+| --- | --- |
+| 编写测试，在本地和 CI 中运行并生成报告 | `e2e`。参阅[快速开始](/quickstart)。 |
+| 让编码智能体在你的应用上拥有实时会话 | [MCP 服务器](/mcp-server) |
+| 从你自己的程序操作应用：脚本、爬虫、机器人、测试数据准备 | `@e2e-dev/core` |
+| 在测试中打开第二个浏览器或设备 | `@e2e-dev/core`。参阅[在测试中打开宿主](#open-a-host-inside-a-test)。 |
 
 ## 安装
 
@@ -23,7 +32,7 @@ bun add @e2e-dev/core @e2e-dev/web
 
 </CodeGroup>
 
-要操作设备，安装 `@e2e-dev/mobile`，替代 `@e2e-dev/web` 或与它一起使用。`@e2e-dev/core` 不需要基于它构建的测试运行器 `e2e`。
+要操作设备，安装 `@e2e-dev/mobile`，替代 `@e2e-dev/web` 或与它一起使用。`@e2e-dev/core` 不需要基于它构建的测试运行器 `e2e`。它需要 Node.js 22.x 中的 22.22.3 或更高版本，或 24.8 或更高版本。
 
 <Note>
 像示例一样，从引擎的 `/engine` 入口导入。主入口也能在没有 `e2e` 的情况下运行，但其中的 `test` 会抛出 `RUNNER_NOT_INSTALLED`，且除非启用了 `skipLibCheck`，否则其类型需要 `e2e`。
@@ -47,6 +56,8 @@ for (const sku of ['A-1001', 'B-2040']) {
   console.log(sku, price);
 }
 ```
+
+用 `node prices.ts` 运行。Node.js 无需构建步骤即可运行 `.ts` 文件。
 
 `screen` 和 `app` 与测试中的 API 相同：参阅 [screen](/reference/screen) 和 [app](/reference/app)。`await using` 在代码块结束时关闭每个会话，在文件末尾关闭宿主及其浏览器。它需要 Node.js 24 或 Bun。在 Node.js 22 上，在 `finally` 中调用 `close()`：
 

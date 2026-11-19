@@ -34,3 +34,4 @@ list its source below.
 - `limrun.svg`: a copy of `docs/images/integrations/limrun.svg`
 - `vercel.svg`: a copy of `docs/images/integrations/vercel.svg`
 - `lightpanda.svg`: `docs/images/integrations/lightpanda.svg` without its background circle
+- `moli.png`: a copy of `docs/images/integrations/moli.png`

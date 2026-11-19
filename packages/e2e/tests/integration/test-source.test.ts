@@ -155,3 +155,47 @@ describe('test source location', () => {
     expect(imported.stderr).toContain('tests/imports-shared.e2e.ts:3 names no test (the file declares no test itself)');
   });
 });
+
+/** A helper that declares a whole group, so the test file's frame is the outermost of a deep stack. */
+const GROUP_HELPER = `import { test } from 'e2e';
+
+export function crud(names: string[]) {
+  test.describe('crud', () => {
+    test('lists', async () => {});
+    test.each(names)('creates %s', async () => {});
+    test.for(names)('deletes %s', async () => {});
+  });
+}
+`;
+
+const GROUPED = `import { crud } from '../support/crud.ts';
+
+crud(['a task', 'a project']);
+`;
+
+describe('test source location of test.each and test.for rows', () => {
+  const project = createProject({
+    'e2e.config.ts': CONFIG,
+    'support/crud.ts': GROUP_HELPER,
+    'tests/grouped.e2e.ts': GROUPED,
+  });
+
+  afterAll(() => {
+    project.cleanup();
+  });
+
+  it('points every row at the helper call in the test file, as it does a plain test beside them', async () => {
+    const outcome = await execFileAsync(process.execPath, [CLI, 'run'], {
+      cwd: project.dir,
+      env: { ...process.env, CI: '' },
+    }).catch((error: { stdout?: string; stderr?: string }) => error);
+    const report = JSON.parse(readFileSync(path.join(project.dir, '.e2e', 'report.json'), 'utf8')) as Report;
+    expect(report.run.status, `${outcome.stdout ?? ''}${outcome.stderr ?? ''}`).toBe('passed');
+    expect(report.run.results.map((result) => [result.titlePath.at(-1), result.source])).toEqual(
+      ['lists', 'creates a task', 'creates a project', 'deletes a task', 'deletes a project'].map((title) => [
+        title,
+        { file: 'tests/grouped.e2e.ts', line: 3, column: 1 },
+      ]),
+    );
+  });
+});

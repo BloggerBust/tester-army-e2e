@@ -1,6 +1,6 @@
 {
   "name": "@e2e-dev/eas",
-  "version": "0.3.4",
+  "version": "0.3.5",
   "description": "Expo Simulators for e2e: run mobile targets on Expo's hosted iOS simulators and Android emulators",
   "keywords": [
     "e2e",
@@ -16,8 +16,8 @@
   ],
   "license": "Apache-2.0",
   "contributors": [
-    "Oskar Kwaśniewski <oskar@tester.army>",
-    "Szymon Rybczak <szymon@tester.army>"
+    "Oskar Kwaśniewski <oskar@e2e.com>",
+    "Szymon Rybczak <szymon@e2e.com>"
   ],
   "repository": {
     "type": "git",
@@ -61,7 +61,7 @@
     "@types/node": "26.6.6",
     "e2e": "workspace:*",
     "typescript": "7.0.2",
-    "vitest": "5.1.0"
+    "vitest": "5.1.1"
   },
   "engines": {
     "node": "^22.22.3 || >=24.8.0"

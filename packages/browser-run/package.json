@@ -1,6 +1,6 @@
 {
   "name": "@e2e-dev/browser-run",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Cloudflare Browser Run hosted Chromium for e2e web targets",
   "keywords": [
     "e2e",
@@ -10,8 +10,8 @@
   ],
   "license": "Apache-2.0",
   "contributors": [
-    "Oskar Kwa\u015bniewski <oskar@tester.army>",
-    "Szymon Rybczak <szymon@tester.army>"
+    "Oskar Kwa\u015bniewski <oskar@e2e.com>",
+    "Szymon Rybczak <szymon@e2e.com>"
   ],
   "repository": {
     "type": "git",
@@ -54,7 +54,7 @@
     "@types/node": "26.6.6",
     "e2e": "workspace:*",
     "typescript": "7.0.2",
-    "vitest": "5.1.0"
+    "vitest": "5.1.1"
   },
   "engines": {
     "node": "^22.22.3 || >=24.8.0"

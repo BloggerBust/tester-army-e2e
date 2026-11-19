@@ -533,10 +533,11 @@ await screen.getByTestId('feed').scrollUntilVisible(row);
 | --- | --- |
 | [`screen.tree`](#screen-tree) | `Promise<string>` |
 | [`screen.debug`](#screen-debug) | `Promise<void>` |
+| [`screen.pause`](#screen-pause) | `Promise<void>` |
 
-Both read the whole screen once, without waiting, and work on every engine.
-They run as a step. A locator does not have them, and a frame throws
-`INVALID_ARGUMENT`.
+`tree` and `debug` read the whole screen once, without waiting, and work on
+every engine. They run as a step. A locator does not have them, and a frame
+throws `INVALID_ARGUMENT`.
 
 #### `screen.tree`
 
@@ -579,6 +580,49 @@ debug(options?: ActionOptions): Promise<void>;
 ```ts
 await screen.debug();
 ```
+
+#### `screen.pause`
+
+The test is paused at this line, with the app open, until it is resumed.
+See [Pause a test](/debugging#pause-a-test) for the keys and commands.
+
+```ts
+/**
+ * Pauses the test at this line, with the app open, until it is resumed with
+ * Enter in the terminal or with `e2e run --step next` from another shell in
+ * the same directory. In `e2e run`, the test is paused each time the line
+ * runs. Paused time doesn't count toward the test's timeout. Call it with
+ * `await` on `screen`, between steps in fixture setup, a `beforeEach` hook,
+ * or the test body. Anywhere else, or with `CI` set, the test isn't paused
+ * and the call fails.
+ */
+pause(): Promise<void>;
+```
+
+```ts
+await screen.pause();
+```
+
+- The test is paused on every attempt, retries and setup tests included.
+- In a `--step` run, the test is still paused at `screen.pause()` after
+  `n`, `a`, or `e2e run --step rest`.
+- Paused time doesn't count toward any timeout.
+- A test isn't paused in a session that an [MCP](/mcp-server)
+  `open_session {test}` opens, in a program on `@e2e-dev/core` or
+  `openHost`, or in `run()` from `e2e/runner`. With `CI` set, the test still
+  fails with `PAUSE_UNAVAILABLE` in `run()`, as in `e2e run`.
+- In `e2e run --watch`, only the current run is cancelled when `q` is pressed
+  at a pause or `e2e run --step stop` is run.
+- A locator doesn't have it.
+
+| Throws | When |
+| --- | --- |
+| `PAUSE_UNAVAILABLE` | `CI` is set. Remove the call before you commit, or run the test with `e2e run` in a terminal. A call where a pause isn't allowed fails with its error below instead. |
+| `INVALID_ARGUMENT` | It is called on a locator or a frame, in an [`afterEach`](/reference/test#aftereach) hook, a fixture teardown, or unawaited code that runs after the body returned. Call it on `screen`, between steps in fixture setup, a `beforeEach` hook, or the test body. |
+| `ACTION_FAILED` | It is called inside an agent step, such as an [`onAction`](/reference/agent#agent-act) hook or a [custom executor](/executors). The step fails with the pause's message, and the test isn't paused. In a [project tool](/tools) on the built-in agent, the refusal goes back to the model as a failed tool result and the step continues. Call it between steps instead. |
+| `ASSERTION_FAILED` | It is called inside an [`expect.poll`](/reference/expect#polling-a-value) read. The read is retried until the poll times out. Call it outside the read. |
+| `STEP_NOT_AWAITED` | The test body returns while a `screen.pause()` it did not await is still waiting. The test fails at the pause's line. Put `await` in front of the call. |
+| `RUNNER_BUSY` | The run doesn't have a terminal, and another run in the directory is already controlled with `e2e run --step`. End that run with `e2e run --step stop`, or run this test in a terminal. Once the other run has ended, a test is paused at the next `screen.pause()` in this run. |
 
 ### Locator actions
 

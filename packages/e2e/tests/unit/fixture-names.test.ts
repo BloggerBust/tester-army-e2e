@@ -1,4 +1,4 @@
-/** The fixtures a function names: read from the source of its first parameter. */
+/** The fixtures a function names: read from the source of its first parameter, or of the one after a row. */
 
 import { describe, expect, it } from 'vitest';
 import { declarationSite } from '../../src/collect/fixture-errors.ts';
@@ -37,6 +37,38 @@ describe('fixtureNames', () => {
     ['no parameter in a function', 'function () { return ({ app }) => app; }', []],
   ])('reads %s', (_, source, expected) => {
     expect(names(written(source))).toEqual(expected);
+  });
+
+  it.each([
+    ['the parameter after an object row', 'async ({ user }, { app, screen }) => {}', 1, ['app', 'screen']],
+    ['the parameter after a spread row', '(a, b = [1, 2], { app }) => {}', 2, ['app']],
+    ['no parameter after the row', '({ user }) => {}', 1, []],
+    ['no parameter after the row of a bare arrow', 'row => row', 1, []],
+    ['no parameter at all', '() => {}', 2, []],
+  ])('reads %s', (_, source, position, expected) => {
+    expect(fixtureNames(written(source), 'test "x"', undefined, position)).toEqual(expected);
+  });
+
+  it.each([
+    ['a named parameter', '(row, fixtures) => {}', 1, 'fixtures'],
+    ['a rest parameter that takes the fixtures', '(a, ...others) => {}', 2, '...others'],
+    ['a rest parameter in place of the row', '(...all) => {}', 1, '...all'],
+  ])('refuses %s after the row', (_, source, position, taken) => {
+    expect(() => fixtureNames(written(source), 'test "x"', undefined, position)).toThrow(
+      expect.objectContaining({
+        code: 'COLLECTION_ERROR',
+        message: `test "x" must destructure parameter ${position + 1}, where it takes the fixtures, as in ({ app, screen }) => {}; it takes "${taken}". e2e sets up only the fixtures a function names there`,
+      }),
+    );
+  });
+
+  it('says how to wrap a bound function that takes a row first', () => {
+    const bound = Function.prototype.bind.call((row: unknown, { app }: { app: unknown }) => [row, app], undefined) as FixtureUserFn;
+    expect(() => fixtureNames(bound, 'test "x"', undefined, 1)).toThrow('or wrap it: (row, { app }) => bound(row, { app }). e2e sets up');
+    // A spread row hands over one argument per item, and the wrapper passes each on.
+    expect(() => fixtureNames(bound, 'test "x"', undefined, 3)).toThrow(
+      'or wrap it: (item1, item2, item3, { app }) => bound(item1, item2, item3, { app }). e2e sets up',
+    );
   });
 
   it('reads method shorthand, with a plain, computed, or quoted name', () => {

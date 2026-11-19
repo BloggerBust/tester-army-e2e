@@ -6,11 +6,15 @@ import type { HeldStep, StepHoldContext, StepPrompt } from '../../src/run/step-h
 const KEY_GUARD_MS = 150;
 
 function step(label: string, testId = 'checkout', target = 'web'): HeldStep {
-  return { target, testId, agent: 'default', repeat: 0, title: testId, api: 'app.open', label };
+  return { kind: 'step', target, testId, agent: 'default', repeat: 0, title: testId, api: 'app.open', label };
+}
+
+function pause(testId = 'checkout', target = 'web'): HeldStep {
+  return { kind: 'pause', target, testId, agent: 'default', repeat: 0, title: testId, api: 'screen.pause', label: '' };
 }
 
 /** A gate on a clock the test moves, recording what it showed and whether it asked to stop. */
-function gate() {
+function gate(holdSteps = true) {
   let now = 0;
   const shown: (StepPrompt | undefined)[] = [];
   let stops = 0;
@@ -18,9 +22,9 @@ function gate() {
     () => {
       stops += 1;
     },
-    { now: () => now },
+    { now: () => now, holdSteps },
   );
-  const context = (signal = new AbortController().signal): StepHoldContext => ({ signal, show: (prompt) => shown.push(prompt) });
+  const context = (signal = new AbortController().signal): StepHoldContext => ({ signal, show: (prompt) => shown.push(prompt), readScreen: () => Promise.resolve(undefined) });
   /** Holds `held` and reports, after the microtasks drain, whether it was let through. */
   const hold = (held: HeldStep, signal?: AbortSignal) => {
     let released = false;
@@ -163,5 +167,128 @@ describe('StepGate', () => {
     hold(step('/next'));
     ended.abort();
     expect(showing()).toBe('3 /next');
+  });
+
+  it('waits at a pause that comes before any step until Enter', async () => {
+    const { gate: subject, hold, shown, later } = gate();
+    const paused = hold(pause());
+    expect(await paused.released()).toBe(false);
+    expect(shown.at(-1)?.steps.map((held) => held.step.kind)).toEqual(['pause']);
+    later();
+    subject.press('continue');
+    expect(await paused.released()).toBe(true);
+    expect(shown.at(-1)).toBeUndefined();
+  });
+
+  it('holds the first step after a pause that came first, as step 1, since the pause already showed the app', async () => {
+    const { gate: subject, hold, showing, later } = gate();
+    const paused = hold(pause());
+    later();
+    subject.press('continue');
+    expect(await paused.released()).toBe(true);
+    const first = hold(step('/one'));
+    expect(await first.released()).toBe(false);
+    expect(showing()).toBe('1 /one');
+    later();
+    subject.press('continue');
+    expect(await first.released()).toBe(true);
+    hold(step('/two'));
+    expect(showing()).toBe('2 /two');
+  });
+
+  it('shows pauses from several tests one at a time, oldest first', async () => {
+    const { gate: subject, hold, shown, later } = gate();
+    const first = hold(pause('checkout'));
+    const second = hold(pause('profile'));
+    expect(shown.at(-1)?.steps.map((held) => held.step.testId)).toEqual(['checkout']);
+    later();
+    subject.press('continue');
+    expect(await first.released()).toBe(true);
+    expect(await second.released()).toBe(false);
+    expect(shown.at(-1)?.steps.map((held) => held.step.testId)).toEqual(['profile']);
+    later();
+    subject.press('continue');
+    expect(await second.released()).toBe(true);
+  });
+
+  it('shows a pause on a separate prompt, without a step number, and keeps numbering the steps', async () => {
+    const { gate: subject, hold, showing, later } = gate();
+    await hold(step('/')).released();
+    const paused = hold(pause());
+    expect(showing()).toBe('0 ');
+    later();
+    subject.press('continue');
+    expect(await paused.released()).toBe(true);
+    hold(step('/cart'));
+    expect(showing()).toBe('2 /cart');
+  });
+
+  it('waits at every pause in a run without --step, whichever key resumed the one before', async () => {
+    const { gate: subject, hold, shown, later } = gate(false);
+    const first = hold(pause());
+    expect(shown.at(-1)).toMatchObject({ holdSteps: false });
+    later();
+    subject.press('rest');
+    expect(await first.released()).toBe(true);
+    const second = hold(pause());
+    expect(await second.released()).toBe(false);
+    later();
+    subject.press('test');
+    expect(await second.released()).toBe(true);
+    expect(await hold(pause()).released()).toBe(false);
+  });
+
+  it('resumes only the test whose pause is shown on a, and keeps the pause of another test waiting behind it', async () => {
+    const { gate: subject, hold, shown, later } = gate(false);
+    const first = hold(pause('checkout'));
+    const second = hold(pause('profile'));
+    later();
+    subject.press('rest');
+    expect(await first.released()).toBe(true);
+    expect(await second.released()).toBe(false);
+    expect(shown.at(-1)?.steps.map((held) => held.step.testId)).toEqual(['profile']);
+  });
+
+  it('stops holding steps after a at a step, but still waits at a later pause', async () => {
+    const { gate: subject, hold, later } = gate();
+    await hold(step('/')).released();
+    hold(step('/cart'));
+    later();
+    subject.press('rest');
+    expect(await hold(step('/pay')).released()).toBe(true);
+    const paused = hold(pause());
+    expect(await paused.released()).toBe(false);
+    later();
+    subject.press('continue');
+    expect(await paused.released()).toBe(true);
+    expect(await hold(step('/done')).released()).toBe(true);
+  });
+
+  it('stops holding the steps of the test after n at a step, but still waits at a later pause of that test', async () => {
+    const { gate: subject, hold, later } = gate();
+    await hold(step('/')).released();
+    hold(step('/cart'));
+    later();
+    subject.press('test');
+    expect(await hold(step('/pay')).released()).toBe(true);
+    expect(await hold(pause()).released()).toBe(false);
+  });
+
+  it('resumes the paused test on n or a in a stepped run, stops holding steps as at a step, and waits at the next pause', async () => {
+    const { gate: subject, hold, shown, later } = gate();
+    await hold(step('/')).released();
+    const paused = hold(pause());
+    expect(shown.at(-1)).toMatchObject({ holdSteps: true });
+    later();
+    subject.press('test');
+    expect(await paused.released()).toBe(true);
+    expect(await hold(step('/cart')).released()).toBe(true);
+    const next = hold(pause());
+    expect(await next.released()).toBe(false);
+    later();
+    subject.press('rest');
+    expect(await next.released()).toBe(true);
+    expect(await hold(step('/', 'profile')).released()).toBe(true);
+    expect(await hold(pause('profile')).released()).toBe(false);
   });
 });

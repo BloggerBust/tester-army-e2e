@@ -443,9 +443,11 @@ Each group opens with one table, one row per entry. Keep it to the minimum:
 ## Translations
 
 `docs/<language>/<path>.mdx` translates `docs/<path>.mdx`: `docs/ja/` is
-Japanese, `docs/zh/` Simplified Chinese. Each language's README
-([`docs/ja/README.md`](../../../docs/ja/README.md),
-[`docs/zh/README.md`](../../../docs/zh/README.md)) has its rules, style, and
+Japanese, `docs/zh/` Simplified Chinese, `docs/cs/` Czech, `docs/es/` Spanish. Each language's
+README ([`docs/ja/README.md`](../../../docs/ja/README.md),
+[`docs/zh/README.md`](../../../docs/zh/README.md),
+[`docs/cs/README.md`](../../../docs/cs/README.md),
+[`docs/es/README.md`](../../../docs/es/README.md)) has its rules, style, and
 glossary.
 
 Translations are best effort. English is the source of truth and every
@@ -500,6 +502,6 @@ expected to update a language they don't speak.
       ([Vendor logos](#vendor-logos)) and a card on its section's
       overview.
 - [ ] Links and anchors resolve. Moved pages have redirects.
-- [ ] A moved or deleted English page took its `docs/ja/` and `docs/zh/`
+- [ ] A moved or deleted English page took its `docs/ja/`, `docs/zh/`, `docs/cs/`, and `docs/es/`
       translations with it ([Translations](#translations)).
 - [ ] `pnpm docs:check` passes.

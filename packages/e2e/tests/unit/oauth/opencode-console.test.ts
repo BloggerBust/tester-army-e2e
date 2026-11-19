@@ -1,5 +1,6 @@
 import { generateText, tool } from 'ai';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { USER_AGENT } from '@e2e-dev/core/lib/internal/client-identity';
 import { z } from 'zod';
 import { promptCacheKey } from '@e2e-dev/core/lib/agent/model/provider-hints';
 import { createOAuthFetch } from '../../../src/oauth/fetch.ts';
@@ -108,6 +109,7 @@ describe('OpenCode Console login', () => {
     expect(shown?.instructions).toContain(`Open ${consoleServer.url}/console/device?user_code=ABCD-EFGH&client_id=e2e`);
     expect(credentials).toMatchObject({ access: 'st_1', refresh: 'rt_1', orgId: 'org_1' });
     expect(credentials.expires).toBeGreaterThanOrEqual(before + 2_592_000_000);
+    expect(new Set(consoleServer.requests.map((request) => request.headers['user-agent']))).toEqual(new Set([USER_AGENT]));
   });
 
   it('refreshes with rotation and keeps the workspace when a grant omits it', async () => {
@@ -121,6 +123,7 @@ describe('OpenCode Console login', () => {
     });
     const provider = createOpencodeConsoleProvider({ consoleUrl: `${consoleServer.url}/console` });
     expect(await provider.refresh(login)).toMatchObject({ access: 'st_2', refresh: 'rt_2', orgId: 'org_1' });
+    expect(new Set(consoleServer.requests.map((request) => request.headers['user-agent']))).toEqual(new Set([USER_AGENT]));
   });
 
   it('keeps the refresh token when a refresh grant omits a new one', async () => {

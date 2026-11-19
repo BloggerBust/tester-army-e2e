@@ -1,6 +1,6 @@
 {
   "name": "@e2e-dev/core",
-  "version": "0.0.0",
+  "version": "0.24.0",
   "description": "Drive a browser or a native app from code, with an optional agent: the engines, locators, and agent of e2e, without the test runner",
   "keywords": [
     "e2e",
@@ -13,8 +13,8 @@
   ],
   "license": "Apache-2.0",
   "contributors": [
-    "Oskar Kwaśniewski <oskar@tester.army>",
-    "Szymon Rybczak <szymon@tester.army>"
+    "Oskar Kwaśniewski <oskar@e2e.com>",
+    "Szymon Rybczak <szymon@e2e.com>"
   ],
   "repository": {
     "type": "git",
@@ -75,9 +75,9 @@
   },
   "devDependencies": {
     "@types/node": "26.6.6",
-    "ai": "7.0.173",
+    "ai": "7.0.177",
     "typescript": "7.0.2",
-    "vitest": "5.1.0"
+    "vitest": "5.1.1"
   },
   "engines": {
     "node": "^22.22.3 || >=24.8.0"

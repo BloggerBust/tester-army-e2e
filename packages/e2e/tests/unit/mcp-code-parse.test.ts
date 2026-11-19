@@ -202,6 +202,7 @@ describe('parseCode refuses', () => {
     ["await app.screenshot('after')", 'run_code: "screenshot" at 1:11 is left out of run_code: it writes into the test attempt; use the screenshot tool with path to save a file'],
     ["screen.getByLabel('Upload').setInputFiles('/etc/passwd')", 'run_code: "setInputFiles" at 1:29 is left out of run_code: it reads files from disk; attach files with the upload tool, which checks the paths'],
     ['screen.debug()', "run_code: \"debug\" at 1:8 is left out of run_code: it prints to the server's own output; read the screen with screen.tree() or the observe tool"],
+    ['await screen.pause()', 'run_code: "pause" at 1:14 is left out of run_code: it pauses a test until someone resumes it; a session already keeps the app open between calls'],
     ["screen.getByRol('button').tap()", 'run_code: "getByRol" at 1:8 is not something run_code runs on screen; did you mean "getByRole"?'],
     ['app.launch()', 'run_code: "launch" at 1:5 is not something run_code runs on app; app takes open, restart, clearState, back'],
     ["screen.getByText('a').constructor('return 1')()", `run_code: "constructor" at 1:23 is not something run_code runs on a locator; a locator takes ${LOCATOR_MEMBERS}`],

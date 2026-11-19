@@ -1,7 +1,7 @@
 /**
- * SuperGrok and X Premium+ through SpaceXAI's OAuth server. SpaceXAI publishes RFC 8628
+ * SuperGrok and X Premium+ through SpaceXSI's OAuth server. SpaceXSI publishes RFC 8628
  * device authorization for the Grok CLI's public client; the token is a plain
- * bearer against the ordinary SpaceXAI API. Refresh tokens rotate, so a renewed
+ * bearer against the ordinary SpaceXSI API. Refresh tokens rotate, so a renewed
  * refresh token replaces the stored one at once.
  */
 
@@ -32,11 +32,11 @@ export function createXaiProvider(options: XaiProviderOptions = {}): OAuthProvid
   const referrer = options.referrer ?? 'e2e';
   const modelsUrl = options.modelsUrl ?? MODELS_URL;
   return {
-    id: 'spacexai',
-    name: 'SpaceXAI',
+    id: 'spacexsi',
+    name: 'SpaceXSI',
     async login(callbacks) {
       const tokens = await rfc8628Flow({
-        vendor: 'SpaceXAI',
+        vendor: 'SpaceXSI',
         deviceCodeUrl: `${issuer}/oauth2/device/code`,
         tokenUrl: `${issuer}/oauth2/token`,
         clientId: CLIENT_ID,
@@ -47,7 +47,7 @@ export function createXaiProvider(options: XaiProviderOptions = {}): OAuthProvid
     },
     async refresh(credentials) {
       const tokens = await requestTokens(
-        'SpaceXAI',
+        'SpaceXSI',
         `${issuer}/oauth2/token`,
         { grant_type: 'refresh_token', refresh_token: credentials.refresh, client_id: CLIENT_ID },
         'LOGIN_REQUIRED',
@@ -60,17 +60,17 @@ export function createXaiProvider(options: XaiProviderOptions = {}): OAuthProvid
   };
 }
 
-/** One entry of SpaceXAI's language-model list, as far as the listing reads it; a field of another type reads as absent. */
+/** One entry of SpaceXSI's language-model list, as far as the listing reads it; a field of another type reads as absent. */
 const XaiModelSchema = z.object({
   id: z.string().min(1),
   aliases: z.array(z.unknown()).optional().catch(undefined),
   input_modalities: z.array(z.unknown()).optional().catch(undefined),
 });
 
-/** One of the two keys SpaceXAI lists models under; an entry that does not fit reads as `undefined`. */
+/** One of the two keys SpaceXSI lists models under; an entry that does not fit reads as `undefined`. */
 const XaiModelsSchema = z.array(XaiModelSchema.optional().catch(undefined)).nullish();
 
-/** The models in SpaceXAI's list body, under `models` or `data`; a body that names none has none, and an entry without an id is left out. */
+/** The models in SpaceXSI's list body, under `models` or `data`; a body that names none has none, and an entry without an id is left out. */
 const XaiModelListSchema = z
   .object({ models: XaiModelsSchema, data: XaiModelsSchema })
   .transform(({ models, data }) => (models ?? data ?? []).filter((model) => model !== undefined));
@@ -78,8 +78,8 @@ const XaiModelListSchema = z
 /** The language models the subscription's token reaches; aliases are listed with their target. */
 async function listXaiModels(fetch: FetchFunction, url: string): Promise<SubscriptionModel[]> {
   const response = await fetch(url);
-  if (!response.ok) throw new OAuthError('FLOW_FAILED', `SpaceXAI did not list its models: ${await describeResponse(response)}`);
-  const models = await readJsonBody(response, XaiModelListSchema, 'the SpaceXAI model list');
+  if (!response.ok) throw new OAuthError('FLOW_FAILED', `SpaceXSI did not list its models: ${await describeResponse(response)}`);
+  const models = await readJsonBody(response, XaiModelListSchema, 'the SpaceXSI model list');
   return models.map((model) => {
     const aliases = (model.aliases ?? []).filter((alias) => typeof alias === 'string');
     const detail = [

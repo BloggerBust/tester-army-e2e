@@ -1,6 +1,7 @@
 import { generateText, tool } from 'ai';
 import { z } from 'zod';
 import { afterEach, describe, expect, it } from 'vitest';
+import { USER_AGENT } from '@e2e-dev/core/lib/internal/client-identity';
 import { createCodexProvider, type CodexCredentials } from '../../../src/oauth/providers/openai.ts';
 import { listModels } from '../../../src/oauth/models.ts';
 import { MemoryCredentialStore } from './helpers/store.ts';
@@ -58,6 +59,7 @@ describe('Codex login', () => {
     expect(exchange.get('code')).toBe('the-code');
     expect(exchange.get('code_verifier')).toMatch(/^[A-Za-z0-9_-]{43}$/);
     expect(exchange.get('redirect_uri')).toBe(authorize!.searchParams.get('redirect_uri'));
+    expect(new Set(issuer.requests.map((request) => request.headers['user-agent']))).toEqual(new Set([USER_AGENT]));
     expect(credentials).toMatchObject({ access: accessToken, refresh: 'ref', accountId: 'acct_123', residency: 'eu' });
     expect(credentials.expires).toBeGreaterThan(Date.now());
   });
@@ -177,6 +179,8 @@ describe('Codex login', () => {
     const credentials = await onFakeTimeouts(() => provider.login({ onAuth: (info) => (shown = info), onPrompt: async () => '' }, { method: 'device' }));
     expect(shown).toMatchObject({ url: `${issuer.url}/codex/device`, userCode: 'ABCD-EFGH' });
     expect(credentials.accountId).toBe('acct_123');
+    expect(issuer.requests).toHaveLength(5);
+    expect(new Set(issuer.requests.map((request) => request.headers['user-agent']))).toEqual(new Set([USER_AGENT]));
   });
 
   it('fails the device login on a user-code answer or a grant that is missing fields', async () => {

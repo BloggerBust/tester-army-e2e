@@ -219,7 +219,7 @@ async function bootstrap(
     isolated: true,
     resolvePairs,
     debug,
-    step: message.step,
+    holdSteps: message.holdSteps,
   };
 }
 

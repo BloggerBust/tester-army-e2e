@@ -593,6 +593,8 @@ describe('observationShape', () => {
     // keep a settle from ever seeing two looks agree.
     expect(shapeOf('#n1 status "Elapsed 00:12"')).toBe(shapeOf('#n1 status "Elapsed 00:13"'));
     expect(shapeOf('#n1 text "12:05:59"')).toBe(shapeOf('#n1 text "12:06:00"'));
+    expect(shapeOf('#n1 text "5:42pm"')).toBe(shapeOf('#n1 text "5:43pm"'));
+    expect(shapeOf('#n1 text "5:42am"')).not.toBe(shapeOf('#n1 text "5:42pm"'));
     expect(shapeOf('#n1 status "Items 12"')).not.toBe(shapeOf('#n1 status "Items 13"'));
   });
 

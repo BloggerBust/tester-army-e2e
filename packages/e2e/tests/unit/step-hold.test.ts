@@ -12,7 +12,7 @@ describe('AttemptHolds', () => {
     // Synchronous work blocks the event loop past the deadline, so its timer never fires.
     const end = Date.now() + 40;
     while (Date.now() < end) {}
-    await holds.hold({ api: 'app.open', label: '/' }, signal);
+    await holds.hold({ kind: 'step', api: 'app.open', label: '/' }, signal);
     await expect(body).rejects.toThrow('timed out');
     expect(ask).not.toHaveBeenCalled();
   });

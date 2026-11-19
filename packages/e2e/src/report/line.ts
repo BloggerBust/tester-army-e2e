@@ -1,7 +1,29 @@
+import type { Reporter } from '../run-types.ts';
+import { ListReporter, runView } from './list.ts';
 import { bounded, fitColumns } from './format.ts';
 import type { TerminalProgress, TerminalProgressResult, TerminalProgressTest } from './progress.ts';
 
-export interface LineProgressOutput {
+/** Options of the built-in `line` reporter. */
+export interface LineReporterOptions {
+  /** Defaults to stdout, or stderr alongside the JSON reporter. */
+  readonly stream?: 'stdout' | 'stderr';
+}
+
+/** Shows the active test or latest selected result on one terminal row. */
+export function line(options: LineReporterOptions = {}): Reporter {
+  const stream = options.stream ?? 'stdout';
+  return runView('line', stream, options.stream === undefined, (output) => {
+    const destination = process[stream];
+    const progress = new LineProgress({
+      write: output.raw,
+      interactive: destination.isTTY === true && process.env.TERM !== 'dumb',
+      columns: () => destination.columns || 80,
+    });
+    return new ListReporter(output, { progress });
+  });
+}
+
+interface LineProgressOutput {
   readonly write: (text: string) => void;
   readonly interactive: boolean;
   /** Returns the current terminal width, including after resizing. */
@@ -24,7 +46,7 @@ export class LineProgress implements TerminalProgress {
   }
 
   /**
-   * Shows the test that started last, or started again on a retry, beside the
+   * Shows the most recent test start reported by the runner beside the
    * count of finished tests. One row cannot follow every worker, so the latest
    * start or result replaces it.
    */
@@ -34,16 +56,12 @@ export class LineProgress implements TerminalProgress {
   }
 
   /** Reports a selected test's final result after any retries. */
-  result(row: TerminalProgressResult): void {
-    if (this.total === undefined) return;
+  result(row: TerminalProgressResult): string | void {
     this.completed += 1;
     const label = this.label(row);
     const verdict = ` (${row.status})`;
-    if (this.output.interactive) {
-      this.draw(label, verdict);
-    } else {
-      this.output.write(`${label}${verdict}\n`);
-    }
+    if (!this.output.interactive) return `${label}${verdict}`;
+    this.draw(label, verdict);
   }
 
   settle(): void {
@@ -54,7 +72,7 @@ export class LineProgress implements TerminalProgress {
 
   /** The row's text before its state: the finished count, the target, and `file > title`. */
   private label(row: TerminalProgressTest): string {
-    return oneLine(`[${this.completed}/${this.total}] [${row.target}] ${row.file} > ${row.title}`);
+    return oneLine(`[${this.completed}/${this.total ?? '?'}] [${row.target}] ${row.file} > ${row.title}`);
   }
 
   private draw(label: string, verdict: string): void {

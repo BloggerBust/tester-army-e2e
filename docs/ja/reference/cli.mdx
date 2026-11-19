@@ -239,7 +239,7 @@ npx e2e login openai --device     # sign in with a device code
 npx e2e login github-copilot --from-gh  # use your GitHub CLI login
 npx e2e login github-copilot --client-id <id> [--enterprise-url <host>]
 npx e2e login opencode-console    # OpenCode Console, device code
-npx e2e login spacexai            # SuperGrok, device code
+npx e2e login spacexsi            # SuperGrok, device code
 npx e2e login                     # choose a provider
 ```
 
@@ -249,7 +249,7 @@ pnpm exec e2e login openai --device     # sign in with a device code
 pnpm exec e2e login github-copilot --from-gh  # use your GitHub CLI login
 pnpm exec e2e login github-copilot --client-id <id> [--enterprise-url <host>]
 pnpm exec e2e login opencode-console    # OpenCode Console, device code
-pnpm exec e2e login spacexai            # SuperGrok, device code
+pnpm exec e2e login spacexsi            # SuperGrok, device code
 pnpm exec e2e login                     # choose a provider
 ```
 
@@ -259,14 +259,14 @@ bunx e2e login openai --device     # sign in with a device code
 bunx e2e login github-copilot --from-gh  # use your GitHub CLI login
 bunx e2e login github-copilot --client-id <id> [--enterprise-url <host>]
 bunx e2e login opencode-console    # OpenCode Console, device code
-bunx e2e login spacexai            # SuperGrok, device code
+bunx e2e login spacexsi            # SuperGrok, device code
 bunx e2e login                     # choose a provider
 ```
 </CodeGroup>
 
 | オプション | 説明 |
 | --- | --- |
-| `[provider]` | サブスクリプションです。`openai`、`github-copilot`、`opencode-console`、`spacexai` を指定できます。デフォルトでは選択画面を表示します。 |
+| `[provider]` | サブスクリプションです。`openai`、`github-copilot`、`opencode-console`、`spacexsi` を指定できます。`spacexai` と `grok` は `spacexsi` のエイリアスで、`logout` と `models` でも使えます。デフォルトでは選択画面を表示します。 |
 | `--device` | ChatGPT 用です。ブラウザを開かず、別のデバイスで入力するコードを表示します。 |
 | `--from-gh` | GitHub Copilot 用です。サインイン済みの GitHub CLI のトークンを再利用します。 |
 | `--client-id <id>` | GitHub Copilot 用です。デバイスフローを有効にした GitHub OAuth App のクライアント ID です。 |
@@ -301,7 +301,7 @@ bunx e2e logout openai    # forget one
 
 | オプション | 説明 |
 | --- | --- |
-| `[provider]` | ログイン情報を削除する対象です。`openai`、`github-copilot`、`opencode-console`、`spacexai` を指定できます。デフォルトでは保存済みのログインから選ぶ画面を表示します。 |
+| `[provider]` | ログイン情報を削除する対象です。`openai`、`github-copilot`、`opencode-console`、`spacexsi` を指定できます。デフォルトでは保存済みのログインから選ぶ画面を表示します。 |
 
 #### `e2e models`
 
@@ -326,7 +326,7 @@ bunx e2e models openai    # one provider
 
 | オプション | 説明 |
 | --- | --- |
-| `[provider]` | `openai`、`github-copilot`、`opencode-console`、`spacexai` を指定できます。デフォルトでは保存済みの全ログインを使い、`OPENCODE_API_KEY` だけがある場合も OpenCode Console を含めます。 |
+| `[provider]` | `openai`、`github-copilot`、`opencode-console`、`spacexsi` を指定できます。デフォルトでは保存済みの全ログインを使い、`OPENCODE_API_KEY` だけがある場合も OpenCode Console を含めます。 |
 
 各行には次の情報があります。
 
@@ -518,13 +518,13 @@ e2e run [files...]
 | `--strict-cache` | この実行で `cache.strict` を有効にします。記録はあるがリプレイできなくなったステップは、エージェントに引き継がず `REPLAY_STALE` で失敗します。リトライもリプレイし、キャッシュには書き込みません。[古くなった記録で失敗させる](/cache#fail-on-a-stale-recording)を参照してください。 |
 | `-u`, `--update-snapshots` | [`toHaveScreenshot`](/reference/expect#screenshot-matchers) が未保存または相違ありと判断したスクリーンショットを書き込み、マッチャーを成功にします。未指定では、未保存のものを書き込んで失敗にし、CI では結果への添付だけを行います。 |
 | `-w`, `--watch` | 実行後、テストファイルや設定の変更、またはキー操作で再実行します。[監視モード](#watch-mode)を参照してください。 |
-| `--step` | 最初のステップを実行し、以後の各ステップはキー入力まで待機します。Enter はそのステップ、`n` はテストの残り、`a` は実行の残りを進め、`h` はキー一覧、`q` は終了コード 130 で停止します。待機時間はどのタイムアウトにも含めません。ターミナルがなければバックグラウンドで進み、各コマンドは次の待機ステップで画面を返します。`--step next` はそのステップ、`--step rest` は残り、`--step stop` は終了です。ワーカーは 1 つで、CI、`--watch`、1 を超える `--workers`、json レポーターとの併用は拒否します（終了コード 2）。[ステップごとにテストを進める](/debugging#step-through-a-test)と[ターミナルなしで進める](/debugging#step-through-a-test-without-a-terminal)を参照してください。 |
+| `--step` | 最初のステップを実行し、以後の各ステップはキー入力まで待機します。Enter はそのステップ、`n` はテストの残り、`a` は実行の残りを進め、`h` はキー一覧、`q` は終了コード 130 で停止します。待機時間はどのタイムアウトにも含めません。ターミナルがなければバックグラウンドで進み、各コマンドは次の待機ステップで画面を返します。`--step next` はそのステップ、`--step rest` は残り、`--step stop` は終了です。`--step next`、`rest`、`stop` は、[`screen.pause()`](/debugging#pause-a-test) で一時停止したテストの再開や停止にも使えます。ワーカーは 1 つで、CI、`--watch`、1 を超える `--workers`、json レポーターとの併用は拒否します（終了コード 2）。[ステップごとにテストを進める](/debugging#step-through-a-test)と[ターミナルなしで進める](/debugging#step-through-a-test-without-a-terminal)を参照してください。 |
 
 **出力**
 
 | オプション | 説明 |
 | --- | --- |
-| `--reporter <ids>` | `config.reporters` の組み込みレポーターを上書きします。`list`、`dot`、`line`、`json`、`junit`、`markdown` をカンマ区切りで指定します。設定内の[レポーターオブジェクト](/reference/reporters)は引き続き実行します。`list` と `dot`、`line`、`json` のいずれかを併用した場合や、`line` と `dot` を併用した場合は `INVALID_CONFIG` です。省略すると設定済みのレポーターを使います。 |
+| `--reporter <ids>` | `config.reporters` の組み込みレポーターを置き換えます。`list`、`dot`、`line`、`json`、`junit`、`markdown` をカンマ区切りで指定します。デフォルトは設定値です。`junit({ outputFile })` のように設定で構成した組み込みレポーターは、そのオプションを保ちます。`json` と併用すると、`list`、`dot`、`line` の各 ID は stderr に出力します。同じストリームに出力するレポーターを 2 つ指定すると `INVALID_CONFIG` になります。設定内の[その他のレポーター](/reference/reporters)は引き続き実行します。 |
 | `--output <dir>` | 設定の [`output`](/reference/config#output) より優先する、この実行の結果ディレクトリです。レポート、レポーターのファイル、AI トレース、`results/`、`sessions/` を含みます。デフォルトは設定値、なければ `.e2e` です。プロジェクトルートから解決し、その内側のディレクトリである必要があります。ルート自体や、実行が所有できないその他のディレクトリ（リンク先に一覧）は `INVALID_CONFIG` です。テスト開始時に `results/` を消去しますが、`--last-failed` の再実行では前回のレポートが参照するものを残します。 |
 | `--cache-dir <dir>` | [`E2E_CACHE_DIR`](/reference/environment#replay-cache) と [`cache.dir`](/reference/config#cache) より優先する、この実行のリプレイキャッシュディレクトリです。デフォルトは `E2E_CACHE_DIR`、次に `cache.dir`、なければ `.e2e/cache` です。プロジェクトルートから解決し、`~` または先頭の `~/` はホームディレクトリです。キャッシュモードは設定のままです。カスタムの `cache.store` との併用は `INVALID_CONFIG` です。 |
 | `--timings <file>` | 実行終了時に更新する[所要時間の履歴](/ci#cache-the-timings-history)です。`<output>/timings.json` より優先します。複数ワーカーでは、時間の記録がないファイルを先に、残りを所要時間の長い順に開始します。プロジェクトルートから解決します。ファイルがない、または不正な場合は履歴なしとして扱い、エラーにはしません。 |
@@ -601,7 +601,7 @@ $ npx e2e run --debug
 
 テスト開始前に停止した実行は、これらを何も書かず、前回のファイルを残します。設定や収集のエラー、`NO_TESTS`、`NO_LAST_RUN`、`UNSUPPORTED_ARTIFACT`、アプリコマンドの起動失敗、中断が該当します。エラーはターミナルと終了コードで示します。`junit.xml` または `summary.md` の書き込み失敗は stderr の 1 行で示し、実行エラーにはしません。
 
-`list`、`dot`、`line` レポーターは実行エラーを `Run Errors` の下に表示します。いずれも使わない場合は、`json` を使うときも、各エラーを `CODE: message` の形式で stderr に出力します。
+`list`、`dot`、`line` レポーターは実行エラーを `Run Errors` の下に表示します。いずれも、また [`onOutput`](/reference/reporters#onoutput) でターミナルに出力する他のレポーターもなければ、`json` の場合も含め、各エラーを stderr に `CODE: message` として表示します。
 
 レポートの `run.summary` は結果を集計します。
 
@@ -1108,7 +1108,7 @@ bunx e2e report --output out
 | 2 | CLI、設定、収集、依存関係、認証情報、モデル設定、ポリシーのエラー |
 | 3 | エンジン、アプリプロセス、モデルプロバイダー、成果物、クリーンアップのインフラ障害。配信できなかった `e2e feedback`、レジストリに接続できなかった `e2e upgrade` |
 | 4 | ランナー内部の不変条件違反、またはランナーの未処理エラー |
-| 130 | ユーザーや CI のシグナル、`--step` の入力待ちでの `q`、`e2e run --step stop` による中断 |
+| 130 | ユーザーや CI のシグナル、`--step` または `screen.pause()` の入力待ちでの `q`、`e2e run --step stop` による中断 |
 
 - 複数の結果が混在する実行での優先順位は `130 > 4 > 3 > 2 > 1 > 0` です。個々の結果はすべてレポートに残し、優先順位はプロセスの終了コードだけに影響します。
 - 引数の解析失敗は、stderr に 1 行のエラーを出して 2 で終了します。

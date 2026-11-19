@@ -251,6 +251,8 @@ function planFixtures(request: PlanRequest): FixturePlan {
     const known = placed.get(definition);
     if (known !== undefined) return known;
     const own = planner.inputs.get(definition) ?? new Map<string, undefined>();
+    // `reachesEngine` stops at the first name that reaches the engine, so it cannot be what orders the rest.
+    for (const dependency of own.values()) if (dependency !== undefined) place(dependency);
     const usesEngine = reachesEngine(own);
     const planned: PlannedFixture = { definition, scope: planner.scopeOf(definition) === 'worker' ? 'worker' : 'test', usesEngine, inputs: own };
     placed.set(definition, planned);

@@ -1,6 +1,5 @@
 import type { ResultStatus } from '@e2e-dev/core/lib/run/records';
 import type { OutputStream } from '../run/process-output.ts';
-import type { TerminalReporterId } from './builtin.ts';
 
 /** A selected test as a progress row names it. */
 export interface TerminalProgressTest {
@@ -15,11 +14,12 @@ export interface TerminalProgressResult extends TerminalProgressTest {
 }
 
 export interface TerminalProgress {
-  readonly name: Exclude<TerminalReporterId, 'list'>;
+  readonly name: 'dot' | 'line';
   plan?(total: number): void;
-  /** A selected test started an attempt: its first, or a retry. */
+  /** The runner announced a selected test start. */
   start?(row: TerminalProgressTest): void;
-  result(result: TerminalProgressResult): void;
+  /** Returns a permanent row for the view to print when the renderer needs one. */
+  result(result: TerminalProgressResult): string | void;
   /** Handles redacted user output when the mode prints it without headings. */
   show?(stream: OutputStream, text: string): void;
   /** Leaves the terminal ready for permanent output. */

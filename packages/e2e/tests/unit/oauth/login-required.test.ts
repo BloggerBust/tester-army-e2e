@@ -30,9 +30,9 @@ describe.each([
   {
     constructor: 'grok',
     model: () => grok('grok-4'),
-    id: 'spacexai',
+    id: 'spacexsi',
     tokenPath: '/oauth2/token',
-    message: 'SpaceXAI token request failed (401: invalid_grant); run `npx e2e login spacexai`',
+    message: 'SpaceXSI token request failed (401: invalid_grant); run `npx e2e login spacexsi`',
   },
   {
     constructor: 'opencodeConsole',

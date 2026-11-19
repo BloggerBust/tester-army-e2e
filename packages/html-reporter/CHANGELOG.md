@@ -1,5 +1,21 @@
 # @e2e-dev/html-reporter
 
+## 0.0.2
+
+### Patch Changes
+
+- [#1965](https://github.com/e2e-inc/e2e/pull/1965) [`60d29cf`](https://github.com/e2e-inc/e2e/commit/60d29cfe4c9d88b00659e0d0e00b8973d61e7391) Thanks [@szymonrybczak](https://github.com/szymonrybczak)! - List the maintainers' `@e2e.com` addresses in `contributors`.
+
+- [#1829](https://github.com/e2e-inc/e2e/pull/1829) [`3fac999`](https://github.com/e2e-inc/e2e/commit/3fac999c460bc2dfc1268aba9316e3f67ca9ad4f) Thanks [@Wali05](https://github.com/Wali05)! - Durations just under a unit boundary now read `1.0s`, `1m 0s`, or `2m 0s` instead of `1000ms`, `60.0s`, or `1m 60s`.
+
+- [#1915](https://github.com/e2e-inc/e2e/pull/1915) [`243eaa4`](https://github.com/e2e-inc/e2e/commit/243eaa40ec5e60cd46bbe9422026d386cd3325e0) Thanks [@Asheesh7298](https://github.com/Asheesh7298)! - `htmlReporter()` no longer overwrites `report.html` when a run stops before its tests.
+
+- [#1793](https://github.com/e2e-inc/e2e/pull/1793) [`f5cda16`](https://github.com/e2e-inc/e2e/commit/f5cda163137b298bfef82bd25281d7e872d47f46) Thanks [@DeryFerd](https://github.com/DeryFerd)! - Filter a run's results by target in the HTML report: on a multi-target run target tabs sit above the status tabs, and the counts, the test tree, and the header follow the selected target.
+
+- [#1935](https://github.com/e2e-inc/e2e/pull/1935) [`9d240ac`](https://github.com/e2e-inc/e2e/commit/9d240ac954f65804fece214bfbf112966364d644) Thanks [@okwasniewski](https://github.com/okwasniewski)! - A session a test opens with `launch()` is now in the test's report: its steps under `launch-1`, `launch-2`, in the order they ran, its model usage counted with the test's, and its video kept beside the test's when the test records one. Steps and video artifacts carry an `actor`, and so does `progress.identity` for reporters. The test owns what it opened: a host or session it leaves open is closed when the test ends, a step it leaves running fails the test with `STEP_NOT_AWAITED`, and a timeout cuts a session's step as it cuts the test's own. The trace page, the HTML report, and the Markdown and JUnit failure text name the session, and the HTML report plays each step in its own session's video. While such a session records for the test, `app.startRecording()` on it fails with `UNSUPPORTED_CAPABILITY`, as it does on the test's own session.
+
+- [#1851](https://github.com/e2e-inc/e2e/pull/1851) [`9034956`](https://github.com/e2e-inc/e2e/commit/9034956b204e57be2ef982148c02d1d573ec495d) Thanks [@Wali05](https://github.com/Wali05)! - Token counts just under a million now read `1.0M` instead of `1000.0k`, and the HTML report shows millions as `2.5M` instead of `2500.0k`.
+
 ## 0.0.1
 
 ### Patch Changes

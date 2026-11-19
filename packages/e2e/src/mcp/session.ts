@@ -369,7 +369,7 @@ export class SessionHost {
         origin:
           'file' in source
             ? `config ${source.file}, read with the e2e mcp server's environment, not your shell's.`
-            : `no config file: one target on ${source.engine.package}, every other setting at its default. run_tests and open_session {test} need an e2e.config.ts (npx e2e init writes one).`,
+            : `no config file: one target on ${source.engine.package}, every other setting at its default. e2e run and open_session {test} need an e2e.config.ts (npx e2e init writes one).`,
         headed,
         attempt,
         step,

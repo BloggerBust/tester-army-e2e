@@ -1,0 +1,71 @@
+---
+title: Úvod
+description: Open source AI testování webových a mobilních aplikací. Méně času nad testy, víc času na vývoj.
+---
+
+import { VideoCard } from '../snippets/video-card.jsx';
+
+e2e je open source framework pro testování webových a mobilních aplikací.
+Test může používat přesné [lokátory](/core-concepts#locators) a
+[aserce](/reference/expect#locator-matchers), [úkoly](/core-concepts#goals)
+v přirozeném jazyce, které splní agent, nebo obojí v jednom testu.
+
+<VideoCard
+  id="NEawZb6Hssw"
+  title="e2e za 2 minuty"
+  subtitle="Propoj úkoly pro agenta s kontrolami přes lokátory, spusť jeden test na webu, iOS i Androidu a nastav projekt za minutu."
+/>
+
+```ts title="tests/checkout.e2e.ts"
+import { test, expect } from 'e2e';
+
+test('a member upgrades to Pro', async ({ app, agent, screen }) => {
+  await app.open('/settings/billing');
+
+  await agent.act('upgrade the workspace to the Pro plan');
+  await agent.assert('the invoice preview shows a prorated amount');
+
+  await expect(screen.getByRole('status')).toContainText('Pro');
+});
+```
+
+## Proč e2e
+
+- **Méně času nad testy.** Místo skriptu se selektory a čekáním napíšeš
+  úkol. Když se UI změní, agent se přizpůsobí, takže opravuješ méně testů.
+- **Levné běhy.** e2e zaznamená krok `agent.act`, když následná kontrola
+  projde. Další běh ho [přehraje](/cache) bez volání modelu a předá řízení
+  zpět agentovi, když se aplikace změnila. S vestavěným agentem `assert`,
+  `waitFor` a `extract` model volají vždy.
+
+## Jak to funguje
+
+- **Cíle.** Každý test běží jednou na každém cíli, třeba v Chromiu nebo na
+  simulátoru iPhonu. [Webový engine](/web) ovládá prohlížeče přes
+  Playwright. [Mobilní engine](/mobile) ovládá simulátory iOS a emulátory
+  Androidu přes agent-device. Můžeš také
+  [napsat vlastní](/writing-an-engine).
+- **Kroky agenta.** `agent.act` splní úkol. `agent.assert`,
+  `agent.waitFor` a `agent.extract` posuzují obrazovku. Použij vlastní
+  [předplatné](/subscriptions), [API klíč nebo lokální model](/models). Testy
+  bez kroků agenta žádný model nepotřebují.
+- **Reporty.** Runner [maskuje registrované tajné klíče](/security) ve vstupu
+  pro model. Zaznamenává kroky, selhání a artefakty do
+  [reportu](/debugging), který si přečteš ty nebo tvůj kódovací agent.
+
+## Začínáme
+
+<CardGroup cols={2}>
+  <Card title="Rychlý start" icon="rocket" href="/quickstart">
+    Jeden prompt pro tvého kódovacího agenta, nebo ruční nastavení.
+  </Card>
+  <Card title="Ukázkové projekty" icon="folder-open" href="/example-projects">
+    Spusť samostatnou webovou nebo mobilní aplikaci, která už má testy e2e.
+  </Card>
+  <Card title="Základní koncepty" icon="pen-to-square" href="/core-concepts">
+    Úkoly, aserce a lokátory.
+  </Card>
+  <Card title="Kódovací agenti" icon="robot" href="/coding-agents">
+    Nech svého kódovacího agenta psát, spouštět a ladit testy.
+  </Card>
+</CardGroup>

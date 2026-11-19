@@ -54,6 +54,18 @@ describe('the built declarations', () => {
     expect(sdk).not.toHaveProperty('list');
   });
 
+  it('declares the built-in reporter factories and their options from e2e/reporters', async () => {
+    const reporters = declaration('reporters.d.ts');
+    for (const name of ['list', 'dot', 'json', 'junit', 'markdown', 'ListReporterOptions', 'DotReporterOptions', 'JunitReporterOptions', 'MarkdownReporterOptions']) {
+      expect(mentions(reporters, name), name).toBe(true);
+    }
+    for (const name of ['ListReporter', 'runView', 'builtinReporter', 'builtin']) {
+      expect(mentions(reporters, name), name).toBe(false);
+    }
+    const api = await import(new URL('../../dist/reporters.js', import.meta.url).href);
+    expect(Object.keys(api).toSorted()).toEqual(['dot', 'json', 'junit', 'list', 'markdown']);
+  });
+
   it.each([
     ['oauth/chatgpt.d.ts', 'chatgpt', 'ChatGptOptions'],
     ['oauth/copilot.d.ts', 'copilot', 'CopilotOptions'],

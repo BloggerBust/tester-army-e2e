@@ -3,6 +3,7 @@
 import { appLocation, appNavigation } from '../cache/route.ts';
 import { OBSERVED_NAME_LIMIT, OBSERVED_TEXT_LIMIT } from '../engine/contract.ts';
 import type { Observation, SemanticNode, ViewportSize } from '../engine/surface.ts';
+import { CLOCK_TIME } from '../internal/dates.ts';
 import { sha256Hex } from '../internal/ids.ts';
 import type { SecretLedger } from '../internal/redact.ts';
 import { collapseText } from '../internal/text.ts';
@@ -588,8 +589,8 @@ export function pixelDigest(bytes: Uint8Array): string {
   return sha256Hex(bytes);
 }
 
-/** `12:05`, `0:59`, `23:59:59`: a value that changes on its own once a second or minute. */
-const CLOCK_PATTERN = /\b\d{1,2}:\d{2}(?::\d{2})?\b/g;
+/** `12:05`, `0:59`, `23:59:59`, `5:42pm`: a value that changes on its own once a second or minute. */
+const CLOCK_PATTERN = new RegExp(CLOCK_TIME.source, `${CLOCK_TIME.flags}g`);
 const CLOCK_MASK = '<time>';
 
 /**

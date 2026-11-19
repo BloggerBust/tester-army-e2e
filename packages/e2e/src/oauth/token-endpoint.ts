@@ -6,6 +6,7 @@
  */
 
 import { z } from 'zod';
+import { USER_AGENT } from '@e2e-dev/core/lib/internal/client-identity';
 import { OAuthError, describeResponse, readJsonBody, type OAuthErrorCode } from './errors.ts';
 
 /**
@@ -24,7 +25,7 @@ export type TokenResponse = z.infer<typeof TokenResponseSchema>;
 export async function postForm(url: string, params: Record<string, string>, signal?: AbortSignal): Promise<Response> {
   return fetch(url, {
     method: 'POST',
-    headers: { 'content-type': 'application/x-www-form-urlencoded', accept: 'application/json' },
+    headers: { 'content-type': 'application/x-www-form-urlencoded', accept: 'application/json', 'user-agent': USER_AGENT },
     body: new URLSearchParams(params),
     ...(signal === undefined ? {} : { signal }),
   });

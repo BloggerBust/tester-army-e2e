@@ -77,7 +77,7 @@ export const GATEWAYS: readonly GatewayPreset[] = [
   {
     id: 'copilot',
     label: 'GitHub Copilot subscription',
-    hint: 'your Copilot plan: OpenAI, Anthropic, Google, and SpaceXAI models',
+    hint: 'your Copilot plan: OpenAI, Anthropic, Google, and SpaceXSI models',
     dependencies: { '@ai-sdk/openai-compatible': '^3.0.0', '@ai-sdk/openai': '^4.0.0' },
     import: "import { copilot } from 'e2e/oauth/copilot';",
     comment: 'Your GitHub Copilot subscription serves the model; sign in once with `e2e login github-copilot`, `e2e models github-copilot` lists the ids.',
@@ -100,8 +100,8 @@ export const GATEWAYS: readonly GatewayPreset[] = [
     hint: 'your SuperGrok or X Premium+ plan',
     dependencies: { '@ai-sdk/xai': '^5.0.0' },
     import: "import { grok } from 'e2e/oauth/grok';",
-    comment: 'Your SuperGrok subscription serves the model; sign in once with `e2e login spacexai`, `e2e models spacexai` lists the ids.',
-    login: 'spacexai',
+    comment: 'Your SuperGrok subscription serves the model; sign in once with `e2e login spacexsi`, `e2e models spacexsi` lists the ids.',
+    login: 'spacexsi',
     model: () => "grok('grok-4')",
   },
 ];

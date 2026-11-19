@@ -17,6 +17,7 @@ import { modelLabel } from '@e2e-dev/core/lib/config/agent';
 import type { ResolvedRunConfig } from '../config/resolve-run.ts';
 import type { McpClient } from '../mcp/server.ts';
 import type { McpSessionSummary } from '../mcp/usage.ts';
+import { builtinId } from '../report/builtin-id.ts';
 import type { Report1Document, ReportError, ReportExplore, ReportStep, ReportUsage } from '../report/build.ts';
 import { memberRan } from '@e2e-dev/core/lib/run/records';
 import { STEP_KINDS } from '@e2e-dev/core/lib/run/steps';
@@ -395,8 +396,8 @@ function configFeatures(config: ResolvedRunConfig): Record<string, JsonValue> {
     config_cache_mode: config.cache.mode,
     config_cache_store: config.cache.store === undefined ? 'file' : 'custom',
     config_cache_strict: config.cache.strict !== false,
-    config_reporters: unique(config.reporters),
-    config_custom_reporters: config.customReporters.length,
+    config_reporters: unique(config.reporters.flatMap((reporter) => builtinId(reporter) ?? [])),
+    config_custom_reporters: config.reporters.filter((reporter) => builtinId(reporter) === undefined).length,
     config_filters: config.filters.length,
     config_artifact_store: config.artifactStore !== undefined,
     config_trace_modes: unique(config.targets.map((target) => target.trace.mode)),

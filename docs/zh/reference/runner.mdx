@@ -78,7 +78,7 @@ process.exitCode = result.exitCode;
 | `exitCode` | 与 CLI 对应的退出码：`0`、`1`、`2`、`3`、`4` 或 `130`。 |
 | `status` | `passed`、`failed`、`blocked`、`error` 或 `interrupted`。 |
 | `report` | 完整报告。读取 `report.run.results`、`report.run.errors` 和 `report.run.summary` 获取结果。 |
-| `reportPath` | `report.json` 的绝对路径；无法写入时为 `undefined`。 |
+| `reportPath` | `report.json` 的绝对路径；无法写入或运行在测试开始前停止时为 `undefined`。 |
 | `aiTracePath` | AI 追踪记录路径；未写入 AI 追踪记录时为 `undefined`。 |
 
 测试失败、配置失败和中断都会兑现 Promise，其状态和错误包含在报告中。

@@ -87,7 +87,7 @@ process.exitCode = result.exitCode;
 | `exitCode` | The CLI-equivalent exit code: `0`, `1`, `2`, `3`, `4`, or `130`. |
 | `status` | `passed`, `failed`, `blocked`, `error`, or `interrupted`. |
 | `report` | The complete report. Read `report.run.results`, `report.run.errors`, and `report.run.summary` for outcomes. |
-| `reportPath` | Absolute path to `report.json`, or `undefined` if it could not be written. |
+| `reportPath` | Absolute path to `report.json`, or `undefined` if it could not be written or the run stopped before its tests. |
 | `aiTracePath` | AI trace path, or `undefined` when no AI trace was written. |
 
 Test failures, config failures, and interruption resolve with their status

@@ -201,7 +201,7 @@ workers: 4, // default: 1 in CI, else half the cores
 
 #### `reporters`
 
-出力用のレンダラーとレポーターオブジェクトです。
+実行のレポーターです。組み込みの ID と、`e2e/reporters` のファクトリーなどのレポーターオブジェクトを指定します。
 
 ```ts
 reporters: ['list', 'junit'], // default: ['list']
@@ -209,15 +209,15 @@ reporters: ['list', 'junit'], // default: ['list']
 
 | 値 | 動作 |
 | --- | --- |
-| `'list'` | ターミナルに進捗、失敗、実行サマリーを表示します。 |
-| `'dot'` | ターミナルに簡潔な進捗、失敗、実行サマリーを表示します。`list` とは排他で、併用すると `INVALID_CONFIG` です。 |
-| `'line'` | [1 行で進捗を表示します](/reference/reporters#line)。`list` や `dot` とは併用できません。 |
-| `'junit'` | `<output>/junit.xml` に書き込みます。 |
-| `'markdown'` | `<output>/summary.md` に書き込みます。 |
-| `'json'` | レポートを出力します。`list` とは排他で、併用すると `INVALID_CONFIG` です。 |
-| `Reporter` オブジェクト | 組み込みレポーターと一緒に実行します。`--reporter` では取り除かれません。 |
+| `'list'`、`list()` | ターミナルに進捗、失敗、実行サマリーを表示します。 |
+| `'dot'`、`dot()` | ターミナルに簡潔な進捗、失敗、実行サマリーを表示します。 |
+| `'line'`、`line()` | [進捗を 1 行で表示し](/reference/reporters#line)、失敗が確定すると詳細を表示します。 |
+| `'junit'`、`junit()` | `<output>/junit.xml`、または `outputFile` に書き込みます。 |
+| `'markdown'`、`markdown()` | `<output>/summary.md`、または `outputFile` に書き込みます。 |
+| `'json'`、`json()` | レポートを stdout に出力します。併用すると、`list`、`dot`、`line` は `stream` を指定しない限り stderr に出力します。 |
+| その他の `Reporter` オブジェクト | 組み込みレポーターと一緒に実行します。`--reporter` では取り除かれません。 |
 
-未知の ID は `INVALID_CONFIG` です。[レポーター](/reference/reporters)を参照してください。
+ID は、そのファクトリーをオプションなしで呼び出したものと同じです。未知の ID は `INVALID_CONFIG` です。[レポーター](/reference/reporters)を参照してください。
 
 ### targets
 

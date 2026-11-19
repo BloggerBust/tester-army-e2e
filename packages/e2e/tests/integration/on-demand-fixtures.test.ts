@@ -224,6 +224,53 @@ test.describe('drives the device', () => {
   );
 
   it(
+    'sets up for each test.each and test.for row what the body names after its row',
+    async () => {
+      const support = `import { test as base } from 'e2e';
+import { log } from './log.ts';
+${LOGGED}
+export const test = base.extend<{ page: string; idle: string }>({ page: logged('page'), idle: logged('idle') });
+`;
+      const file = `import { test } from './support.ts';
+import { log } from './log.ts';
+
+test.each([{ user: 'Ada' }, { user: 'Grace' }])('signs in as $user', ({ user }, { page }) => log('body:' + user + ':' + page));
+test.each([[1, 2]])('adds %i and %i', (a, b, { platform }) => log('body:' + (a + b) + ':' + platform));
+test.for([['x', 'y']])('pairs %s and %s', ([a, b]) => log('body:' + a + b));
+`;
+      const log = hookLog('on-demand-each');
+      const { outcome, project } = await runProject(
+        { 'tests/log.ts': LOG_MODULE, 'tests/support.ts': support, 'tests/a.e2e.ts': file },
+        { config: engineConfig(createFakeEngine({ fixtures: true }).engine) },
+      );
+      try {
+        assertValidReport(outcome.report);
+        expect(outcome.report.run.errors).toEqual([]);
+        expect(outcome.results.map((result) => [result.test.title, result.status])).toEqual([
+          ['signs in as Ada', 'passed'],
+          ['signs in as Grace', 'passed'],
+          ['adds 1 and 2', 'passed'],
+          ['pairs x and y', 'passed'],
+        ]);
+        // `page` once per row that names it; `idle`, which no body names, never.
+        expect(log.lines()).toEqual([
+          'setup:page',
+          'body:Ada:page',
+          'teardown:page',
+          'setup:page',
+          'body:Grace:page',
+          'teardown:page',
+          'body:3:fake',
+          'body:xy',
+        ]);
+      } finally {
+        project.cleanup();
+      }
+    },
+    120_000,
+  );
+
+  it(
     'keeps a file valid on a target where the tests that name another engine\'s fixture do not run',
     async () => {
       const file = `import { test as base } from 'e2e';
@@ -319,6 +366,16 @@ export const test = base.extend<{ gadget: unknown; workspace: string }, { databa
       'a skipped test that takes the whole fixture object',
       `${IMPORT}test('ok', () => {});\ntest.skip('later', async (fixtures) => void fixtures);\n`,
       'test "later" must destructure its first parameter, as in ({ app, screen }) => {}; it takes "fixtures". e2e sets up only the fixtures a function names there',
+    ],
+    [
+      'a test.each body that takes the whole fixture object after its row',
+      `${IMPORT}test.each([{ user: 'Ada' }, { user: 'Grace' }])('signs in as $user', async ({ user }, fixtures) => void [user, fixtures]);\n`,
+      'test "signs in as Ada" must destructure parameter 2, where it takes the fixtures, as in ({ app, screen }) => {}; it takes "fixtures". e2e sets up only the fixtures a function names there',
+    ],
+    [
+      'a test.for body that names a fixture the target does not have',
+      `${IMPORT}test.for([[1, 2]])('pair %#', async ([a, b], { workspce }: { workspce: unknown }) => void [a, b, workspce]);\n`,
+      'test "pair 0" names "workspce": target "fake" has no "workspce" fixture; available: agent, app, database, gadget, platform, screen, session, workspace (engine fake contributes gadget); did you mean "workspace"?',
     ],
     [
       'an unknown fixture name',

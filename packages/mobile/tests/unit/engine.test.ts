@@ -16,6 +16,8 @@ import type { EngineFixtureContext, EngineSnapshot, FixtureOperations, LocatorEx
 import type { Device } from '../../src/device.ts';
 import type { RawNode } from '../../src/nodes.ts';
 import { mobile } from '../../src/engine.ts';
+import { ORIGIN_UNKNOWN_BOUNDS, ORIGIN_WARNING } from '../../src/errors.ts';
+import { swipeWithin } from '../../src/support.ts';
 import { ANDROID_APP_PACKAGE, ANDROID_ID_SNAPSHOT, SETTINGS_NODES, SETTINGS_SNAPSHOT } from '../helpers/fake-client.ts';
 import { boot, harness, poolVariableIn, PROJECT_ROOT, type Harness } from '../helpers/harness.ts';
 import { ignoreTrace, noSecrets } from '../helpers/secrets.ts';
@@ -1693,11 +1695,11 @@ describe('device fixture', () => {
     });
   });
 
-  describe('dismissing a keyboard that has no dismiss key', () => {
+  describe('dismissing a keyboard agent-device refuses', () => {
     const NO_DISMISS_KEY = () => {
       throw new AppError(
         'UNSUPPORTED_OPERATION',
-        'Unable to dismiss the iOS keyboard: the keyboard exposes no dismiss key, and background taps are never attempted',
+        'The Apple runner cannot dismiss this keyboard automatically',
       );
     };
     const KEYBOARD_FRAME = { x: 0, y: 583, width: 390, height: 261 };
@@ -1890,7 +1892,7 @@ describe('device fixture', () => {
       captures(h, [covered]);
       await expect(device.dismissKeyboard()).rejects.toMatchObject({
         code: 'UNSUPPORTED_CAPABILITY',
-        message: expect.stringMatching(/every point above it .*is on a control.*Done or close control/s),
+        message: expect.stringMatching(/every point above the keyboard .*is on a control.*Done or close control/s),
       });
       expect(h.fake.calls.filter((call) => call.method === 'interactions.swipe')).toHaveLength(0);
     });
@@ -3636,6 +3638,91 @@ describe('deterministic actions', () => {
     // The control moved from y 320 to 350 after the gesture, then rested.
     expect(reads).toBe(2);
     expect(h.fake.lastArgs('interactions.swipe')).toMatchObject({ from: { y: expect.any(Number) } });
+  });
+
+  const ORIGIN_UNKNOWN_SNAPSHOT = { ...SETTINGS_SNAPSHOT, warnings: [ORIGIN_WARNING] };
+  const ORIGIN_UNKNOWN_SWIPE = `perform swipe failed: the ${ORIGIN_UNKNOWN_BOUNDS} Nothing was sent. Swipe the screen with screen.swipe({ direction }), or between screen points with screen.swipe({ from, to }) not taken from those bounds.`;
+
+  it('refuses a node swipe aimed from a capture that could not place its window on the screen, and sends nothing', async () => {
+    const h = harness({ settle: false, transition: 0 });
+    await openAttempt(h);
+    h.fake.respond('capture.snapshot', () => ORIGIN_UNKNOWN_SNAPSHOT);
+    const scroller = await observed(h, 'Scroller');
+
+    const refused = { code: 'NOT_ACTIONABLE', retryable: false, message: ORIGIN_UNKNOWN_SWIPE };
+    await expect(h.engine.perform!(scroller.ref, { kind: 'swipe', direction: 'down' }, test())).rejects.toMatchObject(refused);
+    // The swipe shape a locator-scoped scrollUntilVisible sends (momentum: 'slow').
+    await expect(h.engine.perform!(scroller.ref, { kind: 'swipe', direction: 'down', momentum: 'slow' }, test())).rejects.toMatchObject(refused);
+    expect(h.fake.methods()).not.toContain('interactions.swipe');
+  });
+
+  it('refuses the agent node swipe on a capture without the window origin', async () => {
+    const h = harness({ settle: false, transition: 0 });
+    await openAttempt(h);
+    h.fake.respond('capture.snapshot', () => ORIGIN_UNKNOWN_SNAPSHOT);
+    const scroller = await observed(h, 'Scroller');
+
+    await expect(h.engine.perform!(scroller.ref, { kind: 'swipe', direction: 'down' }, operation())).rejects.toMatchObject({
+      code: 'NOT_ACTIONABLE',
+      retryable: false,
+    });
+    expect(h.fake.methods()).not.toContain('interactions.swipe');
+  });
+
+  it('sends the same node swipe when the capture carries only part of the origin warning', async () => {
+    const h = harness({ settle: false, transition: 0 });
+    await openAttempt(h);
+    h.fake.respond('capture.snapshot', () => ({ ...SETTINGS_SNAPSHOT, warnings: ['This snapshot cannot establish the window origin on screen.'] }));
+    const scroller = await observed(h, 'Scroller');
+
+    await h.engine.perform!(scroller.ref, { kind: 'swipe', direction: 'down' }, test());
+    expect(h.fake.lastArgs('interactions.swipe')).toMatchObject(swipeWithin(scroller.rect!, 'down', undefined));
+  });
+
+  it('refuses a node swipe when only the re-read that supplied its bounds lost the window origin', async () => {
+    const h = harness({ settle: false, transition: 0 });
+    await openAttempt(h);
+    await sleep(0);
+    const root = await screenRootOf(h);
+    const scroller = await observed(h, 'Scroller');
+    h.fake.respond('capture.snapshot', () => ORIGIN_UNKNOWN_SNAPSHOT);
+
+    await h.engine.perform!(root.ref, { kind: 'swipe', direction: 'down' }, test());
+    await expect(h.engine.perform!(scroller.ref, { kind: 'swipe', direction: 'down' }, test())).rejects.toMatchObject({
+      code: 'NOT_ACTIONABLE',
+      message: ORIGIN_UNKNOWN_SWIPE,
+    });
+    expect(h.fake.methods()).not.toContain('interactions.swipe');
+  });
+
+  it('swipes a node again once a later capture places the window', async () => {
+    const h = harness({ settle: false, transition: 0 });
+    await openAttempt(h);
+    await sleep(0);
+    const root = await screenRootOf(h);
+    const scroller = await observed(h, 'Scroller');
+    h.fake.respond('capture.snapshot', () => ORIGIN_UNKNOWN_SNAPSHOT);
+    await h.engine.perform!(root.ref, { kind: 'swipe', direction: 'down' }, test());
+    await expect(h.engine.perform!(scroller.ref, { kind: 'swipe', direction: 'down' }, test())).rejects.toMatchObject({ code: 'NOT_ACTIONABLE' });
+
+    h.fake.respond('capture.snapshot', () => SETTINGS_SNAPSHOT);
+    const placed = await observed(h, 'Scroller');
+    await h.engine.perform!(placed.ref, { kind: 'swipe', direction: 'down' }, test());
+    expect(h.fake.lastArgs('interactions.swipe')).toMatchObject(swipeWithin(placed.rect!, 'down', undefined));
+  });
+
+  it('leaves a screen swipe and a ref tap on a capture without the window origin to agent-device', async () => {
+    const h = harness({ settle: false, transition: 0 });
+    await openAttempt(h);
+    h.fake.respond('capture.snapshot', () => ORIGIN_UNKNOWN_SNAPSHOT);
+    const root = await screenRootOf(h);
+    const about = await observed(h, 'About');
+
+    await h.engine.perform!(root.ref, { kind: 'swipe', direction: 'down' }, operation());
+    expect(h.fake.lastArgs('interactions.scroll')).toMatchObject({ direction: 'down' });
+    await h.engine.perform!(about.ref, { kind: 'tap' }, operation());
+    expect(h.fake.lastArgs('interactions.press')).toMatchObject({ ref: '@e4' });
+    expect(h.fake.methods()).not.toContain('interactions.swipe');
   });
 
   it('does not re-read a control after a gesture when the agent made it', async () => {

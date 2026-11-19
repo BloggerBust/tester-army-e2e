@@ -483,6 +483,21 @@ describe('deltaMismatch', () => {
     expect(holds([{ role: 'alert', text: 'Due October 26th' }], [due('a', 'Overdue')])).toBe(false);
   });
 
+  it('reads a clock time with am or pm written against it as volatile, as it does one with a space', () => {
+    const before = nodes([heading]);
+    for (const time of ['5:42pm', '5:42PM', '5:42:07am', '5:42p.m.', '5:42 PM']) {
+      const after = nodes([heading, node('s', { role: 'status', text: 'Profile saved' }), node('t', { text: `Last saved ${time}` })]);
+      expect(describeDelta(before, after, false)).toEqual({ appeared: [{ role: 'status', text: 'Profile saved' }], gone: [] });
+    }
+    const expiring = (id: string, at: string) => node(id, { role: 'alert', text: `Session expires at ${at}` });
+    expect(holds([{ role: 'alert', text: 'Session expires at 5:42pm' }], [expiring('a', '5:45pm')])).toBe(true);
+    expect(holds([{ role: 'alert', text: 'Session expires at 5:42pm' }], [node('x', { role: 'alert', text: 'Session expired' })])).toBe(false);
+    for (const text of ['Ratio 16:10amp', 'Build 5:42pmx']) {
+      const after = nodes([heading, node('s', { role: 'status', text: 'Profile saved' }), node('r', { text })]);
+      expect(describeDelta(before, after, false).appeared).toHaveLength(2);
+    }
+  });
+
   it('skips a date with an ordinal suffix as volatile when the step has a stable result', () => {
     const before = nodes([heading]);
     const after = nodes([heading, node('s', { role: 'status', text: 'Task created' }), node('d', { text: 'Due October 26th' })]);

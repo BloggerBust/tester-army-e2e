@@ -1,5 +1,17 @@
 # @e2e-dev/acp
 
+## 0.1.3
+
+### Patch Changes
+
+- [#1766](https://github.com/e2e-inc/e2e/pull/1766) [`92bf0a9`](https://github.com/e2e-inc/e2e/commit/92bf0a93f171e72c93990a15641c7cfb2a2c184b) Thanks [@jxnxts](https://github.com/jxnxts)! - A cancelled ACP step now stops right away instead of waiting for the screen read to finish.
+
+- [#1761](https://github.com/e2e-inc/e2e/pull/1761) [`f64e7db`](https://github.com/e2e-inc/e2e/commit/f64e7dba8d617a8804cba96cd8c885658db8aca5) Thanks [@jxnxts](https://github.com/jxnxts)! - A step that times out while the agent is still finishing the previous step's turn now fails with its timeout instead of `MODEL_PROVIDER_FAILED`.
+
+- [#1871](https://github.com/e2e-inc/e2e/pull/1871) [`8af43f5`](https://github.com/e2e-inc/e2e/commit/8af43f5075661ad61bcf36f246e1a269e8c1bb17) Thanks [@okwasniewski](https://github.com/okwasniewski)! - Bump `@agentclientprotocol/sdk` to 2.7.0, and oxc-parser, oxc-transform, `@oxc-project/runtime` to 0.159.0.
+
+- [#1958](https://github.com/e2e-inc/e2e/pull/1958) [`ad641be`](https://github.com/e2e-inc/e2e/commit/ad641beeaca6ee56a251bdc0abde8053b0b0ee7c) Thanks [@okwasniewski](https://github.com/okwasniewski)! - Bump `@ai-sdk/provider` to 4.0.39, `@vitest/expect` to 5.1.1, and `@agentclientprotocol/sdk` to 2.8.0.
+
 ## 0.1.2
 
 ### Patch Changes

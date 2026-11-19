@@ -139,6 +139,7 @@ export function finished(document: Report, lastRun?: Report): FinishedRun {
     exitCode: document.run.exitCode,
     projectRoot: '/work/app',
     reportPath: '/work/app/.e2e/report.json',
+    outputDir: '/work/app/.e2e',
     artifactsRoot: '/work/app/.e2e/artifacts',
     aiTracePath: undefined,
     traces: new Map(),

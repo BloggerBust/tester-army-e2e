@@ -64,12 +64,13 @@ export function ellipsize(text: string, max: number): string {
 
 /** The terminal width; a pty without a size reports 0, which counts as unknown. */
 export function terminalColumns(): number {
-  return process.stdout.columns || 80;
+  // stderr's when stdout is not a terminal: `list` beside `json` paints there.
+  return process.stdout.columns || process.stderr.columns || 80;
 }
 
 /** The terminal height; a pty without a size reports 0, which counts as unknown. */
 export function terminalRows(): number {
-  return process.stdout.rows || 40;
+  return process.stdout.rows || process.stderr.rows || 40;
 }
 
 /** vitest's duration format: whole milliseconds under a second, two decimals above. */

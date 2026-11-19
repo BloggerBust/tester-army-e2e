@@ -223,7 +223,7 @@ bunx e2e run tests/checkout.e2e.ts --step --headed
 | --- | --- |
 | Enter | 运行暂停的步骤，并暂停下一步 |
 | `n` | 运行该测试的剩余部分，包括重试，并在下一个测试处暂停 |
-| `a` | 不中断地运行本次运行的剩余部分 |
+| `a` | 运行本次运行的剩余部分，不再暂停步骤 |
 | `h` | 在提示下方显示或隐藏所有按键 |
 | `q`、Esc | 与 Ctrl-C 一样停止运行：测试以 `interrupted` 结束，其余测试被跳过，退出码为 130 |
 
@@ -265,21 +265,85 @@ Screen:
   heading "Checkout"
   textbox "Email"
   button "Pay"
-Next: e2e run --step next runs it, e2e run --step rest runs the rest, e2e run --step stop ends the run.
+Next: e2e run --step next to run it, e2e run --step rest to run the rest, or e2e run --step stop to end the run.
 ```
 
 | 命令 | 操作 |
 | --- | --- |
 | `e2e run --step next` | 运行暂停的步骤，并在下一步处返回 |
-| `e2e run --step rest` | 不中断地运行本次运行的剩余部分 |
+| `e2e run --step rest` | 运行本次运行的剩余部分，不再暂停步骤 |
 | `e2e run --step stop` | 与 `q` 一样停止运行，退出码为 130，即使另一个命令仍在等待也有效 |
 
 - 每次响应开头都会显示自上一个命令以来运行输出的内容：每个已运行的步骤一行，如上面的第一行所示，失败步骤下方会显示错误。最后一次响应以运行摘要和 `The stepped run has ended.` 结束，命令以本次运行的退出码退出。
 - 屏幕会像追踪记录页面一样列出应用节点，并对机密值进行脱敏。
 - 一个目录只能有一个单步运行。在第一个结束前，同目录中的第二个 `--step` 会以退出码 2 退出。
-- `next` 和 `rest` 只会操作命令已经输出的步骤。如果命令在等待时被终止，下一个命令会输出它遗漏的内容：显示步骤但不运行，或显示运行结束信息。在步骤运行期间发送的 `next` 或 `rest` 会等待下一次暂停，不执行操作。无论哪种情况，响应开头都会说明该操作未应用。
+- `next` 和 `rest` 只会操作命令已经输出的步骤。如果命令在等待时被终止，下一个命令会输出它遗漏的内容：显示步骤但不运行，或显示运行结束信息。在步骤运行期间发送的 `next` 或 `rest` 会等待下一个暂停的步骤，不执行操作。无论哪种情况，响应开头都会说明该操作未应用。
 - 步骤暂停 30 分钟且未收到命令时，运行会停止。
 - 使用 `--step` 时，名为 `next`、`rest` 或 `stop` 的文件或目录必须以路径形式指定，例如 `./next`。
+
+## 暂停测试
+
+使用 [`screen.pause()`](/reference/screen#screen-pause)，可以让测试在某一行暂停，同时保持应用打开，直到你恢复测试。无论是否使用 [`--step`](#step-through-a-test)，任何 `e2e run` 中都可以使用它。每次运行到该行时，测试都会暂停，例如循环的每一轮。
+
+```ts title="tests/checkout.e2e.ts"
+import { test } from '@e2e-dev/web';
+
+test('pays with a card', async ({ app, screen }) => {
+  await app.open('/checkout');
+  await screen.pause();
+});
+```
+
+添加 `--headed` 可在测试暂停时观察浏览器：
+
+<CodeGroup>
+```bash npm
+npx e2e run tests/checkout.e2e.ts --headed
+```
+
+```bash pnpm
+pnpm exec e2e run tests/checkout.e2e.ts --headed
+```
+
+```bash bun
+bunx e2e run tests/checkout.e2e.ts --headed
+```
+</CodeGroup>
+
+在终端中，暂停会显示在所属测试下方：
+
+```text
+ ❯ |web| tests/checkout.e2e.ts 0/1
+   └── pays with a card paused
+       ▶ paused  screen.pause()  tests/checkout.e2e.ts:5
+         press enter to resume, press h to show help, press q to quit
+```
+
+按 Enter 恢复测试，按 `h` 列出按键，或按 `q` 停止运行，退出码为 130，与 [`--step` 提示](#step-through-a-test)处相同。
+
+没有终端时，例如在编码智能体的 shell 中，会输出暂停信息及其等待操作的屏幕：
+
+```text
+Paused in pays with a card [web]:
+  screen.pause() (tests/checkout.e2e.ts:5)
+Screen:
+  http://localhost:3000/checkout
+  heading "Checkout"
+Next: e2e run --step next to resume the test, or e2e run --step stop to end the run.
+```
+
+要恢复测试，请在同一目录的另一个 shell 中运行 `e2e run --step next`。要以退出码 130 结束运行，请运行 `e2e run --step stop`。无论运行是否有终端，都可以使用这些命令。唯一的例外是在终端中进行的 `--step` 运行，这时请使用它的按键。也可以用 `rest` 代替 `next`。
+
+测试再次暂停或运行结束时，你会收到响应。运行结束时，你会收到 `The run has ended.` 和本次运行的退出码。每次响应包含的内容见[无终端时单步执行测试](#step-through-a-test-without-a-terminal)。
+
+- 暂停时间不计入任何超时。但没有终端时，如果暂停 30 分钟且未收到命令，运行会停止。
+- 每次尝试都会暂停测试，包括重试和准备测试。
+- 有多个工作进程时，暂停会按从早到晚的顺序逐个显示，其他工作进程继续运行。
+- 请在 [`beforeEach`](/reference/test#beforeeach) 钩子、[测试夹具](/fixtures)的准备阶段或测试体中使用 `await` 调用 `screen.pause()`。在其他位置调用时会发生什么，见 [`screen.pause()`](/reference/screen#screen-pause)。
+- 每个目录一次只能有一个运行受 `e2e run --step` 命令控制。无终端启动的 `--step` 运行从开始时就受控制。不带 `--step` 的运行从第一次暂停时开始受控制。如果目录中的另一个运行已经以这种方式受控制：
+  - 没有终端时，测试会在暂停处以 `RUNNER_BUSY` 失败。请用 `e2e run --step stop` 结束另一个运行，或在终端中运行这个运行。
+  - 在终端中，仍然可以使用按键。会输出一行，说明命令会发送到另一个运行。
+- 设置了 `CI` 时，测试会在暂停处以 `PAUSE_UNAVAILABLE` 失败。请在提交前删除该调用。
 
 ## 控制台输出
 
@@ -290,7 +354,7 @@ stdout | |web| tests/todos.e2e.ts > adds a todo
 hello from the test
 ```
 
-测试外部的输出，例如文件顶层或报告器的输出，显示在 `stdout | runner` 或 `stderr | runner` 下。这两个流都输出到 stdout。未使用 `list` 报告器时，输出会按写入方式进入各自的流；但 `json` 报告器（`--reporter json` 或 `reporters` 中的设置）例外，它将 stdout 留给报告，并将输出写到 stderr。加载配置产生的输出会显示在运行标题之前；如果加载失败，则由一条警告替代。
+测试外部的输出，例如文件顶层或报告器的输出，显示在 `stdout | runner` 或 `stderr | runner` 下。这两个流都输出到 `list` 输出的位置：stdout，与 `json` 同时使用时为 stderr。未使用 `list` 报告器，也没有其他通过 [`onOutput`](/reference/reporters#onoutput) 输出到终端的报告器时，输出会按写入方式进入各自的流；但 `json` 报告器（`--reporter json` 或 `reporters` 中的设置）例外，它将 stdout 留给报告，并将输出写到 stderr。加载配置产生的输出会显示在运行标题之前；如果加载失败，则由一条警告替代。
 
 运行器会对机密值进行[脱敏](/reference/security#redaction)。报告不包含控制台输出，因此对于后续读者需要的信息，请使用 `expect` 或产物保存。
 

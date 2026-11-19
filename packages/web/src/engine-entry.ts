@@ -7,7 +7,7 @@
 export { web, surfaceOf } from './engine.ts';
 /** The engine factory again, as the default export: what `e2e mcp` calls when `open_session` names this package as its `engine`. */
 export { web as default } from './engine.ts';
-export type { PlaywrightLiveSurface } from './engine.ts';
+export type { PlaywrightLiveSurface, WebEngine } from './engine.ts';
 export type { WebBasicAuth, WebConnectOptions, WebOptions, WebScreencastOptions } from './surface.ts';
 export type { WebInitScript } from './init-scripts.ts';
 export type { WebMedia } from './media.ts';

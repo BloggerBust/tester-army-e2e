@@ -1,12 +1,32 @@
-/** Compact progress and user output for the terminal reporter. */
+/** The built-in `dot` reporter: one mark per test, then the `list` reporter's failures and summary. */
 
 import picocolors from 'picocolors';
 import type { ResultStatus } from '@e2e-dev/core/lib/run/records';
-import type { Colors } from './format.ts';
-import { writeTerminal, type OutputStream } from '../run/process-output.ts';
-
+import type { Reporter } from '../run-types.ts';
 import type { TerminalProgress, TerminalProgressResult } from './progress.ts';
+import type { Colors } from './format.ts';
+import { ListReporter, runView } from './list.ts';
 
+type OutputStream = 'stdout' | 'stderr';
+
+/** Options of the built-in `dot` reporter. */
+export interface DotReporterOptions {
+  /** The terminal stream it prints to; without it, `stdout`, or `stderr` beside `json`, as the `dot` id. */
+  readonly stream?: OutputStream;
+}
+
+/**
+ * The built-in `dot` reporter: one mark per selected test as it finishes,
+ * with what user code prints on its own lines, then the failures and the
+ * summary the `list` reporter prints.
+ */
+export function dot(options: DotReporterOptions = {}): Reporter {
+  const stream = options.stream ?? 'stdout';
+  const write = (to: OutputStream, text: string): void => void process[to].write(text);
+  return runView('dot', stream, options.stream === undefined, (output) => new ListReporter(output, { live: false, progress: new DotProgress(stream, write) }));
+}
+
+/** The marks of the `dot` reporter, and the user output it prints between them. */
 export class DotProgress implements TerminalProgress {
   readonly name = 'dot';
   private readonly marks: Record<ResultStatus, string>;
@@ -15,7 +35,7 @@ export class DotProgress implements TerminalProgress {
 
   constructor(
     private readonly stream: OutputStream,
-    private readonly output: (stream: OutputStream, text: string) => void = writeTerminal,
+    private readonly output: (stream: OutputStream, text: string) => void,
     colors = picocolors.isColorSupported,
   ) {
     const pc: Colors = picocolors.createColors(colors);
@@ -47,7 +67,7 @@ export class DotProgress implements TerminalProgress {
     else this.unfinished.add(destination);
   }
 
-  /** Finishes progress and any partial user output before the next permanent line. */
+  /** Releases any pending text in the destination view once the run is over. */
   settle(): void {
     this.finishMarks();
     for (const stream of this.unfinished) this.output(stream, '\n');

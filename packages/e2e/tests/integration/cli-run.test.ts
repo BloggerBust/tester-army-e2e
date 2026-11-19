@@ -310,6 +310,29 @@ test('left out', () => {});
     expect(stdout).toMatch(/Tests\s+1 passed.*1 flaky.*1 skipped/u);
   });
 
+  it('reports a selected skip when engine preparation fails before the plan', () => {
+    const config = `import { defineEngine } from 'e2e/engine';
+const engine = defineEngine({
+  name: 'fake', version: '1.0.0', spiVersion: 1,
+  async prepare() { throw new Error('fixture preparation failed'); },
+});
+export default { targets: [{ name: 'fake', platform: 'fake', engine }] };
+`;
+    const { exitCode, stdout, stderr } = cli({
+      'e2e.config.ts': config,
+      'tests/prepare.e2e.ts': `import { test } from 'e2e';
+test.skip('registered skip', () => {});
+test('scheduled', () => {});
+`,
+    }, ['run', '--reporter', 'line,json']);
+    expect(exitCode, stderr).toBe(3);
+    const report = JSON.parse(stdout) as Report1Document;
+    assertValidReport(report);
+    expect(report.run.errors).toEqual([expect.objectContaining({ phase: 'launch', message: expect.stringContaining('fixture preparation failed') })]);
+    expect(report.run.results).toContainEqual(expect.objectContaining({ titlePath: ['registered skip'], selected: true, status: 'skipped' }));
+    expect(stderr).toMatch(/^\[1\/\?\] \[fake\] tests\/prepare\.e2e\.ts > registered skip \(skipped\)$/mu);
+  });
+
   it('prints line failures as they finish and recaps each with its trace', () => {
     const { project, exitCode, stdout, stderr } = cli(
       {
@@ -396,14 +419,16 @@ test('later', () => {
   });
 });
 
-it('keeps explore logs on stderr with line and JSON reporters', () => {
-  const config = `import { extracted, installFakeModel } from '../../helpers/fake-model.ts';
+it.each(['config', 'CLI'])('keeps explore logs on stderr with line and JSON reporters from %s', (source) => {
+  const config = `import { line, json } from 'e2e/reporters';
+import { extracted, installFakeModel } from '../../helpers/fake-model.ts';
 console.log('config log');
 ` + fakeConfig('{}', `
   agents: {
     default: { model: installFakeModel(() => extracted({ decision: 'finish', title: '', instruction: '', summary: 'Finished' })) },
   },
-  reporters: [{
+  reporters: [${source === 'config' ? 'line(), json(),' : ''}
+  {
     name: 'progress logger',
     onEvent(event) {
       if (event.type === 'test-finished') console.log('custom reporter log');
@@ -412,7 +437,7 @@ console.log('config log');
 `);
   const { exitCode, stdout, stderr } = cli(
     { 'e2e.config.ts': config },
-    ['explore', 'Check the app', '--config', 'e2e.config.ts', '--reporter', 'line,json'],
+    ['explore', 'Check the app', '--config', 'e2e.config.ts', ...(source === 'CLI' ? ['--reporter', 'line,json'] : [])],
   );
   expect(exitCode, stdout + stderr).toBe(0);
   const report = JSON.parse(stdout) as Report1Document;

@@ -1,0 +1,223 @@
+---
+title: MCP server
+description: Nech kódovacího agenta používat tvou aplikaci a kontrolovat vlastní práci.
+"og:image": "https://e2e.com/docs/images/og/mcp-server.png?v=17998906c0"
+"twitter:image": "https://e2e.com/docs/images/og/mcp-server.png?v=17998906c0"
+---
+
+`e2e mcp` dává kódovacímu agentovi, jako je Claude Code, Codex nebo Cursor,
+živou relaci v tvé aplikaci na webu, iOS nebo Androidu. Agent vidí obrazovku,
+pracuje s ní a kontroluje svou práci.
+
+## Proč na tom záleží
+
+| Úkol | Bez `e2e mcp` | S `e2e mcp` |
+| --- | --- | --- |
+| Napsat test | Hádá lokátory, spustí test, ten selže, hádá znovu | Píše test, zatímco prochází flow, z ověřených řádků testu a z řádků, které spustil přes `run_code` |
+| Změnit UI | Hotovo, jakmile se to zkompiluje | Otevře stránku a zkontroluje výsledek |
+| Reprodukovat chybu | Hádá z kódu | Projde kroky v aplikaci |
+| Opravit selhávající test | Znovu proklikává celé flow | Spustí test a zastaví se na selhání |
+| Ukázat změnu v PR | Popíše ji | Nahraje video |
+
+Server žádný model nepotřebuje. Test, který spouští, ho potřebuje jen pro
+agentní krok bez nahrávky.
+
+## Nastavení
+
+[Plugin e2e](/coding-agents) obsahuje server jako `npx -y e2e@<version> mcp`, připnutý na verzi e2e, se kterou byl plugin vydán. Tuto verzi spouští, i když má projekt nainstalovanou jinou verzi e2e.
+Bez pluginu server zaregistruj v projektu. `e2e init` nabídne registraci serveru v `.mcp.json` (Claude Code),
+`.cursor/mcp.json` (Cursor) a `.codex/config.toml` (Codex). Nainstaluj
+závislosti projektu a spusť MCP klienta v adresáři projektu, aby
+`npx` (v projektu s Bunem `bunx`) použil nainstalovanou verzi e2e. Ručně:
+
+<Tabs>
+  <Tab title="Claude Code">
+    <CodeGroup>
+    ```bash npm
+    claude mcp add --scope project e2e -- npx e2e mcp
+    ```
+
+    ```bash pnpm
+    claude mcp add --scope project e2e -- pnpm exec e2e mcp
+    ```
+
+    ```bash bun
+    claude mcp add --scope project e2e -- bunx e2e mcp
+    ```
+    </CodeGroup>
+  </Tab>
+  <Tab title="Codex">
+    Spusť s nainstalovaným CLI `e2e init --yes --skills none --mcp .codex/config.toml`,
+    nebo přidej záznam níže. Označ projekt jako důvěryhodný a spusť novou relaci Codexu.
+    Registraci ukáže `codex mcp list` spuštěný v projektu:
+
+    ```toml title=".codex/config.toml"
+    [mcp_servers.e2e]
+    command = "npx"
+    args = ["e2e", "mcp"]
+    ```
+  </Tab>
+  <Tab title="Cursor">
+    Přidej server do `.cursor/mcp.json`. Ostatní klienti, kteří čtou mapu
+    `mcpServers`, přijímají stejný blok.
+
+    ```json title=".cursor/mcp.json"
+    {
+      "mcpServers": {
+        "e2e": { "command": "npx", "args": ["e2e", "mcp"] }
+      }
+    }
+    ```
+  </Tab>
+  <Tab title="OpenCode">
+    Přidej server do `opencode.json` v projektu. `opencode mcp list`
+    spuštěný v projektu ho ukáže jako připojený:
+
+    ```json title="opencode.json"
+    {
+      "$schema": "https://opencode.ai/config.json",
+      "mcp": {
+        "e2e": { "type": "local", "command": ["npx", "e2e", "mcp"] }
+      }
+    }
+    ```
+  </Tab>
+</Tabs>
+
+Relace spustí příkaz aplikace daného cíle, pokud ho cíl má, a oznámí jeho
+URL a port. Konfigurace čte prostředí serveru, ne shell agenta.
+
+## Vyzkoušej to bez konfigurace
+
+V adresáři bez konfiguračního souboru e2e agent při otevírání relace
+určí engine:
+
+```txt
+open_session {engine: "@e2e-dev/web", app: {url: "http://localhost:3000"}}
+```
+
+`e2e run` konfiguraci stále potřebuje. Možnosti enginu, poskytovatele
+zařízení a instalaci enginu najdeš v části
+[Bez konfigurace](/reference/mcp#without-a-config).
+
+## Zeptej se agenta
+
+- „Přidej do přihlašovacího formuláře zaškrtávací políčko Zapamatovat si mě. Zkontroluj ho v aplikaci pomocí e2e.“
+- „Napiš test pokladny, zatímco ji procházíš v aplikaci.“
+- „Reprodukuj issue #123 v aplikaci a nahraj video.“
+
+Přidej „headed“, pokud chceš sledovat lokální prohlížeč nebo simulátor.
+
+## Jak píše řádek testu
+
+Každá akce v relaci odpoví řádkem testu, který ji zopakuje. Lokátor
+na tomto řádku odpovídal na živé obrazovce jen tomuto ovládacímu prvku:
+
+```text wrap
+Tapped #n31.
+Test line: await screen.getByRole("button", "Sign in").tap();
+```
+
+Agent si řádky, které potřebuje, kopíruje do testu, zatímco prochází flow.
+`test_lines` vrátí všechny dosavadní řádky v pořadí jako návrh těla testu.
+Jak se řádek sestavuje, popisuje [`test_lines`](/reference/mcp#test_lines).
+
+## Jak ověřuje lokátor
+
+U řádku, který žádná akce nevypsala, například u aserce, agent nejdřív
+vyzkouší lokátor v relaci. Špatný odhad selže tam, ne při běhu testů:
+
+```text wrap
+0 nodes match getByLabel("Email").
+A test using this locator would fail with LOCATOR_NOT_FOUND. ...
+
+1 node matches getByRole("button", name: "Sign in").
+Use: screen.getByRole("button", "Sign in")
+```
+
+## Jak spouští řádek testu
+
+Řádky, které žádná akce nevypsala, například aserce, agent spouští přes
+`run_code` v otevřené relaci. Ty, které projdou, se přidají do návrhu
+`test_lines`. Špatný řádek selže během pár sekund, bez běhu testů:
+
+```text wrap
+Statement 2 of 2 failed; the one before it passed. Each statement waited at most 5000 ms. ...
+1. passed: await screen.getByLabel('Full name').fill('Grace Hopper');
+2. failed: await screen.getByRole('button', 'Save').tap();
+   LOCATOR_NOT_FOUND: locator matched no nodes within getByRole("button", name: "Save")
+```
+
+Server řádky parsuje a nikdy je nevyhodnocuje jako JavaScript. Viz
+[`run_code`](/reference/mcp#run_code).
+
+## Oprava selhávajícího testu
+
+`open_session {test: "tests/checkout.e2e.ts:12"}` spustí v relaci jeden test
+a zastaví se na obrazovce, kde selhal. Agent si přečte chybu, zkontroluje
+obrazovku a upraví test:
+
+```text wrap
+Test "a member checks out" (tests/checkout.e2e.ts:12) failed after 30.25s; 8 steps ran.
+LOCATOR_NOT_FOUND: locator matched no nodes within getByLabel("Name")
+At tests/checkout.e2e.ts:20:3
+On screen, closest to what the locator asked for:
+  #n32 textbox "Full name"
+```
+
+Každá akce z této obrazovky vypíše svůj
+[řádek testu](#how-it-writes-a-test-line) a `run_code` tam spustí opravený
+řádek. Agent těmito řádky v testu nahradí ten, který selhal.
+
+Aby upravený test spustil znovu, agent relaci zavře a otevře novou
+se stejným `test`. Agentní kroky se přehrají z cache stejně jako v `e2e run`.
+Co se spouští a jaká platí omezení, popisuje
+[Spuštění testu](/reference/mcp#running-a-test).
+
+## Spouštění testů vedle relace
+
+Relace nezapisuje žádné výsledky testů a replay cache používá jen test,
+který spustí přes `open_session {test}`. Sady testů agent spouští přes
+`e2e run`, a pokud
+může běh probíhat vedle relace, nechá relaci mezi běhy otevřenou. Po neúspěšném běhu přejde na obrazovku se selháním
+v této relaci, místo aby otevíral novou.
+
+Na webu závisí běh vedle relace na `app` daného cíle:
+
+| `app` cíle | Běh při otevřené relaci |
+| --- | --- |
+| Bez `command` | Oba používají aplikaci, kterou jsi spustil. |
+| `url` na portu [`0`](/web#let-the-runner-pick-the-port) | Každý spustí vlastní kopii aplikace. Vývojový server, který v jednom adresáři běží jen jednou, například `next dev`, způsobí selhání běhu. |
+| `command` s [`reuseExisting: true`](/web#starting-your-app) | Běh použije aplikaci, kterou spustila relace. Když se relace zavře, i během běhu, tato aplikace se zastaví. |
+| `command` na pevném portu, bez `reuseExisting` | Selže s `APP_ALREADY_RUNNING`. |
+
+Když je nastavená proměnná `CI`, e2e ignoruje `reuseExisting` a běh selže
+stejně jako na pevném portu. Před během, který by selhal, relaci zavři.
+Na mobilu spouštěj testy na zařízení, které nepoužívá žádná relace.
+
+## Více agentů najednou
+
+Každý agent, včetně subagentů, otevírá vlastní relaci s vlastním prohlížečem
+nebo zařízením, ve výchozím nastavení až čtyři. Na mobilu dej každé relaci
+vlastní cíl.
+
+## Tajné klíče
+
+`type_secret` nebo `fill` v `run_code` vyplní tajný klíč, aniž by ho agentovi
+ukázal. Snímky obrazovky maskují jen zabezpečená pole, takže tajný klíč,
+který aplikace zobrazí kdekoli jinde, v nich bude vidět.
+
+<Warning>
+Videa ze `start_recording` maskovaná nejsou.
+</Warning>
+
+## Co dál
+
+<CardGroup cols={2}>
+  <Card title="Reference MCP serveru" icon="book" href="/reference/mcp">
+    Všechny nástroje, přepínače, pravidla relací a chybové kódy.
+  </Card>
+  <Card title="Kódovací agenti" icon="robot" href="/coding-agents">
+    Skill, spouštění testů a čtení selhání.
+  </Card>
+</CardGroup>

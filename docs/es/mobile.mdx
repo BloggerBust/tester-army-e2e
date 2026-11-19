@@ -1,0 +1,955 @@
+---
+title: Móvil
+description: Configura un simulador, un emulador o un teléfono conectado como destino, escribe un test de dispositivo y conoce qué se diferencia de la web.
+"og:image": "https://e2e.com/docs/images/og/mobile.png?v=0a8bfea0a3"
+"twitter:image": "https://e2e.com/docs/images/og/mobile.png?v=0a8bfea0a3"
+---
+
+import { Video } from '../snippets/video.jsx';
+
+`@e2e-dev/mobile` ejecuta tests en simuladores de iOS, emuladores de Android
+y teléfonos conectados a tu máquina. Está construido sobre
+[agent-device](https://github.com/callstack/agent-device). Los tests usan las
+mismas API `agent`, `screen` y `expect` que los tests de navegador.
+
+## Configuración
+
+Instala Xcode con un runtime de simulador de iOS, o el SDK de Android con un
+emulador. Luego sigue los [Primeros pasos](/quickstart) y elige **Mobile
+(iOS/Android)**. El asistente selecciona iOS en macOS y Android en el resto, y
+apunta a la app Ajustes con un worker, así que un test se ejecuta antes de
+que apuntes a tu app. El arranque del dispositivo ocurre antes de que empiece a
+contar el tiempo del test y no cuenta para `launchTimeout`. Consulta los
+[proyectos de ejemplo](/example-projects) para ver configuraciones completas.
+
+Comprueba tu configuración:
+
+<CodeGroup>
+```bash npm
+npx e2e doctor
+```
+
+```bash pnpm
+pnpm exec e2e doctor
+```
+
+```bash bun
+bunx e2e doctor
+```
+</CodeGroup>
+
+Comprueba agent-device, Xcode o el SDK de Android, cada dispositivo que nombra
+el destino y la compilación de `appPath`. Sin `appPath`, comprueba que el
+`bundleId` esté instalado cuando hay un dispositivo arrancado. Consulta
+[`e2e doctor`](/reference/cli#e2e-doctor).
+
+## Apunta a tu app
+
+Define `app.bundleId` del destino con el identificador de paquete o el nombre
+de paquete de tu app. `app.open()`, `app.restart()` y `app.clearState()`
+lanzan esa app. Añade `appPath` para nombrar una compilación, un paquete `.app`
+para iOS o un `.apk` para Android:
+
+```ts
+{
+  name: 'ios',
+  engine: mobile({ platform: 'ios' }),
+  app: {
+    bundleId: 'com.example.app',
+    appPath: './build/MyApp.app', // the iOS .app bundle
+  },
+}
+```
+
+Un destino de dispositivo necesita `bundleId`, `appPath` o ambos. El motor no
+instala nada por sí solo. Llama a `device.installApp()` una vez por
+dispositivo, en un [fixture de worker](/fixtures#share-a-fixture-across-a-worker)
+con [`auto: true`](/fixtures#run-a-fixture-for-every-test). Sin ruta, instala
+`app.appPath`. Sin `bundleId`, `app.open()` lanza la app que instaló la
+compilación.
+
+Para ejecutar la suite en CI, consulta [Trabajos móviles](/ci#mobile-jobs).
+
+### Argumentos de lanzamiento y permisos
+
+`app.launchArguments` y `app.permissions` se aplican a cada lanzamiento nuevo.
+
+```ts
+app: {
+  bundleId: 'com.example.app',
+  launchArguments: ['-e2e', 'YES'],
+  permissions: { camera: 'grant', notifications: 'deny', location: 'reset' },
+},
+```
+
+- Los argumentos de lanzamiento son los argumentos del proceso en iOS y los
+  argumentos de `am start` en Android.
+- Los permisos se definen antes del lanzamiento, así que no aparece ningún
+  aviso del sistema. `app.clearState()` los restablece junto con los datos y
+  luego los define de nuevo.
+- `deny` en iOS le dice a la app que no sin mostrar un aviso. En Android revoca
+  el permiso, así que el sistema operativo vuelve a preguntar.
+- El calentamiento previo a la ejecución no pasa ninguno de los dos, así que
+  empieza cada test con `app.open()`.
+- Los argumentos que seleccionan un modo de compilación cambian lo que es la
+  app. Dale a cada modo su propio `app.identity` para que sus grabaciones se
+  mantengan separadas.
+
+Para lanzar un test con los suyos propios, usa `device.openApp`. Cada opción
+que pasa reemplaza el valor completo del destino:
+`permissions: { camera: 'deny' }` descarta los demás permisos del destino. En
+un relanzamiento de la app del destino, las opciones que no pasa conservan los
+valores del destino:
+
+```ts
+await device.openApp('com.example.app', { relaunch: true, permissions: { camera: 'deny' } });
+```
+
+### Ejecuta la app en otro idioma
+
+En iOS, los argumentos de lanzamiento fijan el idioma y la región de la app
+para ese lanzamiento. El dispositivo conserva su propio idioma. Añade un
+destino por idioma:
+
+```ts
+{
+  name: 'ios-fr',
+  engine: mobile({ platform: 'ios' }),
+  app: {
+    bundleId: 'com.example.app',
+    launchArguments: ['-AppleLanguages', '(fr)', '-AppleLocale', 'fr_FR'],
+  },
+}
+```
+
+- La app debe incluir el idioma. Si no lo incluye, iOS muestra su idioma de
+  desarrollo.
+- Android no tiene un argumento de lanzamiento para el idioma. En un
+  dispositivo alojado, define `language` y `locale` en `browserstack()` o
+  `testmu()`. En un dispositivo local, define el idioma del dispositivo antes
+  de la ejecución.
+
+### Compilaciones de desarrollo de Expo
+
+Una compilación de desarrollo (`expo-dev-client`) se abre en el dev launcher y
+carga su JavaScript desde un servidor de desarrollo. En un simulador de iOS,
+estos argumentos de lanzamiento abren el servidor directamente y desactivan el
+menú de desarrollo, su hoja de bienvenida y su botón flotante. `app.command`
+inicia el servidor:
+
+```ts title="e2e.config.ts"
+import type { E2EConfig } from 'e2e';
+import { mobile } from '@e2e-dev/mobile';
+
+export default {
+  targets: [
+    {
+      engine: mobile({ platform: 'ios' }),
+      app: {
+        bundleId: 'com.example.app',
+        launchArguments: [
+          '--initialUrl', 'http://localhost:8081',
+          '-EXDevMenuShowsAtLaunch', 'NO',
+          '-EXDevMenuIsOnboardingFinished', 'YES',
+          '-EXDevMenuShowFloatingActionButton', 'NO',
+        ],
+        command: { executable: 'npx', args: ['expo', 'start', '--port', '8081'] },
+        readyUrl: 'http://localhost:8081/status',
+      },
+    },
+  ],
+} satisfies E2EConfig;
+```
+
+- El calentamiento deja la app en el dev launcher. Empieza cada test con
+  `app.open()`.
+- El primer lanzamiento espera a que el servidor de desarrollo empaquete la
+  app. Dale a la primera comprobación del test un tiempo de espera más
+  largo.
+- En Android, expo-dev-launcher no lee `--initialUrl`. Abre el servidor con
+  `device.openLink` y el enlace
+  `exp+<slug>://expo-development-client/?url=<encoded server URL>` de la
+  compilación.
+
+## Escribe un test de dispositivo
+
+`screen` asigna los controles nativos a roles comunes como `button`, `textbox`,
+`listitem` y `switch`. Usa `getByTestId` para los identificadores de elementos
+nativos.
+
+```ts
+import { test } from '@e2e-dev/mobile';
+import { expect } from 'e2e';
+
+test('shows the version in dark mode', async ({ agent, app, device, screen }) => {
+  await device.setAppearance('dark');
+  await app.open();
+  await agent.act('go to General, then About');
+  await expect(screen.getByRole('button', /^iOS Version/)).toBeVisible();
+  await expect(device.locator('role=navigation-bar id=About')).toBeVisible();
+});
+```
+
+Entre tests, la app se queda donde la dejó el último test. Los
+dispositivos no admiten `selectOption`, `setInputFiles`, `scrollIntoView`,
+`secondaryTap` ni `modifiers` en `tap` y `doubleTap`. Usa toques y deslizamientos
+sobre los controles nativos.
+
+### Ids de test por framework
+
+`getByTestId` lee el identificador de accesibilidad en iOS y el id de recurso
+en Android. Cada framework de UI los define a su manera:
+
+| Framework | Define el id con | Ejemplo |
+| --- | --- | --- |
+| React Native | `testID` | [with-expo](https://github.com/e2e-inc/e2e/tree/main/examples/with-expo) |
+| SwiftUI | `.accessibilityIdentifier()` | [with-swiftui](https://github.com/e2e-inc/e2e/tree/main/examples/with-swiftui) |
+| UIKit | `view.accessibilityIdentifier`, o Identifier en el inspector Identity de Interface Builder | - |
+| Jetpack Compose | `Modifier.testTag()` | [with-compose](https://github.com/e2e-inc/e2e/tree/main/examples/with-compose) |
+| Compose Multiplatform | `Modifier.testTag()` | [with-kotlin-multiplatform](https://github.com/e2e-inc/e2e/tree/main/examples/with-kotlin-multiplatform) |
+| Flutter | `Semantics(identifier:)` | [with-flutter](https://github.com/e2e-inc/e2e/tree/main/examples/with-flutter) |
+| .NET MAUI | `AutomationId` | [with-maui](https://github.com/e2e-inc/e2e/tree/main/examples/with-maui) |
+| NativeScript | `testID` | [Guía de Norrix](https://docs.norrix.net/guides/e2e-testing/#3-write-a-first-test) |
+
+- En Android, un `android:id` nativo y un `AutomationId` de .NET MAUI se leen
+  como `<package>:id/<id>`. `getByTestId('greet')` los encuentra sin el
+  paquete de la app, como en iOS. Los ids del framework, como
+  `android:id/content`, coinciden solo completos.
+- En Android, Compose oculta las etiquetas de test hasta que un composable
+  raíz define `Modifier.semantics { testTagsAsResourceId = true }`. Sin eso,
+  `getByTestId` no encuentra nada. iOS lee una etiqueta de Compose
+  Multiplatform tal cual, así que una pantalla compartida define la bandera en su
+  actividad de Android.
+- En SwiftUI, un `.accessibilityIdentifier()` en un contenedor como un
+  `VStack` reemplaza los ids de todos los elementos que contiene.
+  `getByTestId` falla entonces con `LOCATOR_AMBIGUOUS` con el id del
+  contenedor y no encuentra nada con los ids de los hijos. Pon
+  `.accessibilityElement(children: .contain)` antes del identificador para
+  conservar ambos.
+- En Flutter, envuelve el `Semantics` de un botón en `MergeSemantics` para que
+  el id y el rol de botón queden en un solo nodo.
+- En NativeScript, `testID` y `accessibilityIdentifier` definen el mismo id:
+  `getByTestId('login-button')` encuentra
+  `<Button text="Login" testID="login-button" />` en ambas plataformas.
+  `accessibilityLabel` define el nombre, no el id. En Android, NativeScript lo
+  pone antes del texto, así que `<Button text="Help" accessibilityLabel="Open help" />`
+  se llama `Open help. Help`. Búscalo con
+  `getByRole('button', /^Open help/)`.
+
+## El fixture device
+
+`device` cambia los ajustes del dispositivo sin llamar al modelo: red,
+permisos, apariencia, instalaciones de apps y más. Cada llamada es un paso
+`device.<method>` en el informe. La
+[referencia del motor móvil](/reference/mobile#device) enumera todos los
+métodos.
+
+`device.locator` acepta un selector de agent-device, como en el test
+anterior, para los controles que las consultas de `screen` no pueden nombrar.
+
+`device.installApp` también sirve para probar actualizaciones e instalaciones
+limpias:
+
+```ts
+const { app } = await device.installApp('./build/MyApp.app', { reinstall: true });
+await device.openApp(app);
+```
+
+`device.openApp` acepta un identificador de paquete, un nombre de paquete o un
+nombre visible, nunca un enlace. `device.openLink` abre un enlace profundo o
+web en la app fijada, o en la `app` de sus opciones, para el inicio de sesión
+con enlace mágico y las rutas de enlaces profundos:
+
+```ts
+await device.openLink('myapp://orders/42');
+await expect(screen.getByText('Order #42')).toBeVisible();
+```
+
+`device.setNetwork('offline')` y `device.setAirplaneMode(true)` funcionan solo
+en Android. Un simulador de iOS comparte la red del Mac, y simctl solo puede
+cambiar su barra de estado, así que en iOS ambos fallan con
+`UNSUPPORTED_CAPABILITY`. `setNetwork('online')` y `setAirplaneMode(false)` no
+hacen nada en iOS, de modo que un hook de limpieza que ejecutan ambas
+plataformas sigue pasando.
+
+En Android, `setNetwork('offline')` solo desactiva el Wi-Fi, y la app puede
+seguir conectada por la red móvil. Para dejar la app sin conexión, usa
+`setAirplaneMode(true)`. Requiere Android 11 o posterior. El motor no
+restablece la red después de un test, así que vuelve a activarla en
+`afterEach`, que también se ejecuta cuando el test falla:
+
+```ts
+import { afterEach, test } from '@e2e-dev/mobile';
+import { expect } from 'e2e';
+
+afterEach(async ({ device }) => {
+  await device.setAirplaneMode(false);
+});
+
+test('shows the offline banner', { platforms: ['android'] }, async ({ app, device, screen }) => {
+  await app.open();
+  await device.setAirplaneMode(true);
+  await expect(screen.getByText('You are offline')).toBeVisible();
+});
+```
+
+`device.clearKeychain()` restablece el llavero del simulador, que
+`app.clearState()` no toca, de modo que un token de sesión guardado
+desaparece en el siguiente lanzamiento. Solo funciona en iOS.
+
+Para todo lo que `device` no cubre, `device.unstable_raw` ofrece un cliente de
+[agent-device](https://github.com/callstack/agent-device) vinculado a la sesión
+del test, además del nombre de la sesión, el id y el nombre del
+dispositivo, y un `selection` para expandir en una llamada al cliente. Es
+inestable y puede cambiar o desaparecer en cualquier versión:
+
+```ts
+const { client, deviceId } = device.unstable_raw;
+const { nodes } = await client.capture.snapshot({});
+```
+
+Las llamadas al cliente no son pasos: el informe y la traza las omiten, la
+caché del agente no las reproduce, los secretos que se les pasan no se ocultan
+y nada espera a que la pantalla se estabilice después de una.
+
+<Accordion title="Tamaño de texto y animaciones">
+`device` no tiene ningún método para el tamaño de texto del sistema ni para las
+animaciones, así que defínelos a través de `unstable_raw`. Cambia el tamaño de
+texto antes de `app.open()`. Una app en ejecución puede conservar el tamaño
+anterior hasta que se lance de nuevo, así que llama a `app.restart()` después
+de un cambio a mitad del test:
+
+```ts
+import { afterEach, test } from '@e2e-dev/mobile';
+import { expect } from 'e2e';
+
+afterEach(async ({ app, device }) => {
+  const { client, selection } = device.unstable_raw;
+  await client.settings.update({ ...selection, setting: 'text-size', state: 'large' });
+});
+
+test('the checkout button shows at the largest text size', async ({ app, device, screen }) => {
+  const { client, selection } = device.unstable_raw;
+  await client.settings.update({ ...selection, setting: 'text-size', state: 'accessibility-extra-extra-extra-large' });
+  await app.open();
+  await expect(screen.getByRole('button', 'Checkout')).toBeVisible();
+});
+```
+
+`text-size` funciona en simuladores de iOS y en Android; `large` es el valor
+por defecto en ambos. `setting: 'animations'` con `state: 'off'` u `'on'` solo
+funciona en Android y falla en iOS. En Android define las escalas de ventana,
+transición y animador en 0 o 1. Ambos ajustes sobreviven al test, así que
+vuelve a ponerlos en `afterEach`. El `app.open()` del siguiente test
+relanza la app, así que restaurar el ajuste basta.
+</Accordion>
+
+<Accordion title="Fotos para un test de selector">
+`device` no puede añadir fotos a la biblioteca, así que añádelas desde el host
+antes de `app.open()`. En un simulador de iOS, `xcrun simctl addmedia` lo
+hace, y `deviceId` es el UDID del simulador. `addmedia` añade una copia en cada
+llamada, y un paso del agente no puede distinguir fotos idénticas, así que el
+ejemplo deja un archivo marcador en el directorio de datos propio del
+simulador y añade la foto una sola vez. El marcador desaparece junto con la
+biblioteca cuando se borra el simulador:
+
+```ts
+import { execFileSync } from 'node:child_process';
+import { existsSync, writeFileSync } from 'node:fs';
+import { resolve } from 'node:path';
+import { test, type Device } from '@e2e-dev/mobile';
+import { expect } from 'e2e';
+
+// Put a JPEG named receipt.jpg beside this test.
+const receipt = resolve(import.meta.dirname, 'receipt.jpg');
+
+function addPhotoOnce(device: Device, file: string): void {
+  const { deviceId } = device.unstable_raw;
+  const listing = execFileSync('xcrun', ['simctl', 'list', 'devices', '-j'], { encoding: 'utf8' });
+  const { devices } = JSON.parse(listing) as {
+    devices: Record<string, { udid: string; dataPath: string }[]>;
+  };
+  const simulator = Object.values(devices).flat().find((d) => d.udid === deviceId);
+  if (!simulator) throw new Error(`No simulator ${deviceId}`);
+  const marker = resolve(simulator.dataPath, 'tmp', 'receipt-photo-added');
+  if (existsSync(marker)) return;
+  execFileSync('xcrun', ['simctl', 'addmedia', deviceId, file]);
+  writeFileSync(marker, file);
+}
+
+test('attaches the receipt from the photo library', { platforms: ['ios'] }, async ({ app, device, screen }) => {
+  addPhotoOnce(device, receipt);
+  await app.open();
+  await screen.getByLabel('Choose photo').tap();
+  await screen.getByRole('image', /^Photo, /).first().tap();
+  await expect(screen.getByText(/^Receipt attached/)).toBeVisible();
+});
+```
+
+El selector del sistema se ejecuta fuera de la app, pero sus fotos están en el
+árbol de la pantalla, cada una un `image` llamado `Photo, ` seguido de la fecha
+en que se tomó. El selector ordena por esa fecha, de la más reciente a la más
+antigua, que es la fecha de los datos EXIF de la foto, no el día en que la
+añadiste.
+
+Un emulador de Android necesita que el archivo se copie con `adb` y un
+escaneo de medios, y su selector es otra app con sus propios nombres. Esta
+página no se ha comprobado en Android, así que lee el árbol del selector en la
+traza antes de escribir ese localizador.
+</Accordion>
+
+<Accordion title="Simuladores y emuladores plegables">
+`device.fold(pose)` pone el simulador de iPhone Duo o un emulador de Android
+plegable (un perfil Pixel Fold, o el genérico «7.6in Foldable») en una postura
+de la bisagra. `closed` enciende la pantalla exterior. `half-open` y `open`
+encienden la interior. En el Duo la llamada vuelve cuando la bisagra alcanza la
+postura, normalmente tras 10 a 16 segundos, así que mantén `actionTimeout` en
+20 segundos o más; `half-open` es un libro de 130° ahí. En un emulador de
+Android vuelve en unos pocos segundos, cuando Android confirma el estado de
+dispositivo correspondiente; `half-open` es el ángulo propio del perfil (90° en
+los Pixel plegables), y plegar hacia la pantalla de cubierta descarta la
+pantalla de bloqueo «Swipe up to continue» que levanta el emulador. La
+siguiente observación lee la app en la otra pantalla.
+
+El motor nunca restablece la postura, así que un reintento y el siguiente
+test empiezan donde la dejó el último test. Pliega de nuevo en
+`afterEach`, que también se ejecuta cuando el test falla:
+
+```ts
+import { afterEach, test } from '@e2e-dev/mobile';
+
+afterEach(async ({ device }) => {
+  await device.fold('closed');
+});
+
+test('the list and the detail split across the fold', async ({ agent, app, device }) => {
+  await app.open();
+  await device.fold('half-open');
+  await agent.assert('the list and the detail sit on either side of the fold', { vision: true });
+});
+```
+</Accordion>
+
+### Graba una transición
+
+[`app.startRecording()` y `app.stopRecording()`](/reference/app#startrecording)
+graban un tramo de la pantalla como un `.mp4`. El `boundingBox()` de un
+localizador da el marco de un elemento en puntos (píxeles físicos en Android).
+
+```ts
+test('the sheet slides up', { video: 'off' }, async ({ app, screen }) => {
+  await app.open();
+  await app.startRecording({ name: 'sheet' });
+  await screen.getByRole('button', 'Open sheet').tap();
+  await expect(screen.getByText('Sheet title')).toBeVisible();
+  const [video] = await app.stopRecording();
+});
+```
+
+Empieza después de `app.open()`. Una grabación iniciada después de
+`device.closeApp()` termina la sesión del dispositivo cuando se detiene, así
+que abre la app de nuevo después. Los toques se muestran a menos que
+[`videoTouches`](/reference/mobile#videotouches) sea `false`.
+
+## Varios dispositivos
+
+<Video>
+  <video src="/images/cross-platform.mp4" aria-label="Una misma suite de test se ejecuta a la vez en web, iOS y Android." muted loop playsInline controls />
+
+  Una misma suite de test se ejecuta en web, iOS y Android.
+</Video>
+
+Añade un destino por plataforma:
+
+```ts title="e2e.config.ts"
+import type { E2EConfig } from 'e2e';
+import { mobile } from '@e2e-dev/mobile';
+
+const app = { bundleId: 'com.example.app' };
+
+export default {
+  targets: [
+    { name: 'iphone', engine: mobile({ platform: 'ios' }), app },
+    { name: 'pixel', engine: mobile({ platform: 'android' }), app },
+  ],
+  workers: 1,
+} satisfies E2EConfig;
+```
+
+Los tests se ejecutan en ambos destinos. Define `platforms: ['ios']` o
+`platforms: ['android']` en un test con etiquetas o comportamiento
+específicos de una plataforma.
+
+Para ejecutar archivos en paralelo, da un conjunto de dispositivos y define
+`workers` con al menos su tamaño. Cada dispositivo recibe un worker:
+
+```ts
+mobile({ platform: 'ios', device: ['iPhone 17', 'iPhone 17 Pro'] })
+```
+
+Sin `device`, el motor usa los dispositivos arrancados, hasta el límite de
+workers. Un iPhone o iPad emparejado y accesible (por USB o por red) cuenta
+como arrancado. Si no hay ninguno arrancado, arranca uno apagado: en iOS un
+iPhone antes que un iPad antes que un Apple TV, en Android un teléfono o
+tableta antes que un televisor, luego el sistema operativo más reciente y
+después el orden de nombre. Dos workers nunca controlan el mismo dispositivo.
+
+## Herramientas del agente
+
+El agente ya tiene acciones básicas como `tap`, `type` y `scroll`. Añade
+`mobileTools` para cambiar de app, deslizamientos libres y alertas del sistema.
+Pasa todos los motores de dispositivo de la configuración a una sola llamada:
+
+```ts title="e2e.config.ts"
+import type { E2EConfig } from 'e2e';
+import { mobile } from '@e2e-dev/mobile';
+import { mobileTools } from '@e2e-dev/mobile/tools';
+import { gateway } from 'ai';
+
+const app = { bundleId: 'com.example.app' };
+const iphone = mobile({ platform: 'ios' });
+const pixel = mobile({ platform: 'android' });
+
+export default {
+  targets: [
+    { name: 'iphone', engine: iphone, app },
+    { name: 'pixel', engine: pixel, app },
+  ],
+  agents: { default: { model: gateway('openai/gpt-6-luna-fast'), tools: mobileTools(iphone, pixel) } },
+} satisfies E2EConfig;
+```
+
+Las llamadas van al motor que ejecuta el intento actual. `open_app`, `swipe` y
+`alert` cambian el estado del dispositivo, así que el agente los ejecuta en
+vivo durante una reproducción de la caché. La
+[referencia del motor móvil](/reference/mobile#agent-tools) describe cada
+herramienta. Para añadir las tuyas junto a ellas, consulta
+[Herramientas del proyecto](/tools).
+
+## Dispositivos físicos
+
+agent-device controla un teléfono conectado a tu máquina igual que un
+simulador, sin otro motor ni otra opción. Lista los dispositivos que ve:
+
+<CodeGroup>
+```bash npm
+npx agent-device devices --platform ios
+```
+
+```bash pnpm
+pnpm exec agent-device devices --platform ios
+```
+
+```bash bun
+bunx agent-device devices --platform ios
+```
+</CodeGroup>
+
+Después nombra el teléfono en `device` tal como aparece en la lista:
+
+```ts
+mobile({ platform: 'ios', device: 'QA iPhone' })
+```
+
+Usa el nombre, no el id. El motor lee una cadena de `device` como id solo
+para un UDID de simulador o un serial `emulator-<port>`. Gana el primer
+dispositivo con un nombre coincidente, así que dale a cada teléfono un nombre
+único. Sin `device`, un iPhone o iPad emparejado y accesible (por USB o por
+red), o un teléfono Android conectado, cuenta como arrancado y se une al
+conjunto junto a los simuladores arrancados.
+
+Configura el teléfono una sola vez:
+
+<Tabs>
+  <Tab title="iOS">
+  - Empareja y confía en el teléfono, desbloquéalo y activa el modo
+    desarrollador.
+  - agent-device compila y firma su ejecutor de XCTest en el teléfono. Define
+    `AGENT_DEVICE_IOS_TEAM_ID` con el id de tu equipo y
+    `AGENT_DEVICE_IOS_BUNDLE_ID` con un id único en DNS inverso, como
+    `com.example.agentdevice.runner`. El perfil de firma debe permitir ese id
+    y `<id>.uitests`. La primera ejecución compila el ejecutor y tarda más.
+  - Después de cambiar estas variables, ejecuta `npx agent-device daemon stop`.
+    Un daemon en ejecución conserva el entorno con el que arrancó.
+  - `app.appPath` debe ser una compilación firmada para dispositivo, no un
+    `.app` de simulador.
+
+  `npx agent-device help physical-device` explica en detalle la firma en iOS.
+  </Tab>
+  <Tab title="Android">
+  - Activa la depuración por USB y autoriza el teléfono. `adb devices` lo
+    muestra como `device`.
+  - `app.appPath` es el mismo `.apk` que en un emulador.
+  </Tab>
+</Tabs>
+
+En un teléfono, `localhost` dentro de la app es el propio teléfono. Apunta la
+app a la dirección de red de tu máquina, o en Android reenvía el puerto con
+`adb reverse tcp:<port> tcp:<port>`.
+
+<Accordion title="Qué no funciona en un teléfono">
+Algunos controles del dispositivo necesitan un simulador o un emulador. En un
+teléfono, fallan con el mensaje de agent-device.
+
+- En un iPhone, todos los ajustes del dispositivo son exclusivos del
+  simulador: `app.permissions`, `device.setPermission`, `app.clearState()`,
+  `device.setLocation`, `device.clearLocation`, `device.setAppearance`, los
+  métodos biométricos y `device.clearKeychain`. También lo son
+  `device.clipboard`, `device.setClipboard` y `device.fold`.
+- Para un inicio limpio en un iPhone, reinstala con
+  `device.installApp(path, { reinstall: true })`. Define `app.bundleId` o la
+  opción `app` para que agent-device sepa qué app eliminar.
+- agent-device controla un iPhone antiguo sin CoreDevice cuando
+  `xcrun devicectl list devices` no lo muestra. Los toques, la escritura y la
+  pantalla funcionan. Las instalaciones, `--video`, `device.openLink` y
+  `app.launchArguments` fallan. Instala la compilación desde Xcode y fija
+  `app.bundleId`.
+- En un teléfono Android, `device.setLocation` es exclusivo del emulador.
+  `device.setBiometrics('fingerprint', ...)` funciona solo donde el teléfono
+  expone `cmd fingerprint`.
+- `--video` en un iPhone se construye a partir de capturas de pantalla a unos
+  15 fotogramas por segundo, y pierde fotogramas.
+</Accordion>
+
+## Dispositivos alojados
+
+Usa [Limrun](/integrations/limrun) para simuladores de iOS y emuladores de
+Android alojados con instalación automática de la app y limpieza del
+dispositivo.
+
+Define `device` como un `DeviceProvider` para ejecutar en dispositivos que
+aloja un servicio. Sirve cualquier servicio que ejecute un daemon de
+agent-device junto a un simulador, un emulador o un teléfono. El proveedor
+alquila un dispositivo por worker slot cuando empieza la ejecución y lo libera
+cuando termina.
+
+Para [Expo Simulators](/integrations/eas), usa `expoSimulators()` de
+`@e2e-dev/eas`. Para [TestMu AI](/integrations/testmu), usa `testmu()` de
+`@e2e-dev/testmu`. Para [BrowserStack](/integrations/browserstack), usa
+`browserstack()` de `@e2e-dev/browserstack`. Para Android en [E2B](/integrations/e2b), usa `e2b()` de
+`@e2e-dev/e2b`. Para [Revyl](/integrations/revyl), usa `revyl()` de
+`@e2e-dev/revyl`. Para otro servicio, escribe un proveedor de unas pocas
+decenas de líneas, como `hostedDevices` en el ejemplo siguiente:
+
+```ts
+mobile({
+  platform: 'ios',
+  device: hostedDevices({ serviceUrl: 'https://devices.example.com', image: 'ios-18-iphone-17' }),
+})
+```
+
+- Cada worker alquila su propia sesión, y un servicio factura una sesión
+  mientras se ejecuta. Mantén `workers` en lo que la suite pueda llenar.
+- La caché de reproducción usa `app.bundleId` como clave, así que las
+  grabaciones hechas en local se reproducen en dispositivos alojados.
+- Los dispositivos alquilados se calientan como los locales, antes de que
+  empiece a contar el tiempo de los tests.
+
+<Accordion title="El contrato de DeviceProvider">
+```ts
+export interface DeviceProvider {
+  /** Label in progress lines and error messages. */
+  readonly name: string;
+  acquire(request: DeviceRequest): Promise<DeviceLease>;
+  release(lease: DeviceLease, context: DeviceReleaseContext): Promise<void>;
+  record?(lease: DeviceLease, context: ProviderRecordContext): Promise<ProviderRecording>;
+}
+
+export interface DeviceLease {
+  /** The provider's handle (a session id), handed back to `release`. */
+  readonly id: string;
+  /** The agent-device daemon the worker connects to; a lease names this, `client`, or both. */
+  readonly daemon?: { readonly baseUrl: string; readonly authToken?: string };
+  /** agent-device client configuration the worker's client is created with: a lease scope, a `stateDir`. */
+  readonly client?: DeviceClientConfig;
+  /** Device to select inside that daemon, when it hosts more than one. */
+  readonly device?: string;
+  /** Device to select inside that daemon by the id agent-device lists it under: a simulator UDID or an Android serial. */
+  readonly deviceId?: string;
+  /** Bundle id or package the provider installed itself; skips the target's `app.appPath`. */
+  readonly installedApp?: string;
+}
+```
+
+**`acquire`** se ejecuta para todos los worker slots a la vez, en el proceso
+del ejecutor. La solicitud incluye `platform`, `runId`, `targetName`, `slot`,
+`slots`, `app` (el `app.bundleId` del destino), el `appPath` resuelto,
+`agentDeviceVersion` (para un servicio que inicia un daemon de una versión
+elegida), `projectRoot`, `env`, una `signal` de interrupción y un `log` que
+llega al generador de informes.
+
+- Lee los tokens de `request.env`, no de `process.env`. Lee los archivos del
+  proyecto bajo `request.projectRoot`, no bajo `process.cwd()`.
+- Un destino sin nada que ejecutar no alquila nada.
+- Define `installedApp` solo cuando la solicitud tiene un `appPath`. Si no, la
+  ejecución falla.
+
+**`release`** se ejecuta después de que salga el último worker, dentro de
+`cleanupTimeout`, en cada camino de salida: un fallo, una interrupción o un
+`prepare` que lanzó una excepción. Recibe el objeto que devolvió `acquire`, así
+que un proveedor puede guardar en él sus propios campos. Solo los campos de
+`DeviceLease` llegan a los workers. Cuando un slot no consigue alquilar, la
+ejecución termina antes de cualquier test, y el motor sigue liberando cada
+alquiler que obtuvo.
+
+**`client`** es la configuración del cliente de agent-device, como datos JSON,
+aplicada sobre el nombre de la sesión y la dirección de `daemon`. Se rechaza un
+alquiler que define `session`, `daemonBaseUrl`, `daemonAuthToken` o
+`daemonTransport`. Para los runtimes de nube de dispositivos propios de
+agent-device, `client` lleva el ámbito del alquiler que devolvió
+`leases.allocate`: `tenant`, `runId`, `leaseId`, `leaseBackend` y
+`leaseProvider`. Un comando sin ámbito recurre a los dispositivos locales. Un
+`stateDir` en `client` apunta al worker a un daemon que inició el proveedor,
+así que no hace falta ninguna dirección de `daemon`.
+
+**`record`** es opcional. Cuando un intento graba vídeo, el worker lo llama en
+lugar de la grabación de pantalla de agent-device. El worker puede ser otro
+proceso, así que `record` recibe solo los campos del alquiler, no el estado que
+guardó `acquire`. Devuelve un `ProviderRecording` (un tipo de `e2e/engine`)
+cuyo `stop` o bien escribe un archivo en el directorio que recibe y devuelve
+`{ file }`, que se conserva como `video/<file>`, o bien devuelve
+`{ url, mediaType }` para una grabación que conserva el servicio, que el
+informe enlaza. Un `record` que falla hace fallar el lanzamiento del intento.
+Un `stop` que falla se reintenta una vez más cuando termina el intento.
+</Accordion>
+
+<Accordion title="Ejemplo: un proveedor para una API de sesiones">
+Una API de sesiones típica necesita tres solicitudes: crear una sesión,
+consultarla hasta que el daemon sea accesible y detenerla.
+
+```ts title="device-provider.ts" expandable
+import type { DeviceProvider } from '@e2e-dev/mobile';
+
+/**
+ * Leases devices from a service that starts an agent-device daemon per
+ * session. Replace the three requests with your service's API.
+ */
+export function hostedDevices(options: { serviceUrl: string; image: string }): DeviceProvider {
+  return {
+    name: 'hosted-devices',
+    async acquire(request) {
+      const token = request.env['DEVICE_SERVICE_TOKEN'];
+      if (token === undefined || token === '') throw new Error('DEVICE_SERVICE_TOKEN is not set');
+      const headers = { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' };
+      // 1. Ask for a device; name the session after the run so it can be found later.
+      const created = await fetch(`${options.serviceUrl}/sessions`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          platform: request.platform,
+          image: options.image,
+          name: `e2e ${request.runId} ${request.targetName} ${request.slot + 1}/${request.slots}`,
+        }),
+        signal: request.signal,
+      });
+      if (!created.ok) throw new Error(`device service: HTTP ${created.status}`);
+      const { id } = (await created.json()) as { id: string };
+      // 2. Wait until the session exposes its agent-device daemon.
+      for (;;) {
+        const response = await fetch(`${options.serviceUrl}/sessions/${id}`, { headers, signal: request.signal });
+        const session = (await response.json()) as { status: string; daemonUrl?: string; daemonToken?: string; viewerUrl?: string };
+        if (session.status === 'ready' && session.daemonUrl !== undefined) {
+          if (session.viewerUrl !== undefined) request.log(`watch at ${session.viewerUrl}`);
+          return { id, daemon: { baseUrl: session.daemonUrl, authToken: session.daemonToken } };
+        }
+        if (session.status !== 'starting') throw new Error(`device service: session ${id} is ${session.status}`);
+        await new Promise((resolve) => setTimeout(resolve, 5_000));
+      }
+    },
+    async release(lease, context) {
+      // 3. Stop the session; the run waits for this within cleanupTimeout.
+      const token = context.env['DEVICE_SERVICE_TOKEN'] ?? '';
+      await fetch(`${options.serviceUrl}/sessions/${lease.id}/stop`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+        signal: context.signal,
+      });
+    },
+  };
+}
+```
+</Accordion>
+
+<Accordion title="Ejemplo: una nube de dispositivos compatible con agent-device">
+Una nube de dispositivos con la que agent-device habla directamente no necesita
+una API de sesiones propia. `agentDeviceLeases()` de `@e2e-dev/mobile/lease`
+inicia un daemon de agent-device por worker slot con las credenciales de `env`,
+asigna un alquiler con los `selectors`, lo mantiene vivo mientras la ejecución
+lo retiene y, al liberar, falla salvo que agent-device confirme que la sesión
+terminó. `testmu()` de `@e2e-dev/testmu` funciona así para
+[TestMu AI](/integrations/testmu), `browserstack()` de
+`@e2e-dev/browserstack` para [BrowserStack](/integrations/browserstack) y
+`revyl()` de `@e2e-dev/revyl` para [Revyl](/integrations/revyl).
+
+Cuando la nube necesita un plugin de proveedor de agent-device, depende de él y
+pasa `agentDevicePlugin(import.meta.resolve('@agent-device/<plugin>'))`: llama
+a su `assertVersion(request.agentDeviceVersion)` en `acquire` y pasa su
+`prepareHome` junto con el alquiler, lo que registra el plugin en el home del
+daemon.
+
+```ts title="device-cloud-provider.ts" expandable
+import type { DeviceProvider } from '@e2e-dev/mobile';
+import { agentDeviceLeases } from '@e2e-dev/mobile/lease';
+
+/**
+ * Leases devices from a device cloud agent-device itself speaks to. Each
+ * worker slot gets its own agent-device daemon, whose runtime for the cloud
+ * starts the session when the lease is allocated and ends it on release.
+ * `provider` is agent-device's name for the cloud.
+ */
+export function cloudDevices(options: { provider: string; device: string; osVersion: string; app: string }): DeviceProvider {
+  const leases = agentDeviceLeases({ provider: options.provider, label: options.provider });
+  return {
+    name: options.provider,
+    async acquire(request) {
+      const token = request.env['CLOUD_TOKEN'];
+      if (token === undefined || token === '') throw new Error('CLOUD_TOKEN is not set');
+      return leases.acquire(request, {
+        // The daemon's runtime reads the credentials from its environment.
+        env: { CLOUD_TOKEN: token },
+        selectors: { device: options.device, providerOsVersion: options.osVersion, providerApp: options.app },
+        summary: `${options.device}, ${request.platform} ${options.osVersion}`,
+      });
+    },
+    release: (lease, context) => leases.release(lease, context),
+  };
+}
+```
+</Accordion>
+
+## Qué se diferencia de la web
+
+| En la web | En un dispositivo |
+| --- | --- |
+| `app.open('/path')` y el verbo `navigate` del agente | No hay URL de la app ni `navigate`. `app.open()` lanza `app.bundleId` desde cero, y `device.openLink(url)` abre un enlace dentro de ella. Con [`app.linkBase`](/reference/config#linkbase), `app.open('/path')` abre la ruta como un enlace |
+| `test.setup` guarda una sesión, `session:` la restaura | No disponible. Un simulador no tiene un snapshot de sesión portátil; inicia sesión en cada test o prepara la app con datos |
+| Entrada de secretos | `type_secret` y `screen.getByLabel(...).fill(secret)` rellenan los secretos declarados en campos seguros |
+| `--video` escribe un screencast WebM | `--video` escribe un MP4 de la pantalla del dispositivo con los toques visibles (`videoTouches: false` los oculta), o conserva la grabación propia de un proveedor de dispositivos |
+| La caché se ancla a la ruta de la página | La caché se ancla a la ubicación `<bundle id> / <screen title>`, con el título leído de la barra de navegación en iOS y de la barra de herramientas en Android |
+
+### Limitaciones conocidas de los dispositivos
+
+- `placeholder` es el único atributo que tiene un nodo de dispositivo.
+- Una pestaña de React Native (`accessibilityRole="tab"`) en iOS tiene el rol
+  `other`. Búscala por id de test o etiqueta y comprueba `toBeSelected`.
+  Las casillas, los radios y `toBeChecked` funcionan en ambas plataformas.
+- En iOS, un `View` simple de React Native no tiene hijos en el árbol, así que
+  `filter({ has })` sobre él y las consultas acotadas a él no encuentran nada,
+  mientras que `filter({ hasNot })` conserva todas esas filas, incluida una que
+  querías excluir. Acota al `ScrollView` de la pantalla
+  (`device.locator('role=scroll-area')`), o dale ids de test a los hijos.
+- Un elemento clicable de Jetpack Compose dibujado a menos de 48dp aparece como
+  dos botones en el árbol, y un toque falla con
+  `has no parent-owned touch point`. Haz el control de al menos 48dp, el
+  tamaño táctil mínimo de Android.
+- Un elemento oculto con `display: none` no está en el árbol, así que
+  `toBeAttached` falla. Comprueba `toHaveCount(0)` o `toBeHidden`.
+- Un nodo cuyo centro queda cubierto por el teclado en pantalla está oculto, como uno
+  desplazado fuera de la pantalla. Las teclas del teclado, su barra de
+  sugerencias y su dock siguen visibles, y también el campo con foco. Un
+  contenedor sigue visible mientras uno de sus hijos se muestra sobre el
+  teclado. `toBeVisible()` falla en otros nodos cubiertos, y un toque en uno
+  falla con `ACTION_FAILED`. Llama primero a `device.dismissKeyboard()` o
+  desplaza el nodo hasta dejarlo libre. Consulta
+  [Visibilidad](/reference/mobile#visibility).
+- `doubleTap()` y `screen.doubleTapAt()` en iOS son dos toques separados unos
+  285 a 335 ms. Dale a un detector de doble toque una ventana de 350 ms o más.
+- En iOS, `device.foregroundApp()` sigue nombrando la app de la sesión después
+  de `device.home()`. Comprueba la pantalla en su lugar.
+- En una compilación de Android sin comando de shell para el servicio del
+  portapapeles (el emulador de Android 16 es una), `device.clipboard()` y
+  `device.setClipboard()` lanzan `UNSUPPORTED_CAPABILITY`. Para comprobar una
+  copia, pega en un campo y lee el campo de vuelta.
+- En un iPhone Duo, `--video` graba la pantalla que estaba encendida cuando
+  empezó la grabación. Después de que `device.fold` mueva la app a la otra
+  pantalla, el resto del vídeo es negro.
+
+## Solución de problemas
+
+Un fallo del dispositivo muestra el mensaje propio de agent-device. Con el
+agente, un fallo del motor sin un código más específico se informa como
+`APP_UNREACHABLE`, así que lee el mensaje antes que el código: a menudo lo que
+falló no es la app.
+
+**El ejecutor de automatización de iOS está ocupado, bloqueado o no puede
+presentar un snapshot.** Una pantalla pesada o con animaciones puede saturar el
+ejecutor, y una ejecución detenida con Ctrl-C puede dejarlo ocupado. El mensaje
+nombra el ejecutor y la primera medida, normalmente repetir la ejecución. Si la
+siguiente ejecución vuelve a encontrarlo, detén el daemon y reinicia el
+simulador con los comandos de abajo.
+
+**`device.installApp()` en Android informa de que no hay bundle id ni
+paquete.** agent-device no pudo determinar de qué paquete es la compilación,
+así que `app.open()` no tiene nada que lanzar. Cuando no puede leer el
+manifiesto del APK, recurre a `aapt` del SDK de Android, que busca en
+`ANDROID_SDK_ROOT`, `ANDROID_HOME`, `~/Library/Android/sdk` en macOS o
+`~/Android/Sdk`. Define `app.bundleId` en el destino. O exporta
+`ANDROID_HOME` y luego detén el daemon de agent-device para que la siguiente
+ejecución lo inicie con la variable.
+
+**Android informa de contenido insuficiente de la app en primer plano, o iOS
+informa de que la app no se está ejecutando.** agent-device todavía no pudo
+leer la pantalla, a menudo porque la app sigue cargando tras un arranque en
+frío. En iOS esto solo cuenta hasta la primera pantalla legible después de
+`app.open()`, `app.restart()` o `device.openLink()`, como en un iPhone físico
+que aún está lanzando la app; una app que termina más tarde falla de
+inmediato. Una acción de localizador con espera o un `expect` esperan a través
+de ello, como con un elemento que todavía no está. Si la pantalla sigue sin
+poder leerse cuando se agota la espera, el paso falla con este mensaje. Las
+lecturas inmediatas como `count()` e `isVisible()` no ven coincidencias en su
+lugar, así que `not.toBeVisible()` puede pasar mientras la pantalla no se
+puede leer, también en una app que se cerró antes de renderizar. Una
+observación, como el siguiente turno del agente, falla de inmediato.
+
+**Un tiempo de espera agotado en el dispositivo.** Un arranque de simulador,
+una conexión con el ejecutor o un lanzamiento de app que agota el tiempo en el
+dispositivo da `ENGINE_FAILURE` con el mensaje y la sugerencia de
+agent-device, nunca `LAUNCH_TIMEOUT`, `ACTION_FAILED` ni `STEP_TIMEOUT`.
+
+**Una acción que supera su tiempo de espera.** Un toque, relleno, tecla,
+deslizamiento o `back` recibe su `timeout` (por defecto `actionTimeout`). Si el
+dispositivo no responde a tiempo, el paso falla con `ACTION_FAILED` y no se
+reintenta: la entrada puede haber llegado. Un toque, doble toque, foco,
+marcado o desmarcado pendiente se cancela cuando el paso deja de esperarlo o
+se interrumpe la ejecución. La entrada ya enviada al dispositivo aún puede
+completarse. Un `longPress` que se mantiene al menos tanto como el tiempo
+restante se rechaza antes de enviarse; aumenta su `timeout`. Los snapshots y
+las capturas de pantalla se ejecutan dentro del tiempo de espera de la llamada
+que los toma, así que un dispositivo que deja de responder hace fallar el paso
+con `ACTION_FAILED` en lugar de retenerlo hasta el tiempo de espera del
+test. `locator.waitFor`, `expect` y `toHaveScreenshot` dan a su último
+snapshot tiempo extra, hasta el más lento hasta ese momento y dentro del
+tiempo de espera del test, así que una pantalla que aparece durante ese
+tiempo aún pasa. Un elemento que nunca aparece falla como
+`LOCATOR_NOT_FOUND`, o `ASSERTION_FAILED` para `expect`.
+
+<CodeGroup>
+```bash npm
+npx e2e doctor                   # agent-device, the toolchain, the devices, the app
+npx agent-device daemon stop     # after a wedge: drops every session, the next run starts the daemon
+xcrun simctl shutdown <udid> && xcrun simctl boot <udid>
+```
+
+```bash pnpm
+pnpm exec e2e doctor                   # agent-device, the toolchain, the devices, the app
+pnpm exec agent-device daemon stop     # after a wedge: drops every session, the next run starts the daemon
+xcrun simctl shutdown <udid> && xcrun simctl boot <udid>
+```
+
+```bash bun
+bunx e2e doctor                   # agent-device, the toolchain, the devices, the app
+bunx agent-device daemon stop     # after a wedge: drops every session, the next run starts the daemon
+xcrun simctl shutdown <udid> && xcrun simctl boot <udid>
+```
+</CodeGroup>
+
+## Siguiente
+
+<CardGroup cols={2}>
+  <Card title="Referencia del motor móvil" icon="mobile-screen" href="/reference/mobile">
+    Cada opción, el fixture `device` y el paquete de herramientas.
+  </Card>
+  <Card title="Localizadores" icon="crosshairs" href="/core-concepts#locators">
+    Toques, deslizamientos y comprobaciones exactos con `screen` y `expect`, en cualquier plataforma.
+  </Card>
+</CardGroup>

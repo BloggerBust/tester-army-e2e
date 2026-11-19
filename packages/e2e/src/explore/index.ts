@@ -22,7 +22,7 @@ import type { ReportExplore } from '../report/build.ts';
 import { validateChangedSince } from '../run/changes.ts';
 import type { RunEventSink } from '../run/events.ts';
 import type { RunnerOutput } from '../run/process-output.ts';
-import { run, type RunOutcome } from '../run/runner.ts';
+import { keepsStdout, run, type RunOutcome } from '../run/runner.ts';
 import { registerStaticSecrets, staticSecretLedger } from '@e2e-dev/core/lib/run/secrecy';
 import type { AgentConfig, RecordingMode } from '@e2e-dev/core/lib/types';
 import type { BuiltinReporter, E2EConfig } from '../run-types.ts';
@@ -140,10 +140,16 @@ export async function explore(options: ExploreOptions = {}): Promise<ExploreOutc
   // code printed is released, as `run` loads its config.
   const loadConfig = async (): Promise<{ raw: E2EConfig; projectRoot: string; resolved: ResolvedConfig }> => {
     const { raw, projectRoot } = await loadRawConfig(options, cwd);
-    const resolved = resolveConfig(raw, { projectRoot, env, cli: options.agent === undefined ? {} : { agents: [options.agent] } });
+    const resolved = resolveConfig(raw, {
+      projectRoot, env,
+      cli: {
+        ...(options.agent === undefined ? {} : { agents: [options.agent] }),
+        ...(options.reporters === undefined ? {} : { reporters: options.reporters }),
+      },
+    });
     registerStaticSecrets(resolved.allSecrets);
-    // Reserve stdout for JSON before flushing buffered configuration output.
-    if ((options.reporters ?? resolved.reporters).includes('json')) options.processOutput?.keepStdoutForReport();
+    // Reserve a stdout printer's stream before releasing buffered configuration output.
+    if (resolved.reporters.some(keepsStdout)) options.processOutput?.keepStdoutForReport();
     return { raw, projectRoot, resolved };
   };
   const { raw, projectRoot, resolved } = await (options.processOutput === undefined

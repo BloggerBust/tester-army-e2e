@@ -20,16 +20,59 @@ describe('FileCredentialStore', () => {
   it('creates the file with owner-only permissions and round-trips entries', async () => {
     const file = tempFile();
     const store = new FileCredentialStore(file);
-    expect(await store.get('spacexai')).toBeUndefined();
-    await store.set('spacexai', creds);
+    expect(await store.get('spacexsi')).toBeUndefined();
+    await store.set('spacexsi', creds);
     expect(statSync(file).mode & 0o777).toBe(0o600);
     expect(statSync(path.dirname(file)).mode & 0o777).toBe(0o700);
-    expect(await store.get('spacexai')).toEqual(creds);
-    expect(await store.list()).toEqual(['spacexai']);
-    await store.remove('spacexai');
+    expect(await store.get('spacexsi')).toEqual(creds);
+    expect(await store.list()).toEqual(['spacexsi']);
+    await store.remove('spacexsi');
     expect(await store.list()).toEqual([]);
     expect(readFileSync(file, 'utf8')).toBe('{}\n');
     expect(() => statSync(`${file}.lock`)).toThrow();
+  });
+
+  it('reads a login an earlier release stored under a legacy key, and keeps it under that key so that release still finds it', async () => {
+    const file = tempFile();
+    const store = new FileCredentialStore(file);
+    await store.set('openai', creds);
+    writeFileSync(file, JSON.stringify({ spacexai: creds }));
+    expect(await store.get('spacexsi')).toEqual(creds);
+    expect(await store.list()).toEqual(['spacexsi']);
+    await store.set('spacexsi', { ...creds, access: 'renewed' });
+    expect(JSON.parse(readFileSync(file, 'utf8'))).toEqual({ spacexai: { ...creds, access: 'renewed' } });
+    await store.remove('spacexsi');
+    expect(readFileSync(file, 'utf8')).toBe('{}\n');
+  });
+
+  it('refreshes a login stored under a legacy key holding the lock an earlier release holds for it', async () => {
+    const file = tempFile();
+    const store = new FileCredentialStore(file);
+    await store.set('openai', creds);
+    writeFileSync(file, JSON.stringify({ spacexai: creds }));
+    await store.exclusive('spacexsi', async () => {
+      expect(statSync(`${file}.spacexai.refresh.lock`).isFile()).toBe(true);
+      expect(() => statSync(`${file}.spacexsi.refresh.lock`)).toThrow();
+    });
+  });
+
+  it('prefers the login under the id to one under its legacy key', async () => {
+    const file = tempFile();
+    const store = new FileCredentialStore(file);
+    await store.set('openai', creds);
+    writeFileSync(file, JSON.stringify({ spacexai: creds, spacexsi: { ...creds, access: 'newer' } }));
+    expect(await store.get('spacexsi')).toEqual({ ...creds, access: 'newer' });
+    expect(await store.list()).toEqual(['spacexsi']);
+    await store.remove('spacexsi');
+    expect(await store.list()).toEqual([]);
+  });
+
+  it('reads no login under a CLI alias, since no release stored one there', async () => {
+    const file = tempFile();
+    const store = new FileCredentialStore(file);
+    await store.set('openai', creds);
+    writeFileSync(file, JSON.stringify({ grok: creds }));
+    expect(await store.get('spacexsi')).toBeUndefined();
   });
 
   it('keeps other providers when one is written, even from concurrent writers', async () => {
@@ -145,9 +188,15 @@ describe('EnvCredentialStore', () => {
     expect(store).toBeInstanceOf(EnvCredentialStore);
     expect(await store.get('github-copilot')).toEqual(creds);
     expect(await store.list()).toEqual(['github-copilot']);
-    await expect(store.set('spacexai', creds)).rejects.toMatchObject({ code: 'MISCONFIGURED', message: expect.stringContaining(CREDENTIALS_ENV) });
+    await expect(store.set('spacexsi', creds)).rejects.toMatchObject({ code: 'MISCONFIGURED', message: expect.stringContaining(CREDENTIALS_ENV) });
     await expect(store.remove('github-copilot')).rejects.toMatchObject({ code: 'MISCONFIGURED' });
     expect(defaultCredentialStore({ [CREDENTIALS_ENV]: '' })).toBeInstanceOf(FileCredentialStore);
+  });
+
+  it('reads a login the variable holds under a legacy key', async () => {
+    const store = defaultCredentialStore({ [CREDENTIALS_ENV]: JSON.stringify({ spacexai: creds }) });
+    expect(await store.get('spacexsi')).toEqual(creds);
+    expect(await store.list()).toEqual(['spacexsi']);
   });
 
   it('rejects malformed JSON naming the variable', () => {

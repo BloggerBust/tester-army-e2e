@@ -8,6 +8,7 @@
  */
 
 import { z } from 'zod';
+import { USER_AGENT } from '@e2e-dev/core/lib/internal/client-identity';
 import { startCallbackServer, type CallbackAnswer, type CallbackServer } from '../callback-server.ts';
 import { runDeviceFlow } from '../device-code.ts';
 import { OAuthError, describeResponse, readJsonBody } from '../errors.ts';
@@ -249,7 +250,7 @@ const DeviceGrantSchema = z.object({
 /** The Codex CLI's device login: OpenAI's own user-code endpoints, pending until the user enters the code. */
 function deviceLogin(callbacks: OAuthLoginCallbacks, issuer: string, timeoutMs: number): Promise<TokenResponse> {
   const json = (url: string, body: unknown, signal?: AbortSignal) =>
-    fetch(url, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body), ...(signal === undefined ? {} : { signal }) });
+    fetch(url, { method: 'POST', headers: { 'content-type': 'application/json', 'user-agent': USER_AGENT }, body: JSON.stringify(body), ...(signal === undefined ? {} : { signal }) });
   return runDeviceFlow<TokenResponse>({
     callbacks,
     async start(signal) {

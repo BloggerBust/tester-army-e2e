@@ -55,7 +55,14 @@ export function surfaceOf(engine: EngineHandle): PlaywrightLiveSurface | undefin
   return { page: () => surface.requirePage(), context: () => surface.requireContext() };
 }
 
-export function web(options: WebOptions = {}): EngineHandle<WebFixtures> {
+/**
+ * The handle `web()` returns. Declared here so a config's inferred type
+ * names this package: a project sees `@e2e-dev/core` only through its
+ * dependencies, and TypeScript cannot write that path in a declaration.
+ */
+export interface WebEngine extends EngineHandle<WebFixtures> {}
+
+export function web(options: WebOptions = {}): WebEngine {
   if ('allowedOrigins' in options) {
     throw new ConfigurationError(
       'INVALID_CONFIG',

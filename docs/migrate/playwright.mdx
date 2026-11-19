@@ -181,6 +181,7 @@ run only in a browser, so a test that uses it declares
 | `[fn, { scope: 'worker' }]` fixtures | the same, typed with the second type argument of `extend` |
 | `[fn, { auto: true }]` fixtures | the same, in either scope |
 | Overriding a fixture, `page: async ({ page }, use) => {}` | the same for `app`, `screen`, `browser`, and your own fixtures, see [Extending a fixture](/reference/test#extending-a-fixture) |
+| `page.pause()` | `screen.pause()`, with `--headed` to look at the browser |
 
 </Accordion>
 <Accordion title="CLI">
@@ -300,7 +301,6 @@ purpose. Use the workaround, or keep the test in Playwright.
 | The Playwright Docker image | The image for the `playwright-core` version `@e2e-dev/web` pins, or `npx @e2e-dev/web install chromium --with-deps` |
 | `test.use({ ... })` in a file or describe | Runner options on the group, engine options on a target, `browser.setViewport` at runtime |
 | `projects[].dependencies`, `teardown` | A top-level `test.setup` for sign-in; a script around the run |
-| `page.pause()` | `--step --headed` holds each step until a key |
 | The `github` reporter | `github()` posts a pull request comment |
 
 </Accordion>

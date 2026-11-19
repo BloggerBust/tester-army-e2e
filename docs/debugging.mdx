@@ -268,7 +268,7 @@ The keys follow [`--watch`](/reference/cli#watch-mode). These work at a prompt:
 | --- | --- |
 | Enter | runs the held step and holds the next one |
 | `n` | runs the rest of this test, retries included, and holds at the next test |
-| `a` | runs the rest of the run without stopping |
+| `a` | runs the rest of the run without holding steps |
 | `h` | shows every key under the prompt, or hides them |
 | `q`, Esc | stops the run as Ctrl-C does: the test ends `interrupted`, the rest are skipped, exit 130 |
 
@@ -326,13 +326,13 @@ Screen:
   heading "Checkout"
   textbox "Email"
   button "Pay"
-Next: e2e run --step next runs it, e2e run --step rest runs the rest, e2e run --step stop ends the run.
+Next: e2e run --step next to run it, e2e run --step rest to run the rest, or e2e run --step stop to end the run.
 ```
 
 | Command | Does |
 | --- | --- |
 | `e2e run --step next` | runs the held step and returns at the next one |
-| `e2e run --step rest` | runs the rest of the run without stopping |
+| `e2e run --step rest` | runs the rest of the run without holding steps |
 | `e2e run --step stop` | stops the run as `q` does, exit 130, even while another command waits |
 
 - Each answer starts with what the run printed since the last command: a
@@ -347,11 +347,99 @@ Next: e2e run --step next runs it, e2e run --step rest runs the rest, e2e run --
 - `next` and `rest` only act on a step a command has printed. When a
   command is killed while it waits, the next one prints what it missed: the
   step, without running it, or the end of the run. A `next` or `rest` sent while a step runs waits for
-  the next pause without acting. Either way, the answer opens with a line
+  the next held step without acting. Either way, the answer opens with a line
   saying the action was not applied.
 - A step held for 30 minutes with no command stops the run.
 - With `--step`, a file or directory named `next`, `rest`, or `stop` needs
   a path, such as `./next`.
+
+## Pause a test
+
+With [`screen.pause()`](/reference/screen#screen-pause), you can pause the
+test at a line, with the app open, until you resume it. You can use it in
+any `e2e run`, with or without [`--step`](#step-through-a-test). The test
+is paused each time the line runs, such as on every pass of a loop.
+
+```ts title="tests/checkout.e2e.ts"
+import { test } from '@e2e-dev/web';
+
+test('pays with a card', async ({ app, screen }) => {
+  await app.open('/checkout');
+  await screen.pause();
+});
+```
+
+Add `--headed` to look at the browser while the test is paused:
+
+<CodeGroup>
+```bash npm
+npx e2e run tests/checkout.e2e.ts --headed
+```
+
+```bash pnpm
+pnpm exec e2e run tests/checkout.e2e.ts --headed
+```
+
+```bash bun
+bunx e2e run tests/checkout.e2e.ts --headed
+```
+</CodeGroup>
+
+In a terminal, the pause is shown under its test:
+
+```text
+ ❯ |web| tests/checkout.e2e.ts 0/1
+   └── pays with a card paused
+       ▶ paused  screen.pause()  tests/checkout.e2e.ts:5
+         press enter to resume, press h to show help, press q to quit
+```
+
+Press Enter to resume the test, `h` to list the keys, or `q` to stop the run
+with exit 130, as at a [`--step` prompt](#step-through-a-test).
+
+Without a terminal, as in a coding agent's shell, the pause is printed with
+the screen it waits on:
+
+```text
+Paused in pays with a card [web]:
+  screen.pause() (tests/checkout.e2e.ts:5)
+Screen:
+  http://localhost:3000/checkout
+  heading "Checkout"
+Next: e2e run --step next to resume the test, or e2e run --step stop to end the run.
+```
+
+To resume the test, run `e2e run --step next` from another shell in the
+same directory. To end the run with exit 130, run `e2e run --step stop`. You
+can run these commands whether or not the run has a terminal. The one
+exception is a `--step` run in a terminal, where you use its keys. You can
+also use `rest` in place of `next`.
+
+You get an answer once the test is paused again or the run ends. At the
+end, you get `The run has ended.` and the run's exit code. See
+[Step through a test without a terminal](#step-through-a-test-without-a-terminal)
+for what each answer holds.
+
+- Paused time doesn't count toward any timeout. But without a terminal, the
+  run is stopped after 30 minutes at a pause without a command.
+- The test is paused on every attempt, retries and setup tests included.
+- With several workers, pauses are shown one at a time, oldest first, while
+  the other workers keep running.
+- Call `screen.pause()` with `await` in a
+  [`beforeEach`](/reference/test#beforeeach) hook,
+  [fixture](/fixtures) setup, or the test body. See
+  [`screen.pause()`](/reference/screen#screen-pause) for what happens
+  anywhere else.
+- You can control one run per directory at a time with `e2e run --step`
+  commands. A `--step` run started without a terminal is controlled from its
+  start. A run without `--step` is controlled from its first pause. If
+  another run in the directory is already controlled this way:
+  - Without a terminal, the test fails at the pause with `RUNNER_BUSY`. End
+    the other run with `e2e run --step stop`, or run this one in a terminal.
+  - In a terminal, you can still use the keys. A line is printed to say
+    that the commands go to the other run.
+- With `CI` set, the test fails at the pause with `PAUSE_UNAVAILABLE`.
+  Remove the call before you commit.
 
 ## Console output
 
@@ -364,9 +452,11 @@ hello from the test
 ```
 
 Output from outside a test, such as a file's top level or a reporter,
-prints under `stdout | runner` or `stderr | runner`. Both streams print on
-stdout. Without the `list` reporter, output goes to its own stream as
-written, except with the `json` reporter (`--reporter json` or in
+prints under `stdout | runner` or `stderr | runner`. Both streams print
+where `list` does: stdout, or stderr beside `json`. Without the `list`
+reporter, or another reporter that prints to the terminal with
+[`onOutput`](/reference/reporters#onoutput), output goes to its own stream
+as written, except with the `json` reporter (`--reporter json` or in
 `reporters`), which keeps stdout for the report and prints output on
 stderr. Output from the config load prints before the
 run header, or a warning replaces it if the load fails.

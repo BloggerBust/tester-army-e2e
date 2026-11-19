@@ -19,7 +19,7 @@ import { MAX_TIMER_MS } from '@e2e-dev/core/lib/internal/time';
 import type { AttemptRecord, ResultRecord, RunError, SerialGroupRecord } from '@e2e-dev/core/lib/run/records';
 import { retryVerdict } from './retry.ts';
 import { SerialGroupProgress, serialGroupId } from './serial.ts';
-import type { HeldStep } from './step-hold.ts';
+import type { HeldStep, StepHoldContext } from './step-hold.ts';
 import type { StepProgress } from '@e2e-dev/core/lib/run/steps';
 import type { SpawnUnitRunner, UnitRunner } from './unit-runner.ts';
 import {
@@ -100,13 +100,15 @@ export interface RunUnitsOptions {
   readonly spawn: SpawnUnitRunner;
   readonly events: SchedulerEvents;
   /**
-   * Answers a worker's held step (`e2e run --step`): it resolves to let the
-   * step run. `signal` aborts when the hold ends without an answer: the
-   * worker cancelled it, its attempt ended, it exited, or the run was
-   * interrupted. A rejection otherwise stops the run with its error. While
-   * any step is held, the time limit does not run.
+   * Answers a worker's held step (`e2e run --step`) or pause: it resolves to
+   * let the step run or the test resume. `signal` aborts when the hold ends
+   * without an answer: the worker cancelled it, its attempt ended, it exited,
+   * or the run was interrupted. A rejection otherwise stops the run with its
+   * error, or fails the test at a pause. While any step is held, the time
+   * limit does not run. `readScreen` asks the worker for the screen at that
+   * wait.
    */
-  readonly beforeStep?: ((step: HeldStep, signal: AbortSignal) => Promise<void>) | undefined;
+  readonly beforeStep?: ((step: HeldStep, signal: AbortSignal, readScreen: StepHoldContext['readScreen']) => Promise<void>) | undefined;
   /** App failures buffered during startup, then delivered while target work remains. */
   readonly subscribeTargetFailures?: (receive: (failure: TargetFailure) => void) => () => void;
 }
@@ -387,6 +389,8 @@ class Scheduler {
   private signalledWave: Set<SchedulerWorker> | undefined;
   /** Steps waiting for `beforeStep`, by hold id: the worker holding each, and what ends its wait. */
   private readonly holds = new Map<string, { readonly worker: SchedulerWorker; readonly controller: AbortController }>();
+  /** Pending `screen-request` calls, keyed by request ID. */
+  private readonly screenReplies = new Map<string, { readonly worker: SchedulerWorker; readonly resolve: (screen: string | undefined) => void }>();
   /** When the time limit is reached, 0 when it is not running; every hold pushes it back by how long it lasted. */
   private timeLimitDue = 0;
   private timeLimitTimer: NodeJS.Timeout | undefined;
@@ -541,9 +545,10 @@ class Scheduler {
   }
 
   /**
-   * Asks `beforeStep` about a worker's held step, and releases it when the
-   * answer is yes. Nothing asks once the run is interrupted: the worker's
-   * interrupt cancels the hold, and a prompt then would be one nobody answers.
+   * Asks `beforeStep` about a worker's held step or pause, and releases it
+   * when the answer is yes. Nothing asks once the run is interrupted: the
+   * worker's interrupt cancels the hold, and a prompt then would be one
+   * nobody answers. A rejection at a pause fails the test there.
    */
   private hold(worker: SchedulerWorker, holdId: string, step: HeldStep): void {
     if (this.interrupting) return;
@@ -552,15 +557,32 @@ class Scheduler {
     if (this.holds.size === 0) this.heldSince = Date.now();
     this.holds.set(holdId, { worker, controller });
     const signal = AbortSignal.any([controller.signal, this.options.interruptSignal]);
+
+    const readScreen = (): Promise<string | undefined> =>
+      new Promise((resolve) => {
+        // The wait has ended or its worker is gone, so no reply can arrive.
+        if (!this.holds.has(holdId) || !worker.runner.alive) {
+          resolve(undefined);
+          return;
+        }
+
+        const requestId = uuidv7();
+        this.screenReplies.set(requestId, { worker, resolve });
+        worker.runner.send({ type: 'screen-request', holdId, requestId });
+      });
+
     // Called inside the chain, so a hook that throws stops the run like one that rejects.
-    Promise.resolve().then(() => beforeStep(step, signal)).then(
+    Promise.resolve().then(() => beforeStep(step, signal, readScreen)).then(
       () => {
         // An answer that came after the hold ended (an interrupt, say) lets nothing run.
         if (this.endHold(holdId) && !signal.aborted && worker.runner.alive) worker.runner.send({ type: 'step-release', holdId });
       },
       (cause: unknown) => {
         const answered = this.endHold(holdId);
-        if (answered && !signal.aborted) this.options.events.onRunAbort({ error: serializeError(classifyError(cause)) });
+        if (!answered || signal.aborted) return;
+        const error = serializeError(classifyError(cause));
+        if (step.kind === 'step') this.options.events.onRunAbort({ error });
+        else if (worker.runner.alive) worker.runner.send({ type: 'step-release', holdId, error });
       },
     );
   }
@@ -907,6 +929,11 @@ class Scheduler {
         this.cancelHolds((holdId) => holdId === message.holdId);
         break;
       }
+      case 'screen-reply': {
+        this.screenReplies.get(message.requestId)?.resolve(message.screen);
+        this.screenReplies.delete(message.requestId);
+        break;
+      }
       case 'progress': {
         this.options.events.onProgress?.(
           { testId: message.testId, agent: message.agent, repeat: message.repeat },
@@ -1014,6 +1041,16 @@ class Scheduler {
 
   private onExit(worker: SchedulerWorker, detail: string, signal: NodeJS.Signals | null, active: WatchedAttempt | undefined): void {
     this.cancelHolds((_, holder) => holder === worker);
+
+    for (const [requestId, waiting] of this.screenReplies) {
+      if (waiting.worker !== worker) {
+        continue;
+      }
+
+      this.screenReplies.delete(requestId);
+      waiting.resolve(undefined);
+    }
+
     const tracked = this.workers.includes(worker);
     this.forget(worker);
     const state = this.targetState(worker);

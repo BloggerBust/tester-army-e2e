@@ -12,12 +12,15 @@ import { validateTitle } from '@e2e-dev/core/lib/internal/ids';
 import { realmSlot } from '@e2e-dev/core/lib/internal/realm-slot';
 import { markRunningTestExpectedToFail } from '@e2e-dev/core/lib/internal/expected-failure';
 import { parseModifierCall, skipRunningTest } from '../internal/skip.ts';
+import { formatEachTitle, readRows } from './each.ts';
 import { unknownKeyMessage } from '@e2e-dev/core/lib/internal/options';
 import type { SourceLocation } from '@e2e-dev/core/lib/internal/source';
-import { fixtureNames } from './fixture-names.ts';
+import { fixtureNames, type FixtureUserFn } from './fixture-names.ts';
 import { checkDeclaredFixtures, describeFixture, describeUser } from './fixture-plan.ts';
 import type {
   DescribeOptions,
+  EachFn,
+  EachRegistrar,
   FixtureFn,
   FixtureScope,
   SetupOptions,
@@ -183,6 +186,12 @@ class Collector {
     return insideSerial(this.currentGroup);
   }
 
+  /**
+   * Registers one test. Its fixtures are the ones `fn` names in its first
+   * parameter, unless `namedBy` says which function and parameter name them:
+   * a `test.each` row runs a wrapper, and the body it wraps takes the
+   * fixtures after the row.
+   */
   registerTest(
     kind: 'test' | 'setup',
     mode: TestMode,
@@ -191,6 +200,7 @@ class Collector {
     sessions: readonly string[],
     fn: TestBody,
     fixtures: readonly FixtureDefinition[],
+    namedBy?: { readonly fn: FixtureUserFn; readonly position: number },
   ): TestCase {
     this.assertOpen(kind === 'setup' ? 'test.setup()' : 'test()');
     const normalizedTitle = this.title(title);
@@ -230,7 +240,7 @@ class Collector {
       sessions,
       tags: declaredTags(this.currentGroup, options),
       fn,
-      names: fixtureNames(fn, describeUser({ kind, titlePath }), source),
+      names: fixtureNames(namedBy?.fn ?? fn, describeUser({ kind, titlePath }), source, namedBy?.position),
       fixtures,
       group: this.currentGroup,
       mode,
@@ -608,7 +618,17 @@ const STACK_FRAME = /^at (?:async )?(?:[^(]*? \()?(.+?):(\d+)(?::(\d+))?\)?$/;
  * the call sites at all.
  */
 function stackLocations(): SourceLocation[] {
-  return (new Error().stack ?? '').split('\n').slice(1).flatMap((line) => {
+  // The default limit of 10 frames cuts the test file's frame off a stack
+  // that reaches the runner through a helper, a describe, and `test.each`.
+  const limit = Error.stackTraceLimit;
+  Error.stackTraceLimit = Infinity;
+  let stack: string;
+  try {
+    stack = new Error().stack ?? '';
+  } finally {
+    Error.stackTraceLimit = limit;
+  }
+  return stack.split('\n').slice(1).flatMap((line) => {
     const match = STACK_FRAME.exec(line.trim());
     if (match === null) return [];
     // An ES module names itself by URL, the loader's cache-busting query included; a mapped frame or CommonJS by path.
@@ -642,10 +662,10 @@ function captureSource(moduleFile: string | undefined): SourceLocation | undefin
   return outsideModule;
 }
 
-function normalizeArgs(
-  optionsOrFn: TestOptions | TestBody,
-  maybeFn: TestBody | undefined,
-): { options: TestOptions; fn: TestBody } {
+function normalizeArgs<Fn extends TestBody | EachFn<unknown[]>>(
+  optionsOrFn: TestOptions | Fn,
+  maybeFn: Fn | undefined,
+): { options: TestOptions; fn: Fn } {
   if (typeof optionsOrFn === 'function') {
     return { options: {}, fn: optionsOrFn };
   }
@@ -716,15 +736,19 @@ function fixtureDefinition(name: string, entry: unknown): Pick<FixtureDefinition
  */
 function createTestAPI(chain: readonly FixtureDefinition[]): TestAPI {
   /**
-   * The `test()` call forms. `api` names the caller in errors. A `skip`
+   * Registers one `test()` call. `api` names the caller in errors. A `skip`
    * condition comes from `skipIf` or `runIf`: when true, the test is
    * skipped, keeping any reason its `skip` option gives. Either way a serial
    * group rejects it, so a file collects the same on every platform.
+   * `namedBy` is passed on to `registerTest`.
    */
-  const registrar = (api: string, skip?: boolean): TestRegistrar<object> => (
+  const registerOne = (
+    api: string,
+    skip: boolean | undefined,
     title: string,
-    optionsOrFn: TestOptions | TestBody,
-    maybeFn?: TestBody,
+    given: TestOptions,
+    fn: TestBody,
+    namedBy?: { readonly fn: FixtureUserFn; readonly position: number },
   ): TestCase => {
     const collector = requireCollector(api);
     if (skip !== undefined && collector.inSerialGroup) {
@@ -733,14 +757,53 @@ function createTestAPI(chain: readonly FixtureDefinition[]): TestAPI {
           'set skip on the serial describe instead',
       );
     }
-    const { options: given, fn } = normalizeArgs(optionsOrFn, maybeFn);
     const options = skip === true
       ? { ...given, skip: typeof given.skip === 'string' ? given.skip : true }
       : given;
     const mode: TestMode = options.only === true ? 'only' : options.skip !== undefined && options.skip !== false ? 'skip' : 'normal';
-    return collector.registerTest('test', mode, title, options, [], fn, chain);
+    return collector.registerTest('test', mode, title, options, [], fn, chain, namedBy);
+  };
+  /** The `test()` call forms. */
+  const registrar = (api: string, skip?: boolean): TestRegistrar<object> => (
+    title: string,
+    optionsOrFn: TestOptions | TestBody,
+    maybeFn?: TestBody,
+  ): TestCase => {
+    requireCollector(api);
+    const { options, fn } = normalizeArgs(optionsOrFn, maybeFn);
+    return registerOne(api, skip, title, options, fn);
   };
   const testFunction = registrar('test()');
+
+  /**
+   * The `test.each` and `test.for` call forms: one `test()` per row, in row
+   * order, titled from the row. `spread` passes each array row's items as
+   * the body's first arguments; it is decided once for the table, like
+   * Vitest and Jest, so it only applies when every row is an array.
+   * Otherwise the row is the first argument. The fixtures always come last.
+   */
+  const eachRegistrar = (api: string, rows: readonly unknown[], spread: boolean): EachRegistrar<unknown[]> => {
+    // Array.from, not every: a hole in the rows is a row too, `undefined`.
+    const spreadRows = spread && Array.from(rows).every((row) => Array.isArray(row));
+    return (
+      title: string,
+      optionsOrFn: TestOptions | EachFn<unknown[]>,
+      maybeFn?: EachFn<unknown[]>,
+    ): readonly TestCase[] => {
+      requireCollector(api);
+      const { options, fn: body } = normalizeArgs(optionsOrFn, maybeFn);
+      if (typeof body !== 'function') throw new CollectionError('test body must be a function');
+      return Array.from(rows, (row, index) => {
+        const args: unknown[] = spreadRows ? [...(row as unknown[])] : [row];
+        const rowTitle = typeof title === 'string' ? formatEachTitle(title, row, index) : title;
+        // The row comes first, so the body names its fixtures in the parameter after it.
+        return registerOne(api, undefined, rowTitle, options, (fixtures) => body(...args, fixtures), {
+          fn: body,
+          position: args.length,
+        });
+      });
+    };
+  };
 
   const api: TestAPI = Object.assign(testFunction, {
     skip(first?: string | boolean, second?: TestBody | string): TestCase | undefined {
@@ -764,6 +827,12 @@ function createTestAPI(chain: readonly FixtureDefinition[]): TestAPI {
     },
     runIf(condition: unknown): TestRegistrar<object> {
       return registrar('test.runIf()', !readCondition('test.runIf()', condition));
+    },
+    each(rows: unknown): EachRegistrar<unknown[]> {
+      return eachRegistrar('test.each()', readRows('test.each()', rows), true);
+    },
+    for(rows: unknown): EachRegistrar<unknown[]> {
+      return eachRegistrar('test.for()', readRows('test.for()', rows), false);
     },
     only(title: string, fn: TestBody): TestCase {
       return requireCollector('test.only()').registerTest('test', 'only', title, { only: true }, [], fn, chain);

@@ -1,0 +1,304 @@
+---
+title: Agentes de programación
+description: Da a un agente de programación el skill, una sesión en vivo de la aplicación y los informes que necesita para escribir y depurar tests.
+"og:image": "https://e2e.com/docs/images/og/coding-agents.png?v=c6990935d7"
+"twitter:image": "https://e2e.com/docs/images/og/coding-agents.png?v=c6990935d7"
+---
+
+Un agente de programación como Claude Code, Codex o Cursor puede escribir,
+ejecutar y depurar tests de e2e. Aprende e2e con el skill, usa la aplicación
+a través del servidor `e2e mcp` y lee la página de traza de un test fallido.
+
+## Instala el skill
+
+<CodeGroup>
+```bash npm
+npx e2e init
+```
+
+```bash pnpm
+pnpm dlx e2e init
+```
+
+```bash bun
+bunx e2e init
+```
+</CodeGroup>
+
+| Ruta | Lo usa |
+| --- | --- |
+| `.agents/skills/e2e/` | Codex, Cursor, OpenCode y otros agentes que leen `.agents/skills` |
+| `.claude/skills/e2e/` | Claude Code. Un enlace simbólico a `.agents/skills/e2e/` cuando están instalados ambos. |
+
+La copia contiene `SKILL.md` y referencias por tema.
+[`e2e upgrade`](/reference/cli#e2e-upgrade) la actualiza, también después de
+actualizar con tu gestor de paquetes. Sin `init`, `npx skills add e2e-inc/e2e`
+instala el skill, y `npx e2e guide [topic]` lo imprime desde el paquete
+instalado. El plugin de abajo instala los tres skills de e2e para todos los
+proyectos.
+
+`init` no modifica las instrucciones de tu proyecto. Para los agentes que
+necesitan una referencia, añade esta línea:
+
+```md title="AGENTS.md"
+End-to-end tests use e2e; read .agents/skills/e2e/SKILL.md before writing or running one.
+```
+
+El paquete también incluye estas docs como páginas `.mdx` para leerlas sin
+conexión, en `node_modules/e2e/docs` en un proyecto de un solo paquete. Un
+enlace como `/reference/cli` es `docs/reference/cli.mdx`.
+
+<Accordion title="Instala el plugin de Claude Code, Codex o Cursor">
+
+El repositorio de e2e es un marketplace de plugins para Claude Code y Codex, y
+para Grok Build, que lee los archivos de Claude Code. Cursor carga el plugin
+desde su carpeta local de plugins:
+
+<CodeGroup>
+```bash Claude
+claude plugin marketplace add e2e-inc/e2e
+claude plugin install e2e@e2e
+```
+
+```bash Codex
+codex plugin marketplace add e2e-inc/e2e
+codex plugin add e2e@e2e
+```
+
+```bash Cursor
+repo=$(mktemp -d)
+git clone --depth 1 https://github.com/e2e-inc/e2e "$repo"
+mkdir -p ~/.cursor/plugins/local
+rm -rf ~/.cursor/plugins/local/e2e
+cp -R "$repo/plugins/e2e" ~/.cursor/plugins/local/
+```
+</CodeGroup>
+
+Inicia una nueva sesión. En Cursor, ejecuta **Developer: Reload Window**. En
+Cursor Teams y Enterprise, los plugins locales requieren el ajuste de
+administrador **Allow Local Plugin Imports**, o que un administrador importe
+`e2e-inc/e2e` como marketplace del equipo. El plugin añade los skills
+`e2e`, `create-verification-skill` y `migrate-to-e2e` y el
+[servidor MCP](/mcp-server), no el paquete de npm. Invoca los otros dos con el
+nombre del plugin, `/e2e:<skill>` en Claude Code y `$e2e:<skill>` en Codex, y
+como `/<skill>` en Cursor.
+
+La versión del plugin sigue las versiones de e2e. Para actualizarlo, ejecuta
+estos comandos e inicia una nueva sesión. En Cursor, vuelve a ejecutar los
+comandos anteriores.
+
+<CodeGroup>
+```bash Claude
+claude plugin marketplace update e2e
+claude plugin update e2e@e2e
+```
+
+```bash Codex
+codex plugin marketplace upgrade e2e
+```
+</CodeGroup>
+
+</Accordion>
+
+<Accordion title="Instala en OpenClaw o Hermes Agent">
+
+Los tres skills están publicados en [ClawHub](https://clawhub.ai/) bajo
+`@e2e`. Hermes Agent lee el repositorio como un tap:
+
+<CodeGroup>
+```bash OpenClaw
+openclaw skills install @e2e/e2e
+openclaw skills install @e2e/create-verification-skill
+openclaw skills install @e2e/migrate-to-e2e
+```
+
+```bash Hermes
+hermes skills tap add e2e-inc/e2e
+hermes skills install e2e-inc/e2e/e2e
+```
+</CodeGroup>
+
+</Accordion>
+
+## Deja que el agente use la aplicación
+
+`e2e mcp` da al agente una sesión en vivo sobre tu aplicación. Comprueba sus
+localizadores contra la pantalla antes de escribirlos y comprueba sus propios
+cambios en la UI. `init` registra el servidor. Consulta
+[Servidor MCP](/mcp-server) para la configuración y los prompts.
+
+## Cómo escribe y ejecuta un test un agente
+
+El skill indica al agente que lea primero la configuración y un test
+existente. Con `e2e mcp`, recorre el flujo en una sesión y escribe cada paso
+a medida que lo da. Los campos conocidos y los valores exactos usan llamadas
+a `screen`, con localizadores que coincidieron con un solo nodo:
+
+```ts title="tests/checkout.e2e.ts"
+import { test, expect, credentials } from 'e2e';
+
+test('a signed-in user reaches checkout', async ({ screen, app, agent }) => {
+  const user = credentials.user('customer');
+  await app.open('/login');
+  await screen.getByLabel('Email').fill(user.username);
+  await screen.getByLabel('Password').fill(user.password);
+  await screen.getByRole('button', 'Sign in').click();
+  await expect(screen.getByRole('heading', 'Welcome back')).toBeVisible();
+
+  await agent.act('Add the cheapest item on the page to the cart');
+  await expect(screen.getByRole('status', 'Cart')).toHaveText('1 item');
+  await agent.act('Open the cart');
+  await expect(screen.getByRole('heading', 'Your cart')).toBeVisible();
+});
+```
+
+- **Un `agent.act` por [objetivo atómico](/core-concepts#goals), seguido de un
+  `expect`.** El `expect` falla cuando el agente hizo algo incorrecto. Un
+  matcher de localizador, u otra
+  [comprobación de verificación](/cache#when-a-recording-is-written), también
+  permite que la caché reproduzca el paso.
+- **Sin pausas.** Los localizadores sondean, las acciones esperan a su destino
+  y `expect` reintenta hasta su tiempo de espera.
+- **Secretos mediante `credentials.user(name)`.** Decláralos en la
+  configuración. Nunca los escribas en un test.
+
+Mientras itera, el agente ejecuta solo el test en el que trabaja, por la
+línea en la que se abre su `test(`. Con `--action-timeout 5000`, un localizador
+incorrecto falla a los 5 s en lugar de a los 30 s:
+
+<CodeGroup>
+```bash npm
+npx e2e run tests/checkout.e2e.ts:3 --action-timeout 5000
+```
+
+```bash pnpm
+pnpm exec e2e run tests/checkout.e2e.ts:3 --action-timeout 5000
+```
+
+```bash bun
+bunx e2e run tests/checkout.e2e.ts:3 --action-timeout 5000
+```
+</CodeGroup>
+
+El agente corrige los errores de la CLI, de la configuración y de la
+recolección de tests antes de volver a ejecutar. No edita las grabaciones de
+la caché.
+
+El agente mantiene activada la caché de reproducción, así que un objetivo cuya
+comprobación pasó se reproduce sin llamadas al modelo. Desactiva los
+reintentos, ya que un reintento ejecuta todos los objetivos en vivo. Cuando el
+test pasa, el agente quita `--action-timeout` y lo ejecuta una vez con
+`--no-cache` para comprobar que el agente en vivo alcanza cada objetivo.
+Consulta
+[Vuelve a ejecutar un test mientras lo arreglas](/cache#rerun-a-test-while-you-fix-it).
+
+## Cómo lee un fallo un agente
+
+Por defecto ([`trace`](/reference/config#trace)), una ejecución escribe una
+página de traza por cada test fallido, con tiempo de espera agotado,
+interrumpida o inestable, en el directorio del test dentro de
+`.e2e/results/`. `.e2e` es el `output` por defecto. El terminal nombra la
+página bajo cada test fallido, como
+`❯ trace .e2e/results/<test>/trace.md`.
+
+El agente lee esa página, no `.e2e/report.json`, que contiene los mismos
+datos para [scripts](/debugging). La página muestra la línea que falla y cada
+paso con lo que hizo: el nodo al que llegó una acción, los valores que leyó
+una aserción, la decisión de la caché, los errores de consola y las
+solicitudes fallidas. También incluye los últimos turnos del agente y la
+pantalla en el momento del fallo.
+
+El agente arregla el test a partir de esa evidencia. Corrige cada línea que
+la evidencia cubre, no solo la que falla. Un test se detiene en su primer
+paso fallido, así que el agente también revisa las líneas posteriores antes de
+la siguiente ejecución.
+
+Para ver una pantalla que la página no muestra, el agente la abre en una
+sesión MCP por el camino más corto, como su URL en web. No vuelve a recorrer
+el flujo desde el principio.
+
+Para los detalles de las llamadas al modelo, el agente añade `--ai-trace` y
+lee la traza con [unbox-ai](/debugging#agent-steps). Combínalo con
+`--no-cache` para capturar todas las llamadas al modelo del flujo. No abras la
+traza sin procesar en el contexto de un agente. Repite prompts y puede ocupar
+varios megabytes.
+
+## Genera un skill de verificación para tu aplicación
+
+El skill de e2e enseña el ejecutor, no tu aplicación. El skill
+`create-verification-skill` escribe un skill local del proyecto,
+`.agents/skills/verify-<app>/`, que sí lo hace, y lo prueba una vez antes de
+entregarlo.
+
+<CodeGroup>
+```bash npm
+npx skills add e2e-inc/e2e --skill create-verification-skill
+```
+
+```bash pnpm
+pnpm dlx skills add e2e-inc/e2e --skill create-verification-skill
+```
+
+```bash bun
+bunx skills add e2e-inc/e2e --skill create-verification-skill
+```
+</CodeGroup>
+
+Después pide al agente `/create-verification-skill`.
+
+<Accordion title="Qué contiene el skill generado">
+- Comandos de inicio y de diagnóstico (doctor) a partir de tu configuración.
+- Las dos formas de manejar la aplicación: una sesión `e2e mcp` en vivo y un
+  test.
+- La evidencia que conserva un test de verificación.
+- Un mapa de funcionalidades con un objetivo de `e2e explore` por cada
+  funcionalidad, para que un [bug bash](/bug-bash) parta del mapa.
+
+El skill generado solo dice lo que es cierto de tu aplicación y enlaza al
+skill de e2e para el resto. Se basa en
+[create-verification-skill](https://github.com/cursor/plugins/tree/main/pstack/skills/create-verification-skill)
+de pstack de poteto, con e2e en lugar de un arnés de tests hecho a mano.
+</Accordion>
+
+## Migra una suite existente
+
+El skill `migrate-to-e2e` mueve a e2e una suite de Playwright, Cypress,
+Selenium, Appium, Detox, Maestro o TesterArmy, una porción por sesión. La suite
+antigua sigue ejecutándose junto a los nuevos tests, así que puedes parar
+después de cualquier sesión.
+
+<CodeGroup>
+```bash npm
+npx skills add e2e-inc/e2e --skill migrate-to-e2e
+```
+
+```bash pnpm
+pnpm dlx skills add e2e-inc/e2e --skill migrate-to-e2e
+```
+
+```bash bun
+bunx skills add e2e-inc/e2e --skill migrate-to-e2e
+```
+</CodeGroup>
+
+Después pide al agente `/migrate-to-e2e`. Porta la porción que elijas y
+ejecuta cada test portado tres veces en cada destino. Un archivo
+`MIGRATION.md` registra el progreso para la siguiente sesión. Opcionalmente, el
+agente planta un error temporal en la aplicación, como un total de pago
+incorrecto, y comprueba si ambas suites fallan con él. El agente borra un
+test antiguo solo cuando tú lo confirmas. Primero lee la guía de migración de
+tu ejecutor:
+[Playwright](/migrate/playwright), [Cypress](/migrate/cypress),
+[Selenium](/migrate/selenium), [Appium](/migrate/appium), [Detox](/migrate/detox),
+[Maestro](/migrate/maestro) o [TesterArmy](/migrate/testerarmy).
+
+## Siguiente
+
+<CardGroup cols={2}>
+  <Card title="Referencia de la CLI" icon="terminal" href="/reference/cli">
+    init, guide, mcp y run, bandera por bandera.
+  </Card>
+  <Card title="Depurar una ejecución" icon="bug" href="/debugging">
+    El informe, los artefactos y las banderas del agente.
+  </Card>
+</CardGroup>

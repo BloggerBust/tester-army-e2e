@@ -39,8 +39,6 @@ export interface McpToolResult {
 /** What a tool body gets from the request. */
 export interface McpToolCallExtra {
   readonly signal: AbortSignal;
-  /** Tells the client how a long call is going, when it asked for progress; otherwise does nothing. */
-  readonly progress?: ((message: string) => void) | undefined;
 }
 
 /** What the server registers: the contract and the body of one of its fixed tools. */

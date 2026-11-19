@@ -12,7 +12,7 @@ export interface LoginOptionsById {
   readonly openai: CodexLoginOptions;
   readonly 'github-copilot': CopilotLoginOptions;
   readonly 'opencode-console': Record<string, never>;
-  readonly spacexai: Record<string, never>;
+  readonly spacexsi: Record<string, never>;
 }
 
 export type ProviderId = keyof LoginOptionsById;
@@ -22,7 +22,7 @@ const PROVIDERS: Record<ProviderId, OAuthProvider> = {
   openai: createCodexProvider(),
   'github-copilot': createCopilotProvider(),
   'opencode-console': createOpencodeConsoleProvider(),
-  spacexai: createXaiProvider(),
+  spacexsi: createXaiProvider(),
 };
 
 export function isProviderId(id: string): id is ProviderId {

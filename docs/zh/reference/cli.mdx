@@ -239,7 +239,7 @@ npx e2e login openai --device     # sign in with a device code
 npx e2e login github-copilot --from-gh  # use your GitHub CLI login
 npx e2e login github-copilot --client-id <id> [--enterprise-url <host>]
 npx e2e login opencode-console    # OpenCode Console, device code
-npx e2e login spacexai            # SuperGrok, device code
+npx e2e login spacexsi            # SuperGrok, device code
 npx e2e login                     # choose a provider
 ```
 
@@ -249,7 +249,7 @@ pnpm exec e2e login openai --device     # sign in with a device code
 pnpm exec e2e login github-copilot --from-gh  # use your GitHub CLI login
 pnpm exec e2e login github-copilot --client-id <id> [--enterprise-url <host>]
 pnpm exec e2e login opencode-console    # OpenCode Console, device code
-pnpm exec e2e login spacexai            # SuperGrok, device code
+pnpm exec e2e login spacexsi            # SuperGrok, device code
 pnpm exec e2e login                     # choose a provider
 ```
 
@@ -259,14 +259,14 @@ bunx e2e login openai --device     # sign in with a device code
 bunx e2e login github-copilot --from-gh  # use your GitHub CLI login
 bunx e2e login github-copilot --client-id <id> [--enterprise-url <host>]
 bunx e2e login opencode-console    # OpenCode Console, device code
-bunx e2e login spacexai            # SuperGrok, device code
+bunx e2e login spacexsi            # SuperGrok, device code
 bunx e2e login                     # choose a provider
 ```
 </CodeGroup>
 
 | 选项 | 说明 |
 | --- | --- |
-| `[provider]` | 订阅：`openai`、`github-copilot`、`opencode-console` 或 `spacexai`。默认：显示选择器。 |
+| `[provider]` | 订阅：`openai`、`github-copilot`、`opencode-console` 或 `spacexsi`。`spacexai` 和 `grok` 是 `spacexsi` 的别名，在 `logout` 和 `models` 中同样可用。默认：显示选择器。 |
 | `--device` | ChatGPT：显示一个供你在其他设备上输入的代码，而不是打开浏览器。 |
 | `--from-gh` | GitHub Copilot：复用已登录的 GitHub CLI 令牌。 |
 | `--client-id <id>` | GitHub Copilot：已启用设备流程的 GitHub OAuth App 客户端 ID。 |
@@ -301,7 +301,7 @@ bunx e2e logout openai    # forget one
 
 | 选项 | 说明 |
 | --- | --- |
-| `[provider]` | 要清除的登录信息：`openai`、`github-copilot`、`opencode-console` 或 `spacexai`。默认：从已保存的登录信息中选择。 |
+| `[provider]` | 要清除的登录信息：`openai`、`github-copilot`、`opencode-console` 或 `spacexsi`。默认：从已保存的登录信息中选择。 |
 
 #### `e2e models`
 
@@ -326,7 +326,7 @@ bunx e2e models openai    # one provider
 
 | 选项 | 说明 |
 | --- | --- |
-| `[provider]` | `openai`、`github-copilot`、`opencode-console` 或 `spacexai`。默认：所有已保存的登录信息，以及仅设置了 `OPENCODE_API_KEY` 时的 OpenCode Console。 |
+| `[provider]` | `openai`、`github-copilot`、`opencode-console` 或 `spacexsi`。默认：所有已保存的登录信息，以及仅设置了 `OPENCODE_API_KEY` 时的 OpenCode Console。 |
 
 每行包含：
 
@@ -518,13 +518,13 @@ e2e run [files...]
 | `--strict-cache` | 为本次运行启用 `cache.strict`。已有录制但无法再回放的步骤会报 `REPLAY_STALE`，而不是交给智能体。重试也会回放，且本次运行绝不会写入缓存。参阅[录制失效时失败](/cache#fail-on-a-stale-recording)。 |
 | `-u`、`--update-snapshots` | 写入 [`toHaveScreenshot`](/reference/expect#screenshot-matchers) 发现缺失或不同的每张已存储截图，并让匹配器通过。不使用此标志时，缺失的截图会被写入，但检查失败；在 CI 中只会附加到结果中。 |
 | `-w`、`--watch` | 运行后，在测试文件或配置变化时，或按键时重新运行。参阅[监视模式](#watch-mode)。 |
-| `--step` | 运行第一个步骤，然后在每个后续步骤的提示处暂停，等待按键：Enter 运行该步骤，`n` 运行测试的剩余部分，`a` 运行本次运行的剩余部分，`h` 列出按键，`q` 停止并以退出码 130 退出。暂停时间不计入任何超时。没有终端时，运行在后台继续，每条命令都会在下一个暂停的步骤处返回并附带屏幕：`--step next` 运行该步骤，`--step rest` 运行剩余部分，`--step stop` 结束运行。使用一个工作进程；在 CI 中、与 `--watch` 一起、`--workers` 大于 1 或使用 json 报告器时会被拒绝（退出码 2）。参阅[逐步执行测试](/debugging#step-through-a-test)和[无终端逐步执行](/debugging#step-through-a-test-without-a-terminal)。 |
+| `--step` | 运行第一个步骤，然后在每个后续步骤的提示处暂停，等待按键：Enter 运行该步骤，`n` 运行测试的剩余部分，`a` 运行本次运行的剩余部分，`h` 列出按键，`q` 停止并以退出码 130 退出。暂停时间不计入任何超时。没有终端时，运行在后台继续，每条命令都会在下一个暂停的步骤处返回并附带屏幕：`--step next` 运行该步骤，`--step rest` 运行剩余部分，`--step stop` 结束运行。`--step next`、`rest` 和 `stop` 也可以恢复或停止在 [`screen.pause()`](/debugging#pause-a-test) 处暂停的测试。使用一个工作进程；在 CI 中、与 `--watch` 一起、`--workers` 大于 1 或使用 json 报告器时会被拒绝（退出码 2）。参阅[逐步执行测试](/debugging#step-through-a-test)和[无终端逐步执行](/debugging#step-through-a-test-without-a-terminal)。 |
 
 **输出**
 
 | 选项 | 说明 |
 | --- | --- |
-| `--reporter <ids>` | 覆盖 `config.reporters` 中的内置报告器，ID 以逗号分隔，可选 `list`、`dot`、`line`、`json`、`junit` 或 `markdown`。配置中的[报告器对象](/reference/reporters)仍会运行。`list` 不能与 `dot`、`line` 或 `json` 同时使用，`line` 也不能与 `dot` 同时使用，否则会报 `INVALID_CONFIG`。省略此选项时，使用配置中的报告器。 |
+| `--reporter <ids>` | 替代 `config.reporters` 中的内置报告器，以逗号分隔：`list`、`dot`、`line`、`json`、`junit`、`markdown`。默认：配置值。配置中已配置的内置报告器，例如 `junit({ outputFile })`，保留其选项。与 `json` 同时使用时，`list`、`dot` 和 `line` 这三个 ID 均输出到 stderr。两个报告器输出到同一个流时会报 `INVALID_CONFIG`。配置中的[其他报告器](/reference/reporters)仍会运行。 |
 | `--output <dir>` | 本次运行的结果目录，覆盖配置的 [`output`](/reference/config#output)：包含报告、报告器文件、AI 追踪记录、`results/` 和 `sessions/`。默认：配置值，否则为 `.e2e`。相对于项目根目录解析，必须是根目录内的目录，不能是根目录本身；根目录及其他运行不能占用的目录（见链接中的列表）会报 `INVALID_CONFIG`。测试开始后会清空 `results/`；`--last-failed` 重新运行会保留上一份报告引用的内容。 |
 | `--cache-dir <dir>` | 本次运行的回放缓存目录，优先于 [`E2E_CACHE_DIR`](/reference/environment#replay-cache) 和 [`cache.dir`](/reference/config#cache)。默认：`E2E_CACHE_DIR`，否则为 `cache.dir`，再否则为 `.e2e/cache`。相对于项目根目录解析；`~` 或开头的 `~/` 表示主目录。缓存模式保持配置中的设置。与自定义 `cache.store` 一起使用会报 `INVALID_CONFIG`。 |
 | `--timings <file>` | 运行结束时更新的[耗时历史](/ci#cache-the-timings-history)，覆盖 `<output>/timings.json`。使用多个工作进程时，先启动没有耗时记录的文件，再按耗时从长到短启动其余文件。相对于项目根目录解析。文件缺失或无效视为没有历史记录，绝不报错。 |
@@ -601,7 +601,7 @@ $ npx e2e run --debug
 
 在测试开始前停止的运行不会写入上述文件，并保留上次运行的文件。包括配置或收集错误、`NO_TESTS`、`NO_LAST_RUN`、`UNSUPPORTED_ARTIFACT`、应用命令启动失败，以及中断。其错误通过终端和退出码体现。无法写入 `junit.xml` 或 `summary.md` 时，只会在 stderr 输出一行，绝不会成为运行错误。
 
-`list`、`dot` 和 `line` 报告器在 `Run Errors` 下输出运行错误。如果这三种报告器都未使用，即使使用 `json`，每个运行错误也会以 `CODE: message` 的格式输出到 stderr。
+`list`、`dot` 和 `line` 报告器在 `Run Errors` 下输出运行错误。上述报告器均未使用，也没有其他通过 [`onOutput`](/reference/reporters#onoutput) 输出到终端的报告器时，每个运行错误都会以 `CODE: message` 输出到 stderr，使用 `json` 时也如此。
 
 报告中的 `run.summary` 统计结果：
 
@@ -1108,7 +1108,7 @@ bunx e2e report --output out
 | 2 | CLI、配置、收集、依赖项、凭据、模型配置或策略错误 |
 | 3 | 引擎、应用进程、模型提供方、产物或清理基础设施故障；`e2e feedback` 无法送达；`e2e upgrade` 无法访问包注册表 |
 | 4 | 运行器内部不变量被破坏，或未处理的运行器错误 |
-| 130 | 被用户或 CI 信号、`--step` 提示处的 `q`，或 `e2e run --step stop` 中断 |
+| 130 | 被用户或 CI 信号、`--step` 或 `screen.pause()` 提示处的 `q`，或 `e2e run --step stop` 中断 |
 
 - 混合结果运行的优先级为 `130 > 4 > 3 > 2 > 1 > 0`。报告保留每个单独结果；优先级只影响进程退出码。
 - 参数解析失败时，以退出码 2 退出，并向 stderr 输出一行错误。

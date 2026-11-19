@@ -1,0 +1,135 @@
+---
+title: De agente o determinista
+description: Elige entre acciones y aserciones de agente o deterministas para tus tests end-to-end.
+---
+
+Los tests de agente te permiten describir la intención de un usuario y el
+resultado esperado en lenguaje natural. El agente elige las acciones que
+debe realizar y juzga si la pantalla cumple tus expectativas. Tu test se
+centra en el resultado, sin selectores que mantener cuando cambia la UI.
+
+Los tests deterministas especifican en código las acciones y las
+comprobaciones. Ambos enfoques pueden probar resultados de usuario, y e2e te
+permite combinarlos en un mismo test.
+
+## ¿Cuándo usar tests de agente?
+
+Usa tests de agente cuando los cambios en la UI te obligan una y otra vez
+a actualizar los selectores de tus tests. También encajan con flujos que
+requieren muchas interacciones pero son fáciles de describir en lenguaje
+natural, como rellenar y enviar un formulario.
+
+`agent.act` te permite describir una intención del usuario, como aplicar un
+código de descuento. El agente decide qué controles usar y qué hacer.
+`agent.assert` comprueba si la pantalla muestra el resultado que describes,
+como un descuento aplicado al total.
+
+Por ejemplo, dentro de un test con los fixtures `app` y `agent`:
+
+```ts
+await app.open('/checkout');
+await agent.act('apply the discount code SUMMER');
+await agent.assert('the checkout shows code SUMMER applied with a 10% discount');
+```
+
+No necesitas nombrar el campo del descuento, el botón que lo aplica ni el
+elemento que muestra el resultado.
+
+Los tests atados a clases CSS o a IDs de test requieren cambios cuando
+esos identificadores cambian. Si mueves un botón o rediseñas un formulario,
+el agente aún puede llevar a cabo la intención del usuario con lo que hay en
+pantalla.
+
+Los tests de agente permiten monitorizar con datos reales en staging o en
+producción sin sembrar datos deterministas, porque los agentes se adaptan a
+tu aplicación. Usa una cuenta de test: el modelo ve lo que hay en pantalla.
+Consulta [Seguridad](/security).
+
+Para un recorrido complejo, escribe una secuencia de objetivos en lenguaje
+natural. Limita cada objetivo a un resultado y compruébalo antes de seguir.
+Consulta [Objetivos](/core-concepts#goals) para ver cómo dividir un recorrido
+en pasos.
+
+## ¿Cuándo usar aserciones de agente?
+
+Las aserciones de agente son útiles cuando varias formulaciones o diseños
+cumplirían el mismo requisito. Por ejemplo, un mensaje de validación puede
+explicar el problema sin coincidir con una frase exacta:
+
+```ts
+await agent.assert('the error message explains that an email address is required');
+```
+
+Para una comprobación visual, añade `vision: true` para que el modelo también
+vea una captura de pantalla:
+
+```ts
+await agent.assert('the chart trends upward', { vision: true });
+```
+
+`agent.assert` comprueba la pantalla actual y falla si la afirmación es falsa
+o la evidencia es insuficiente. Usa `agent.waitFor` cuando la UI aún necesite
+tiempo para llegar al estado esperado. Consulta
+[Aserciones](/core-concepts#assertions) para ver ambos métodos.
+
+## ¿Cuándo usar tests deterministas?
+
+Usa localizadores para flujos cortos y estables en los que ya sabes qué
+controles usar. Especificas cada campo y botón en código, como en este test
+de descuento:
+
+```ts
+await app.open('/checkout');
+await screen.getByLabel('Discount code').fill('SUMMER');
+await screen.getByRole('button', 'Apply').tap();
+await expect(screen.getByRole('status')).toHaveText('10% off');
+```
+
+Estas acciones y comprobaciones no hacen llamadas al modelo. Prefiere roles y
+etiquetas para que el test se refiera a controles que el usuario reconoce.
+Los tests deterministas no tienen por qué depender de clases CSS ni de IDs
+de test.
+
+Usa aserciones deterministas cuando puedas expresar el resultado esperado como
+un valor exacto, un recuento o un estado. Lo comprueban sin el juicio de un
+modelo. Si un mensaje de validación debe usar una redacción concreta,
+comprueba ese texto con `expect`.
+
+## Combina tests de agente con deterministas
+
+Elige las acciones y las aserciones de forma independiente. Puedes dejar que
+el agente se abra paso por una UI cambiante y luego comprobar un valor exacto
+con `expect`:
+
+```ts
+await agent.act('apply the discount code SUMMER');
+await expect(screen.getByRole('status')).toHaveText('10% off');
+```
+
+También puedes usar localizadores para rellenar y enviar un formulario, y
+después usar `agent.assert` para comprobar si su mensaje de validación explica
+el problema.
+
+La adaptación sigue el objetivo que escribes. Una instrucción vaga puede
+permitir un resultado que no pretendías. Si un camino concreto importa,
+nómbralo en el objetivo o usa localizadores para esas acciones. Un `expect`
+después de `agent.act` detecta un objetivo que se cumplió de forma incorrecta.
+
+Las acciones y aserciones dirigidas por un modelo añaden latencia y coste, y
+pueden equivocarse. La [caché de reproducción](/cache) puede repetir las
+acciones de `agent.act` grabadas sin llamadas al modelo. Las aserciones se
+ejecutan de nuevo en cada ejecución de los tests. Cuando una grabación ya no
+coincide, el agente puede adaptarse a la UI modificada, salvo que el modo
+estricto de la caché esté activado. Consulta
+[Tests con autorreparación](/self-healing) para ver cómo funciona.
+
+## Siguiente
+
+<CardGroup cols={2}>
+  <Card title="Conceptos básicos" icon="lightbulb" href="/core-concepts">
+    Escribe objetivos, aserciones y pasos con localizadores.
+  </Card>
+  <Card title="Tests con autorreparación" icon="bandage" href="/self-healing">
+    Descubre cómo se recupera un agente cuando cambia un flujo grabado.
+  </Card>
+</CardGroup>

@@ -18,6 +18,10 @@ export default {
 } satisfies E2EConfig;
 ```
 
+組み込みレポーターにオプションを渡すには、ID の代わりに `e2e/reporters` からそのファクトリーを呼び出します（`junit({ outputFile: 'reports/junit.xml' })`）。ID は、そのファクトリーをオプションなしで呼び出したものと同じです。
+
+組み込みレポーターは [`Reporter`](#custom-reporters) の契約だけを使っています。そのため、独自のレポーターでも組み込みレポーターと同じことがすべてできます。
+
 ## リファレンス
 
 ### 組み込みレポーター
@@ -37,10 +41,9 @@ export default {
 | --- | --- |
 | `INVALID_CONFIG` | `reporters` が配列でない場合。 |
 | `INVALID_CONFIG` | `list`、`dot`、`line`、`json`、`junit`、`markdown` 以外の ID を指定した場合。 |
-| `INVALID_CONFIG` | エントリが ID でも、`name` と 1 つ以上のハンドラーを持つオブジェクトでもない場合。 |
-| `INVALID_CONFIG` | `json` と `list` を併用した場合。 |
-| `INVALID_CONFIG` | `dot` と `list` を併用した場合。 |
-| `INVALID_CONFIG` | `line` と `list` または `dot` を併用した場合。 |
+| `INVALID_CONFIG` | `junit()` の代わりに `junit` と書くなど、ファクトリーを呼び出していない場合。 |
+| `INVALID_CONFIG` | エントリが ID でも、`name` と 1 つ以上のフックを持つオブジェクトでもない場合。 |
+| `INVALID_CONFIG` | `list` と `dot` のように、2 つのレポーターが同じストリームに[出力する](#printsto)場合。 |
 
 #### `list`
 
@@ -50,9 +53,10 @@ export default {
 reporters: ['list'], // default
 ```
 
-- [`onEvent`](#onevent) が受け取るものと同じイベントを表示します。
+- `list({ stream })` は、[出力先](#printsto)のターミナルのストリームを `'stdout'` または `'stderr'` で指定します。指定しなければ stdout に出力し、`json` と併用する場合は stderr に出力します。
+- [`onEvent`](#onevent) が受け取るものと同じイベントを、コードが出力した内容（[`onOutput`](#onoutput)）と `--step` のプロンプト（[`onStepPrompt`](#onstepprompt)）とともに表示します。
 - TTY では実行中のテストをリアルタイムに表示します。stdout がターミナルでない場合（パイプ、リダイレクト、多くの CI）は、各テストの完了時に表示します。
-- レポーターが返す[サマリー行](#onrunfinished)を、自身のサマリーの下に表示します。
+- [`onSummary`](#onsummary) で、すべてのレポーターのサマリー行を自身のサマリーの下に表示します。
 - 出力の最後には、失敗したテストごとに `Failed` 行を表示します。ファイルと行、エラーの最初の行、作成済みならトレースページを示すため、`e2e run | tail` でも何が失敗したかを確認できます。
 
 #### `dot`
@@ -67,9 +71,9 @@ reporters: ['dot'],
 | --- | --- | --- | --- | --- | --- |
 | `.` | `~` | `F` | `T` | `I` | `-` |
 
-80 文字ごとに改行します。色はターミナルの設定に従い、`NO_COLOR` で無効にできます。実行ヘッダー、失敗の詳細と場所、サマリー、ステップのプロンプトは `list` と同じ形式です。
+記号 80 個ごとに改行します。色はターミナルの設定に従い、`NO_COLOR` で無効にできます。実行ヘッダー、失敗の詳細と場所、サマリー、ステップのプロンプトは `list` と同じ形式です。
 
-レポーターの出力先はデフォルトで stdout です。`--reporter dot,json` では、ターミナル向けの出力をすべて stderr に送り、stdout には JSON レポートだけを出力します。
+デフォルトでは stdout に出力し、`dot({ stream: 'stderr' })` で stderr に移せます。`--reporter dot,json` のように `json` と併用すると、`dot` はすべてを stderr に出力するため、stdout には JSON レポートが入ります。
 
 Playwright と異なり、e2e は ASCII の記号を使い、リトライ後の最終結果だけを出力します。リトライした各試行の記号は出力しません。
 
@@ -81,13 +85,13 @@ Playwright と異なり、e2e は ASCII の記号を使い、リトライ後の�
 reporters: ['line'],
 ```
 
-対話型ターミナルでは、テストが始まるたびに、そのテストと完了済みの件数を進捗行に表示します。リトライの開始時にもテストは表示されますが、完了件数は増えません。テストが完了すると、最終結果を表示します。ログ、失敗の詳細、サマリーを出力する前には進捗行を消去します。出力をリダイレクトした場合や `TERM=dumb` の場合は、最終結果ごとに進捗を 1 行ずつ出力します。
+対話型ターミナルでは、テストが始まるたびに、そのテストと完了済みの件数を進捗行に表示します。リトライで完了件数は増えません。テストが完了すると、最終結果を表示します。ログ、失敗の詳細、サマリーを出力する前には進捗行を消去します。出力をリダイレクトした場合や `TERM=dumb` の場合は、最終結果ごとに進捗を 1 行ずつ出力します。
 
 リトライを終えてもテストが失敗またはタイムアウトした場合は、詳細とその時点で利用できる記録をすぐに表示します。実行終了時にトレースページが作成された場合は、最後の一覧にそのリンクを表示します。
 
 e2e は `file > title` でテストを示し、完了件数を表示します。Playwright は `file:line:col` の位置情報と開始件数を表示し、実行中のステップも表示できます。
 
-`--reporter line,json` を指定すると、ターミナル向けの出力は stderr に、JSON レポートは stdout に送られます。
+`line({ stream: 'stderr' })` で出力先を stderr に指定できます。`--reporter line,json` を指定すると、ターミナル向けの出力は stderr に、JSON レポートは stdout に送られます。
 
 #### `json`
 
@@ -97,6 +101,8 @@ e2e は `file > title` でテストを示し、完了件数を表示します。
 reporters: ['json'],
 ```
 
+[stdout に出力し](#printsto)、コードの出力は受け取りません。そのため、コードが出力した内容は stderr に送られます。
+
 #### `junit`
 
 レポートと同じディレクトリに `junit.xml` を書き込みます。
@@ -105,9 +111,9 @@ reporters: ['json'],
 reporters: ['list', 'junit'],
 ```
 
-- `run.report` を読み、`run.reportPath` と同じディレクトリに `junit.xml` を書き込み、そのファイルを示す 1 行を返します。レポーターの最小限の完全な実装例です。
+- `e2e/reporters` の `junit({ outputFile: 'reports/junit.xml' })` を使うと、プロジェクトルートからのパスで別の場所に書き込みます。デフォルトは[出力ディレクトリ](/reference/config#output)の `junit.xml` です。
+- [`reportFiles`](#reportfiles) で `run.report` を 1 つのファイルに変換し、`JUnit` 行を付けます。レポーターの最小限の完全な実装例で、レポートが書き込まれなかった場合は何も書き込みません。
 - 失敗、タイムアウト、リトライ後にのみ成功、または [`test.fail`](/reference/test#fail) の期待どおりに失敗したテストで、失敗時のスクリーンショットを記録している場合、`<testcase>` 内に `<system-out>[[ATTACHMENT|<path>]]</system-out>` としてリンクします。GitLab CI はこれをパイプラインのテストレポートに表示します。パスは `$CI_PROJECT_DIR`、未設定ならプロジェクトルートからの相対パスです。その外にあるスクリーンショットにはリンクしません。
-- 2 回目の Ctrl-C でもファイルを書き込むため、新しいレポートの隣に前回のファイルが残ることはありません。
 
 #### `markdown`
 
@@ -117,7 +123,7 @@ reporters: ['list', 'junit'],
 reporters: ['list', 'markdown'],
 ```
 
-2 回目の Ctrl-C を含め、`junit` と同じように動きます。出力ファイルは `summary.md` で、[`renderMarkdownReport`](#rendermarkdownreport) を使います。
+`summary.md` について `junit` と同じことを、[`renderMarkdownReport`](#rendermarkdownreport) を使って行います。同じ `outputFile` も受け取ります（`markdown({ outputFile: 'reports/summary.md' })`）。
 
 <a id="rendermarkdownreport" />
 
@@ -165,7 +171,8 @@ import { htmlReporter } from '@e2e-dev/html-reporter';
 const reporter = htmlReporter({ media: 'embed' });
 ```
 
-- レポートと同じディレクトリに `report.html` を書き込み、レポートドキュメントを埋め込みます。サーバーなしでディスクから開けるほか、`npx e2e report`（[CLI リファレンス](/reference/cli#e2e-report)）でも開けます。
+- [`reportFiles`](#reportfiles) で、レポートドキュメントを埋め込んだ `report.html` をレポートと同じディレクトリに書き込みます。ページはサーバーなしでディスクから開けるほか、[`npx e2e report`](/reference/cli#e2e-report) でも開けます。
+- レポートを書き込まない実行はページも書き込まないので、`junit.xml` と同じく前回の実行のページが残ります。[出力](/reference/cli#output)を参照してください。
 - `media` は、スクリーンショット、動画、ダウンロードの扱いを決めます。
 
   | `media` | ページの内容 | 共有方法 |
@@ -178,6 +185,7 @@ const reporter = htmlReporter({ media: 'embed' });
 - `outputFile` を指定すると、プロジェクトルートからのパスで別の場所にページを保存できます（プロジェクトルートから実行する場合は、そのパスを `e2e report <path>` に渡してください）。
 - ページに表示するのは、そのページを作成した実行だけです。`--last-failed` の後は、引き継いだ失敗を除く再実行のテストを表示します。`e2e explore` では探索を表示しますが、発見事項は含めません。
 - テストは、各ファイル、その describe ブロック、テストの順でツリー表示し、失敗を先に並べます。ファイルのパスを選択すると、テストを折りたたみます。
+- 複数のターゲットを選択した実行では、状態のタブの上にターゲットのタブを表示します。1 つを選ぶと、そのターゲットのテストと件数だけを表示します。選択は URL に含まれるため、絞り込んだ表示はリンクとしてもそのまま使えます。
 - 各ステップには、試行の動画内での開始時刻を表示します。時刻を選択するとそこから再生し、動画で再生中のステップを強調表示し続けます。動画のタイムラインには各ステップの開始位置を示します。速度ボタンは 0.25 倍から 4 倍まで切り替えられ、5 秒未満の録画は低速で再生を始めます。スマートフォンの録画はステップの上ではなく横に表示します。
 - 期待値と実際の値を報告するアサーション失敗（ロケーターのアサーションなど）では、異なる文字を強調表示します。テストファイルがプロジェクト内にあれば、失敗した呼び出しの周辺コードを表示し、各ステップから実行したコードを開けます。このためページには各ステップの周辺の数行を保存し、共有したレポートにも表示します。
 - 失敗した試行のエラーにある **copy prompt** は、コーディングエージェント向けに失敗内容をコピーします。エラー、ステップ、失敗したステップの操作、存在するトレースページ、画面ツリー、スクリーンショット、動画のプロジェクトルートからのパスを含めます。
@@ -186,7 +194,7 @@ const reporter = htmlReporter({ media: 'embed' });
 
 ### カスタムレポーター
 
-レポーターオブジェクトには `name` と 1 つ以上のハンドラーが必要です。リアルタイムの進捗には `onEvent`、最終レポートと成果物の処理には `onRunFinished` を使います。
+レポーターオブジェクトには `name` と 1 つ以上のフックが必要です。各フックは、そのフックを持つすべてのレポーターに届きます。リアルタイムの進捗には `onEvent`、レポートと並べて書き込むファイルには `reportFiles`、最終レポートをどこかに送るには `onRunFinished` を使います。
 
 ```ts title="e2e.config.ts"
 import type { E2EConfig, Reporter } from 'e2e';
@@ -213,14 +221,24 @@ export default {
 | メンバー | 型 |
 | --- | --- |
 | [`name`](#name) | `string` |
+| [`printsTo`](#printsto) | `'stdout' \| 'stderr'` |
 | [`onEvent`](#onevent) | `(event: RunEvent) => void` |
+| [`onOutput`](#onoutput) | `(output: ReporterOutput) => void` |
+| [`onStepPrompt`](#onstepprompt) | `(prompt) => void` |
+| [`reportFiles`](#reportfiles) | `(run, signal) => ReportFile[]` |
 | [`onRunFinished`](#onrunfinished) | `(run, signal) => Promise<…>` |
+| [`onSummary`](#onsummary) | `(rows: ReporterSummary) => void` |
 
 ```ts
 interface Reporter {
   readonly name: string;
+  readonly printsTo?: 'stdout' | 'stderr';
   onEvent?(event: RunEvent): void;
+  onOutput?(output: ReporterOutput): void;
+  onStepPrompt?(prompt: StepPrompt | undefined): void;
+  reportFiles?(run: FinishedRun, signal: AbortSignal): readonly ReportFile[] | Promise<readonly ReportFile[]>;
   onRunFinished?(run: FinishedRun, signal: AbortSignal): Promise<ReporterSummary | void>;
+  onSummary?(rows: ReporterSummary): void;
 }
 ```
 
@@ -228,11 +246,25 @@ interface Reporter {
 
 #### `name`
 
-診断に使うレポーターのラベルです。必須で、空にはできません。
+診断に使うレポーターのラベルです。必須で、空にはできません。組み込みレポーターと同じ名前でもかまいません。`json` という名前のレポーターもあなたのものであり、`--reporter` で置き換えられることはありません。
 
 ```ts
 name: 'upload',
 ```
+
+#### `printsTo`
+
+レポーターが出力するターミナルのストリームです。[`list`](#list) や [`json`](#json) は stdout に出力します。2 つが同じストリームに出力すると互いに崩れるため、設定できるのはストリームごとに 1 つだけです。
+
+```ts
+printsTo: 'stdout',
+```
+
+- フックは `process.stdout` または `process.stderr` に直接書き込みます。ランナーはこの出力をリダクションしないため、イベントとレポートの内容だけを出力してください。これらはリダクション済みです。
+- `json` のように、stdout に出力するレポーターが [`onOutput`](#onoutput) を持たない場合、ランナー自身の出力は stderr に移り、stdout にはそのレポーターの出力だけが残ります。
+- `--step` には、stdout に出力するレポーターが `list` のように [`onStepPrompt`](#onstepprompt) を持つ必要があります。
+- 2 回目の Ctrl-C でも、その `onRunFinished` は止まりません。出力がローカルだからです。
+- [`e2e/runner`](/reference/runner) で埋め込んだ実行では、`list` や `dot` のように `onOutput` も持つものは実行しません。
 
 #### `onEvent`
 
@@ -255,9 +287,66 @@ onEvent(event) {
 `onEvent` でブロックや例外の送出をしないでください。時間のかかる処理は `onRunFinished` で行います。例外を投げると、そのレポーターはその実行が終わるまで無効になり、レポーター名、イベントの種類、エラーを stderr に 1 行表示します。実行結果は変わりません。
 </Note>
 
+#### `onOutput`
+
+コードが出力した内容を、出力した時点でリダクションして受け取ります。テストの出力と、実行中にランナープロセスが出力する内容（読み込み中のテストファイル、テストフィルター、他のレポーター）です。
+
+```ts
+onOutput({ stream, text, target, pair }) {
+  socket.send(JSON.stringify({ source: target === undefined ? 'runner' : pair?.testId, stream, text }));
+},
+```
+
+```ts
+interface ReporterOutput {
+  readonly stream: 'stdout' | 'stderr';
+  readonly text: string;   // one write, which may end mid-line
+  readonly target?: string; // the target of a test's output; absent for the runner's
+  readonly pair?: { testId: string; agent: string; repeat: number }; // the test running then
+}
+```
+
+- `list` や `dot` のように、[ターミナルに出力する](#printsto)レポーターが `onOutput` を持たない限り、ランナーも出力と実行エラーをそのままターミナルに出力します。出力を記録するだけのレポーターがターミナルを黙らせることはありません。
+- ターミナルに出力し、`onOutput` を持つレポーターは、実行エラーも出力します。`run-error` [イベント](#events)を処理してください。処理しなければ、`NO_TESTS` などで早期に停止した実行では何も表示されません。
+- `onOutput` が例外を投げるか reject すると、実行の残りの間はランナー自身が出力と実行エラーを表示します。
+- テストの出力は `output` [イベント](#events)にもなります。
+- レポーターが `onOutput` の中で、またはそこで開始した処理から出力した内容は、そのままターミナルに出力され、`onOutput` には戻りません。
+
+#### `onStepPrompt`
+
+ターミナルに表示する [`--step`](/debugging#step-through-a-test) のプロンプト、または消すための `undefined` を受け取ります。バックグラウンドの `--step` は、代わりにソケット経由で各プロンプトに応答し、レポーターを呼び出しません。
+
+```ts
+onStepPrompt(prompt) {
+  overlay.show(prompt === undefined ? '' : `Step ${prompt.steps[0].number}: ${prompt.steps[0].step.label}`);
+},
+```
+
+[ターミナルに出力する](#printsto)レポーターがこれを持たない限り、プロンプトは stderr にも 1 行で出力されます。そのレポーターの `onStepPrompt` が例外を投げるか reject した後のプロンプトも、実行が待っているものを含めて、すべて同様に出力されます。
+
+#### `reportFiles`
+
+完了した実行について書き込むファイルを返します。ランナーが各ファイルを、そのディレクトリを作成したうえでアトミックに書き込みます。
+
+```ts
+reportFiles: (run) => [{ path: 'reports/status.txt', content: run.report.run.status, label: 'Status' }],
+```
+
+```ts
+interface ReportFile {
+  readonly path: string;    // absolute, or from the project root
+  readonly content: string;
+  readonly label?: string;  // the summary row's label; its text is the path
+  readonly note?: string;   // printed after the path, such as `(one file, 2.1 MB)`
+}
+```
+
+- `onRunFinished` と同じ 1 分の期限と `signal` がありますが、2 回目の Ctrl-C でも止まりません。前回の実行のファイルが新しいレポートの横に残ることはありません。
+- `report.json` のパスへのファイル、書き込めないファイル、ファイルの一覧でない戻り値は、stderr に 1 行出力されます。
+
 #### `onRunFinished`
 
-レポートを書き込み、ターミナルのサマリーを表示した後に、完了した実行と `AbortSignal` を渡して呼び出します。
+レポートとすべてのレポートファイルを書き込み、ターミナルのサマリーを表示した後に、完了した実行と `AbortSignal` を渡して呼び出します。
 
 ```ts
 async onRunFinished(run, signal) {
@@ -272,7 +361,8 @@ interface FinishedRun {
   readonly status: RunStatus;              // report.run.status
   readonly exitCode: RunExitCode;
   readonly projectRoot: string;            // what the terminal shows paths relative to
-  readonly reportPath: string | undefined; // absent when the write failed
+  readonly reportPath: string | undefined; // absent when the run stopped before its tests or the write failed
+  readonly outputDir: string;              // the output directory, .e2e by default
   readonly artifactsRoot: string;          // what the report's artifact paths are relative to
   readonly aiTracePath: string | undefined;
   readonly traces: ReadonlyMap<string, string>;      // result id -> its trace page, from the project root
@@ -285,7 +375,7 @@ type ReporterSummary = readonly { label: string; text: string }[];
 
 - すべてのレポーターを並行して実行し、それぞれに 1 分の期限を設けます。
 - タイムアウト、例外、不正な戻り値は stderr に報告します。実行の状態、終了コード、レポートは変わりません。
-- Ctrl-C が 1 回ならレポーターの完了を待ちます。2 回目の Ctrl-C で待機をやめますが、[`junit`](#junit) と [`markdown`](#markdown) は例外です。
+- Ctrl-C が 1 回ならレポーターの完了を待ちます。2 回目の Ctrl-C で待機をやめますが、[`printsTo`](#printsto) を設定したレポーターは例外です。
 - 予算を使い切るか、実行を強制停止すると `signal` が中止状態になります。
 - ランナーは `onRunFinished` を呼ぶ前に、トレースページ `results/<test>/trace.md` を書き込みます。
 
@@ -295,7 +385,7 @@ type ReporterSummary = readonly { label: string; text: string }[];
 
 ##### サマリー行
 
-レポーターが返す行は、`list`、`dot`、`line` のサマリーの下に、ほかのサマリー行と同じ形式で表示します。`json` レポーターには含めません。
+レポーターが resolve 時に返す行と、ラベル付きのレポートファイルの行は、すべての [`onSummary`](#onsummary) に届きます。`list`、`dot`、`line` は、それらを自身のサマリーの下に、自身の行と同じレイアウトで表示します。`json` レポーターには含めません。
 
 ```
    Test Files  2 passed (2)
@@ -328,13 +418,25 @@ type ReporterSummary = readonly { label: string; text: string }[];
 - フィルターの判断後、`run.changes` は判断した変更を集計値で保持します。`base`（マージベース）、`files`、`skipped`（`no files changed since abc1234` など、どのフィルターも実行しなかった理由）です。フィルターを設定して `--changed-since` を渡した実行に存在します。ただし `e2e explore`、`--watch` の再実行、判断前に終了した実行は除きます。`--last-failed`、または判断するテストがない場合は、`skipped` だけを保持します。
 - 存在しないコミットを指定した参照による `INVALID_CHANGED_SINCE` など、フィルターの判断中の失敗は、`phase` が `filter` のエラーとして `run.errors` に入ります。不正な形式の `changedSince` では `phase` は `config` です。
 
+#### `onSummary`
+
+すべてのレポーターのサマリー行を受け取ります。組み込みレポーターが先で、その後に他のレポーターが `reporters` の順に続きます。各レポーターについて、ラベル付きのレポートファイルの行、次に `onRunFinished` が返した行の順です。
+
+```ts
+onSummary(rows) {
+  for (const row of rows) console.log(`${row.label}: ${row.text}`);
+},
+```
+
+すべての `onRunFinished` が終わるか打ち切られた後、最後に実行されます。2 回目の Ctrl-C の後も実行されます。
+
 ## イベント
 
 `onEvent` は、次のいずれかのイベントを受け取ります。各イベントには連番 `seq` と ISO 形式のタイムスタンプ `at` もあります。
 
 ```ts
 type RunEventFact =
-  | { type: 'run-started'; runId; projectId; projectRoot; artifactsRoot; ci; targets; agents?; model?; judge? }
+  | { type: 'run-started'; runId; projectId; projectRoot; artifactsRoot; ci; targets; agents?; model?; judge?; stepping? }
   | { type: 'plan'; total; files: { file; target; tests }[] }
   | { type: 'notice'; target; message }
   | { type: 'output'; target; pair; stream: 'stdout' | 'stderr'; text }
@@ -353,7 +455,7 @@ type RunEventFact =
 
 - 最初が `run-started`、最後が `run-finished` です。
 - `run-started` の `targets` は、`--target` で選んだターゲットを設定順で列挙します。指定がない場合、または `--target` に未知のターゲットを指定した場合は、設定済みのすべてのターゲットを列挙します。未知のターゲットの場合、実行は `UNKNOWN_TARGET` で失敗します。レポートの `run.targets` は、いずれの場合も設定済みの全ターゲットを列挙します。
-- `run-started` の `judge` は、実行エージェントのジャッジモデルです。判定に `model` 以外のモデルを使う場合だけ存在します。
+- `run-started` の `judge` は、実行エージェントのジャッジモデルです。判定に `model` 以外のモデルを使う場合だけ存在します。`stepping` は、実行が `--step` のために各ステップで止まる場合に `true` です。
 - `setup` はテスト開始前の処理の開始と終了を示します。`step.kind` は `collect`、`filter`（`name` で示す 1 つの[テストフィルター](/filters)）、`prepare`、`service`、`app` のいずれかです。`app` ステップの `url` は、準備完了チェックがポーリングする URL で、空きポートを反映し、ユーザー情報とクエリを除いています。`outcome` は、サービスやアプリのコマンドが、その URL ですでに稼働するプロセスを再利用した場合に `reused`、フィルターが例外を投げるか不正な結果を返した場合に `failed`、5 分を超えた場合に `timed-out` になります。
 - `notice` は、その行が何についての通知かを `target` に示します。値はターゲット名、`app`、`collect`、テストフィルターの進捗やサマリーを示す `filter`、または `run` です。
 - `output` はテストによる stdout または stderr への 1 回の書き込みです。`pair` はその時点で実行中のテストを示し、テストの合間では undefined です。
@@ -418,7 +520,7 @@ type StepProgress = (
 
 ## `--reporter` とレポーターオブジェクトの関係
 
-`--reporter` が置き換えるのは組み込みレポーターだけです。設定済みのレポーターオブジェクトは引き続き実行します。
+`--reporter` が置き換えるのは組み込みレポーターだけです。独自のレポーターやパッケージのレポーターは引き続き実行します。フラグで指定した組み込みレポーターは、設定で渡したオプションを保ちます。
 
 <CodeGroup>
 ```bash npm
@@ -434,18 +536,19 @@ bunx e2e run --reporter list,junit
 ```
 </CodeGroup>
 
-- レポーターオブジェクトだけを指定した設定では、組み込みのターミナル出力はありません。実行エラーは引き続き stderr に、各行 `CODE: message` の形式で表示します。
+- `reporters: ['list', junit({ outputFile: 'reports/junit.xml' })]` の場合、`--reporter junit` はその `junit` だけを実行し、引き続き `reports/junit.xml` に書き込みます。
+- [`onOutput`](#onoutput) でターミナルに出力するレポーターがない設定では、実行の表示はありません。実行エラーは引き続き stderr に、各行 `CODE: message` の形式で表示します。
 
 ## レポーターの実行場所
 
-ハンドラーはランナーのプロセスで実行します。ワーカーも設定を読み込むため、レポーターの作成時に副作用を起こさないでください。
+フックはランナーのプロセスで実行します。ワーカーも設定を読み込むため、レポーターの作成時に副作用を起こさないでください。`--watch` では 1 つのレポーターがすべての実行を受け取り、各実行は最初のイベントから始まります。
 
 - トークンの読み取りやリクエストの開始は、ハンドラー内で行ってください。
 - レポーターを追加しても、[キャッシュしたトレース](/cache#what-must-match)は有効なままです。
 
 ## 型
 
-`Reporter`、`FinishedRun`、`ReporterSummary`、`Report`、`RunEvent`、`RunEventOf` はメインエントリポイントからエクスポートします。`renderMarkdownReport(report, options)` も同様です。
+`Reporter`、`FinishedRun`、`ReportFile`、`ReporterOutput`、`ReporterSummary`、`StepPrompt`、`Report`、`RunEvent`、`RunEventOf` はメインエントリポイントからエクスポートします。`renderMarkdownReport(report, options)` も同様です。`e2e/reporters` は `list`、`dot`、`line`、`json`、`junit`、`markdown` を、`ListReporterOptions`、`DotReporterOptions`、`LineReporterOptions`、`JunitReporterOptions`、`MarkdownReporterOptions` とともにエクスポートします。
 
 ## 関連情報
 

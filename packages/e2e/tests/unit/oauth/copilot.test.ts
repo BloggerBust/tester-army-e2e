@@ -1,6 +1,7 @@
 import { generateText, tool } from 'ai';
 import { z } from 'zod';
 import { afterEach, describe, expect, it } from 'vitest';
+import { USER_AGENT } from '@e2e-dev/core/lib/internal/client-identity';
 import { copilot } from '../../../src/oauth/copilot.ts';
 import { copilotBaseUrl, copilotProtocolFor, copilotRefusal, createCopilotProvider, enterpriseHost, sendCopilotRequest } from '../../../src/oauth/providers/github-copilot.ts';
 import { unservedModelExplanation } from '@e2e-dev/core/lib/internal/unserved-model';
@@ -36,6 +37,7 @@ describe('Copilot login', () => {
     );
     expect(shown).toMatchObject({ url: 'https://github.com/login/device', userCode: 'WXYZ-1234' });
     expect(credentials).toEqual({ access: 'gho_token', refresh: '', expires: 0, enterpriseUrl: 'gh.acme.com' });
+    expect(new Set(github.requests.map((request) => request.headers['user-agent']))).toEqual(new Set([USER_AGENT]));
   });
 
   it('reuses the GitHub CLI token by default, and explains what it needs when there is none', async () => {

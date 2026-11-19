@@ -348,7 +348,8 @@ describe('e2e run argument parsing', () => {
       await invoke('run', '--step');
       const options = lastRunOptions();
       expect(options.workers).toBe(1);
-      expect(options.beforeStep).toBeTypeOf('function');
+      expect(options.hold?.ask).toBeTypeOf('function');
+      expect(options.hold?.steps).toBe(true);
     } finally {
       process.stdin.isTTY = tty.stdin;
       process.stdout.isTTY = tty.stdout;
@@ -1147,6 +1148,25 @@ describe('e2e upgrade argument parsing', () => {
     expect(upgradeMock).not.toHaveBeenCalled();
     expect(process.exitCode).toBe(2);
     expect(written(stderrSpy)).toContain("error: command-argument value '^0.22.0' is invalid for argument 'version'. must be a version such as 0.22.0 or a dist-tag");
+  });
+});
+
+describe('e2e logout argument parsing', () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it.each(['spacexsi', 'spacexai', 'grok'])('takes %s for the SpaceXSI login', async (provider) => {
+    vi.stubEnv('E2E_OAUTH_CREDENTIALS', '{}');
+    await invoke('logout', provider);
+    expect(process.exitCode).toBe(0);
+    expect(written(stdoutSpy)).toContain('No SpaceXSI login was stored.');
+  });
+
+  it('rejects an unknown provider with exit code 2, naming the ids and their aliases', async () => {
+    await invoke('logout', 'xai');
+    expect(process.exitCode).toBe(2);
+    expect(written(stderrSpy)).toContain('Allowed choices are openai, github-copilot, opencode-console, spacexsi, spacexai, grok.');
   });
 });
 

@@ -14,7 +14,6 @@ import { classifyError, ConfigurationError, serializeError } from '@e2e-dev/core
 import type { DebugTrace } from '@e2e-dev/core/lib/internal/debug';
 import type { InMemoryAttempts } from './execute.ts';
 import type { SessionStore } from '@e2e-dev/core/lib/run/sessions';
-import type { StepHolding } from './step-hold.ts';
 import type { SpawnUnitRunner, UnitRunner, UnitRunnerEvents } from './unit-runner.ts';
 import { pairKey } from './units.ts';
 import type { MainToWorker, RunUnitMessage, WirePair } from './worker/protocol.ts';
@@ -39,8 +38,8 @@ export interface InProcessRunnerOptions {
   readonly sessionStore: SessionStore;
   readonly headed: boolean;
   readonly debug: DebugTrace;
-  /** See `TargetWorkerDeps.step`. */
-  readonly step: StepHolding | undefined;
+  /** See `TargetWorkerDeps.holdSteps`. */
+  readonly holdSteps: boolean;
   /** The environment each target's workers run with; see `EngineInitInfo.env`. */
   readonly envFor: (targetName: string) => Readonly<Record<string, string | undefined>>;
 }
@@ -185,7 +184,7 @@ class InProcessRunner implements UnitRunner {
       env: this.options.envFor(this.targetName),
       isolated: false,
       debug: this.options.debug,
-      step: this.options.step,
+      holdSteps: this.options.holdSteps,
       inMemory: this.options.inMemory,
       resolvePairs: (unit) =>
         resolveFromSelection(

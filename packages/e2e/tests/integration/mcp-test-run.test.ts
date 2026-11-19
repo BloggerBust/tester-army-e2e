@@ -171,6 +171,16 @@ test.setup('member signs in', { sessions: ['member'] }, async ({ app, session })
 });
 `;
 
+const PAUSE = `import { expect, test } from 'e2e';
+
+test('counts past a pause', async ({ app, screen }) => {
+  await app.open('/');
+  await screen.pause();
+  await screen.getByRole('button', { name: 'Increment' }).tap();
+  await expect(screen.getByRole('status', { name: 'Counter' })).toHaveText('1');
+});
+`;
+
 /** The one-based line of the first line of `source` that holds `fragment`. */
 const lineOf = (source: string, fragment: string): number => source.split('\n').findIndex((line) => line.includes(fragment)) + 1;
 
@@ -217,6 +227,7 @@ describe('open_session {test}', { timeout: 120_000 }, () => {
         'tests/visual.e2e.ts': VISUAL,
         'tests/expected.e2e.ts': EXPECTED,
         'tests/marked-hooks.e2e.ts': MARKED_HOOKS,
+        'tests/pause.e2e.ts': PAUSE,
       });
       const transport = new StdioClientTransport({
         command: process.execPath,
@@ -250,6 +261,14 @@ describe('open_session {test}', { timeout: 120_000 }, () => {
       const closed = await invoke('close_session');
       expect(closed.text).toMatch(/^Session \S+ closed/);
       expect(readFileSync(marker, 'utf8')).toBe('ran');
+    });
+
+    it('runs the test past its screen.pause() right away', async () => {
+      const opened = await invoke('open_session', { test: 'tests/pause.e2e.ts:3' });
+      expect(opened.isError, opened.text).toBe(false);
+      expect(opened.text).toMatch(/^Test "counts past a pause" \(tests\/pause\.e2e\.ts:3\) passed after \S+; 3 steps ran\.\n/);
+      expect(await observe()).toContain('status "Counter" text="1"');
+      expect((await invoke('close_session')).isError).toBe(false);
     });
 
     it('opens a failing test with its code, line, code frame, and nearest nodes, on the screen it failed on', async () => {

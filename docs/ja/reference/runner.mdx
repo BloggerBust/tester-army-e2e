@@ -78,7 +78,7 @@ process.exitCode = result.exitCode;
 | `exitCode` | CLI と同じ終了コードです。`0`、`1`、`2`、`3`、`4`、`130` のいずれかです。 |
 | `status` | `passed`、`failed`、`blocked`、`error`、`interrupted` のいずれかです。 |
 | `report` | 完全なレポートです。結果は `report.run.results`、`report.run.errors`、`report.run.summary` で確認できます。 |
-| `reportPath` | `report.json` の絶対パスです。書き込めなかった場合は `undefined` です。 |
+| `reportPath` | `report.json` の絶対パスです。書き込めなかった場合や、テストの前に実行が止まった場合は `undefined` です。 |
 | `aiTracePath` | AI トレースのパスです。書き込まなかった場合は `undefined` です。 |
 
 テスト失敗、設定の失敗、中断の場合も resolve し、状態とエラーをレポートに含めます。

@@ -170,6 +170,7 @@ test('checkout', async ({ app, agent, screen }) => {
 | `[fn, { scope: 'worker' }]` 测试夹具 | 相同，用 `extend` 的第二个类型参数提供类型 |
 | `[fn, { auto: true }]` 测试夹具 | 相同，两种作用域都可以 |
 | 覆盖测试夹具，`page: async ({ page }, use) => {}` | 对 `app`、`screen`、`browser` 和你自己的测试夹具同样适用，参阅[扩展测试夹具](/reference/test#extending-a-fixture) |
+| `page.pause()` | `screen.pause()`，加上 `--headed` 可观察浏览器 |
 
 </Accordion>
 <Accordion title="CLI">
@@ -285,7 +286,6 @@ export const test = base.extend<{ accountPage: AccountPage }>({
 | Playwright Docker 镜像 | 与 `@e2e-dev/web` 固定的 `playwright-core` 版本对应的镜像，或 `npx @e2e-dev/web install chromium --with-deps` |
 | 文件或 describe 中的 `test.use({ ... })` | 组上的运行器选项、测试目标上的引擎选项、运行时的 `browser.setViewport` |
 | `projects[].dependencies`, `teardown` | 用于登录的顶层 `test.setup`；在运行前后执行的脚本 |
-| `page.pause()` | `--step --headed` 在每个步骤等待按键后继续 |
 | `github` 报告器 | `github()` 发布拉取请求（PR）评论 |
 
 </Accordion>

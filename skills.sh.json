@@ -1,0 +1,11 @@
+{
+  "$schema": "https://skills.sh/schemas/skills.sh.schema.json",
+  "notGrouped": "bottom",
+  "groupings": [
+    {
+      "title": "e2e",
+      "description": "Write, run, and debug e2e tests, verify your app, and migrate from other runners.",
+      "skills": ["e2e", "create-verification-skill", "migrate-to-e2e"]
+    }
+  ]
+}

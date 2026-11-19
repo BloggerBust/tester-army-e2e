@@ -1,5 +1,36 @@
 # @e2e-dev/web
 
+## 0.16.1
+
+### Patch Changes
+
+- [#1785](https://github.com/e2e-inc/e2e/pull/1785) [`ceaea64`](https://github.com/e2e-inc/e2e/commit/ceaea64ceead09d0a0f8cb5b384ef0d9ffac23a1) Thanks [@okwasniewski](https://github.com/okwasniewski)! - Bump playwright-core to 1.65.1 and `@ai-sdk/provider` to 4.0.38. Smol sandboxes use the Playwright 1.65.1 image.
+
+- [#1633](https://github.com/e2e-inc/e2e/pull/1633) [`0b44859`](https://github.com/e2e-inc/e2e/commit/0b4485989d3b6aad0188c66e5f34a465894afb51) Thanks [@leszko11](https://github.com/leszko11)! - Read a listed node's computed style from a read-only project tool with
+  `getToolContext(options).read({ id }, { style: ['color', 'font-weight'] })`.
+  The web engine returns allow-listed CSS values, secret-redacted, under the
+  step's deadline. Engines can implement the optional `readStyle` method over the
+  engine protocol for the `computed-style` capability; a read on an engine
+  without it fails with `POLICY_DENIED`.
+
+- [#1965](https://github.com/e2e-inc/e2e/pull/1965) [`60d29cf`](https://github.com/e2e-inc/e2e/commit/60d29cfe4c9d88b00659e0d0e00b8973d61e7391) Thanks [@szymonrybczak](https://github.com/szymonrybczak)! - List the maintainers' `@e2e.com` addresses in `contributors`.
+
+- [#1737](https://github.com/e2e-inc/e2e/pull/1737) [`0a5ee16`](https://github.com/e2e-inc/e2e/commit/0a5ee16387cf213df547a8422b7d690675744986) Thanks [@kdy1](https://github.com/kdy1)! - New package `@e2e-dev/core`: the engine contract, locators, agent, replay cache, and engine sessions that `e2e` is built on. `e2e` depends on it at the same version, and `e2e/engine` and `e2e/agent` re-export it unchanged. `@e2e-dev/web` and `@e2e-dev/mobile` peer on `@e2e-dev/core` beside `e2e`, and import the contract from `@e2e-dev/core/engine`, which a third-party engine can now import too. npm, pnpm and Bun install the new peer themselves. A Yarn project lists `@e2e-dev/core` beside the engine; `e2e init` and `e2e upgrade` add it.
+
+- [#1734](https://github.com/e2e-inc/e2e/pull/1734) [`dbe3dc5`](https://github.com/e2e-inc/e2e/commit/dbe3dc54a9123b10e535441f785de2e81a202798) Thanks [@kdy1](https://github.com/kdy1)! - New package `@e2e-dev/core`: drive a browser or a native app from plain code, with no test runner, config file, or report. `launch(web())` prepares an engine and returns a host; `host.newSession()` opens an isolated session holding `screen`, `app`, `platform`, and the engine's fixture. `session.saveState()` captures state in memory, and `SessionState.export({ key })` returns it only AES-256-GCM encrypted, as `session-state-1` bytes. Secrets go to `launch({ secrets })` and fill through `host.secret(name)`. `createAgent(session, { model, cache })` from `@e2e-dev/core/agent` adds the agent: with `cache`, every `act` names its recording with `cacheKey`.
+  
+  `@e2e-dev/web` and `@e2e-dev/mobile` need `e2e` only for the `test` their main entry exports, so their `e2e` peer is optional. Without `e2e`, the main entry still loads and its engine factory works; `test`, `describe`, and the hooks throw `RUNNER_NOT_INSTALLED` when called. Its types still name `e2e`, so a TypeScript program without it imports from the `/engine` entry or sets `skipLibCheck`. `@e2e-dev/core/agent` also exports what `e2e/agent` does, `defineTool` among it.
+  
+  Device targets take `app.linkBase`: `app.open('/orders/42')` then opens the path as a link in the pinned app, through the new optional engine hook `session.openLink` (protocol method `session/openLink`). `@e2e-dev/mobile` implements it.
+  
+  `@e2e-dev/web/engine` and `@e2e-dev/mobile/engine` export the engine factories and their types without `test`, so a program that only drives an engine never loads the test runner. `defineEngine<Fixtures>()` and `EngineHandle<Fixtures>` now carry the fixtures an engine contributes as a type, and `defineEngine` requires a factory for each one `Fixtures` names: `web()` is an `EngineHandle<WebFixtures>`, `mobile()` an `EngineHandle<MobileFixtures>`. `defineEngine` refuses a fixture named `close`, `saveState`, or `setDefaultTimeout`, the methods of a session. `@e2e-dev/core/engine` (and `e2e/engine`) exports `isRefusedLinkScheme`, the scheme list app links are refused by, which `@e2e-dev/mobile` now uses for `device.openLink`.
+
+- [#1853](https://github.com/e2e-inc/e2e/pull/1853) [`705c049`](https://github.com/e2e-inc/e2e/commit/705c0492052378488511a67ade1db8303e41959b) Thanks [@okwasniewski](https://github.com/okwasniewski)! - A name from content now leaves out descendants whose own role is not named from content, as Chrome and Playwright do: a parent tree item is `treeitem "src"`, not every label under it, and a tab with a `status` badge is `tab "Inbox"`, not `tab "Inbox 3"`.
+
+- [#1726](https://github.com/e2e-inc/e2e/pull/1726) [`9602daa`](https://github.com/e2e-inc/e2e/commit/9602daa9602444673b99ef6aaa33c67a81cb2f0b) Thanks [@andreakiro](https://github.com/andreakiro)! - A browser provider's `downloads.read` gets the site's suggested file name as `context.suggestedFilename`, for a service that stores downloads by name rather than under the path the browser saved them to. `releaseEach` releases every lease a provider's `sweep` found at once and sorts them into released and failed, so a failed release never skips the others.
+
+- [#1789](https://github.com/e2e-inc/e2e/pull/1789) [`25bde7a`](https://github.com/e2e-inc/e2e/commit/25bde7a730a2e90cb15b9eee7f1de3a366342697) Thanks [@Asheesh7298](https://github.com/Asheesh7298)! - Everything outside a `<dialog>` opened with `showModal()` takes no input, so the agent no longer sees it or spends an action timeout tapping it. With several modal dialogs open, only the one shown last stays in the tree; when e2e can't tell which one that is, nothing is left out.
+
 ## 0.16.0
 
 ### Minor Changes

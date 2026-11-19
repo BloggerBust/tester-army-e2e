@@ -12,6 +12,7 @@ export type { MarkdownReportOptions } from './report/markdown.ts';
 
 export type * from '@e2e-dev/core/lib/types';
 export type * from './run-types.ts';
+export type { HeldStep, NumberedStep, StepPrompt } from './run/step-hold.ts';
 export type {
   ExecutorActions,
   ExecutorAttempt,

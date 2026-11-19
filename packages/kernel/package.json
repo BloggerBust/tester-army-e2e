@@ -1,6 +1,6 @@
 {
   "name": "@e2e-dev/kernel",
-  "version": "0.2.2",
+  "version": "0.2.3",
   "description": "Kernel hosted browsers for e2e: run web targets in Kernel's hosted Chromium",
   "keywords": [
     "e2e",
@@ -15,8 +15,8 @@
   ],
   "license": "Apache-2.0",
   "contributors": [
-    "Oskar Kwaśniewski <oskar@tester.army>",
-    "Szymon Rybczak <szymon@tester.army>"
+    "Oskar Kwaśniewski <oskar@e2e.com>",
+    "Szymon Rybczak <szymon@e2e.com>"
   ],
   "repository": {
     "type": "git",
@@ -58,11 +58,11 @@
   },
   "devDependencies": {
     "@e2e-dev/web": "workspace:*",
-    "@onkernel/sdk": "0.148.0",
+    "@onkernel/sdk": "0.149.0",
     "@types/node": "26.6.6",
     "e2e": "workspace:*",
     "typescript": "7.0.2",
-    "vitest": "5.1.0"
+    "vitest": "5.1.1"
   },
   "engines": {
     "node": "^22.22.3 || >=24.8.0"

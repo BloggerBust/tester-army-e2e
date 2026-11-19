@@ -1,7 +1,7 @@
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import type { FinishedRun, Report, Reporter, ReporterSummary } from 'e2e';
+import type { FinishedRun, Report, Reporter, ReportFile } from 'e2e';
 import { embedPayload, type ReportMedia } from './payload.ts';
 
 export interface HtmlReporterOptions {
@@ -41,34 +41,30 @@ const TEMPLATE_PATH = path.join(path.dirname(fileURLToPath(import.meta.url)), 'a
 export function htmlReporter(options: HtmlReporterOptions = {}): Reporter {
   return {
     name: 'html',
-    onRunFinished: async (run, signal) => writeReport(run, options, await readFile(TEMPLATE_PATH, 'utf8'), signal),
+    // A run that wrote no report writes no page, so the previous page stays
+    // beside the previous report, as `junit.xml` and `summary.md` do.
+    reportFiles: async (run, signal) =>
+      run.reportPath === undefined ? [] : [await renderReport(run, options, await readFile(TEMPLATE_PATH, 'utf8'), signal)],
   };
 }
 
 /**
- * Fills the page template with one finished run, writes it, and resolves with
- * the row naming where it went. Once `signal` aborts (the runner gave up on
- * its reporters), it stops reading files and writes nothing.
+ * Fills the page template with one finished run: the file the runner writes,
+ * with the row naming where it went. Once `signal` aborts (the runner gave up
+ * on it), it stops reading files.
  */
-export async function writeReport(run: FinishedRun, options: HtmlReporterOptions, template: string, signal?: AbortSignal): Promise<ReporterSummary> {
-  const outputFile =
-    options.outputFile === undefined
-      ? path.join(path.dirname(run.artifactsRoot), 'report.html')
-      : path.resolve(run.projectRoot, options.outputFile);
+export async function renderReport(run: FinishedRun, options: HtmlReporterOptions, template: string, signal?: AbortSignal): Promise<ReportFile> {
+  const outputFile = path.resolve(run.projectRoot, options.outputFile ?? path.join(run.outputDir, 'report.html'));
   const mode = options.media ?? 'link';
   const media = await pageMedia(mode, run, outputFile, signal);
   const resultsDir = toPosix(path.relative(run.projectRoot, run.artifactsRoot)) || '.';
   const traces = Object.fromEntries([...run.traces].map(([id, trace]) => [id, toPosix(trace)]));
   const sources = await sourceFrames(run.report, run.projectRoot, run.redact);
   const page = embedPayload(template, { report: run.report, media, resultsDir, traces, sources });
-  signal?.throwIfAborted();
-  await mkdir(path.dirname(outputFile), { recursive: true });
-  await writeFile(outputFile, page, 'utf8');
-  const shown = path.relative(process.cwd(), outputFile) || outputFile;
-  let note = '';
-  if (mode === 'embed') note = ` (one file, ${formatSize(Buffer.byteLength(page))})`;
-  if (mode === 'none') note = ' (text only)';
-  return [{ label: 'HTML report', text: `${shown}${note}` }];
+  let note: string | undefined;
+  if (mode === 'embed') note = `(one file, ${formatSize(Buffer.byteLength(page))})`;
+  if (mode === 'none') note = '(text only)';
+  return { path: outputFile, content: page, label: 'HTML report', ...(note === undefined ? {} : { note }) };
 }
 
 /** What the page holds for screenshots and videos in each `media` mode. */

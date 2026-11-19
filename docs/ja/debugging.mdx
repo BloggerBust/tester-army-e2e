@@ -224,7 +224,7 @@ bunx e2e run tests/checkout.e2e.ts --step --headed
 | --- | --- |
 | Enter | 待機中のステップを実行し、次で待機 |
 | `n` | リトライも含めてこのテストの残りを実行し、次のテストで待機 |
-| `a` | 残りの実行を止めずに続行 |
+| `a` | ステップで待機せずに残りの実行を続行 |
 | `h` | プロンプトの下に全キーを表示、または非表示 |
 | `q`、Esc | Ctrl-C と同様に停止。テストは `interrupted`、残りはスキップ、終了コード 130 |
 
@@ -266,21 +266,85 @@ Screen:
   heading "Checkout"
   textbox "Email"
   button "Pay"
-Next: e2e run --step next runs it, e2e run --step rest runs the rest, e2e run --step stop ends the run.
+Next: e2e run --step next to run it, e2e run --step rest to run the rest, or e2e run --step stop to end the run.
 ```
 
 | コマンド | 動作 |
 | --- | --- |
 | `e2e run --step next` | 待機中のステップを実行し、次で戻る |
-| `e2e run --step rest` | 残りの実行を止めずに続行 |
+| `e2e run --step rest` | ステップで待機せずに残りの実行を続行 |
 | `e2e run --step stop` | 別のコマンドが待機中でも、`q` と同様に停止。終了コード 130 |
 
 - 各応答の冒頭には、前のコマンド以降の出力が付きます。上の最初の行のように、実行したステップごとに 1 行表示し、失敗した場合はその下にエラーを表示します。最後の応答は実行サマリーと `The stepped run has ended.` で終わり、コマンドは実行全体の終了コードで終了します。
 - 画面はトレースページと同様にアプリのノードを列挙し、シークレットをマスキングします。
 - ひとつのディレクトリでステップ実行できるのはひとつだけです。最初の実行が終わるまで、2 つ目の `--step` は終了コード 2 で終了します。
-- `next` と `rest` は、コマンドが表示済みのステップだけを進めます。待機中のコマンドを強制終了した場合、次のコマンドは見逃した内容を表示します。ステップなら実行せずに表示し、実行が終わっていれば終了を表示します。ステップ実行中に送った `next` や `rest` は、操作せずに次の停止を待ちます。どちらの場合も、操作を適用しなかったことを示す行で応答が始まります。
+- `next` と `rest` は、コマンドが表示済みのステップだけを進めます。待機中のコマンドを強制終了した場合、次のコマンドは見逃した内容を表示します。ステップなら実行せずに表示し、実行が終わっていれば終了を表示します。ステップ実行中に送った `next` や `rest` は、操作せずに次の待機ステップを待ちます。どちらの場合も、操作を適用しなかったことを示す行で応答が始まります。
 - コマンドなしでステップが 30 分待機すると、実行を停止します。
 - `--step` を使う場合、`next`、`rest`、`stop` というファイルやディレクトリには、`./next` のようにパスを付ける必要があります。
+
+## テストを一時停止する
+
+[`screen.pause()`](/reference/screen#screen-pause) を使うと、アプリを開いたまま、再開するまでテストをその行で一時停止できます。[`--step`](#step-through-a-test) の有無にかかわらず、どの `e2e run` でも使えます。ループの各回など、その行が実行されるたびにテストは一時停止します。
+
+```ts title="tests/checkout.e2e.ts"
+import { test } from '@e2e-dev/web';
+
+test('pays with a card', async ({ app, screen }) => {
+  await app.open('/checkout');
+  await screen.pause();
+});
+```
+
+テストの一時停止中にブラウザを見るには、`--headed` を追加します。
+
+<CodeGroup>
+```bash npm
+npx e2e run tests/checkout.e2e.ts --headed
+```
+
+```bash pnpm
+pnpm exec e2e run tests/checkout.e2e.ts --headed
+```
+
+```bash bun
+bunx e2e run tests/checkout.e2e.ts --headed
+```
+</CodeGroup>
+
+ターミナルでは、一時停止はそのテストの下に表示されます。
+
+```text
+ ❯ |web| tests/checkout.e2e.ts 0/1
+   └── pays with a card paused
+       ▶ paused  screen.pause()  tests/checkout.e2e.ts:5
+         press enter to resume, press h to show help, press q to quit
+```
+
+[`--step` のプロンプト](#step-through-a-test)と同様に、Enter でテストを再開し、`h` でキーを一覧表示し、`q` で実行を終了コード 130 で停止します。
+
+コーディングエージェントのシェルなどターミナルがない場合は、一時停止が待っている画面とともに表示されます。
+
+```text
+Paused in pays with a card [web]:
+  screen.pause() (tests/checkout.e2e.ts:5)
+Screen:
+  http://localhost:3000/checkout
+  heading "Checkout"
+Next: e2e run --step next to resume the test, or e2e run --step stop to end the run.
+```
+
+テストを再開するには、同じディレクトリの別のシェルで `e2e run --step next` を実行します。実行を終了コード 130 で終了するには、`e2e run --step stop` を実行します。これらのコマンドは、実行にターミナルがあるかどうかにかかわらず使えます。例外はターミナルでの `--step` 実行で、その場合はキーを使います。`next` の代わりに `rest` も使えます。
+
+テストが再び一時停止するか実行が終わると、応答が返ります。終了時には `The run has ended.` と実行の終了コードが返ります。各応答の内容は[ターミナルなしでステップ実行する](#step-through-a-test-without-a-terminal)を参照してください。
+
+- 一時停止の時間はどのタイムアウトにも加算しません。ただしターミナルがない場合、コマンドなしで 30 分一時停止すると実行を停止します。
+- リトライやセットアップテストを含め、すべての試行でテストは一時停止します。
+- ワーカーが複数ある場合、一時停止は古い順にひとつずつ表示し、その間もほかのワーカーは実行を続けます。
+- `screen.pause()` は、[`beforeEach`](/reference/test#beforeeach) フック、[フィクスチャ](/fixtures)のセットアップ、またはテスト本体で `await` を付けて呼び出します。それ以外の場所で呼び出した場合の動作は [`screen.pause()`](/reference/screen#screen-pause) を参照してください。
+- `e2e run --step` コマンドで操作できる実行は、ディレクトリごとに一度にひとつです。ターミナルなしで開始した `--step` 実行は、開始時から操作対象になります。`--step` なしの実行は、最初の一時停止から操作対象になります。ディレクトリ内の別の実行がすでにこの方法で操作されている場合は、次のようになります。
+  - ターミナルがない場合、テストは一時停止の位置で `RUNNER_BUSY` により失敗します。`e2e run --step stop` で別の実行を終了するか、この実行をターミナルで実行してください。
+  - ターミナルでは、引き続きキーを使えます。コマンドが別の実行に送られることを示す行が表示されます。
+- `CI` が設定されている場合、テストは一時停止の位置で `PAUSE_UNAVAILABLE` により失敗します。コミット前に呼び出しを削除してください。
 
 ## コンソール出力
 
@@ -291,7 +355,7 @@ stdout | |web| tests/todos.e2e.ts > adds a todo
 hello from the test
 ```
 
-ファイルの最上位やレポーターなど、テスト外の出力は `stdout | runner` または `stderr | runner` の下に表示します。両ストリームとも標準出力に表示します。`list` レポーターがなければ、各出力は元のストリームにそのまま流れます。ただし `json` レポーター（`--reporter json` または `reporters` 内）では、標準出力をレポート専用にし、その他は標準エラー出力に流します。設定読み込み中の出力は実行ヘッダーより前に表示されます。読み込みが失敗した場合は警告に置き換わります。
+ファイルの最上位やレポーターなど、テスト外の出力は `stdout | runner` または `stderr | runner` の下に表示します。両ストリームとも `list` と同じ場所、つまり標準出力、`json` と併用する場合は標準エラー出力に表示します。`list` レポーターも、[`onOutput`](/reference/reporters#onoutput) でターミナルに出力する他のレポーターもなければ、各出力は元のストリームにそのまま流れます。ただし `json` レポーター（`--reporter json` または `reporters` 内）では、標準出力をレポート専用にし、その他は標準エラー出力に流します。設定読み込み中の出力は実行ヘッダーより前に表示されます。読み込みが失敗した場合は警告に置き換わります。
 
 ランナーはシークレットの値を[マスキング](/reference/security#redaction)します。レポートにコンソール出力は含まれないため、後から読む人に必要な情報は `expect` またはアーティファクトを使って残してください。
 

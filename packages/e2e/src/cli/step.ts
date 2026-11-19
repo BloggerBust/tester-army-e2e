@@ -1,8 +1,8 @@
 /**
  * `e2e run --step`: the run's first step runs on its own, then every later
- * one waits for a key. The runner holds each step through its `beforeStep`
- * hook; this module answers it from the keyboard, one prompt at a time, and
- * the runner draws the prompt.
+ * one waits for a key. The runner holds each step and `screen.pause()` call
+ * through its `hold` hook; this module answers it from the keyboard, one
+ * prompt at a time, and the runner draws the prompt.
  */
 
 import type { Keypress } from './keyboard.ts';
@@ -52,6 +52,9 @@ export function isStepAction(value: string | undefined): value is StepAction {
 /** How long a prompt ignores keys after it appears: a key pressed for the step before must not run this one. */
 const KEY_GUARD_MS = 150;
 
+/** Options for a `StepGate.press` call. Set `guard` to false to skip the key guard. */
+type PressOptions = { readonly guard: boolean };
+
 /** One held step waiting for its prompt, or showing it. */
 interface Waiting extends NumberedStep {
   readonly context: StepHoldContext;
@@ -64,6 +67,11 @@ function testKey(step: HeldStep): string {
   return `${step.target}\u0000${pairKey(step.testId, step.agent, step.repeat)}`;
 }
 
+/** Returns whether two waits share a prompt. They must have the same kind and test. */
+function samePrompt(waiting: HeldStep, step: HeldStep): boolean {
+  return waiting.kind === step.kind && testKey(waiting) === testKey(step);
+}
+
 /**
  * Answers held steps from keys, one prompt at a time, in the order the steps
  * were held. Steps of one test held together, as in one `Promise.all`, share
@@ -71,6 +79,11 @@ function testKey(step: HeldStep): string {
  * would otherwise time out while the action waits for its key. `stop`
  * interrupts the run; the interrupt aborts every waiting step's signal,
  * which takes it off the queue.
+ *
+ * A pause has a separate prompt and waits every time it runs, even if it's
+ * the first wait in the run. `n` stops holding steps in the current test.
+ * `a` and the `rest` command stop holding steps for the run. Every pause
+ * still waits, and either key resumes the test at a pause like Enter.
  */
 export class StepGate {
   private readonly queue: Waiting[] = [];
@@ -87,33 +100,36 @@ export class StepGate {
   private show: StepHoldContext['show'] | undefined;
 
   private readonly now: () => number;
-  private readonly keyGuardMs: number;
+  private readonly holdSteps: boolean;
 
   /**
-   * `stop` interrupts the run. `keyGuardMs` defaults to `KEY_GUARD_MS`; a
-   * caller whose keys are commands, not presses that can repeat, passes 0.
+   * `stop` interrupts the run. `holdSteps` is false for a run without
+   * `--step`, where only pauses wait and the prompt doesn't offer `n` or `a`.
    */
   constructor(
     private readonly stop: () => void,
-    options: { readonly now?: () => number; readonly keyGuardMs?: number } = {},
+    options: { readonly now?: () => number; readonly holdSteps?: boolean } = {},
   ) {
     this.now = options.now ?? Date.now;
-    this.keyGuardMs = options.keyGuardMs ?? KEY_GUARD_MS;
+    this.holdSteps = options.holdSteps ?? true;
   }
 
-  /** The runner's `beforeStep` hook. */
+  /** The runner's `hold` hook. */
   readonly beforeStep: BeforeStep = (step, context) => {
     // A hold that ended before it arrived has nobody to answer.
     if (context.signal.aborted) return Promise.resolve();
     this.show = context.show;
     const key = testKey(step);
-    const number = this.count(key);
+    const number = step.kind === 'pause' ? 0 : this.count(key);
     // The first step runs at once, so the app is open before the first prompt.
-    if (!this.started) {
+    // A pause already has the app open.
+    if (step.kind === 'pause') {
+      this.started = true;
+    } else if (!this.started) {
       this.started = true;
       return Promise.resolve();
     }
-    if (this.runRest || this.released === key) return Promise.resolve();
+    if (step.kind === 'step' && (this.runRest || this.released === key)) return Promise.resolve();
     return new Promise<void>((resolve) => {
       const waiting: Waiting = {
         step,
@@ -125,34 +141,36 @@ export class StepGate {
           if (index === -1) return;
           this.queue.splice(index, 1);
           resolve();
-          if (index === 0 || this.onPrompt(key)) this.showNext();
+          if (index === 0 || this.onPrompt(step)) this.showNext();
         },
       };
       context.signal.addEventListener('abort', waiting.onAbort, { once: true });
       this.queue.push(waiting);
       // The first step held shows its prompt; a step held beside it joins that prompt.
-      if (this.onPrompt(key)) this.showNext();
+      if (this.onPrompt(step)) this.showNext();
     });
   };
 
   /** Acts on one key. Ctrl-C works at any time; the others only on a prompt, once it has been up for the key guard. */
-  press(key: Exclude<StepKey, 'suspend'>): void {
+  press(key: Exclude<StepKey, 'suspend'>, options: PressOptions = { guard: true }): void {
     if (key === 'interrupt') {
       this.stop();
       return;
     }
     const shown = this.queue[0];
-    if (shown === undefined || this.now() - this.shownAt < this.keyGuardMs) return;
+    if (shown === undefined || (options.guard && this.now() - this.shownAt < KEY_GUARD_MS)) return;
     const test = testKey(shown.step);
     switch (key) {
       case 'continue':
+        this.release((waiting) => samePrompt(waiting.step, shown.step));
+        return;
       case 'test':
-        if (key === 'test') this.released = test;
-        this.release((waiting) => testKey(waiting.step) === test);
+        this.released = test;
+        this.release((waiting) => samePrompt(waiting.step, shown.step) || (waiting.step.kind === 'step' && testKey(waiting.step) === test));
         return;
       case 'rest':
         this.runRest = true;
-        this.release(() => true);
+        this.release((waiting) => samePrompt(waiting.step, shown.step) || waiting.step.kind === 'step');
         return;
       case 'help':
         // The same steps, so the key guard keeps running.
@@ -164,10 +182,10 @@ export class StepGate {
     }
   }
 
-  /** Whether the prompt up now is for a step of the test `key` names. */
-  private onPrompt(key: string): boolean {
+  /** Returns whether `step` belongs to the prompt currently shown. */
+  private onPrompt(step: HeldStep): boolean {
     const shown = this.queue[0];
-    return shown !== undefined && testKey(shown.step) === key;
+    return shown !== undefined && samePrompt(shown.step, step);
   }
 
   /** Numbers the steps of one test as they reach the gate; a new test starts at 1 and ends what `n` let through. */
@@ -200,8 +218,7 @@ export class StepGate {
   private prompt(): StepPrompt | undefined {
     const [first, ...rest] = this.queue;
     if (first === undefined) return undefined;
-    const test = testKey(first.step);
     const numbered = ({ step, number }: Waiting): NumberedStep => ({ step, number });
-    return { steps: [numbered(first), ...rest.filter((waiting) => testKey(waiting.step) === test).map(numbered)], help: this.help };
+    return { steps: [numbered(first), ...rest.filter((waiting) => samePrompt(waiting.step, first.step)).map(numbered)], help: this.help, holdSteps: this.holdSteps };
   }
 }

@@ -13,7 +13,9 @@ description: 通过观察、操作、生命周期钩子和测试夹具构建引�
 import { defineEngine, resolveExpression, type EngineHandle } from 'e2e/engine';
 import { connect } from './client.ts';
 
-export function kiosk(options: { host: string }): EngineHandle {
+export interface KioskEngine extends EngineHandle {}
+
+export function kiosk(options: { host: string }): KioskEngine {
   const client = connect(options.host);
   return defineEngine({
     name: 'kiosk',
@@ -71,6 +73,8 @@ export interface EngineHandle<Fixtures extends object = {}> extends Engine {
 句柄上的每个函数都绑定到其来源规范，因此类实例与对象字面量一样，都可以作为实现主体。
 
 `Fixtures` 定义引擎的 [`fixtures`](#contributed-fixtures) 所提供的测试夹具类型，例如 `{ browser: Browser }`。对于其中声明的每个测试夹具，编译器都要求 `fixtures` 中存在返回该测试夹具的工厂；`screen`、`app` 和 `platform` 不需要，因为每个会话都包含它们。运行时不会检查这一点。有了它，[`@e2e-dev/core`](/core) 的 `launch` 无需手写类型参数就能推导会话的测试夹具类型：从工厂返回 `defineEngine<{ device: Device }>(...)` 即可。
+
+请像上面的 `KioskEngine` 一样，从工厂返回自己的接口。这样，推导类型的配置文件就能通过你的包名引用该类型。如果直接返回 `EngineHandle`，设置了 `declaration: true` 的 pnpm 项目可能会因 TS2883 报错。
 
 当规范违反以下任一规则时，`defineEngine` 会抛出 `INVALID_CONFIG`：
 

@@ -321,6 +321,18 @@ class ScreenImpl implements Screen {
     console.log(await this.readTree('screen.debug', options));
   }
 
+  /** Pauses the test. Call it on `screen`, since a pause affects the whole test. */
+  async pause(): Promise<void> {
+    if (this.scope !== undefined || this.wrap !== undefined) {
+      throw new TestError(
+        'INVALID_ARGUMENT',
+        'you can\'t call pause() on a locator or a frame, since a pause stops the whole test; call screen.pause()',
+      );
+    }
+
+    await this.context.steps.pause();
+  }
+
   /** One observation of the whole screen, rendered; a locator or a frame refuses, since the tree is not scoped. */
   private async readTree(api: string, options: ActionOptions | undefined): Promise<string> {
     rejectUnknownOptions(api, options, ['timeout']);

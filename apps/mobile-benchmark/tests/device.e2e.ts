@@ -39,8 +39,8 @@ test.describe('permission prompt', () => {
 
 // Every step auto-focuses its field and keeps the keyboard up on Return
 // (`submitBehavior="submit"`), so the keyboard covers Continue from the start
-// and `device.dismissKeyboard()` is the way past it: the dismiss key on
-// Android and iPad, a short drag on an iPhone, which the wizard's scroll view
+// and `device.dismissKeyboard()` is the way past it: Android hides the
+// keyboard directly, iOS takes a short drag, which the wizard's scroll view
 // turns into a dismissal. The success screen echoes the values, so a stray key
 // press fails it.
 test('sequential onboarding echoes the exact values', async ({ app, device, screen }) => {

@@ -6,7 +6,8 @@
 
 import { ConfigurationError } from '@e2e-dev/core/lib/internal/errors';
 import { didYouMean } from '@e2e-dev/core/lib/internal/suggest';
-import { BUILTIN_REPORTER_LIST, BUILTIN_REPORTERS, isBuiltinReporter, TERMINAL_REPORTERS } from '../report/builtin.ts';
+import { BUILTIN_REPORTER_LIST, builtinReporter } from '../report/builtin.ts';
+import { BUILTIN_REPORTERS, builtinMark, isBuiltinReporter } from '../report/builtin-id.ts';
 import { ellipsize } from '../report/format.ts';
 import type { BuiltinReporter, E2EConfig, Reporter, TestFilter } from '../run-types.ts';
 import { resolveProjectConfig, type CliOverrides, type ResolvedConfig } from '@e2e-dev/core/lib/config/resolve';
@@ -14,10 +15,12 @@ import { TARGET_NAME_PATTERN } from '@e2e-dev/core/lib/config/targets';
 
 /** A resolved config with what only a run reads. */
 export interface ResolvedRunConfig extends ResolvedConfig {
-  /** The built-in renderers in force: `--reporter` when given, else the config's ids. */
-  readonly reporters: readonly BuiltinReporter[];
-  /** The reporter objects the config names; `--reporter` never removes one. */
-  readonly customReporters: readonly Reporter[];
+  /**
+   * Every reporter in force, the built-ins first: the ones `--reporter`
+   * names when given, else the config's, then every other reporter the
+   * config names. At most one prints to each terminal stream.
+   */
+  readonly reporters: readonly Reporter[];
   /** The test filters, in order; empty when unset. A run with `--changed-since` applies them. */
   readonly filters: readonly TestFilter[];
 }
@@ -38,20 +41,22 @@ export function resolveConfig(
   },
 ): ResolvedRunConfig {
   const resolved = resolveProjectConfig(raw, options);
-  const { reporters, customReporters } = resolveReporters(raw, options.cli ?? {});
-  return { ...resolved, reporters, customReporters, filters: resolveTestFilters(raw.filters) };
+  return { ...resolved, reporters: resolveReporters(raw, options.cli ?? {}), filters: resolveTestFilters(raw.filters) };
 }
 
 /**
- * Splits `reporters` into the built-in ids and the reporter objects.
- * `--reporter` replaces the ids only: an object has no id to name on the
- * command line, so a CI flag choosing `list,junit` never drops the upload a
- * config asked for.
+ * Resolves `reporters` into reporter objects, an id into its built-in
+ * factory's reporter with default options. `--reporter` replaces the
+ * built-ins only, keeping the options of one the config configured: a
+ * third-party reporter has no id to name on the command line, so a CI flag
+ * choosing `list,junit` never drops the upload a config asked for. One
+ * reporter at most prints to each terminal stream: a `list`, `dot`, or `line` id,
+ * or its factory called without a `stream`, prints to stderr beside
+ * `json`, leaving stdout to the report. An id named twice runs once.
+ * Workers resolve this too and never call a reporter, which the factories
+ * allow: constructing one has no side effects.
  */
-function resolveReporters(
-  raw: E2EConfig,
-  cli: RunCliOverrides,
-): { reporters: readonly BuiltinReporter[]; customReporters: readonly Reporter[] } {
+function resolveReporters(raw: E2EConfig, cli: RunCliOverrides): readonly Reporter[] {
   const configured = raw.reporters ?? ['list'];
   if (!Array.isArray(configured)) {
     throw new ConfigurationError(
@@ -59,35 +64,64 @@ function resolveReporters(
       'reporters must be an array of reporter ids and reporter objects',
     );
   }
-  const ids: BuiltinReporter[] = [];
-  const customReporters: Reporter[] = [];
-  for (const reporter of configured as readonly unknown[]) {
-    if (typeof reporter === 'string') {
-      if (!isBuiltinReporter(reporter)) {
-        throw new ConfigurationError(
-          'INVALID_CONFIG',
-          `unknown reporter "${reporter}"; reporters are ${BUILTIN_REPORTER_LIST}${didYouMean(reporter, BUILTIN_REPORTERS)}`,
-        );
-      }
-      ids.push(reporter);
-    } else if (isReporter(reporter)) {
-      customReporters.push(reporter);
-    } else {
+  // A built-in named by id is made once the selection is known, since
+  // terminal reporter ids print to stderr beside `json`.
+  type Built = { readonly id: BuiltinReporter; readonly reporter: Reporter | undefined };
+  const builtins: Built[] = [];
+  const others: Reporter[] = [];
+  const addId = (id: BuiltinReporter): void => {
+    if (!builtins.some((entry) => entry.id === id && entry.reporter === undefined)) builtins.push({ id, reporter: undefined });
+  };
+  for (const [index, entry] of (configured as readonly unknown[]).entries()) {
+    const resolved = resolveReporter(entry, `reporters[${index}]`);
+    const mark = typeof resolved === 'string' ? undefined : builtinMark(resolved);
+    if (typeof resolved === 'string') addId(resolved);
+    else if (mark === undefined) others.push(resolved);
+    else if (mark.asId) addId(mark.id);
+    else builtins.push({ id: mark.id, reporter: resolved });
+  }
+  const chosen: readonly Built[] =
+    cli.reporters === undefined
+      ? builtins
+      : [...new Set(cli.reporters)].flatMap((id) => {
+          const same = builtins.filter((entry) => entry.id === id);
+          return same.length > 0 ? same : [{ id, reporter: undefined }];
+        });
+  const stream = chosen.some((entry) => entry.id === 'json') ? 'stderr' : 'stdout';
+  const reporters = [...chosen.map((entry) => entry.reporter ?? builtinReporter(entry.id, stream)), ...others];
+  for (const printsTo of ['stdout', 'stderr'] as const) {
+    const printers = reporters.filter((reporter) => reporter.printsTo === printsTo);
+    if (printers.length < 2) continue;
+    const names = printers.map((reporter) => `"${reporter.name}"`);
+    throw new ConfigurationError(
+      'INVALID_CONFIG',
+      `reporters ${names.slice(0, -1).join(', ')} and ${names.at(-1)} both print to ${printsTo}, where they would garble each other; run one of them`,
+    );
+  }
+  return reporters;
+}
+
+/** One entry of `reporters`: a built-in id, or an object checked structurally, never with `instanceof`. */
+function resolveReporter(entry: unknown, label: string): BuiltinReporter | Reporter {
+  if (typeof entry === 'string') {
+    if (!isBuiltinReporter(entry)) {
       throw new ConfigurationError(
         'INVALID_CONFIG',
-        `a reporter is a built-in id (${BUILTIN_REPORTERS.join(', ')}) or an object with a name and an onEvent or onRunFinished method`,
+        `unknown reporter "${entry}"; reporters are ${BUILTIN_REPORTER_LIST}${didYouMean(entry, BUILTIN_REPORTERS)}`,
       );
     }
+    return entry;
   }
-  const reporters = cli.reporters ?? ids;
-  if (reporters.includes('json') && reporters.includes('list')) {
-    throw new ConfigurationError('INVALID_CONFIG', 'the json renderer cannot be combined with list');
+  if (typeof entry === 'function') {
+    throw new ConfigurationError('INVALID_CONFIG', `${label} is ${entry.name ? `the function ${entry.name}` : 'a function'}; call it, such as reporters: [junit()]`);
   }
-  const [firstTerminal, secondTerminal] = TERMINAL_REPORTERS.filter((id) => reporters.includes(id));
-  if (secondTerminal !== undefined) {
-    throw new ConfigurationError('INVALID_CONFIG', `the ${secondTerminal} reporter cannot be combined with ${firstTerminal}`);
+  if (!isReporter(entry)) {
+    throw new ConfigurationError(
+      'INVALID_CONFIG',
+      `${label} must be a built-in id (${BUILTIN_REPORTERS.join(', ')}) or a reporter: a name, an optional printsTo of "stdout" or "stderr", and at least one of onEvent, onOutput, onStepPrompt, reportFiles, onRunFinished, and onSummary`,
+    );
   }
-  return { reporters, customReporters };
+  return entry;
 }
 
 const MAX_FILTER_NAME = 256;
@@ -138,12 +172,12 @@ function isTestFilter(value: unknown): value is TestFilter {
   return typeof name === 'string' && typeof filter === 'function';
 }
 
-/** Structural reporter check: a non-empty name and at least one handler, each a function when present. */
+/** Structural reporter check: a non-empty name, `printsTo` a terminal stream when present, and at least one hook, each a function when present. */
 function isReporter(value: unknown): value is Reporter {
   if (typeof value !== 'object' || value === null) return false;
-  const { name, onEvent, onRunFinished } = value as { name?: unknown; onEvent?: unknown; onRunFinished?: unknown };
+  const { name, printsTo, onEvent, onOutput, onStepPrompt, reportFiles, onRunFinished, onSummary } = value as Record<keyof Reporter, unknown>;
   if (typeof name !== 'string' || name.length === 0) return false;
-  const optionalFunction = (handler: unknown): boolean => handler === undefined || typeof handler === 'function';
-  return optionalFunction(onEvent) && optionalFunction(onRunFinished) && (onEvent ?? onRunFinished) !== undefined;
+  if (printsTo !== undefined && printsTo !== 'stdout' && printsTo !== 'stderr') return false;
+  const hooks = [onEvent, onOutput, onStepPrompt, reportFiles, onRunFinished, onSummary];
+  return hooks.every((hook) => hook === undefined || typeof hook === 'function') && hooks.some((hook) => hook !== undefined);
 }
-

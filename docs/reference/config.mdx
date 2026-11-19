@@ -238,7 +238,8 @@ workers: 4, // default: 1 in CI, else half the cores
 
 #### `reporters`
 
-Output renderers and reporter objects.
+The reporters of the run: built-in ids, and reporter objects such as the
+factories in `e2e/reporters`.
 
 ```ts
 reporters: ['list', 'junit'], // default: ['list']
@@ -246,15 +247,16 @@ reporters: ['list', 'junit'], // default: ['list']
 
 | Value | Does |
 | --- | --- |
-| `'list'` | Terminal progress, failures, and a run summary. |
-| `'dot'` | Compact terminal progress, failures, and a run summary. Excludes `list`: the two together are `INVALID_CONFIG`. |
-| `'line'` | [Single-row progress](/reference/reporters#line). Excludes `list` and `dot`. |
-| `'junit'` | Writes `<output>/junit.xml`. |
-| `'markdown'` | Writes `<output>/summary.md`. |
-| `'json'` | Prints the report. Excludes `list`: the two together are `INVALID_CONFIG`. |
-| a `Reporter` object | Runs beside the built-in ones. `--reporter` never removes it. |
+| `'list'`, `list()` | Terminal progress, failures, and a run summary. |
+| `'dot'`, `dot()` | Compact terminal progress, failures, and a run summary. |
+| `'line'`, `line()` | [One updating row](/reference/reporters#line), with failure details as tests finish. |
+| `'junit'`, `junit()` | Writes `<output>/junit.xml`, or `outputFile`. |
+| `'markdown'`, `markdown()` | Writes `<output>/summary.md`, or `outputFile`. |
+| `'json'`, `json()` | Prints the report on stdout. Beside it, `list`, `dot`, or `line` prints to stderr unless given a `stream`. |
+| another `Reporter` object | Runs beside the built-in ones. `--reporter` never removes it. |
 
-An unknown id is `INVALID_CONFIG`. See [Reporters](/reference/reporters).
+An id is its factory called with no options. An unknown id is
+`INVALID_CONFIG`. See [Reporters](/reference/reporters).
 
 ### targets
 

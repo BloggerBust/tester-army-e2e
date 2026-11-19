@@ -11,7 +11,7 @@ import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest
 import { createFakeEngine } from '../helpers/fake-engine.ts';
 import { engineConfig } from '../helpers/fixture-config.ts';
 import { createProject, runExisting, type FixtureProject } from '../helpers/run-project.ts';
-import type { FinishedRun, Reporter, RunEvent } from '../../src/index.ts';
+import type { FinishedRun, Reporter, ReporterSummary, RunEvent } from '../../src/index.ts';
 
 // The built runner's flag. It stays set for the rest of the process, so only the first reporter given up on can show it.
 const abandonedModule = '@e2e-dev/core/lib/internal/abandoned';
@@ -225,5 +225,83 @@ describe('reporter objects', () => {
     expect(outcome.exitCode).toBe(0);
     const written = stderr.mock.calls.map((call) => String(call[0])).join('');
     expect(written).toContain('e2e: reporter "uploading" abandoned: the run was forced to stop');
+  }, 120_000);
+
+  it('hands every onSummary the rows of every report file and onRunFinished, in reporters order', async () => {
+    const seen: Record<string, ReporterSummary> = {};
+    const summary = (name: string): Reporter => ({ name, onSummary: (rows) => void (seen[name] = rows) });
+    const uploading: Reporter = { name: 'uploading', onRunFinished: async () => [{ label: 'Results', text: 'https://example.test/runs/1' }] };
+    const outcome = await runExisting(project, {
+      config: {
+        ...engineConfig(createFakeEngine().engine),
+        tests: 'tests/**/*.e2e.ts',
+        reporters: [summary('socket'), 'junit', uploading, summary('overlay')],
+        cache: 'off' as const,
+      },
+    });
+
+    expect(outcome.exitCode).toBe(0);
+    const rows = [
+      { label: 'JUnit', text: path.join('.e2e', 'junit.xml') },
+      { label: 'Results', text: 'https://example.test/runs/1' },
+    ];
+    expect(seen).toEqual({ socket: rows, overlay: rows });
+  }, 120_000);
+
+  it('runs no reporter that shows the run on the terminal in a quiet run, and still runs one that prints a document', async () => {
+    const stdout = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
+    const shown = vi.fn();
+    const printed = vi.fn(async () => undefined);
+    try {
+      const outcome = await runExisting(project, {
+        config: {
+          ...engineConfig(createFakeEngine().engine),
+          tests: 'tests/**/*.e2e.ts',
+          reporters: [
+            { name: 'view', printsTo: 'stderr', onOutput: () => undefined, onSummary: shown },
+            { name: 'document', printsTo: 'stdout', onRunFinished: printed },
+          ],
+          cache: 'off' as const,
+        },
+      });
+
+      expect(outcome.exitCode).toBe(0);
+      expect(shown).not.toHaveBeenCalled();
+      expect(printed).toHaveBeenCalledOnce();
+    } finally {
+      stdout.mockRestore();
+    }
+  }, 120_000);
+
+  it('writes report files after a forced stop, but never over report.json', async () => {
+    const stderr = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+    const force = new AbortController();
+    // The second Ctrl-C lands once the report is on disk, before the reporters finish.
+    const forceAtFinish = (event: RunEvent): void => {
+      if (event.type === 'run-finished') force.abort();
+    };
+    const outcome = await runExisting(project, {
+      config: {
+        ...engineConfig(createFakeEngine().engine),
+        tests: 'tests/**/*.e2e.ts',
+        reporters: [
+          {
+            name: 'pages',
+            reportFiles: (run) => [
+              { path: 'reports/run.txt', content: run.report.run.status },
+              { path: path.join(run.outputDir, 'report.json'), content: 'clobbered' },
+            ],
+          },
+        ],
+        cache: 'off' as const,
+      },
+      runOptions: { forceSignal: force.signal, onEvent: forceAtFinish },
+    });
+
+    expect(force.signal.aborted).toBe(true);
+    expect(readFileSync(path.join(project.dir, 'reports', 'run.txt'), 'utf8')).toBe(outcome.report.run.status);
+    expect(JSON.parse(readFileSync(outcome.reportPath!, 'utf8'))).toEqual(outcome.report);
+    const written = stderr.mock.calls.map((call) => String(call[0])).join('');
+    expect(written).toContain(`e2e: reporter "pages" cannot write ${path.join(project.dir, '.e2e', 'report.json')}: it is the run's report`);
   }, 120_000);
 });

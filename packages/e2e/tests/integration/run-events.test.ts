@@ -357,7 +357,7 @@ test.describe('shared', { serial: true }, () => {
       expect(finished.status).toBe('passed');
       expect(finished.reportPath).toBe(outcome.reportPath);
       const written = stderr.mock.calls.map((call) => String(call[0])).join('');
-      expect(written).toContain('e2e: reporter "junit" failed:');
+      expect(written).toContain('e2e: reporter "junit" could not write');
     } finally {
       vi.restoreAllMocks();
       project.cleanup();

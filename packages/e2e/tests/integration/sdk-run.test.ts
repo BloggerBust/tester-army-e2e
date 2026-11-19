@@ -67,6 +67,53 @@ test('home', async ({ app, screen }) => {
     assertValidReport(outcome.report);
   });
 
+  it('runs past screen.pause() right away, and fails the test at the pause with PAUSE_UNAVAILABLE when CI is set', async () => {
+    const fake = createFakeEngine();
+    const fixture = project({ 'tests/pause.e2e.ts': `import { test } from 'e2e';\ntest('pauses', async ({ app, screen }) => {\n  await app.open('/');\n  await screen.pause();\n});\n` });
+    const targets = [{ name: 'fake', platform: 'test', engine: fake.engine, app: FAKE_APP }];
+    const ci = process.env['CI'];
+
+    try {
+      delete process.env['CI'];
+      const passed = await run({ cwd: fixture.dir, config: { targets } });
+      expect(passed.exitCode).toBe(0);
+
+      process.env['CI'] = '1';
+      const failed = await run({ cwd: fixture.dir, config: { targets } });
+      expect(failed.exitCode).toBe(1);
+
+      expect(failed.report.run.results[0]?.attempts[0]?.error).toMatchObject({
+        code: 'PAUSE_UNAVAILABLE',
+        source: { file: 'tests/pause.e2e.ts', line: 4 },
+      });
+    } finally {
+      if (ci === undefined) {
+        delete process.env['CI'];
+      } else {
+        process.env['CI'] = ci;
+      }
+    }
+  });
+
+  it('runs past screen.pause() right away in a session openHost opens', async () => {
+    const fake = createFakeEngine();
+    const fixture = project({});
+
+    const host = await openHost({
+      cwd: fixture.dir,
+      config: { targets: [{ name: 'fake', platform: 'test', engine: fake.engine, app: FAKE_APP }] },
+    });
+
+    try {
+      const session = await host.openSession({ name: 'pauses' });
+      await session.fixtures.app.open('/');
+      await session.fixtures.screen.pause();
+      await session.close();
+    } finally {
+      await host.close();
+    }
+  });
+
   it('cancels a browser run, executes teardown, and permits the next run', async () => {
     const fixture = project({ 'tests/cancel.e2e.ts': `import { writeFileSync } from 'node:fs';
 import { test, expect } from 'e2e';
