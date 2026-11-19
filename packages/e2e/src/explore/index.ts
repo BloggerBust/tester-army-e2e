@@ -148,7 +148,8 @@ export async function explore(options: ExploreOptions = {}): Promise<ExploreOutc
       },
     });
     registerStaticSecrets(resolved.allSecrets);
-    // Reserve a stdout printer's stream before releasing buffered configuration output.
+    // Reserve stdout before releasing config logs so they cannot corrupt
+    // a report written there.
     if (resolved.reporters.some(keepsStdout)) options.processOutput?.keepStdoutForReport();
     return { raw, projectRoot, resolved };
   };

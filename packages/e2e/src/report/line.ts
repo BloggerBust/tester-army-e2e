@@ -70,7 +70,6 @@ export class LineProgress implements TerminalProgress {
     this.visible = false;
   }
 
-  /** The row's text before its state: the finished count, the target, and `file > title`. */
   private label(row: TerminalProgressTest): string {
     return oneLine(`[${this.completed}/${this.total ?? '?'}] [${row.target}] ${row.file} > ${row.title}`);
   }

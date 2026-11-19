@@ -249,11 +249,15 @@ reporters: ['list', 'junit'], // default: ['list']
 | --- | --- |
 | `'list'`, `list()` | Terminal progress, failures, and a run summary. |
 | `'dot'`, `dot()` | Compact terminal progress, failures, and a run summary. |
-| `'line'`, `line()` | [One updating row](/reference/reporters#line), with failure details as tests finish. |
+| `'line'`, `line()` | [Single-row progress](/reference/reporters#line) in an interactive terminal. |
 | `'junit'`, `junit()` | Writes `<output>/junit.xml`, or `outputFile`. |
 | `'markdown'`, `markdown()` | Writes `<output>/summary.md`, or `outputFile`. |
-| `'json'`, `json()` | Prints the report on stdout. Beside it, `list`, `dot`, or `line` prints to stderr unless given a `stream`. |
+| `'json'`, `json()` | Prints the report to stdout. With `json`, `list`, `dot`, and `line` default to stderr unless you set `stream`. |
 | another `Reporter` object | Runs beside the built-in ones. `--reporter` never removes it. |
+
+Only one reporter can print to each stream. `['list', 'line']` raises
+`INVALID_CONFIG` because both default to stdout. Use
+`['list', line({ stream: 'stderr' })]` to run them together.
 
 An id is its factory called with no options. An unknown id is
 `INVALID_CONFIG`. See [Reporters](/reference/reporters).

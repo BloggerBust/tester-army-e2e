@@ -2,6 +2,6 @@
 'e2e': patch
 ---
 
-Use `line()` from `e2e/reporters`, `reporters: ['line']`, or `--reporter line` to show running tests and completed results on one updating terminal row. Failure details print when each failure settles.
+Use `--reporter line`, `reporters: ['line']`, or `line()` from `e2e/reporters` for a single updating progress row in an interactive terminal. The reporter prints failure details as soon as a test's final result is a failure or timeout.
 
-With a JSON reporter, `e2e explore` sends configuration and custom reporter logs to stderr so stdout contains a valid JSON report.
+With the `json` reporter, `e2e explore` now sends captured logs to stderr so you can pipe the JSON report on stdout to `jq`.

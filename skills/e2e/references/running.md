@@ -51,7 +51,7 @@ npx e2e telemetry [disable|enable] # anonymous usage telemetry: status or switch
 | `--max-failures <n>` | Stop after n failures: the rest skip (cause `failure-limit`), running tests end `interrupted`; exit 1. |
 | `--max-duration <ms>` | Stop after ms of running tests, over config `maxDuration`: the rest skip (cause `time-limit`), running tests end `interrupted`, `RUN_TIMEOUT`; exit 1. |
 | `--repeat-each <n>` | Run every selected test n times, each run its own result (`repeat` 0 through n-1); add `--no-cache` or later runs replay the first's recording. The `Repeats` summary row names each unstable test's failed runs. |
-| `--reporter <ids>` | `list`, `dot`, `line`, `json`, `junit`, `markdown`, comma-separated; one reporter per stream; beside `json`, the `list`, `dot`, and `line` ids print to stderr. An empty value is a usage error, exit 2. |
+| `--reporter <ids>` | `list`, `dot`, `line`, `json`, `junit`, `markdown`, comma-separated; one reporter per stream. With `json`, `list`, `dot`, and `line` default to stderr. An empty value is a usage error, exit 2. |
 | `--output <dir>` | Results directory, over the config's `output` (default `.e2e`). Must be inside the project root, not the root itself (`INVALID_CONFIG`); to keep reports elsewhere, copy them after the run. |
 | `--no-cache` | Replay cache off for this run. |
 | `--strict-cache` | Fail a step whose committed recording no longer replays (`REPLAY_STALE`, exit 2) instead of handing it to the agent; retries replay too, and the run never writes the cache. |
@@ -166,7 +166,7 @@ hosted service's video by URL.
   run: a signal, `--max-failures`, `--max-duration`, a run-level error; not a failure), `flaky`, and `skipped` add up
   to `selected`; `discovered - selected` were left out.
 - `dot`: one ASCII mark per selected test's final result after retries, wrapped at 80 marks; colors follow terminal settings and `NO_COLOR`. It shares `list`'s header, failure details, summary, run errors, and step prompts. Use `--reporter dot,json` (or `list,json`) for all terminal output on stderr and the JSON report on stdout.
-- `line`: Shows each test as it starts and displays its final result on the same row in an interactive terminal. The count advances only on final results. Redirected output and `TERM=dumb` print one progress line per result. Failure details print as failures settle, and trace links appear in the final recap. With `--reporter line,json`, terminal output goes to stderr and the JSON report goes to stdout.
+- `line` updates one progress row in an interactive terminal as tests start and their final results arrive. The count advances once per test, after any retries. For redirected output or `TERM=dumb`, it prints one progress line per final result. It prints failure details when the final result is a failure or timeout. The final `Failed` summary lists any trace paths. With `--reporter line,json`, terminal output goes to stderr and the JSON report goes to stdout.
 - `junit`: `junit.xml` for CI summaries; `--reporter list,junit` keeps the
   terminal output. A case with a failure screenshot links it as
   `<system-out>[[ATTACHMENT|<path>]]</system-out>`, relative to

@@ -333,7 +333,7 @@ test('scheduled', () => {});
     expect(stderr).toMatch(/^\[1\/\?\] \[fake\] tests\/prepare\.e2e\.ts > registered skip \(skipped\)$/mu);
   });
 
-  it('prints line failures as they finish and recaps each with its trace', () => {
+  it('prints line failure details immediately and lists trace paths at the end', () => {
     const { project, exitCode, stdout, stderr } = cli(
       {
         'e2e.config.ts': fakeConfig(),
@@ -387,7 +387,7 @@ test('later', () => {
     }
   });
 
-  it('prints a run error on stderr once, whichever reporters run, and keeps the json document whole', () => {
+  it('prints a run error once and keeps JSON output parseable', () => {
     const project = fixture({
       'e2e.config.ts': fakeConfig(),
       'tests/broken.e2e.ts': "import { test } from 'e2e';\ntest('broken', async () => { const text = 'unterminated; });\n",

@@ -67,7 +67,7 @@ export class DotProgress implements TerminalProgress {
     else this.unfinished.add(destination);
   }
 
-  /** Releases any pending text in the destination view once the run is over. */
+  /** Finishes the row of marks and adds a newline to any unfinished log lines. */
   settle(): void {
     this.finishMarks();
     for (const stream of this.unfinished) this.output(stream, '\n');

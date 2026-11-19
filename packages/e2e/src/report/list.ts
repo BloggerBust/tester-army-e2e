@@ -464,7 +464,6 @@ export class ListReporter {
         break;
       case 'plan':
         this.plan(event);
-        // Count only selected tests so progress reflects the work being run.
         this.progress?.plan?.(event.files.reduce((count, file) => count + file.tests, 0));
         break;
       case 'notice':
@@ -1249,7 +1248,7 @@ export class ListReporter {
     });
   }
 
-  /** Prints one failure in full: its heading row, the error with its code frame, and the evidence, trace page, and recordings it has. */
+  /** Prints the failure block shared by immediate and end-of-run reporting. */
   private printFailure({ group, title, status, error, videos, failure, screenPath, appLog, skipReason }: Failure, page: string | undefined): void {
     const { pc } = this;
     this.print(
@@ -1269,9 +1268,9 @@ export class ListReporter {
   }
 
   /**
-   * Holds a failure for the closing sections. `line` prints it in full at once,
-   * beside the output that led to it; its trace page is written when the run
-   * ends, so the closing `Failed` rows carry that path.
+   * `line` prints the failure details as soon as the final result arrives.
+   * Keep the failure for the closing `Failed` rows, which can include its
+   * trace path once the run has written it.
    */
   private recordFailure(failure: Failure): void {
     this.failures.push(failure);

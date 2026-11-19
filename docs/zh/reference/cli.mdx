@@ -524,7 +524,7 @@ e2e run [files...]
 
 | 选项 | 说明 |
 | --- | --- |
-| `--reporter <ids>` | 替代 `config.reporters` 中的内置报告器，以逗号分隔：`list`、`dot`、`line`、`json`、`junit`、`markdown`。默认：配置值。配置中已配置的内置报告器，例如 `junit({ outputFile })`，保留其选项。与 `json` 同时使用时，`list`、`dot` 和 `line` 这三个 ID 均输出到 stderr。两个报告器输出到同一个流时会报 `INVALID_CONFIG`。配置中的[其他报告器](/reference/reporters)仍会运行。 |
+| `--reporter <ids>` | 替代 `config.reporters` 中的内置报告器，以逗号分隔：`list`、`dot`、`line`、`json`、`junit`、`markdown`。默认：配置值。配置中已配置的内置报告器，例如 `junit({ outputFile })`，保留其选项。与 `json` 同时使用时，`list`、`dot` 和 `line` 默认输出到 stderr。两个报告器输出到同一个流时会报 `INVALID_CONFIG`。配置中的[其他报告器](/reference/reporters)仍会运行。 |
 | `--output <dir>` | 本次运行的结果目录，覆盖配置的 [`output`](/reference/config#output)：包含报告、报告器文件、AI 追踪记录、`results/` 和 `sessions/`。默认：配置值，否则为 `.e2e`。相对于项目根目录解析，必须是根目录内的目录，不能是根目录本身；根目录及其他运行不能占用的目录（见链接中的列表）会报 `INVALID_CONFIG`。测试开始后会清空 `results/`；`--last-failed` 重新运行会保留上一份报告引用的内容。 |
 | `--cache-dir <dir>` | 本次运行的回放缓存目录，优先于 [`E2E_CACHE_DIR`](/reference/environment#replay-cache) 和 [`cache.dir`](/reference/config#cache)。默认：`E2E_CACHE_DIR`，否则为 `cache.dir`，再否则为 `.e2e/cache`。相对于项目根目录解析；`~` 或开头的 `~/` 表示主目录。缓存模式保持配置中的设置。与自定义 `cache.store` 一起使用会报 `INVALID_CONFIG`。 |
 | `--timings <file>` | 运行结束时更新的[耗时历史](/ci#cache-the-timings-history)，覆盖 `<output>/timings.json`。使用多个工作进程时，先启动没有耗时记录的文件，再按耗时从长到短启动其余文件。相对于项目根目录解析。文件缺失或无效视为没有历史记录，绝不报错。 |
@@ -588,7 +588,7 @@ $ npx e2e run --debug
 | --- | --- |
 | `list` | 终端进度、带代码上下文的失败信息，以及运行摘要。在 TTY 中，实时进度显示当前智能体步骤、模型轮次、工具调用和推理摘录；stdout 不是终端时（管道、重定向、大多数 CI），每个测试结束后才输出。输出结尾列出每个失败测试的文件和行号、错误首行，以及已写入的追踪记录页面。不可信字段限制为 8 KiB，并移除控制字符。 |
 | `dot` | 为每个所选测试的结果输出一个标记，随后显示失败详情和运行摘要。标记、颜色和换行规则参见 [`dot`](/reference/reporters#dot)。使用 `dot,json` 时，所有终端输出都发送到 stderr。 |
-| `line` | [在同一行显示正在运行的测试和已完成的测试结果](/reference/reporters#line)。失败确定后立即显示详情，运行结束时显示摘要。使用 `line,json` 时，面向终端的文本输出写入 stderr。 |
+| `line` | [在交互式终端中更新同一行进度](/reference/reporters#line)。如果最终结果为失败或超时，立即显示详情。运行结束时显示摘要。使用 `line,json` 时，面向终端的文本输出写入 stderr。 |
 | `json` | 将报告文档输出到 stdout，且不在 stdout 输出其他内容，因此 `e2e run --reporter json \| jq` 可正常工作。文档与 `<output>/report.json` 相同，由包中的 `schema/report-v1.schema.json` 描述。结构只会随 `schemaVersion` 字段变化（目前为 `report-1`）。 |
 | `junit` | 报告旁的 `junit.xml`。每个文件一个 `<testsuite>`，每个测试与测试目标的组合一个 `<testcase>`，命名为 `title > path [target]`。test 类别的错误为 `<failure>`，其他错误为 `<error>`，跳过为带原因的 `<skipped>`。被中断的测试没有得出判定，因此为消息以 `interrupted:` 开头的 `<skipped>`。被[测试过滤器](/filters)排除的测试为消息以 `left out by filter <name>:` 开头的 `<skipped>`；其他未被本次运行选中的测试不会列出。运行级错误组成一个 `run` 套件。 |
 | `markdown` | 报告旁的 `summary.md`：数量、费用、错误和失败详情，每项都会指出保留的追踪记录页面。探索运行会显示发现的问题。[`@e2e-dev/github`](/github) 使用该摘要生成拉取请求（PR）评论。 |
@@ -714,7 +714,7 @@ bunx e2e explore 'Hunt for broken forms and dead links' --agent thorough --video
 | `--max-steps <n>` | 最多探索步骤数，范围为 1–100 的整数。默认：`8`。超出范围时以退出码 2 退出。 |
 | `--timeout <ms>` | 运行的实际经过时间，范围为 180000–7200000 的整数。默认：`600000`。最后一分钟留给最终评估。超出范围时以退出码 2 退出。 |
 | `--headed` | 引擎支持时，请求显示 UI。 |
-| `--reporter <ids>` | 与 `run` 相同。默认：解析后的配置值。`list` 在摘要下输出探索行，`json` 将记录包含在报告中，`markdown` 将发现的问题写入 `<output>/summary.md`。 |
+| `--reporter <ids>` | 与 `run` 相同。默认：解析后的配置值。`list` 在摘要下输出探索行。`markdown` 将发现的问题写入 `<output>/summary.md`。`json` 将包含探索记录的报告输出到 stdout。捕获的日志输出到 stderr。 |
 | `--output <dir>` | 与 `run` 相同。默认：配置值，否则为 `.e2e`。发现问题的证据截图是 `<output>/results` 下的尝试产物。 |
 | `--debug` | 与 `run` 相同：阶段耗时和智能体步骤表。 |
 | `--ai-trace` | 与 `run` 相同。 |

@@ -211,11 +211,13 @@ reporters: ['list', 'junit'], // default: ['list']
 | --- | --- |
 | `'list'`、`list()` | ターミナルに進捗、失敗、実行サマリーを表示します。 |
 | `'dot'`、`dot()` | ターミナルに簡潔な進捗、失敗、実行サマリーを表示します。 |
-| `'line'`、`line()` | [進捗を 1 行で表示し](/reference/reporters#line)、失敗が確定すると詳細を表示します。 |
+| `'line'`、`line()` | 対話型ターミナルで[進捗を 1 行で表示します](/reference/reporters#line)。 |
 | `'junit'`、`junit()` | `<output>/junit.xml`、または `outputFile` に書き込みます。 |
 | `'markdown'`、`markdown()` | `<output>/summary.md`、または `outputFile` に書き込みます。 |
 | `'json'`、`json()` | レポートを stdout に出力します。併用すると、`list`、`dot`、`line` は `stream` を指定しない限り stderr に出力します。 |
 | その他の `Reporter` オブジェクト | 組み込みレポーターと一緒に実行します。`--reporter` では取り除かれません。 |
+
+同じストリームに出力できるレポーターは 1 つだけです。`['list', 'line']` は、どちらもデフォルトで stdout に出力するため `INVALID_CONFIG` になります。併用するには `['list', line({ stream: 'stderr' })]` を使います。
 
 ID は、そのファクトリーをオプションなしで呼び出したものと同じです。未知の ID は `INVALID_CONFIG` です。[レポーター](/reference/reporters)を参照してください。
 

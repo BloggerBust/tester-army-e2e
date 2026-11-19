@@ -524,7 +524,7 @@ e2e run [files...]
 
 | オプション | 説明 |
 | --- | --- |
-| `--reporter <ids>` | `config.reporters` の組み込みレポーターを置き換えます。`list`、`dot`、`line`、`json`、`junit`、`markdown` をカンマ区切りで指定します。デフォルトは設定値です。`junit({ outputFile })` のように設定で構成した組み込みレポーターは、そのオプションを保ちます。`json` と併用すると、`list`、`dot`、`line` の各 ID は stderr に出力します。同じストリームに出力するレポーターを 2 つ指定すると `INVALID_CONFIG` になります。設定内の[その他のレポーター](/reference/reporters)は引き続き実行します。 |
+| `--reporter <ids>` | `config.reporters` の組み込みレポーターを置き換えます。`list`、`dot`、`line`、`json`、`junit`、`markdown` をカンマ区切りで指定します。デフォルトは設定値です。`junit({ outputFile })` のように設定で構成した組み込みレポーターは、そのオプションを保ちます。`json` と併用すると、`list`、`dot`、`line` のデフォルトの出力先は stderr になります。同じストリームに出力するレポーターを 2 つ指定すると `INVALID_CONFIG` になります。設定内の[その他のレポーター](/reference/reporters)は引き続き実行します。 |
 | `--output <dir>` | 設定の [`output`](/reference/config#output) より優先する、この実行の結果ディレクトリです。レポート、レポーターのファイル、AI トレース、`results/`、`sessions/` を含みます。デフォルトは設定値、なければ `.e2e` です。プロジェクトルートから解決し、その内側のディレクトリである必要があります。ルート自体や、実行が所有できないその他のディレクトリ（リンク先に一覧）は `INVALID_CONFIG` です。テスト開始時に `results/` を消去しますが、`--last-failed` の再実行では前回のレポートが参照するものを残します。 |
 | `--cache-dir <dir>` | [`E2E_CACHE_DIR`](/reference/environment#replay-cache) と [`cache.dir`](/reference/config#cache) より優先する、この実行のリプレイキャッシュディレクトリです。デフォルトは `E2E_CACHE_DIR`、次に `cache.dir`、なければ `.e2e/cache` です。プロジェクトルートから解決し、`~` または先頭の `~/` はホームディレクトリです。キャッシュモードは設定のままです。カスタムの `cache.store` との併用は `INVALID_CONFIG` です。 |
 | `--timings <file>` | 実行終了時に更新する[所要時間の履歴](/ci#cache-the-timings-history)です。`<output>/timings.json` より優先します。複数ワーカーでは、時間の記録がないファイルを先に、残りを所要時間の長い順に開始します。プロジェクトルートから解決します。ファイルがない、または不正な場合は履歴なしとして扱い、エラーにはしません。 |
@@ -588,7 +588,7 @@ $ npx e2e run --debug
 | --- | --- |
 | `list` | ターミナルの進捗、周辺コード付きの失敗、実行サマリーです。TTY では現在のエージェントステップ、モデルのターン、ツール呼び出し、推論の抜粋をリアルタイムに表示します。stdout がターミナルでなければ（パイプ、リダイレクト、多くの CI）、各テストの完了時に表示します。最後に、失敗した各テストのファイルと行、エラーの最初の行、作成済みならトレースページを示します。信頼できないフィールドは 8 KiB に制限し、制御文字を除きます。 |
 | `dot` | 選択した各テストの結果を 1 文字で表示し、その後に失敗の詳細と実行サマリーを表示します。記号、色、改行については [`dot`](/reference/reporters#dot) を参照してください。`dot,json` では、ターミナル向けの出力をすべて stderr に送ります。 |
-| `line` | [実行中のテストと完了したテストの結果を同じ行に表示します](/reference/reporters#line)。失敗の詳細は失敗が確定した時点で、実行サマリーは実行終了時に表示します。`line,json` ではターミナル向けの出力を stderr に送ります。 |
+| `line` | [対話型ターミナルで進捗を 1 行で表示します](/reference/reporters#line)。最終結果が失敗またはタイムアウトの場合はすぐに詳細を表示します。実行終了時にはサマリーを表示します。`line,json` ではターミナル向けの出力を stderr に送ります。 |
 | `json` | stdout にレポートドキュメントだけを出すため、`e2e run --reporter json \| jq` を使えます。内容は `<output>/report.json` と同じで、パッケージの `schema/report-v1.schema.json` に定義されています。形式の変更は `schemaVersion` フィールドの変更時だけです（現在は `report-1`）。 |
 | `junit` | レポートと同じ場所の `junit.xml` です。ファイルごとに 1 つの `<testsuite>`、テストとターゲットの組ごとに `title > path [target]` という名前の `<testcase>` を作ります。test 分類のエラーは `<failure>`、それ以外は `<error>`、スキップは理由付きの `<skipped>` です。中断したテストには判定がないため、メッセージが `interrupted:` で始まる `<skipped>` にします。[テストフィルター](/filters)が除外したテストは、`left out by filter <name>:` で始まる `<skipped>` です。それ以外の未選択テストは載せません。実行全体のエラーは `run` スイートにまとめます。 |
 | `markdown` | レポートと同じ場所の `summary.md` です。件数、コスト、エラー、失敗の詳細を載せ、トレースページを残したものにはそのパスを示します。探索実行では発見事項を表示します。[`@e2e-dev/github`](/github) はこのサマリーをプルリクエストのコメントに使います。 |
@@ -714,7 +714,7 @@ bunx e2e explore 'Hunt for broken forms and dead links' --agent thorough --video
 | `--max-steps <n>` | 探索ステップ数の上限です。1〜100 の整数で、デフォルトは `8` です。範囲外は 2 で終了します。 |
 | `--timeout <ms>` | 実行の実時間の上限です。180000〜7200000 の整数で、デフォルトは `600000` です。最後の 1 分は最終評価用に確保します。範囲外は 2 で終了します。 |
 | `--headed` | エンジンが対応していれば UI の表示を要求します。 |
-| `--reporter <ids>` | `run` と同じです。デフォルトは解決済みの設定値です。`list` はサマリーの下に探索の行を表示し、`json` はレポートに記録を含め、`markdown` は発見事項を `<output>/summary.md` に書きます。 |
+| `--reporter <ids>` | `run` と同じです。デフォルトは解決済みの設定値です。`list` はサマリーの下に探索の行を表示します。`markdown` は発見事項を `<output>/summary.md` に書きます。`json` は探索の記録を含むレポートを stdout に出力します。取り込んだログは stderr に出力します。 |
 | `--output <dir>` | `run` と同じです。デフォルトは設定値、なければ `.e2e` です。発見事項の証拠となるスクリーンショットは、`<output>/results` 内の試行の成果物です。 |
 | `--debug` | `run` と同じく、フェーズ別の時間とエージェントステップの表を出します。 |
 | `--ai-trace` | `run` と同じです。 |
