@@ -26,6 +26,7 @@ export default {
 | --- | --- |
 | [`list`](#list) | ターミナルの進捗と実行サマリー |
 | [`dot`](#dot) | 簡潔な進捗と実行サマリー |
+| [`line`](#line) | 1 行の進捗表示と実行サマリー |
 | [`json`](#json) | レポートを stdout に出力 |
 | [`junit`](#junit) | `<output>/junit.xml` に書き込み |
 | [`markdown`](#markdown) | `<output>/summary.md` に書き込み |
@@ -35,10 +36,11 @@ export default {
 | 投げるエラー | 発生条件 |
 | --- | --- |
 | `INVALID_CONFIG` | `reporters` が配列でない場合。 |
-| `INVALID_CONFIG` | `list`、`dot`、`json`、`junit`、`markdown` 以外の ID を指定した場合。 |
+| `INVALID_CONFIG` | `list`、`dot`、`line`、`json`、`junit`、`markdown` 以外の ID を指定した場合。 |
 | `INVALID_CONFIG` | エントリが ID でも、`name` と 1 つ以上のハンドラーを持つオブジェクトでもない場合。 |
 | `INVALID_CONFIG` | `json` と `list` を併用した場合。 |
 | `INVALID_CONFIG` | `dot` と `list` を併用した場合。 |
+| `INVALID_CONFIG` | `line` と `list` または `dot` を併用した場合。 |
 
 #### `list`
 
@@ -70,6 +72,16 @@ reporters: ['dot'],
 レポーターの出力先はデフォルトで stdout です。`--reporter dot,json` では、ターミナル向けの出力をすべて stderr に送り、stdout には JSON レポートだけを出力します。
 
 Playwright と異なり、e2e は ASCII の記号を使い、リトライ後の最終結果だけを出力します。リトライした各試行の記号は出力しません。
+
+#### `line`
+
+`line` レポーターは、選択されたテストのうち最後に完了したものを 1 行で表示します。その行には進捗件数、ターゲット、ファイル、タイトル、最終結果が含まれます。リトライしたテストは、最後の試行が終わった時点で 1 回だけ表示し、1 件として数えます。
+
+```ts
+reporters: ['line'],
+```
+
+対話型ターミナルでは、テストが完了するたびに同じ行を更新し、ログや最終サマリーを表示する前にその行を消去します。出力をリダイレクトした場合や `TERM=dumb` の場合は、テストごとに 1 行ずつ出力します。失敗の詳細とサマリーは `list` と同じ形式です。`--reporter line,json` を指定すると、ターミナル向けの出力は stderr に、JSON レポートは stdout に送られます。
 
 #### `json`
 
@@ -277,7 +289,7 @@ type ReporterSummary = readonly { label: string; text: string }[];
 
 ##### サマリー行
 
-レポーターが resolve 時に返す行は、`list` または `dot` のサマリーの下に同じレイアウトで表示します。`json` レポーターには含めません。
+レポーターが返す行は、`list`、`dot`、`line` のサマリーの下に、ほかのサマリー行と同じ形式で表示します。`json` レポーターには含めません。
 
 ```
    Test Files  2 passed (2)

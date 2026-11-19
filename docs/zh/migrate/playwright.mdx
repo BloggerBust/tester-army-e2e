@@ -46,7 +46,7 @@ e2e 可以在同一个项目中与 Playwright 并行运行，让你逐个文件�
 | `retries`, `workers`, `timeout` | 名称相同，但[默认值不同](#defaults-that-differ)；`workers` 为整数 |
 | `expect.timeout`, `use.actionTimeout`, `globalTimeout` | `assertionTimeout`、`actionTimeout`、`maxDuration`；`maxDuration` 从测试开始时计时，不包含应用启动 |
 | `maxFailures`, `use.headless: false` | CLI 上的 `--max-failures <n>` 和 `--headed` |
-| `reporter`, `outputDir` | `reporters: ['list', 'junit', htmlReporter()]`，其中 `htmlReporter` 来自 `@e2e-dev/html-reporter`；也支持 `dot`、`json` 和 `markdown`；`output` 默认为 `.e2e` |
+| `reporter`, `outputDir` | `reporters: ['list', 'junit', htmlReporter()]`，其中 `htmlReporter` 来自 `@e2e-dev/html-reporter`；也支持 `dot`、`line`、`json` 和 `markdown`；`output` 默认为 `.e2e` |
 | `use.viewport`, `locale`, `timezoneId`, `colorScheme`, `reducedMotion`, `userAgent`, `testIdAttribute` | `web({ ... })` 中的同名键 |
 | `use.browserName`, `httpCredentials`, `extraHTTPHeaders` | `web({ browser, basicAuth, headers })`；`basicAuth` 和 `headers` 仅作用于应用的源，可通过 [`credentialOrigins`](/reference/web#credentialorigins) 添加更多源 |
 | `chromium.connectOverCDP(url)` | `web({ connect: { cdpEndpoint: () => url } })`，仅限 chromium |
@@ -286,7 +286,7 @@ export const test = base.extend<{ accountPage: AccountPage }>({
 | 文件或 describe 中的 `test.use({ ... })` | 组上的运行器选项、测试目标上的引擎选项、运行时的 `browser.setViewport` |
 | `projects[].dependencies`, `teardown` | 用于登录的顶层 `test.setup`；在运行前后执行的脚本 |
 | `page.pause()` | `--step --headed` 在每个步骤等待按键后继续 |
-| `line` 和 `github` 报告器 | `list`；`github()` 发布拉取请求（PR）评论 |
+| `github` 报告器 | `github()` 发布拉取请求（PR）评论 |
 
 </Accordion>
 </AccordionGroup>

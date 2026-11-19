@@ -46,7 +46,7 @@ e2e は同じプロジェクト内で Playwright と並行して動かせるた�
 | `retries`, `workers`, `timeout` | 同名。[デフォルト値は一部異なります](#defaults-that-differ)。`workers` は整数 |
 | `expect.timeout`, `use.actionTimeout`, `globalTimeout` | `assertionTimeout`、`actionTimeout`、`maxDuration`。`maxDuration` の計測はアプリの起動時ではなくテスト開始時から |
 | `maxFailures`, `use.headless: false` | CLI の `--max-failures <n>` と `--headed` |
-| `reporter`, `outputDir` | `reporters: ['list', 'junit', htmlReporter()]`。`htmlReporter` は `@e2e-dev/html-reporter` から。`dot`、`json`、`markdown` も利用可能。出力先は `output`、デフォルトは `.e2e` |
+| `reporter`, `outputDir` | `reporters: ['list', 'junit', htmlReporter()]`。`htmlReporter` は `@e2e-dev/html-reporter` から。`dot`、`line`、`json`、`markdown` も利用可能。出力先は `output`、デフォルトは `.e2e` |
 | `use.viewport`, `locale`, `timezoneId`, `colorScheme`, `reducedMotion`, `userAgent`, `testIdAttribute` | `web({ ... })` 内の同名キー |
 | `use.browserName`, `httpCredentials`, `extraHTTPHeaders` | `web({ browser, basicAuth, headers })`。`basicAuth` と `headers` はアプリのオリジンだけに適用。[`credentialOrigins`](/reference/web#credentialorigins) で追加可能 |
 | `chromium.connectOverCDP(url)` | `web({ connect: { cdpEndpoint: () => url } })`。chromium のみ |
@@ -286,7 +286,7 @@ export const test = base.extend<{ accountPage: AccountPage }>({
 | ファイルや describe 内の `test.use({ ... })` | ランナーのオプションはグループ、エンジンのオプションはターゲット、実行時の変更は `browser.setViewport` |
 | `projects[].dependencies`, `teardown` | サインインはトップレベルの `test.setup`。実行の前後を囲むスクリプト |
 | `page.pause()` | `--step --headed` で、キー入力まで各ステップを停止 |
-| `line`、`github` レポーター | `list`。`github()` はプルリクエストにコメントを投稿 |
+| `github` レポーター | `github()` はプルリクエストにコメントを投稿 |
 
 </Accordion>
 </AccordionGroup>

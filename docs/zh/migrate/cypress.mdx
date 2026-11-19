@@ -145,7 +145,7 @@ describe('todos', () => {
 | `it`、`context`、`specify`、`xit` | `test`、`describe`、`test.skip` |
 | chai 的 `expect(x).to...`、`assert.*` | `expect(value)` 上的 `toEqual`、`toContain`、`toMatchObject`，或自行导入 `chai` |
 | `cy.window()`、`cy.document()`、`onBeforeLoad(win)` | 使用 JSON 值的 `browser.evaluate` 和 `browser.addInitScript`。测试在 Node 中运行，而非页面中 |
-| Mocha 报告器、`reporterOptions` | `list`、`dot`、`json`、`junit`、`markdown`、`htmlReporter()`、`github()`，或你自己的[报告器](/reference/reporters) |
+| Mocha 报告器、`reporterOptions` | `list`、`dot`、`line`、`json`、`junit`、`markdown`、`htmlReporter()`、`github()`，或你自己的[报告器](/reference/reporters) |
 | Cucumber `.feature` 文件、`file:preprocessor` | 将功能描述改写为测试。TypeScript 不需要预处理器 |
 | 组件测试 | 保留在 Cypress 中。e2e 测试的是正在运行的应用 |
 | `.parent()`、`.closest()`、`.siblings()`、`.next()` | 定位祖先元素并缩小范围：`card.filter({ has: child })` |

@@ -524,7 +524,7 @@ e2e run [files...]
 
 | オプション | 説明 |
 | --- | --- |
-| `--reporter <ids>` | `config.reporters` の組み込み ID を置き換えます。`list`、`dot`、`json`、`junit`、`markdown` をカンマ区切りで指定します。デフォルトは設定値です。`json` または `dot` と `list` の併用は `INVALID_CONFIG` です。設定内の[レポーターオブジェクト](/reference/reporters)は引き続き実行します。 |
+| `--reporter <ids>` | `config.reporters` の組み込みレポーターを上書きします。`list`、`dot`、`line`、`json`、`junit`、`markdown` をカンマ区切りで指定します。設定内の[レポーターオブジェクト](/reference/reporters)は引き続き実行します。`list` と `dot`、`line`、`json` のいずれかを併用した場合や、`line` と `dot` を併用した場合は `INVALID_CONFIG` です。省略すると設定済みのレポーターを使います。 |
 | `--output <dir>` | 設定の [`output`](/reference/config#output) より優先する、この実行の結果ディレクトリです。レポート、レポーターのファイル、AI トレース、`results/`、`sessions/` を含みます。デフォルトは設定値、なければ `.e2e` です。プロジェクトルートから解決し、その内側のディレクトリである必要があります。ルート自体や、実行が所有できないその他のディレクトリ（リンク先に一覧）は `INVALID_CONFIG` です。テスト開始時に `results/` を消去しますが、`--last-failed` の再実行では前回のレポートが参照するものを残します。 |
 | `--cache-dir <dir>` | [`E2E_CACHE_DIR`](/reference/environment#replay-cache) と [`cache.dir`](/reference/config#cache) より優先する、この実行のリプレイキャッシュディレクトリです。デフォルトは `E2E_CACHE_DIR`、次に `cache.dir`、なければ `.e2e/cache` です。プロジェクトルートから解決し、`~` または先頭の `~/` はホームディレクトリです。キャッシュモードは設定のままです。カスタムの `cache.store` との併用は `INVALID_CONFIG` です。 |
 | `--timings <file>` | 実行終了時に更新する[所要時間の履歴](/ci#cache-the-timings-history)です。`<output>/timings.json` より優先します。複数ワーカーでは、時間の記録がないファイルを先に、残りを所要時間の長い順に開始します。プロジェクトルートから解決します。ファイルがない、または不正な場合は履歴なしとして扱い、エラーにはしません。 |
@@ -588,6 +588,7 @@ $ npx e2e run --debug
 | --- | --- |
 | `list` | ターミナルの進捗、周辺コード付きの失敗、実行サマリーです。TTY では現在のエージェントステップ、モデルのターン、ツール呼び出し、推論の抜粋をリアルタイムに表示します。stdout がターミナルでなければ（パイプ、リダイレクト、多くの CI）、各テストの完了時に表示します。最後に、失敗した各テストのファイルと行、エラーの最初の行、作成済みならトレースページを示します。信頼できないフィールドは 8 KiB に制限し、制御文字を除きます。 |
 | `dot` | 選択した各テストの結果を 1 文字で表示し、その後に失敗の詳細と実行サマリーを表示します。記号、色、改行については [`dot`](/reference/reporters#dot) を参照してください。`dot,json` では、ターミナル向けの出力をすべて stderr に送ります。 |
+| `line` | テストが完了するたびに、[同じ行を更新して最新の結果を表示します](/reference/reporters#line)。最後に失敗の詳細と実行サマリーを表示します。`line,json` ではターミナル向けの出力を stderr に送ります。 |
 | `json` | stdout にレポートドキュメントだけを出すため、`e2e run --reporter json \| jq` を使えます。内容は `<output>/report.json` と同じで、パッケージの `schema/report-v1.schema.json` に定義されています。形式の変更は `schemaVersion` フィールドの変更時だけです（現在は `report-1`）。 |
 | `junit` | レポートと同じ場所の `junit.xml` です。ファイルごとに 1 つの `<testsuite>`、テストとターゲットの組ごとに `title > path [target]` という名前の `<testcase>` を作ります。test 分類のエラーは `<failure>`、それ以外は `<error>`、スキップは理由付きの `<skipped>` です。中断したテストには判定がないため、メッセージが `interrupted:` で始まる `<skipped>` にします。[テストフィルター](/filters)が除外したテストは、`left out by filter <name>:` で始まる `<skipped>` です。それ以外の未選択テストは載せません。実行全体のエラーは `run` スイートにまとめます。 |
 | `markdown` | レポートと同じ場所の `summary.md` です。件数、コスト、エラー、失敗の詳細を載せ、トレースページを残したものにはそのパスを示します。探索実行では発見事項を表示します。[`@e2e-dev/github`](/github) はこのサマリーをプルリクエストのコメントに使います。 |
@@ -600,7 +601,7 @@ $ npx e2e run --debug
 
 テスト開始前に停止した実行は、これらを何も書かず、前回のファイルを残します。設定や収集のエラー、`NO_TESTS`、`NO_LAST_RUN`、`UNSUPPORTED_ARTIFACT`、アプリコマンドの起動失敗、中断が該当します。エラーはターミナルと終了コードで示します。`junit.xml` または `summary.md` の書き込み失敗は stderr の 1 行で示し、実行エラーにはしません。
 
-`list` と `dot` レポーターは実行エラーを `Run Errors` の下に表示します。どちらもなければ、`json` の場合も含め、各エラーを stderr に `CODE: message` として表示します。
+`list`、`dot`、`line` レポーターは実行エラーを `Run Errors` の下に表示します。いずれも使わない場合は、`json` を使うときも、各エラーを `CODE: message` の形式で stderr に出力します。
 
 レポートの `run.summary` は結果を集計します。
 

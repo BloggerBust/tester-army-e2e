@@ -145,7 +145,7 @@ describe('todos', () => {
 | `it`, `context`, `specify`, `xit` | `test`、`describe`、`test.skip` |
 | chai の `expect(x).to...`、`assert.*` | `expect(value)` の `toEqual`、`toContain`、`toMatchObject`、または自分で `chai` をインポート |
 | `cy.window()`, `cy.document()`, `onBeforeLoad(win)` | JSON 値を使う `browser.evaluate` と `browser.addInitScript`。テストはページ内ではなく Node で実行 |
-| Mocha レポーター、`reporterOptions` | `list`、`dot`、`json`、`junit`、`markdown`、`htmlReporter()`、`github()`、または独自の[レポーター](/reference/reporters) |
+| Mocha レポーター、`reporterOptions` | `list`、`dot`、`line`、`json`、`junit`、`markdown`、`htmlReporter()`、`github()`、または独自の[レポーター](/reference/reporters) |
 | Cucumber の `.feature` ファイル、`file:preprocessor` | フィーチャーをテストに書き換え。TypeScript にプリプロセッサーは不要 |
 | コンポーネントテスト | Cypress に残す。e2e は実行中のアプリをテスト |
 | `.parent()`, `.closest()`, `.siblings()`, `.next()` | 祖先を探して絞り込む: `card.filter({ has: child })` |

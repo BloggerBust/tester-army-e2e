@@ -26,6 +26,7 @@ export default {
 | --- | --- |
 | [`list`](#list) | 终端进度和运行摘要 |
 | [`dot`](#dot) | 简洁进度和运行摘要 |
+| [`line`](#line) | 单行进度和运行摘要 |
 | [`json`](#json) | 将报告文档输出到 stdout |
 | [`junit`](#junit) | 写入 `<output>/junit.xml` |
 | [`markdown`](#markdown) | 写入 `<output>/summary.md` |
@@ -35,10 +36,11 @@ export default {
 | 抛出 | 条件 |
 | --- | --- |
 | `INVALID_CONFIG` | `reporters` 不是数组。 |
-| `INVALID_CONFIG` | ID 不是 `list`、`dot`、`json`、`junit` 或 `markdown`。 |
+| `INVALID_CONFIG` | ID 不是 `list`、`dot`、`line`、`json`、`junit` 或 `markdown`。 |
 | `INVALID_CONFIG` | 条目既不是 ID，也不是包含 `name` 和至少一个处理函数的对象。 |
 | `INVALID_CONFIG` | 同时使用 `json` 和 `list`。 |
 | `INVALID_CONFIG` | 同时使用 `dot` 和 `list`。 |
+| `INVALID_CONFIG` | 将 `line` 与 `list` 或 `dot` 同时使用。 |
 
 #### `list`
 
@@ -70,6 +72,16 @@ reporters: ['dot'],
 报告器默认输出到 stdout。使用 `--reporter dot,json` 时，所有面向用户的终端输出都发送到 stderr，stdout 只包含 JSON 报告。
 
 与 Playwright 不同，e2e 使用 ASCII 标记，并且只在重试结束后输出最终结果，不为每次重试单独输出标记。
+
+#### `line`
+
+`line` 报告器在一行内显示所选测试中最近完成的一项，列出进度计数、测试目标、文件、标题和最终结果。测试重试时，只在最后一次尝试结束后显示结果，且只计一次。
+
+```ts
+reporters: ['line'],
+```
+
+在交互式终端中，每完成一个测试就更新同一行，并在输出日志或最终摘要前清除该行。如果输出被重定向，或设置了 `TERM=dumb`，则每个测试各占一行。失败详情和摘要沿用 `list` 的格式。使用 `--reporter line,json` 时，面向终端的文本输出写入 stderr，JSON 报告写入 stdout。
 
 #### `json`
 
@@ -277,7 +289,7 @@ type ReporterSummary = readonly { label: string; text: string }[];
 
 ##### 摘要行
 
-报告器完成时返回的行显示在 `list` 或 `dot` 摘要下方，布局与其自身的行相同。`json` 报告器不包含这些行。
+报告器完成时返回的行显示在 `list`、`dot` 和 `line` 的摘要下方，格式与其他摘要行相同。`json` 报告器不包含这些行。
 
 ```
    Test Files  2 passed (2)
