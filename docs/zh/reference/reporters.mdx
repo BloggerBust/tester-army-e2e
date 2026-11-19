@@ -93,7 +93,7 @@ reporters: ['line'],
 
 Playwright 统计测试的开始次数，包括重试的开始次数。它的进度行包含 `file:line:col` 位置信息，也可以显示当前步骤。
 
-`line` 默认输出到 stdout。要输出到 stderr，请使用 `line({ stream: 'stderr' })`。使用 `--reporter line,json` 时，终端输出写入 stderr，JSON 报告写入 stdout。
+未指定 `stream` 时，`line` 默认输出到 stdout，与 `json` 一起使用时则输出到 stderr。也可以用 `line({ stream: 'stderr' })` 直接指定 stderr。
 
 #### `json`
 

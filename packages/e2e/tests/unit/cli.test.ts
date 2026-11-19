@@ -16,7 +16,11 @@ const upgradeMock = vi.hoisted(() => vi.fn());
 
 // The suite runs from the repository; these tests cover an installed CLI, where telemetry is on.
 vi.mock('../../src/telemetry/checkout.ts', () => ({ runsFromCheckout: () => false }));
-vi.mock('../../src/run/runner.ts', () => ({ run: runMock, listSelection: listMock }));
+vi.mock('../../src/run/runner.ts', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../src/run/runner.ts')>()),
+  run: runMock,
+  listSelection: listMock,
+}));
 vi.mock('../../src/cli/watch.ts', () => ({ watchSession: watchMock }));
 // `e2e list --reporter json` writes its document past the claimed output; here it lands on the stdout spy.
 vi.mock('../../src/run/process-output.ts', async (importOriginal) => ({

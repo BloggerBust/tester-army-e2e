@@ -93,7 +93,7 @@ reporters: ['line'],
 
 Playwright はリトライも含めてテストの開始回数を数えます。進捗行には `file:line:col` の位置情報が含まれ、実行中のステップも表示できます。
 
-`line` のデフォルトの出力先は stdout です。stderr に出力するには `line({ stream: 'stderr' })` を使います。`--reporter line,json` を指定すると、ターミナル向けの出力は stderr に、JSON レポートは stdout に送られます。
+`stream` を指定しなければ、`line` は通常 stdout に、`json` と併用する場合は stderr に出力します。stderr を明示的に指定するには `line({ stream: 'stderr' })` を使います。
 
 #### `json`
 

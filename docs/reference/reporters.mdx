@@ -120,9 +120,8 @@ to any trace pages for those failures.
 Playwright counts test starts, including retries. Its row includes the
 `file:line:col` location and can show the current step.
 
-`line` prints to stdout by default. Use `line({ stream: 'stderr' })` to send it
-to stderr. With `--reporter line,json`, the terminal output goes to stderr and
-the JSON report goes to stdout.
+If you omit `stream`, `line` prints to stdout, or to stderr when used with
+`json`. You can also choose stderr explicitly with `line({ stream: 'stderr' })`.
 
 #### `json`
 
