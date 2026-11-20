@@ -92,6 +92,7 @@ const LOCATOR = members({
   uncheck: action(0, 1),
   selectOption: action(1, 2),
   focus: action(0, 1),
+  blur: action(0, 1),
   hover: action(0, 1),
   dragTo: action(1, 2),
   scrollIntoView: action(0, 1),

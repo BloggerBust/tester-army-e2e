@@ -79,26 +79,9 @@ app: {
 - 测试从 `app.baseUrl` 读取带实际端口的 URL。
 - 端口变化时，缓存条目仍然有效。
 - `reuseExisting` 不能与端口 `0` 一起使用。
+- Next.js 开发服务器需要为该主机添加 `allowedDevOrigins` 条目。参阅 [Next.js](/frameworks/nextjs#fix-next-js-problems)。
 
 参阅[空闲端口](/reference/config#free-ports)。
-
-<Accordion title="Next.js 开发服务器能渲染页面但始终无法完成水合">
-Next.js 16 会阻止对开发资源的跨源请求。测试目标打开 `127.0.0.1` 或 `[::1]` 时，`next dev` 仍将自己标识为 `localhost`。页面可以渲染，定位器可以解析，点击也会命中，但 React 处理函数不会运行。
-
-将测试目标打开的主机添加到 `allowedDevOrigins`。当 `app.url` 打开 `http://[::1]:0` 时，使用 `'[::1]'`：
-
-```ts title="next.config.ts"
-import type { NextConfig } from 'next';
-
-const nextConfig: NextConfig = {
-  allowedDevOrigins: ['127.0.0.1'],
-};
-
-export default nextConfig;
-```
-
-`localhost` 测试目标和生产环境的 `next start` 测试目标无需添加条目。
-</Accordion>
 
 ## 受保护的预览
 

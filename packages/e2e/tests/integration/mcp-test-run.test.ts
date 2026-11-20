@@ -118,6 +118,18 @@ test('outlives its timeout', { timeout: 1_000 }, async ({ app }) => {
   await new Promise((resolve) => setTimeout(resolve, 2_000));
   await app.open('/about');
 });
+test('lowers its timeout', { timeout: 30_000 }, async ({ app }) => {
+  await app.open('/');
+  test.setTimeout(500);
+  await new Promise((resolve) => setTimeout(resolve, 5_000));
+});
+
+test('raises its timeout', { timeout: 300 }, async ({ app }) => {
+  test.setTimeout(10_000);
+  await new Promise((resolve) => setTimeout(resolve, 800));
+  await app.open('/');
+});
+
 `;
 
 const HOOKS = `import { beforeAll, test } from 'e2e';
@@ -345,6 +357,15 @@ describe('open_session {test}', { timeout: 120_000 }, () => {
       const observed = await observe();
       expect(observed).toContain('heading "Home"');
       expect(observed).not.toContain('document "About page"');
+      await invoke('close_session');
+    });
+
+    it('applies test.setTimeout to the test it runs, lowered or raised', async () => {
+      const lowered = await invoke('open_session', { test: `tests/sloppy.e2e.ts:${lineOf(SLOPPY, "test('lowers its timeout'")}` });
+      expect(lowered.text).toMatch(/^Test "lowers its timeout" .* timed out after \S+; 1 step ran\.\nTEST_TIMEOUT: test timed out after 500 ms in phase body\n/);
+      await invoke('close_session');
+      const raised = await invoke('open_session', { test: `tests/sloppy.e2e.ts:${lineOf(SLOPPY, "test('raises its timeout'")}` });
+      expect(raised.text).toMatch(/^Test "raises its timeout" .* passed/);
       await invoke('close_session');
     });
 

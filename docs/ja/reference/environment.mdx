@@ -46,10 +46,10 @@ OpenCode Console のサービスアカウント API キー、または OpenCode 
 | `E2E_SECRET_<NAME>` | `E2E_SECRET_API_KEY="$API_KEY"` | set | `secrets.<name>` の値を置き換えます |
 
 - `<NAME>` は名前を大文字にし、`A-Z0-9` 以外の文字をすべて `_` に置き換えたものです。たとえば `power-user` は `E2E_USER_POWER_USER_USERNAME` になります。
-- 2 つの認証情報、または 2 つのシークレットの名前が同じ `<NAME>` になる場合、環境変数の設定有無にかかわらず、設定の読み込み時に `INVALID_CONFIG` になります。これにより、1 回のローテーションで 2 つのエントリが置き換わることを防ぎます。メッセージには該当するエントリと変数が示されます。たとえば `api-key` と `api_key` はどちらも `E2E_SECRET_API_KEY` を、`svc-a` と `svc_a` はどちらも `E2E_USER_SVC_A_USERNAME` と `_PASSWORD` を読み取ります。
+- 2 つの認証情報、または 2 つのシークレットの名前が同じ `<NAME>` になる場合、環境変数の設定有無にかかわらず、設定の読み込み時に `INVALID_CONFIG` になります。これにより、1 回のローテーションで 2 つのエントリーが置き換わることを防ぎます。メッセージには該当するエントリーと変数が示されます。たとえば `api-key` と `api_key` はどちらも `E2E_SECRET_API_KEY` を、`svc-a` と `svc_a` はどちらも `E2E_USER_SVC_A_USERNAME` と `_PASSWORD` を読み取ります。
 - 認証情報とシークレットは接頭辞が異なるため、同じ名前を使えます。
 - 設定にない名前の変数は無視されます。
-- パスワードやシークレットが空、または 6 文字（コードポイント）未満の場合は `INVALID_CONFIG` になります。秘匿処理は値が出現するすべての箇所を書き換えるため、短すぎる値では通常のテキストまで置き換わってしまいます。空のユーザー名は指定できます。
+- パスワードやシークレットが空、または 6 文字（コードポイント）未満の場合は `INVALID_CONFIG` になります。秘匿は値が出現するすべての箇所を書き換えるため、短すぎる値では通常のテキストまで置き換わってしまいます。空のユーザー名は指定できます。
 
 ### 実行モード
 
@@ -78,7 +78,7 @@ CI モードを有効にします。
 
 - `~` または先頭の `~/` はホームディレクトリを表します。
 - `--cache-dir` の指定が優先されます。
-- カスタムの `cache.store` はこの値を無視します。
+- 独自の `cache.store` はこの値を無視します。
 - キャッシュモードは設定どおりのままです。`--no-cache` を指定すれば引き続きキャッシュを無効にできます。
 
 ### 診断
@@ -136,7 +136,7 @@ CI モードを有効にします。
 | `GITHUB_ACTIONS` | `GITHUB_ACTIONS=true` | value | 未設定の場合、レポーターは何も投稿せず、その旨を表示します |
 | `GITHUB_REPOSITORY`, `GITHUB_RUN_ID`, `GITHUB_EVENT_NAME`, `GITHUB_WORKFLOW`, `GITHUB_JOB` | `GITHUB_REPOSITORY=acme/shop` | value | GitHub Actions のランナーが常に設定します。いずれかがなければレポーターは失敗し、変数名を示します。リポジトリと実行 ID は成果物へのリンクに使います。イベント名は「プルリクエストではない」ことを示す行に表示します。ワークフローとジョブは、再実行時に自身のコメントを見つけるためのマーカーに含めます |
 | `GITHUB_TOKEN`, `GH_TOKEN` | `GITHUB_TOKEN=<token>` | value | コメントの投稿に使います。先に挙げた変数が優先されます。未設定でもジョブサマリーは書き込みます。フォークの `pull_request` トークンは読み取り専用で、投稿できません。[何も投稿されない場合](/github#when-nothing-is-posted)を参照してください |
-| `GITHUB_EVENT_PATH`, `GITHUB_REF` | `GITHUB_REF=refs/pull/42/merge` | value | イベントペイロードからプルリクエスト番号と先頭コミットを取得するか、`refs/pull/N/merge` から番号を取得します |
+| `GITHUB_EVENT_PATH`, `GITHUB_REF` | `GITHUB_REF=refs/pull/42/merge` | value | イベントペイロードからプルリクエスト番号と最新コミットを取得するか、`refs/pull/N/merge` から番号を取得します |
 | `GITHUB_SHA` | `GITHUB_SHA=<commit>` | value | イベントがプルリクエストに関するものでない場合に、ソースへのリンクが指すコミットです |
 | `GITHUB_WORKSPACE` | `GITHUB_WORKSPACE=/home/runner/work/shop/shop` | value | チェックアウトのルートです。ソースへのリンクには、その中のプロジェクトのパスを加えるため、サブディレクトリのテストスイートでも正しいファイルにリンクできます |
 | `GITHUB_SERVER_URL`, `GITHUB_API_URL` | `GITHUB_SERVER_URL=https://github.example.com` | value | Enterprise Server 向けの GitHub ホストです。デフォルトは `https://github.com` と `https://api.github.com` です |
@@ -149,6 +149,8 @@ CI モードを有効にします。
 | `PLAYWRIGHT_BROWSERS_PATH` | `PLAYWRIGHT_BROWSERS_PATH=~/.cache/ms-playwright` | value | Playwright のブラウザキャッシュです。エンジンの `prepare` フックがこの設定に従います |
 | `PLAYWRIGHT_SKIP_BROWSER_GC` | `PLAYWRIGHT_SKIP_BROWSER_GC=0` | value | エンジンがブラウザをインストールするときのデフォルトは `1` で、キャッシュ内のほかのブラウザを残します。`0` ならインストール時にそれらを削除できます |
 | `KERNEL_API_KEY` | `KERNEL_API_KEY=<key>` | value | `@e2e-dev/kernel` の `kernel()` がブラウザを作成する API キーです。未設定の場合、ブラウザのリースに失敗します。[Kernel](/integrations/kernel) を参照してください |
+| `NOTTE_API_KEY` | `NOTTE_API_KEY=<key>` | value | `@e2e-dev/notte` の `notte()` がセッションを開始する API キーです。未設定の場合、ブラウザのリースに失敗します。[Notte](/integrations/notte) を参照してください |
+| `NOTTE_API_URL` | `NOTTE_API_URL=<url>` | value | `notte()` が呼び出す Notte API の URL です。デフォルトは `https://api.notte.cc` です |
 | `LIGHTPANDA_PATH` | `LIGHTPANDA_PATH=/opt/lightpanda` | value | `@e2e-dev/lightpanda` の `lightpanda()` が CDP サーバーを起動するバイナリです。未設定の場合は `PATH`、`~/.lightpanda`、`~/.local/bin` の `lightpanda` を使います。[Lightpanda](/integrations/lightpanda) を参照してください |
 | `MOLI_PATH` | `MOLI_PATH=/opt/moli` | value | `binary` が未設定のときに `@e2e-dev/moli` の `moli()` が起動する実行ファイルです。`MOLI_PATH` がなければ `PATH`、次に `~/.local/bin/moli` を検索します。[Moli](/integrations/moli) を参照してください |
 | [`EXPO_TOKEN`](#expo_token) | `EXPO_TOKEN=<token>` | value | `@e2e-dev/eas` の `expoSimulators()` が使う Expo アクセストークンです |
@@ -159,6 +161,8 @@ CI モードを有効にします。
 | `BROWSERSTACK_API_ENDPOINT` | `BROWSERSTACK_API_ENDPOINT=<url>` | value | `browserstack()` が `https` のビルドをアップロードし、セッションの録画を取得する App Automate API のベース URL です。デフォルトは `https://api-cloud.browserstack.com/app-automate` です。http(s) URL でない値や、ユーザー名またはパスワードを含む値は `INVALID_CONFIG` で失敗します |
 | `LT_USERNAME`, `LT_ACCESS_KEY` | `LT_USERNAME=acme` | value | `@e2e-dev/testmu` の `testmu()` がデバイスをリースする TestMu AI のユーザー名とアクセスキーです。どちらかが未設定の場合、デバイスのリースに失敗します。`@e2e-dev/testmu/web` の `testmuBrowsers()` はこれらを各ブラウザセッションの CDP URL にのみ含め、どちらかが未設定ならブラウザのリースに失敗します。[TestMu AI](/integrations/testmu) を参照してください |
 | `TESTMU_API_ENDPOINT` | `TESTMU_API_ENDPOINT=<url>` | value | `testmu()` がセッションの録画を取得する TestMu AI セッション API のベース URL です。デフォルトは `https://mobile-api.lambdatest.com/mobile-automation/api/v1` です。http(s) URL でない値や、ユーザー名またはパスワードを含む値の場合、取得は `INVALID_CONFIG` で失敗します。agent-device の TestMu AI プラグインもこの変数を読み取ります |
+| `REVYL_API_KEY` | `REVYL_API_KEY=<key>` | value | `@e2e-dev/revyl` の `revyl()` がデバイスをリースする API キーです。未設定の場合、デバイスのリースに失敗します。[Revyl](/integrations/revyl) を参照してください |
+| `REVYL_API_URL` | `REVYL_API_URL=<url>` | value | `revyl()` がデバイスをリースする Revyl のバックエンドです。デフォルトは `https://backend.revyl.ai` です。agent-device の Revyl プラグインがこの変数を読み取ります |
 | `E2B_API_KEY` | `E2B_API_KEY=<key>` | value | `@e2e-dev/e2b` の `e2b()` と `@e2e-dev/e2b/web` の `e2bBrowsers()` がサンドボックスを作成する API キーです。未設定の場合、リースは `INVALID_CONFIG` で失敗します。[E2B](/integrations/e2b) を参照してください |
 | `E2B_DOMAIN` | `E2B_DOMAIN=e2b.example.com` | value | プロバイダーがサンドボックスを作成する E2B ドメインです。デフォルトは `e2b.app` です。専用の E2B クラスターを使う場合に設定します |
 | `E2B_API_URL` | `E2B_API_URL=<url>` | value | プロバイダーが呼び出す E2B API の URL です。デフォルトは `https://api.<E2B_DOMAIN>` です |

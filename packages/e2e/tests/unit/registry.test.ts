@@ -437,6 +437,50 @@ describe('registration', () => {
     expect(registration.tests.map((item) => item.mode)).toEqual(['normal']);
   });
 
+  it('registers test.fixme(title, fn) as fixme with the reason fixme, and rejects it in a serial group', async () => {
+    const registration = await collectModule(async () => {
+      test.fixme('not yet', noop);
+      test.describe('plain group', () => {
+        test.fixme('grouped', noop);
+      });
+    });
+    expect(registration.tests.map((item) => [item.title, item.mode, item.options])).toEqual([
+      ['not yet', 'fixme', { skip: 'fixme' }],
+      ['grouped', 'fixme', { skip: 'fixme' }],
+    ]);
+    await expect(
+      collectModule(async () => {
+        test.describe('unit', { serial: true }, () => {
+          test.describe('nested', () => {
+            test.fixme('member', noop);
+          });
+        });
+      }),
+    ).rejects.toThrow('test.fixme() cannot be used inside a serial group, which skips as one unit; set skip on the serial describe instead');
+    expect(() => test.fixme('outside', noop)).toThrow(/^test\.fixme\(\) can only be called while a test module is being collected/);
+  });
+
+  it('rejects test.skip(title, fn) in a serial group, naming test.skip()', async () => {
+    await expect(
+      collectModule(async () => {
+        test.describe('unit', { serial: true }, () => {
+          test.describe('nested', () => {
+            test.skip('member', noop);
+          });
+        });
+      }),
+    ).rejects.toThrow('test.skip() cannot be used inside a serial group, which skips as one unit; set skip on the serial describe instead');
+  });
+
+  it('rejects the runtime test.fixme forms outside a test body, pointing at test.fixme(title, fn)', async () => {
+    const message =
+      'test.fixme(condition, reason) skips the running test and must be called inside a test body; to mark a test fixme at collection, register it with test.fixme(title, fn)';
+    await expect(collectModule(async () => test.fixme(true, 'flaky on webkit'))).rejects.toThrow(message);
+    await expect(collectModule(async () => test.fixme(false))).rejects.toThrow(message);
+    await expect(collectModule(async () => test.fixme('flaky on webkit'))).rejects.toThrow(message);
+    await expect(collectModule(async () => test.fixme())).rejects.toThrow(CollectionError);
+  });
+
   it('registers expected failures by test.fail(title, fn) and the fail option, and checks the option', async () => {
     const registration = await collectModule(async () => {
       test.fail('registered', noop);
@@ -755,15 +799,17 @@ describe('test.extend', () => {
     expect(() => test.extend({ database: [fixture, { scop: 'worker' }] } as never)).toThrow(/options has unknown key "scop"/);
   });
 
-  it('carries the chain through skipIf and runIf on an extended test', async () => {
+  it('carries the chain through skipIf, runIf, and fixme on an extended test', async () => {
     const extended = test.extend<{ one: string }>({ one: fixture });
     const registration = await collectModule(async () => {
       extended.skipIf(true)('skipped', noop);
       extended.runIf(true)('runs', noop);
+      extended.fixme('fixme', noop);
     });
     expect(registration.tests.map((item) => [item.mode, item.fixtures.map((definition) => definition.name)])).toEqual([
       ['skip', ['one']],
       ['normal', ['one']],
+      ['fixme', ['one']],
     ]);
   });
 

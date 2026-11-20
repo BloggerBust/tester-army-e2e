@@ -1,0 +1,330 @@
+---
+title: Web
+description: Indiquez au moteur web l'URL de votre app ou laissez le runner la démarrer, et exécutez une suite à plusieurs tailles de viewport.
+"og:image": "https://e2e.com/docs/images/og/web.png?v=e860636537"
+"twitter:image": "https://e2e.com/docs/images/og/web.png?v=e860636537"
+---
+
+`@e2e-dev/web` exécute les tests dans un navigateur sur l'URL de votre app. Pour les routes,
+les cookies, les boîtes de dialogue et les téléchargements, consultez [Utiliser le navigateur](/browser).
+
+## Démarrer votre app
+
+Définissez l'URL de votre app dans le champ `app` de la cible. `app.open('/path')` se résout
+par rapport à elle :
+
+```ts title="Target fragment"
+engine: web(),
+app: { url: process.env.APP_URL ?? 'http://localhost:3000' },
+```
+
+Une URL sans schéma utilise HTTPS, ou HTTP pour un hôte de boucle locale (loopback). Le HTTP simple
+ne fonctionne que sur un hôte de boucle locale.
+
+### Laisser le runner la démarrer
+
+Ajoutez `app.command` et le runner démarre le serveur de développement. Il attend que
+`app.url` réponde, et arrête le serveur qu'il a démarré quand l'exécution se termine, échoue ou
+est interrompue :
+
+```ts title="e2e.config.ts"
+import type { E2EConfig } from 'e2e';
+import { web } from '@e2e-dev/web';
+
+export default {
+  targets: [{
+    engine: web(),
+    app: {
+      url: process.env.APP_URL ?? 'http://localhost:3000',
+      command: {
+        executable: 'npm',
+        args: ['run', 'dev'],
+        reuseExisting: true,
+        log: '.e2e/logs/app.log',
+      },
+    },
+  }],
+} satisfies E2EConfig;
+```
+
+```text
+ ✓ target "web" command at http://localhost:3000/ ready 1.20s
+```
+
+La commande s'exécute sans shell : `executable` vient de `PATH` et `args`
+est passé tel quel. Le processus enfant ne reçoit que `PATH`, `HOME`, les variables
+du répertoire temporaire, `inheritEnv` et `env`.
+
+| Option | Rôle |
+| --- | --- |
+| `reuseExisting: true` | Utilise un serveur déjà en cours d'exécution, par exemple celui qu'une [session MCP](/mcp-server#run-tests-next-to-a-session) a démarré. En CI, e2e l'ignore, et un serveur qui répond déjà donne `APP_ALREADY_RUNNING`. |
+| `log` | Enregistre le stdout et le stderr de l'app dans un fichier relatif au projet. Une erreur de démarrage, ou un arrêt inattendu pendant `e2e run`, cite les lignes qu'un processus a ajoutées au fichier depuis le démarrage de la commande. Un log de 40 lignes au plus et de moins de 8 Kio est cité en entier ; sinon, la citation garde jusqu'à 20 lignes de chaque extrémité, séparées par `[startup output omitted]`, et pour un log de plus de 8 Kio, ces lignes viennent de ses 4 premiers et 4 derniers Kio. Les valeurs de `command.env` et `inheritEnv` d'au moins quatre caractères sont masquées dans la citation. Le fichier lui-même n'est pas masqué. |
+| `env` | Variables d'environnement de l'app. |
+| `inheritEnv` | Variables de l'hôte à transmettre quand elles sont définies, par nom ou par préfixe : `['DATABASE_URL', 'STRIPE_*']`. `env` l'emporte sur elles. |
+| `startupTimeout` | Durée d'attente de la réponse de l'app. 60 secondes par défaut. |
+| `readyUrl` | À définir à côté de `command`, pas dedans, pour interroger un endpoint de santé au lieu de `app.url`. |
+
+Consultez la [référence de command](/reference/config#command) pour toutes les options.
+
+<Note>
+Le runner ne démarre que `app.command`. Démarrez les bases de données, les mocks et les autres
+services avant l'exécution, ou faites de `app.command` un script qui les démarre
+et sert l'app. Une API de services reviendra dans une version ultérieure.
+</Note>
+
+### Laisser le runner choisir le port
+
+Utilisez le port `0` pour exécuter plusieurs copies de travail sans conflit de port. Le runner
+choisit un port libre et remplace `{port}` dans les `args` et l'`env` de la commande :
+
+```ts title="Target fragment"
+engine: web(),
+app: {
+  url: 'http://127.0.0.1:0',
+  command: { executable: 'pnpm', args: ['dev', '--port', '{port}'], env: { PORT: '{port}' } },
+},
+```
+
+- Écrivez `127.0.0.1` ou `[::1]`, l'adresse à laquelle la commande se lie.
+  `localhost:0` est refusé.
+- Les tests lisent l'URL avec le vrai port dans `app.baseUrl`.
+- Les entrées du cache restent valides quand le port change.
+- `reuseExisting` ne fonctionne pas avec le port `0`.
+
+Consultez [ports libres](/reference/config#free-ports).
+
+<Accordion title="Le serveur de développement Next.js affiche la page mais ne l'hydrate jamais">
+Next.js 16 bloque les requêtes cross-origin vers ses ressources de développement. Quand la
+cible ouvre `127.0.0.1` ou `[::1]`, `next dev` s'identifie toujours comme
+`localhost`. La page s'affiche, les locators se résolvent et les clics aboutissent, mais aucun
+handler React ne s'exécute.
+
+Ajoutez l'hôte que la cible ouvre à `allowedDevOrigins`. Utilisez `'[::1]'` quand
+`app.url` ouvre `http://[::1]:0` :
+
+```ts title="next.config.ts"
+import type { NextConfig } from 'next';
+
+const nextConfig: NextConfig = {
+  allowedDevOrigins: ['127.0.0.1'],
+};
+
+export default nextConfig;
+```
+
+Une cible `localhost` et une cible `next start` de production n'ont besoin d'aucune entrée.
+</Accordion>
+
+## Prévisualisations protégées
+
+Utilisez `headers` pour ouvrir une prévisualisation protégée ou passer la page d'avertissement d'un tunnel.
+Par exemple, une prévisualisation Vercel accepte un en-tête de contournement de la protection :
+
+```ts title="Target fragment"
+engine: web({
+  headers: {
+    'x-vercel-protection-bypass': process.env.VERCEL_AUTOMATION_BYPASS_SECRET ?? '',
+  },
+}),
+app: {
+  url: process.env.PREVIEW_URL ?? 'http://localhost:3000',
+  identity: 'storefront',
+},
+```
+
+Le navigateur n'ajoute `headers` qu'aux requêtes qui partent de l'origine de
+`app.url` : son schéma, son hôte et son port. Une requête les garde à travers ses
+redirections, vers n'importe quelle origine. Pour les ajouter pour une autre origine, comme un hôte d'API
+derrière la même protection, indiquez-la dans `credentialOrigins`. Consultez
+[identifiants des requêtes](/reference/security#request-credentials). Pour ngrok,
+utilisez `'ngrok-skip-browser-warning': '1'`.
+`app.identity` garde l'identité du cache stable quand l'URL de prévisualisation change.
+
+<Note>
+Définir `headers` désactive le cache HTTP du navigateur et bloque les service
+workers.
+</Note>
+
+Utilisez `basicAuth` pour l'authentification HTTP basique. Le navigateur répond à un défi `401`
+venant de l'origine de `app.url` et de chaque origine de
+`credentialOrigins`. WebKit répond à n'importe quelle origine quand l'une d'elles est sur un
+port par défaut, comme une URL `https://` sans port, ou a un hôte IPv6.
+Déclarez le mot de passe dans `secrets` et passez `secrets.get(name)` :
+
+```ts title="e2e.config.ts"
+import type { E2EConfig } from 'e2e';
+import { secrets } from 'e2e';
+import { web } from '@e2e-dev/web';
+
+export default {
+  targets: [
+    {
+      engine: web({
+        basicAuth: { username: 'preview', password: secrets.get('previewPassword') },
+      }),
+      app: { url: 'https://staging.example.com' },
+    },
+  ],
+  secrets: { previewPassword: () => process.env.PREVIEW_PASSWORD ?? '' },
+} satisfies E2EConfig;
+```
+
+Le moteur résout le secret au début de chaque tentative, et le runner
+l'exclut des rapports, des logs et de ce que lit l'agent. Un nom non déclaré
+fait échouer le chargement de la configuration avec `INVALID_CONFIG`. Un mot de passe en chaîne simple fonctionne
+aussi, mais e2e ne masque qu'un mot de passe `secrets.get`.
+
+## Viewports
+
+Définissez un viewport sur la cible pour exécuter une suite à cette taille, ou appelez
+`browser.setViewport()` pendant un test. L'agent redimensionne avec son outil
+[`resize_viewport`](/reference/agent#action-tools).
+
+### Une taille par cible
+
+`viewport` définit la taille initiale de chaque tentative, en pixels. La valeur par défaut est
+1280 sur 720. Ajoutez une cible par taille :
+
+```ts title="e2e.config.ts"
+import type { E2EConfig } from 'e2e';
+import { web } from '@e2e-dev/web';
+
+const app = { url: 'http://localhost:3000' };
+
+export default {
+  targets: [
+    { name: 'desktop', engine: web(), app },
+    { name: 'tablet', engine: web({ viewport: { width: 820, height: 1180 } }), app },
+    { name: 'phone', engine: web({ browser: 'webkit', viewport: { width: 390, height: 844 } }), app },
+  ],
+} satisfies E2EConfig;
+```
+
+Chaque test s'exécute sur chaque cible, avec un résultat distinct par nom de cible.
+Chaque nouvelle tentative démarre à la taille de la cible.
+
+- Exécutez une seule taille avec `npx e2e run --target phone`. Listez les paires
+  test-cible avec `npx e2e list`.
+- Les cibles qui déclarent le même `app.command` partagent un seul serveur de développement.
+- Une cible d'appareil peut figurer dans la même liste. Consultez la
+  [référence du moteur mobile](/reference/mobile).
+
+### Remplir la fenêtre
+
+`viewport: null` ne définit aucune taille : la page remplit la fenêtre du navigateur, et
+l'agent, les captures d'écran et les vidéos utilisent cette taille. Utilisez-le pour une exécution headed, ou
+avec un navigateur hébergé dont la vue en direct afficherait une page de 1280 sur 720 dans un
+coin :
+
+```ts title="Target fragment"
+{ name: 'window', engine: web({ viewport: null }), app }
+```
+
+Un lancement headed local ouvre une petite fenêtre. Un navigateur hébergé utilise la
+taille de fenêtre que vous avez demandée au service. `browser.setViewport` fonctionne
+toujours.
+
+### Redimensionner pendant un test
+
+`browser.setViewport` redimensionne la page pour le reste de la tentative, y compris
+après `app.restart()` et `app.clearState()`. Utilisez-le quand un test vérifie une
+mise en page avant et après un redimensionnement :
+
+```ts
+import { test } from '@e2e-dev/web';
+import { expect } from 'e2e';
+
+test('the menu collapses on a narrow screen', async ({ app, screen, browser }) => {
+  await app.open('/');
+  await expect(screen.getByRole('navigation')).toBeVisible();
+
+  await browser.setViewport({ width: 390, height: 844 });
+  await expect(screen.getByRole('button', 'Menu')).toBeVisible();
+  await expect(screen.getByRole('navigation')).toBeHidden();
+});
+```
+
+Appelez-le avant `app.open` pour charger la première page à cette taille, sans
+rendu desktop préalable.
+
+### Ce que voit l'agent
+
+L'agent reçoit la taille actuelle du viewport avec chaque observation : redimensionnez donc
+avant `agent.act`. Les captures d'écran couvrent le viewport. Les éléments hors écran peuvent
+quand même figurer dans l'arbre, un appui les fait défiler jusqu'à la vue, et l'agent peut
+faire défiler la page pour charger du contenu différé.
+
+Une phrase qui contient un lien, une mise en emphase ou du code parvient entière à l'agent, et le
+lien est aussi listé comme contrôle. L'agent lit les 512 premiers caractères
+de chaque bloc de texte. Dans un bloc plus long, e2e liste aussi séparément ses liens et
+son texte mis en emphase.
+
+L'agent voit aussi une case à cocher ou un bouton radio qu'une bibliothèque de composants réduit
+à une taille nulle sous son propre libellé, comme le fait Element Plus, avec son état
+coché. Un appui dessus clique sur le libellé. Quand ce libellé est ou contient un lien
+ou un autre contrôle, l'agent voit le texte du libellé et ce contrôle mais
+pas la case à cocher, car un clic sur le libellé pourrait atterrir sur le lien. Les locators considèrent toujours ce contrôle comme masqué, comme
+Playwright, donc vérifiez-le avec `toBeChecked()`, pas `toBeVisible()`.
+
+### Limiter un test à une taille
+
+`platforms` et `requires` ne peuvent pas sélectionner un viewport, car chaque
+cible navigateur a la plateforme `web`. Pour ignorer un test à certaines tailles, lisez la largeur dans
+le test :
+
+```ts
+test('the sidebar stays open', async ({ app, screen, browser }) => {
+  await app.open('/');
+  test.skip((await browser.evaluate(() => window.innerWidth)) < 768, 'desktop layout only');
+  await expect(screen.getByRole('complementary')).toBeVisible();
+});
+```
+
+Pour isoler un groupe de tests propres à une taille, donnez-leur leur propre configuration
+et exécutez-la avec `--config`.
+
+### Limites
+
+Un viewport étroit teste uniquement la mise en page responsive. Le navigateur reste un
+navigateur desktop : facteur d'échelle 1, pointeur desktop et son user agent habituel.
+Il n'émule pas le tactile. Pour tester sur un simulateur ou un émulateur, utilisez le
+[moteur mobile](/mobile). Pour le mode sombre et la réduction des animations, consultez
+[Émuler le mode sombre et la réduction des animations](/browser#emulate-dark-mode-and-reduced-motion).
+
+Une vidéo garde la taille qu'avait la page au début de l'enregistrement. Définissez
+`web({ screencast: { size } })` pour une taille fixe. Un fournisseur de navigateur qui
+enregistre, comme [Kernel](/integrations/kernel#recordings), enregistre plutôt
+l'écran entier.
+
+## Accorder des permissions au navigateur
+
+Chromium headless refuse une permission que la cible n'accorde pas, donc
+`navigator.clipboard.writeText` échoue même après un clic. Pour permettre à
+l'app d'utiliser le presse-papiers, accordez-la sur la cible :
+
+```ts
+{
+  engine: web(),
+  app: {
+    url: 'http://localhost:3000',
+    permissions: { 'clipboard-read': 'grant', 'clipboard-write': 'grant' },
+  },
+}
+```
+
+- Chaque page de chaque tentative détient l'autorisation, sur n'importe quelle origine.
+- Une cible web n'accepte que `'grant'`. `'deny'` et `'reset'` donnent
+  `INVALID_CONFIG` : omettez plutôt la permission.
+- Les noms sont ceux de Playwright, et chaque navigateur accorde son propre ensemble. Consultez
+  [`permissions`](/reference/config#permissions).
+
+## Pour aller plus loin
+
+<CardGroup cols={2}>
+  <Card title="Utiliser le navigateur" icon="globe" href="/browser">
+    Simulez des routes, définissez des cookies, gérez les boîtes de dialogue et téléchargez des fichiers.
+  </Card>
+  <Card title="Référence du moteur web" icon="masks-theater" href="/reference/web">
+    Chaque option de `web()` et chaque méthode de `browser`.
+  </Card>
+</CardGroup>

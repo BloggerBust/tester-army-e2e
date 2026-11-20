@@ -11,6 +11,7 @@ import {
   pollReads,
   ReadWindow,
   sleep,
+  StepDeadline,
   withTimeout,
 } from '@e2e-dev/core/lib/internal/time';
 import { E2EError } from '@e2e-dev/core/lib/internal/errors';
@@ -57,6 +58,21 @@ describe('Deadline', () => {
     expect(deadline.remaining(7000)).toBe(0);
     expect(deadline.expired(5999)).toBe(false);
     expect(deadline.expired(6000)).toBe(true);
+  });
+});
+
+describe('StepDeadline', () => {
+  it('ends at its timeout or its cap, whichever is sooner, and counts elapsed time from its start either way', () => {
+    const own = new StepDeadline(1000, new Deadline(9000, 0), 5000);
+    expect(own.endsAt).toBe(6000);
+    expect(own.elapsed(6000)).toBe(1000);
+    const capped = new StepDeadline(1000, new Deadline(5400, 0), 5000);
+    expect(capped.endsAt).toBe(5400);
+    expect(capped.elapsed(5400)).toBe(400);
+    const unbounded = new StepDeadline(Number.POSITIVE_INFINITY, new Deadline(5400, 0), 5000);
+    expect(unbounded.endsAt).toBe(5400);
+    const spent = new StepDeadline(1000, new Deadline(4000, 0), 5000);
+    expect(spent.expired(5000)).toBe(true);
   });
 });
 

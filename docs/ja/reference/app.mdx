@@ -112,7 +112,7 @@ await app.back();
 
 ### `screenshot`
 
-機密フィールドをマスクした証跡用のスクリーンショットを撮影し、そのパスを返します。
+機密フィールドをマスキングした証跡用のスクリーンショットを撮影し、そのパスを返します。
 
 ```ts
 const shot = await app.screenshot('after-checkout');
@@ -129,7 +129,7 @@ const shot = await app.screenshot('after-checkout');
 | `ENGINE_FAILURE` | 撮影に失敗した場合。 |
 
 <Note>
-`Secret` を入力した後も、スクリーンショットでマスクされるのは機密フィールドだけです。アプリが別の場所にシークレットを表示していれば、画像に写ります。[シークレット入力後のスクリーンショット](/reference/security#screenshots-after-a-secret-fill)を参照してください。
+`Secret` を入力した後も、スクリーンショットでマスキングされるのは機密フィールドだけです。アプリが別の場所にシークレットを表示していれば、画像に写ります。[シークレット入力後のスクリーンショット](/reference/security#screenshots-after-a-secret-fill)を参照してください。
 </Note>
 
 ### `startRecording`
@@ -148,7 +148,7 @@ test('the dialog slides in', { video: 'off' }, async ({ app, screen }) => {
 
 - 同時に実行できる録画は 1 つです。エンジンのレコーダーは 1 つなので、テストには `video: 'off'` を設定してください。テストの[動画](/reference/config#video)を録画中に開始すると失敗します。`--video`、`retain-on-failure`、`on-first-retry` で録画されるリトライも対象です。
 - テスト終了時に録画が続いている場合は、停止して保存します。
-- テストの動画と同様に、録画にはマスク処理を行いません。
+- テストの動画と同様に、録画では何もマスキングしません。
 
 | エラー | 発生条件 |
 | --- | --- |

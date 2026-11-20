@@ -94,6 +94,7 @@ export function web(options: WebOptions = {}): WebEngine {
   if (options.basicAuth !== undefined) validateBasicAuth(options.basicAuth);
   if (options.credentialOrigins !== undefined) validateCredentialOrigins(options);
   if (options.testIdAttribute !== undefined) validateTestIdAttribute(options.testIdAttribute);
+  if (options.chromiumSandbox !== undefined) validateChromiumSandbox(options.chromiumSandbox);
   if (options.userAgent !== undefined) validateUserAgent(options.userAgent, options.headers);
   if (options.locale !== undefined) validateLocale(options.locale, options.headers);
   if (options.timezoneId !== undefined) validateTimezoneId(options.timezoneId);
@@ -129,8 +130,8 @@ export function web(options: WebOptions = {}): WebEngine {
     readStyle: (ref, properties, operation) => surface.readStyle(ref, properties, operation),
     locate: (expression, operation) => surface.locate(expression, operation),
     perform: (ref, action, operation) => surface.perform(ref, action, operation),
-    // A browser honors every action kind of the contract; `actions.ts` dispatches each.
-    actions: LOCATOR_ACTION_KINDS,
+    // A browser honors the SPI v1 actions and blur; `actions.ts` dispatches each.
+    actions: [...LOCATOR_ACTION_KINDS, 'blur'],
     // Playwright holds each modifier for the click.
     tapModifiers: true,
     // A page takes every pointer action of the contract at a bare point too.
@@ -176,6 +177,7 @@ export function web(options: WebOptions = {}): WebEngine {
 /** Every option `web()` takes, kept equal to `WebOptions` by the compiler. */
 const WEB_OPTION_KEYS: readonly string[] = Object.keys({
   browser: true,
+  chromiumSandbox: true,
   viewport: true,
   screencast: true,
   connect: true,
@@ -433,6 +435,16 @@ function validateTestIdAttribute(attribute: unknown): void {
     throw new ConfigurationError(
       'INVALID_CONFIG',
       `web({ testIdAttribute }) must be an attribute name such as "data-testid", got ${JSON.stringify(attribute)}`,
+    );
+  }
+}
+
+/** Refuses a sandbox opt-out that is not a boolean, at config load. */
+function validateChromiumSandbox(chromiumSandbox: unknown): void {
+  if (typeof chromiumSandbox !== 'boolean') {
+    throw new ConfigurationError(
+      'INVALID_CONFIG',
+      `web({ chromiumSandbox }) must be a boolean, got ${JSON.stringify(chromiumSandbox)}`,
     );
   }
 }

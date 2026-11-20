@@ -55,7 +55,7 @@ export default {
 | オプション | 用途 |
 | --- | --- |
 | `reuseExisting: true` | [MCP セッション](/mcp-server#run-tests-next-to-a-session) が起動したものなど、既存のサーバーを使います。CI では無視され、応答するサーバーがすでにあると `APP_ALREADY_RUNNING` になります。 |
-| `log` | アプリの stdout と stderr を、プロジェクトからの相対パスのファイルに保存します。起動エラーや `e2e run` 中の予期しない終了では、コマンド開始後にいずれかのプロセスが追記した行を引用します。8 KiB 以内かつ 40 行以内なら全体を引用します。それ以外は先頭と末尾からそれぞれ最大 20 行を残し、間に `[startup output omitted]` を挿入します。8 KiB を超える場合は、先頭と末尾の各 4 KiB から行を取得します。`command.env` と `inheritEnv` の 4 文字以上の値は引用からマスキングされます。ファイル自体はマスキングされません。 |
+| `log` | アプリの stdout と stderr を、プロジェクトからの相対パスのファイルに保存します。起動エラーや `e2e run` 中の予期しない終了では、コマンド開始後にいずれかのプロセスが追記した行を引用します。8 KiB 以内かつ 40 行以内なら全体を引用します。それ以外は先頭と末尾からそれぞれ最大 20 行を残し、間に `[startup output omitted]` を挿入します。8 KiB を超える場合は、先頭と末尾の各 4 KiB から行を取得します。`command.env` と `inheritEnv` の 4 文字以上の値は引用では秘匿されます。ファイル自体は秘匿されません。 |
 | `env` | アプリに渡す環境変数。 |
 | `inheritEnv` | 設定されている場合に渡すホスト側の変数を、名前または接頭辞で指定します。例は `['DATABASE_URL', 'STRIPE_*']` です。`env` が優先されます。 |
 | `startupTimeout` | アプリの応答を待つ時間。デフォルトは 60 秒です。 |
@@ -88,29 +88,10 @@ app: {
 - テストは `app.baseUrl` から実際のポートを含む URL を読み取ります。
 - ポートが変わってもキャッシュのエントリーは有効です。
 - ポート `0` では `reuseExisting` は使えません。
+- Next.js の開発サーバーには、そのホストの `allowedDevOrigins` エントリーが必要です。
+  [Next.js](/frameworks/nextjs#fix-next-js-problems) を参照してください。
 
 [空きポート](/reference/config#free-ports) を参照してください。
-
-<Accordion title="Next.js の開発サーバーで描画されてもハイドレーションされない">
-Next.js 16 は、開発用リソースへのクロスオリジンリクエストをブロックします。
-ターゲットが `127.0.0.1` や `[::1]` を開いても、`next dev` は自身を `localhost` として扱います。
-ページは描画され、ロケーターも解決され、クリックも届きますが、React のハンドラーが動きません。
-
-ターゲットが開くホストを `allowedDevOrigins` に追加してください。
-`app.url` が `http://[::1]:0` を開く場合は、`'[::1]'` を使います。
-
-```ts title="next.config.ts"
-import type { NextConfig } from 'next';
-
-const nextConfig: NextConfig = {
-  allowedDevOrigins: ['127.0.0.1'],
-};
-
-export default nextConfig;
-```
-
-`localhost` のターゲットや、本番用の `next start` のターゲットには追加不要です。
-</Accordion>
 
 ## 保護されたプレビュー
 
@@ -166,7 +147,7 @@ export default {
 
 エンジンは各試行の開始時にシークレットを解決し、ランナーはレポート、ログ、エージェントの入力からその値を除きます。
 未宣言の名前は、設定の読み込み時に `INVALID_CONFIG` で失敗します。
-通常の文字列のパスワードも使えますが、e2e がマスキングするのは `secrets.get` のパスワードだけです。
+通常の文字列のパスワードも使えますが、e2e が秘匿するのは `secrets.get` のパスワードだけです。
 
 ## ビューポート
 

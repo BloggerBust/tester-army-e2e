@@ -139,7 +139,8 @@ export function stepPromptLine(prompt: StepPrompt): string {
   const steps = prompt.steps.map(({ step }) => heldCall(step));
   const keys = [`enter to ${enterDoes(prompt)}`, ...promptKeys(prompt).map(([key, does]) => `${key} to ${does}`)].join(', ');
   const at = first.step.kind === 'pause' ? 'in' : `at ${prompt.steps.length === 1 ? 'step' : 'steps'} ${numbers} of`;
-  return `paused ${at} ${bounded(first.step.title)} [${bounded(first.step.target)}]: ${steps.join('; ')} · press ${keys}`;
+  return `paused (${first.step.attachId}) ${at} ${bounded(first.step.title)} [${bounded(first.step.target)}]: ` +
+    `${steps.join('; ')} · press ${keys}`;
 }
 
 /**
@@ -154,7 +155,7 @@ export function stepPromptText(prompt: StepPrompt, screen: string | undefined): 
   const pause = first.step.kind === 'pause';
   const numbers = prompt.steps.map(({ number }) => number).join(', ');
   const at = pause ? 'in' : `before ${prompt.steps.length === 1 ? 'step' : 'steps'} ${numbers} of`;
-  const lines = [`Paused ${at} ${bounded(first.step.title)} [${bounded(first.step.target)}]:`];
+  const lines = [`Paused (${first.step.attachId}) ${at} ${bounded(first.step.title)} [${bounded(first.step.target)}]:`];
   for (const { step } of prompt.steps) {
     lines.push(`  ${heldCall(step)}`);
   }

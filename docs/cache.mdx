@@ -197,8 +197,9 @@ page on any other origin is another route.
   already on screen before the actions proves nothing. When the step's last
   action moved to another route, that move is the evidence.
 - An alert that the replay raised and the recording never saw stops the
-  replay. The web engine does not observe Next.js App Router's route
-  announcer, so its title echo never counts.
+  replay. The web engine does not observe the
+  [Next.js](/frameworks/nextjs#fix-next-js-problems) App Router's route announcer, so
+  its title echo never counts.
 - Text that differs on every run, such as a date, a duration, or an id,
   is skipped while a stable change exists on either side of the step's delta,
   whether something appeared or disappeared. With nothing else, it is kept,
@@ -283,9 +284,11 @@ A `gap` is an action the cache can't repeat: a mutating
 [project tool](/tools), or a value the agent read off the screen, typed
 after it saw a screenshot, or worked out from the date. `step.cache.derived`
 names the rule: `whole-node` (a control's whole name or text),
-`minted-token` (a code or id the app showed as its own word), `date`, or
+`minted-token` (a code or id the app showed as its own word, or any value
+typed into a field marked `autocomplete="one-time-code"`), `date`, or
 `pixels`. Values from the instruction or `params`, and values the agent
-composed itself, replay.
+composed itself, replay. In a one-time-code field, only a whole code the
+instruction or `params` spell out replays.
 
 ## What a recording holds
 

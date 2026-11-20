@@ -28,6 +28,7 @@ import type {
   WorkerBootstrap,
   WorkerToMain,
 } from './protocol.ts';
+import { inHeldTestToolCall } from './held-test-tool-scope.ts';
 import { TargetWorker, type ResolvedUnitPairs, type TargetWorkerDeps } from './session.ts';
 import { isAbandonedRejection } from '@e2e-dev/core/lib/internal/abandoned';
 
@@ -107,6 +108,15 @@ function captureOutput(pairInFlight: () => OutputMessage['pair']): () => void {
     flushes.push(() => void output(redactor.flush(), heldFor));
     const write = (written: string | Uint8Array, encoding?: BufferEncoding | Done, callback?: Done): boolean => {
       const done = typeof encoding === 'function' ? encoding : callback;
+
+      if (inHeldTestToolCall()) {
+        if (done !== undefined) {
+          process.nextTick(done);
+        }
+
+        return true;
+      }
+
       const chunk = writtenChunk(written, encoding);
       if (configLoad.hold(name, chunk)) {
         if (done !== undefined) process.nextTick(done);

@@ -6,11 +6,31 @@ import type { HeldStep, StepHoldContext, StepPrompt } from '../../src/run/step-h
 const KEY_GUARD_MS = 150;
 
 function step(label: string, testId = 'checkout', target = 'web'): HeldStep {
-  return { kind: 'step', target, testId, agent: 'default', repeat: 0, title: testId, api: 'app.open', label };
+  return {
+    kind: 'step',
+    attachId: 'k3f9',
+    target,
+    testId,
+    agent: 'default',
+    repeat: 0,
+    title: testId,
+    api: 'app.open',
+    label,
+  };
 }
 
 function pause(testId = 'checkout', target = 'web'): HeldStep {
-  return { kind: 'pause', target, testId, agent: 'default', repeat: 0, title: testId, api: 'screen.pause', label: '' };
+  return {
+    kind: 'pause',
+    attachId: 'k3f9',
+    target,
+    testId,
+    agent: 'default',
+    repeat: 0,
+    title: testId,
+    api: 'screen.pause',
+    label: '',
+  };
 }
 
 /** A gate on a clock the test moves, recording what it showed and whether it asked to stop. */
@@ -24,7 +44,12 @@ function gate(holdSteps = true) {
     },
     { now: () => now, holdSteps },
   );
-  const context = (signal = new AbortController().signal): StepHoldContext => ({ signal, show: (prompt) => shown.push(prompt), readScreen: () => Promise.resolve(undefined) });
+  const context = (signal = new AbortController().signal): StepHoldContext => ({
+    signal,
+    show: (prompt) => shown.push(prompt),
+    readScreen: () => Promise.resolve(undefined),
+    attach: () => Promise.reject(new Error('no held tests')),
+  });
   /** Holds `held` and reports, after the microtasks drain, whether it was let through. */
   const hold = (held: HeldStep, signal?: AbortSignal) => {
     let released = false;

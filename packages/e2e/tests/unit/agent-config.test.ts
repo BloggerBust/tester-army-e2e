@@ -10,7 +10,7 @@ import type { SdkLanguageModel } from '@e2e-dev/core/lib/agent/ai-sdk';
 import type { E2EConfig } from '../../src/run-types.ts';
 import { HARNESS_TOOL_NAMES } from '@e2e-dev/core/lib/agent/action-names';
 import { FINDING_TOOL_NAME } from '../../src/explore/executor.ts';
-import { recordingTools } from '../../src/mcp/recording.ts';
+import { recordingTools } from '../../src/session-tools/recording.ts';
 
 const ROOT = '/tmp/e2e-agent-config-project';
 const BASE_ENV = { APP_URL: 'http://localhost:3000' } as NodeJS.ProcessEnv;

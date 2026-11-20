@@ -109,7 +109,7 @@ test('checkout', async ({ app, agent, screen }) => {
 | `click()`, `dblclick()` | `tap()`、`doubleTap()`；`click()` 和 `dblclick()` 是别名 |
 | `click({ button: 'right' })`, `click({ delay })` | `secondaryTap()`、`longPress({ duration })` |
 | `click({ position })`, `click({ modifiers })` | `tap({ position })`、`tap({ modifiers })` |
-| `fill()`, `pressSequentially()`, `clear()`, `focus()`, `hover()`, `check()`, `uncheck()`, `dragTo()`, `setInputFiles(path)`, `selectOption({ label })` 或 `{ value }` | 相同，但不支持 `force`、`trial` 或 `position` |
+| `fill()`, `pressSequentially()`, `clear()`, `focus()`, `blur()`, `hover()`, `check()`, `uncheck()`, `dragTo()`, `setInputFiles(path)`, `selectOption({ label })` 或 `{ value }` | 相同，但不支持 `force`、`trial` 或 `position` |
 | `press(key)` | 单个字符或[命名按键](/reference/engine#keys)的用法相同；按键代码则在 `focus()` 后使用 `browser.keyboard.press` |
 | `innerText()`, `allInnerTexts()`, `scrollIntoViewIfNeeded()` | `textContent()`、`allTextContents()`、`scrollIntoView()` |
 | `textContent()`, `allTextContents()`, `inputValue()`, `getAttribute()`, `boundingBox()`, `isVisible()`, `isHidden()`, `isEnabled()`, `isDisabled()`, `isChecked()`, `waitFor({ state })` | 相同 |
@@ -162,7 +162,8 @@ test('checkout', async ({ app, agent, screen }) => {
 | --- | --- |
 | `import { test, expect } from '@playwright/test'` | `import { test } from '@e2e-dev/web'` 和 `import { expect } from 'e2e'` |
 | 测试中的 `{ page }` | `{ screen, app, browser }` |
-| `test()`, `test.describe()`, `test.only`, `test.fail()`, `test.skip(title, fn)`, `test.skip(condition, reason)` | 相同；条件式 `skip` 可用于测试体或 `beforeEach` 中 |
+| `test()`, `test.describe()`, `test.only`, `test.fail()`, `test.skip(title, fn)`, `test.skip(condition, reason)`, `test.fixme(title, fn)`, `test.fixme(condition, reason)` | 相同，但 serial 组改为在组上设置 `skip`；条件式可用于测试体或 `beforeEach` 中 |
+| `test.setTimeout()` | 在测试体、`beforeEach` 或 `beforeAll`（该钩子自身的超时）中相同；`afterEach` 和 `afterAll` 不能调用。在 `describe` 回调中，请改为向 `test.describe` 传入 `{ timeout }`。没有表示不限时的 `0`：请传入一个较大的值 |
 | `beforeEach`, `afterEach`, `beforeAll`, `afterAll` | 相同，但不带标题；`beforeAll` 和 `afterAll` 得到工作进程测试夹具，而不是 `browser`、`app` 或 `screen` |
 | `test.describe.skip`, `test.describe.serial`, `describe.configure({ mode: 'serial', retries, timeout })` | `test.describe(title, { skip, serial, retries, timeout }, fn)` |
 | `{ tag: '@smoke' }` | 测试或组上的 `{ tags: ['smoke'] }` |
@@ -280,7 +281,8 @@ export const test = base.extend<{ accountPage: AccountPage }>({
 | `globalSetup`, `globalTeardown`, `webServer` 数组 | 在运行前后执行的脚本，或启动所有进程的一个 `app.command` |
 | `projects[].testMatch`, `testDir`, `testIgnore`, `grep` | 测试上的 `platforms` 或标签，或为每个测试目标单独运行 |
 | `--ui`, `npx playwright show-report`, `--reporter html` | `--watch --headed`；`npx e2e report`（打开 `htmlReporter()` 写入的 `<output>/report.html`） |
-| `test.setTimeout()`、`test.slow()`、`test.fixme()`、`test.describe.only()`、describe 上的 `test.fail()` | 测试或组上的 `{ timeout }` 或 `{ skip: 'reason' }`；每个测试上的 `test.only` 和 `test.fail()` |
+| `test.slow()`、`test.describe.only()`、`test.describe.fixme()`、`test.fixme(title, details, body)`、describe 上的 `test.fail()` | 测试或组上的 `{ timeout }` 或 `{ skip: 'fixme' }`，details 中的 `tags` 一并写在旁边（报告的跳过原因为 `explicit`，而非 `fixme`）；每个测试上的 `test.only` 和 `test.fail()` |
+| `test.skip(callback, description)`、`test.fixme(callback, description)` | 在测试体中使用 `test.skip(condition, reason)` 或 `test.fixme(condition, reason)`，或在测试上设置 `platforms` |
 | `failOnFlakyTests`, `use.navigationTimeout`, `--timeout`, `--quiet` | `report.json` 中的 `run.summary.flaky`；`browser.goto(url, { timeout })`；配置中的 `timeout` |
 | `blob` 报告器和 `merge-reports` | 每个分片一份报告 |
 | Playwright Docker 镜像 | 与 `@e2e-dev/web` 固定的 `playwright-core` 版本对应的镜像，或 `npx @e2e-dev/web install chromium --with-deps` |

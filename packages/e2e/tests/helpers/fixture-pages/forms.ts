@@ -1,5 +1,6 @@
 /** Controls the tree cannot name or tell apart: unnamed fields, repeated buttons, moving twins. */
 
+import { randomInt } from 'node:crypto';
 import { constant, type PageRenderer } from './page.ts';
 
 /**
@@ -73,6 +74,36 @@ ${widget ? `    setTimeout(() => {
       widget.textContent = 'Chat with us';
       document.body.prepend(widget);
     }, 150);` : ''}
+  </script>
+</body>
+</html>`;
+}
+
+/**
+ * Six one-digit boxes the app marks as a one-time code, and the code it
+ * issued for this load. The status reads the verdict once every box holds a
+ * digit, so a replay that typed another load's code shows as it would to a
+ * user.
+ */
+function renderOneTimeCode(code: string): string {
+  const boxes = [1, 2, 3, 4, 5, 6]
+    .map((n) => `<input aria-label="Digit ${String(n)}" inputmode="numeric" maxlength="1" autocomplete="one-time-code" oninput="check()" />`)
+    .join('\n    ');
+  return `<!doctype html>
+<html>
+<head><title>Confirm</title></head>
+<body>
+  <p>Your code is ${code}</p>
+  <div role="group" aria-label="Code">
+    ${boxes}
+  </div>
+  <output role="status" aria-label="Verdict">waiting</output>
+  <script>
+    function check() {
+      const typed = [...document.querySelectorAll('input')].map((input) => input.value).join('');
+      if (typed.length < 6) return;
+      document.querySelector('output').textContent = typed === '${code}' ? 'Code verified' : 'Incorrect code';
+    }
   </script>
 </body>
 </html>`;
@@ -320,6 +351,10 @@ export const FORM_PAGES: Record<string, PageRenderer> = {
   </script>
 </body>
 </html>`),
+  // A one-time code split over one box per digit, as sign-in and checkout
+  // pages ask for it: the page issues a new code on every load, so a run
+  // that typed the last load's code reads "Incorrect code".
+  '/one-time-code': () => renderOneTimeCode(String(randomInt(1_000_000)).padStart(6, '0')),
   '/unanchored': constant(UNANCHORED_PAGE),
   '/repeats': (_state, url) =>
     renderRepeats(url.searchParams.get('reverse') === '1' || url.searchParams.get('variant') === 'b', url.searchParams.get('still') !== '1'),

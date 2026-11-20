@@ -1,6 +1,6 @@
 ---
 title: Selenium からの移行
-description: ロケーター、自動リトライするアサーション、エージェントの目標を使い、Selenium のフローを TypeScript に書き換えます。
+description: ロケーター、自動リトライするアサーション、エージェントのゴールを使い、Selenium のフローを TypeScript に書き換えます。
 "og:image": "https://e2e.com/docs/images/og/migrate/selenium.png?v=32737f50da"
 "twitter:image": "https://e2e.com/docs/images/og/migrate/selenium.png?v=32737f50da"
 ---
@@ -18,7 +18,7 @@ export const migrationPrompt = `このプロジェクトの Selenium テスト�
 7. 依存関係をインストールしてください。
 8. ページオブジェクトとそれを使うフローを一覧にし、最初に移すものを私に確認してください。1 つのページオブジェクトと、それに関連するフローを提案してください。
 9. ガイドの表を使い、それらのフローを \`tests/\` 内の \`.e2e.ts\` に書き換えてください（e2e のデフォルトは \`tests/**/*.e2e.ts\` です）。移す前に「e2e にまだない機能」を確認してください。必要な呼び出しが載っていれば、「現在使える方法」を採用するか、そのフローを Selenium に残して理由を説明してください。CSS や XPath より、ロール、ラベル、テスト ID のクエリを優先してください。すべての待機と \`Thread.sleep\` をロケーターアサーションに置き換えてください。複数ノードに一致するクエリは絞り込んでください。ページオブジェクトの準備コードはフィクスチャにしてください。
-10. ページ遷移と最終的な検証は、\`app.open()\` とロケーターアサーションで決定論的に保ってください。決め打ちの操作列が頻繁に壊れる箇所には、代わりに \`agent.act\` の目標を提案してください。
+10. ページ遷移と最終的な検証は、\`app.open()\` とロケーターアサーションで決定論的に保ってください。決め打ちの操作列が頻繁に壊れる箇所には、代わりに \`agent.act\` のゴールを提案してください。
 11. \`npx e2e run <file>\` で新しいファイルを実行し、成功するまで修正してください。削除してよいと私が確認するまで、Selenium のテストは残してください。
 12. 移したフロー、Selenium に残したフロー、それぞれの理由をまとめてください。`;
 
@@ -92,13 +92,13 @@ test('signs in', async ({ app, screen, browser }) => {
 | `switchTo().frame()`, `switchTo().alert().accept()` | `browser.frameLocator('#frame')`、操作前に `browser.onDialog('accept')` |
 | `switchTo().window(handle)`, `getWindowHandles()`, `switchTo().newWindow()` | `tab.activate()`、`browser.tabs()`、`browser.newTab()`。アプリが開くタブには `browser.waitForPopup(() => trigger)`。[タブ](/reference/web#tabs)を参照 |
 | `executeScript(script, args)` | `browser.evaluate(fn, arg)`。入出力は JSON のみ |
-| ページオブジェクト | `test.extend` のフィクスチャ、または `agent.act` の目標。[ページオブジェクト](/page-object-model)を参照 |
+| ページオブジェクト | `test.extend` のフィクスチャ、または `agent.act` のゴール。[ページオブジェクト](/page-object-model)を参照 |
 
 ## e2e にまだない機能
 
-「計画済み」はロードマップに載っています。「未対応」は日程が未定です。「対応予定なし」は意図的に含めていません。
+「実装予定」はロードマップに載っています。「未対応」は日程が未定です。「実装予定なし」は意図的に含めていません。
 
-### 計画済み
+### 実装予定
 
 | Selenium | 現在使える方法 |
 | --- | --- |
@@ -119,15 +119,15 @@ test('signs in', async ({ app, screen, browser }) => {
 | `getPageSource()`, `getLocalStorage()`, `getSessionStorage()` | `browser.evaluate`。例: `() => localStorage.getItem('k')` |
 | Java、Python、C#、Ruby のバインディング | テストは TypeScript または JavaScript |
 
-### 対応予定なし
+### 実装予定なし
 
 | Selenium | 代わりに使う方法 |
 | --- | --- |
-| Cucumber の feature ファイル | 各シナリオをテストに書き換え。1 ステップを 1 つの `agent.act` の目標にできることが多い |
+| Cucumber の feature ファイル | 各シナリオをテストに書き換え。1 ステップを 1 つの `agent.act` のゴールにできることが多い |
 | `Thread.sleep`, `Actions.pause`, `wait.until(elementToBeClickable(...))` | 待ちたい状態へのロケーターアサーション。各アクションは自身のノードを待つ |
 | ダイアログが開いた後の `switchTo().alert()`、`alertIsPresent()` | ダイアログを開く操作の前に `browser.onDialog(handler)` |
 | 実際の Safari、IE モード | Safari に最も近いビルドは `webkit`。IE モードのテストは Selenium に残す |
-| `executeCdpCommand`、`DevTools.send`、ドライバーを受け取る SDK | Selenium に残す。生のドライバー呼び出しは記録も伏せ字化もされない |
+| `executeCdpCommand`、`DevTools.send`、ドライバーを受け取る SDK | Selenium に残す。生のドライバー呼び出しは記録も秘匿もされない |
 | Allure レポート | `junit` レポーターの XML を Allure に渡すか、`htmlReporter()` を使用 |
 
 ## 意図的に異なる点
@@ -141,7 +141,7 @@ test('signs in', async ({ app, screen, browser }) => {
 
 <CardGroup cols={2}>
   <Card title="基本概念" icon="pen-to-square" href="/core-concepts">
-    決め打ちのセレクターに代わる、目標、アサーション、ロケーター。
+    決め打ちのセレクターに代わる、ゴール、アサーション、ロケーター。
   </Card>
   <Card title="screen のリファレンス" icon="crosshairs" href="/reference/screen">
     すべてのクエリ、絞り込み、アクション、読み取り。

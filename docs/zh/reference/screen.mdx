@@ -528,6 +528,7 @@ await screen.pause();
 | [`uncheck`](#uncheck) | `Promise<void>` |
 | [`selectOption`](#selectoption) | `Promise<void>` |
 | [`focus`](#focus) | `Promise<void>` |
+| [`blur`](#blur) | `Promise<void>` |
 | [`hover`](#hover) | `Promise<void>` |
 | [`setInputFiles`](#setinputfiles) | `Promise<void>` |
 | [`dragTo`](#dragto) | `Promise<void>` |
@@ -747,6 +748,19 @@ focus(options?: ActionOptions): Promise<void>;
 
 ```ts
 await screen.getByLabel('Email').focus();
+```
+
+#### `blur`
+
+```ts
+/** Removes focus from exactly one node if it is focused. */
+blur(options?: ActionOptions): Promise<void>;
+```
+
+仅支持 Web。如果匹配的节点未获得焦点，此操作不会产生效果。
+
+```ts
+await screen.getByLabel('Email').blur();
 ```
 
 #### `hover`

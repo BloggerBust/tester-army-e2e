@@ -2,14 +2,13 @@ import { realmSlot } from '@e2e-dev/core/lib/internal/realm-slot';
 import type { ResultStatus } from '@e2e-dev/core/lib/run/records';
 import type { OutputStream } from '../run/process-output.ts';
 
-/** A line view consumes this grant at startup if the runner has reserved the cursor row for it. */
+/** Spreading a reporter copies its hooks without copying this non-enumerable cursor grant. */
 export const cursorRow = realmSlot<{ exclusive: boolean }>('e2e.reporter.cursor-row');
 
-/** A selected test as a progress row names it. */
 export interface TerminalProgressTest {
   readonly target: string;
   readonly file: string;
-  /** The title as the reporter prints it, with its agent and repeat suffixes. */
+  /** Includes any repeat and agent suffixes. */
   readonly title: string;
 }
 
@@ -20,9 +19,11 @@ export interface TerminalProgressResult extends TerminalProgressTest {
 export interface TerminalProgress {
   readonly failureTiming: 'immediate' | 'at-end';
   plan?(total: number): void;
-  /** The runner announced a selected test start. */
   start?(row: TerminalProgressTest): void;
-  /** Return a permanent row so the view can reset the log heading, or write progress directly and return nothing. */
+  /**
+   * Called once per selected test, after any retries. Return a permanent row so the view
+   * can reset the log heading, or write progress directly and return nothing.
+   */
   result(result: TerminalProgressResult): string | void;
   /** Handles redacted user output when the mode prints it without headings. */
   show?(stream: OutputStream, text: string): void;

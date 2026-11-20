@@ -32,12 +32,11 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { join, relative, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { DOCS_LANGUAGES } from './docs-languages.ts';
 import { pages } from './docs-pages.ts';
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url));
 const DOCS = join(ROOT, 'docs');
-/** The languages the docs are translated into, each a folder under `docs/`. */
-const LANGUAGES = ['ja', 'zh', 'cs', 'es'];
 // MDX components can contain fences indented beyond CommonMark's three spaces.
 const FENCE = /^ *(`{3,}|~{3,})/;
 const HEADING = /^ {0,3}(#{1,4})\s+\S/;
@@ -120,7 +119,7 @@ const warnings: { file: string; message: string }[] = [];
 const config = JSON.parse(read(join(DOCS, 'docs.json'))) as DocsJson;
 let checked = 0;
 
-for (const language of LANGUAGES) {
+for (const language of DOCS_LANGUAGES) {
   const root = join(DOCS, language);
   for (const page of pages(root)) {
     const file = docsPath(page);

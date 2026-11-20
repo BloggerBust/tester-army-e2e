@@ -3,7 +3,6 @@ import { ListReporter, runView } from './list.ts';
 import { bounded, fitColumns } from './format.ts';
 import { cursorRow, type TerminalProgress, type TerminalProgressResult, type TerminalProgressTest } from './progress.ts';
 
-/** Options of the built-in `line` reporter. */
 export interface LineReporterOptions {
   /** Defaults to stdout, or stderr alongside the JSON reporter. */
   readonly stream?: 'stdout' | 'stderr';
@@ -32,7 +31,6 @@ export function line(options: LineReporterOptions = {}): Reporter {
 interface LineProgressOutput {
   readonly write: (text: string) => void;
   readonly interactive: boolean;
-  /** Returns the current terminal width, including after resizing. */
   readonly columns: () => number;
 }
 
@@ -51,17 +49,12 @@ export class LineProgress implements TerminalProgress {
     this.completed = 0;
   }
 
-  /**
-   * Shows the most recent test start reported by the runner beside the
-   * count of finished tests. One row cannot follow every worker, so the latest
-   * start or result replaces it.
-   */
+  /** Concurrent tests share one row. Each start or final result replaces its contents. */
   start(row: TerminalProgressTest): void {
     if (!this.output.interactive || !this.total) return;
     this.draw(this.label(row), ' (running)');
   }
 
-  /** Reports a selected test's final result after any retries. */
   result(row: TerminalProgressResult): string | void {
     this.completed += 1;
     const label = this.label(row);
@@ -89,7 +82,6 @@ export class LineProgress implements TerminalProgress {
   }
 }
 
-/** Keeps line breaks in user labels from creating extra terminal rows. */
 function oneLine(text: string): string {
   return bounded(text).replace(/[\r\n]+/g, ' ');
 }

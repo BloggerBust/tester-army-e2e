@@ -45,6 +45,8 @@ interface ShownScreen {
   readonly keyboard: boolean;
   /** The open tabs when there was more than one, the shown one numbered from 1. */
   readonly tabs: ExecutorObservation['tabs'];
+  /** Where the surface was, as the update reports it. */
+  readonly path: string | undefined;
 }
 
 /** A node line whose role is the on-screen keyboard, as device trees list it. */
@@ -109,6 +111,34 @@ export function toolResultTexts(output: ToolResultPart['output']): string[] {
   return output.value.flatMap((item) => (item.type === 'text' ? [item.text] : []));
 }
 
+/** Leads of an update that changed the listing or the tabs; the loop guard reads them. */
+const CHANGED_SUBSTANTIALLY = 'The screen changed substantially since revision ';
+const CHANGES_SINCE = 'Screen changes since revision ';
+const NOTHING_LISTED_CHANGED = 'no listed node changed';
+const TRUNCATED_ASSURANCE = 'The screen listing is truncated: nodes past the cut are not listed and none is reported removed; every listed node keeps the id you have.';
+const TAB_OPENED = 'The app opened ';
+const TABS_CLOSED = 'The other tab';
+const TAB_SHOWN = 'The screen shows tab ';
+const LOCATION_CHANGED = 'The location changed to ';
+const CURRENT_SCREEN = 'Current screen (';
+const NO_TREE = 'semantic capture unavailable';
+
+/**
+ * True when a tool result's first line, which this module writes, reports a
+ * change to the listing or to the open tabs. Only that line is read: node
+ * text comes after it, so app content can never pass for a change. A
+ * truncated listing with no line changed, a screen with no tree, and a
+ * change in pixels alone (an animated spinner) report no change here.
+ */
+export function reportsScreenChange(text: string): boolean {
+  const headline = text.split('\n').find((line) => line.trim() !== '' && line.trim() !== 'Observed.') ?? '';
+  // Match renderer-owned leads and endings because the location comes from the app.
+  if ([CHANGED_SUBSTANTIALLY, TAB_OPENED, TABS_CLOSED, TAB_SHOWN, LOCATION_CHANGED].some((lead) => headline.startsWith(lead))) return true;
+  // A whole screen after an update is the listing coming back once semantic capture recovers.
+  if (headline.startsWith(CURRENT_SCREEN)) return !headline.endsWith(`, ${NO_TREE}):`);
+  return headline.startsWith(CHANGES_SINCE) && !headline.endsWith(`): ${NOTHING_LISTED_CHANGED}. ${TRUNCATED_ASSURANCE}`);
+}
+
 /** Renders one step's screens for the model and remembers what it has seen. */
 export class ScreenPresenter {
   private shown: ShownScreen | undefined;
@@ -116,6 +146,12 @@ export class ScreenPresenter {
   private screenshotDigest: string | undefined;
   /** True once the engine said it captures no screenshots at all. */
   private pixelsDenied = false;
+  /**
+   * The tabs and location of the last screen sent, kept even when that screen
+   * had no tree; undefined until the first screen, so a presenter that was
+   * never opened reports no change on its first result.
+   */
+  private seen: { readonly tabs: ExecutorObservation['tabs']; readonly path: string | undefined } | undefined;
 
   /** True once a screenshot went to the model in this step. */
   get showingPixels(): boolean {
@@ -127,9 +163,27 @@ export class ScreenPresenter {
     return this.screenshot;
   }
 
+  /** What the tabs and location say changed since the last screen sent, for a screen with no tree to compare. */
+  private movedSinceSeen(observation: ExecutorObservation): string {
+    if (this.seen === undefined) return '';
+    const tabs = tabNote(this.seen.tabs, observation.tabs);
+    const moved = tabs?.moved !== true && this.newLocation(observation.path);
+    return `${tabs === undefined ? '' : `${tabs.note} `}${moved ? `${LOCATION_CHANGED}${observation.path ?? 'none'}. ` : ''}`;
+  }
+
+  /**
+   * True when the screen reports a location and it differs from the last
+   * one reported: an engine that leaves the location out of one capture has
+   * not navigated, and neither has it when the location comes back.
+   */
+  private newLocation(path: string | undefined): boolean {
+    return path !== undefined && this.seen?.path !== undefined && path !== this.seen.path;
+  }
+
   /** The step's first screen, whole. */
   initial(observation: ExecutorObservation): string {
     this.shown = observation.treeUnavailable === true ? undefined : indexScreen(observation);
+    this.seen = { tabs: observation.tabs, path: observation.path ?? this.seen?.path };
     return renderFull(observation);
   }
 
@@ -145,33 +199,44 @@ export class ScreenPresenter {
   private render(observation: ExecutorObservation, options: ScreenUpdateOptions, pixels: PixelEvidence): string {
     let lead = options.lead === undefined ? '' : `${options.lead}\n\n`;
     if (observation.treeUnavailable === true) {
-      return `${lead}${this.initial(observation)}`;
+      // No tree to compare, but the tabs and the location still say what happened.
+      return `${lead}${this.movedSinceSeen(observation)}${this.initial(observation)}`;
     }
     const previous = this.shown;
     const next = indexScreen(observation);
+    if (previous === undefined) {
+      const notes = this.movedSinceSeen(observation);
+      this.shown = next;
+      this.seen = { tabs: next.tabs, path: next.path ?? this.seen?.path };
+      return `${lead}${notes}${renderFull(observation)}`;
+    }
     this.shown = next;
-    if (previous === undefined) return `${lead}${renderFull(observation)}`;
+    const located = this.newLocation(next.path);
+    this.seen = { tabs: next.tabs, path: next.path ?? this.seen?.path };
     const closed = options.keyboardNote === false || options.lead === undefined ? '' : keyboardClosedNote(previous, next);
     const tabs = tabNote(previous.tabs, next.tabs);
     // Another tab is another document: its ids say nothing about the tab the model held.
     if (tabs?.moved === true) return `${lead}${tabs.note} ${renderFull(observation)}${closed}`;
-    // A tab opened is the action's effect, so an unchanged screen blames no control.
-    const expectChange = options.expectChange === true && tabs === undefined;
-    if (tabs !== undefined) lead = `${lead}${tabs.note} `;
     const diff = diffScreens(previous, next);
     const changes = diff.length;
+    // A new location with nothing listed changed (a save that only moved the URL) is said, not hidden.
+    const moved = changes === 0 && located;
+    // A tab opened or a new location is the action's effect, so an unchanged screen blames no control.
+    const expectChange = options.expectChange === true && tabs === undefined && !moved;
+    if (tabs !== undefined) lead = `${lead}${tabs.note} `;
+    if (moved) lead = `${lead}${LOCATION_CHANGED}${next.path ?? 'none'}. `;
     // A truncated screen is never called unchanged: what it left out is unknown.
     if (changes === 0 && !observation.truncated) {
       return `${lead}${renderUnchanged(previous.revision, observation, expectChange, pixels)}${closed}`;
     }
     if (changes >= MAX_DIFF_LINES || changes > MAX_DIFF_SHARE * next.order.length) {
-      return `${lead}The screen changed substantially since revision ${previous.revision}. ${renderFull(observation)}${closed}`;
+      return `${lead}${CHANGED_SUBSTANTIALLY}${previous.revision}. ${renderFull(observation)}${closed}`;
     }
     const assurance = observation.truncated
-      ? 'The screen listing is truncated: nodes past the cut are not listed and none is reported removed; every listed node keeps the id you have.'
+      ? TRUNCATED_ASSURANCE
       : 'Every node not listed as removed is still on screen under the id you have.';
     return [
-      `${lead}Screen changes since revision ${previous.revision} (now revision ${observation.revision}${describeLocation(observation)}, ${String(next.nodes)} nodes): ${describeCounts(diff)}. ${assurance}`,
+      `${lead}${CHANGES_SINCE}${previous.revision} (now revision ${observation.revision}${describeLocation(observation)}, ${String(next.nodes)} nodes): ${describeCounts(diff)}. ${assurance}`,
       ...diff,
     ].join('\n') + closed;
   }
@@ -263,16 +328,16 @@ function describeCounts(diff: readonly string[]): string {
     .filter(([n]) => n > 0)
     .map(([n, kind]) => `${String(n)} ${kind}`)
     .join(', ');
-  return counts === '' ? 'no listed node changed' : counts;
+  return counts === '' ? NOTHING_LISTED_CHANGED : counts;
 }
 
 /** One full screen, headed so the elision can find it later. */
 function renderFull(observation: ExecutorObservation): string {
   if (observation.treeUnavailable === true) {
-    return `Current screen (revision ${observation.revision}${describeLocation(observation)}, semantic capture unavailable):\n${observation.text}`;
+    return `${CURRENT_SCREEN}revision ${observation.revision}${describeLocation(observation)}, ${NO_TREE}):\n${observation.text}`;
   }
   const nodes = indexScreen(observation).nodes;
-  return `Current screen (revision ${observation.revision}${describeLocation(observation)}, ${String(nodes)} nodes):\n${observation.text}`;
+  return `${CURRENT_SCREEN}revision ${observation.revision}${describeLocation(observation)}, ${String(nodes)} nodes):\n${observation.text}`;
 }
 
 /**
@@ -298,9 +363,9 @@ function renderUnchanged(since: string, observation: ExecutorObservation, expect
   if (!expectedChange) return `Screen unchanged since revision ${since} (${looked}); the ids you have stay valid.`;
   switch (pixels) {
     case 'unchanged':
-      return `The screen did not change within the wait after this action (${looked}); the ids you have stay valid. If a change was expected, the control had no visible effect here: look for another way rather than repeating it.`;
+      return `The screen did not change within the wait after this action (${looked}); the ids you have stay valid. If a change was expected and the control commits something (a save, a submit), it may still have gone through: check before you commit again by any route. Otherwise, if a change was expected, the control had no visible effect here: look for another way rather than repeating it.`;
     case 'unavailable':
-      return `No listed node changed within the wait after this action (${looked}); the ids you have stay valid. No screenshot can be taken in this step, so the listing is the only evidence: if a change was expected, look for another way rather than repeating it.`;
+      return `No listed node changed within the wait after this action (${looked}); the ids you have stay valid. No screenshot can be taken in this step, so the listing is the only evidence. If a change was expected and the control commits something (a save, a submit), it may still have gone through: check before you commit again by any route. Otherwise, if a change was expected, look for another way rather than repeating it.`;
     case 'none':
       return `No listed node changed within the wait after this action (${looked}); the ids you have stay valid. The listing shows only what the tree describes: a drawn change needs a screenshot to see.`;
   }
@@ -314,7 +379,7 @@ function keyboardClosedNote(previous: ShownScreen, next: ShownScreen): string {
 }
 
 function describeLocation(observation: ExecutorObservation): string {
-  const path = observation.path === undefined ? '' : `, path ${observation.path}`;
+  const path = observation.path === undefined ? '' : `, path ${observation.path.replace(/[\r\n]+/g, ' ')}`;
   const tabs = observation.tabs === undefined ? '' : `, tab ${String(observation.tabs.active)} of ${String(observation.tabs.count)}`;
   return `${path}${tabs}`;
 }
@@ -336,10 +401,10 @@ function tabNote(previous: ShownScreen['tabs'], next: ShownScreen['tabs']): { re
     const opened = added === 1
       ? `a new tab (tab ${total} of ${total})`
       : `${String(added)} new tabs (tabs ${String(before.count + 1)} to ${total} of ${total})`;
-    return { note: `The app opened ${opened}. The screen still shows tab ${String(after.active)}; use switch_tab to see ${added === 1 ? 'it' : 'one'}.`, moved: false };
+    return { note: `${TAB_OPENED}${opened}. The screen still shows tab ${String(after.active)}; use switch_tab to see ${added === 1 ? 'it' : 'one'}.`, moved: false };
   }
-  if (next === undefined) return { note: `The other tab${before.count > 2 ? 's' : ''} closed; the screen shows the one tab still open.`, moved: true };
-  return { note: `The screen shows tab ${String(after.active)} of ${String(after.count)} now.`, moved: true };
+  if (next === undefined) return { note: `${TABS_CLOSED}${before.count > 2 ? 's' : ''} closed; the screen shows the one tab still open.`, moved: true };
+  return { note: `${TAB_SHOWN}${String(after.active)} of ${String(after.count)} now.`, moved: true };
 }
 
 /** Node id at the head of one rendered line, or undefined for a marker line. */
@@ -380,6 +445,7 @@ function indexScreen(observation: ExecutorObservation): ShownScreen {
     truncated: observation.truncated,
     keyboard: order.some((line) => KEYBOARD_LINE.test(line)),
     tabs: observation.tabs,
+    path: observation.path,
   };
 }
 

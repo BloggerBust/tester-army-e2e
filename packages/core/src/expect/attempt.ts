@@ -22,6 +22,12 @@ export interface PublishedAttempt {
   readonly soft: SoftFailures;
   /** Marks the attempt expected to fail (`test.fail`); absent where no mark is allowed. */
   readonly expectFailure?: (reason: string) => void;
+  /**
+   * Gives the attempt a test timeout of `timeoutMs`, counted from its start
+   * (`test.setTimeout`); false once the attempt's timeout race settled.
+   * Absent in a hosted session, which runs no e2e test.
+   */
+  readonly setTimeout?: (timeoutMs: number) => boolean;
   /** Hosted callers have no runner-owned body lineage; their polls belong to the session. */
   readonly polls?: PollScope;
   /**

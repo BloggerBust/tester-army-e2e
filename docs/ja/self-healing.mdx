@@ -3,7 +3,7 @@ title: セルフヒーリングするテスト
 description: UI の変更に再生中のエージェントステップがどう対応し、記録がどう修復されるかを説明します。
 ---
 
-セルフヒーリングするテストは、記録済みの `agent.act()` ステップに関わる UI が変わっても、成功し続けます。ランナーは、画面と一致しなくなるところまで記録を再生します。その後、残りの処理をエージェントに引き継ぎ、エージェントが現在の画面から目標を達成します。`read-write` モードでは、後続の確認が成功すると、同じ実行中に新しいフローを保存できます。
+セルフヒーリングするテストは、記録済みの `agent.act()` ステップに関わる UI が変わっても、成功し続けます。ランナーは、画面と一致しなくなるところまで記録を再生します。その後、残りの処理をエージェントに引き継ぎ、エージェントが現在の画面からゴールを達成します。`read-write` モードでは、後続の確認が成功すると、同じ実行中に新しいフローを保存できます。
 
 この方法で修復されたステップは、実行サマリーで `handed off` に数えられます。
 
@@ -64,9 +64,9 @@ Continue the step from the CURRENT screen state shown below — do NOT redo the 
 
 ## UI の変更に対応しながら、不具合も検出する
 
-エージェントは、記録済みのクリック手順ではなく、指示にある目標に向けて修復します。割引ボタンが移動したなら見つけ直します。割引が機能しなくなったなら、ステップまたは後続の確認が失敗します。
+エージェントは、記録済みのクリック手順ではなく、指示にあるゴールに向けて修復します。割引ボタンが移動したなら見つけ直します。割引が機能しなくなったなら、ステップまたは後続の確認が失敗します。
 
-それでも、別の割引を使うなど、意図しない方法で目標を達成する可能性はあります。上の `toHaveText('10% off')` のように、結果を決定論的に確認してテストを終えてください。この確認は、再生でも修復でも、実行のたびに行われます。
+それでも、別の割引を使うなど、意図しない方法でゴールを達成する可能性はあります。上の `toHaveText('10% off')` のように、結果を決定論的に確認してテストを終えてください。この確認は、再生でも修復でも、実行のたびに行われます。
 
 ## 修復されたステップを確認する
 
@@ -76,7 +76,7 @@ Continue the step from the CURRENT screen state shown below — do NOT redo the 
 cache: replayed 1 of 2 recorded actions, then the agent took over: a recorded target is not on the screen; recorded with `openai/gpt-6-luna-fast`; at action 2 of 2, tap button "Apply"; recording saved (`.e2e/cache/<entry>.json`)
 ```
 
-`agent.act()` は、`write` を除く同じ記録を `result.cache` として返します。[独自のエグゼキューター](/executors#replay-cache)には `ctx.replayedPrefix` で引き継がれます。こちらも現在の画面から処理を続ける必要があります。
+`agent.act()` は、`write` を除く同じ記録を `result.cache` として返します。[カスタムエグゼキューター](/executors#replay-cache)には `ctx.replayedPrefix` で引き継がれます。こちらも現在の画面から処理を続ける必要があります。
 
 ## CI で修復のたびにモデルコストがかかるのを防ぐ
 

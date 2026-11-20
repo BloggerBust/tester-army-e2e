@@ -12,6 +12,7 @@ import {
 import { DebugTrace } from '@e2e-dev/core/lib/internal/debug';
 import { titlePathKey } from '@e2e-dev/core/lib/internal/ids';
 import { withTimeout } from '@e2e-dev/core/lib/internal/time';
+import type { AttemptTimeout } from '@e2e-dev/core/lib/run/budget';
 import type { CollectedFile, CollectedTest } from '../collect/collect.ts';
 import {
   collectModule,
@@ -52,7 +53,8 @@ export function findRegistered(realm: Realm, test: CollectedTest): RegisteredTes
 }
 
 /**
- * Runs one hook, or a fixture teardown, within its budget. One that overruns
+ * Runs one hook, or a fixture teardown, within its budget: a fixed one, or
+ * one `test.setTimeout` can move. One that overruns
  * fails with the runner's timeout error naming `label`; `onTimeout` lets the
  * caller cancel what it started. The hook owns the `expect.poll` calls it
  * starts: one still running when it returns fails it with
@@ -62,19 +64,17 @@ export function findRegistered(realm: Realm, test: CollectedTest): RegisteredTes
 export async function runHook(
   label: string,
   run: () => void | Promise<void>,
-  timeoutMs: number,
+  timeout: number | AttemptTimeout,
   onTimeout?: () => void,
 ): Promise<void> {
   const polls = new PollScope(`the ${label}`);
+  const work = runInPollScope(polls, () => Promise.resolve().then(run));
+  const timedOut = (): Error => {
+    onTimeout?.();
+    return new TestTimeoutError(`${label} timed out`);
+  };
   try {
-    await withTimeout(
-      runInPollScope(polls, () => Promise.resolve().then(run)),
-      timeoutMs,
-      () => {
-        onTimeout?.();
-        return new TestTimeoutError(`${label} timed out`);
-      },
-    );
+    await (typeof timeout === 'number' ? withTimeout(work, timeout, timedOut) : timeout.race(work, timedOut));
   } catch (cause) {
     polls.close();
     throw cause;

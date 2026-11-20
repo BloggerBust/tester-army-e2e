@@ -22,6 +22,7 @@ import type { AgentErrorCode } from '../types.ts';
 import { READ_ONLY_GRAMMAR } from './action-names.ts';
 import { isRuntimeHardStop, BLOCKABLE_CODES, type StepExecutorContext, type StepVerdict } from './executor.ts';
 import { cacheTokenFields, readCost } from './model/sdk.ts';
+import { markWaitingTool } from './loop-guards.ts';
 import { OperationQueue } from './operation-queue.ts';
 import { imagePointToViewport, POINT_VERBS } from './point-tap.ts';
 import { SAMPLE_NAMES, SAMPLE_PREFIX } from './sample-files.ts';
@@ -77,7 +78,7 @@ const MODEL_BLOCKABLE_CODES = MODEL_ERROR_CODES.filter((code) => BLOCKABLE_CODES
 /** The verdict rules the built-in agent appends to its instructions. */
 export const VERDICT_RULES = `Verdict rules:
 - When the step's goal is achieved, or you are certain it cannot be, call complete_step exactly once.
-- Conclude from the newest screen and changes already in this conversation; never guess success. Observe again before concluding only when the newest result shows work still in progress (a spinner, "Saving…", a pending state).
+- Conclude from the newest screen and changes already in this conversation; never guess success. Observe again before concluding only when the newest result shows work still in progress (a spinner, "Saving…", a pending state), or when a press that commits something (a save, a submit, a delete) showed no confirmation.
 - "passed" means the application behaved as the step required. "failed" means it did not. "blocked" means credentials, the environment, or test setup prevented a product verdict — blocked says nothing about the product and requires an errorCode.`;
 
 /**
@@ -362,12 +363,12 @@ export function grammarTools(
     .describe('Node id from any screen in this conversation that is still present, e.g. "n42"');
 
   const tools: ToolSet = {
-    observe: screenTool({
+    observe: markWaitingTool(screenTool({
       description:
-        'Look at the screen again and get what changed since the screen you last received. Action results already include their changes, so call this only after waiting for something in progress, never right after an action.',
+        'Look at the screen again and get what changed since the screen you last received. Action results already include their changes, so call this only after waiting for something in progress, or to check whether a press that commits something (a save, a submit, a delete) went through; never to re-read another action\'s result.',
       inputSchema: z.object({}),
       execute: () => inOrder(() => guard(() => present('Observed.', { expectChange: false, keyboardNote: false }))),
-    }),
+    })),
   };
   const modifiers = z
     .array(z.enum(KEY_MODIFIERS))
@@ -644,7 +645,8 @@ export function grammarTools(
   const save = options.saveScreenshot;
   tools['screenshot'] =
     save === undefined
-      ? screenTool({ description, inputSchema: z.object({}), execute: () => inOrder(() => guard(look)) })
+      ? // Only looks, like observe: waiting on a save by screenshots is a wait too. The variant that saves a file is not marked.
+        markWaitingTool(screenTool({ description, inputSchema: z.object({}), execute: () => inOrder(() => guard(look)) }))
       : screenTool({
           description: `${description} With path, also saves the masked full-resolution screenshot as a PNG file and returns its absolute path.`,
           inputSchema: z.object({

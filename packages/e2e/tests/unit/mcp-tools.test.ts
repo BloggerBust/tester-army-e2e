@@ -5,8 +5,8 @@ import { loadAiSdk } from '@e2e-dev/core/lib/agent/ai-sdk';
 import { createGrammarTools } from '@e2e-dev/core/lib/agent/primitives';
 import { ScreenPresenter } from '@e2e-dev/core/lib/agent/screen-update';
 import { TestError } from '@e2e-dev/core/lib/internal/errors';
-import { createSessionCatalog } from '../../src/mcp/catalog.ts';
-import { catalogLine, describeToolDetail, errorResult, invokeTool, resultFromOutput, toolJsonSchema } from '../../src/mcp/tools.ts';
+import { createSessionCatalog } from '../../src/session-tools/catalog.ts';
+import { catalogLine, describeToolDetail, errorResult, invokeTool, resultFromOutput, toolJsonSchema } from '../../src/session-tools/tools.ts';
 import { fakeExecutorContext } from '../helpers/fake-executor-context.ts';
 
 const extra = { signal: new AbortController().signal };
@@ -32,6 +32,13 @@ describe('catalogLine', () => {
     const line = catalogLine('long', long, false);
     expect(line.length).toBeLessThan(200);
     expect(line.endsWith('…')).toBe(true);
+  });
+
+  it('redacts a secret that spans the catalog sentence cutoff', () => {
+    const secret = 'private. part is not for the catalog';
+    const tool = { ...tap, description: `Uses ${secret}. More details.` };
+    expect(catalogLine('tap', tool, false, (value) => value.replaceAll(secret, '<secret:token>')))
+      .toBe('- tap {target, times?}: Uses <secret:token>.');
   });
 });
 

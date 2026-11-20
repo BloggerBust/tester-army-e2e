@@ -8,6 +8,10 @@ import { describe, expect, it } from 'vitest';
 import { EngineError, defineEngine } from '@e2e-dev/core/engine';
 import { web, surfaceOf } from '../../src/index.ts';
 
+it('declares support for blur on web', () => {
+  expect(web().actions).toContain('blur');
+});
+
 describe('surfaceOf', () => {
   it('returns a live surface for a playwright handle and undefined for a foreign one', () => {
     const handle = web();

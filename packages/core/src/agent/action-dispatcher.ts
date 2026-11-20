@@ -770,6 +770,7 @@ export class ActionDispatcher {
       const derived = derivedReason(action.value, this.options.instruction, this.options.params, {
         shown: this.feed.shownText(),
         pixels: this.feed.pixelsShown,
+        ...(action.name === 'type' ? { inputPurpose: action.node.inputPurpose } : {}),
       });
       if (derived !== undefined) {
         trace.recordDerivedGap(derived);

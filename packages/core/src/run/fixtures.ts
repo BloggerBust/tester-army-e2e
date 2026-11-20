@@ -601,7 +601,10 @@ function unreachableApp(cause: unknown, url: string, command: CommandConfig | un
 }
 
 /** Builds the portable app fixture with the session's shared screenshot policy. */
-function createApp(environment: AttemptEnvironment, engine: LocatorEngine): App {
+export function createApp(
+  environment: Pick<AttemptEnvironment, 'config' | 'steps' | 'target' | 'session' | 'artifacts'>,
+  engine: LocatorEngine,
+): App {
   const { config, steps, target } = environment;
   const recordings = sessionRecordings(environment.session, target.name);
   /** What bounds an open, a restart, or a link open: the default a program set, else the test's timeout. */

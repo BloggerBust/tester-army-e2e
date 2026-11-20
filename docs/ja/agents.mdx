@@ -37,7 +37,7 @@ export default {
 
 各エントリーは `default` の設定を継承しません。上の例のように共通の定数を使うなどして、それぞれに必要なモデルとコンテキストを指定します。
 
-[独自のエグゼキューター](/executors)は `executor` に設定します。モデル、ジャッジ、コンテキスト、予算は引き続き適用されます。エグゼキューターが独自のプロンプトとツールを用意するため、`system` と `tools` は指定できません。
+[カスタムエグゼキューター](/executors)は `executor` に設定します。モデル、ジャッジ、コンテキスト、予算は引き続き適用されます。エグゼキューターが独自のプロンプトとツールを用意するため、`system` と `tools` は指定できません。
 
 ## 指示と用語を設定する
 
@@ -150,7 +150,7 @@ describe('checkout', { agent: ['buyer', 'admin'] }, () => {
   <Card title="プロジェクトツール" icon="wrench" href="/tools">
     エージェントにテスト API やデバイス用ツールを渡します。
   </Card>
-  <Card title="独自のエグゼキューター" icon="gears" href="/executors">
+  <Card title="カスタムエグゼキューター" icon="gears" href="/executors">
     エージェントによる操作の選択方法と実行方法を変更します。
   </Card>
 </CardGroup>

@@ -43,6 +43,7 @@ web({ viewport: { width: 390, height: 844 }, locale: 'de-DE' });
 | 选项 | 类型 | 默认值 |
 | --- | --- | --- |
 | [`browser`](#browser) | `BrowserName \| BrowserProvider` | `'chromium'` |
+| [`chromiumSandbox`](#chromiumsandbox) | `boolean` | `true`，Linux 上为 `false` |
 | [`viewport`](#viewport) | `ViewportSize \| null` | 1280 × 720 |
 | [`screencast`](#screencast) | `WebScreencastOptions` | 视口尺寸 |
 | [`connect`](#connect) | `WebConnectOptions` | 在本地启动 |
@@ -82,6 +83,23 @@ web({ browser: 'firefox' }); // default: 'chromium'
 | 抛出错误 | 触发条件 |
 | --- | --- |
 | `INVALID_CONFIG` | 同时设置 `browser: provider` 和 `connect`。 |
+
+#### `chromiumSandbox`
+
+本地启动的 Chromium 是否启用操作系统沙箱。
+
+```ts
+web({ chromiumSandbox: true }); // default: true on macOS and Windows, false on Linux
+```
+
+- 沙箱有助于遏制智能体所到页面上的渲染进程漏洞利用，见[安全](/security)。
+- 在 Linux 上，沙箱需要非特权用户命名空间，而 root、大多数容器和 Ubuntu 23.10 及以上版本会阻止它。在允许的主机上设置 `true`。
+- 通过 `connect` 或提供方接入的浏览器由其主机启动，Firefox 和 WebKit 没有此选项，因此它们都不读取该设置。
+
+| 抛出错误 | 触发条件 |
+| --- | --- |
+| `INVALID_CONFIG` | 值不是布尔值（加载配置时）。 |
+| `ENGINE_FAILURE` | 沙箱已启用，但无法在此主机上启动。 |
 
 #### `viewport`
 

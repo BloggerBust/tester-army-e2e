@@ -28,6 +28,15 @@ export interface TestIdentity {
   readonly serialId: string | undefined;
 }
 
+/**
+ * The skip causes a test gives itself: `explicit` from `test.skip` or the
+ * `skip` option, `fixme` from `test.fixme`. Every other cause is the runner's.
+ */
+const SELF_SKIP_CAUSES = ['explicit', 'fixme'] as const;
+
+/** One of `SELF_SKIP_CAUSES`. */
+export type SelfSkipCause = (typeof SELF_SKIP_CAUSES)[number];
+
 /** Why a pair did not run; only a `filtered` one can name the test filter that left it out. */
 export type SkipInfo =
   | (SkipDetail & {
@@ -37,7 +46,7 @@ export type SkipInfo =
     })
   | (SkipDetail & {
       readonly cause:
-        | 'explicit'
+        | SelfSkipCause
         | 'platform-unavailable'
         | 'capability-unavailable'
         | 'setup-failed'
@@ -131,7 +140,7 @@ export interface AttemptRecord {
   error?: SerializedError;
   failure?: FailureEvidence;
   /**
-   * Why the body skipped itself (`test.skip(condition, reason)`). Always set
+   * Why the body skipped itself (`test.skip` or `test.fixme`). Always set
    * when `status` is `skipped`; also on a failed attempt whose body skipped
    * after a soft failure, or whose teardown failed after the skip.
    */
@@ -160,9 +169,9 @@ export interface SerialMemberRecord {
   /** What the runner saw when this member's failure landed; see `FailureEvidence`. */
   failure?: FailureEvidence;
   /**
-   * Why the member was skipped: its own `test.skip`, or the runner (a failed
-   * predecessor or hook, an interrupt). Also on a failed member that skipped
-   * itself first; see `AttemptRecord.skip`.
+   * Why the member was skipped: its own `test.skip` or `test.fixme`, or the
+   * runner (a failed predecessor or hook, an interrupt). Also on a failed
+   * member that skipped itself first; see `AttemptRecord.skip`.
    */
   skip?: SkipInfo;
   secondaryErrors: SerializedError[];
@@ -231,7 +240,12 @@ export function isFailedStatus(status: AttemptStatus | ResultStatus): status is 
  * itself started its body.
  */
 export function memberRan(member: { readonly status: string; readonly skip?: { readonly cause: string } | undefined }): boolean {
-  return member.status !== 'skipped' || member.skip?.cause === 'explicit';
+  return member.status !== 'skipped' || skippedItself(member.skip?.cause);
+}
+
+/** Whether a skip cause is a `SelfSkipCause`, one a test gives itself rather than one the runner gives it. */
+function skippedItself(cause: string | undefined): cause is SelfSkipCause {
+  return (SELF_SKIP_CAUSES as readonly (string | undefined)[]).includes(cause);
 }
 
 /** Whether an attempt keeps its trace, by the rule its video follows too (`keeps`): a `test.fail` verdict, not what the body did. */
@@ -297,17 +311,18 @@ export function cleanupErrorsOf(
 }
 
 /**
- * The failure a test's `test.skip(...)` followed: the last attempt that
- * failed before a skipped retry, or an error the skipped attempt kept beside
- * its skip. A soft failure before the skip fails its own attempt. Engine
- * cleanup diagnostics after the skip are not one. A serial member's attempts
- * live on its group, which `groupOf` looks up only for such a member.
+ * The failure a test's `test.skip(...)` or `test.fixme(...)` followed: the
+ * last attempt that failed before a skipped retry, or an error the skipped
+ * attempt kept beside its skip. A soft failure before the skip fails its own
+ * attempt. Engine cleanup diagnostics after the skip are not one. A serial
+ * member's attempts live on its group, which `groupOf` looks up only for such
+ * a member.
  */
 export function failureBeforeSkip(
   result: Pick<ResultRecord, 'status' | 'skip' | 'attempts' | 'serialGroupId' | 'test'>,
   groupOf: (id: string) => SerialGroupRecord | undefined,
 ): FailureBeforeSkip | undefined {
-  if (result.status !== 'skipped' || result.skip?.cause !== 'explicit') return undefined;
+  if (result.status !== 'skipped' || !skippedItself(result.skip?.cause)) return undefined;
   const runs =
     result.serialGroupId === undefined
       ? result.attempts

@@ -4,7 +4,7 @@ import { isExcluded, sizeOf, type ChangedFile } from './size.ts';
 
 const file = (filename: string, additions: number, deletions = 0): ChangedFile => ({ filename, additions, deletions });
 
-test('leaves tests, fixtures, snapshots, and the lockfile out of the count', () => {
+test('leaves tests, fixtures, snapshots, the lockfile, and translated docs out of the count', () => {
   for (const path of [
     'packages/e2e/tests/unit/config.test.ts',
     'packages/web/src/locator.test.ts',
@@ -12,10 +12,12 @@ test('leaves tests, fixtures, snapshots, and the lockfile out of the count', () 
     'apps/testbed/tests/visual.e2e.ts-snapshots/home.png',
     'packages/e2e/schema/fixtures/report.json',
     'pnpm-lock.yaml',
+    'docs/ja/community-packages.mdx',
+    'docs/zh/reference/config.mdx',
   ]) {
     assert.equal(isExcluded(path), true, path);
   }
-  for (const path of ['packages/e2e/src/run/fixture.ts', 'packages/e2e/src/run/execute.ts', 'docs/guide.mdx', 'packages/web/pnpm-lock.yaml.md']) {
+  for (const path of ['packages/e2e/src/run/fixture.ts', 'packages/e2e/src/run/execute.ts', 'docs/guide.mdx', 'docs/ci/github.mdx', 'packages/web/pnpm-lock.yaml.md']) {
     assert.equal(isExcluded(path), false, path);
   }
 });
@@ -23,6 +25,12 @@ test('leaves tests, fixtures, snapshots, and the lockfile out of the count', () 
 test('sizes a mixed PR by its non-test lines', () => {
   const size = sizeOf([file('packages/e2e/src/a.ts', 12, 3), file('packages/e2e/tests/unit/a.test.ts', 400), file('pnpm-lock.yaml', 900, 200)]);
   assert.deepEqual({ total: size.total, counted: size.counted, label: size.label.name }, { total: 1515, counted: 15, label: 'size:S' });
+});
+
+test('sizes a docs PR by its English lines', () => {
+  const page = 'community-packages.mdx';
+  const size = sizeOf([file(`docs/${page}`, 9, 1), file(`docs/ja/${page}`, 9, 1), file(`docs/zh/${page}`, 9, 1)]);
+  assert.deepEqual({ total: size.total, counted: size.counted, label: size.label.name }, { total: 30, counted: 10, label: 'size:S' });
 });
 
 test('sizes a test-only PR by all of its lines', () => {

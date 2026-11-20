@@ -25,6 +25,27 @@ export class Deadline {
 }
 
 /**
+ * One step's deadline: its own timeout from `now`, ending no later than
+ * `cap`. It keeps the clock read it counts from, so a wait that reports how
+ * long it ran measures from where its deadline does. A second read beside
+ * the deadline can land a millisecond later, and a wait that ran its whole
+ * timeout then reports less than it.
+ */
+export class StepDeadline extends Deadline {
+  readonly startedAt: number;
+
+  constructor(timeoutMs: number, cap: Deadline, now: number = Date.now()) {
+    super(Math.min(timeoutMs, cap.endsAt - now), now);
+    this.startedAt = now;
+  }
+
+  /** Time since the step's timeout started, in ms. */
+  elapsed(now: number = Date.now()): number {
+    return now - this.startedAt;
+  }
+}
+
+/**
  * Refuses a per-call step timeout that is not a finite number of
  * milliseconds, 0 or more. 0 means no step deadline: the step waits until
  * the running phase's deadline (the test timeout in the body).

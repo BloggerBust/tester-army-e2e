@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { ExecutorObservation } from '@e2e-dev/core/lib/agent/executor';
-import { ScreenPresenter } from '@e2e-dev/core/lib/agent/screen-update';
+import { reportsScreenChange, ScreenPresenter } from '@e2e-dev/core/lib/agent/screen-update';
 
 function screen(revision: string, lines: readonly string[], extra: Partial<ExecutorObservation> = {}): ExecutorObservation {
   return {
@@ -22,6 +22,90 @@ const HOME = [
 ];
 
 describe('ScreenPresenter', () => {
+  describe('says what a wait can count as progress', () => {
+    const textOf = (output: ReturnType<ScreenPresenter['present']>) => (typeof output === 'string' ? output : output.text);
+    const noTree = (revision: string, extra: Partial<ExecutorObservation> = {}) =>
+      screen(revision, ['[semantic capture unavailable: no nodes were read]'], { treeUnavailable: true, truncated: true, ...extra });
+
+    it('names a new location when nothing listed changed, and does not blame the control for it', () => {
+      const presenter = new ScreenPresenter();
+      presenter.open(screen('b1', HOME, { path: '/products/new' }));
+      const tapped = textOf(presenter.present(screen('b2', HOME, { path: '/products/123' }), { lead: 'Tapped #n3.', expectChange: true }));
+      expect(tapped).toContain('The location changed to /products/123. ');
+      expect(tapped).not.toContain('had no visible effect');
+      // A look is what the wait counts: observe's result leads with "Observed." and the line after it.
+      const looked = textOf(presenter.present(screen('b3', HOME, { path: '/products/124' }), { lead: 'Observed.' }));
+      expect(looked).toContain('The location changed to /products/124. ');
+      expect(reportsScreenChange(looked)).toBe(true);
+      const still = textOf(presenter.present(screen('b4', HOME, { path: '/products/124' }), { lead: 'Observed.' }));
+      expect(still).not.toContain('The location changed');
+      expect(reportsScreenChange(still)).toBe(false);
+    });
+
+    it('counts tree recovery even when the location contains the unavailable status', () => {
+      const presenter = new ScreenPresenter();
+      const location = { path: 'Editor\nsemantic capture unavailable' };
+      presenter.open(screen('b1', HOME, location));
+      expect(reportsScreenChange(textOf(presenter.present(noTree('b2', location), { lead: 'Observed.' })))).toBe(false);
+      expect(reportsScreenChange(textOf(presenter.present(noTree('b3', location), { lead: 'Observed.' })))).toBe(false);
+      const back = textOf(presenter.present(screen('b4', HOME, location), { lead: 'Observed.' }));
+      expect(back).toContain('Current screen (revision b4');
+      expect(reportsScreenChange(back)).toBe(true);
+    });
+
+    it('counts a listed change even when the location contains the unchanged status', () => {
+      const presenter = new ScreenPresenter();
+      const location = { path: 'Editor): no listed node changed. ', truncated: true };
+      presenter.open(screen('b1', HOME, location));
+      const still = presenter.update(screen('b2', HOME, location));
+      expect(reportsScreenChange(still)).toBe(false);
+      const changed = presenter.update(screen('b3', [...HOME, '#n7 button "Save"'], location));
+      expect(reportsScreenChange(changed)).toBe(true);
+    });
+
+    it('names a new location while the screen has no tree', () => {
+      const presenter = new ScreenPresenter();
+      presenter.open(screen('b1', HOME, { path: '/product/edit' }));
+      expect(reportsScreenChange(textOf(presenter.present(noTree('b2', { path: '/product/edit' }), { lead: 'Observed.' })))).toBe(false);
+      const moved = textOf(presenter.present(noTree('b3', { path: '/product/42' }), { lead: 'Observed.' }));
+      expect(moved).toContain('The location changed to /product/42. ');
+      expect(reportsScreenChange(moved)).toBe(true);
+    });
+
+    it('does not take a capture that leaves the location out for navigation, there or back', () => {
+      const presenter = new ScreenPresenter();
+      presenter.open(screen('b1', HOME, { path: '/edit' }));
+      const without = textOf(presenter.present(screen('b2', HOME), { lead: 'Observed.' }));
+      const back = textOf(presenter.present(screen('b3', HOME, { path: '/edit' }), { lead: 'Observed.' }));
+      const treeless = textOf(presenter.present(noTree('b4'), { lead: 'Observed.' }));
+      for (const text of [without, back, treeless]) {
+        expect(text).not.toContain('The location changed');
+        expect(reportsScreenChange(text)).toBe(false);
+      }
+      // A location reported again after a gap is compared with the last one known.
+      expect(textOf(presenter.present(screen('b5', HOME, { path: '/view' }), { lead: 'Observed.' }))).toContain('The location changed to /view. ');
+    });
+
+    it('reports no tab or location change on the first result of a presenter that was never opened', () => {
+      for (const active of [1, 2]) {
+        const output = textOf(new ScreenPresenter().present(screen('b1', HOME, { tabs: { count: 2, active }, path: '/p' }), { lead: 'Tapped #n3.' }));
+        expect(output).not.toContain('The app opened');
+        expect(output).not.toContain('The screen shows tab');
+        expect(output).not.toContain('The location changed');
+        expect(output).toContain(`tab ${String(active)} of 2`);
+      }
+    });
+
+    it('says a tab opened even while the screen has no tree', () => {
+      const presenter = new ScreenPresenter();
+      presenter.open(screen('b1', HOME));
+      presenter.present(noTree('b2'), { lead: 'Observed.' });
+      const opened = textOf(presenter.present(noTree('b3', { tabs: { count: 2, active: 1 } }), { lead: 'Observed.' }));
+      expect(opened).toContain('The app opened');
+      expect(reportsScreenChange(opened)).toBe(true);
+    });
+  });
+
   it('retires semantic history through repeated unavailable captures and shows recovery whole', () => {
     const presenter = new ScreenPresenter();
     presenter.initial(screen('b1', ['#root', ' #save button "Save"']));
@@ -133,6 +217,7 @@ describe('ScreenPresenter', () => {
     const after = textOf(denied.present(screen('c3', HOME), { lead: 'Tapped #n3.', expectChange: true }));
     expect(after).toContain('No screenshot can be taken in this step');
     expect(after).toContain('look for another way rather than repeating it');
+    expect(after).toContain('If a change was expected and the control commits something (a save, a submit), it may still have gone through: check before you commit again by any route. Otherwise');
     expect(after).not.toContain('needs a screenshot to see');
   });
 
@@ -148,6 +233,7 @@ describe('ScreenPresenter', () => {
     // The same image again: the tree describes this screen, so the control is blamed as before.
     const still = textOf(presenter.present(screen('b3', HOME, { pixels: shot(2) }), { lead: 'Tapped #n3.', expectChange: true }));
     expect(still).toContain('had no visible effect');
+    expect(still).toContain('If a change was expected and the control commits something (a save, a submit), it may still have gone through: check before you commit again by any route. Otherwise');
     expect(still).not.toContain('the screenshot changed');
     // A moved image is reported whether or not a change was expected.
     const observed = textOf(presenter.present(screen('b4', HOME, { pixels: shot(3) }), { lead: 'Observed.', expectChange: false }));

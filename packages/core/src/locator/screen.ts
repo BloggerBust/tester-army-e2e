@@ -278,10 +278,9 @@ class ScreenImpl implements Screen {
     const label = describeExpression(internals.expression);
     await this.context.steps.run('screen', 'screen.scrollUntilVisible', label, async () => {
       const deadline = engine.deadline(options?.timeout ?? 30_000);
-      const startedMs = Date.now();
       const notVisible = (cause?: unknown) =>
         new TestError('LOCATOR_NOT_FOUND', `target did not become visible while scrolling: ${label}`, {
-          details: locatorDetails(internals.expression, Date.now() - startedMs),
+          details: locatorDetails(internals.expression, deadline.elapsed()),
           ...(cause === undefined ? {} : { cause }),
         });
       const reads = engine.reads(deadline);
@@ -531,6 +530,11 @@ class LocatorImpl extends ScreenImpl implements Locator {
     return this.perform('focus', { kind: 'focus' }, options);
   }
 
+  /** Removes focus from the matched node. */
+  blur(options?: ActionOptions): Promise<void> {
+    return this.perform('blur', { kind: 'blur' }, options);
+  }
+
   hover(options?: ActionOptions): Promise<void> {
     return this.perform('hover', { kind: 'hover' }, options);
   }
@@ -648,7 +652,6 @@ class LocatorImpl extends ScreenImpl implements Locator {
     await this.context.steps.run('locator', 'locator.waitFor', `${this.label} → ${state}`, async () => {
       const { engine } = this.context;
       const deadline = engine.deadline(options?.timeout);
-      const startedMs = Date.now();
       const samples = new SampleHistory('waitFor', (text) => engine.redact(text));
       await samples.record(engine, () =>
         pollReads({
@@ -663,7 +666,7 @@ class LocatorImpl extends ScreenImpl implements Locator {
           },
           onTimeout: (cause) =>
             new TestError('LOCATOR_NOT_FOUND', `locator did not become ${state}: ${this.label}`, {
-              details: locatorDetails(this.expression, Date.now() - startedMs),
+              details: locatorDetails(this.expression, deadline.elapsed()),
               ...(cause === undefined ? {} : { cause }),
             }),
         }),

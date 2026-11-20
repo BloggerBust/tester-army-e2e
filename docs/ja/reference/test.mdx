@@ -30,11 +30,13 @@ describe('checkout', { tags: ['billing'] }, () => {
 | --- | --- |
 | [`test`](#test) | `TestCase` |
 | [`test.skip`](#test-skip) | `TestCase \| void` |
+| [`test.fixme`](#test-fixme) | `TestCase \| void` |
 | [`test.skipIf`](#test-skipif) | `TestRegistrar` |
 | [`test.runIf`](#test-runif) | `TestRegistrar` |
 | [`test.each`](#test-each) | `EachRegistrar` |
 | [`test.for`](#test-for) | `EachRegistrar` |
 | [`test.fail`](#test-fail) | `TestCase \| void` |
+| [`test.setTimeout`](#test-settimeout) | `void` |
 | [`test.only`](#test-only) | `TestCase` |
 | [`test.setup`](#test-setup) | `TestCase` |
 | [`test.extend`](#test-extend) | `TestAPI` |
@@ -108,8 +110,30 @@ test('switches organizations', { session: 'admin' }, async ({ app, agent }) => {
 
 | エラー | 発生条件 |
 | --- | --- |
-| `INVALID_ARGUMENT` | セットアップテストで呼び出した場合。他のテストがそのセッションに依存するため、セットアップテストはスキップできません。 |
+| `INVALID_ARGUMENT` | セットアップテストで、条件が true か条件なしで呼び出した場合。他のテストがそのセッションに依存するため、セットアップテストはスキップできません。 |
 | `COLLECTION_ERROR` | 条件付きの形式をテスト本体の外で呼び出した場合。 |
+| `COLLECTION_ERROR` | 登録時の形式を直列実行グループ内で呼び出した場合。代わりに直列実行の `describe` に [`skip`](#skip) を設定します。 |
+
+#### `test.fixme`
+
+fixme と印を付けたスキップするテストを登録するか、実行中のテストを fixme としてスキップします。
+
+```ts
+test.fixme('exports a PDF', async ({ app }) => {}); // at registration
+test.fixme(platform === 'android', 'crashes on Android'); // inside a body
+test.fixme(); // inside a body, always
+```
+
+- [`test.skip`](#test-skip) と同じ 3 つの形式を受け付け、本体内の形式のルールが適用されます。
+- テストは `skipped` と報告します。`report.json` の `skip.cause` は、`test.skip` の `explicit` ではなく `fixme` です。理由は `fixme` です。テスト本体内の呼び出しで空白でない理由を渡した場合は `fixme: <reason>` です。リスト形式のレポーターは `[fixme: crashes on Android]` と表示します。
+- 登録時の形式はテストオプションを受け付けません。
+- 登録時の戻り値は `TestCase`、テスト本体内では `void` です。
+
+| エラー | 発生条件 |
+| --- | --- |
+| `INVALID_ARGUMENT` | セットアップテストで、条件が true か条件なしで呼び出した場合。他のテストがそのセッションに依存するため、セットアップテストはスキップできません。 |
+| `COLLECTION_ERROR` | 条件付きの形式をテスト本体の外で呼び出した場合。収集時には `test.fixme(title, fn)` を使います。 |
+| `COLLECTION_ERROR` | 登録時の形式を直列実行グループ内で呼び出した場合。代わりに直列実行の `describe` に [`skip`](#skip) を設定します。 |
 
 #### `test.skipIf`
 
@@ -219,6 +243,29 @@ test('exports a PDF', { fail: 'PDF export is broken' }, async ({ app }) => {}); 
 | --- | --- |
 | `INVALID_ARGUMENT` | セットアップテスト、直列実行グループのメンバー、`afterEach` フック、フィクスチャの後処理で、条件が true の場合。 |
 | `COLLECTION_ERROR` | 条件付きの形式をテスト本体の外で呼び出した場合、または直列実行グループ内で `fail` オプションを使った場合。 |
+
+#### `test.setTimeout`
+
+実行中のテストのタイムアウトをテスト本体または `beforeEach` フックから変更します。`beforeAll` フックの中では、そのフック自身のタイムアウトを変更します。
+
+```ts
+test('imports a large file', async ({ app }) => {
+  test.setTimeout(180_000);
+  await app.open('/import');
+});
+```
+
+- 新しいタイムアウトは [`timeout`](#timeout) オプションと同じく試行の開始から数え、この試行ではオプションの値を置き換えます。リトライはオプションの値から始まります。
+- すでに経過した時間より短いタイムアウトを指定すると、テストはその場でタイムアウトします。
+- `beforeAll` フックの中では、そのフックのタイムアウト（設定の `timeout`）を置き換え、フックの開始から数えます。テストは自身のタイムアウトのままです。
+- `afterEach` フック、`afterAll` フック、フィクスチャの後処理は `cleanupTimeout` で動くため、タイムアウトを変更できません。
+- [`host.openSession`](/reference/runner#host-opensession) のセッションは e2e のテストを実行しないため、変更できません。`host.openSession` に `timeout` を渡してください。
+- タイムアウトなしを意味する `0` はありません。代わりに大きな値を渡してください。
+
+| エラー | 発生条件 |
+| --- | --- |
+| `INVALID_ARGUMENT` | タイムアウトがミリ秒の正の安全な整数でない場合、2147483647 を超える場合、または `afterEach` フック、`afterAll` フック、フィクスチャの後処理、ホストされたセッションから呼び出した場合。テストやフックの終了後も動き続けているコードから呼び出した場合も同様です。 |
+| `COLLECTION_ERROR` | 実行中のテストやフックの外で呼び出した場合。そこでは `timeout` オプションを使ってください。 |
 
 #### `test.only`
 
@@ -336,7 +383,7 @@ test.afterEach(async ({ app }) => {
 ```
 
 - 最も内側のグループから、宣言とは逆の順序で実行します。失敗やタイムアウトの後も実行します。
-- 各 `afterEach` フックには、動作するフィクスチャと独立した `cleanupTimeout` が与えられます。そのため、テスト本体がタイムアウトしても、後処理でアプリを操作できます。
+- 各 `afterEach` フックには、それぞれ独立した `cleanupTimeout` が与えられ、その間もフィクスチャは動作します。そのため、テスト本体がタイムアウトしても、後処理でアプリを操作できます。
 - テストのフィクスチャを受け取ります。フックが指定したフィクスチャは、最初の `beforeEach` より前に、テストのタイムアウト内でセットアップします。フックの開始時ではありません。
 - セットアップに失敗したフィクスチャを指定したフックはスキップします。
 
@@ -368,6 +415,8 @@ test.beforeAll(async ({ database, device }) => {
 - その試行を開けない場合や、実行が中断された場合も、フックは実行します。その場合、`device`、`app`、`screen` を読み取ると、理由を示す例外をスローします。試行を開けなかった失敗は、フェーズ `launch` の 1 件の実行エラーになります。
 
 スイートのフックが実行したステップは、どのテストの記録にも含まれません。失敗には、フックのスコープを示します。
+
+各 `beforeAll` フックは設定の `timeout` で動きます。その中で [`test.setTimeout`](#test-settimeout) を呼ぶとそのフックのタイムアウトが変わり、そのフックがセットアップするワーカーフィクスチャも変更後のタイムアウトで動きます。
 
 | エラー | 発生条件 |
 | --- | --- |
@@ -459,7 +508,7 @@ describe('checkout', { tags: ['billing', 'smoke'] }, () => {});
 
 #### `skip`
 
-収集時にテストをスキップします。文字列は理由になります。どれかの階層に真と評価される値があればスキップします。実行時の `test.skip` を含むスキップ理由は、報告前にシークレットの伏せ字化とサニタイズを行い、UTF-8 で 8,192 バイトに制限します。
+収集時にテストをスキップします。文字列は理由になります。どれかの階層に真と評価される値があればスキップします。実行時の `test.skip` を含むスキップ理由は、報告前にシークレットの秘匿とサニタイズを行い、UTF-8 で 8,192 バイトに制限します。
 
 ```ts
 test('exports a PDF', { skip: 'PDF export is off on staging' }, async ({ app }) => {});
@@ -580,7 +629,7 @@ describe('checkout', { serial: true }, () => {
 });
 ```
 
-- シークレットの状態も共有します。1 つのメンバーが解決した値は、そのグループの試行の残りでも伏せ字の対象になります。リトライでは新しい状態から始めます。
+- シークレットの状態も共有します。1 つのメンバーが解決した値は、そのグループの試行の残りでも秘匿の対象になります。リトライでは新しい状態から始めます。
 - メンバーには、直列実行の `describe` またはそれを囲むグループの `trace` と `video` を適用します。動画はグループの試行ごとに 1 本記録します。
 - ファイルの読み込みやセッションの起動に失敗し、グループの試行が始まらないこともあります。その場合、最初のメンバーをそのエラーで失敗にし、残りは原因 `serial-predecessor-failed` でスキップします。起動中に実行が中断された場合は、代わりに全メンバーをスキップします。
 - リトライが中断された場合や、メンバーの実行まで到達しなかった場合、各メンバーは最後に実行された試行の判定と所要時間を保持します。
@@ -589,7 +638,7 @@ describe('checkout', { serial: true }, () => {
 | エラー | 発生条件 |
 | --- | --- |
 | `COLLECTION_ERROR` | メンバーが `retries`、`trace`、`video`、`session`、`platforms`、`requires`、`skip`、`only`、または入れ子の `serial` を指定した場合。 |
-| `COLLECTION_ERROR` | メンバーが `test.skipIf` または `test.runIf` で登録された場合。 |
+| `COLLECTION_ERROR` | メンバーが `test.skip(title, fn)`、`test.skipIf`、`test.runIf`、または `test.fixme(title, fn)` で登録された場合。 |
 
 #### `sessions`
 
@@ -768,6 +817,18 @@ export interface TestAPI<Fixtures = TestFixtures, Worker = WorkerFixtures> exten
    */
   skip(condition: boolean, reason?: string): void;
   skip(reason?: string): void;
+  /** Registers one skipped test marked fixme, reported with the skip cause and reason `fixme`. */
+  fixme(title: string, fn: TestFn<Fixtures & Worker>): TestCase;
+  /**
+   * Inside a running test: skips it as fixme when `condition` is true (or
+   * always, with no condition), as `test.skip` does. The skip cause is
+   * `fixme`, and the reason `fixme`, or `fixme: <reason>` when `reason` is not
+   * blank. A setup test cannot skip. Outside a test body this form is
+   * `COLLECTION_ERROR`; use `test.fixme(title, fn)` to mark a test fixme at
+   * collection.
+   */
+  fixme(condition: boolean, reason?: string): void;
+  fixme(reason?: string): void;
   /**
    * Returns a function that registers one test, like `test(title, fn)`:
    * skipped when `condition` is truthy, as if it had the `skip` option. The

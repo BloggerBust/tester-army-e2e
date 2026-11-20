@@ -59,6 +59,8 @@ jobs:
         run: pnpm check:changeset-bumps
       - name: Examples registry (examples/examples.json)
         run: pnpm check:examples
+      - name: Benchmark scenario coverage
+        run: pnpm check:benchmark-coverage
       - name: No install scripts in published dependency trees
         run: pnpm check:install-scripts
       - name: Plugin package matches its sources

@@ -60,11 +60,13 @@ for (const name of current) {
 }
 if (!current.includes(size.label.name)) {
   const { name, max, color } = size.label;
-  const description = `${max === Infinity ? '1,000+' : `Up to ${max}`} changed lines, not counting tests, fixtures, or the lockfile`;
+  const description = `${max === Infinity ? '1,000+' : `Up to ${max}`} changed lines, not counting tests, fixtures, translated docs, or the lockfile`;
   try {
     await rest('/labels', { method: 'POST', body: { name, color, description } });
   } catch (error) {
     if (!String(error).includes(': 422 ')) throw error;
+    // The label exists; keep its description in step with what is counted.
+    await rest(`/labels/${encodeURIComponent(name)}`, { method: 'PATCH', body: { color, description } });
   }
   await rest(`/issues/${number}/labels`, { method: 'POST', body: { labels: [name] } });
 }

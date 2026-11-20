@@ -96,7 +96,7 @@ export class StepGate {
   private released: string | undefined;
   /** The test whose steps reached the gate last, and how many of them did. */
   private current: { readonly key: string; count: number } | undefined;
-  /** Where the prompt shows; every hold's context shows it in the same place. */
+  /** The displayed hold's callback, also used to clear its prompt. */
   private show: StepHoldContext['show'] | undefined;
 
   private readonly now: () => number;
@@ -118,7 +118,6 @@ export class StepGate {
   readonly beforeStep: BeforeStep = (step, context) => {
     // A hold that ended before it arrived has nobody to answer.
     if (context.signal.aborted) return Promise.resolve();
-    this.show = context.show;
     const key = testKey(step);
     const number = step.kind === 'pause' ? 0 : this.count(key);
     // The first step runs at once, so the app is open before the first prompt.
@@ -211,7 +210,10 @@ export class StepGate {
   /** Shows the next prompt, or takes the prompt down when no step waits. */
   private showNext(): void {
     this.shownAt = this.now();
-    this.show?.(this.prompt());
+    const show = this.queue[0]?.context.show;
+    const draw = show ?? this.show;
+    this.show = show;
+    draw?.(this.prompt());
   }
 
   /** The prompt for the step first in the queue and the steps of its test held beside it, or none. */

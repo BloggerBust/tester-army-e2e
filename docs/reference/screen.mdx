@@ -585,6 +585,7 @@ await screen.debug();
 
 The test is paused at this line, with the app open, until it is resumed.
 See [Pause a test](/debugging#pause-a-test) for the keys and commands.
+Use the pause ID to [attach over MCP](/reference/mcp#attaching-to-a-held-test).
 
 ```ts
 /**
@@ -642,6 +643,7 @@ await screen.pause();
 | [`uncheck`](#uncheck) | `Promise<void>` |
 | [`selectOption`](#selectoption) | `Promise<void>` |
 | [`focus`](#focus) | `Promise<void>` |
+| [`blur`](#blur) | `Promise<void>` |
 | [`hover`](#hover) | `Promise<void>` |
 | [`setInputFiles`](#setinputfiles) | `Promise<void>` |
 | [`dragTo`](#dragto) | `Promise<void>` |
@@ -886,6 +888,19 @@ focus(options?: ActionOptions): Promise<void>;
 
 ```ts
 await screen.getByLabel('Email').focus();
+```
+
+#### `blur`
+
+```ts
+/** Removes focus from exactly one node if it is focused. */
+blur(options?: ActionOptions): Promise<void>;
+```
+
+Web only. If the matched node already lacks focus, this has no effect.
+
+```ts
+await screen.getByLabel('Email').blur();
 ```
 
 #### `hover`

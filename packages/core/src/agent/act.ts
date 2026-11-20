@@ -2,18 +2,19 @@
  * Harness-owned dispatch of one `agent.act()` step.
  *
  * The harness opens the step and hands only the thinking to the configured
- * executor; everything the executor can touch is built here from four
+ * executor. `createStepExecution` in `step-execution.ts` builds three
  * collaborators, each owning one concern of the step:
  *
  * - `StepAccounting`: the clock, the budgets, the hard stop, the metrics.
  * - `ObservationFeed`: every capture, the settle, the id ring, the pixel decision.
  * - `ActionDispatcher`: the verb table, target resolution, recording.
- * - `StepTraceSession`: replay, live recording, and the stage-or-evict decision.
+ *
+ * This file adds `StepTraceSession` for replay, live recording, and the
+ * stage-or-evict decision. It assembles the executor's context and maps the
+ * executor's verdict onto the runner's error taxonomy.
  *
  * Capabilities beyond the grammar (secret fills, the trace cache) are modules
- * over those collaborators, borrowed through a small host each. What stays in
- * this file is the wiring, the executor's context, and the mapping of the
- * executor's verdict onto the runner's error taxonomy.
+ * over those collaborators, borrowed through a small host each.
  */
 
 import { executorRedactors } from './redaction.ts';
@@ -27,19 +28,17 @@ import { withAbort, withTimeout } from '../internal/time.ts';
 import type { ActionHook, ActOptions, AssertOptions, BeforeActionHook, ActResult, AgentErrorCode, JsonValue, ModelInstance, Secret, VisionMode } from '../types.ts';
 import { AgentError, CATEGORY_BY_CODE, toAgentError } from './error.ts';
 import { redactParams, validateActOptions, validateInstruction, validateParams, validateVerdict } from './act-validation.ts';
-import { ActionDispatcher } from './action-dispatcher.ts';
 import { resolveBoundedBudget, resolveTimeout } from './call-options.ts';
 import { RUNTIME_CODES, type ExecutorPixels, type StepExecutorContext, type StepVerdict } from './executor.ts';
 import type { AgentContext, AgentSelection } from './invocation.ts';
 import { projectPriorSteps, serializeLedger } from './ledger.ts';
-import { tokenUpperBound } from './model/adapter.ts';
 import { instantiateLanguageModel, isUnservedModelError, unservedModelError } from './model/sdk.ts';
 import type { AgentObservation } from './observation.ts';
-import { ObservationFeed } from './observation-feed.ts';
+import type { ObservationFeed } from './observation-feed.ts';
 import type { ObservedScreen } from './replay.ts';
 import { appLocation } from '../cache/route.ts';
-import { OperationQueue } from './operation-queue.ts';
-import { StepAccounting } from './step-accounting.ts';
+import type { StepAccounting } from './step-accounting.ts';
+import { createStepExecution, type StepExecutionBindings } from './step-execution.ts';
 import { failedStepOutcome, StepTraceSession, type StepCacheHost, type StepOutcome } from './step-cache.ts';
 import type { ParamTemplate } from '../cache/template.ts';
 
@@ -217,7 +216,7 @@ function redactSpec(spec: DispatchSpec, redact: (text: string) => string): Dispa
 class ActDispatch {
   private readonly accounting: StepAccounting;
   private readonly feed: ObservationFeed;
-  private readonly dispatcher: ActionDispatcher;
+  private readonly bindings: StepExecutionBindings;
   /** The step's trace-cache session; undefined when caching is off or the kind is not cacheable. */
   private readonly stepCache: StepTraceSession | undefined;
   /** Timeline index of the step being dispatched. */
@@ -234,31 +233,32 @@ class ActDispatch {
     /** The agent this step runs with. */
     private readonly agent: DispatchAgent,
   ) {
-    this.accounting = new StepAccounting(runtime, {
-      api: spec.api,
-      timeoutMs: resolveTimeout(spec.timeout, runtime.config.timeout),
-      maxActions: resolveBoundedBudget(spec.maxSteps, agent.config.maxSteps, 'maxSteps'),
-      maxModelCalls: resolveBoundedBudget(spec.maxModelCalls, agent.config.maxModelCalls, 'maxModelCalls'),
-      contextBytes: new TextEncoder().encode(agent.agentContext ?? '').byteLength,
+    const { accounting, feed, bindings } = createStepExecution(runtime, {
+      accounting: {
+        api: spec.api,
+        timeoutMs: resolveTimeout(spec.timeout, runtime.config.timeout),
+        maxActions: resolveBoundedBudget(spec.maxSteps, agent.config.maxSteps, 'maxSteps'),
+        maxModelCalls: resolveBoundedBudget(spec.maxModelCalls, agent.config.maxModelCalls, 'maxModelCalls'),
+        contextBytes: new TextEncoder().encode(agent.agentContext ?? '').byteLength,
+      },
+      observation: {
+        pixelsAllowed: spec.vision !== false,
+        maxObservationBytes: agent.config.maxObservationBytes,
+        maxInputTokens: agent.config.maxInputTokens,
+      },
+      actions: {
+        readOnly: spec.kind === 'assert',
+        instruction: spec.instruction,
+        params: spec.params,
+        secrets: spec.secrets,
+        trace: () => this.stepCache,
+        onAction: spec.onAction,
+        onBeforeAction: spec.onBeforeAction,
+      },
     });
-    // One queue for observations and actions alike: call order is what keeps
-    // a batched turn from resolving two targets against one stale screen.
-    const queue = new OperationQueue();
-    this.feed = new ObservationFeed(runtime, this.accounting, queue, {
-      pixelsAllowed: spec.vision !== false,
-      maxObservationBytes: agent.config.maxObservationBytes,
-      maxInputTokens: agent.config.maxInputTokens,
-      instructionBytes: tokenUpperBound(spec.instruction),
-    });
-    this.dispatcher = new ActionDispatcher(runtime, this.accounting, this.feed, queue, {
-      readOnly: spec.kind === 'assert',
-      instruction: spec.instruction,
-      params: spec.params,
-      secrets: spec.secrets,
-      trace: () => this.stepCache,
-      onAction: spec.onAction,
-      onBeforeAction: spec.onBeforeAction,
-    });
+    this.accounting = accounting;
+    this.feed = feed;
+    this.bindings = bindings;
     // The dispatch always runs inside a recorded step (`dispatchAgentStep`
     // opens one); the index names the step to the executor and to the trace cache.
     const stepIndex = runtime.steps.currentStepIndex;
@@ -299,6 +299,7 @@ class ActDispatch {
     );
     this.accounting.metrics.ledgerBytes = ledger.bytes;
     const replayedPrefix = this.stepCache?.replayedPrefix;
+    const { budgets, observe, read, actions } = this.bindings;
     const context: StepExecutorContext = {
       step: {
         kind: this.spec.kind,
@@ -324,16 +325,9 @@ class ActDispatch {
       providerOptions: this.agent.config.providerOptions,
       ledger: ledger.text,
       agentContext: this.agent.agentContext,
-      budgets: {
-        maxActions: this.accounting.maxActions,
-        maxModelCalls: this.accounting.maxModelCalls,
-        actionsUsed: () => this.accounting.metrics.actionSteps,
-        remainingMs: () => this.accounting.remainingMs(),
-        recordModelCall: (usage) => this.accounting.recordModelCall(usage),
-        runTool: (call, body) => this.dispatcher.runTool(call, body),
-      },
-      observe: (options) => this.feed.observe(options),
-      read: (target, options) => this.feed.read(target, options),
+      budgets,
+      observe,
+      read,
       attachTranscript: (text) => {
         // Debug detail only: transcripts are model prose and can be large.
         if (this.runtime.debug?.enabled === true && typeof text === 'string' && text !== '') {
@@ -350,7 +344,7 @@ class ActDispatch {
         }));
       },
       attachScreenshot: (pixels, label) => this.attachScreenshot(pixels, label),
-      actions: this.dispatcher.actions,
+      actions,
     };
     executorRedactors.set(context, this.runtime.redact);
     return context;
@@ -528,7 +522,7 @@ class ActDispatch {
     return {
       get traceEligible() { return feed.traceEligible; },
       observe: async (mode) => screenOf(await this.feed.probe(mode), this.runtime.app.base?.origin),
-      actions: this.dispatcher.actions,
+      actions: this.bindings.actions,
       signal: this.accounting.signal,
       remainingMs: () => this.accounting.remainingMs(),
       replaying: (active) => {

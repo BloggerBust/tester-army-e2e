@@ -349,7 +349,7 @@ describe('foldLastRun', () => {
     expect(page).not.toContain('left out by filters');
   });
 
-  it('counts a serial member executed when its body ran in any group attempt, one that skipped itself included', () => {
+  it.each(['explicit', 'fixme'] as const)('counts a serial member executed when its body ran in any group attempt, one that skipped itself (cause %s) included', (cause) => {
     const titles = ['one', 'two', 'three'];
     const memberIds = titles.map((title) => `tests/example.e2e.ts::wizard::${title}`);
     const blocked = { cause: 'serial-predecessor-failed' as const, reason: 'member 0 failed in this group attempt' };
@@ -361,7 +361,7 @@ describe('foldLastRun', () => {
         index,
         testId: memberIds[index]!,
         status: status === 'failed' ? ('failed' as const) : ('skipped' as const),
-        ...(status === 'failed' ? {} : { error: undefined, skip: status === 'self-skipped' ? { cause: 'explicit' as const, reason: 'not here' } : blocked }),
+        ...(status === 'failed' ? {} : { error: undefined, skip: status === 'self-skipped' ? { cause, reason: 'not here' } : blocked }),
       }));
       return report({
         status: 'failed',
@@ -374,6 +374,9 @@ describe('foldLastRun', () => {
     const folded = foldLastRun(run(['self-skipped', 'failed', 'skipped']), run(['failed', 'skipped', 'skipped']));
     // One ran in both runs and skipped itself in the rerun, two ran in the rerun, three never started.
     expect(folded.run.summary).toMatchObject({ selected: 3, executed: 2, failed: 1, skipped: 2 });
+    // Two ran only in the rerun, where it skipped itself.
+    const selfSkippedOnly = foldLastRun(run(['failed', 'self-skipped', 'skipped']), run(['failed', 'skipped', 'skipped']));
+    expect(selfSkippedOnly.run.summary).toMatchObject({ selected: 3, executed: 2, failed: 1, skipped: 2 });
   });
 
   it('leaves the rerun alone when the run before is another project\'s', () => {

@@ -197,8 +197,9 @@ client kills the server isn't sent.
 | --- | --- |
 | `client`, `client_version` | The name and version the MCP client gives itself (`claude-code`, `cursor-vscode`, ...). `null` before the client introduced itself |
 | `outcome`, `error_code` | `closed` for a session that opened, `open-failed` with the runner code of the failure (`APP_UNREACHABLE`, `ENGINE_FAILURE`, ...) |
-| `ended_by` | `agent` for `close_session`, `idle`, `step` for the session's time limit, `server` when the server shut down. `null` for a failed open |
+| `ended_by` | `agent` for `close_session`, `idle`, `step` when the session reaches its time limit or the held test resumes, `server` when the server shut down. `null` for a failed open |
 | `platform`, `engine`, `headed` | The target's platform and engine with its version, as for a run, and whether the UI was shown |
+| `attached` | Whether the session attached to a held test |
 | `duration_ms`, `sessions_open` | How long the session lived, and how many other sessions were open when it opened |
 | `calls_total`, `calls_failed`, `calls` | Tool calls, failed calls, and calls by the session's own tool names: `{"observe": 4, "tap": 9, "locate": 2, "screenshot": 1}` |
 | `error_codes` | How often each runner code failed a call: `{"LOCATOR_NOT_FOUND": 2}`, at most 20 codes |

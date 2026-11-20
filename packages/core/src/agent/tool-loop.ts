@@ -45,6 +45,7 @@ import {
   DEFAULT_LOOP_GUARD_THRESHOLDS,
   extractGuardCalls,
   extractToolResults,
+  waitingToolNames,
 } from './loop-guards.ts';
 
 /** Turns remaining when the loop warns the model to wrap up, by default. */
@@ -233,6 +234,10 @@ class LoopRun {
   private hardStop: AgentError | undefined;
   private guardStop: string | undefined;
   private noticedGuardReason: string | undefined;
+  /** The waits already warned in this step, by key: other notices in between do not make a wait warned again. */
+  private readonly noticedWaits = new Set<string>();
+  /** Whether each look (by call id) showed a change, read when the result was new and kept past compaction. */
+  private readonly looks = new Map<string, boolean>();
   private noticedLowClock = false;
   /** Every turn that ran, oldest first: the debug transcript is rendered from it, the report keeps the tail. */
   private readonly turns: LoopTurn[] = [];
@@ -425,7 +430,7 @@ class LoopRun {
         ({ steps }) => this.turnOffset + steps.length >= this.maxTurns,
       ],
       prepareStep: ({ messages, stepNumber, steps }) =>
-        this.prepareTurn(messages, this.turnOffset + stepNumber, steps.at(-1)),
+        this.prepareTurn(messages, this.turnOffset + stepNumber, steps.at(-1), tools),
     });
   }
 
@@ -603,6 +608,7 @@ class LoopRun {
     messages: ModelMessage[],
     stepNumber: number,
     previous: StepResult<ToolSet> | undefined,
+    tools: ToolSet,
   ): Promise<{
     messages?: ModelMessage[];
     activeTools?: string[];
@@ -650,19 +656,32 @@ class LoopRun {
     }
 
     if (this.guardStop === undefined) {
-      const guard = checkLoopGuards(
-        extractGuardCalls(prepared, 'complete_step'),
-        DEFAULT_LOOP_GUARD_THRESHOLDS,
-      );
+      // Read per turn: a handler replaced after the tools were built (in
+      // buildPrompt, say) may write, and loses the waiting room.
+      const waiting = waitingToolNames(tools);
+      // The calls are the ones the model reads, after an executor's own
+      // prepareMessages; each look's result is read while it is the newest,
+      // before compaction can elide its lead line, and kept for the turns after.
+      const calls = extractGuardCalls(prepared, 'complete_step', waiting, this.looks, messages);
+      const guard = checkLoopGuards(calls, DEFAULT_LOOP_GUARD_THRESHOLDS, waiting);
+      const fresh =
+        guard.kind === 'warn' &&
+        (guard.key === undefined ? guard.reason !== this.noticedGuardReason : !this.noticedWaits.has(guard.key));
       if (guard.kind === 'stop') {
         this.guardStop = guard.reason;
-      } else if (guard.kind === 'warn' && guard.reason !== this.noticedGuardReason) {
-        this.noticedGuardReason = guard.reason;
+      } else if (guard.kind === 'warn' && fresh) {
+        if (guard.key === undefined) this.noticedGuardReason = guard.reason;
+        else this.noticedWaits.add(guard.key);
         this.note(`loop guard warned before turn ${String(stepNumber + 1)}: ${guard.reason}`);
+        // Repeated looks at a save or load still in progress are a wait the
+        // rules ask for, so the notice bounds the wait instead of calling it a circle.
         prepared = appendNotice(
           prepared,
-          `[SYSTEM NOTICE] You appear to be going in circles: ${guard.reason}. ` +
-            'Change approach, or call complete_step with your best verdict.',
+          guard.waiting === true
+            ? `[SYSTEM NOTICE] ${guard.reason}. Observe again only while the screen still shows the work in progress; ` +
+                'once it is done, do what the step still asks for, then call complete_step with your verdict.'
+            : `[SYSTEM NOTICE] You appear to be going in circles: ${guard.reason}. ` +
+                'Change approach, or call complete_step with your best verdict.',
         );
       }
     }

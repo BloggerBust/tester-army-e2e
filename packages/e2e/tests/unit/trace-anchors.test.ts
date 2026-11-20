@@ -276,6 +276,14 @@ describe('describeDelta', () => {
     ['41건은 처리되었습니다', '42건은 처리되었습니다'],
     ['41개는 품절', '42개는 품절'],
     ['41건도 확인', '42건도 확인'],
+    ['41件です', '42件です'],
+    ['41件でした', '42件でした'],
+    ['全41件です。', '全42件です。'],
+    ['총 41건입니다', '총 42건입니다'],
+    ['41건이에요', '42건이에요'],
+    ['41건이었습니다', '42건이었습니다'],
+    ['41개예요', '42개예요'],
+    ['41개였습니다', '42개였습니다'],
   ])('reads %s becoming %s, a count with a CJK counter, the way it reads an English one', (from, to) => {
     const before = nodes([heading, node('c0', { text: from })]);
     const after = nodes([heading, node('c1', { text: to }), node('n', { text: 'Item added' })]);
@@ -323,6 +331,12 @@ describe('describeDelta', () => {
     '3개국어',
     '3行で書く',
     '2024 개도국 지원',
+    '3行でも読める',
+    '3行ですべて書く',
+    '3個ですぐ届く',
+    '2行でしたためる',
+    '2024 개입 사례',
+    '2024 건이동 안내',
   ])('keeps %s on a screen the step navigated to, since the digits are not a count', (text) => {
     const opened = nodes([heading, node('p', { text }), node('n', { text: 'インポートしたレコード' })]);
     expect(describeDelta(nodes([heading]), opened, true).appeared).toEqual([{ text }, { text: 'インポートしたレコード' }]);

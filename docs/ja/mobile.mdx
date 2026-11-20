@@ -223,6 +223,8 @@ const { app } = await device.installApp('./build/MyApp.app', { reinstall: true }
 await device.openApp(app);
 ```
 
+`device.uninstallApp(id)` はアプリを削除し、`device.isAppInstalled(id)` はアプリがあるかを確かめます。ID を省略すると、どちらも固定したアプリを対象にします。
+
 `device.openApp` はバンドル ID、パッケージ、表示名を受け取ります。リンクは受け取りません。
 `device.openLink` は、固定されたアプリ、またはオプションの `app` に、ディープリンクや Web リンクを開きます。
 マジックリンクによるサインインや、ディープリンクのルートに使えます。
@@ -271,7 +273,7 @@ const { nodes } = await client.capture.snapshot({});
 
 クライアント呼び出しはステップではありません。
 レポートやトレースに載らず、エージェントのキャッシュはリプレイしません。
-渡したシークレットはマスキングされず、呼び出し後に画面が落ち着くまで待つこともありません。
+渡したシークレットは秘匿されず、呼び出し後に画面が落ち着くまで待つこともありません。
 
 <Accordion title="テキストサイズとアニメーション">
 `device` にはシステムのテキストサイズやアニメーション用のメソッドがないため、`unstable_raw` で設定します。
@@ -469,7 +471,7 @@ export default {
 呼び出しは、現在の試行を実行しているエンジンに届きます。
 `open_app`、`swipe`、`alert` はデバイスの状態を変えるため、キャッシュのリプレイ中もライブ実行します。
 各ツールは [モバイルエンジンリファレンス](/reference/mobile#agent-tools) を参照してください。
-独自のツールを併用するには、[プロジェクトのツール](/tools) を参照してください。
+独自のツールを併用するには、[プロジェクトツール](/tools)を参照してください。
 
 ## 実機
 
@@ -548,18 +550,22 @@ ID ではなく名前を使ってください。
 
 ## ホスト型デバイス
 
-アプリの自動インストールとデバイスのクリーンアップに対応したホスト型 iOS シミュレーター・Android エミュレーターには、
-[Limrun](/integrations/limrun) を使えます。
+ホスト型の iOS シミュレーターと Android エミュレーターには、[Limrun](/integrations/limrun) を使えます。
+Limrun は、アプリの自動インストールとデバイスのクリーンアップに対応しています。
 
-サービスがホストするデバイスで実行するには、`device` に `DeviceProvider` を設定します。
-シミュレーター、エミュレーター、実機のそばで agent-device デーモンを動かすサービスなら対応できます。
-プロバイダーは実行開始時にワーカースロットごとに 1 台を借り、実行終了時に解放します。
+外部サービスがホストするデバイスで実行するには、`device` に `DeviceProvider` を設定します。
+シミュレーター、エミュレーター、実機と並べて agent-device デーモンを動かすサービスであれば、どれでも使えます。
+プロバイダーは、実行の開始時にワーカースロットごとに 1 台を借り、実行の終了時に解放します。
 
-[Expo Simulators](/integrations/eas) には `@e2e-dev/eas` の `expoSimulators()`、
-[TestMu AI](/integrations/testmu) には `@e2e-dev/testmu` の `testmu()`、
-[BrowserStack](/integrations/browserstack) には `@e2e-dev/browserstack` の `browserstack()` を使います。
-[E2B](/integrations/e2b) 上の Android には、`@e2e-dev/e2b` の `e2b()` を使います。
-他のサービスには、下の例の `hostedDevices` のように数十行のプロバイダーを書けます。
+主なサービスには、次のプロバイダーを使います。
+
+- [Expo Simulators](/integrations/eas): `@e2e-dev/eas` の `expoSimulators()`
+- [TestMu AI](/integrations/testmu): `@e2e-dev/testmu` の `testmu()`
+- [BrowserStack](/integrations/browserstack): `@e2e-dev/browserstack` の `browserstack()`
+- [E2B](/integrations/e2b) 上の Android: `@e2e-dev/e2b` の `e2b()`
+- [Revyl](/integrations/revyl): `@e2e-dev/revyl` の `revyl()`
+
+それ以外のサービスでも、下の例の `hostedDevices` のように、数十行でプロバイダーを書けます。
 
 ```ts
 mobile({
@@ -691,8 +697,14 @@ export function hostedDevices(options: { serviceUrl: string; image: string }): D
 agent-device が直接対応するデバイスクラウドでは、独自のセッション API は不要です。
 `@e2e-dev/mobile/lease` の `agentDeviceLeases()` は、`env` の認証情報でワーカースロットごとにデーモンを起動し、
 `selectors` でリースを割り当て、実行中は維持します。解放時は、agent-device がセッション終了を確認しなければ失敗します。
-[TestMu AI](/integrations/testmu) 用の `@e2e-dev/testmu` の `testmu()` と、
-[BrowserStack](/integrations/browserstack) 用の `@e2e-dev/browserstack` の `browserstack()` がこの方式です。
+[TestMu AI](/integrations/testmu) 用の `@e2e-dev/testmu` の `testmu()`、
+[BrowserStack](/integrations/browserstack) 用の `@e2e-dev/browserstack` の `browserstack()`、
+[Revyl](/integrations/revyl) 用の `@e2e-dev/revyl` の `revyl()` がこの方式です。
+
+クラウドが agent-device のプロバイダープラグインを必要とする場合は、そのプラグインに依存し、
+`agentDevicePlugin(import.meta.resolve('@agent-device/<plugin>'))` を渡します。
+`acquire` でその `assertVersion(request.agentDeviceVersion)` を呼び出し、リースと一緒にその `prepareHome` を渡してください。
+`prepareHome` は、デーモンのホームにプラグインを登録します。
 
 ```ts title="device-cloud-provider.ts" expandable
 import type { DeviceProvider } from '@e2e-dev/mobile';
@@ -730,86 +742,87 @@ export function cloudDevices(options: { provider: string; device: string; osVers
 | --- | --- |
 | `app.open('/path')` とエージェントの `navigate` 操作 | アプリの URL も `navigate` もありません。`app.open()` は `app.bundleId` を新たに起動し、`device.openLink(url)` はそのアプリにリンクを開きます。[`app.linkBase`](/reference/config#linkbase) があれば、`app.open('/path')` はパスをリンクとして開きます |
 | `test.setup` でセッションを保存し、`session:` で復元 | 利用できません。シミュレーターには持ち運べるセッションスナップショットがないため、テストごとにサインインするか、アプリにデータを投入します |
-| シークレットの入力 | `type_secret` と `screen.getByLabel(...).fill(secret)` が、宣言済みシークレットを保護されたフィールドに入力します |
+| シークレットの入力 | `type_secret` と `screen.getByLabel(...).fill(secret)` が、宣言済みシークレットを機密フィールドに入力します |
 | `--video` は WebM の画面録画を保存 | `--video` はタップ表示付きのデバイス画面を MP4 で保存します（`videoTouches: false` で非表示）。またはデバイスプロバイダー独自の録画を保持します |
 | キャッシュの基準はページのパス | キャッシュの基準は `<bundle id> / <screen title>` という場所です。タイトルは iOS のナビゲーションバー、Android のツールバーから読み取ります |
 
 ### デバイスの既知の制限
 
-- デバイスのノードが持つ属性は `placeholder` だけです。
-- iOS の React Native のタブ（`accessibilityRole="tab"`）は `other` ロールになります。
-  テスト ID やラベルで探し、`toBeSelected` で検証してください。
-  チェックボックス、ラジオボタン、`toBeChecked` は両プラットフォームで動きます。
-- iOS では、通常の React Native の `View` はツリーに子を持ちません。
-  そのため、`filter({ has })` や、その View に範囲を絞ったクエリは一致せず、
-  `filter({ hasNot })` は除外したかった行も含め、すべての行を残します。
-  画面の `ScrollView`（`device.locator('role=scroll-area')`）に範囲を絞るか、子にテスト ID を付けてください。
-- 48dp 未満で描画した Jetpack Compose のクリック可能な要素は、ツリーに 2 つのボタンとして現れ、
-  タップが `has no parent-owned touch point` で失敗します。
-  Android の最小タッチターゲットである 48dp 以上にしてください。
-- `display: none` の要素はツリーに存在しないため、`toBeAttached` は失敗します。
+- デバイスのノードで使える属性は `placeholder` だけです。
+- iOS の React Native アプリでは、タブ（`accessibilityRole="tab"`）のロールが `other` になります。
+  タブはテスト ID かラベルで探し、選択状態は `toBeSelected` で検証してください。
+  チェックボックスとラジオボタン、`toBeChecked` は両プラットフォームで使えます。
+- iOS の React Native アプリでは、素の `View` がツリー上で子要素を持ちません。
+  そのため、その `View` に `filter({ has })` を使っても、その `View` に範囲を絞ってクエリを書いても、何も一致しません。
+  逆に `filter({ hasNot })` では、除外したかった行も含めてすべての行が残ります。
+  範囲は画面の `ScrollView`（`device.locator('role=scroll-area')`）で絞るか、子要素にテスト ID を付けてください。
+- Jetpack Compose で 48dp より小さく描画したクリック可能な要素は、ツリー上で 2 つのボタンとして現れます。
+  この要素をタップすると、`has no parent-owned touch point` で失敗します。
+  要素は、Android の最小タッチターゲットである 48dp 以上にしてください。
+- `display: none` で隠した要素はツリーに含まれないため、その要素の `toBeAttached` は失敗します。
   `toHaveCount(0)` または `toBeHidden` で検証してください。
-- ソフトキーボードが中心を覆うノードは、画面外にスクロールしたノードと同様に非表示になります。
-  キーボードのキー、候補バー、ドック、フォーカスされたフィールドは表示されたままです。
-  子が 1 つでもキーボードの上に見えていれば、コンテナーも表示状態です。
-  それ以外の覆われたノードでは `toBeVisible()` が失敗し、タップは `ACTION_FAILED` になります。
-  先に `device.dismissKeyboard()` を呼ぶか、スクロールして見えるようにしてください。
+- ソフトキーボードがノードの中心を覆っている場合、そのノードは、画面外にスクロールしたノードと同じく非表示として扱われます。
+  ただし、キーボード自体のキー、候補バー、ドックと、フォーカス中のフィールドは表示されたままです。
+  また、子要素のどれか 1 つでもキーボードより上に見えていれば、そのコンテナーは表示状態のままです。
+  これら以外の覆われたノードでは `toBeVisible()` が失敗し、タップすると `ACTION_FAILED` になります。
+  先に `device.dismissKeyboard()` を呼ぶか、ノードが見えるまでスクロールしてください。
   [可視性](/reference/mobile#visibility) を参照してください。
-- iOS の `doubleTap()` と `screen.doubleTapAt()` は、約 285〜335 ms 間隔の 2 回のタップです。
-  ダブルタップの検出には 350 ms 以上の猶予を設けてください。
-- iOS の `device.foregroundApp()` は、`device.home()` の後もセッションのアプリを返します。
-  代わりに画面を確認してください。
+- iOS では、`doubleTap()` と `screen.doubleTapAt()` が約 285〜335 ms 間隔の 2 回のタップになります。
+  アプリのダブルタップ検出では、2 回のタップの間隔の上限を 350 ms 以上にしてください。
+- iOS では、`device.home()` の後も、`device.foregroundApp()` がセッションのアプリを返します。
+  前面のアプリを確かめるには、代わりに画面を確認してください。
 - クリップボードサービスのシェルコマンドがない Android ビルド（Android 16 エミュレーターなど）では、
   `device.clipboard()` と `device.setClipboard()` が `UNSUPPORTED_CAPABILITY` をスローします。
-  コピーを確認するには、フィールドに貼り付けて読み取ってください。
-- iPhone Duo の `--video` は、録画開始時に点灯していたディスプレイを記録します。
-  `device.fold` でもう一方にアプリを移すと、それ以降の動画は黒くなります。
+  コピーできたかを確認するには、フィールドに貼り付けて、その値を読み取ってください。
+- iPhone Duo では、`--video` が録画開始時に点灯していたディスプレイを録画します。
+  `device.fold` でアプリをもう一方のディスプレイに移すと、それ以降の動画は真っ黒になります。
 
 ## トラブルシューティング
 
-デバイスの失敗では、agent-device 自身のメッセージが表示されます。
-エージェント経由では、より具体的なコードのないエンジン障害は `APP_UNREACHABLE` として報告されます。
-アプリ自体が原因とは限らないため、コードより先にメッセージを読んでください。
+デバイスで失敗すると、agent-device が出したメッセージがそのまま表示されます。
+エージェント経由の場合、エンジンの障害でより具体的なコードがないものは `APP_UNREACHABLE` として報告されます。
+原因がアプリ以外にあることも多いため、エラーコードより先にメッセージを読んでください。
 
-**iOS の自動化ランナーがビジー、応答不能、またはスナップショットを返せない。**
-重い画面やアニメーション中の画面がランナーの処理能力を超えたり、Ctrl-C で止めた実行がビジー状態を残したりすることがあります。
-メッセージにはランナーと最初の対処（通常は再実行）が示されます。
-次の実行でも発生する場合は、下のコマンドでデーモンを止め、シミュレーターを再起動してください。
+**iOS の自動化ランナーがビジー、応答しない、またはスナップショットを返せない。**
+重い画面やアニメーション中の画面では、ランナーの処理が追いつかないことがあります。
+Ctrl-C で止めた実行のせいで、ランナーがビジーのまま残ることもあります。
+メッセージには、問題のランナーと最初に試すこと（たいていは再実行）が書かれています。
+次の実行でも同じ問題が起きる場合は、下のコマンドでデーモンを止め、シミュレーターを再起動してください。
 
-**Android の `device.installApp()` がバンドル ID やパッケージなしと報告する。**
-agent-device がビルドのパッケージを判別できず、`app.open()` の起動対象がありません。
-APK のマニフェストを読めない場合、Android SDK の `aapt` にフォールバックします。
-検索先は `ANDROID_SDK_ROOT`、`ANDROID_HOME`、macOS の `~/Library/Android/sdk`、または `~/Android/Sdk` です。
-ターゲットの `app.bundleId` を設定してください。
-または `ANDROID_HOME` をエクスポートしてからデーモンを停止し、次の実行でその変数を使って起動させます。
+**Android で `device.installApp()` がバンドル ID やパッケージ名を取得できない。**
+agent-device がビルドのパッケージ名を判別できていないため、`app.open()` で起動するアプリが決まりません。
+agent-device は APK のマニフェストを読めないとき、Android SDK の `aapt` を使います。
+`aapt` は `ANDROID_SDK_ROOT`、`ANDROID_HOME`、`~/Library/Android/sdk`（macOS）、`~/Android/Sdk` から探します。
+対処法は 2 つあります。ターゲットの `app.bundleId` を設定するか、
+`ANDROID_HOME` をエクスポートしてから agent-device のデーモンを止めてください。次の実行で、デーモンがその変数を読んで起動します。
 
-**Android でフォアグラウンドのアプリ内容が不十分、または iOS でアプリが起動していないと報告される。**
-agent-device がまだ画面を読めていません。コールドスタート後の読み込み中によく起こります。
-iOS では、実機の iPhone が起動中の場合など、`app.open()`、`app.restart()`、`device.openLink()` の後、
-最初に画面が読めるまでだけこの扱いになります。その後でアプリが終了した場合は、直ちに失敗します。
-待機するロケーター操作や `expect` は、要素がまだない場合と同じように待ち続けます。
-待機が終わっても読めなければ、そのメッセージで失敗します。
-一方、`count()` や `isVisible()` などの即時読み取りは一致なしとして扱います。
-そのため、描画前にクラッシュしたアプリを含め、画面が読めない間も `not.toBeVisible()` が成功する場合があります。
-エージェントの次のターンなどの観測は、直ちに失敗します。
+**Android で「フォアグラウンドのアプリの内容が不十分」、iOS で「アプリが起動していない」と報告される。**
+agent-device がまだ画面を読み取れていない状態です。コールドスタート直後で、アプリがまだ読み込み中のときによく起こります。
+iOS でこの扱いになるのは、`app.open()`、`app.restart()`、`device.openLink()` の後、画面を最初に読み取れるまでの間だけです。
+実機の iPhone でアプリの起動がまだ終わっていないときなどが、これに当たります。それより後にアプリが終了した場合は、すぐに失敗します。
+待機するロケーター操作や `expect` は、要素がまだ表示されていないときと同じように待ちます。
+待ち時間が切れても画面を読み取れなければ、ステップはこのメッセージで失敗します。
+一方、`count()` や `isVisible()` のようにすぐ読み取る処理は、読み取れない画面を「一致なし」として扱います。
+そのため、画面を読み取れない間は `not.toBeVisible()` が成功してしまうことがあります。描画前にクラッシュしたアプリでも同様です。
+エージェントの次のターンのような観測は、この状態ではすぐに失敗します。
 
-**デバイス側のタイムアウト。**
-シミュレーターの起動、ランナーへの接続、アプリの起動がデバイス側でタイムアウトすると、
-agent-device のメッセージとヒントを伴う `ENGINE_FAILURE` になります。
+**デバイス側でタイムアウトする。**
+シミュレーターの起動、ランナーへの接続、アプリの起動がデバイス側でタイムアウトした場合は、`ENGINE_FAILURE` になります。
+エラーには agent-device のメッセージとヒントが付きます。
 `LAUNCH_TIMEOUT`、`ACTION_FAILED`、`STEP_TIMEOUT` にはなりません。
 
-**操作がタイムアウトを超えて続く。**
+**操作がタイムアウトしても終わらない。**
 タップ、入力、キー、スワイプ、`back` には `timeout`（デフォルトは `actionTimeout`）が適用されます。
-時間内にデバイスが応答しなければ `ACTION_FAILED` で失敗し、リトライしません。入力が届いた可能性があるためです。
-待機中のタップ、ダブルタップ、フォーカス、チェック、チェック解除は、待機終了や実行中断時にキャンセルされます。
-すでにデバイスに送られた入力は、その後も完了する場合があります。
-残り時間以上の長さで押し続ける `longPress` は送信前に拒否されるため、`timeout` を増やしてください。
+時間内にデバイスが応答しなければ、ステップは `ACTION_FAILED` で失敗します。入力がすでに届いている可能性があるため、リトライはしません。
+ステップが待機をやめたときや実行が中断されたときは、処理中のタップ、ダブルタップ、フォーカス、チェック、チェック解除をキャンセルします。
+ただし、すでにデバイスに送った入力は、その後も最後まで実行されることがあります。
+押し続ける時間が残り時間以上の `longPress` は、送信前に拒否されます。その場合は `timeout` を延ばしてください。
 スナップショットとスクリーンショットも、それを取得する呼び出しのタイムアウト内で実行されます。
-デバイスが応答しなくても、テスト全体のタイムアウトまで待たずに `ACTION_FAILED` になります。
-`locator.waitFor`、`expect`、`toHaveScreenshot` は最後のスナップショットに、
-それまでで最も遅かった取得時間を上限として、テストのタイムアウト内で追加時間を与えます。
-その間に画面が現れれば成功します。要素が最後まで現れなければ `LOCATOR_NOT_FOUND`、
-`expect` では `ASSERTION_FAILED` になります。
+そのため、デバイスが応答しなくなっても、ステップはテストのタイムアウトまで待ち続けず、`ACTION_FAILED` で失敗します。
+`locator.waitFor`、`expect`、`toHaveScreenshot` は、最後のスナップショットに追加の時間を与えます。
+追加の時間は、それまでで最も遅かった取得時間までで、テストのタイムアウトは超えません。
+その間に画面が表示されれば成功します。最後まで要素が表示されなければ `LOCATOR_NOT_FOUND`、
+`expect` の場合は `ASSERTION_FAILED` で失敗します。
 
 <CodeGroup>
 ```bash npm

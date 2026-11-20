@@ -17,7 +17,7 @@ export const migrationPrompt = `このプロジェクトの Playwright テスト
 6. 依存関係をインストールしてください。
 7. Playwright の spec を一覧にして、最初に移すものを私に確認してください。ウィザードや購入手続きなど、手順がよく変わるフローを提案してください。
 8. その spec の各 Playwright API を「e2e にまだない機能」と照合してください。「現在使える方法」または「代わりに使う方法」を採用するか、そのテストを Playwright に残して理由を説明してください。その後、ガイドに沿って spec を \`tests/\` 内の \`.e2e.ts\` に書き換えてください（e2e のデフォルトは \`tests/**/*.e2e.ts\` です）。各 \`page\` 呼び出しを \`screen\`、\`app\`、\`browser\` に対応付けてください。Playwright のクエリが部分一致していた箇所には、\`{ exact: false }\` または RegExp を加えてください。
-9. ページ遷移と最終的な検証は、\`app.open()\` とロケーターアサーションで決定論的に保ってください。決め打ちの操作列が頻繁に壊れる箇所には、代わりに \`agent.act\` の目標を提案してください。
+9. ページ遷移と最終的な検証は、\`app.open()\` とロケーターアサーションで決定論的に保ってください。決め打ちの操作列が頻繁に壊れる箇所には、代わりに \`agent.act\` のゴールを提案してください。
 10. \`npx e2e run <file>\` で新しいファイルを実行し、成功するまで修正してください。削除してよいと私が確認するまで、Playwright の spec は残してください。
 11. 移したテスト、Playwright に残したテスト、それぞれの理由をまとめてください。`;
 
@@ -109,7 +109,7 @@ test('checkout', async ({ app, agent, screen }) => {
 | `click()`, `dblclick()` | `tap()`、`doubleTap()`。`click()` と `dblclick()` は別名 |
 | `click({ button: 'right' })`, `click({ delay })` | `secondaryTap()`、`longPress({ duration })` |
 | `click({ position })`, `click({ modifiers })` | `tap({ position })`、`tap({ modifiers })` |
-| `fill()`, `pressSequentially()`, `clear()`, `focus()`, `hover()`, `check()`, `uncheck()`, `dragTo()`, `setInputFiles(path)`, `selectOption({ label })` または `{ value }` | 同じ。ただし `force`、`trial`、`position` はなし |
+| `fill()`, `pressSequentially()`, `clear()`, `focus()`, `blur()`, `hover()`, `check()`, `uncheck()`, `dragTo()`, `setInputFiles(path)`, `selectOption({ label })` または `{ value }` | 同じ。ただし `force`、`trial`、`position` はなし |
 | `press(key)` | 1 文字または[名前付きキー](/reference/engine#keys)なら同じ。キーコードは `focus()` 後に `browser.keyboard.press` |
 | `innerText()`, `allInnerTexts()`, `scrollIntoViewIfNeeded()` | `textContent()`、`allTextContents()`、`scrollIntoView()` |
 | `textContent()`, `allTextContents()`, `inputValue()`, `getAttribute()`, `boundingBox()`, `isVisible()`, `isHidden()`, `isEnabled()`, `isDisabled()`, `isChecked()`, `waitFor({ state })` | 同じ |
@@ -162,7 +162,8 @@ test('checkout', async ({ app, agent, screen }) => {
 | --- | --- |
 | `import { test, expect } from '@playwright/test'` | `import { test } from '@e2e-dev/web'` と `import { expect } from 'e2e'` |
 | テストの `{ page }` | `{ screen, app, browser }` |
-| `test()`, `test.describe()`, `test.only`, `test.fail()`, `test.skip(title, fn)`, `test.skip(condition, reason)` | 同じ。条件付きの `skip` はテスト本体または `beforeEach` 内で利用可能 |
+| `test()`, `test.describe()`, `test.only`, `test.fail()`, `test.skip(title, fn)`, `test.skip(condition, reason)`, `test.fixme(title, fn)`, `test.fixme(condition, reason)` | 同じ。ただし serial グループではグループに `skip` を指定。条件付きの形はテスト本体または `beforeEach` 内で利用可能 |
+| `test.setTimeout()` | テスト本体、`beforeEach`、`beforeAll`（そのフック自身のタイムアウト）では同じ。`afterEach` と `afterAll` からは呼び出せません。`describe` のコールバック内では、代わりに `test.describe` に `{ timeout }` を渡します。タイムアウトなしを意味する `0` はないため、大きな値を渡します |
 | `beforeEach`, `afterEach`, `beforeAll`, `afterAll` | 同じ。ただしタイトルなし。`beforeAll` と `afterAll` が受け取るのはワーカーフィクスチャで、`browser`、`app`、`screen` は受け取らない |
 | `test.describe.skip`, `test.describe.serial`, `describe.configure({ mode: 'serial', retries, timeout })` | `test.describe(title, { skip, serial, retries, timeout }, fn)` |
 | `{ tag: '@smoke' }` | テストまたはグループの `{ tags: ['smoke'] }` |
@@ -226,9 +227,9 @@ export const test = base.extend<{ accountPage: AccountPage }>({
 
 ## e2e にまだない機能
 
-「計画済み」はロードマップに載っています。「未対応」は日程が未定です。「対応予定なし」は意図的に含めていません。代替手段を使うか、そのテストを Playwright に残してください。
+「実装予定」はロードマップに載っています。「未対応」は日程が未定です。「実装予定なし」は意図的に含めていません。代替手段を使うか、そのテストを Playwright に残してください。
 
-### 計画済み
+### 実装予定
 
 <AccordionGroup>
 <Accordion title="ロケーターとアクション">
@@ -280,7 +281,8 @@ export const test = base.extend<{ accountPage: AccountPage }>({
 | `globalSetup`、`globalTeardown`、`webServer` の配列 | 実行の前後を囲むスクリプト、または全プロセスを起動する 1 つの `app.command` |
 | `projects[].testMatch`, `testDir`, `testIgnore`, `grep` | テストの `platforms` やタグ、またはターゲットごとに別の実行 |
 | `--ui`, `npx playwright show-report`, `--reporter html` | `--watch --headed`。`npx e2e report`（`htmlReporter()` が書き出す `<output>/report.html` を開く） |
-| `test.setTimeout()`、`test.slow()`、`test.fixme()`、`test.describe.only()`、describe に対する `test.fail()` | テストやグループに `{ timeout }` または `{ skip: 'reason' }`。各テストに `test.only` と `test.fail()` |
+| `test.slow()`、`test.describe.only()`、`test.describe.fixme()`、`test.fixme(title, details, body)`、describe に対する `test.fail()` | テストやグループに `{ timeout }` または `{ skip: 'fixme' }`、details の `tags` があればその横に指定（スキップ原因は `fixme` ではなく `explicit` と報告）。各テストに `test.only` と `test.fail()` |
+| `test.skip(callback, description)`、`test.fixme(callback, description)` | テスト本体内で `test.skip(condition, reason)` または `test.fixme(condition, reason)`、またはテストに `platforms` |
 | `failOnFlakyTests`, `use.navigationTimeout`, `--timeout`, `--quiet` | `report.json` の `run.summary.flaky`。`browser.goto(url, { timeout })`。設定の `timeout` |
 | `blob` レポーターと `merge-reports` | シャードごとに 1 つのレポート |
 | Playwright の Docker イメージ | `@e2e-dev/web` が固定する `playwright-core` バージョンのイメージ、または `npx @e2e-dev/web install chromium --with-deps` |
@@ -306,7 +308,7 @@ export const test = base.extend<{ accountPage: AccountPage }>({
 | `emulateMedia({ media, forcedColors, contrast })` | - |
 | `npx playwright show-trace`, `trace.zip`, `context.tracing` | `.e2e/results/` 以下のテストのディレクトリにある `trace.md`。トレースは Markdown ページで、zip やビューアーはなし |
 
-### 対応予定なし
+### 実装予定なし
 
 | Playwright | 代わりに使う方法 |
 | --- | --- |
@@ -315,7 +317,7 @@ export const test = base.extend<{ accountPage: AccountPage }>({
 | `page.waitForTimeout(ms)`, `page.waitForNavigation()` | 待ちたい状態へのロケーターアサーション。`browser.waitForURL(url)` |
 | ルートの glob 内のリテラル `?` と `{a,b}` | `RegExp`。glob では `?` はワイルドカード、`{a,b}` はリテラル |
 | `--only-changed` | `filters` の[テストフィルター](/filters)と `--changed-since <ref>` |
-| `page.$()`、`$eval()`、`elementHandle()`、JSON 以外の `evaluate` 値、`locator.page()` | ロケーターと、JSON を入出力する `browser.evaluate`。レポートに記録し、シークレットを伏せ字化。ページオブジェクトには `browser` を渡す |
+| `page.$()`、`$eval()`、`elementHandle()`、JSON 以外の `evaluate` 値、`locator.page()` | ロケーターと、JSON を入出力する `browser.evaluate`。レポートに記録し、シークレットを秘匿。ページオブジェクトには `browser` を渡す |
 | ハンドラーなしで黙って閉じられるダイアログ | `browser.onDialog('dismiss')`。未処理のダイアログは次のステップを失敗させる |
 | `page.goto('data:...')`, `'file://...'` | アプリの URL に `route.fulfill({ body, contentType: 'text/html' })`。開けるのは `http` と `https` のみ |
 | `getByRole(role, { includeHidden })` | `browser.locator('role=button[include-hidden=true]')`。ロールクエリはアクセシビリティツリーに従う |
@@ -344,7 +346,7 @@ export const test = base.extend<{ accountPage: AccountPage }>({
 - ロケーターは厳密です。複数一致した場合、アクション、読み取り、肯定形のマッチャーは `LOCATOR_AMBIGUOUS` になります。Playwright の `page.click(selector)` や `isVisible()` は最初の一致を使います。`filter` や `first()` で絞り込んでください。
 - `.not.toBeChecked()` はボタンや見出しでも成功します。コントロールの種類が変わったら失敗するように、ロールで対象を探してください。
 - セッションは 1 回の実行内だけ有効です。`test.setup` が名前付きで状態を保存し、`{ session }` が復元します。ファイルは暗号化し、クリーンアップ時に削除するため、再利用する `.auth/user.json` はありません。
-- テストには生の `Page` を渡しません。その上の操作は記録、伏せ字化、マスクの対象にならないためです。`surfaceOf(engine)` はテストコード向けではなく、[カスタムエグゼキューター](/executors#driving-the-page-yourself)向けです。
+- テストには生の `Page` を渡しません。その上の操作は記録も秘匿もマスキングもされないためです。`surfaceOf(engine)` はテストコード向けではなく、[カスタムエグゼキューター](/executors#driving-the-page-yourself)向けです。
 
 ## デフォルト値の違い
 
@@ -362,7 +364,7 @@ export const test = base.extend<{ accountPage: AccountPage }>({
 
 <CardGroup cols={2}>
   <Card title="基本概念" icon="pen-to-square" href="/core-concepts">
-    決め打ちのセレクターに代わる、目標、アサーション、ロケーター。
+    決め打ちのセレクターに代わる、ゴール、アサーション、ロケーター。
   </Card>
   <Card title="Web エンジンのリファレンス" icon="masks-theater" href="/reference/web">
     すべてのオプションと `browser` のメソッド。

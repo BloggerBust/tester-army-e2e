@@ -1,0 +1,147 @@
+---
+title: विज़ुअल तुलना
+description: एक ही टेस्ट से वेब, iOS और Android पर पूरी स्क्रीन, या किसी एक एलिमेंट, की तुलना सेव किए हुए स्क्रीनशॉट से करें।
+"og:image": "https://e2e.com/docs/images/og/visual-testing.png?v=4929216b19"
+"twitter:image": "https://e2e.com/docs/images/og/visual-testing.png?v=4929216b19"
+---
+
+import { Video } from '../snippets/video.jsx';
+
+ऐप जो दिखाता है, `toHaveScreenshot` उसकी तुलना टेस्ट फ़ाइल के बगल में रखी PNG
+से करता है। यह हर उस इंजन पर काम करता है जो पिक्सल कैप्चर करता है, इसलिए एक ही
+टेस्ट ब्राउज़र, iOS सिम्युलेटर और Android एम्युलेटर को जाँचता है।
+
+<Video>
+  <video src="/images/visual-testing.mp4" aria-label="टर्मिनल में फ़ेल हुआ toHaveScreenshot असर्शन, फिर अगल-बगल अपेक्षित इमेज, रन में ली गई इमेज और डिफ़ इमेज।" muted loop playsInline controls />
+
+  फ़ेल हुई तुलना, फिर उसकी अपेक्षित इमेज, रन में ली गई इमेज और डिफ़ इमेज।
+</Video>
+
+```ts title="tests/checkout.e2e.ts"
+import { test, expect } from 'e2e';
+
+test('checkout looks right', async ({ app, screen }) => {
+  await app.open('/checkout');
+  await expect(screen).toHaveScreenshot('checkout.png');
+  await expect(screen.getByRole('button', 'Pay')).toHaveScreenshot('pay-button.png');
+});
+```
+
+`expect(screen)` पूरी स्क्रीन की तुलना करता है। `expect(locator)` अपने एक मैच को
+स्क्रोल करके सामने लाता है और उसी बॉक्स की तुलना करता है।
+
+## सेव किए हुए स्क्रीनशॉट
+
+स्क्रीनशॉट को टेस्ट के साथ कमिट करें। पहले रन के पास तुलना के लिए कुछ नहीं होता,
+इसलिए वह स्क्रीनशॉट लिखता है और फ़ेल होता है। इमेज देखें, उसे कमिट करें और फिर
+से चलाएँ।
+
+```text
+tests/checkout.e2e.ts
+tests/checkout.e2e.ts-snapshots/checkout-web-linux.png
+tests/checkout.e2e.ts-snapshots/checkout-ios-darwin.png
+tests/checkout.e2e.ts-snapshots/pay-button-web-linux.png
+```
+
+हर टारगेट और ऑपरेटिंग सिस्टम की अपनी फ़ाइल होती है, क्योंकि फ़ॉन्ट और रेंडरिंग
+अलग होते हैं। नाम न देने पर फ़ाइल टेस्ट का नाम लेती है:
+`checkout-looks-right-1-web-linux.png`।
+
+जब ऐप जानबूझकर बदलता है, तो जो स्क्रीनशॉट अलग हैं उन्हें दोबारा लिखें, और जो
+स्क्रीनशॉट मौजूद नहीं हैं उन्हें लिखें। तब रन पास होता है:
+
+<CodeGroup>
+```bash npm
+npx e2e run --update-snapshots
+```
+
+```bash pnpm
+pnpm exec e2e run --update-snapshots
+```
+
+```bash bun
+bunx e2e run --update-snapshots
+```
+</CodeGroup>
+
+## CI में
+
+स्क्रीनशॉट उसी मशीन पर लें जो CI में उन्हें रेंडर करती है: वेब और Android के
+लिए Linux रनर, और iOS के लिए उसी सिम्युलेटर वाला macOS रनर।
+
+`--update-snapshots` के बिना CI रन प्रोजेक्ट में कभी कुछ नहीं लिखता। कोई
+स्क्रीनशॉट मौजूद न होने पर टेस्ट फ़ेल होता है, और रन उसे टेस्ट के नतीजों में
+`snapshots/<path in the project>` पर सेव करता है, ताकि आप उसे डाउनलोड करके कमिट
+कर सकें। सभी स्क्रीनशॉट एक बार में लिखने के लिए, टेस्ट जॉब जैसे किसी जॉब में
+`--update-snapshots` चलाएँ:
+
+```yaml title=".github/workflows/screenshots.yml"
+name: Update screenshots
+on: workflow_dispatch
+jobs:
+  screenshots:
+    runs-on: ubuntu-latest
+    steps:
+      # the same checkout, setup, and install steps as the test job
+      - run: npx e2e run --update-snapshots
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: screenshots
+          path: tests/**/*-snapshots/
+```
+
+आर्टिफ़ैक्ट को प्रोजेक्ट में डाउनलोड करें, इमेज जाँचें और उन्हें कमिट करें।
+
+## जब यह फ़ेल हो
+
+मैचर तब तक स्क्रीनशॉट लेता रहता है जब तक कोई एक मेल न खा जाए, या असर्शन
+टाइमआउट (`assertionTimeout`, 5 s) खत्म न हो जाए। मेल न खाने पर विफलता बताती है
+कि कितने पिक्सल अलग हैं, और टेस्ट के नतीजों में तीन इमेज देती है: `-diff`, जिसमें
+बदले हुए पिक्सल लाल रंग में होते हैं, `-actual` और `-expected`।
+
+```text
+2173 pixels (0.24% of the image) differ from tests/home.e2e.ts-snapshots/screen-web-darwin.png; run with --update-snapshots to keep this run's
+diff: .e2e/results/home-1a2b3c4d5e6f7a8b/attempt-1/screenshots/screen-diff.png
+actual: .e2e/results/home-1a2b3c4d5e6f7a8b/attempt-1/screenshots/screen-actual.png
+expected: .e2e/results/home-1a2b3c4d5e6f7a8b/attempt-1/screenshots/screen-expected.png
+```
+
+स्क्रीनशॉट लिखने के लिए मैचर लगातार दो ऐसे स्क्रीनशॉट का इंतज़ार करता है जो एक
+जैसे हों। जो स्क्रीन कभी स्थिर नहीं रहती, वह आख़िरी दो स्क्रीनशॉट और उनकी डिफ़
+इमेज के साथ फ़ेल होती है।
+
+## टॉलरेंस और मास्क
+
+```ts
+await expect(screen).toHaveScreenshot('dashboard.png', {
+  maxDiffPixelRatio: 0.01,
+  mask: [screen.getByTestId('last-updated')],
+});
+```
+
+| विकल्प | डिफ़ॉल्ट | मतलब |
+| --- | --- | --- |
+| `threshold` | `0.2` | एक पिक्सल का रंग कितना बदलकर भी वैसा ही गिना जाए, 0 से 1 |
+| `maxDiffPixels` | `0` | कितने पिक्सल अलग हो सकते हैं |
+| `maxDiffPixelRatio` | `0` | पिक्सल का कितना हिस्सा अलग हो सकता है, 0 से 1 |
+| `mask` | कोई नहीं | बदलते कंटेंट के लोकेटर। तुलना से पहले इन लोकेटर से मिले हिस्सों को रंग से ढक दिया जाता है। |
+| `maskColor` | `#ff00ff` | मास्क बॉक्स का रंग |
+| `timeout` | `assertionTimeout` | असर्शन का बजट, मिलीसेकंड में |
+
+वेब पर e2e एनिमेशन रोक देता है और टेक्स्ट कैरेट छिपा देता है। iOS और Android पर
+यह स्टेटस बार को स्थिर रखता है, ताकि हर रन में घड़ी और बैटरी एक जैसी दिखें।
+
+e2e हर स्क्रीनशॉट में सुरक्षित फ़ील्ड मास्क करता है, सीक्रेट भरने के बाद भी। जब
+इंजन यह साबित नहीं कर पाता कि स्क्रीन पर हर सुरक्षित फ़ील्ड मास्क है, तो मैचर
+`POLICY_DENIED` के साथ फ़ेल होता है।
+
+## आगे
+
+<CardGroup cols={2}>
+  <Card title="स्क्रीनशॉट मैचर" icon="circle-check" href="/reference/expect#screenshot-matchers">
+    `toHaveScreenshot` और `.not`, हर विकल्प के साथ।
+  </Card>
+  <Card title="सुरक्षा" icon="shield-halved" href="/security">
+    सीक्रेट रिपोर्ट और मॉडल के टेक्स्ट इनपुट से बाहर कैसे रहते हैं, और क्या अब भी लीक हो सकता है।
+  </Card>
+</CardGroup>

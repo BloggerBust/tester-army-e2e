@@ -1,7 +1,8 @@
 name: pr-size
 
 # Labels every PR size:XS..size:XXL by changed lines, not counting tests,
-# fixtures, snapshots, or the lockfile (scripts/pr-size/label.ts).
+# fixtures, snapshots, translated docs, or the lockfile
+# (scripts/pr-size/label.ts).
 # pull_request_target so fork PRs get a token that can label; the checkout is
 # the base branch's script, never PR code.
 on:
@@ -24,6 +25,8 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          # Cone mode also checks out the files directly under scripts/, where
+          # the docs-languages.ts that size.ts imports lives.
           sparse-checkout: scripts/pr-size
           persist-credentials: false
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0

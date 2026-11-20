@@ -18,6 +18,7 @@
 import type { JSONSchema7, Tool, ToolExecutionOptions, ToolSet } from 'ai';
 import type { z } from 'zod';
 import { loadAiSdk, loadAiSdkIfInstalled, loadedAiSdk } from '@e2e-dev/core/lib/agent/ai-sdk';
+import { GRAMMAR_TOOL_NAMES } from '@e2e-dev/core/lib/agent/action-names';
 import { isFailedResult } from '@e2e-dev/core/lib/agent/loop-guards';
 import { codedMessage, ConfigurationError, errorMessage, InfrastructureError } from '@e2e-dev/core/lib/internal/errors';
 import { describeIssue } from '@e2e-dev/core/lib/internal/standard-schema';
@@ -130,12 +131,29 @@ function standardJsonSchema(schema: unknown): unknown {
  * one), the first sentence of the description, and the read-only mark.
  * `- tap {target}: Tap or click one node.`
  */
-export function catalogLine(name: string, tool: ToolSet[string], readOnly: boolean): string {
+export function catalogLine(
+  name: string,
+  tool: ToolSet[string],
+  readOnly: boolean,
+  redact: (text: string) => string = (text) => text,
+): string {
   const schema = toolJsonSchema(tool);
   const required = new Set(schema.required ?? []);
   const args = Object.keys(schema.properties ?? {}).map((key) => (required.has(key) ? key : `${key}?`));
   const signature = args.length === 0 ? name : `${name} {${args.join(', ')}}`;
-  return `- ${signature}: ${firstSentence(toolDescription(name, tool))}${readOnly ? ' [read-only]' : ''}`;
+  return `- ${redact(signature)}: ${firstSentence(redact(toolDescription(name, tool)))}${readOnly ? ' [read-only]' : ''}`;
+}
+
+/** Explains why a name cannot be called on this target. */
+export function unavailableSessionTool(target: string, catalog: { readonly tools: ToolSet }, name: string): ConfigurationError {
+  if (GRAMMAR_TOOL_NAMES.has(name)) {
+    return new ConfigurationError(
+      'UNSUPPORTED_CAPABILITY',
+      `tool "${name}" is not available in this session: the engine of target "${target}" declares no such action; tools lists what it can do`,
+    );
+  }
+
+  return new ConfigurationError('UNKNOWN_TOOL', `tool "${name}" is not available in this session; tools: ${Object.keys(catalog.tools).join(', ')}`);
 }
 
 /** The full contract of one tool: its description and the JSON Schema of its arguments. */

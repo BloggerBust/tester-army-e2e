@@ -1,0 +1,192 @@
+---
+title: एजेंट और पर्सोना
+description: एक टेस्ट सूट में कई एजेंट कॉन्फ़िगर करें, टेस्ट के लिए एजेंट पिन करें, और एक ही फ़्लो को हर पर्सोना के रूप में चलाएँ।
+"og:image": "https://e2e.com/docs/images/og/agents.png?v=94dc88725f"
+"twitter:image": "https://e2e.com/docs/images/og/agents.png?v=94dc88725f"
+---
+
+import { Video } from '../snippets/video.jsx';
+
+एजेंट `agents` में नाम वाली एक एंट्री है। उसका अपना मॉडल, अपने निर्देश और अपने
+टूल होते हैं। जब तक आप कोई दूसरा एजेंट न चुनें, टेस्ट `default` इस्तेमाल करते
+हैं। मॉडल की तुलना करने के लिए, या एक फ़्लो को कई पर्सोना के रूप में चलाने के
+लिए, और नाम वाले एजेंट जोड़ें।
+
+## नाम वाले एजेंट तय करें
+
+```ts title="e2e.config.ts"
+import type { E2EConfig } from 'e2e';
+import { web } from '@e2e-dev/web';
+import { gateway } from 'ai';
+
+const vocabulary = 'Plans are called tiers. Billing lives under Settings. "Approve" on an order refunds it.';
+
+export default {
+  targets: [{ engine: web(), app: { url: 'http://localhost:3000' } }],
+  agents: {
+    default: { model: gateway('openai/gpt-6-luna-fast'), context: vocabulary },
+    thorough: {
+      model: gateway('anthropic/claude-opus-5'),
+      system: 'Verify every claim on screen before concluding a step.',
+      context: vocabulary,
+    },
+    buyer: { model: gateway('openai/gpt-6-luna-fast'), system: 'You are a first-time buyer.', context: vocabulary },
+    admin: { model: gateway('openai/gpt-6-luna-fast'), system: 'You manage orders and approve refunds.', context: vocabulary },
+  },
+} satisfies E2EConfig;
+```
+
+एक एंट्री में `model`, एक वैकल्पिक [`judge`](/models#a-judge-of-its-own),
+`system`, `context`, [टूल](/tools), बजट और `providerOptions` होते हैं।
+`maxSteps` एक चरण के एक्शन की सीमा तय करता है, और `maxModelCalls` उसकी मॉडल
+कॉल की: डिफ़ॉल्ट 25, ज़्यादा से ज़्यादा 100।
+[कॉन्फ़िग रेफ़रेंस](/reference/config#agents) देखें।
+
+कोई भी एंट्री `default` से कुछ इनहेरिट नहीं करती। हर एंट्री को वह मॉडल और कॉन्टेक्स्ट
+दें जिसकी उसे ज़रूरत है, जैसे ऊपर की तरह किसी साझा कॉन्स्टेंट से।
+
+[कस्टम एक्ज़ीक्यूटर](/executors) `executor` के नीचे आता है। मॉडल, जज मॉडल,
+कॉन्टेक्स्ट और बजट तब भी लागू होते हैं। `system` और `tools` अस्वीकार किए जाते
+हैं, क्योंकि एक्ज़ीक्यूटर अपना प्रॉम्प्ट और अपने टूल खुद लाता है।
+
+## निर्देश और शब्दावली
+
+| | `system` | `context` |
+|---|---|---|
+| किस सवाल का जवाब | एक्शन करने वाला एजेंट कैसे काम करे? | यह ऐप चीज़ों को क्या कहता है? |
+| कौन पढ़ता है | सिर्फ़ act लूप | हर मॉडल कॉल, चाहे वह act टर्न हो या `assert`, `waitFor` और `extract` के पीछे के जज मॉडल की कॉल |
+| यहाँ क्या रखें | पर्सोना, सावधानी, खत्म करने से पहले क्या जाँचना है, अचानक दिखने वाले डायलॉग को कैसे संभालना है | स्क्रीन और मेन्यू के नाम, कोई फ़ीचर कहाँ है, कौन सा बटन फ़ॉर्म सबमिट करता है, डोमेन के शब्द |
+| कहाँ सेट करें | `agents.<name>.system` | `agents.<name>.context`, ज़्यादा से ज़्यादा 16 KiB |
+
+जज मॉडल को `system` कभी नहीं दिखता, इसलिए "फ़ॉर्म बंद होते ही चरण पूरा है" जैसा
+निर्देश फ़ैसले का पैमाना नीचे नहीं कर सकता। आसान नियम: जो बात इस ऐप पर किसी भी
+टेस्टर के लिए सच है, वह `context` में जाती है। जो बात इस टेस्टर के लिए किसी भी
+ऐप पर सच है, वह `system` में जाती है।
+
+कोई टेस्ट या ग्रुप `agentContext` से `context` में अपनी शब्दावली जोड़ता है। इसे
+सिर्फ़ उन तथ्यों के लिए इस्तेमाल करें जो वही टेस्ट जानता है, जैसे सीड किया गया
+डेटा या कोई फ़ीचर फ़्लैग जो किसी लेबल को बदलता है:
+
+```ts title="tests/billing.e2e.ts"
+import { describe, test } from 'e2e';
+
+describe('billing', { agentContext: 'The seeded workspace is called "Acme Trial".' }, () => {
+  test('upgrades the tier', async ({ agent }) => { /* ... */ });
+});
+```
+
+`agentContext` में निर्देश न रखें: यह जज मॉडलों तक भी पहुँचता है।
+
+`e2e run` के तहत हर प्रॉम्प्ट में टेस्ट का टाइटल पाथ भी होता है, जैसे
+`Test: billing > upgrades the tier`। जज मॉडल भी इसे पढ़ते हैं, इसलिए टेस्ट का नाम
+इस आधार पर रखें कि वह क्या कवर करता है, न कि उस फ़ैसले पर जिसकी आप उम्मीद करते
+हैं।
+
+## हर रन के लिए एजेंट चुनें
+
+`--agent` उन टेस्ट के लिए एजेंट चुनता है जो खुद कोई एजेंट नहीं चुनते। कई नाम
+देने पर हर टेस्ट हर एजेंट के लिए एक बार चलता है:
+
+<CodeGroup>
+```bash npm
+npx e2e run --agent thorough tests/checkout.e2e.ts
+npx e2e run --agent buyer,admin
+```
+
+```bash pnpm
+pnpm exec e2e run --agent thorough tests/checkout.e2e.ts
+pnpm exec e2e run --agent buyer,admin
+```
+
+```bash bun
+bunx e2e run --agent thorough tests/checkout.e2e.ts
+bunx e2e run --agent buyer,admin
+```
+</CodeGroup>
+
+## सूट में एजेंट पिन करें
+
+एजेंट किसी टेस्ट, किसी describe ब्लॉक या एक कॉल पर चुना जा सकता है। सबसे
+नज़दीकी सेटिंग लागू होती है: पहले कॉल, फिर टेस्ट, फिर उसे घेरने वाले ग्रुप, फिर
+रन।
+
+```ts title="tests/checkout.e2e.ts"
+import { describe, test } from 'e2e';
+
+describe('checkout as a first-time buyer', { agent: 'buyer' }, () => {
+  test('pays for one item', async ({ app, agent }) => { /* ... */ });
+
+  describe('refunds', { agent: 'admin' }, () => {
+    test('refunds the order', async ({ agent }) => { /* ... */ });
+  });
+
+  test('reorders, and the admin approves', async ({ app, agent }) => {
+    await app.open('/orders');
+    await agent.act('reorder the most recent order');
+    // The admin's act call sees what the earlier steps of this test did.
+    await agent.act('approve the pending reorder', { agent: 'admin' });
+    await agent.assert('the reorder shows as approved');
+  });
+});
+```
+
+`--agent` उस एजेंट की जगह नहीं लेता जिसे कोई टेस्ट चुनता है। टेस्ट या ग्रुप पर
+अनजान एजेंट कलेक्शन के दौरान फ़ेल होता है। कॉल पर अनजान एजेंट
+`INVALID_ARGUMENT` थ्रो करता है। रिपोर्ट हर चरण का एजेंट दर्ज करती हैं।
+
+## एक फ़्लो, कई पर्सोना
+
+<Video>
+  <video src="/images/personas.mp4" aria-label="चार एजेंट वही लोकलाइज़ेशन टेस्ट चलाते हैं। हर एजेंट ऐसा पर्सोना है जो एक भाषा पढ़ता है। अरबी वाला रन अंग्रेज़ी में छूटे एक बटन पर फ़ेल होता है।" muted loop playsInline controls />
+
+  चार पर्सोना, हर भाषा के लिए एक, वही लोकलाइज़ेशन सूट चलाते हैं।
+</Video>
+
+एक ही टेस्ट को हर एजेंट के साथ एक बार चलाने के लिए कई एजेंट चुनें:
+
+```ts title="tests/checkout.e2e.ts"
+import { describe, test } from 'e2e';
+
+describe('checkout', { agent: ['buyer', 'admin'] }, () => {
+  test('pays for one item', async ({ app, agent }) => { /* runs once per persona */ });
+  test('applies a promo code', async ({ app, agent }) => { /* ... */ });
+});
+```
+
+हर एजेंट को अपना नतीजा और अपनी आर्टिफ़ैक्ट डायरेक्टरी मिलती है। टर्मिनल और
+JUnit के टेस्ट नामों में एजेंट शामिल होता है, जैसे `[admin]`।
+
+`--agent` पिन किए गए एजेंटों में से चुनता है और कभी कोई एजेंट नहीं जोड़ता। यहाँ
+`--agent admin` सिर्फ़ `admin` चलाता है। `--agent thorough` दोनों में से किसी से
+मेल नहीं खाता, इसलिए दोनों फिर भी चलते हैं।
+
+सीरियल ग्रुप हर एजेंट के लिए एक यूनिट के रूप में चलता है, और उसके सदस्य ग्रुप का
+पिन साझा करते हैं। सेटअप टेस्ट ज़्यादा से ज़्यादा एक एजेंट पिन करता है।
+
+हर एजेंट अपनी [रीप्ले कैश](/cache) एंट्री खुद रिकॉर्ड करता है, और उनकी कैश कुंजी
+में उसका नाम और कॉन्टेक्स्ट शामिल होते हैं। `buyer` कभी `admin` के चरण रीप्ले
+नहीं करता, और `agentContext` बदलने पर चरण फिर से रिकॉर्ड होते हैं।
+
+एजेंट कोई साइन इन किया हुआ यूज़र नहीं है। साइन इन किए हुए पर्सोना के लिए, हर
+एजेंट को एक अलग describe ब्लॉक में किसी `session` के साथ जोड़ें।
+[ऑथेंटिकेशन](/authentication#several-signed-in-users) देखें।
+
+## एजेंट को अपना बनाएँ
+
+जब कोई चरण फ़ेल हो या बहुत ज़्यादा कॉल इस्तेमाल करे, तो उसकी रिपोर्ट खोलें, या
+ट्रांसक्रिप्ट देखने के लिए `--debug` के साथ चलाएँ। पहले निर्देश ठीक करें।
+निर्देश में स्क्रीन पर दिखने वाले लेबल इस्तेमाल करें। जब समस्या कई टेस्ट पर असर डाले,
+तो एजेंट ठीक करें: शब्दावली `context` में, निर्देश `system` में, या किसी ऑपरेशन
+के लिए एक [टूल](/tools), जैसे टेस्ट API से कार्ट में पहले से आइटम डालना। मॉडल या
+`providerOptions` की तुलना करने के लिए वही टेस्ट `--agent <name>` के साथ चलाएँ।
+
+## आगे
+
+<CardGroup cols={2}>
+  <Card title="प्रोजेक्ट टूल" icon="wrench" href="/tools">
+    एजेंट को एक टेस्ट API या डिवाइस टूलकिट दें।
+  </Card>
+  <Card title="कस्टम एक्ज़ीक्यूटर" icon="gears" href="/executors">
+    बदलें कि एजेंट एक्शन कैसे चुनता और करता है।
+  </Card>
+</CardGroup>

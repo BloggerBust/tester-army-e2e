@@ -159,7 +159,13 @@ await session.screen.getByLabel('Password').fill(shop.secret('SHOP_PASSWORD'));
 | [`setDefaultTimeout`](#setdefaulttimeout) | `void` |
 | `close` | `Promise<void>` |
 
-`close` は `await using` と同じくセッションを終了します。それ以降、すべての操作は `CANCELLED` で失敗します。
+`close` は `await using` と同じくセッションを終了します。実行中の呼び出しは `CANCELLED` で失敗します。
+操作、待機、`app` やエージェントの呼び出しは、`the session closed while app.open "/" was running` のように、エラーメッセージに自身の名前を示します。
+`close` の後は、すべての操作が `CANCELLED` で失敗します。
+
+<Note>
+  すべての呼び出しを await してください。await していない呼び出しは、セッションが閉じたときに未処理の reject になり、Node.js はそこでプログラムを終了します。
+</Note>
 
 #### `saveState`
 

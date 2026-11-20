@@ -97,7 +97,7 @@ docker run -d --name lightpanda -p 127.0.0.1:9222:9222 lightpanda/browser:nightl
 | オプション | デフォルト | 意味 |
 | --------------- | ------------------------------- | ------- |
 | `binary` | `LIGHTPANDA_PATH`、なければ検索 | 起動するバイナリ。パス、または `PATH` 上の名前。 |
-| `loadResources` | `[]` | サーバーが取得するサブリソース。`iframe`、`image`、`stylesheet`。[ページの追加リソースを取得する](#fetch-more-of-the-page) を参照。 |
+| `loadResources` | `['stylesheet']` | サーバーが取得するサブリソース。`iframe`、`image`、`stylesheet`。[ページの追加リソースを取得する](#fetch-more-of-the-page) を参照。 |
 | `args` | `[]` | プロバイダーが設定するフラグの後に渡す、追加の `lightpanda serve` フラグ。 |
 
 プロバイダーは実行中、ワーカースロットごとに 1 サーバーを保持します。
@@ -107,15 +107,16 @@ Lightpanda は試行単位のリースが再接続に使うデフォルトコン
 
 ## ページの追加リソースを取得する
 
-`lightpanda serve` はデフォルトでは画像、外部スタイルシート、iframe などのサブリソースを要求しません。
-`loadResources` で個別に有効にすると、サーバーに `--load-resources` として渡されます。
+`lightpanda serve` 自体は、デフォルトでは画像、外部スタイルシート、iframe などのサブリソースを要求しません。
+プロバイダーはデフォルトでスタイルシートを要求します。取得するリソースの一覧は `loadResources` で指定し、サーバーには `--load-resources` として渡されます。
+一覧を指定するとプロバイダーのこのデフォルトを置き換えるため、`stylesheet` も含めてください。`[]` を指定すると何も取得しません。
 
 ```ts
 web({ browser: lightpanda({ loadResources: ['stylesheet', 'iframe'] }) })
 ```
 
 インラインスタイル、`<style>` ブロック、`hidden` 属性は、追加設定なしで可視性に反映されます。
-`stylesheet` を有効にすると外部ファイルのルールも反映され、リンク先のスタイルシートで隠されたノードはクエリでも非表示になります。
+`stylesheet` があると外部ファイルのルールも反映され、リンク先のスタイルシートで隠されたノードはクエリでも非表示になります。
 `image` は画像のヘッダーを取得し、`load` と `error` に実際の状態を反映します。
 
 ## 使える機能

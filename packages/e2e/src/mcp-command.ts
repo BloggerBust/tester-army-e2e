@@ -10,13 +10,13 @@
 import { Writable } from 'node:stream';
 import { isAbandonedRejection } from '@e2e-dev/core/lib/internal/abandoned';
 import { errorMessage, exitCodeForCategory, classifyError } from '@e2e-dev/core/lib/internal/errors';
-import { onBun } from '../internal/runtime.ts';
-import { McpOutput } from '../mcp/output.ts';
-import { serveMcp, type ServeOptions } from '../mcp/server.ts';
+import { onBun } from './internal/runtime.ts';
+import { McpOutput } from './mcp/output.ts';
+import { serveMcp, type ServeOptions } from './mcp/server.ts';
 import { processSecrets } from '@e2e-dev/core/lib/run/secrecy';
-import { claimStrayRejection } from '../run/standalone-test.ts';
-import { mcpSessionEvent } from '../telemetry/events.ts';
-import type { Telemetry } from '../telemetry/telemetry.ts';
+import { claimStrayRejection } from './run/standalone-test.ts';
+import { mcpSessionEvent } from './telemetry/events.ts';
+import type { Telemetry } from './telemetry/telemetry.ts';
 
 export interface McpCommandOptions {
   config?: string | undefined;

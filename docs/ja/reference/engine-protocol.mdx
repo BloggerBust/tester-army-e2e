@@ -112,6 +112,8 @@ export function spawnTransport(options: {
 ```
 
 接続を閉じると、標準入力を終了し、`SIGTERM` を送ります。クリーンアップの制限時間を使い切ると `SIGKILL` を送ります。
+サーバーの標準出力が終わると、サーバーが終了して標準エラー出力も閉じた時点か、標準出力が終わってから 2 秒後の、どちらか早いほうで接続を閉じます。
+エラーには、その時点までにトランスポートが把握した終了コードまたはシグナルと、標準エラー出力の末尾の行が含まれます。
 
 ### `socketTransport`
 
@@ -219,7 +221,7 @@ export interface EngineManifest {
 | `attempt/screen` | 通知 | `{ attemptId, snapshot }` |
 | `attempt/resolveSecret` | リクエスト | `{ attemptId, name, derivation? }`、結果は `{ value }` |
 
-`derivation` がある場合、クライアントは回答前に `attempt/deriveSecret` で `{ derivation, plaintext }` を問い合わせます。サーバーは、Basic 認証ヘッダーなど、エンジンが値から導いた形式を `{ values }` として返し、クライアントはそれらをシークレット名でマスキングします。
+`derivation` がある場合、クライアントは回答前に `attempt/deriveSecret` で `{ derivation, plaintext }` を問い合わせます。サーバーは、Basic 認証ヘッダーなど、エンジンが値から導いた形式を `{ values }` として返し、クライアントはそれらをシークレット名で秘匿します。
 
 ### シグナル
 

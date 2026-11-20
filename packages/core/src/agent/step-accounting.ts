@@ -39,6 +39,8 @@ export interface StepAccountingOptions {
   readonly maxModelCalls: number;
   /** Bytes of trusted agent context every model turn resends; a fixed cost the metrics carry. */
   readonly contextBytes: number;
+  /** Supply a per-call signal when accounting is shared across attachment calls. */
+  readonly callSignal?: () => AbortSignal;
 }
 
 export class StepAccounting {
@@ -47,13 +49,14 @@ export class StepAccounting {
   readonly maxActions: number;
   readonly maxModelCalls: number;
   readonly deadline: Deadline;
+  private readonly callSignal: StepAccountingOptions['callSignal'];
   /**
-   * The one signal everything inside the step aborts with: the attempt's
-   * cancellation or the step's own hard stop. Built once so the executor
+   * The default signal for everything inside a step. It combines attempt
+   * cancellation with the step's hard stop. Built once so the executor
    * context, the replay host, and the settle clock can never disagree about
    * what "the step's signal" means.
    */
-  readonly signal: AbortSignal;
+  private readonly stepSignal: AbortSignal;
   readonly metrics: StepMetrics = {
     modelCalls: 0,
     actionSteps: 0,
@@ -82,8 +85,14 @@ export class StepAccounting {
     this.maxActions = options.maxActions;
     this.maxModelCalls = options.maxModelCalls;
     this.metrics.contextBytes = options.contextBytes;
+    this.callSignal = options.callSignal;
     this.deadline = runtime.engine.deadline(options.timeoutMs);
-    this.signal = AbortSignal.any([runtime.engine.signal, this.stepAbort.signal]);
+    this.stepSignal = AbortSignal.any([runtime.engine.signal, this.stepAbort.signal]);
+  }
+
+  /** The cancellation signal for the current call or step. */
+  get signal(): AbortSignal {
+    return this.callSignal?.() ?? this.stepSignal;
   }
 
   get hardStop(): AgentError | undefined {
@@ -130,7 +139,9 @@ export class StepAccounting {
         ...(cause === undefined ? {} : { cause }),
       });
     } catch (error) {
-      if (isAgentError(error)) this.fatalize(error);
+      if (this.callSignal === undefined && isAgentError(error)) {
+        this.fatalize(error);
+      }
       throw error;
     }
   }

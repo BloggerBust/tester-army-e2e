@@ -1,0 +1,231 @@
+---
+title: Next.js
+description: Next.js アプリに e2e を追加し、ローカルでは `next dev`、CI では本番ビルドでテストします。
+---
+
+import { SetupPrompt } from '../../snippets/setup-prompt-card.jsx';
+
+export const setupPrompt = `この Next.js アプリに e2e のエンドツーエンドテストを導入してください。ドキュメント: \`https://e2e.com/docs/frameworks/nextjs.md\`
+
+1. \`npx e2e init --yes\` を実行してください。プロジェクトで pnpm や bun を使っている場合は、それに対応するコマンドを使ってください。
+2. e2e.config.ts のターゲットを、ページにあるものに置き換えてください。ローカルでは \`next dev\`、CI が設定されているときは \`next start\` を起動します。このアプリのポートとパッケージマネージャーに合わせてください。
+3. エージェントステップで使うモデルを私に確認し、https://e2e.com/docs/models.md のとおりに設定してください。
+4. 依存関係をインストールし、サンプルテストを実行して、成功するまでエラーを修正してください。まずページの「Next.js の問題を解決する」セクションを確認してください。
+5. このアプリで最も重要なユーザーフローのテストを 1 つ作成し、成功するまで実行と修正を繰り返してください。`;
+
+このページでは、既存の Next.js アプリに e2e を追加します。
+ランナーは手元のマシンでは `next dev` を、CI では `next start` を起動し、Web エンジンが Chromium でアプリをテストします。
+新しいアプリの場合は、[サンプルから始めてください](#start-a-new-app)。
+
+<SetupPrompt>
+
+<Prompt description={setupPrompt} children={setupPrompt} actions={["copy", "cursor"]} />
+
+</SetupPrompt>
+
+## アプリに e2e を追加する
+
+アプリのディレクトリでウィザードを実行します。
+
+<CodeGroup>
+```bash npm
+npx e2e init
+```
+
+```bash pnpm
+pnpm dlx e2e init
+```
+
+```bash bun
+bunx e2e init
+```
+</CodeGroup>
+
+**Web (Playwright)** とモデルプロバイダーを選びます。
+ウィザードは `e2e.config.ts` と `tests/example.e2e.ts` を作成し、依存関係を追加し、`.e2e/` の実行出力を `.gitignore` に追加します。
+各選択肢については [クイックスタート](/quickstart) を参照してください。
+
+## 設定からアプリを起動する
+
+`app.command` を設定すると、ランナーがアプリを起動し、`app.url` が応答するまで待ちます。
+`init` が作成した設定を次のように編集します。モデルの import と `agents` エントリーはそのまま残してください。
+
+```ts title="e2e.config.ts"
+import type { E2EConfig } from 'e2e';
+import { web } from '@e2e-dev/web';
+
+// e2e reads CI the same way: unset, '', '0', and 'false' mean a local run.
+const ci = !['', '0', 'false'].includes(process.env.CI?.trim().toLowerCase() ?? '');
+
+export default {
+  // Keep the `agents` entry that `init` wrote.
+  targets: [{
+    engine: web(),
+    app: {
+      url: 'http://localhost:3000',
+      // CI serves the production build: run `next build` before `e2e run`.
+      command: ci
+        ? { executable: 'npm', args: ['run', 'start'] }
+        : { executable: 'npm', args: ['run', 'dev'], reuseExisting: true },
+    },
+  }],
+} satisfies E2EConfig;
+```
+
+- **ローカル**では、ランナーが `next dev` を起動します。`reuseExisting: true` を指定すると、そのポートですでに起動している開発サーバーを使います。
+- **CI** では、ランナーがビルドを配信する `next start` を起動します。
+  CI では `reuseExisting` は適用されません。
+- `app.url` の**ポート**は、`dev` と `start` の両方が待ち受けるポートと一致させます。Next.js は 3000 を使います。
+  一方のスクリプトが `--port` を指定している場合は、もう一方にも同じポートを指定します。
+
+続いてテストを実行します。
+
+<CodeGroup>
+```bash npm
+npx e2e run
+```
+
+```bash pnpm
+pnpm exec e2e run
+```
+
+```bash bun
+bunx e2e run
+```
+</CodeGroup>
+
+`log`、`env`、ポート `0` など、ほかの `command` オプションについては [アプリを起動する](/web#starting-your-app) を参照してください。
+
+## CI で実行する
+
+テストの前にアプリをビルドします。CI サービスが `CI` を設定するので、設定は `next start` を起動します。
+
+<CodeGroup>
+```bash npm
+npm run build
+npx e2e run
+```
+
+```bash pnpm
+pnpm build
+pnpm exec e2e run
+```
+
+```bash bun
+bun run build
+bunx e2e run
+```
+</CodeGroup>
+
+ワークフロー全体は、[GitHub Actions](/ci/github-actions#web) のジョブを使い、e2e のステップの前にビルドのステップを追加します。
+この設定は `APP_URL` を読まないので、ジョブの `APP_URL` は削除してください。
+CI でのデフォルトについては [継続的インテグレーション](/ci) を参照してください。
+
+Vercel の各プレビューデプロイをテストする場合は、[Vercel Previews](/ci/vercel-previews) を参照してください。
+
+## Next.js の問題を解決する
+
+<AccordionGroup>
+<Accordion title="ページは描画されるがハイドレーションされない">
+Next.js 16 は、開発用リソースへのクロスオリジンリクエストをブロックします。
+[ポート `0`](/web#let-the-runner-pick-the-port) のようにターゲットが `127.0.0.1` や `[::1]` を開いても、`next dev` は自身を `localhost` として扱います。
+ページは描画され、ロケーターも解決され、クリックも届きますが、React のハンドラーが動きません。
+
+ターゲットが開くホストを `allowedDevOrigins` に追加してください。
+`app.url` が `http://[::1]:0` を開く場合は、`'[::1]'` を使います。
+
+```ts title="next.config.ts"
+import type { NextConfig } from 'next';
+
+const nextConfig: NextConfig = {
+  allowedDevOrigins: ['127.0.0.1'],
+};
+
+export default nextConfig;
+```
+
+`localhost` のターゲットや、本番用の `next start` のターゲットには追加不要です。
+</Accordion>
+
+<Accordion title="getByRole('alert') が余分な要素を見つける">
+App Router は、すべてのページに空の `role="alert"` のルートアナウンサーを描画します。
+`screen.getByRole('alert')` はこれにも一致します。自分のアラートはテキストで選んでください。
+
+```ts title="Test fragment"
+await expect(screen.getByRole('alert').filter({ hasText: 'Enter a name first.' })).toBeVisible();
+```
+
+エージェントにはルートアナウンサーが見えず、[リプレイキャッシュ](/cache) もこれを変化として数えません。
+</Accordion>
+
+<Accordion title="テストの実行中に next dev が再コンパイルする">
+e2e は、結果、ログ、トレース、リプレイキャッシュなどの実行出力を `.e2e/` の下に書き込みます。
+このフォルダーを監視するウォッチャーがあると、実行中にアプリが何度も再ビルドされることがあります。
+
+- `init` が `.gitignore` に追加する `.e2e/` のエントリーは残してください。
+  Tailwind CSS など、プロジェクト内のソースファイルを探すツールは、無視されたファイルをスキップします。
+- Next.js 16 より前の `next dev` のデフォルトである webpack では、ウォッチャーが無視するパスに `.e2e` を追加します。
+
+```ts title="next.config.ts"
+import type { NextConfig } from 'next';
+
+const nextConfig: NextConfig = {
+  webpack: (config, { dev }) => {
+    if (dev) {
+      config.watchOptions = {
+        ...config.watchOptions,
+        ignored: ['**/.git/**', '**/.next/**', '**/node_modules/**', '**/.e2e/**'],
+      };
+    }
+    return config;
+  },
+};
+
+export default nextConfig;
+```
+
+この一覧は Next.js のデフォルトを残しています。
+設定ですでに `ignored` を指定している場合は、代わりにそこへ `'**/.e2e/**'` を追加してください。
+</Accordion>
+</AccordionGroup>
+
+## 新しいアプリを始める
+
+[`with-next` サンプル](https://github.com/e2e-inc/e2e/tree/main/examples/with-next) から、e2e がセットアップ済みの Next.js App Router アプリを作成します。
+
+<CodeGroup>
+```bash npm
+npx create-next-app --example https://github.com/e2e-inc/e2e/tree/main/examples/with-next my-app
+cd my-app
+npm run test:e2e
+```
+
+```bash pnpm
+pnpm create next-app --example https://github.com/e2e-inc/e2e/tree/main/examples/with-next my-app
+cd my-app
+pnpm test:e2e
+```
+
+```bash bun
+bun create next-app --example https://github.com/e2e-inc/e2e/tree/main/examples/with-next my-app
+cd my-app
+bun run test:e2e
+```
+</CodeGroup>
+
+このアプリには、ロケーターテストが 3 つとエージェントテストが 2 つあります。
+エージェントテストは、`AI_GATEWAY_API_KEY` を設定するまでスキップされます。
+
+Vercel にデプロイしてすべてのデプロイをテストする場合は、代わりに [Next.js with e2e テンプレート](https://github.com/e2e-inc/e2e-vercel-previews) から始めてください。
+README に **Deploy** ボタンがあります。
+
+## 次のステップ
+
+<CardGroup cols={2}>
+  <Card title="Web" icon="globe" href="/web">
+    アプリの起動方法、保護されたプレビュー、ビューポートのすべて。
+  </Card>
+  <Card title="Vercel Previews" icon="/images/integrations/vercel.svg" href="/ci/vercel-previews">
+    各プレビューデプロイをテストし、テストが通るまで本番リリースを止めます。
+  </Card>
+</CardGroup>

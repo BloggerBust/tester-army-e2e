@@ -235,7 +235,7 @@ await expect(screen).toHaveScreenshot('feed.png', { mask: [screen.getByTestId('t
 | --- | --- |
 | `INVALID_ARGUMENT` | 画面を読み取る前に検証します。名前にパス区切り文字がある、受け付けないオプション（Playwright の `fullPage`、`animations`、`clip`）がある、値が範囲外、フレームに限定した screen に `expect` を使った場合。フレーム内ではロケーターを比較してください |
 | `ASSERTION_FAILED` | 上の表のとおり、保存画像がない、異なる、または同じ実行中に保存された場合 |
-| `POLICY_DENIED` | 画面上のすべての機密フィールドをマスクしたとエンジンが確認できない場合 |
+| `POLICY_DENIED` | 画面上のすべての機密フィールドをマスキングしたとエンジンが確認できない場合 |
 
 #### スクリーンショットのオプション
 
@@ -588,7 +588,7 @@ last: expected "running" not to be "running"
 | --- | --- |
 | デフォルトタイムアウト | [`config.assertionTimeout`](/reference/config#assertiontimeout) |
 | 上書き | すべてのロケーターと `browser` のマッチャーで、ミリ秒単位の `{ timeout }` |
-| 読み取り | 開始から 0、20、50 ms、その後は 100 ms ごと |
+| 読み取り | 開始から 0、20、50 ms、その後は開始から 100 ms ごと |
 | 未知のオプション | `INVALID_ARGUMENT`。[オプションの検証](#option-validation)を参照 |
 | 失敗コード | `ASSERTION_FAILED`、終了コード 1 |
 

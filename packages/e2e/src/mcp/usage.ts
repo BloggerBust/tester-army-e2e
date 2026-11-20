@@ -22,6 +22,8 @@ export interface McpSessionSummary {
   /** Undefined before the target resolved, and for a target without an engine. */
   readonly engine: SessionEngine | undefined;
   readonly headed: boolean;
+  /** True when the session attached to an attempt held by a run. */
+  readonly attached: boolean;
   readonly durationMs: number;
   /** Sessions live beside this one when it opened. */
   readonly concurrent: number;
@@ -52,11 +54,13 @@ export class SessionUsage {
 
   constructor(
     private readonly concurrent: number,
-    private readonly headed: boolean,
+    private headed: boolean,
+    private readonly attached: boolean,
   ) {}
 
   /** Notes the target once the open resolved it, so a later failure still names the platform it failed on. */
-  resolved(platform: string, engine: SessionEngine | undefined): void {
+  resolved(platform: string, engine: SessionEngine | undefined, headed = this.headed): void {
+    this.headed = headed;
     this.target = { platform, engine };
   }
 
@@ -81,6 +85,7 @@ export class SessionUsage {
       platform: this.target?.platform,
       engine: this.target?.engine,
       headed: this.headed,
+      attached: this.attached,
       durationMs: Date.now() - this.startedAt,
       concurrent: this.concurrent,
       toolCalls: new Map(this.toolCalls),
@@ -99,6 +104,7 @@ export class SessionUsage {
       platform: this.target?.platform,
       engine: this.target?.engine,
       headed: this.headed,
+      attached: this.attached,
       durationMs: Date.now() - this.startedAt,
       concurrent: this.concurrent,
       toolCalls: new Map(),

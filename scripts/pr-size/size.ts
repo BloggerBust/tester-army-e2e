@@ -1,10 +1,11 @@
 /**
  * How big a pull request is, for the `size:*` labels (`label.ts`). Counts
- * added plus deleted lines, leaving out tests, fixtures, snapshots, and the
- * lockfile unless a PR changes nothing else.
+ * added plus deleted lines, leaving out tests, fixtures, snapshots, the
+ * lockfile, and translated docs unless a PR changes nothing else.
  */
 
 import { matchesGlob } from 'node:path';
+import { DOCS_LANGUAGES } from '../docs-languages.ts';
 
 export interface SizeLabel {
   name: string;
@@ -33,6 +34,7 @@ const EXCLUDED: readonly string[] = [
   '**/*-snapshots/**',
   '**/fixtures/**',
   'pnpm-lock.yaml',
+  ...DOCS_LANGUAGES.map((language) => `docs/${language}/**`),
 ];
 
 export interface ChangedFile {

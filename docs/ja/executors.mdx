@@ -1,5 +1,5 @@
 ---
-title: 独自のエグゼキューター
+title: カスタムエグゼキューター
 description: エージェントのループをカスタマイズするか、独自のステップエグゼキューターを実装します。
 "og:image": "https://e2e.com/docs/images/og/executors.png?v=283f7962bb"
 "twitter:image": "https://e2e.com/docs/images/og/executors.png?v=283f7962bb"
@@ -10,7 +10,7 @@ description: エージェントのループをカスタマイズするか、独�
 | 選択肢 | 自分で実装するもの | ランナーが引き続き担当するもの |
 | --- | --- | --- |
 | `e2e/agent` の `createToolLoopExecutor` | ツールとプロンプト。ループが追加するのは `complete_step` だけ | 予算、繰り返し呼び出しの検出、判定、使用量の集計、デバッグ用トランスクリプト |
-| `StepExecutor` | `runStep(ctx)`。モデルは任意で、`e2e` と `e2e/engine` の型は `ai` パッケージなしでコンパイルできる | ステップの期限、機密情報をマスキングした観測、検証済みの操作、判定の記録 |
+| `StepExecutor` | `runStep(ctx)`。モデルは任意で、`e2e` と `e2e/engine` の型は `ai` パッケージなしでコンパイルできる | ステップの期限、機密情報を秘匿した観測、検証済みの操作、判定の記録 |
 
 どちらも `agents` エントリーの `executor` に設定します。そのエントリーの `model`、`judge`、`context`、予算は引き続き使われますが、`system` と `tools` は拒否されます。これらは `createToolLoopExecutor` に渡してください。選択肢を限定した回答を返すプロバイダーには、[デシジョンエグゼキューター](/decision-models)を参照してください。
 
@@ -61,7 +61,7 @@ export default {
 
 `buildPrompt` は文字列またはメッセージ履歴を返します。`prepareMessages` はターン間に実行され、履歴を短くするか、進展がない場合に `{ messages, stop }` を返します。メッセージを直接書き換える場合も置き換える場合も、リクエストの前半部分が変わります。Anthropic モデルでは推論がそれに結び付いているため、ループはそのメッセージ以降の推論を送らなくなります。プロバイダーがリクエストを大きすぎるとして拒否した場合、ループは履歴を短くし、リクエストが小さくなれば 1 回だけ再試行します。小さくならなければ `CONTEXT_OVERFLOW` で失敗します。以前の画面が根拠になるアサーションループでは、`inconclusiveOnOverflow: true` を設定すると代わりに `ASSERTION_INCONCLUSIVE` で失敗します。`guard()` は、ステップが終了処理に入ると新たなツール呼び出しを止め、モデルに失敗をテキストで返します。`ctx.actions` が各操作を許可、集計、記録するため、これらのステップは[キャッシュ](/cache)から再生でき、`tap` に対応するどのエンジンでも動きます。
 
-独自ツールと一緒に組み込みの操作も使うには、`createGrammarTools(ctx, { guard })` をツールセットに展開します。ターゲットのエンジンが対応する動詞に応じて、組み込みエージェントの操作ツールを返します。各結果には画面の変化が含まれます。`BASE_RULES` は、これらのツールに対する組み込みエージェントの指示です。`system` の先頭に置いてください。
+カスタムツールと一緒に組み込みの操作も使うには、`createGrammarTools(ctx, { guard })` をツールセットに展開します。ターゲットのエンジンが対応する動詞に応じて、組み込みエージェントの操作ツールを返します。各結果には画面の変化が含まれます。`BASE_RULES` は、これらのツールに対する組み込みエージェントの指示です。`system` の先頭に置いてください。
 
 ```ts
 import { BASE_RULES, createGrammarTools, createToolLoopExecutor } from 'e2e/agent';
@@ -118,8 +118,8 @@ export default {
 | メンバー | 内容 |
 | --- | --- |
 | `ctx.step` | `kind`、指示、パラメーター、試行のタイムライン内の `index`。指示やパラメーター内の設定済みシークレットは `<secret:name>` になります。`secrets.get()` のハンドルは名前だけのプレースホルダーとして届き、`typeSecret` が入力します |
-| `ctx.observe({ tree, pixels })` | 機密情報をマスキングした画面テキスト。任意でノードツリーとマスキング済みスクリーンショットも含む |
-| `ctx.read({ id }, { style })` | 現在列挙されているノードの、シークレットをマスキングした計算済みスタイル。[プロジェクトツール](/tools#read-a-nodes-computed-style)を参照 |
+| `ctx.observe({ tree, pixels })` | 機密情報を秘匿した画面テキスト。任意でノードツリーとマスキング済みスクリーンショットも含む |
+| `ctx.read({ id }, { style })` | 現在列挙されているノードの、シークレットを秘匿した計算済みスタイル。[プロジェクトツール](/tools#read-a-nodes-computed-style)を参照 |
 | `ctx.actions` | 検証・記録される操作: `tap`、`doubleTap`、`longPress`、`secondaryTap`、`hover`、`type`、`typeSecret`、`press`、`select`、`check`、`drag`、`scrollTo`、`scrollUntil`、`upload`、`scroll`、`navigate`、`back`、`resize`、`switchTab`、`closeTab`、および以下の座標・キーボード操作 |
 | `ctx.target` | ターゲットの `name`、`platform`、エンジンが対応する操作を示す `verbs`。モデルにはこれらだけを提供します。`tap`、`doubleTap`、`secondaryTap` が `{ modifiers }` を受け取れる場合、`tapModifiers` は true です |
 | `ctx.signal` | キャンセル、ステップの期限、その他の強制停止で中断されます。期限を無視する処理は止められません |
@@ -128,7 +128,7 @@ export default {
 | `ctx.agentContext` | エージェントの `context` とテストの `agentContext` を合わせたもの |
 | `ctx.ledger` | テストの完了済みステップ |
 | `ctx.attempt` | テストと試行の ID、テストの `titlePath`（`e2e run` の外では空）、リトライのインデックス、AbortSignal、レポートには含まれない `memory` マップ |
-| `ctx.budgets` | 独自ツール（`runTool`）とモデル呼び出し（`recordModelCall`）の使用量管理 |
+| `ctx.budgets` | カスタムツール（`runTool`）とモデル呼び出し（`recordModelCall`）の使用量管理 |
 | `ctx.attachTranscript(text)` | `--debug` 時にモデルのトランスクリプトを `log` アーティファクトとして添付。最後に 1 回呼び出します |
 | `ctx.attachTurns(turns)` | モデルのターン（`{ index, calls, outcome }`）を短縮した記録としてステップに保持。失敗したステップの下に直近のものを表示します |
 | `ctx.attachScreenshot(pixels, label)` | 観測した画像をステップの `screenshot` アーティファクトとして保持し、レポート内の ID を返します |

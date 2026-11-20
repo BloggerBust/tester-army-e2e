@@ -1,13 +1,13 @@
 ---
 title: テストを書かずに探索する
-description: テストファイルの代わりに目標を渡すと、エージェントが手順を計画し、アプリを操作して、見つけた問題を報告します。
+description: テストファイルの代わりにゴールを渡すと、エージェントが手順を計画し、アプリを操作して、見つけた問題を報告します。
 "og:image": "https://e2e.com/docs/images/og/explore.png?v=8969611dd1"
 "twitter:image": "https://e2e.com/docs/images/og/explore.png?v=8969611dd1"
 ---
 
 import { Video } from '../snippets/video.jsx';
 
-`e2e explore` は、テストファイルの代わりに目標を与えて、アプリ上でエージェントを動かします。エージェントはステップを計画して実行し、目標を網羅するか予算に達するまで検出結果を記録した後、評価をまとめます。モデル、ツール、操作ルールは `agent.act()` と同じです。
+`e2e explore` は、テストファイルの代わりにゴールを与えて、アプリ上でエージェントを動かします。エージェントはステップを計画して実行し、ゴールを網羅するか予算に達するまで検出結果を記録した後、評価をまとめます。モデル、ツール、操作ルールは `agent.act()` と同じです。
 
 <Video>
   <video src="/images/explore.mp4" aria-label="e2e explore が画面を表示したブラウザでアプリを操作し、ターミナルに検出結果を報告します。" muted loop playsInline controls />
@@ -17,7 +17,7 @@ import { Video } from '../snippets/video.jsx';
 
 ## 探索を始める
 
-フローとユーザーの目標を指定し、必要に応じて制限を加えます。
+フローとユーザーのゴールを指定し、必要に応じて制限を加えます。
 
 <CodeGroup>
 ```bash npm
@@ -33,7 +33,7 @@ bunx e2e explore 'Explore the checkout flow like a first-time buyer and report a
 ```
 </CodeGroup>
 
-制限には「注文を確定する前に止める」などを指定できます。目標がない場合は `Explore the app and find bugs` を使います。ステップが失敗しても、実行は止まりません。
+制限には「注文を確定する前に止める」などを指定できます。ゴールがない場合は `Explore the app and find bugs` を使います。ステップが失敗しても、実行は止まりません。
 
 `e2e.config.ts` がない場合、explore は先に [`e2e init`](/reference/cli#e2e-init) ウィザードを実行します。手作業が残っていなければ、そのまま探索を開始します。残っている場合は、`npm install` やモデルキーの設定など、必要な手順を init が示します。CI などのターミナルがない環境では、explore は `CONFIG_NOT_FOUND` で失敗します。
 
@@ -56,7 +56,7 @@ bunx e2e explore 'Explore the checkout flow like a first-time buyer and report a
 
 ## 別の画面サイズを確認する
 
-ターゲットのエンジンがビューポートのサイズ変更に対応している場合（Web エンジンは対応しています）、目標の中で別の幅のレイアウトを確認するよう指示できます。
+ターゲットのエンジンがビューポートのサイズ変更に対応している場合（Web エンジンは対応しています）、ゴールの中で別の幅のレイアウトを確認するよう指示できます。
 
 <CodeGroup>
 ```bash npm
@@ -114,7 +114,7 @@ bunx e2e explore --changed-since origin/main
 
 変更によって生じる可能性のある不具合だけが `issue` になります。アプリの他の部分にある不具合は `warning` となり、実行を失敗させません。
 
-目標を省略した場合は `Explore what this change affects and find bugs in
+ゴールを省略した場合は `Explore what this change affects and find bugs in
 it` になります。この場合、ドキュメントやテストだけの変更など、ユーザーから見えない変更をプランナーがスキップできます。実行は `skipped` で終了し、成功します。スキップするのは変更全体を読めた場合だけです。大きな差分、バイナリファイル、未コミットのファイルがあればスキップしません。
 
 ブランチ自身のコミットメッセージやコードが、スキップの判断に影響する可能性があります。スキップと、問題なく完了した探索を区別するには、`run.explore.ended` を確認してください。

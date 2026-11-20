@@ -104,7 +104,7 @@ CI のシークレットなどを使い、`e2e run` を起動する環境に `BR
 | `locale` | デバイスの設定 | ロケール（`'fr_FR'`）。 |
 | `appiumVersion` | BrowserStack の設定（1.x） | セッションの Appium バージョン（`'3.2.0'`）。 |
 | `networkProfile` | なし | 名前付きのネットワーク条件プロファイル（`'4g-lte-advanced-good'`）。`customNetwork` と併用できません。 |
-| `customNetwork` | なし | カスタムのネットワーク条件。`networkProfile` と併用できません。 |
+| `customNetwork` | なし | 独自のネットワーク条件。`networkProfile` と併用できません。 |
 | `noResignApp` | `false` | iOS のみ。BrowserStack による再署名を行わず、アップロードしたアプリの署名を維持します。再署名するとプッシュ通知などのエンタイトルメントが取り除かれます。 |
 
 デバイスの機能はセッション開始時に設定され、そのセッション全体に適用されます。

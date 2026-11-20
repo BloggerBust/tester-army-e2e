@@ -7,6 +7,7 @@
   "groups": {
     "Get started": "入门",
     "Platforms": "平台",
+    "Frameworks": "框架",
     "Features": "功能",
     "Models and agents": "模型与智能体",
     "Run in CI": "在 CI 中运行",

@@ -9,7 +9,7 @@ import { engineBrand } from '../internal/brands.ts';
 import { ConfigurationError } from '../internal/errors.ts';
 import { obj } from '../internal/objects.ts';
 import { isSecret } from '../secrets.ts';
-import { ENGINE_SPI_VERSION, LOCATOR_ACTION_KINDS, POINTER_ACTION_KINDS } from './contract.ts';
+import { ENGINE_SPI_VERSION, KNOWN_LOCATOR_ACTION_KINDS, POINTER_ACTION_KINDS } from './contract.ts';
 import type { Secret } from '../types.ts';
 import type { Engine, EngineCapability, EngineFixtureContext, EngineHandle } from './index.ts';
 
@@ -295,7 +295,7 @@ export function defineEngine<Fixtures extends object = {}>(declared: EngineSpec<
     const fn = spec[member];
     if (fn !== undefined) handle[member] = fn.bind(spec);
   }
-  if (spec.actions !== undefined) handle['actions'] = declaredKinds(name, 'actions', spec.actions, LOCATOR_ACTION_KINDS);
+  if (spec.actions !== undefined) handle['actions'] = declaredKinds(name, 'actions', spec.actions, KNOWN_LOCATOR_ACTION_KINDS);
   if (spec.tapModifiers === true) handle['tapModifiers'] = true;
   if (spec.isolation === 'worker') handle['isolation'] = 'worker';
   if (spec.pointerActions !== undefined) {

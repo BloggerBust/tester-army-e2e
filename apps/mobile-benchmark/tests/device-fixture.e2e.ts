@@ -5,9 +5,12 @@
  * and `foregroundApp` says which app is in front.
  */
 
-import { expect, openScenario, test } from './fixtures.ts';
+import { BUILDS, expect, openScenario, test } from './fixtures.ts';
 
 const APP_ID = 'dev.e2e.benchmark';
+
+/** An app id no device has. */
+const MISSING_ID = 'dev.e2e.benchmark.missing';
 
 test.describe('device fixture', () => {
   test.beforeEach(async ({ app, device, screen }) => {
@@ -116,6 +119,30 @@ test.describe('device fixture', () => {
       .toBe(true);
     expect((await device.foregroundApp()).bundleId).toBe(APP_ID);
     await expect(screen.getByTestId('inventory-header')).toBeHidden();
+  });
+
+  test('isAppInstalled finds the app under test and no app that is absent', async ({ device }) => {
+    expect(await device.isAppInstalled()).toBe(true);
+    expect(await device.isAppInstalled(APP_ID)).toBe(true);
+    expect(await device.isAppInstalled(MISSING_ID)).toBe(false);
+    expect(await device.uninstallApp(MISSING_ID)).toBe(false);
+  });
+
+  // Removing the app under test needs its build to put it back, which only a
+  // run that names one has (CI always does); the next test opens it fresh.
+  test('uninstallApp removes the app until installApp puts it back', async ({ device, platform, screen }) => {
+    test.skip(BUILDS[platform] === undefined, 'no build to reinstall the app from');
+    // The reinstall runs whatever fails, so the tests after this one still find the app.
+    try {
+      expect(await device.uninstallApp()).toBe(true);
+      expect(await device.isAppInstalled()).toBe(false);
+    } finally {
+      await device.installApp();
+    }
+    expect(await device.isAppInstalled()).toBe(true);
+    await device.openApp(APP_ID, { relaunch: true });
+    expect((await device.foregroundApp()).bundleId).toBe(APP_ID);
+    await expect(screen.getByTestId('Login Form')).toBeVisible();
   });
 
   test('device.back pops the scenario', async ({ device, screen }) => {

@@ -23,7 +23,7 @@
  * Bun runs an imported module's top level outside its importer's async
  * context, so on Bun nothing that keeps two runs apart by that context runs
  * in one process: `e2e/runner` refuses Bun (`public-ownership.ts`), and
- * `e2e mcp` holds one session (`cli/mcp.ts`).
+ * `e2e mcp` holds one session (`mcp-command.ts`).
  */
 
 import { Console } from 'node:console';

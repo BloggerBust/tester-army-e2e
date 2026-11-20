@@ -1,0 +1,225 @@
+---
+title: Serveur MCP
+description: Laissez votre agent de code utiliser votre app et vérifier son propre travail.
+"og:image": "https://e2e.com/docs/images/og/mcp-server.png?v=17998906c0"
+"twitter:image": "https://e2e.com/docs/images/og/mcp-server.png?v=17998906c0"
+---
+
+`e2e mcp` donne à un agent de code comme Claude Code, Codex ou Cursor une
+session en direct sur votre app, sur web, iOS ou Android. L'agent voit l'écran,
+agit dessus et vérifie son travail.
+
+## Pourquoi c'est utile
+
+| Tâche | Sans `e2e mcp` | Avec `e2e mcp` |
+| --- | --- | --- |
+| Écrire un test | Devine les locators, lance, échoue, devine à nouveau | Écrit le test en parcourant le flux, à partir de lignes de test vérifiées et de lignes exécutées avec `run_code` |
+| Modifier l'UI | Terminé quand ça compile | Ouvre la page et vérifie le résultat |
+| Reproduire un bug | Devine à partir du code | Suit les étapes dans l'app |
+| Corriger un test en échec | Reclique tout le flux | Lance le test et s'arrête sur l'échec |
+| Montrer une modification dans une PR | La décrit | Enregistre une vidéo |
+
+Le serveur n'a besoin d'aucun modèle. Un test qu'il lance n'en a besoin que pour une étape
+d'agent sans enregistrement.
+
+## Le configurer
+
+Le [plugin e2e](/coding-agents) pour Codex et Cursor inclut le serveur sous la forme `npx -y e2e@<version> mcp`. Il exécute la version d'e2e du plugin même quand le projet en a installé une autre.
+Dans Claude Code, ou sans le plugin, enregistrez-le dans le projet. `e2e init` propose d'enregistrer le serveur dans `.mcp.json` (Claude Code),
+`.cursor/mcp.json` (Cursor) et `.codex/config.toml` (Codex). Installez les
+dépendances du projet et démarrez le client MCP dans le répertoire du projet pour que
+`npx` (`bunx` dans un projet Bun) utilise la version d'e2e installée. À la main :
+
+<Tabs>
+  <Tab title="Claude Code">
+    <CodeGroup>
+    ```bash npm
+    claude mcp add --scope project e2e -- npx e2e mcp
+    ```
+
+    ```bash pnpm
+    claude mcp add --scope project e2e -- pnpm exec e2e mcp
+    ```
+
+    ```bash bun
+    claude mcp add --scope project e2e -- bunx e2e mcp
+    ```
+    </CodeGroup>
+  </Tab>
+  <Tab title="Codex">
+    Lancez `e2e init --yes --skills none --mcp .codex/config.toml` avec la CLI installée,
+    ou ajoutez l'entrée ci-dessous. Faites confiance au projet et démarrez une nouvelle session Codex.
+    `codex mcp list`, lancé dans le projet, affiche l'enregistrement :
+
+    ```toml title=".codex/config.toml"
+    [mcp_servers.e2e]
+    command = "npx"
+    args = ["e2e", "mcp"]
+    ```
+  </Tab>
+  <Tab title="Cursor">
+    Ajoutez le serveur à `.cursor/mcp.json`. Les autres clients qui lisent une
+    map `mcpServers` acceptent le même bloc.
+
+    ```json title=".cursor/mcp.json"
+    {
+      "mcpServers": {
+        "e2e": { "command": "npx", "args": ["e2e", "mcp"] }
+      }
+    }
+    ```
+  </Tab>
+  <Tab title="OpenCode">
+    Ajoutez le serveur à `opencode.json` dans le projet. `opencode mcp list`,
+    lancé dans le projet, l'affiche comme connecté :
+
+    ```json title="opencode.json"
+    {
+      "$schema": "https://opencode.ai/config.json",
+      "mcp": {
+        "e2e": { "type": "local", "command": ["npx", "e2e", "mcp"] }
+      }
+    }
+    ```
+  </Tab>
+</Tabs>
+
+Une session démarre la commande de l'app de la cible, s'il y en a une, et l'indique
+avec son URL et son port. La configuration lit l'environnement du serveur, pas le
+shell de l'agent.
+
+## L'essayer sans configuration
+
+Dans un répertoire sans fichier de configuration e2e, l'agent indique le moteur
+quand il ouvre une session :
+
+```txt
+open_session {engine: "@e2e-dev/web", app: {url: "http://localhost:3000"}}
+```
+
+`e2e run` a toujours besoin d'une configuration. Pour les options du moteur, les
+fournisseurs d'appareils et l'installation d'un moteur, consultez
+[Sans configuration](/reference/mcp#without-a-config).
+
+## Demander à l'agent
+
+- « Ajoutez une case à cocher Se souvenir de moi au formulaire de connexion. Vérifiez-la dans l'app avec e2e. »
+- « Écrivez un test pour le paiement pendant que vous le parcourez dans l'app. »
+- « Reproduisez l'issue #123 dans l'app et enregistrez une vidéo. »
+
+Ajoutez « headed » pour regarder un navigateur ou un simulateur local.
+
+## Comment il écrit une ligne de test
+
+Chaque action d'une session répond avec la ligne de test qui la reproduit. Le
+locator de la ligne correspondait à ce seul contrôle sur l'écran en direct :
+
+```text wrap
+Tapped #n31.
+Test line: await screen.getByRole("button", "Sign in").tap();
+```
+
+L'agent copie les lignes dont il a besoin dans le test en parcourant le flux.
+`test_lines` renvoie toutes les lignes jusqu'ici, dans l'ordre, comme brouillon de corps de test. Consultez
+[`test_lines`](/reference/mcp#test_lines) pour savoir comment une ligne est construite.
+
+## Comment il vérifie un locator
+
+Pour une ligne qu'aucune action n'a affichée, comme une assertion, l'agent essaie d'abord le
+locator dans la session. Une mauvaise supposition y échoue, pas pendant l'exécution d'un test :
+
+```text wrap
+0 nodes match getByLabel("Email").
+A test using this locator would fail with LOCATOR_NOT_FOUND. ...
+
+1 node matches getByRole("button", name: "Sign in").
+Use: screen.getByRole("button", "Sign in")
+```
+
+## Comment il exécute une ligne de test
+
+L'agent exécute les lignes qu'aucune action n'a affichées, comme les assertions, avec
+`run_code` dans la session ouverte. Celles qui réussissent rejoignent le brouillon
+`test_lines`. Une ligne erronée échoue en quelques secondes, sans exécuter de test :
+
+```text wrap
+Statement 2 of 2 failed; the one before it passed. Each statement waited at most 5000 ms. ...
+1. passed: await screen.getByLabel('Full name').fill('Grace Hopper');
+2. failed: await screen.getByRole('button', 'Save').tap();
+   LOCATOR_NOT_FOUND: locator matched no nodes within getByRole("button", name: "Save")
+```
+
+Le serveur analyse les lignes et ne les évalue jamais comme du JavaScript. Consultez
+[`run_code`](/reference/mcp#run_code).
+
+## Corriger un test en échec
+
+`open_session {test: "tests/checkout.e2e.ts:12"}` exécute un test dans la
+session et s'arrête sur l'écran où il a échoué. L'agent lit
+l'échec, vérifie l'écran et modifie le test :
+
+```text wrap
+Test "a member checks out" (tests/checkout.e2e.ts:12) failed after 30.25s; 8 steps ran.
+LOCATOR_NOT_FOUND: locator matched no nodes within getByLabel("Name")
+At tests/checkout.e2e.ts:20:3
+On screen, closest to what the locator asked for:
+  #n32 textbox "Full name"
+```
+
+Chaque action depuis cet écran affiche sa
+[ligne de test](#how-it-writes-a-test-line), et `run_code` y exécute une ligne
+corrigée. L'agent met ces lignes dans le test à la place de celle qui a
+échoué.
+
+Pour relancer le test modifié, l'agent ferme la session et en ouvre une nouvelle
+avec le même `test`. Les étapes d'agent sont rejouées depuis le cache comme dans `e2e run`.
+Consultez [Exécuter un test](/reference/mcp#running-a-test) pour savoir ce qui s'exécute et quelles sont les
+limites.
+
+## Lancer des tests à côté d'une session
+
+Une session n'écrit aucun résultat de test, et seul un test qu'elle lance avec
+`open_session {test}` utilise le cache de rejeu. L'agent lance les suites avec
+`e2e run` et, quand une exécution peut se faire à côté de la session, garde la
+session ouverte entre les exécutions. Après une exécution en échec, il va sur l'écran en échec dans
+cette session au lieu d'en ouvrir une nouvelle.
+
+Sur le web, une exécution à côté d'une session dépend de l'`app` de la cible :
+
+| `app` de la cible | Une exécution pendant qu'une session est ouverte |
+| --- | --- |
+| Pas de `command` | Les deux utilisent l'app que vous avez démarrée. |
+| `url` sur le port [`0`](/web#let-the-runner-pick-the-port) | Chacune démarre sa propre copie de l'app. Un serveur de développement qui n'exécute qu'une copie par répertoire, comme `next dev`, fait échouer l'exécution. |
+| `command` avec [`reuseExisting: true`](/web#starting-your-app) | L'exécution utilise l'app que la session a démarrée. Quand la session se ferme, y compris pendant une exécution, cette app s'arrête. |
+| `command` sur un port fixe, sans `reuseExisting` | Échoue avec `APP_ALREADY_RUNNING`. |
+
+Quand `CI` est défini, e2e ignore `reuseExisting`, et l'exécution échoue comme sur un
+port fixe. Fermez la session avant une exécution qui échouerait. Sur mobile, lancez
+l'exécution sur un appareil qu'aucune session n'utilise.
+
+## Lancer plusieurs agents
+
+Chaque agent, sous-agents compris, ouvre sa propre session avec son propre navigateur
+ou appareil, jusqu'à quatre par défaut. Sur mobile, donnez à chaque session sa propre
+cible.
+
+## Secrets
+
+`type_secret`, ou un `fill` dans `run_code`, remplit un secret sans le montrer
+à l'agent. Les captures d'écran ne masquent que les champs sécurisés : un secret que l'app
+affiche ailleurs y apparaît.
+
+<Warning>
+Les vidéos de `start_recording` ne sont pas masquées.
+</Warning>
+
+## Pour aller plus loin
+
+<CardGroup cols={2}>
+  <Card title="Référence du serveur MCP" icon="book" href="/reference/mcp">
+    Chaque outil, option, règle de session et code d'erreur.
+  </Card>
+  <Card title="Agents de code" icon="robot" href="/coding-agents">
+    Le skill, le lancement des tests et la lecture d'un échec.
+  </Card>
+</CardGroup>

@@ -5,7 +5,7 @@ description: Find third-party packages that extend e2e and submit an integration
 
 Community packages extend e2e with tools, engines, and reporters. Their maintainers, not the e2e core team, maintain and support them. A listing is not an endorsement.
 
-Check each package's documentation for supported e2e versions and setup requirements. The versions below record published packages checked on November 12, 2026, not compatibility tests by the e2e team.
+Check each package's documentation for supported e2e versions and setup requirements. The versions below record the published package checked when each entry was added, not compatibility tests by the e2e team.
 
 ## Find a package
 
@@ -48,6 +48,14 @@ Sends e2e results to Testomat.io through its `@testomatio/reporter/e2e` adapter.
 Maintainer: [Testomat.io](https://github.com/testomatio). Version `2.23.0` includes the adapter. Its example uses `e2e ^0.21.0`; the package declares no e2e peer range.
 
 [npm](https://www.npmjs.com/package/@testomatio/reporter) · [Repository and example](https://github.com/testomatio/reporter/tree/2.x/example/e2e)
+
+### `@waitcher/cli`
+
+Runs `*.e2e.ts` tests from your repository on a schedule as Waitcher monitors and alerts when a run fails. Browser tests use `@e2e-dev/web` with Chromium; API tests use `e2e`. Waitcher is a hosted commercial service with a free plan, and the CLI has a proprietary license.
+
+Maintainer: [Sławomir Radzymiński](https://github.com/slawekradzyminski). Version `0.2.28`, published November 19, 2026, runs tests on `e2e 0.24.0` and `@e2e-dev/web 0.16.1`.
+
+[npm](https://www.npmjs.com/package/@waitcher/cli) · [Documentation and example](https://waitcher.dev/docs/repository-workflow)
 
 ## Find related integrations
 

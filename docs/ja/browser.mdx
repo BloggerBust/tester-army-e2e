@@ -183,6 +183,7 @@ bunx @e2e-dev/web install webkit --with-deps
 | サービス | プロバイダー |
 | --- | --- |
 | [Kernel](/integrations/kernel) | `@e2e-dev/kernel` の `kernel()` |
+| [Notte](/integrations/notte) | `@e2e-dev/notte` の `notte()` |
 | 自分のコンピューターで動く [smol machines](/integrations/smol) の microVM | `@e2e-dev/smol` の `smol()` |
 | 自分のマシンで動くオープンソースのヘッドレスブラウザ [Lightpanda](/integrations/lightpanda) | `@e2e-dev/lightpanda` の `lightpanda()` |
 | 必要に応じてレイアウト計算とスクリーンショット撮影を行うローカルブラウザ [Moli](/integrations/moli) | `@e2e-dev/moli` の `moli()` |
@@ -343,7 +344,7 @@ export default {
 
 ### プロバイダーでダウンロードに対応する
 
-`downloads` を実装すると、`browser.waitForDownload` をローカルと同じように使えます。ホスト型ブラウザは、ランナーから開けない自身のディスクにファイルを保存します。`downloads` があると、ファイルを `dir` 配下に保存し、エンジンが完成したファイルのパスを `read` に渡します。`read` はワーカー内でサービスのファイル API からバイト列を取得します。この処理には呼び出しのタイムアウトが適用されます。[Kernel](/integrations/kernel#downloads) はこの方法でダウンロードに対応しています。
+`downloads` を実装すると、`browser.waitForDownload` をローカルと同じように使えます。ホスト型ブラウザは、ランナーから開けない自身のディスクにファイルを保存します。`downloads` があると、ファイルを `dir` 配下に保存し、エンジンが完成したファイルのパスを `read` に渡します。`read` はワーカー内でサービスのファイル API からバイト列を取得します。この処理には呼び出しのタイムアウトが適用されます。[Kernel](/integrations/kernel#downloads) はこの方法でダウンロードに対応しています。ダウンロードをパスではなく名前で保存するサービスでは、[Notte](/integrations/notte#downloads) のように、サイトが提案したファイル名 `context.suggestedFilename` でファイルを探します。
 
 `downloads` がない場合、別のマシン上のブラウザでダウンロードすると、プロバイダー名を示す `ENGINE_FAILURE` になります。ランナーと同じマシンでブラウザを動かすプロバイダーでは、追加の実装は不要です。
 

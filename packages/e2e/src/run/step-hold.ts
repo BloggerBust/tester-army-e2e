@@ -9,13 +9,20 @@
 
 import { abortError, cancelledError } from '@e2e-dev/core/lib/internal/time';
 import type { SourceLocation } from '@e2e-dev/core/lib/internal/source';
-import type { AttemptBudget } from '@e2e-dev/core/lib/run/budget';
+import type { AttemptTimeout } from '@e2e-dev/core/lib/run/budget';
 import type { StepHoldRequest } from '@e2e-dev/core/lib/run/steps';
 import type { OperationContext, TargetSession } from '@e2e-dev/core/lib/engine/surface';
+import type { HeldTestAttachment } from './step-attachment-wire.ts';
 import { traceScreen, type TraceScreenOptions } from '@e2e-dev/core/lib/run/step-screens';
 
 /** A step held before it runs, or a paused test, as the runner's `hold` hook sees it. */
-export interface HeldStep {
+export interface HeldStep extends StepHold {
+  /** The ID shown at every hold of this attempt. */
+  readonly attachId: string;
+}
+
+/** A held step or pause without the runner-assigned attachment ID. */
+export interface StepHold {
   /** Whether this wait is for a held step or a paused test. */
   readonly kind: StepHoldRequest['kind'];
   readonly target: string;
@@ -53,6 +60,8 @@ export interface StepPrompt {
 export interface StepHoldContext {
   /** Aborts once the answer no longer matters: the step was abandoned, its attempt ended, or the run was interrupted. */
   readonly signal: AbortSignal;
+  /** Attaches to a held test by its pause ID. */
+  attach(id: string, signal?: AbortSignal, sessionId?: string): Promise<HeldTestAttachment>;
   /**
    * Shows the step waiting for a key, or no prompt: under its test in the
    * list reporter's live window, else on stderr.
@@ -82,13 +91,14 @@ export type BeforeStep = (step: HeldStep, context: StepHoldContext) => Promise<v
 
 /** What an attempt's holds need from the attempt. */
 export interface AttemptHoldsOptions {
-  readonly budget: AttemptBudget;
+  /** The test clock a hold stops; it hands the watchdog what is left when it runs again. */
+  readonly timeout: AttemptTimeout;
   /** Aborts when the attempt is cut short (a timeout, an interrupt): every hold ends and none starts. */
   readonly signal: AbortSignal;
   /** Asks the runner whether `step` may run; the same contract as `BeforeStep`. */
   readonly ask: (step: StepHoldRequest, signal: AbortSignal) => Promise<void>;
-  /** The test clock runs again, with `remainingMs` left: the last pending hold ended. */
-  readonly onResume: (remainingMs: number) => void;
+  /** The last pending hold ended and the test clock runs again. */
+  readonly onResume: () => void;
 }
 
 /**
@@ -101,9 +111,6 @@ export interface AttemptHoldsOptions {
  */
 export class AttemptHolds {
   private pending = 0;
-  private remainingMs = 0;
-  /** The body's deadline timer, while `race` runs. */
-  private timer: { stop(): void; check(): void } | undefined;
 
   constructor(private readonly options: AttemptHoldsOptions) {}
 
@@ -111,63 +118,28 @@ export class AttemptHolds {
   readonly hold = async (step: StepHoldRequest, signal: AbortSignal): Promise<void> => {
     const cancel = AbortSignal.any([signal, this.options.signal]);
     if (cancel.aborted) throw abortError(cancel, cancelledError);
-    if (this.pending === 0) {
-      this.remainingMs = this.options.budget.deadline.remaining();
-      // Already past it, as after code that blocked the event loop: the body times out now, not after a prompt.
-      if (this.remainingMs === 0 && this.timer !== undefined) {
-        this.timer.check();
-        return;
-      }
-      this.timer?.stop();
-    }
+    // Already past the deadline, the body times out now, not after a prompt.
+    if (this.pending === 0 && !this.options.timeout.stop()) return;
     this.pending += 1;
     try {
       await this.options.ask(step, cancel);
     } finally {
       this.pending -= 1;
-      this.options.budget.resetDeadline(this.remainingMs);
-      if (this.pending === 0) {
-        this.timer?.check();
-        this.options.onResume(this.remainingMs);
+      if (this.pending > 0) this.options.timeout.refill();
+      else {
+        this.options.timeout.start();
+        this.options.onResume();
       }
     }
   };
-
-  /**
-   * Races the body against the phase's deadline, as read at each check, and
-   * checks nothing while a step is held: the test times out on the budget it
-   * had left, never during a hold. `onTimeout` builds the error it rejects with.
-   */
-  race<T>(work: Promise<T>, onTimeout: () => Error): Promise<T> {
-    return new Promise<T>((resolve, reject) => {
-      let handle: NodeJS.Timeout | undefined;
-      const stop = (): void => {
-        clearTimeout(handle);
-        handle = undefined;
-      };
-      const check = (): void => {
-        stop();
-        if (this.pending > 0) return;
-        const remaining = this.options.budget.deadline.remaining();
-        if (remaining > 0) handle = setTimeout(check, remaining);
-        else reject(onTimeout());
-      };
-      this.timer = { stop, check };
-      check();
-      work.then(resolve, reject).finally(() => {
-        stop();
-        this.timer = undefined;
-      });
-    });
-  }
 }
 
 /** What a test attempt's holds are built from. */
-export interface AttemptStepHolds extends Pick<AttemptHoldsOptions, 'budget' | 'signal' | 'onResume'> {
+export interface AttemptStepHolds extends Pick<AttemptHoldsOptions, 'timeout' | 'signal'> {
   /** The attempt as every step held in it names it. */
-  readonly attempt: Pick<HeldStep, 'target' | 'testId' | 'agent' | 'repeat' | 'title'>;
+  readonly attempt: Pick<StepHold, 'target' | 'testId' | 'agent' | 'repeat' | 'title'>;
   /** Asks the runner whether the step may run. The runner can call `readScreen` to read the screen during the wait. */
-  readonly ask: (step: HeldStep, signal: AbortSignal, readScreen: StepHoldContext['readScreen']) => Promise<void>;
+  readonly ask: (step: StepHold, signal: AbortSignal, readScreen: StepHoldContext['readScreen']) => Promise<void>;
   /** Reads the screen a hold starts on. */
   readonly readScreen: (signal: AbortSignal) => Promise<string | undefined>;
 }
@@ -178,7 +150,7 @@ export function holdAttemptSteps(options: AttemptStepHolds): AttemptHolds {
   // Steps held together (one `Promise.all`) wait on one screen, read once.
   let heldScreen: Promise<string | undefined> | undefined;
   return new AttemptHolds({
-    budget: options.budget,
+    timeout: options.timeout,
     signal: options.signal,
     ask: async (step, signal) => {
       await ask(
@@ -187,10 +159,8 @@ export function holdAttemptSteps(options: AttemptStepHolds): AttemptHolds {
         () => (heldScreen ??= readScreen(signal)),
       );
     },
-    onResume: (remainingMs) => {
-      heldScreen = undefined;
-      options.onResume(remainingMs);
-    },
+    // The clock runs again and tells the watchdog itself; the next hold reads a fresh screen.
+    onResume: () => (heldScreen = undefined),
   });
 }
 

@@ -54,6 +54,23 @@ describe('the built-in agent from its agents entry', () => {
     expect(system).toContain('Project context:\nPlans are called tiers.');
   });
 
+  it('tells the act loop to check a commit before it presses the control again', async () => {
+    const model = installFakeLoopModel(() => conclude);
+    const fixtures = runtime({ agents: { default: { model } } });
+    await fixtures.agent.act('save the product');
+    const system = loopCalls[0]!.system;
+    expect(system).toContain('Never repeat a commit, by any route (the same control, Enter in a field, another submit button), before you check whether the first press committed.');
+    expect(system).toContain('Press it again only when the check shows that the first press did not commit, such as an error you corrected,');
+    expect(system).toContain('or when the result reports only the keyboard closing: then the tap was spent closing the keyboard, so press again without that check.');
+    expect(system).toContain('A step that asks for several commits (add two items, send two messages) presses once for each.');
+    expect(system).toContain('while the check still shows the commit in progress, observe again instead of pressing.');
+    expect(system).toContain('When the check shows neither and nothing in progress, do not press it again: do any check the step itself asks for, then conclude.');
+    expect(system).toContain('Do not leave the screen (navigate, go back, open another page) to confirm a commit unless the step asks for that.');
+    expect(system).toContain('or to check whether a press that commits something went through (see below).');
+    expect(system).toContain('or when a press that commits something (a save, a submit, a delete) showed no confirmation.');
+    expect(system).not.toContain('means the decisive action did not land: act again');
+  });
+
   it('joins the context with the test-level agentContext', async () => {
     const model = installFakeLoopModel(() => conclude);
     const fixtures = runtime(

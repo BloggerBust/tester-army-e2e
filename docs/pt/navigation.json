@@ -1,0 +1,24 @@
+{
+  "tabs": {
+    "Documentation": "Documentação",
+    "Reference": "Referência",
+    "Examples": "Exemplos"
+  },
+  "groups": {
+    "Get started": "Primeiros passos",
+    "Platforms": "Plataformas",
+    "Frameworks": "Frameworks",
+    "Features": "Recursos",
+    "Models and agents": "Modelos e agentes",
+    "Run in CI": "Executar em CI",
+    "Hosted browsers and devices": "Navegadores e dispositivos hospedados",
+    "Extend": "Estender",
+    "Engines": "Engines",
+    "Deep dive": "Aprofundamento",
+    "Migrate": "Migrar",
+    "Test API": "API de teste",
+    "Project": "Projeto",
+    "Web": "Web",
+    "Mobile": "Mobile"
+  }
+}

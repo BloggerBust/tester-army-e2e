@@ -20,7 +20,8 @@ import { classifyError, ConfigurationError, E2EError, serializeError, type Seria
 import { uuidv7 } from '@e2e-dev/core/lib/internal/ids';
 import { Deadline, withTimeout } from '@e2e-dev/core/lib/internal/time';
 import { createAttemptArtifacts } from '@e2e-dev/core/lib/run/artifacts';
-import { AttemptBudget } from '@e2e-dev/core/lib/run/budget';
+import { inSuiteHook, type RunningSuiteHook } from '@e2e-dev/core/lib/internal/test-timeout';
+import { AttemptBudget, AttemptTimeout } from '@e2e-dev/core/lib/run/budget';
 import type { ClosingRecord, SessionClose, SessionPlan } from '@e2e-dev/core/lib/run/engine-sessions';
 import { createFixtures, type ArtifactSink } from '@e2e-dev/core/lib/run/fixtures';
 import type { RunError } from '@e2e-dev/core/lib/run/records';
@@ -102,12 +103,17 @@ export class SuiteAttempt implements SuiteHookSession {
     private readonly shared: TargetSession | undefined,
   ) {}
 
-  /** Runs one suite hook with the worker fixtures it names, within `timeoutMs`. */
+  /**
+   * Runs one suite hook with the worker fixtures it names, within
+   * `timeoutMs`; `test.setTimeout` in a `beforeAll` moves it, for the
+   * fixtures the hook sets up as for the hook.
+   */
   async run(hook: SuiteHook, timeoutMs: number): Promise<void> {
     const { host } = this.context;
     const plan = planSuiteHook(host.target, hook);
     const label = `${hook.kind} hook`;
-    await this.within(label, timeoutMs, plan.usesEngine, async (builtIns, owns) => {
+    const running = hook.kind === 'beforeAll' ? { name: 'a beforeAll hook', settable: true } : { name: 'an afterAll hook', settable: false };
+    await this.within(label, timeoutMs, plan.usesEngine, running, async (builtIns, owns) => {
       const bound = bindFixtures({ plan, builtIns, pool: host.workerFixtures });
       await bound.setUp((fixture) => owns(fixtureSetup(fixture)));
       owns(`the ${label}`);
@@ -121,14 +127,25 @@ export class SuiteAttempt implements SuiteHookSession {
    * needs no device and a worker fixture's teardown are not skipped; reading
    * a built-in that needs an attempt then fails with the reason. The steps
    * `body` starts are `label`'s unless it says otherwise through `owns`
-   * (`StepRecorder.owner`).
+   * (`StepRecorder.owner`). `running` names the code to `test.setTimeout`,
+   * which moves the timeout, the attempt's budget with it, only when it is
+   * `settable`.
    */
-  async within(label: string, timeoutMs: number, usesEngine: boolean, body: (builtIns: BuiltInReader, owns: (owner: string) => void) => Promise<void>): Promise<void> {
+  async within(
+    label: string,
+    timeoutMs: number,
+    usesEngine: boolean,
+    running: { readonly name: string; readonly settable: boolean },
+    body: (builtIns: BuiltInReader, owns: (owner: string) => void) => Promise<void>,
+  ): Promise<void> {
     const { host, config } = this.context;
     const acquired = await this.acquire(usesEngine);
     const attempt = isOpen(acquired) ? acquired : undefined;
     const builtIns = isOpen(acquired) ? acquired.builtIns : attemptlessBuiltIns(host.target, unavailable(acquired, label, host.target.engine?.name ?? 'none'));
     const hookAbort = attempt?.budget.enter(host.interruptSignal, timeoutMs);
+    // On the attempt's budget, so the device calls the code makes stop at the deadline `test.setTimeout` moved.
+    const timeout = attempt === undefined ? AttemptTimeout.alone(timeoutMs) : new AttemptTimeout(attempt.budget, timeoutMs);
+    const hook: RunningSuiteHook = { name: running.name, ...(running.settable ? { setTimeout: (ms: number) => timeout.set(ms) } : {}) };
     const leave = host.workerFixtures.enter(builtIns);
     const owns = (owner: string): void => {
       if (attempt !== undefined) attempt.steps.owner = owner;
@@ -136,7 +153,7 @@ export class SuiteAttempt implements SuiteHookSession {
     owns(`the ${label}`);
     let failure: { readonly cause: unknown } | undefined;
     try {
-      await runHook(label, () => body(builtIns, owns), timeoutMs, () => hookAbort?.abort());
+      await inSuiteHook(hook, () => runHook(label, () => body(builtIns, owns), timeout, () => hookAbort?.abort()));
     } catch (cause) {
       failure = { cause };
     }
@@ -248,7 +265,8 @@ export async function tearDownWorkerFixtures(context: SuiteAttemptContext): Prom
   const attempt = new SuiteAttempt(context, undefined);
   for (const teardown of teardowns) {
     try {
-      await attempt.within(`fixture "${teardown.name}" teardown`, config.cleanupTimeout, teardown.usesEngine, () => teardown.run());
+      const label = `fixture "${teardown.name}" teardown`;
+      await attempt.within(label, config.cleanupTimeout, teardown.usesEngine, { name: `a worker ${label}`, settable: false }, () => teardown.run());
     } catch (cause) {
       runErrors.push({ error: serializeError(classifyError(cause), { phase: 'cleanup', projectRoot: config.projectRoot }) });
     }

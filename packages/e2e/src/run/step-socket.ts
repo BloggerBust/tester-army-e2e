@@ -1,11 +1,12 @@
 /**
  * Defines the socket used by later commands from the same directory
- * (`e2e run --step next`, `rest`, `stop`). It also reads one JSON line. The
- * run handles the socket in `cli/step-control.ts`.
+ * (`e2e run --step next`, `rest`, `stop`) and for MCP attachments. See
+ * `cli/step-control.ts` for request handling.
  */
 
 import { createHash } from 'node:crypto';
 import fs from 'node:fs';
+import type { Socket } from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
 import type { z } from 'zod';
@@ -47,4 +48,29 @@ export function parseLine<T>(line: string, schema: z.ZodType<T>): T | undefined 
   } catch {
     return undefined;
   }
+}
+
+/** Delivers complete lines even when split across chunks. Return false from receive to stop reading. */
+export function readSocketLines(socket: Socket, receive: (line: string) => boolean): void {
+  let buffer = '';
+  socket.setEncoding('utf8');
+
+  /** Keeps an incomplete line until the next chunk arrives. */
+  const read = (chunk: string): void => {
+    buffer += chunk;
+
+    for (let end = buffer.indexOf('\n'); end !== -1; end = buffer.indexOf('\n')) {
+      const line = buffer.slice(0, end);
+      buffer = buffer.slice(end + 1);
+
+      if (receive(line)) {
+        continue;
+      }
+
+      socket.off('data', read);
+      return;
+    }
+  };
+
+  socket.on('data', read);
 }

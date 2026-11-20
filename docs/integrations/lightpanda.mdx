@@ -131,8 +131,8 @@ headers so `load` and `error` reflect the real status.
 
 ## What works
 
-Against the e2e testbed's local suite on a Lightpanda nightly from mid-October
-2026, these pass unchanged:
+Against the e2e testbed's local suite on Lightpanda 1.0.4, these pass
+unchanged:
 
 - `app.open`, `app.back`, and `expect(browser).toHaveURL` and `toHaveTitle`.
 - Every `screen` query (`getByRole`, `getByLabel`, `getByText`,
@@ -140,7 +140,10 @@ Against the e2e testbed's local suite on a Lightpanda nightly from mid-October
   `check`, `select`, `press`, and keyboard input.
 - Polling assertions on text, value, count, and state.
 - `browser.route` mocks and request waits.
-- `browser.setCookies` from a test, after a page is open.
+- [Downloads](/browser#download-a-file) with `browser.waitForDownload`.
+- `browser.setCookies` from a test.
+- [Sessions](/authentication): `test.setup` with `session.save`, and `session:`
+  on a test.
 - `app.screenshot` and the screenshot of a failure. Lightpanda paints a plain
   render of the DOM, not the page as Chrome would show it.
 - Agent steps: `agent.act`, `agent.assert`, `agent.extract`, and
@@ -162,11 +165,10 @@ tracks most of them.
 
 | Feature | What happens | Why |
 | ------- | ------------ | --- |
-| [Sessions](/authentication) (`test.setup` with `session.save`, `session:` on a test) | The setup passes and the session is saved, but a test that restores it opens signed out. | Cookies set on a context before its first page exists are dropped. Set them from the test with `browser.setCookies` after `app.open` instead. |
 | [Dialogs](/browser#handle-a-dialog) | `browser.onDialog` runs, then fails the test with `ENGINE_FAILURE`: `Page.handleJavaScriptDialog` reports no dialog. | Lightpanda answers `alert`, `confirm` (`false`), and `prompt` (`null`) itself before a client can. |
-| [Downloads](/browser#download-a-file) | `browser.waitForDownload` times out. | No download events over CDP. |
-| [Iframes](/browser#reach-into-an-iframe) | `frameLocator` finds nothing. | Iframes are not loaded by default. `loadResources: ['iframe']` loads them; queries and fills then work, but a listener in the host page on an element the frame created does not fire. |
-| Drags: `screen.swipe`, `locator.swipeTo`, and `browser.mouse` moves with a button down | `ENGINE_FAILURE` naming `Input.setInterceptDrags`. | Playwright needs that command for a drag and Lightpanda has not implemented it. |
+| [File uploads](/reference/screen#setinputfiles) through a button that opens a hidden file input | `setInputFiles` on the button fails after the action timeout: the click opens no file chooser. `setInputFiles` on the input itself works. | Lightpanda accepts `Page.setInterceptFileChooserDialog` but never sends `Page.fileChooserOpened`. |
+| [Iframes](/browser#reach-into-an-iframe) | `frameLocator` finds nothing. | Iframes are not loaded by default. `loadResources: ['stylesheet', 'iframe']` loads them; queries and fills then work, but a listener in the host page on an element the frame created does not fire. |
+| Drag and drop: `locator.swipeTo`, or a `screen.swipe` path onto a drop target | The pointer moves, but nothing is dropped: the dragged node stays where it was. | Mouse input does not start an HTML drag in Lightpanda yet. |
 | `browser.setViewport` | The page measures the new size, but a `resize` listener never runs. | No `resize` event is dispatched. |
 | [Media emulation](/reference/web#media-emulation): `colorScheme`, `reducedMotion`, `browser.emulateMedia` | The page keeps reporting `light` and full motion. | `Emulation.setEmulatedMedia` does not change what `matchMedia` answers. |
 | Scrolling: `scrollIntoView`, `scrollUntilVisible`, and an action on a node "outside of the viewport" | The scroll is a no-op, and an actionability wait can time out. | Without layout there is no scroll position to move. The plain render stacks every block in one column, so more of a page sits below the fold than in Chrome, and nothing below it can be reached. |

@@ -7,7 +7,7 @@ description: 既存のアプリビルドと testID を、screen、expect、エ�
 
 import { SetupPrompt } from '../../snippets/setup-prompt-card.jsx';
 
-export const migrationPrompt = `このプロジェクトの Detox テストを、テストファイル ごとに e2e へ移行してください。ドキュメント: \`https://e2e.com/docs/migrate/detox.md\` と \`https://e2e.com/docs/mobile.md\`
+export const migrationPrompt = `このプロジェクトの Detox テストを、テストファイルごとに e2e へ移行してください。ドキュメント: \`https://e2e.com/docs/migrate/detox.md\` と \`https://e2e.com/docs/mobile.md\`
 
 1. 上記の移行ガイドを読んでください。\`.detoxrc.js\` と Detox API の e2e への対応関係、および e2e にまだない機能が載っています。モバイルガイドではデバイスとアプリのビルドを説明しています。
 2. プロジェクトに e2e の設定（\`e2e.config.ts\`、\`.mts\`、\`.js\`、\`.mjs\`）がなければ、\`npx e2e init --yes --engine mobile\`（または pnpm、bun の同等コマンド）を実行してください。このマシンのプラットフォーム用のターゲットを 1 つ持つモバイル設定と、設定アプリに対するサンプルテストを作りますが、この時点では何もインストールしません。\`tests/example.e2e.ts\` を対象アプリ用に書き換えるか、削除してください。
@@ -15,10 +15,10 @@ export const migrationPrompt = `このプロジェクトの Detox テストを�
 4. init を実行した場合は、エージェントステップに使うモデルを私に確認してください。ChatGPT、GitHub Copilot、OpenCode Console、SuperGrok のサブスクリプション、API キー、ローカルモデルから選びます。対応するプロバイダーパッケージで設定し、ログインが必要なら \`npx e2e login\` コマンドを示して、私の確認を待ってください。
 5. \`.detoxrc.js\` を e2e の設定に移してください。プラットフォームごとに \`mobile({ platform })\` を使うターゲットを作り、アプリの \`bundleId\` と \`appPath\` を設定し、デバイスの種類を \`mobile({ device })\` に指定します。e2e は通常のデバッグビルドやリリースビルドを使い、Detox フレームワークは不要です。
 6. 依存関係をインストールし、\`npx e2e doctor\`（e2e 0.23.0 以降）を実行して、報告された問題を修正してください。
-7. Detox の テストファイル を一覧にし、どれから移行するか私に確認してください。頻繁にメンテナンスが必要なフローを提案してください。
-8. その テストファイル の各 Detox 呼び出しを「e2e にまだない機能」と照合してください。「現在使える方法」または「代わりに使う方法」を使うか、テストファイル を Detox に残して理由を説明してください。その後、ガイドの対応表を使い、Detox のフォルダーではなく \`tests/\` 以下の \`.e2e.ts\` に書き換えてください（e2e はデフォルトで \`tests/**/*.e2e.ts\` を実行します）。自動では起動しないため、\`app.open()\` から始めてください。複数ノードに一致するクエリは絞り込んでください。
+7. Detox のテストファイルを一覧にし、どれから移行するか私に確認してください。頻繁にメンテナンスが必要なフローを提案してください。
+8. そのテストファイルの各 Detox 呼び出しを「e2e にまだない機能」と照合してください。「現在使える方法」または「代わりに使う方法」を使うか、テストファイルを Detox に残して理由を説明してください。その後、ガイドの対応表を使い、Detox のフォルダーではなく \`tests/\` 以下の \`.e2e.ts\` に書き換えてください（e2e はデフォルトで \`tests/**/*.e2e.ts\` を実行します）。自動では起動しないため、\`app.open()\` から始めてください。複数ノードに一致するクエリは絞り込んでください。
 9. 起動と最終的な検証は、\`app.open()\` とロケーターのアサーションで決定論的に保ってください。スクリプト化した一連の操作が頻繁に壊れる箇所には、代わりに \`agent.act\` のゴールを提案してください。
-10. アプリをビルドしてインストールし、各プラットフォームのターゲットで \`npx e2e run <file>\` を実行して、成功するまで修正してください。Detox の テストファイル は、削除してよいと私が確認するまで残してください。
+10. アプリをビルドしてインストールし、各プラットフォームのターゲットで \`npx e2e run <file>\` を実行して、成功するまで修正してください。Detox のテストファイルは、削除してよいと私が確認するまで残してください。
 11. 移行したテスト、Detox に残したテスト、それぞれの理由をまとめてください。`;
 
 e2e は、通常のデバッグビルドやリリースビルドを使い、シミュレーターやエミュレーターで React Native アプリをテストします。
@@ -35,7 +35,7 @@ e2e は、通常のデバッグビルドやリリースビルドを使い、シ�
 
 ## 設定の移行
 
-<Note>[モバイルガイド](/mobile)でターゲットを、[クイックスタート](/quickstart)でモデルを設定してください。テストファイル ごとに移行する間、両ランナーは同じシミュレーターを使えます。</Note>
+<Note>[モバイルガイド](/mobile)でターゲットを、[クイックスタート](/quickstart)でモデルを設定してください。テストファイルごとに移行する間、両ランナーは同じシミュレーターを使えます。</Note>
 
 | Detox（`.detoxrc.js`） | e2e |
 | --- | --- |
@@ -44,7 +44,7 @@ e2e は、通常のデバッグビルドやリリースビルドを使い、シ�
 | `configurations` | `targets`。プラットフォームごとに 1 エンジン |
 | Jest の `maxWorkers` | `workers`。デバイスごとに 1 ワーカー |
 | `apps.<name>.launchArgs` | ターゲットの `app.launchArguments`。プラットフォームごとの文字列リスト |
-| `launchApp({ permissions })` | ターゲットの `app.permissions`。`YES`、`NO`、`unset` に対して `grant`、`deny`、`reset`。対応する権限名は[追加予定](#planned) |
+| `launchApp({ permissions })` | ターゲットの `app.permissions`。`YES`、`NO`、`unset` に対して `grant`、`deny`、`reset`。ほかの権限名も[実装予定](#planned) |
 
 ```ts title="e2e.config.ts"
 import type { E2EConfig } from 'e2e';
@@ -67,7 +67,7 @@ export default {
 } satisfies E2EConfig;
 ```
 
-## テストファイル を 1 つ書き換える
+## テストファイルを 1 つ書き換える
 
 アプリは自動では起動しないため、e2e テストは `app.open()` から始めます。
 パスワードは[認証情報の設定](/authentication)から取得します。
@@ -137,6 +137,7 @@ test('shows the home screen', async ({ agent, app, screen }) => {
 | `device.launchApp({ launchArgs, permissions })` | `device.openApp(id, { relaunch: true, launchArguments, permissions })` |
 | `device.resetAppState()` | `app.clearState()` |
 | `device.launchApp({ delete: true })` | `device.installApp(path, { reinstall: true })` の後に `app.open()` |
+| `device.uninstallApp()` | `device.uninstallApp(id)`。ID を省略すると固定したアプリ |
 | `device.launchApp({ url })`, `device.openURL({ url })` | `device.openLink(url)` |
 | `device.terminateApp()`, `sendToHome()`, `pressBack()` | `device.closeApp()`、`home()`、`back()` |
 | `device.setLocation(lat, lon)`, `setOrientation('landscape')` | `device.setLocation({ latitude, longitude })`、`setOrientation('landscape-left')` |
@@ -163,7 +164,7 @@ test('shows the home screen', async ({ agent, app, screen }) => {
 | `.setDatePickerDate()`, `.setColumnToValue()`, `.adjustSliderToPosition()` | `agent.act` のゴール、またはスライダー上の `screen.swipe({ from, to })` |
 | フォームコントロール以外の `.toHaveValue(v)` | `expect(device.locator('id=x value="v"')).toBeVisible()` |
 | `health`、`homekit`、`speech`、`faceid`、`userTracking` の `permissions`、値 `always`、`inuse`、`limited` | プロンプトのボタンをタップするか、`device.alert('accept')` |
-| `device.sendUserNotification()`, `device.uninstallApp()`, `.pinch()` | [`unstable_raw`](/reference/mobile#unstable_raw) の `client.apps.push()`、`client.apps.uninstall()`、`client.interactions.pinch()` |
+| `device.sendUserNotification()`, `.pinch()` | [`unstable_raw`](/reference/mobile#unstable_raw) の `client.apps.push()`、`client.interactions.pinch()` |
 | `launchApp({ languageAndLocale })` | iOS では `app.launchArguments: ['-AppleLanguages', '(fr)', '-AppleLocale', 'fr_FR']`。[別の言語でアプリを実行する](/mobile#run-the-app-in-another-language)を参照 |
 | Jest の `globalSetup`、`globalTeardown` | 実行前に依存サービスを起動 |
 | `device.reverseTcpPort()` | CI ステップで `adb reverse` |

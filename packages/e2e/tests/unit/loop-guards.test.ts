@@ -4,10 +4,13 @@ import {
   checkFailureStreak,
   checkLoopGuards,
   DEFAULT_LOOP_GUARD_THRESHOLDS,
+  extractGuardCalls,
   extractToolResults,
   type GuardToolCall,
   type GuardToolResult,
   isFailedResult,
+  markWaitingTool,
+  waitingToolNames,
 } from '@e2e-dev/core/lib/agent/loop-guards';
 
 const call = (toolName: string, input = '{}'): GuardToolCall => ({ toolName, input });
@@ -33,6 +36,131 @@ describe('loop guards', () => {
     const stopped = checkLoopGuards([call('observe'), ...repeated(5)]);
     expect(stopped.kind).toBe('stop');
     expect((stopped as { reason: string }).reason).toContain('"tap"');
+  });
+
+  it('gives repeated calls to a waiting tool more room: waiting on a save in progress is not a loop', () => {
+    const observes = (count: number) => [call('tap', '{"target":"n1"}'), ...Array.from({ length: count }, () => call('observe'))];
+    const waiting = new Set(['observe']);
+    const check = (count: number) => checkLoopGuards(observes(count), DEFAULT_LOOP_GUARD_THRESHOLDS, waiting).kind;
+    expect(check(5)).toBe('clear');
+    expect(check(6)).toBe('warn');
+    expect(checkLoopGuards(observes(6), DEFAULT_LOOP_GUARD_THRESHOLDS, waiting)).toMatchObject({ waiting: true });
+    expect(checkLoopGuards(observes(3))).not.toHaveProperty('waiting');
+    expect(check(10)).toBe('stop');
+    // A tool named observe that the caller did not mark keeps the ordinary thresholds.
+    expect(checkLoopGuards(observes(3)).kind).toBe('warn');
+    expect(checkLoopGuards(observes(5)).kind).toBe('stop');
+  });
+
+  it('counts observe and screenshot in turn as one wait, in calls, and keeps the cycle limits for anything else in the cycle', () => {
+    const waiting = new Set(['observe', 'screenshot']);
+    const alternating = (pairs: number) => [call('tap', '{"target":"n1"}'), ...Array.from({ length: pairs }, () => [call('observe'), call('screenshot')]).flat()];
+    const check = (pairs: number) => checkLoopGuards(alternating(pairs), DEFAULT_LOOP_GUARD_THRESHOLDS, waiting);
+    expect(check(2).kind).toBe('clear');
+    expect(check(3)).toMatchObject({ kind: 'warn', waiting: true });
+    expect(check(5).kind).toBe('stop');
+    // A cycle with an action in it is a circle, whatever else it contains.
+    const withTap = [call('observe'), call('tap', '{"target":"n1"}')];
+    expect(checkLoopGuards([...withTap, ...withTap], DEFAULT_LOOP_GUARD_THRESHOLDS, waiting).kind).toBe('warn');
+    expect(checkLoopGuards([...withTap, ...withTap, ...withTap], DEFAULT_LOOP_GUARD_THRESHOLDS, waiting).kind).toBe('stop');
+  });
+
+  it('ends a waiting streak at the observe that saw the screen change, so the wait can lead on to the next action', () => {
+    const waiting = new Set(['observe']);
+    const turn = (id: string, text: string): ModelMessage[] => [
+      { role: 'assistant', content: [{ type: 'tool-call', toolCallId: id, toolName: 'observe', input: {} }] },
+      { role: 'tool', content: [{ type: 'tool-result', toolCallId: id, toolName: 'observe', output: { type: 'text', value: text } }] },
+    ];
+    const still = (n: number) => `Observed.\n\nScreen unchanged since revision b${n} (re-observed as revision b${n + 1}); the ids you have stay valid.`;
+    const waits = Array.from({ length: 9 }, (_, index) => turn(`o${index}`, still(index))).flat();
+    expect(checkLoopGuards(extractGuardCalls(waits, 'complete_step', waiting), DEFAULT_LOOP_GUARD_THRESHOLDS, waiting).kind).toBe('warn');
+    const saved = [...waits, ...turn('o9', 'Observed.\n\nScreen changes since revision b9 (now revision b10): 1 changed.\nchanged #n1 button "Saved" (was: #n1 button "Saving" [disabled])')];
+    expect(checkLoopGuards(extractGuardCalls(saved, 'complete_step', waiting), DEFAULT_LOOP_GUARD_THRESHOLDS, waiting).kind).toBe('clear');
+    // Ten unchanged looks still force the verdict, and without the waiting set every observe counts.
+    const stuck = [...waits, ...turn('o9', still(9))];
+    expect(checkLoopGuards(extractGuardCalls(stuck, 'complete_step', waiting), DEFAULT_LOOP_GUARD_THRESHOLDS, waiting).kind).toBe('stop');
+    expect(checkLoopGuards(extractGuardCalls(saved, 'complete_step')).kind).toBe('stop');
+  });
+
+  describe('a wait, counted from the results the looks got', () => {
+    const waiting = new Set(['observe', 'screenshot']);
+    let id = 0;
+    /** One call and its result, as the transcript holds them. */
+    const turn = (toolName: string, text: string, input: Record<string, unknown> = {}): ModelMessage[] => {
+      id += 1;
+      const toolCallId = `c${String(id)}`;
+      return [
+        { role: 'assistant', content: [{ type: 'tool-call', toolCallId, toolName, input }] },
+        { role: 'tool', content: [{ type: 'tool-result', toolCallId, toolName, output: { type: 'text', value: text } }] },
+      ];
+    };
+    const verdict = (messages: ModelMessage[]) => checkLoopGuards(extractGuardCalls(messages, 'complete_step', waiting), DEFAULT_LOOP_GUARD_THRESHOLDS, waiting);
+    const repeat = (count: number, make: (index: number) => ModelMessage[]) => Array.from({ length: count }, (_, index) => make(index)).flat();
+    const unchanged = (n: number) => `Observed.\n\nScreen unchanged since revision b${String(n)} (re-observed as revision b${String(n + 1)}); the ids you have stay valid.`;
+    const ticked = (n: number) => `Observed.\n\nScreen changes since revision b${String(n)} (now revision b${String(n + 1)}, 3 nodes): 1 changed. Every node not listed as removed is still on screen under the id you have.\nchanged #n1 text "Saving ${String(n)}s" (was: #n1 text "Saving ${String(n - 1)}s")`;
+    const truncated = (n: number) => `Observed.\n\nScreen changes since revision b${String(n)} (now revision b${String(n + 1)}, 900 nodes): no listed node changed. The screen listing is truncated: nodes past the cut are not listed and none is reported removed; every listed node keeps the id you have.`;
+
+    it('does not take a truncated listing with no line changed for a change', () => {
+      expect(verdict(repeat(9, (index) => turn('observe', truncated(index)))).kind).toBe('warn');
+      expect(verdict(repeat(10, (index) => turn('observe', truncated(index)))).kind).toBe('stop');
+    });
+
+    it('reads only the first line, so app text that looks like a change is not one', () => {
+      const lookalike = (n: number) => `${unchanged(n)}\n#n5 text "Screen changes since revision 3 (now revision 4): 1 changed."`;
+      expect(verdict(repeat(10, (index) => turn('observe', lookalike(index)))).kind).toBe('stop');
+    });
+
+    it('does not count a change in pixels alone, such as an animated spinner', () => {
+      const pixels = (n: number) => `Since revision b${String(n)} (re-observed as revision b${String(n + 1)}): listed nodes unchanged; the screenshot changed. Read the effect off the image (a focus ring alone is no effect); the ids you have stay valid.`;
+      expect(verdict(repeat(10, (index) => turn('screenshot', pixels(index)))).kind).toBe('stop');
+    });
+
+    it('takes a tab the app opened for a change', () => {
+      const opened = `Observed.\n\nThe app opened a new tab (tab 2 of 2). The screen still shows tab 1; use switch_tab to see it. ${unchanged(9).slice('Observed.\n\n'.length)}`;
+      expect(verdict([...repeat(9, (index) => turn('observe', unchanged(index))), ...turn('observe', opened)]).kind).toBe('clear');
+    });
+
+    it('counts looks in any order, not as cycles', () => {
+      const mixed = (index: number) => turn(index % 6 === 5 ? 'screenshot' : 'observe', unchanged(index));
+      expect(verdict(repeat(9, mixed)).kind).toBe('warn');
+      expect(verdict(repeat(10, mixed)).kind).toBe('stop');
+    });
+
+    it('warns a wait whose screen changes on every look at twelve looks and ends it at twenty', () => {
+      expect(verdict(repeat(11, (index) => turn('observe', ticked(index)))).kind).toBe('clear');
+      expect(verdict(repeat(12, (index) => turn('observe', ticked(index))))).toMatchObject({ kind: 'warn', waiting: true });
+      expect(verdict(repeat(19, (index) => turn('observe', ticked(index)))).kind).toBe('warn');
+      const stopped = verdict(repeat(20, (index) => turn('observe', ticked(index))));
+      expect(stopped).toMatchObject({ kind: 'stop' });
+      expect((stopped as { reason: string }).reason).toContain('20 times in a row while it kept changing');
+    });
+
+    it('keeps the cycle limit for a submit and a look in turn, even when every look shows a change', () => {
+      const cycle = (index: number) => [...turn('tap', `Tapped #n1.\n\n${ticked(index).slice('Observed.\n\n'.length)}`, { target: 'n1' }), ...turn('observe', ticked(index + 100))];
+      expect(verdict(repeat(2, cycle)).kind).toBe('warn');
+      expect(verdict(repeat(3, cycle)).kind).toBe('stop');
+    });
+
+    it('keys the waiting notice by the wait, so a wait is warned once and a later wait in the step again', () => {
+      const first = repeat(6, (index) => turn('observe', unchanged(index)));
+      const six = verdict(first);
+      const eight = verdict([...first, ...repeat(2, (index) => turn('observe', unchanged(index + 6)))]);
+      expect(six).toMatchObject({ kind: 'warn', waiting: true });
+      expect((six as { reason: string }).reason).toBe((eight as { reason: string }).reason);
+      expect((six as { key?: string }).key).toBe((eight as { key?: string }).key);
+      const second = verdict([...first, ...turn('tap', 'Tapped #n2.', { target: 'n2' }), ...repeat(6, (index) => turn('observe', unchanged(index + 20)))]);
+      expect(second).toMatchObject({ kind: 'warn', waiting: true });
+      expect((second as { key?: string }).key).not.toBe((six as { key?: string }).key);
+    });
+  });
+
+  it('recognizes a waiting handler marked by another installed copy, and nothing else', () => {
+    const own = markWaitingTool({ execute: async () => 'observed' });
+    // Another copy of the package marks through the same registry symbol, not through this module's state.
+    const foreignHandler = async () => 'observed';
+    Object.defineProperty(foreignHandler, Symbol.for('e2e.agent.waiting-handler.v1'), { value: true });
+    const names = waitingToolNames({ own, foreign: { execute: foreignHandler }, write: { execute: async () => 'wrote' }, bare: {} });
+    expect([...names].toSorted()).toEqual(['foreign', 'own']);
   });
 
   it('identical inputs are required: alternating targets are not a repeat', () => {

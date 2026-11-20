@@ -1,0 +1,293 @@
+---
+title: Intégration continue
+sidebarTitle: Configurer la CI
+description: Lancez e2e sur GitHub Actions, les déploiements Vercel, GitLab CI/CD, Expo Workflows, Bitrise, Codemagic, Norrix ou tout service de CI qui exécute Node.
+"og:image": "https://e2e.com/docs/images/og/ci.png?v=01be716140"
+"twitter:image": "https://e2e.com/docs/images/og/ci.png?v=01be716140"
+---
+
+e2e fonctionne sur tout service de CI capable d'exécuter Node 24.8 ou plus récent (22.22.3 ou
+plus récent sur Node 22), ou [Bun](/reference/cli#bun) 1.4.3 ou plus récent pour les tests web.
+Chaque job installe les dépendances, démarre l'app ou un appareil, lance les
+tests et téléverse `.e2e/`.
+
+## Choisir votre service de CI
+
+<CardGroup cols={2}>
+  <Card title="GitHub Actions" icon="/images/integrations/github-actions.svg" href="/ci/github-actions">
+    Workflows web et mobile. Publiez les résultats en commentaire de pull request.
+  </Card>
+  <Card title="Vercel Previews" icon="/images/integrations/vercel.svg" href="/ci/vercel-previews">
+    Testez chaque déploiement et retenez les mises en production jusqu'à ce que les tests réussissent.
+  </Card>
+  <Card title="GitLab CI/CD" icon="/images/integrations/gitlab.svg" href="/ci/gitlab">
+    Jobs web et mobile. Affichez les résultats dans la merge request.
+  </Card>
+  <Card title="Expo Workflows" icon="/images/integrations/expo.svg" href="/ci/eas-workflows">
+    Compilez une app Expo avec Expo Build, puis lancez des tests iOS et Android dessus.
+  </Card>
+  <Card title="Bitrise" icon="/images/integrations/bitrise.svg" href="/ci/bitrise">
+    Workflows iOS et Android avec les steps Bitrise pour simulateurs et émulateurs.
+  </Card>
+  <Card title="Codemagic" icon="/images/integrations/codemagic.svg" href="/ci/codemagic">
+    Workflows iOS et Android sur des instances Mac mini et Linux.
+  </Card>
+  <Card title="Norrix" icon="/images/integrations/norrix.png" href="/ci/norrix">
+    Compilez une app NativeScript avec Norrix, puis lancez sa suite sur un simulateur ou un émulateur Norrix.
+  </Card>
+</CardGroup>
+
+Pour un autre service de CI, copiez le workflow [GitHub Actions](/ci/github-actions).
+Pour louer des navigateurs ou des appareils auprès d'un service hébergé, consultez
+[Navigateurs et appareils hébergés](/integrations).
+
+## Téléverser les rapports
+
+Téléversez `.e2e/` à la fin de chaque job, y compris quand un test échoue. Il contient :
+
+| Chemin | Contenu |
+| --- | --- |
+| `report.json` | Le rapport d'exécution, pour chaque exécution qui atteint ses tests |
+| `junit.xml` | Avec le reporter `junit` (`--reporter list,junit`) : les résultats, les tests qu'un [filtre de tests](/filters) a écartés, marqués comme ignorés, et les échecs au démarrage comme `APP_UNREACHABLE` dans une suite `run` |
+| `results/` | Les pages de trace, captures d'écran et dumps d'écran de chaque test. Avec `--video`, aussi une vidéo pour chaque cible dont le moteur peut enregistrer |
+
+Pointez l'intégration de rapports de tests de votre service de CI vers `.e2e/junit.xml`.
+Sur GitLab, `junit.xml` référence aussi chaque capture d'écran d'échec, qui s'affiche ainsi dans le rapport de tests.
+L'option [`output`](/reference/config#output) déplace `.e2e/`.
+
+## Identifiants du modèle
+
+Donnez au job les identifiants dont votre fournisseur a besoin, comme
+`AI_GATEWAY_API_KEY` (consultez [Modèles](/models)). Les tests qui n'utilisent jamais `agent`
+n'en ont pas besoin.
+
+<Warning>
+Chaque job qui dispose de la clé la transmet au code qu'il exécute : tests, configuration et
+dépendances. Ne donnez la clé qu'aux builds des branches de confiance. Exécutez
+le code des pull requests non fiables sans secrets ni jetons d'écriture. Consultez
+[Sécurité](/security).
+</Warning>
+
+Gardez les clés dans les secrets de la CI, et fixez des limites de dépenses quand c'est possible. GitHub ne
+transmet pas les secrets aux pull requests provenant de forks.
+
+## Ce que la CI change
+
+Le mode CI est actif quand `CI` a une valeur autre qu'une chaîne vide, `0` ou
+`false`. Pour obtenir ces valeurs par défaut en local, lancez `CI=1 npx e2e run` :
+
+| Réglage | Local | CI |
+| --- | --- | --- |
+| `retries` | `0` | `1` |
+| `workers` | la moitié de vos cœurs | `1` |
+| `cache` non défini | `read-write` | `read-only` |
+| `.only` | autorisé | rejeté avec `ONLY_IN_CI` |
+| `command.reuseExisting` | respecté | ignoré, avec un avertissement |
+
+Pour changer les valeurs par défaut des workers et des nouvelles tentatives, utilisez des options :
+
+<CodeGroup>
+```bash npm
+npx e2e run --workers 4 --retries 0
+```
+
+```bash pnpm
+pnpm exec e2e run --workers 4 --retries 0
+```
+
+```bash bun
+bunx e2e run --workers 4 --retries 0
+```
+</CodeGroup>
+
+Pour n'envoyer aucune [télémétrie](/telemetry#in-ci) depuis la CI, ajoutez
+`E2E_TELEMETRY_DISABLED: '1'` à l'`env` du job.
+
+## Jobs mobiles
+
+Sans [service d'appareils hébergés](/mobile#hosted-devices), chaque plateforme
+a besoin de sa propre machine, de son build et de son appareil :
+
+| | iOS | Android |
+| --- | --- | --- |
+| Machine | macOS avec Xcode et un runtime de simulateur | Linux avec KVM (virtualisation imbriquée) |
+| Build | `.app` Release pour simulateur, sans signature | `.apk` Release |
+| Appareil | Un simulateur démarré | Un émulateur démarré |
+
+Faites un build Release sur les deux plateformes. Un build de debug React Native ou Expo
+charge son JavaScript depuis Metro, que ces jobs ne démarrent pas, il s'ouvre donc
+sur un écran d'erreur. Les exemples utilisent un projet React Native avec `ios/` et
+`android/` dans le dépôt. Pour un projet Expo qui ne les a pas, lancez d'abord
+`npx expo prebuild`.
+
+Installez le build, puis lancez la suite :
+
+<CodeGroup>
+```bash npm
+# iOS
+xcrun simctl install booted path/to/MyApp.app
+npx e2e run --target ios --reporter list,junit
+
+# Android
+adb install -r path/to/app.apk
+npx e2e run --target android --reporter list,junit
+```
+
+```bash pnpm
+# iOS
+xcrun simctl install booted path/to/MyApp.app
+pnpm exec e2e run --target ios --reporter list,junit
+
+# Android
+adb install -r path/to/app.apk
+pnpm exec e2e run --target android --reporter list,junit
+```
+
+```bash bun
+# iOS
+xcrun simctl install booted path/to/MyApp.app
+bunx e2e run --target ios --reporter list,junit
+
+# Android
+adb install -r path/to/app.apk
+bunx e2e run --target android --reporter list,junit
+```
+</CodeGroup>
+
+Les commandes supposent deux cibles nommées `ios` et `android`, chacune avec un
+moteur `mobile()` et le `bundleId` de l'app. Consultez
+[Cibler votre app](/mobile#point-at-your-app). Pour que la suite installe le
+build, définissez `app.appPath` et appelez `device.installApp()`.
+
+Ces règles s'appliquent sur tous les services :
+
+- **Un job par plateforme.** Lancez `--target ios` sur un Mac et
+  `--target android` sur Linux avec KVM. Les Mac hébergés utilisent Apple Silicon,
+  qui ne permet pas la virtualisation imbriquée, donc l'émulateur Android ne démarre pas
+  dessus.
+- **Démarrez l'appareil dans une étape dédiée.** Si aucun appareil n'est démarré, le moteur
+  demande à agent-device d'en démarrer un, mais un nouveau runner Linux n'a pas d'image
+  d'émulateur. Une étape séparée permet aussi de distinguer un échec de démarrage d'un échec de test.
+- **Fixez le runtime iOS.** Un simulateur choisi par son nom (`iPhone 17`) exécute
+  l'iOS par défaut de l'image, et l'arbre d'accessibilité change d'une version d'iOS
+  à l'autre. Une mise à jour de l'image du runner peut alors faire échouer une assertion de locator
+  sans aucun changement dans votre code. Les exemples créent un simulateur sur un runtime
+  nommé et le démarrent par son UDID. Remplacez `iOS-26-5` par un runtime dont l'image
+  dispose (`xcrun simctl list runtimes`).
+- **Mettez en cache `~/.agent-device/apple-runner/derived`.** agent-device y compile
+  son runner XCUITest la première fois qu'il pilote un simulateur. Ne mettez pas en
+  cache tout `~/.agent-device`. Le reste est l'état du dernier
+  daemon, et une copie restaurée peut bloquer l'exécution suivante avec
+  `Failed to communicate with daemon`.
+- **Rejouez les enregistrements locaux.** La clé du cache de rejeu contient l'app, pas
+  l'appareil, donc une étape enregistrée sur votre simulateur est rejouée sur celui de la CI.
+  [Commitez le cache de rejeu](/cache#commit-the-replay-cache).
+
+## Bloquer les pull requests
+
+Chaque code de sortie non nul fait échouer le job, y compris une étape d'agent en échec. Pour bloquer
+les merges sur une exécution en échec, faites du job e2e une vérification obligatoire.
+[Déboguer une exécution](/debugging#read-the-failure) liste chaque code de sortie et
+indique si relancer le job peut aider.
+
+Pour garder des vérifications prévisibles :
+
+- Donnez à chaque `agent.act` un [objectif atomique](/core-concepts#goals). Puis
+  vérifiez son résultat avec une assertion de locator ou `agent.assert`.
+- [Commitez le cache de rejeu](/cache#commit-the-replay-cache). Un
+  `agent.act` rejoué ne fait aucun appel au modèle. Avec l'agent intégré, un défaut de cache, un
+  passage de relais et chaque jugement de l'agent (`agent.assert`, `agent.waitFor`,
+  `agent.extract`) appellent le modèle.
+- Surveillez les tests instables. Le rapport marque comme instable un test qui ne réussit
+  qu'à la nouvelle tentative en CI.
+- Ajoutez `--max-failures <n>` pour arrêter l'exécution après ce nombre de tests en échec, afin
+  qu'un déploiement cassé ne dépense pas un appel au modèle pour chaque étape restante. Le job
+  se termine avec le code 1.
+- Ajoutez `--max-duration <ms>` pour limiter la durée d'exécution des tests ; le chronomètre démarre
+  quand les tests commencent, pas pendant le démarrage de l'app. Le job se termine avec le code 1.
+
+## Lancer seulement les tests concernés
+
+Sur une pull request, passez `--changed-since` pour qu'un [filtre de tests](/filters) puisse
+écarter les tests que le changement a peu de chances d'affecter. Quand le filtre attribue un score
+aux tests, comme le fait le filtre de décision, chaque cible commence par les fichiers des tests
+les plus susceptibles d'échouer. Sans l'option, comme sur `main`, toute la suite
+s'exécute. Consultez [Ajouter le filtre de décision](/filters#add-the-decision-filter).
+
+Avec la valeur par défaut d'un seul worker en CI, seules les bandes de pertinence ordonnent les fichiers, et
+l'ordre de collecte départage les égalités : e2e lit
+l'[historique des durées](#cache-the-timings-history) seulement avec plus d'un worker.
+Consultez [Commencer par les plus susceptibles d'échouer](/filters#start-the-likeliest-first).
+
+## Mettre en cache l'historique des durées
+
+Avec plus d'un worker, `e2e run` démarre par les fichiers les plus longs, après
+tout fichier dont il ne connaît pas la durée, dans l'ordre de `<output>/timings.json` (`.e2e/timings.json` par défaut) : quelques Ko qu'une
+exécution met à jour quand elle a exécuté au moins un fichier en entier. Un checkout de CI neuf n'en a pas,
+donc restaurez-le depuis le cache de votre CI avant l'exécution et sauvegardez-le après.
+[GitHub Actions](/ci/github-actions#cache-the-timings-history) fournit l'étape.
+
+- Le fichier est indicatif. Un fichier manquant, corrompu ou invalide équivaut à aucun historique,
+  et l'exécution se rabat sur le `report.json` précédent. Un fichier restauré peut
+  changer l'ordre des fichiers, jamais un résultat.
+- Une exécution ne chronomètre un fichier que si elle l'a exécuté en entier. Une exécution avec `--grep` ou
+  `--last-failed` laisse telle quelle l'entrée d'un fichier qu'elle a exécuté en partie.
+- La CI utilise un seul worker par défaut. Définissez [`workers`](/reference/config#workers) ou
+  passez `--workers` pour en profiter.
+- Indexez la clé du cache sur la branche, avec `main` en repli, pour qu'une nouvelle pull
+  request parte de l'historique de `main`. Avec le [sharding](#sharding), ajoutez
+  l'index du shard à la clé.
+- `--timings <file>` lit et écrit un autre chemin.
+
+## Sharding
+
+`--shard <index/total>` lance une tranche de la suite. Chaque job lance la
+même commande avec son propre index, et chaque machine découpe la suite de la
+même façon. Un shard sans test échoue avec `NO_TESTS`. Si une matrice peut avoir
+plus de shards que de tests, ajoutez `--pass-with-no-tests`. La
+[référence de la CLI](/reference/cli#flags) détaille les règles de découpage.
+
+Sur GitHub Actions, une matrice lance un job par shard :
+
+```yaml
+jobs:
+  e2e:
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3]
+    steps:
+      # ...
+      - run: npx e2e run --shard ${{ matrix.shard }}/3 --reporter list,junit
+```
+
+Téléversez le `report.json` et le `junit.xml` de chaque shard sous un nom contenant
+l'index du shard. e2e ne sait pas encore fusionner les rapports des shards.
+
+## Relancer les échecs
+
+`--last-failed` ne lance que les tests qui n'ont pas réussi lors de l'exécution précédente,
+lus depuis `report.json` dans le répertoire de sortie. Lancez-le dans la même étape que
+la première exécution :
+
+```yaml
+      - run: npx e2e run || npx e2e run --last-failed
+```
+
+La relance conserve les artefacts de la première exécution et écrit les siens sous
+`rerun-<n>/` dans le répertoire de chaque test, si bien qu'un seul téléversement contient les deux. La
+[référence de la CLI](/reference/cli#flags) liste ce qui compte comme non réussi.
+
+Un job séparé n'a pas de rapport sur son runner. Téléchargez-le d'abord dans le
+répertoire de sortie, ou relancez le job en échec.
+
+## Pour aller plus loin
+
+<CardGroup cols={2}>
+  <Card title="Commentaires de pull request" icon="code-pull-request" href="/github">
+    Un commentaire par exécution, modifié sur place lors d'une relance.
+  </Card>
+  <Card title="Référence de la CLI" icon="terminal" href="/reference/cli">
+    Options, reporters et chaque code de sortie.
+  </Card>
+</CardGroup>

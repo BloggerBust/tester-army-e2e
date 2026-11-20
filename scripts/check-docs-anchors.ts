@@ -19,6 +19,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { join, relative, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import slugify, { slugifyWithCounter } from '@sindresorhus/slugify';
+import { DOCS_LANGUAGES } from './docs-languages.ts';
 import { pages } from './docs-pages.ts';
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url));
@@ -123,9 +124,6 @@ function pageFor(path: string): string | undefined {
   return [`${base}.mdx`, join(base, 'index.mdx')].find((candidate) => existsSync(candidate));
 }
 
-/** The languages the docs are translated into, each a folder under `docs/` (`check-docs-translations.ts`). */
-const LANGUAGES = new Set(['ja', 'zh', 'cs', 'es']);
-
 /**
  * The English page a translation (`docs/ja/quickstart.mdx`) translates, or
  * the page itself. The site gives a translation the English page's ids, so
@@ -133,7 +131,7 @@ const LANGUAGES = new Set(['ja', 'zh', 'cs', 'es']);
  */
 function englishPage(page: string): string {
   const [language, ...rest] = relative(DOCS, page).split(sep);
-  if (language === undefined || !LANGUAGES.has(language)) return page;
+  if (language === undefined || !DOCS_LANGUAGES.includes(language)) return page;
   // A translation whose English page is gone: check-docs-translations.ts reports it.
   const english = join(DOCS, ...rest);
   return existsSync(english) ? english : page;

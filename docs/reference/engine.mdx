@@ -109,7 +109,7 @@ rules:
 | `observe`, `readStyle`, `locate`, `perform`, `performAt`, `prepare`, `finish`, `doctor`, `init`, `startAttempt`, `settleAttempt`, `endAttempt`, `dispose`, `validateApp` | Not a function. |
 | any other top-level key | On an object literal, `app` included: declare the app on the target and check it in `validateApp`. A class instance's own fields are not checked. |
 | `readStyle`, `perform`, `locate`, `performAt`, `keyboard` | Declared without `observe`. |
-| `perform`, `actions` | One without the other. An `actions` list that is empty, repeats a kind, or names one outside `LOCATOR_ACTION_KINDS`. |
+| `perform`, `actions` | One without the other. An `actions` list that is empty, repeats a kind, or names one outside `KNOWN_LOCATOR_ACTION_KINDS`. |
 | `performAt`, `pointerActions` | One without the other. A `pointerActions` list that is empty, repeats a kind, or names one outside `POINTER_ACTION_KINDS`. |
 | `tapModifiers` | Not a boolean, or `true` without `perform`. |
 | `isolation` | Anything but `'attempt'` or `'worker'`. |
@@ -1147,6 +1147,7 @@ honors in `actions` and `pointerActions`.
 | `check` | - | yes | - |
 | `uncheck` | - | yes | - |
 | `focus` | - | yes | - |
+| `blur` | - | yes | - |
 | `hover` | - | yes | yes |
 | `scrollIntoView` | - | yes | - |
 | `selectOption` | `value` | yes | - |
@@ -1193,6 +1194,7 @@ export type LocatorAction =
         | 'uncheck'
         | 'clear'
         | 'focus'
+        | 'blur'
         | 'hover'
         | 'scrollIntoView';
     }
@@ -1211,7 +1213,7 @@ export type LocatorAction =
 /** Every action kind; what an engine declares in `actions`. */
 export type LocatorActionKind = LocatorAction['kind'];
 
-/** The closed list of action kinds, in contract order; the type is derived from it. */
+/** The locator action kinds of SPI v1. List newer kinds explicitly. Use KNOWN_LOCATOR_ACTION_KINDS to check an action kind. */
 export const LOCATOR_ACTION_KINDS = [
   'tap',
   'doubleTap',
@@ -1230,6 +1232,9 @@ export const LOCATOR_ACTION_KINDS = [
   'dragTo',
   'swipe',
 ] as const satisfies readonly LocatorActionKind[];
+
+/** Every action kind understood by this version of core. */
+export const KNOWN_LOCATOR_ACTION_KINDS = [...LOCATOR_ACTION_KINDS, 'blur'] as const satisfies readonly LocatorActionKind[];
 ```
 
 #### Pointer actions
@@ -2362,7 +2367,7 @@ return context.fixture('printer', printer, { print: { kind: 'resource' } });
 `ObservationPixels`, `LocatorAction`, `LocatorActionKind`, `PointerAction`,
 `PointerActionKind`, `ScrollDirection`, `Momentum`, `SelectOption`, `Key`,
 `KeyModifier`, `KeyName`, `ParsedKey`, `ENGINE_SPI_VERSION`,
-`LOCATOR_ACTION_KINDS`, `POINTER_ACTION_KINDS`, `KEY_MODIFIERS`,
+`LOCATOR_ACTION_KINDS`, `KNOWN_LOCATOR_ACTION_KINDS`, `POINTER_ACTION_KINDS`, `KEY_MODIFIERS`,
 `KEY_NAMES`, `parseKey`, `ENGINE_ERROR_CODES`, `RETRYABLE_ENGINE_ERROR_CODES`,
 `Secret`, `isSecret`, `TextMatch`, `JsonValue`, `JsonValueRules`,
 `ResolveExpressionOptions`, `PollConditionOptions`, `WithoutUndefined`,

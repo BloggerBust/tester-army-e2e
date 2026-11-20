@@ -56,10 +56,30 @@ transcripts, reports, or AI traces.
 A targeted action times out after at most 15 seconds. [Project tools](/tools)
 add your own operations, with declared budgets and platforms.
 
-The loop detects repeated calls and cycles. After three failed actions in a
-row, it tells the model to change its approach. After five, it asks for a
-verdict. It also asks for a verdict when the budget or the deadline is
-near.
+The built-in agent presses Save, Submit, or another control that commits a
+change once for each commit the step asks for. It retries only when the
+current screen shows that the first press did not commit, such as a
+validation error, or when the tap only closed the keyboard.
+
+The agent checks a save on the current screen unless the step asks it to leave.
+A silent save can end the step as `failed`. Specify how to check it, for
+example "save the product, then confirm it appears in the product list".
+A click before the page is ready can also leave no trace. Wait for the page
+before saving. The agent makes one press when the outcome is unclear.
+
+The loop detects repeated calls and cycles. It warns after three failed
+actions in a row and asks for a verdict after five. Consecutive calls to
+`observe` or `screenshot` can wait longer, including during assertion
+exploration.
+
+| Wait | Notice | Verdict |
+| --- | ---: | ---: |
+| Looks without a change to the listing, location, or tabs | 6 | 10 |
+| Total consecutive looks, even when the screen changes | 12 | 20 |
+
+Changes to the listing, location, or tabs reset the first count. Pixel
+changes alone, such as a spinner, leave the count in place. The loop also
+asks for a verdict when the budget or deadline is near.
 
 ## Assertion exploration
 

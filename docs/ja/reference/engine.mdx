@@ -89,7 +89,7 @@ export interface EngineHandle<Fixtures extends object = {}> extends Engine {
 | `observe`, `readStyle`, `locate`, `perform`, `performAt`, `prepare`, `finish`, `doctor`, `init`, `startAttempt`, `settleAttempt`, `endAttempt`, `dispose`, `validateApp` | 関数でない。 |
 | その他の最上位キー | オブジェクトリテラルでは `app` も含めて拒否。アプリはターゲットに宣言し、`validateApp` で検証します。クラスインスタンス自身のフィールドは検査しません。 |
 | `readStyle`, `perform`, `locate`, `performAt`, `keyboard` | `observe` なしで宣言。 |
-| `perform`, `actions` | 片方しかない。`actions` が空、種類が重複、または `LOCATOR_ACTION_KINDS` にない種類を含む。 |
+| `perform`, `actions` | 片方しかない。`actions` が空、種類が重複、または `KNOWN_LOCATOR_ACTION_KINDS` にない種類を含む。 |
 | `performAt`, `pointerActions` | 片方しかない。`pointerActions` が空、種類が重複、または `POINTER_ACTION_KINDS` にない種類を含む。 |
 | `tapModifiers` | 真偽値でない、または `perform` がないのに `true`。 |
 | `isolation` | `'attempt'` と `'worker'` 以外の値。 |
@@ -372,7 +372,7 @@ export interface OperationContext {
 
 #### ノードの描画プロパティ
 
-`readStyle(ref, properties, context)` は、アプリの状態を変えずに、指定したプロパティの計算済み CSS 文字列を返します。`computed-style` 機能には `observe` が必要で、`ref` は最新の観測から取得します。要求された各プロパティに文字列を返してください。ノードを解決できなくなっていれば、リトライ可能な `NODE_STALE` を投げます。ハーネスは、ツールに返す前に値をマスキングします。
+`readStyle(ref, properties, context)` は、アプリの状態を変えずに、指定したプロパティの計算済み CSS 文字列を返します。`computed-style` 機能には `observe` が必要で、`ref` は最新の観測から取得します。要求された各プロパティに文字列を返してください。ノードを解決できなくなっていれば、リトライ可能な `NODE_STALE` を投げます。ハーネスは、ツールに返す前に値を秘匿します。
 
 ```ts
 export type ComputedStyleProperty =
@@ -769,7 +769,7 @@ async startAttempt(context) {
 失敗やタイムアウトでは、`context.signal` が中断され、`endAttempt` が実行されます。
 
 <Warning>
-`resolveSecret` の値は、テキストとしてだけ保護されます。レポート、ログ、観測ではマスキングされ、試行のテキストダウンロードも書き換えますが、ページがセキュアなフィールド外に表示した値はスクリーンショットで隠されません。
+`resolveSecret` の値は、テキストとしてだけ保護されます。レポート、ログ、観測では秘匿され、試行のテキストダウンロードも書き換えますが、ページが機密フィールド外に表示した値はスクリーンショットでマスキングされません。
 </Warning>
 
 ```ts
@@ -1050,6 +1050,7 @@ return {
 | `check` | - | 対応 | - |
 | `uncheck` | - | 対応 | - |
 | `focus` | - | 対応 | - |
+| `blur` | - | 対応 | - |
 | `hover` | - | 対応 | 対応 |
 | `scrollIntoView` | - | 対応 | - |
 | `selectOption` | `value` | 対応 | - |
@@ -1096,6 +1097,7 @@ export type LocatorAction =
         | 'uncheck'
         | 'clear'
         | 'focus'
+        | 'blur'
         | 'hover'
         | 'scrollIntoView';
     }
@@ -1114,7 +1116,7 @@ export type LocatorAction =
 /** Every action kind; what an engine declares in `actions`. */
 export type LocatorActionKind = LocatorAction['kind'];
 
-/** The closed list of action kinds, in contract order; the type is derived from it. */
+/** The locator action kinds of SPI v1. List newer kinds explicitly. Use KNOWN_LOCATOR_ACTION_KINDS to check an action kind. */
 export const LOCATOR_ACTION_KINDS = [
   'tap',
   'doubleTap',
@@ -1133,6 +1135,9 @@ export const LOCATOR_ACTION_KINDS = [
   'dragTo',
   'swipe',
 ] as const satisfies readonly LocatorActionKind[];
+
+/** Every action kind understood by this version of core. */
+export const KNOWN_LOCATOR_ACTION_KINDS = [...LOCATOR_ACTION_KINDS, 'blur'] as const satisfies readonly LocatorActionKind[];
 ```
 
 #### ポインター操作
@@ -1970,7 +1975,7 @@ export function stopProviderRecording(
 ): Promise<VideoSegment>;
 ```
 
-#### マスキング
+#### 秘匿
 
 - 動画はマスキングされず、`redaction: 'incomplete'` が付きます。
 - エンジンが添付する `download` は、アプリが返したバイト列です。セッションがシークレットの値を把握している場合、ランナーはテキスト形式（`.txt`、`.csv`、`.json`、`.html`）をシークレットの台帳を通して書き換え、`complete` を付けます。
@@ -2169,7 +2174,7 @@ return context.fixture('printer', printer, { print: { kind: 'resource' } });
 
 ### エクスポートされる名前
 
-`EngineCleanupContext`、`EngineDisposeContext`、`OperationContext`、`TextPattern`、`SemanticQuery`、`LocatorExpression`、`NodeRef`、`SemanticNode`、`ViewportPoint`、`ViewportSize`、`ObservationPixels`、`LocatorAction`、`LocatorActionKind`、`PointerAction`、`PointerActionKind`、`ScrollDirection`、`Momentum`、`SelectOption`、`Key`、`KeyModifier`、`KeyName`、`ParsedKey`、`ENGINE_SPI_VERSION`、`LOCATOR_ACTION_KINDS`、`POINTER_ACTION_KINDS`、`KEY_MODIFIERS`、`KEY_NAMES`、`parseKey`、`ENGINE_ERROR_CODES`、`RETRYABLE_ENGINE_ERROR_CODES`、`Secret`、`isSecret`、`TextMatch`、`JsonValue`、`JsonValueRules`、`ResolveExpressionOptions`、`PollConditionOptions`、`WithoutUndefined`、`FixtureOperation`、`EngineIsolation`、`OBSERVED_NAME_LIMIT`、`OBSERVED_TEXT_LIMIT` は `e2e/engine` からエクスポートされます。[エンジンプロトコル](/reference/engine-protocol)の `connectEngine`、`serveEngine`、`describeEngine`、`spawnTransport`、`socketTransport`、`loopbackTransport`、`ENGINE_METHODS`、`ENGINE_PROTOCOL_VERSION` と、それぞれの型も含まれます。
+`EngineCleanupContext`、`EngineDisposeContext`、`OperationContext`、`TextPattern`、`SemanticQuery`、`LocatorExpression`、`NodeRef`、`SemanticNode`、`ViewportPoint`、`ViewportSize`、`ObservationPixels`、`LocatorAction`、`LocatorActionKind`、`PointerAction`、`PointerActionKind`、`ScrollDirection`、`Momentum`、`SelectOption`、`Key`、`KeyModifier`、`KeyName`、`ParsedKey`、`ENGINE_SPI_VERSION`、`LOCATOR_ACTION_KINDS`、`KNOWN_LOCATOR_ACTION_KINDS`、`POINTER_ACTION_KINDS`、`KEY_MODIFIERS`、`KEY_NAMES`、`parseKey`、`ENGINE_ERROR_CODES`、`RETRYABLE_ENGINE_ERROR_CODES`、`Secret`、`isSecret`、`TextMatch`、`JsonValue`、`JsonValueRules`、`ResolveExpressionOptions`、`PollConditionOptions`、`WithoutUndefined`、`FixtureOperation`、`EngineIsolation`、`OBSERVED_NAME_LIMIT`、`OBSERVED_TEXT_LIMIT` は `e2e/engine` からエクスポートされます。[エンジンプロトコル](/reference/engine-protocol)の `connectEngine`、`serveEngine`、`describeEngine`、`spawnTransport`、`socketTransport`、`loopbackTransport`、`ENGINE_METHODS`、`ENGINE_PROTOCOL_VERSION` と、それぞれの型も含まれます。
 
 ### `SemanticNode`
 
@@ -2266,10 +2271,10 @@ export interface SemanticNode {
 | 定数 | 値 | 制限するフィールド |
 | --- | --- | --- |
 | `OBSERVED_NAME_LIMIT` | 256 | `name` |
-| `OBSERVED_TEXT_LIMIT` | 512 | `text` と、エンジンが省略する `value` や `selection` |
+| `OBSERVED_TEXT_LIMIT` | 512 | `text` と、エンジンが切り詰める `value` や `selection` |
 
-- 観測フィールドを省略するエンジンは、上限ちょうどで切ります。上限と同じ長さのフィールドは省略された可能性があります。短いもの、またはエンジンが全体を残した長いものは完全です。
-- 先頭を残し、末尾を切ってください。ランナーは、上限ちょうどのフィールド末尾に残ったシークレットの先頭部分もマスキングします。値全体の一致では見つけられない部分です。
+- 観測フィールドを切り詰めるエンジンは、上限ちょうどで切ります。上限と同じ長さのフィールドは切り詰められた可能性があります。短いもの、またはエンジンが全体を残した長いものは完全です。
+- 先頭を残し、末尾を切ってください。ランナーは、上限ちょうどのフィールド末尾に残ったシークレットの先頭部分も秘匿します。値全体の一致では見つけられない部分です。
 - 単一ノードの読み取りに上限はなく、常に完全な値を返します。
 
 ### 検索

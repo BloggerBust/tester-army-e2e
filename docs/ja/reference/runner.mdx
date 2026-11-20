@@ -89,7 +89,7 @@ process.exitCode = result.exitCode;
 
 - テストファイルがインポートするヘルパーモジュールは、同じプロセスでの `run` 呼び出し間でキャッシュに残ります。変更を反映するには新しいプロセスが必要です。
 - レポートを返す実行ごとに、匿名の [`e2e_run_completed`](/telemetry) イベントを 1 回送ります。CLI と同じ方法でオプトアウトできます。最初の呼び出しでは、stderr にテレメトリーの通知を表示することがあります。
-- スイートの出力には UTF-8 テキストの秘匿処理を適用するため、バイナリデータは維持しません。アプリケーションのログや進捗コールバックの出力は、呼び出し側で管理します。
+- スイートの出力には UTF-8 テキストの秘匿を適用するため、バイナリデータは維持しません。アプリケーションのログや進捗コールバックの出力は、呼び出し側で管理します。
 
 #### `explore`
 
@@ -148,7 +148,7 @@ console.log(result.status, result.explore.ended, result.explore.findings.length)
 
 | フィールド | 意味 |
 | --- | --- |
-| `explore.goal`, `explore.budgets` | シークレットの値を秘匿した目標と、実行時のステップ数・時間の予算です。 |
+| `explore.goal`, `explore.budgets` | シークレットの値を秘匿したゴールと、実行時のステップ数・時間の予算です。 |
 | `explore.ended` | 探索の終了理由です。`finished`、`skipped`（`changedSince` 指定時に、変更にはユーザーから見える影響がないとプランナーが判断した場合。実行は成功します）、`step-limit`、`time`、`stuck`、`aborted` のいずれかです。 |
 | `explore.summary` | エージェントが最後の評価を示した場合、その内容です。 |
 | `explore.change` | `changedSince` 指定時に計画の基にした変更です。`base` はマージベース、`files` は変更ファイル数です。 |
@@ -306,7 +306,7 @@ await session.fixtures.app.open('/checkout');
 | `TARGET_REQUIRED` | 設定に複数のターゲットがあり、`target` を指定していない場合。 |
 | `RUNNER_BUSY` | スイートが実行中の場合。ホストを開く前に await してください。 |
 
-オープンの失敗は、分類・秘匿処理済みのエラーです。エンジン由来の生の原因は公開しません。[`isE2EError`](#ise2eerror) と `error.code` で判別してください。
+オープンの失敗は、分類済みで機密情報を秘匿したエラーです。エンジン由来の生の原因は公開しません。[`isE2EError`](#ise2eerror) と `error.code` で判別してください。
 
 #### `isE2EError`
 
@@ -434,7 +434,7 @@ if (failures.length > 0) throw new AggregateError(failures, 'e2e session close f
 
 #### 成果物
 
-成果物は `<output>/results/host/<resultSegment>/` に置きます。クローズ時に、e2e はレポートと同じ秘匿済みの形式で、そこに `trace.md` を書き込みます。
+成果物は `<output>/results/host/<resultSegment>/` に置きます。クローズ時に、e2e はレポートと同じ秘匿処理を適用した形式で、そこに `trace.md` を書き込みます。
 
 - e2e は名前と試行固有の識別情報から、安全な `resultSegment` を生成します。名前をそのままパス要素にすることはありません。
 - 同じ名前やリトライには、それぞれ別のディレクトリを使います。

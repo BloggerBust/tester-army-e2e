@@ -78,6 +78,11 @@ elsewhere as one the agent may follow there, with the secrets the step was
 given. If a threat model ever calls for an origin allowlist again, it comes
 back as an opt-in.
 
+On macOS and Windows a locally launched Chromium runs with its OS sandbox on,
+which helps contain a renderer exploit on a page the agent reaches. On Linux,
+where root and most containers cannot start it, `web({ chromiumSandbox: true })`
+turns it on.
+
 Child frames off the site of the target's `url`, its registrable domain, are
 dropped from observations. The browser engine's `headers` and `basicAuth`
 are scoped tighter, to the exact origin of `url` plus the origins

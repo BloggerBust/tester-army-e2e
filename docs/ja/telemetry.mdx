@@ -59,7 +59,7 @@ CLI は、実際のペイロードを `[telemetry] {...}` として標準エラ�
 
 コマンド、`run()`、`explore()` の終了時に、イベントをひとつのリクエストにまとめ、2 秒の期限で送信します。`e2e mcp` はセッションイベントごとに別のリクエストを送り、`e2e run --watch` は各実行の終了時にそのイベントを送ります。
 
-イベントに含まれるのは、以下のプロパティだけです。大文字のトークンでないエラーコードは `OTHER` として送ります。エンジン、プラットフォーム、モデル、フリート、MCP クライアントの名前と、MCP クライアントのバージョンは、英字、数字、ドット、ハイフン、アンダースコアだけのトークンでなければ `other` として送ります。semver でないエンジンバージョンは `unversioned` として送ります。操作数とツール呼び出し数では、プロジェクト独自のツールをまとめて `tool`、その他の未知の名前を `other` として数えます。
+イベントに含まれるのは、以下のプロパティだけです。大文字のトークンでないエラーコードは `OTHER` として送ります。エンジン、プラットフォーム、モデル、フリート、MCP クライアントの名前と、MCP クライアントのバージョンは、英字、数字、ドット、ハイフン、アンダースコアだけのトークンでなければ `other` として送ります。semver でないエンジンバージョンは `unversioned` として送ります。操作数とツール呼び出し数では、プロジェクトツールをまとめて `tool`、その他の未知の名前を `other` として数えます。
 
 <AccordionGroup>
 <Accordion title="すべてのイベント">
@@ -146,7 +146,7 @@ CLI は、実際のペイロードを `[telemetry] {...}` として標準エラ�
 | プロパティ | 値 |
 | --- | --- |
 | `config_workers`, `config_retries` | 実行時に解決されたワーカー数とリトライ数 |
-| `config_agents`, `config_custom_executor`, `config_separate_judge`, `config_project_tools` | 設定済みエージェント数、独自エグゼキューターまたは専用ジャッジモデルを持つものがあるか、宣言された異なるプロジェクトツールの数 |
+| `config_agents`, `config_custom_executor`, `config_separate_judge`, `config_project_tools` | 設定済みエージェント数、カスタムエグゼキューターまたは専用ジャッジモデルを持つものがあるか、宣言された異なるプロジェクトツールの数 |
 | `config_credentials`, `config_secrets` | 設定済みの認証情報とシークレットの数 |
 | `config_cache_mode`, `config_cache_store`, `config_cache_strict` | `off`、`read-only`、`read-write`; `file`、`custom`; 厳格なリプレイが有効か |
 | `config_reporters`, `config_custom_reporters`, `config_artifact_store` | 組み込みレポーターの ID（`list`、`dot`、`line`、`json`、`junit`、`markdown`）、設定で追加したレポーターオブジェクト数、アーティファクトストアが設定されているか |
@@ -184,7 +184,7 @@ CLI は、実際のペイロードを `[telemetry] {...}` として標準エラ�
 
 ## 送信しない情報
 
-テレメトリーは、テストタイトル、ファイルパス、URL、オリジン、指示、観測内容、ページ内容、スクリーンショット、エラーメッセージ、スタックトレース、環境変数の値、認証情報、ファイル内容を送信しません。ターゲット、エージェント、認証情報、シークレット、プロジェクトツールの名前、MCP ツールの引数や結果、探索の目標やチャーター、検出結果の文章も送信しません。
+テレメトリーは、テストタイトル、ファイルパス、URL、オリジン、指示、観測内容、ページ内容、スクリーンショット、エラーメッセージ、スタックトレース、環境変数の値、認証情報、ファイル内容を送信しません。ターゲット、エージェント、認証情報、シークレット、プロジェクトツールの名前、MCP ツールの引数や結果、探索のゴールやチャーター、検出結果の文章も送信しません。
 
 ## CI 環境
 
@@ -204,9 +204,9 @@ CI では、環境変数でのみテレメトリーを無効にできます。�
 
 ## フィードバック
 
-[`e2e feedback`](/reference/cli#e2e-feedback) はテレメトリーではありません。フラグ内の文章を、上記のマシン情報とともに、ひとつの `e2e_feedback` イベントとして同じ PostHog プロジェクトへ送ります。テレメトリーが有効な場合は、同じ匿名 ID を使います。
+[`e2e feedback`](/reference/cli#e2e-feedback) はテレメトリーではありません。フラグ内の文章を、上記のマシン情報とともに、ひとつの `e2e_feedback` イベントとして同じ PostHog プロジェクトへ送ります。テレメトリーが有効な場合は、テレメトリーのイベントと同じ匿名 ID を使います。
 
-保存済みの `e2e telemetry disable` では停止しません。`E2E_TELEMETRY_DISABLED=1` と `DO_NOT_TRACK=1` では停止します。[CLI リファレンス](/reference/cli#e2e-feedback)で、マスキング、`--dry-run`、`--repro` のないバグ報告について説明しています。
+保存済みの `e2e telemetry disable` では停止しません。`E2E_TELEMETRY_DISABLED=1` と `DO_NOT_TRACK=1` では停止します。[CLI リファレンス](/reference/cli#e2e-feedback)で、秘匿、`--dry-run`、`--repro` のないバグ報告について説明しています。
 
 ## 通知
 

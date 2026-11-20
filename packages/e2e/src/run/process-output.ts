@@ -11,6 +11,7 @@
 import { StreamRedactor, type SecretLedger } from '@e2e-dev/core/lib/internal/redact';
 import { AsyncLocalStorage, AsyncResource } from 'node:async_hooks';
 import { realmSlot } from '@e2e-dev/core/lib/internal/realm-slot';
+import { inHeldTestToolCall } from './worker/held-test-tool-scope.ts';
 
 export type OutputStream = 'stdout' | 'stderr';
 
@@ -55,10 +56,19 @@ function routing(): OutputRouting {
       return state.scope.run(null, () => forward(text, done));
     };
     const dispatch = ((chunk: string | Uint8Array, encoding?: BufferEncoding | (() => void), callback?: () => void): boolean => {
+      const done = typeof encoding === 'function' ? encoding : callback;
+
+      if (inHeldTestToolCall()) {
+        if (done !== undefined) {
+          process.nextTick(done);
+        }
+
+        return true;
+      }
+
       const context = state.scope.getStore();
       const output = context === null ? undefined : context ?? state.process;
       if (output === undefined) return forward(chunk, encoding, callback);
-      const done = typeof encoding === 'function' ? encoding : callback;
       return output.write(name, writtenChunk(chunk, encoding), done);
     }) as typeof process.stdout.write;
     state.dispatchers[name] = dispatch;

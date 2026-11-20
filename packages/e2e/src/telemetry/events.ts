@@ -543,6 +543,7 @@ export function mcpSessionEvent(summary: McpSessionSummary, client: McpClient | 
       platform: summary.platform === undefined ? null : plainToken(summary.platform),
       engine: summary.engine === undefined ? null : engineLabel(summary.engine),
       headed: summary.headed,
+      attached: summary.attached,
       duration_ms: Math.max(0, Math.round(summary.durationMs)),
       sessions_open: summary.concurrent,
       calls_total: [...calls.values()].reduce((total, count) => total + count, 0),

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { SemanticNode } from '@e2e-dev/core/lib/engine/surface';
 import { SecretLedger } from '@e2e-dev/core/lib/internal/redact';
-import { describeLocate, locateQuery } from '../../src/mcp/catalog.ts';
+import { describeLocate, locateQuery } from '../../src/session-tools/catalog.ts';
 
 function node(role: string, name: string, extra: Partial<SemanticNode> = {}): SemanticNode {
   return { ref: { id: 'l1', revision: 'l1' }, role, name, ...extra };

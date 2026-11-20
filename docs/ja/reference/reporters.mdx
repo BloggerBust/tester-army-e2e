@@ -42,7 +42,7 @@ export default {
 | `INVALID_CONFIG` | `reporters` が配列でない場合。 |
 | `INVALID_CONFIG` | `list`、`dot`、`line`、`json`、`junit`、`markdown` 以外の ID を指定した場合。 |
 | `INVALID_CONFIG` | `junit()` の代わりに `junit` と書くなど、ファクトリーを呼び出していない場合。 |
-| `INVALID_CONFIG` | エントリが ID でも、`name` と 1 つ以上のフックを持つオブジェクトでもない場合。 |
+| `INVALID_CONFIG` | エントリーが ID でも、`name` と 1 つ以上のフックを持つオブジェクトでもない場合。 |
 | `INVALID_CONFIG` | `list` と `dot` のように、2 つのレポーターが同じストリームに[出力する](#printsto)場合。 |
 
 #### `list`
@@ -262,7 +262,7 @@ name: 'upload',
 printsTo: 'stdout',
 ```
 
-- フックは `process.stdout` または `process.stderr` に直接書き込みます。ランナーはこの出力をリダクションしないため、イベントとレポートの内容だけを出力してください。これらはリダクション済みです。
+- フックは `process.stdout` または `process.stderr` に直接書き込みます。ランナーはこの出力を秘匿しないため、イベントとレポートの内容だけを出力してください。これらは秘匿済みです。
 - `json` のように、stdout に出力するレポーターが [`onOutput`](#onoutput) を持たない場合、ランナー自身の出力は stderr に移り、stdout にはそのレポーターの出力だけが残ります。
 - `--step` には、stdout に出力するレポーターが `list` のように [`onStepPrompt`](#onstepprompt) を持つ必要があります。
 - 2 回目の Ctrl-C でも、その `onRunFinished` は止まりません。出力がローカルだからです。
@@ -291,7 +291,7 @@ onEvent(event) {
 
 #### `onOutput`
 
-コードが出力した内容を、出力した時点でリダクションして受け取ります。テストの出力と、実行中にランナープロセスが出力する内容（読み込み中のテストファイル、テストフィルター、他のレポーター）です。
+コードが出力した内容を、出力した時点で秘匿して受け取ります。テストの出力と、実行中にランナープロセスが出力する内容（読み込み中のテストファイル、テストフィルター、他のレポーター）です。
 
 ```ts
 onOutput({ stream, text, target, pair }) {
@@ -378,7 +378,7 @@ type ReporterSummary = readonly { label: string; text: string }[];
 - すべてのレポーターを並行して実行し、それぞれに 1 分の期限を設けます。
 - タイムアウト、例外、不正な戻り値は stderr に報告します。実行の状態、終了コード、レポートは変わりません。
 - Ctrl-C が 1 回ならレポーターの完了を待ちます。2 回目の Ctrl-C で待機をやめますが、[`printsTo`](#printsto) を設定したレポーターは例外です。
-- 予算を使い切るか、実行を強制停止すると `signal` が中止状態になります。
+- 期限が切れるか、実行を強制停止すると `signal` が中止状態になります。
 - ランナーは `onRunFinished` を呼ぶ前に、トレースページ `results/<test>/trace.md` を書き込みます。
 
 <Note>
@@ -402,7 +402,7 @@ type ReporterSummary = readonly { label: string; text: string }[];
 ##### 成果物
 
 - レポート内の成果物パスは、`artifactsRoot` 相対の POSIX パスです。
-- `path`、`size`、`sha256` は省略可能です。ファイルが生成されなかった成果物や、秘匿処理によって非公開になった成果物は、これらを付けずに記録します。読み取る前に `path` を確認してください。
+- `path`、`size`、`sha256` は省略可能です。ファイルが生成されなかった成果物や、秘匿によって非公開になった成果物は、これらを付けずに記録します。読み取る前に `path` を確認してください。
 - ホスト型サービスが保存する動画は、`path` の代わりに `http(s)` の `url` を持ちます。
 
 ##### `--last-failed` での再実行
@@ -550,7 +550,7 @@ bunx e2e run --reporter list,junit
 
 ## 型
 
-`Reporter`、`FinishedRun`、`ReportFile`、`ReporterOutput`、`ReporterSummary`、`StepPrompt`、`Report`、`RunEvent`、`RunEventOf` はメインエントリポイントからエクスポートします。`renderMarkdownReport(report, options)` も同様です。`e2e/reporters` は `list`、`dot`、`line`、`json`、`junit`、`markdown` を、`ListReporterOptions`、`DotReporterOptions`、`LineReporterOptions`、`JunitReporterOptions`、`MarkdownReporterOptions` とともにエクスポートします。
+`Reporter`、`FinishedRun`、`ReportFile`、`ReporterOutput`、`ReporterSummary`、`StepPrompt`、`Report`、`RunEvent`、`RunEventOf` はメインエントリーポイントからエクスポートします。`renderMarkdownReport(report, options)` も同様です。`e2e/reporters` は `list`、`dot`、`line`、`json`、`junit`、`markdown` を、`ListReporterOptions`、`DotReporterOptions`、`LineReporterOptions`、`JunitReporterOptions`、`MarkdownReporterOptions` とともにエクスポートします。
 
 ## 関連情報
 

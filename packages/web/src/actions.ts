@@ -317,6 +317,23 @@ export async function dispatchLocatorAction(
       if (target.kind === 'locator') await target.locator.focus({ timeout });
       else await target.element.focus();
       return;
+    case 'blur':
+      if (target.kind === 'locator') await target.locator.blur({ timeout });
+      else {
+        const attached = await target.element.evaluate((node) => {
+          const view = node.ownerDocument.defaultView;
+          if (!node.isConnected || view === null) return false;
+          // Bypass instance overrides. Prototype overrides still apply in the page world.
+          if (node instanceof view.HTMLElement) view.HTMLElement.prototype.blur.call(node);
+          else if (node instanceof view.SVGElement) view.SVGElement.prototype.blur.call(node);
+          else if (typeof view.MathMLElement === 'function' && node instanceof view.MathMLElement) {
+            view.MathMLElement.prototype.blur.call(node);
+          }
+          return true;
+        });
+        if (!attached) throw new EngineError('NODE_STALE', 'element is detached', { retryable: true });
+      }
+      return;
     case 'hover':
       await locator.hover({ timeout });
       return;

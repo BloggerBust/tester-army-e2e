@@ -136,6 +136,19 @@ export interface Device {
    */
   installApp(appPath?: string, options?: InstallAppOptions): Promise<InstalledApp>;
   /**
+   * Removes an app, by bundle id or package, from the device; without one,
+   * the pinned app. Resolves to whether it was installed, so removing an app
+   * id that is not there passes. Without `app.bundleId` on the target,
+   * removing the build `installApp` pinned unpins it: `app.open()` then
+   * needs another install.
+   */
+  uninstallApp(app?: string): Promise<boolean>;
+  /**
+   * Whether an app, by bundle id or package, is on the device, system apps
+   * included (Android: launchable apps only); without one, the pinned app.
+   */
+  isAppInstalled(app?: string): Promise<boolean>;
+  /**
    * Brings an app to the foreground; `relaunch` restarts it fresh.
    * `launchArguments` and `permissions` apply to this launch alone; the
    * target's `app.launchArguments` and `app.permissions` apply to a
@@ -305,6 +318,12 @@ export function createDeviceFixture(surface: AgentDeviceSurface, context: Engine
     async installApp(appPath, options) {
       return surface.installApp(appPath, options ?? {}, context.signal);
     },
+    async uninstallApp(app) {
+      return surface.uninstallApp(app, context.signal);
+    },
+    async isAppInstalled(app) {
+      return surface.isAppInstalled(app, context.signal);
+    },
     async openApp(app, options) {
       await surface.openApp(app, options ?? {}, context.signal);
     },
@@ -362,6 +381,8 @@ export function createDeviceFixture(surface: AgentDeviceSurface, context: Engine
     setBiometrics: action,
     enrollBiometrics: action,
     installApp: { ...action, label: (appPath) => appPath ?? surface.appPath ?? 'appPath' },
+    uninstallApp: { ...action, label: (app) => appLabel(app ?? surface.pinnedApp ?? 'app') },
+    isAppInstalled: { ...action, label: (app) => appLabel(app ?? surface.pinnedApp ?? 'app') },
     openApp: { ...action, label: (app) => appLabel(app) },
     openLink: { ...action, label: (url) => linkLabel(url) },
     closeApp: action,

@@ -6,15 +6,16 @@
  * keys and runs on `{}`.
  */
 
-import type { ToolSet } from 'ai';
+import type { ModelMessage, ToolSet } from 'ai';
 import { z } from 'zod';
 import { beforeAll, describe, expect, it, vi } from 'vitest';
 import { aiSdk, loadAiSdk } from '@e2e-dev/core/lib/agent/ai-sdk';
 import { AgentError } from '@e2e-dev/core/lib/agent/error';
-import { isFailedResult } from '@e2e-dev/core/lib/agent/loop-guards';
+import { isFailedResult, waitingToolNames } from '@e2e-dev/core/lib/agent/loop-guards';
 import { GRAMMAR_TOOL_NAMES } from '@e2e-dev/core/lib/agent/action-names';
 import { createGrammarTools, createVerdictTool, grammarTools } from '@e2e-dev/core/lib/agent/primitives';
 import { createBuiltInAgent, projectTools } from '@e2e-dev/core/lib/agent/default-agent';
+import { createToolLoopExecutor } from '@e2e-dev/core/lib/agent/tool-loop';
 import { defineTool } from '@e2e-dev/core/lib/agent/tool';
 import { fakeExecutorContext } from '../helpers/fake-executor-context.ts';
 import { installFakeLoopModel, loopCalls } from '../helpers/fake-loop-model.ts';
@@ -311,5 +312,229 @@ describe('type_secret leaves the act tool set the same across steps', () => {
     expect(loopCalls[1]!.toolNames).toEqual(loopCalls[0]!.toolNames);
     expect(loopCalls[0]!.prompt).not.toContain('Secrets to fill');
     expect(loopCalls[1]!.prompt).toContain('Secrets to fill with type_secret, by name: "admin" (password).');
+  });
+});
+
+describe('observe matches the act rules on checking a commit', () => {
+  it('allows observe to check any press that commits something, not only a save or submit', () => {
+    const { context } = fakeExecutorContext();
+    const description = grammarTools(context, { secretsListedByCaller: true })['observe']?.description;
+    expect(description).toContain('or to check whether a press that commits something (a save, a submit, a delete) went through');
+    expect(description).toContain("never to re-read another action's result");
+  });
+});
+
+describe('the loop guard waits longer on the built-in observe only', () => {
+  beforeAll(() => loadAiSdk());
+
+  /** A model that observes until the loop forces a verdict, and how many times it observed. */
+  const observeUntilForced = () => {
+    let observed = 0;
+    const model = installFakeLoopModel((call) => {
+      if (call.toolNames.length === 1 && call.toolNames[0] === 'complete_step') {
+        return [{ toolName: 'complete_step', input: { status: 'failed', summary: 'still saving' } }];
+      }
+      observed += 1;
+      return [{ toolName: 'observe', input: {} }];
+    });
+    return { model, observed: () => observed };
+  };
+
+  it('marks observe and the plain screenshot as waiting tools, and not the screenshot that saves a file', () => {
+    const { context } = fakeExecutorContext({ secrets: [] });
+    expect([...waitingToolNames(grammarTools(context, {}))].toSorted()).toEqual(['observe', 'screenshot']);
+    expect([...waitingToolNames(createGrammarTools(context))].toSorted()).toEqual(['observe', 'screenshot']);
+    expect([...waitingToolNames(grammarTools(context, { saveScreenshot: async (file) => file }))]).toEqual(['observe']);
+  });
+
+  it('lets the built-in act loop observe ten times while a save stays in progress', async () => {
+    const { context } = fakeExecutorContext({ secrets: [] });
+    const observe = async () => ({ revision: '1', text: '#n1 button "Saving" [disabled]', truncated: false, viewport: { width: 800, height: 600 } });
+    const { model, observed } = observeUntilForced();
+    await expect(createBuiltInAgent().runStep({ ...context, model, observe })).resolves.toMatchObject({ status: 'failed' });
+    expect(observed()).toBe(10);
+    const warned = loopCalls.find((call) => call.lastPrompt.includes('the screen was looked at several times in a row with no change'));
+    expect(warned?.lastPrompt).toContain('Observe again only while the screen still shows the work in progress');
+    expect(warned?.lastPrompt).toContain('once it is done, do what the step still asks for, then call complete_step');
+    expect(warned?.lastPrompt).not.toContain('going in circles');
+  });
+
+  it('gives each notice of a wait once, however the wait alternates between ticking and standing still', async () => {
+    const { context } = fakeExecutorContext({ secrets: [] });
+    let looks = 0;
+    const observe = async () => {
+      looks += 1;
+      // Observes 1-12 tick, 13-18 stand still on the last tick, 19 on tick again until the guard ends the wait at twenty.
+      const call = looks - 1;
+      const second = call <= 12 || call >= 19 ? call : 12;
+      return { revision: String(looks), text: `#n1 text "Saving ${String(second)}s"`, truncated: false, viewport: { width: 800, height: 600 } };
+    };
+    const model = installFakeLoopModel((call) => {
+      if (call.toolNames.length === 1) return [{ toolName: 'complete_step', input: { status: 'failed', summary: 'forced' } }];
+      return [{ toolName: 'observe', input: {} }];
+    });
+    await createBuiltInAgent().runStep({ ...context, model, observe });
+    const added = (notice: string) =>
+      loopCalls.filter((call, index) => index > 0 && call.userMessages > loopCalls[index - 1]!.userMessages && call.lastPrompt.includes(notice)).length;
+    expect(added('looked at many times in a row while it kept changing')).toBe(1);
+    expect(added('looked at several times in a row with no change')).toBe(1);
+  });
+
+  it('keeps a recovered listing as progress after compaction elides it from the history the model reads', async () => {
+    const { context } = fakeExecutorContext({ secrets: [] });
+    const big = Array.from({ length: 900 }, (_, index) => `#n${String(index + 10)} text "row ${String(index)} ${'x'.repeat(40)}"`).join('\n');
+    let looks = 0;
+    const observe = async () => {
+      looks += 1;
+      // Opening look, then: no tree, no tree, the listing back (large) on the third observe, no tree after it.
+      if (looks === 4) return { revision: String(looks), text: big, truncated: false, viewport: { width: 800, height: 600 } };
+      if (looks === 1) return { revision: '1', text: '#n1 button "Saving" [disabled]', truncated: false, viewport: { width: 800, height: 600 } };
+      return { revision: String(looks), text: '[semantic capture unavailable]', truncated: true, treeUnavailable: true as const, viewport: { width: 800, height: 600 } };
+    };
+    let observed = 0;
+    const model = installFakeLoopModel((call) => {
+      if (call.toolNames.length === 1) return [{ toolName: 'complete_step', input: { status: 'failed', summary: 'forced' } }];
+      observed += 1;
+      return [{ toolName: 'observe', input: {} }];
+    });
+    await createBuiltInAgent().runStep({ ...context, model, observe });
+    // The third observe saw the listing come back, so ten unchanged looks are counted from the fourth: thirteen in all.
+    expect(observed).toBe(13);
+  });
+
+  it('warns each wait in a step, not only the first', async () => {
+    const { context } = fakeExecutorContext({ secrets: [] });
+    let looks = 0;
+    const observe = async () => {
+      looks += 1;
+      // The opening look and six observes show the first save in progress; then it is done, and the second save never ends.
+      const text = looks <= 7 ? '#n1 button "Saving" [disabled]' : looks === 8 ? '#n1 button "Saved"\n#n2 button "Send"' : '#n2 button "Sending" [disabled]';
+      return { revision: String(looks), text, truncated: false, viewport: { width: 800, height: 600 } };
+    };
+    let sent = false;
+    const model = installFakeLoopModel((call) => {
+      if (call.toolNames.length === 1) return [{ toolName: 'complete_step', input: { status: 'failed', summary: 'forced' } }];
+      if (!sent && call.lastToolResult.includes('"Send"')) {
+        sent = true;
+        return [{ toolName: 'tap', input: { target: 'n2' } }];
+      }
+      return [{ toolName: 'observe', input: {} }];
+    });
+    await createBuiltInAgent().runStep({ ...context, model, observe });
+    const notice = 'the screen was looked at several times in a row with no change';
+    // A notice joins the history as a new user message, so count the turns that added one.
+    const warned = loopCalls.filter((call, index) => index > 0 && call.userMessages > loopCalls[index - 1]!.userMessages && call.lastPrompt.includes(notice));
+    // One warning per wait: the second wait, after the tap, is warned again.
+    expect(sent).toBe(true);
+    expect(warned).toHaveLength(2);
+  });
+
+  it('lets the act loop go on to the step\'s next action when the tenth observe shows the save finished', async () => {
+    const { context } = fakeExecutorContext({ secrets: [] });
+    let looks = 0;
+    const observe = async () => {
+      looks += 1;
+      // The opening look and nine observes show the save in progress; the tenth observe shows it done.
+      const done = looks > 10;
+      return { revision: String(looks), text: done ? '#n1 button "Saved"\n#n2 link "Product list"' : '#n1 button "Saving" [disabled]', truncated: false, viewport: { width: 800, height: 600 } };
+    };
+    const tools: string[] = [];
+    const model = installFakeLoopModel((call) => {
+      if (call.toolNames.length === 1) return [{ toolName: 'complete_step', input: { status: 'failed', summary: 'forced' } }];
+      // The loop let the tap through: that is all this test asks, whatever the fake engine does with it.
+      if (tools.at(-1) === 'tap') return [{ toolName: 'complete_step', input: { status: 'passed', summary: 'saved, then opened the list' } }];
+      if (call.lastToolResult.includes('"Product list"')) {
+        tools.push('tap');
+        return [{ toolName: 'tap', input: { target: 'n2' } }];
+      }
+      tools.push('observe');
+      return [{ toolName: 'observe', input: {} }];
+    });
+    await expect(createBuiltInAgent().runStep({ ...context, model, observe })).resolves.toMatchObject({ status: 'passed' });
+    expect(tools).toEqual([...Array.from({ length: 10 }, () => 'observe'), 'tap']);
+  });
+
+  it('keeps the ordinary limit for a caller\'s own tool named observe, which may write', async () => {
+    const { context } = fakeExecutorContext({ secrets: [] });
+    const writes: string[] = [];
+    const executor = createToolLoopExecutor({
+      name: 'custom',
+      system: 'Record observations.',
+      buildPrompt: () => 'go',
+      tools: () => ({
+        observe: { description: 'Records an observation.', inputSchema: aiSdk().zodSchema(z.object({})), execute: async () => { writes.push('row'); return 'recorded'; } },
+      }) as ToolSet,
+    });
+    const { model, observed } = observeUntilForced();
+    await expect(executor.runStep({ ...context, model })).resolves.toMatchObject({ status: 'failed' });
+    expect(observed()).toBe(5);
+    expect(writes).toHaveLength(5);
+  });
+
+  it('counts only the calls an executor keeps in the history it sends, not the ones its prepareMessages summarized away', async () => {
+    const { context } = fakeExecutorContext({ secrets: [] });
+    let rows = 5;
+    // The executor carries the five rows read in earlier steps into its prompt, then summarizes them away before the model reads it.
+    const carried = Array.from({ length: 5 }, (_, index): ModelMessage[] => [
+      { role: 'assistant', content: [{ type: 'tool-call', toolCallId: `old${String(index)}`, toolName: 'read_row', input: {} }] },
+      { role: 'tool', content: [{ type: 'tool-result', toolCallId: `old${String(index)}`, toolName: 'read_row', output: { type: 'text', value: `row ${String(index + 1)}` } }] },
+    ]).flat();
+    const executor = createToolLoopExecutor({
+      name: 'custom',
+      system: 'Read the next row.',
+      buildPrompt: () => [{ role: 'user', content: 'Rows so far:' }, ...carried, { role: 'user', content: 'Read the next row.' }],
+      tools: () => ({
+        read_row: { description: 'Reads the next row.', inputSchema: aiSdk().zodSchema(z.object({})), execute: async () => `row ${String((rows += 1))}` },
+      }) as ToolSet,
+      prepareMessages: (messages) => messages.filter((message) => message.role === 'user' || !carried.includes(message)),
+    });
+    const model = installFakeLoopModel((call) => {
+      if (call.toolNames.length === 1 || rows >= 6) return [{ toolName: 'complete_step', input: { status: 'passed', summary: `read ${String(rows)} rows` } }];
+      return [{ toolName: 'read_row', input: {} }];
+    });
+    await expect(executor.runStep({ ...context, model })).resolves.toMatchObject({ status: 'passed' });
+    // The step read its row: the summarized calls did not force a verdict before its first turn.
+    expect(rows).toBe(6);
+  });
+
+  it('keeps the ordinary limit when the caller replaces the built-in handler after the tools are built', async () => {
+    const { context } = fakeExecutorContext({ secrets: [] });
+    const writes: string[] = [];
+    let offered: ToolSet | undefined;
+    const executor = createToolLoopExecutor({
+      name: 'custom',
+      system: 'Record observations.',
+      tools: (ctx) => {
+        offered = { observe: createGrammarTools(ctx)['observe']! };
+        return offered;
+      },
+      buildPrompt: () => {
+        offered!['observe']!.execute = async () => { writes.push('row'); return 'recorded'; };
+        return 'go';
+      },
+    });
+    const { model, observed } = observeUntilForced();
+    await expect(executor.runStep({ ...context, model })).resolves.toMatchObject({ status: 'failed' });
+    expect(observed()).toBe(5);
+    expect(writes).toHaveLength(5);
+  });
+
+  it('keeps the ordinary limit when a caller reuses the built-in observe with a handler of its own', async () => {
+    const { context } = fakeExecutorContext({ secrets: [] });
+    const writes: string[] = [];
+    const executor = createToolLoopExecutor({
+      name: 'custom',
+      system: 'Record observations.',
+      buildPrompt: () => 'go',
+      tools: (ctx) => {
+        const builtIn = createGrammarTools(ctx)['observe']!;
+        builtIn.execute = async () => { writes.push('row'); return 'recorded'; };
+        return { observe: builtIn };
+      },
+    });
+    const { model, observed } = observeUntilForced();
+    await expect(executor.runStep({ ...context, model })).resolves.toMatchObject({ status: 'failed' });
+    expect(observed()).toBe(5);
+    expect(writes).toHaveLength(5);
   });
 });

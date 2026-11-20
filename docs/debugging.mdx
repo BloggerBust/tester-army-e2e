@@ -256,7 +256,7 @@ The held step shows under its test, below the steps that already ran:
 
 ```text
  ❯ |web| tests/checkout.e2e.ts 0/1
-   └── pays with a card paused
+   └── pays with a card (k3f9)
        ✓ app.open "/checkout" 412ms
        ▶ step 2  locator.fill "getByLabel("Email")"  tests/checkout.e2e.ts:9
          press enter to run this step, press h to show help, press q to quit
@@ -319,7 +319,7 @@ bunx e2e run --step next
 
 ```text
 ✓ app.open "/checkout" 124ms
-Paused before step 2 of pays with a card [web]:
+Paused (k3f9) before step 2 of pays with a card [web]:
   locator.fill "getByLabel("Email")" (tests/checkout.e2e.ts:9)
 Screen:
   http://localhost:3000/checkout
@@ -389,7 +389,7 @@ In a terminal, the pause is shown under its test:
 
 ```text
  ❯ |web| tests/checkout.e2e.ts 0/1
-   └── pays with a card paused
+   └── pays with a card (k3f9)
        ▶ paused  screen.pause()  tests/checkout.e2e.ts:5
          press enter to resume, press h to show help, press q to quit
 ```
@@ -401,7 +401,7 @@ Without a terminal, as in a coding agent's shell, the pause is printed with
 the screen it waits on:
 
 ```text
-Paused in pays with a card [web]:
+Paused (k3f9) in pays with a card [web]:
   screen.pause() (tests/checkout.e2e.ts:5)
 Screen:
   http://localhost:3000/checkout
@@ -411,9 +411,12 @@ Next: e2e run --step next to resume the test, or e2e run --step stop to end the 
 
 To resume the test, run `e2e run --step next` from another shell in the
 same directory. To end the run with exit 130, run `e2e run --step stop`. You
-can run these commands whether or not the run has a terminal. The one
-exception is a `--step` run in a terminal, where you use its keys. You can
-also use `rest` in place of `next`.
+can use these commands with or without a terminal. At this pause, you can
+send `rest` in place of `next`.
+
+To [attach over MCP](/reference/mcp#attaching-to-a-held-test) from the same
+directory, pass the ID from the pause header, as in
+`open_session {attach: "k3f9"}`.
 
 You get an answer once the test is paused again or the run ends. At the
 end, you get `The run has ended.` and the run's exit code. See

@@ -21,7 +21,7 @@ import {
 } from '../internal/errors.ts';
 import { requireKey } from '../internal/keys.ts';
 import { describeExpression, expressionHints, filterSpine } from './expression.ts';
-import { abortError, cancelledError, Deadline, POLL_INTERVAL_MS, pollDelay, ReadWindow, sleep, stepTimeout } from '../internal/time.ts';
+import { abortError, cancelledError, Deadline, POLL_INTERVAL_MS, pollDelay, ReadWindow, sleep, StepDeadline, stepTimeout } from '../internal/time.ts';
 import { timestamp } from '../internal/ids.ts';
 import { obj } from '../internal/objects.ts';
 import { targetLabel } from '../cache/trace.ts';
@@ -73,7 +73,7 @@ const STEP_COUNT_BUDGET_MS = 500;
 interface LocatorEngineOptions {
   readonly session: TargetSession;
   /** The running phase's signal and deadline, read per operation. */
-  readonly budget: AttemptBudget;
+  readonly budget: Pick<AttemptBudget, 'signal' | 'deadline'>;
   readonly runId: string;
   readonly attemptId: string;
   readonly actionTimeout: number;
@@ -163,13 +163,13 @@ export class LocatorEngine {
    * capped by the running phase's deadline. 0 sets no deadline of its own,
    * so the phase's alone bounds it.
    */
-  deadline(timeoutMs?: number): Deadline {
+  deadline(timeoutMs?: number): StepDeadline {
     return this.capped(stepTimeout(timeoutMs, 'the step'));
   }
 
   /** A deadline `timeoutMs` (default the action timeout) from now, capped by the running phase's deadline. */
-  private capped(timeoutMs: number | undefined): Deadline {
-    return Deadline.min(new Deadline(timeoutMs ?? this.options.actionTimeout), this.options.budget.deadline);
+  private capped(timeoutMs: number | undefined): StepDeadline {
+    return new StepDeadline(timeoutMs ?? this.options.actionTimeout, this.options.budget.deadline);
   }
 
   /** An operation context bounded by a deadline a caller shares across steps, such as the swipes of one scroll. */
@@ -279,8 +279,10 @@ export class LocatorEngine {
     // budget waited less than the action timeout, and the report says so.
     const notFound = async (cause?: unknown) => {
       // The wait as it happened, read before the diagnostic pass runs: the
-      // prefix resolves below are not part of the locator's wait.
-      const waitedMs = Date.now() - startedMs;
+      // prefix resolves below are not part of the locator's wait. A step's
+      // deadline counts it from the step's start; a deadline borrowed from
+      // elsewhere, such as an assertion's, has only this resolve's.
+      const waitedMs = deadline instanceof StepDeadline ? deadline.elapsed() : Date.now() - startedMs;
       const lines = await this.candidateCounts(expression);
       return new TestError('LOCATOR_NOT_FOUND', `locator matched no nodes within ${describeExpression(expression)}${lines}`, {
         details: locatorDetails(expression, waitedMs),
@@ -515,13 +517,12 @@ const ref = await this.singleOf(await this.resolveOnce(expression, reads, missin
   ): Promise<void> {
     this.checkPointerAction(action);
     const deadline = this.deadline(timeoutMs);
-    const startedMs = Date.now();
     if (this.session.actions.has('scrollIntoView')) {
       await this.performUntil(expression, { kind: 'scrollIntoView' }, deadline);
     }
     const notVisible = (cause?: unknown) =>
       new TestError('LOCATOR_NOT_FOUND', `locator did not become visible with a box to act within: ${describeExpression(expression)}`, {
-        details: locatorDetails(expression, Date.now() - startedMs),
+        details: locatorDetails(expression, deadline.elapsed()),
         ...(cause === undefined ? {} : { cause }),
       });
     const reads = this.reads(deadline);

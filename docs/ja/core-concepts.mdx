@@ -103,13 +103,13 @@ await agent.act('sign up with email {email}', { params: { email: unique(email) }
 
 ## アサーション
 
-アサーションは画面を判定します。モデルには、判定する文、現在の画面のマスキング済みテキストスナップショット、
-その場所、エージェントのコンテキストが渡されます。
+アサーションは画面を判定します。モデルには、判定する文、機密情報を秘匿した現在の画面のテキストスナップショット、
+ロケーション、エージェントのコンテキストが渡されます。
 それ以前のステップや `act` の要約は渡されません。
 
 - `agent.assert` は現在の画面を調べます。文が偽なら `ASSERTION_FAILED` で失敗します。
   根拠が不十分なら `ASSERTION_INCONCLUSIVE` で失敗します。
-- `agent.waitFor` は条件が真になるまで待ちます。画面またはその場所が変わった場合にだけモデルを呼び出します。
+- `agent.waitFor` は条件が真になるまで待ちます。画面またはロケーションが変わった場合にだけモデルを呼び出します。
 - `agent.extract` は、Zod などの [Standard Schema](https://standardschema.dev) の型に沿って
   画面からデータを読み取ります。
 

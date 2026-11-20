@@ -15,7 +15,6 @@ import { line } from './line.ts';
 import { list } from './list.ts';
 import { markdown } from './markdown.ts';
 
-/** The ids as prose: `list, dot, line, json, junit, and markdown`. */
 export const BUILTIN_REPORTER_LIST = `${BUILTIN_REPORTERS.slice(0, -1).join(', ')}, and ${BUILTIN_REPORTERS.at(-1)}`;
 
 type Stream = 'stdout' | 'stderr';
@@ -29,7 +28,6 @@ const FACTORIES: Record<BuiltinReporter, (stream: Stream) => Reporter> = {
   markdown: () => markdown(),
 };
 
-/** The built-in `id` with its default options; the terminal views print to `stream`. */
 export function builtinReporter(id: BuiltinReporter, stream: Stream = 'stdout'): Reporter {
   return FACTORIES[id](stream);
 }

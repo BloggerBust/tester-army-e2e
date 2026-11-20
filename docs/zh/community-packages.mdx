@@ -5,7 +5,7 @@ description: 查找扩展 e2e 的第三方包，并提交集成。
 
 社区包通过工具、引擎和报告器扩展 e2e。它们由各自的维护者维护并提供支持，而非 e2e 核心团队。收录不代表认可。
 
-请查看各包的文档，了解支持的 e2e 版本和配置要求。下方版本记录的是 2026 年 11 月 12 日核查的已发布包，并非 e2e 团队的兼容性测试结果。
+请查看各包的文档，了解支持的 e2e 版本和配置要求。下方版本记录的是添加每个条目时核查的已发布包，并非 e2e 团队的兼容性测试结果。
 
 ## 查找包
 
@@ -48,6 +48,14 @@ description: 查找扩展 e2e 的第三方包，并提交集成。
 维护者：[Testomat.io](https://github.com/testomatio)。版本 `2.23.0` 包含该适配器。其示例使用 `e2e ^0.21.0`；该包未声明 e2e 对等依赖项的版本范围。
 
 [npm](https://www.npmjs.com/package/@testomatio/reporter) · [仓库和示例](https://github.com/testomatio/reporter/tree/2.x/example/e2e)
+
+### `@waitcher/cli`
+
+Runs `*.e2e.ts` tests from your repository on a schedule as Waitcher monitors and alerts when a run fails. Browser tests use `@e2e-dev/web` with Chromium; API tests use `e2e`. Waitcher is a hosted commercial service with a free plan, and the CLI has a proprietary license.
+
+Maintainer: [Sławomir Radzymiński](https://github.com/slawekradzyminski). Version `0.2.28`, published November 19, 2026, runs tests on `e2e 0.24.0` and `@e2e-dev/web 0.16.1`.
+
+[npm](https://www.npmjs.com/package/@waitcher/cli) · [Documentation and example](https://waitcher.dev/docs/repository-workflow)
 
 ## 查找相关集成
 

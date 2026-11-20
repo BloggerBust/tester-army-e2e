@@ -134,6 +134,7 @@ test('shows the home screen', async ({ agent, app, screen }) => {
 | `device.launchApp({ launchArgs, permissions })` | `device.openApp(id, { relaunch: true, launchArguments, permissions })` |
 | `device.resetAppState()` | `app.clearState()` |
 | `device.launchApp({ delete: true })` | `device.installApp(path, { reinstall: true })`，然后 `app.open()` |
+| `device.uninstallApp()` | `device.uninstallApp(id)`；不传 ID 时为固定的应用 |
 | `device.launchApp({ url })`、`device.openURL({ url })` | `device.openLink(url)` |
 | `device.terminateApp()`、`sendToHome()`、`pressBack()` | `device.closeApp()`、`home()`、`back()` |
 | `device.setLocation(lat, lon)`、`setOrientation('landscape')` | `device.setLocation({ latitude, longitude })`、`setOrientation('landscape-left')` |
@@ -160,7 +161,7 @@ test('shows the home screen', async ({ agent, app, screen }) => {
 | `.setDatePickerDate()`、`.setColumnToValue()`、`.adjustSliderToPosition()` | `agent.act` 目标，或在滑块上使用 `screen.swipe({ from, to })` |
 | 在表单控件之外使用 `.toHaveValue(v)` | `expect(device.locator('id=x value="v"')).toBeVisible()` |
 | `health`、`homekit`、`speech`、`faceid`、`userTracking` 的 `permissions`；值 `always`、`inuse`、`limited` | 点击提示中的按钮，或使用 `device.alert('accept')` |
-| `device.sendUserNotification()`、`device.uninstallApp()`、`.pinch()` | [`unstable_raw`](/reference/mobile#unstable_raw) 上的 `client.apps.push()`、`client.apps.uninstall()`、`client.interactions.pinch()` |
+| `device.sendUserNotification()`、`.pinch()` | [`unstable_raw`](/reference/mobile#unstable_raw) 上的 `client.apps.push()`、`client.interactions.pinch()` |
 | `launchApp({ languageAndLocale })` | 在 iOS 上使用 `app.launchArguments: ['-AppleLanguages', '(fr)', '-AppleLocale', 'fr_FR']`，参阅[以其他语言运行应用](/mobile#run-the-app-in-another-language) |
 | Jest `globalSetup`、`globalTeardown` | 运行前启动依赖项 |
 | `device.reverseTcpPort()` | 在 CI 步骤中运行 `adb reverse` |

@@ -6,7 +6,7 @@
  * moves as calls come and go.
  */
 
-import { bounded, F_POINTER, formatTime, terminalColumns, terminalRows, withActor, type Colors } from './format.ts';
+import { bounded, F_POINTER, fitColumns, formatTime, terminalColumns, terminalRows, withActor, type Colors } from './format.ts';
 import type { CurrentStep, FileGroup, PausedTest, RunningTest, SetupInFlight } from './list-model.ts';
 import { eventLine, quotedLabel, stepLine, stepPromptRows } from './list-steps.ts';
 import { REPAINT_INTERVAL_MS, WIDTH_MARGIN } from './live-window.ts';
@@ -96,10 +96,10 @@ export class RunningTree {
    * summary go to the running tests, each test's detail shares what remains
    * once every test has its own row, and tests that still do not fit fold
    * into one `more running` marker. `room` is the screen under the permanent
-   * log; the block pads out to it so the summary sits at the bottom. A test
-   * `paused` at the `--step` prompt says so in place of its clock and shows
-   * the prompt under its steps. The paused test appears first, with enough
-   * rows reserved for its prompt before other tests use the remaining space.
+   * log; the block pads out to it so the summary sits at the bottom. A held
+   * test's row shows the attach ID in place of its clock, with the prompt
+   * under its steps. The held test appears first, with enough rows reserved
+   * for its prompt before other tests use the remaining space.
    */
   render(
     running: readonly RunningTest[],
@@ -117,7 +117,8 @@ export class RunningTree {
     }
     const capacity = terminalRows() - summary.length - CHROME_ROWS;
     let budget = capacity;
-    const maxWidth = terminalColumns() - WIDTH_MARGIN - DETAIL_INDENT.length;
+    const columns = terminalColumns() - WIDTH_MARGIN;
+    const maxWidth = columns - DETAIL_INDENT.length;
     const promptRows = paused === undefined ? 0 : stepPromptRows(pc, paused.prompt, { maxWidth }).length;
     const perTest = Math.max(
       0,
@@ -148,8 +149,17 @@ export class RunningTree {
         }
         const glyph = index === tests.length - 1 ? F_TREE_END : F_TREE_MIDDLE;
         const held = paused?.test === test ? paused : undefined;
-        const state = held === undefined ? this.clock(now - test.startedMs) : pc.bold(pc.cyan('paused'));
-        lines.push(`${pc.bold(pc.yellow(`   ${glyph} `))}${test.title} ${state}`);
+        if (held === undefined) {
+          lines.push(`${pc.bold(pc.yellow(`   ${glyph} `))}${test.title} ${this.clock(now - test.startedMs)}`);
+        } else {
+          const { attachId } = held.prompt.steps[0].step;
+          const id = `(${attachId})`;
+          const prefix = `   ${glyph} `;
+          const titleWidth = columns - prefix.length - id.length - 1;
+          const title = fitColumns(test.title, titleWidth);
+
+          lines.push(`${pc.bold(pc.yellow(prefix))}${title} ${pc.bold(pc.cyan(id))}`);
+        }
         budget -= 1;
         const rows = held === undefined ? perTest : perTest + promptRows;
         const detail = this.detailRows(test, Math.min(MAX_EVENTS, rows), Math.min(rows, budget), now, held);

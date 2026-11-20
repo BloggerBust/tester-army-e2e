@@ -1,0 +1,299 @@
+---
+title: कोडिंग एजेंट
+description: कोडिंग एजेंट को स्किल, ऐप का लाइव सेशन और ऐसी रिपोर्ट दें जिनसे वह टेस्ट लिख और डीबग कर सके।
+"og:image": "https://e2e.com/docs/images/og/coding-agents.png?v=c6990935d7"
+"twitter:image": "https://e2e.com/docs/images/og/coding-agents.png?v=c6990935d7"
+---
+
+Claude Code, Codex या Cursor जैसा कोडिंग एजेंट e2e टेस्ट लिख, चला और डीबग
+कर सकता है। वह स्किल से e2e सीखता है, `e2e mcp` सर्वर के ज़रिए ऐप इस्तेमाल
+करता है, और फ़ेल हुए टेस्ट का ट्रेस पेज पढ़ता है।
+
+## स्किल इंस्टॉल करें
+
+<CodeGroup>
+```bash npm
+npx e2e init
+```
+
+```bash pnpm
+pnpm dlx e2e init
+```
+
+```bash bun
+bunx e2e init
+```
+</CodeGroup>
+
+| पाथ | किसके लिए |
+| --- | --- |
+| `.agents/skills/e2e/` | Codex, Cursor, OpenCode और `.agents/skills` पढ़ने वाले दूसरे एजेंट |
+| `.claude/skills/e2e/` | Claude Code। दोनों इंस्टॉल होने पर यह `.agents/skills/e2e/` का सिमलिंक होता है। |
+
+इस कॉपी में `SKILL.md` और हर विषय की रेफ़रेंस फ़ाइलें होती हैं।
+[`e2e upgrade`](/reference/cli#e2e-upgrade) इसे अपडेट करता है, पैकेज मैनेजर से
+अपग्रेड करने के बाद भी। `init` के बिना, `npx skills add e2e-inc/e2e` स्किल
+इंस्टॉल करता है, और `npx e2e guide [topic]` उसे इंस्टॉल किए गए पैकेज से प्रिंट
+करता है। नीचे दिया गया प्लगइन हर प्रोजेक्ट के लिए e2e की तीनों स्किल इंस्टॉल
+करता है।
+
+`init` आपके प्रोजेक्ट के निर्देशों को नहीं बदलता। जिन एजेंटों को एक संकेत
+चाहिए, उनके लिए यह लाइन जोड़ें:
+
+```md title="AGENTS.md"
+End-to-end tests use e2e; read .agents/skills/e2e/SKILL.md before writing or running one.
+```
+
+पैकेज में ये डॉक्स ऑफ़लाइन पढ़ने के लिए `.mdx` पेजों के रूप में भी आते हैं।
+सिंगल-पैकेज प्रोजेक्ट में ये `node_modules/e2e/docs` में होते हैं।
+`/reference/cli` जैसा लिंक `docs/reference/cli.mdx` फ़ाइल है।
+
+<Accordion title="Claude Code, Codex या Cursor प्लगइन इंस्टॉल करें">
+
+e2e रिपॉज़िटरी Claude Code और Codex के लिए प्लगइन मार्केटप्लेस है, और Grok
+Build के लिए भी, जो Claude Code की फ़ाइलें पढ़ता है। Cursor प्लगइन को अपने
+लोकल प्लगइन फ़ोल्डर से लोड करता है:
+
+<CodeGroup>
+```bash Claude
+claude plugin marketplace add e2e-inc/e2e
+claude plugin install e2e@e2e
+```
+
+```bash Codex
+codex plugin marketplace add e2e-inc/e2e
+codex plugin add e2e@e2e
+```
+
+```bash Cursor
+repo=$(mktemp -d)
+git clone --depth 1 https://github.com/e2e-inc/e2e "$repo"
+mkdir -p ~/.cursor/plugins/local
+rm -rf ~/.cursor/plugins/local/e2e
+cp -R "$repo/plugins/e2e" ~/.cursor/plugins/local/
+```
+</CodeGroup>
+
+नया सेशन शुरू करें। Cursor में **Developer: Reload Window** चलाएँ। Cursor
+Teams और Enterprise पर लोकल प्लगइन के लिए एडमिन सेटिंग **Allow Local
+Plugin Imports** चालू होनी चाहिए, या कोई एडमिन `e2e-inc/e2e` को टीम
+मार्केटप्लेस के रूप में इंपोर्ट करे। प्लगइन
+`e2e`, `create-verification-skill` और `migrate-to-e2e` स्किल जोड़ता है, npm
+पैकेज नहीं। Codex और Cursor में यह [MCP सर्वर](/mcp-server) भी जोड़ता है।
+Claude Code और Grok Build में सर्वर को प्रोजेक्ट में रजिस्टर करें। बाकी दो स्किल को प्लगइन के
+नाम के साथ चलाएँ: Claude Code में `/e2e:<skill>` और Codex में `$e2e:<skill>`,
+और Cursor में `/<skill>` के रूप में।
+
+प्लगइन का वर्ज़न e2e की रिलीज़ के साथ चलता है। इसे अपडेट करने के लिए ये
+कमांड चलाएँ और नया सेशन शुरू करें। Cursor में ऊपर दी गई Cursor वाली इंस्टॉल
+कमांड फिर से चलाएँ।
+
+<CodeGroup>
+```bash Claude
+claude plugin marketplace update e2e
+claude plugin update e2e@e2e
+```
+
+```bash Codex
+codex plugin marketplace upgrade e2e
+```
+</CodeGroup>
+
+</Accordion>
+
+<Accordion title="OpenClaw या Hermes Agent में इंस्टॉल करें">
+
+तीनों स्किल [ClawHub](https://clawhub.ai/) पर `@e2e` के नाम से प्रकाशित हैं।
+Hermes Agent रिपॉज़िटरी को tap के रूप में पढ़ता है:
+
+<CodeGroup>
+```bash OpenClaw
+openclaw skills install @e2e/e2e
+openclaw skills install @e2e/create-verification-skill
+openclaw skills install @e2e/migrate-to-e2e
+```
+
+```bash Hermes
+hermes skills tap add e2e-inc/e2e
+hermes skills install e2e-inc/e2e/e2e
+```
+</CodeGroup>
+
+</Accordion>
+
+## एजेंट को ऐप इस्तेमाल करने दें
+
+`e2e mcp` एजेंट को आपके ऐप पर एक लाइव सेशन देता है। एजेंट अपने लोकेटर
+लिखने से पहले उन्हें स्क्रीन पर जाँचता है, और UI में किए अपने बदलाव भी
+जाँचता है। `init` सर्वर को रजिस्टर करता है। सेटअप और प्रॉम्प्ट के लिए
+[MCP सर्वर](/mcp-server) देखें।
+
+## एजेंट टेस्ट कैसे लिखता और चलाता है
+
+स्किल एजेंट से कहती है कि वह पहले कॉन्फ़िग और कोई मौजूदा टेस्ट पढ़े।
+`e2e mcp` के साथ, एजेंट सेशन में फ़्लो से गुज़रता है और हर चरण को पूरा करते
+ही टेस्ट में लिखता है। जाने-पहचाने फ़ील्ड और सटीक वैल्यू के लिए वह `screen`
+कॉल में ऐसे लोकेटर इस्तेमाल करता है जो ठीक एक नोड से मैच हुए हों:
+
+```ts title="tests/checkout.e2e.ts"
+import { test, expect, credentials } from 'e2e';
+
+test('a signed-in user reaches checkout', async ({ screen, app, agent }) => {
+  const user = credentials.user('customer');
+  await app.open('/login');
+  await screen.getByLabel('Email').fill(user.username);
+  await screen.getByLabel('Password').fill(user.password);
+  await screen.getByRole('button', 'Sign in').click();
+  await expect(screen.getByRole('heading', 'Welcome back')).toBeVisible();
+
+  await agent.act('Add the cheapest item on the page to the cart');
+  await expect(screen.getByRole('status', 'Cart')).toHaveText('1 item');
+  await agent.act('Open the cart');
+  await expect(screen.getByRole('heading', 'Your cart')).toBeVisible();
+});
+```
+
+- **हर [एटॉमिक लक्ष्य](/core-concepts#goals) के लिए एक `agent.act`, फिर एक
+  `expect`।** अगर एजेंट ने गलत काम किया, तो `expect` फ़ेल होता है। लोकेटर
+  मैचर, या कोई दूसरा
+  [वेरिफ़िकेशन चेक](/cache#when-a-recording-is-written), कैश को उस चरण को
+  रीप्ले करने की इजाज़त भी देता है।
+- **स्लीप नहीं।** लोकेटर पोल करते हैं, एक्शन अपने टारगेट का इंतज़ार करते हैं,
+  और `expect` अपने टाइमआउट तक रीट्राई करता है।
+- **सीक्रेट `credentials.user(name)` के ज़रिए।** उन्हें कॉन्फ़िग में डिक्लेयर
+  करें। उन्हें कभी टेस्ट में न लिखें।
+
+बार-बार सुधार करते समय एजेंट सिर्फ़ वही टेस्ट चलाता है जिस पर वह काम कर रहा
+है, उस लाइन नंबर से जिस पर उसका `test(` शुरू होता है। `--action-timeout 5000`
+के साथ, गलत लोकेटर 30 s की जगह 5 s में फ़ेल हो जाता है:
+
+<CodeGroup>
+```bash npm
+npx e2e run tests/checkout.e2e.ts:3 --action-timeout 5000
+```
+
+```bash pnpm
+pnpm exec e2e run tests/checkout.e2e.ts:3 --action-timeout 5000
+```
+
+```bash bun
+bunx e2e run tests/checkout.e2e.ts:3 --action-timeout 5000
+```
+</CodeGroup>
+
+एजेंट दोबारा चलाने से पहले CLI, कॉन्फ़िग और कलेक्शन एरर ठीक करता है।
+वह कैश की रिकॉर्डिंग में बदलाव नहीं करता।
+
+एजेंट रीप्ले कैश चालू रखता है, ताकि जिस लक्ष्य का चेक पास हो चुका है, वह
+मॉडल कॉल के बिना रीप्ले हो। वह रीट्राई बंद कर देता है, क्योंकि रीट्राई हर
+लक्ष्य को लाइव चलाता है। टेस्ट पास होने पर एजेंट `--action-timeout` हटा देता
+है और टेस्ट को एक बार `--no-cache` के साथ चलाता है, यह जाँचने के लिए कि लाइव
+एजेंट हर लक्ष्य तक पहुँचता है। देखें
+[टेस्ट ठीक करते समय उसे दोबारा चलाएँ](/cache#rerun-a-test-while-you-fix-it)।
+
+## एजेंट फ़ेलियर कैसे पढ़ता है
+
+डिफ़ॉल्ट रूप से ([`trace`](/reference/config#trace)), रन हर फ़ेल हुए, टाइमआउट
+हुए, बीच में रुके या फ़्लेकी टेस्ट के लिए एक ट्रेस पेज लिखता है, `.e2e/results/`
+में उस टेस्ट की डायरेक्टरी में। `.e2e` डिफ़ॉल्ट `output` है। टर्मिनल हर फ़ेल हुए
+टेस्ट के नीचे पेज का नाम
+`❯ trace .e2e/results/<test>/trace.md` के रूप में दिखाता है।
+
+एजेंट यही पेज पढ़ता है, `.e2e/report.json` नहीं, जिसमें यही जानकारी
+[स्क्रिप्ट](/debugging) के लिए होती है। पेज में फ़ेल हुई लाइन होती है, और हर
+चरण के साथ यह कि उसने क्या किया: किसी एक्शन ने कौन-सा नोड छुआ, किसी असर्शन
+ने कौन-सी वैल्यू पढ़ीं, कैश का फ़ैसला, कंसोल एरर और फ़ेल हुए अनुरोध। इसमें
+एजेंट के आखिरी टर्न और फ़ेलियर के समय की स्क्रीन भी होती है।
+
+एजेंट इसी सबूत से टेस्ट ठीक करता है। सबूत जिन लाइनों के बारे में बताता है,
+वह उन सभी को ठीक करता है, सिर्फ़ फ़ेल हुई लाइन को नहीं। टेस्ट अपने पहले फ़ेल
+हुए चरण पर रुक जाता है, इसलिए एजेंट अगले रन से पहले उसके बाद की लाइनें भी
+जाँचता है।
+
+जो स्क्रीन पेज पर नहीं दिखती, उसे देखने के लिए एजेंट उसे MCP सेशन में सबसे
+छोटे रास्ते से खोलता है, जैसे वेब पर उसका URL। वह फ़्लो से शुरू से दोबारा
+नहीं गुज़रता।
+
+मॉडल कॉल की जानकारी के लिए एजेंट `--ai-trace` जोड़ता है और ट्रेस को
+[unbox-ai](/debugging#agent-steps) से पढ़ता है। फ़्लो की हर मॉडल कॉल कैप्चर
+करने के लिए इसके साथ `--no-cache` लगाएँ। रॉ ट्रेस को एजेंट के कॉन्टेक्स्ट में
+न खोलें। उसमें प्रॉम्प्ट बार-बार दोहराए जाते हैं और उसका साइज़ कई मेगाबाइट हो
+सकता है।
+
+## अपने ऐप के लिए वेरिफ़िकेशन स्किल बनाएँ
+
+e2e स्किल रनर के बारे में सिखाती है, आपके ऐप के बारे में नहीं।
+`create-verification-skill` स्किल प्रोजेक्ट के अंदर
+`.agents/skills/verify-<app>/` में एक स्किल लिखती है जो एजेंट को आपके ऐप के
+बारे में सिखाती है, और आपको सौंपने से पहले उसे एक बार टेस्ट करती है।
+
+<CodeGroup>
+```bash npm
+npx skills add e2e-inc/e2e --skill create-verification-skill
+```
+
+```bash pnpm
+pnpm dlx skills add e2e-inc/e2e --skill create-verification-skill
+```
+
+```bash bun
+bunx skills add e2e-inc/e2e --skill create-verification-skill
+```
+</CodeGroup>
+
+फिर एजेंट से `/create-verification-skill` चलाने को कहें।
+
+<Accordion title="बनाई गई स्किल में क्या होता है">
+- आपके कॉन्फ़िग से ली गई लॉन्च और doctor कमांड।
+- ऐप को कंट्रोल करने के दो तरीके: लाइव `e2e mcp` सेशन और टेस्ट।
+- वह सबूत जो किसी प्रूफ़ में रखा जाता है।
+- एक फ़ीचर मैप, जिसमें हर फ़ीचर के लिए एक `e2e explore` चार्टर होता है, ताकि
+  [Bug Bash](/bug-bash) मैप से हर फ़ीचर तक फैल सके।
+
+बनाई गई स्किल सिर्फ़ वही बताती है जो आपके ऐप पर सच है, और बाकी के लिए e2e
+स्किल का लिंक देती है। यह poteto के pstack की
+[create-verification-skill](https://github.com/cursor/plugins/tree/main/pstack/skills/create-verification-skill)
+पर आधारित है, जिसमें हाथ से बने हार्नेस की जगह e2e है।
+</Accordion>
+
+## मौजूदा टेस्ट सूट माइग्रेट करें
+
+`migrate-to-e2e` स्किल Playwright, Cypress, Selenium, Appium, Detox, Maestro
+या TesterArmy टेस्ट सूट को हर सेशन में एक हिस्सा करके e2e पर ले जाती है।
+पुराना सूट नए टेस्ट के साथ चलता रहता है, इसलिए आप किसी भी सेशन के बाद रुक
+सकते हैं।
+
+<CodeGroup>
+```bash npm
+npx skills add e2e-inc/e2e --skill migrate-to-e2e
+```
+
+```bash pnpm
+pnpm dlx skills add e2e-inc/e2e --skill migrate-to-e2e
+```
+
+```bash bun
+bunx skills add e2e-inc/e2e --skill migrate-to-e2e
+```
+</CodeGroup>
+
+फिर एजेंट से `/migrate-to-e2e` चलाने को कहें। एजेंट आपका चुना हुआ हिस्सा पोर्ट
+करता है और हर पोर्ट किए गए टेस्ट को हर टारगेट पर तीन बार चलाता है।
+`MIGRATION.md` फ़ाइल अगले सेशन के लिए प्रगति दर्ज करती है। वैकल्पिक रूप से,
+एजेंट ऐप में एक अस्थायी बग डालता है, जैसे चेकआउट का गलत टोटल, और जाँचता है कि दोनों
+सूट उस पर फ़ेल होते हैं या नहीं। एजेंट पुराना टेस्ट तभी हटाता है जब आप पुष्टि
+करें। वह सबसे पहले आपके रनर की माइग्रेशन गाइड पढ़ता है:
+[Playwright](/migrate/playwright), [Cypress](/migrate/cypress),
+[Selenium](/migrate/selenium), [Appium](/migrate/appium), [Detox](/migrate/detox),
+[Maestro](/migrate/maestro) या [TesterArmy](/migrate/testerarmy)।
+
+## आगे
+
+<CardGroup cols={2}>
+  <Card title="CLI रेफ़रेंस" icon="terminal" href="/reference/cli">
+    init, guide, mcp और run, हर फ़्लैग के साथ।
+  </Card>
+  <Card title="रन की डीबगिंग" icon="bug" href="/debugging">
+    रिपोर्ट, आर्टिफ़ैक्ट और एजेंट फ़्लैग।
+  </Card>
+</CardGroup>

@@ -12,8 +12,11 @@ import { spawnSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { afterEach, describe, expect, it } from 'vitest';
-import { createProject, type FixtureProject } from '../helpers/run-project.ts';
+import { defineTool } from '@e2e-dev/core/lib/agent/public';
+import { SecretLedger } from '@e2e-dev/core/lib/internal/redact';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { z } from 'zod';
+import { createProject, runExisting, runExistingWithConfigFile, type FixtureProject, type RunOptions } from '../helpers/run-project.ts';
 
 const CLI = fileURLToPath(new URL('../../dist/cli/bin.js', import.meta.url));
 
@@ -222,4 +225,97 @@ test('prints encoded', () => {
     expect(output).toContain('withheld');
     expect(output).not.toContain(TOKEN);
   });
+});
+
+it('keeps attached project tool output out of the run and report', async () => {
+  const builtOutput = '../../dist/run/process-output.js';
+  const { withProcessOutput }: typeof import('../../src/run/process-output.ts') = await import(builtOutput);
+  const line = 'printed during an attached call';
+  const lateLine = 'printed by a tool timer after the attached call';
+  const project = createProject({
+    'tests/paused.e2e.ts': `import { test } from 'e2e';
+test('prints and pauses', async ({ screen }) => {
+  process.stdout.write('printed by the test\\n');
+  await screen.pause();
+});
+`,
+    'e2e.config.ts': `import { defineTool } from 'e2e/agent';
+import { z } from 'zod';
+import { createFakeEngine, FAKE_APP } from '../../helpers/fake-engine.ts';
+
+export default {
+  targets: [{ name: 'fake', platform: 'fake', engine: createFakeEngine({}).engine, app: FAKE_APP }],
+  agents: { default: { tools: {
+    print_line: defineTool({
+      inputSchema: z.object({}),
+      execute: async () => {
+        process.stdout.write(${JSON.stringify(line + '\n')});
+
+        setTimeout(() => {
+          process.stdout.write(${JSON.stringify(lateLine + '\n')});
+        }, 0);
+
+        return 'printed';
+      },
+    }, { mutates: false }),
+  } } },
+};
+`,
+  });
+  const printTool = defineTool({
+    inputSchema: z.object({}),
+    execute: async () => {
+      process.stdout.write(`${line}\n`);
+
+      setTimeout(() => {
+        process.stdout.write(`${lateLine}\n`);
+      }, 0);
+
+      return 'printed';
+    },
+  }, { mutates: false });
+  let output = '';
+  const stdout = vi.spyOn(process.stdout, 'write').mockImplementation((chunk) => {
+    output += String(chunk);
+    return true;
+  });
+
+  try {
+    for (const worker of ['in-process', 'child process']) {
+      output = '';
+      const outcome = await withProcessOutput(new SecretLedger(), (processOutput) => {
+        const runOptions: Partial<RunOptions> = {
+          quiet: false,
+          processOutput,
+          hold: {
+            steps: false,
+            ask: async (step, { attach }) => {
+              const attached = await attach(step.attachId);
+              const reply = await attached.call('print_line', {});
+              expect(reply).toEqual({ content: [{ type: 'text', text: 'printed' }] });
+
+              await vi.waitFor(() => expect(output, worker).toContain(lateLine));
+            },
+          },
+        };
+
+        if (worker === 'child process') {
+          return runExistingWithConfigFile(project, { runOptions });
+        }
+
+        return runExisting(project, {
+          config: { agents: { default: { tools: { print_line: printTool } } } },
+          runOptions,
+        });
+      });
+
+      expect(outcome.exitCode, worker).toBe(0);
+      expect(output, worker).toContain('printed by the test');
+      expect(output, worker).not.toContain(line);
+      expect(readFileSync(path.join(project.dir, '.e2e/report.json'), 'utf8'), worker).not.toContain(line);
+    }
+  } finally {
+    stdout.mockRestore();
+    project.cleanup();
+  }
 });

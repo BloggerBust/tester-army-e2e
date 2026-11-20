@@ -177,6 +177,8 @@ const { app } = await device.installApp('./build/MyApp.app', { reinstall: true }
 await device.openApp(app);
 ```
 
+`device.uninstallApp(id)` 删除应用，`device.isAppInstalled(id)` 检查应用是否存在；不传 ID 时，两者都使用固定的应用。
+
 `device.openApp` 接受 Bundle ID、包名或显示名称，不能传入链接。`device.openLink` 会将深层链接或网页链接打开到固定的应用，或选项中指定的 `app`，用于魔法链接登录和深层链接路由：
 
 ```ts

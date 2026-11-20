@@ -55,11 +55,11 @@ function foldGroup(current: ReportSerialGroup, before: ReportSerialGroup | undef
 
 /**
  * Whether a serial member's record is a run of its body, a body that skipped
- * itself included. Mirrors `memberRan` in e2e's `run/records.ts`, which the
- * peer range keeps this package from importing.
+ * itself included. Mirrors `memberRan` in `@e2e-dev/core`'s `run/records.ts`,
+ * which the peer range keeps this package from importing.
  */
 function memberRan(member: ReportSerialGroup['attempts'][number]['members'][number]): boolean {
-  return member.status !== 'skipped' || member.skip?.cause === 'explicit';
+  return member.status !== 'skipped' || member.skip?.cause === 'explicit' || member.skip?.cause === 'fixme';
 }
 
 /**

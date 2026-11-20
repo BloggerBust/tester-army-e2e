@@ -27,6 +27,8 @@ export const locatorBrand = brand('e2e.locator');
 export const expectationBrand = brand('e2e.expectation.v1');
 /** Slot on `globalThis` naming the running attempt for `expect.poll`. */
 export const attemptBrand: unique symbol = Symbol.for('e2e.attempt.v1');
+/** Slot on `globalThis` naming the running `beforeAll` or `afterAll` hook for `test.setTimeout`. */
+export const suiteHookBrand: unique symbol = Symbol.for('e2e.suiteHook.v1');
 /** Slot on `globalThis` holding the runner's view of which phase owns an `expect.poll`. */
 export const pollScopesBrand: unique symbol = Symbol.for('e2e.pollScopes.v1');
 /** Slot on `globalThis` holding the secret values the sessions open in the process share. */

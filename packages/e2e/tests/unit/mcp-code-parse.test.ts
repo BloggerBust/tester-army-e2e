@@ -6,7 +6,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { parseCode, type Statement } from '../../src/mcp/code-parse.ts';
+import { parseCode, type Statement } from '../../src/session-tools/code-parse.ts';
 
 /** A target whose engine contributes a `browser` fixture, as the web engine's does. */
 const WEB = { fixtures: ['browser'] } as const;
@@ -15,7 +15,7 @@ const ARGUMENTS =
   "an argument is a string, number, boolean, null, regular expression, array, or object, a locator on screen, credentials.user('name').username, or a secret as fill's value";
 const STATEMENTS = 'a statement starts with screen, app, or expect(...)';
 const LOCATOR_MEMBERS =
-  'getByRole, getByLabel, getByPlaceholder, getByText, getByDisplayValue, getByTestId, tapAt, doubleTapAt, swipe, scrollUntilVisible, filter, or, first, last, nth, tap, click, doubleTap, dblclick, secondaryTap, longPress, fill, pressSequentially, clear, press, check, uncheck, selectOption, focus, hover, dragTo, scrollIntoView, waitFor, textContent, inputValue, getAttribute, isVisible, isHidden, isEnabled, isDisabled, isChecked, boundingBox, count, allTextContents';
+  'getByRole, getByLabel, getByPlaceholder, getByText, getByDisplayValue, getByTestId, tapAt, doubleTapAt, swipe, scrollUntilVisible, filter, or, first, last, nth, tap, click, doubleTap, dblclick, secondaryTap, longPress, fill, pressSequentially, clear, press, check, uncheck, selectOption, focus, blur, hover, dragTo, scrollIntoView, waitFor, textContent, inputValue, getAttribute, isVisible, isHidden, isEnabled, isDisabled, isChecked, boundingBox, count, allTextContents';
 const SECRET_PLACE = "is accepted only as fill's value, such as screen.getByLabel('Password').fill(credentials.user('admin').password)";
 
 /** The message `run_code` refuses `code` with. */

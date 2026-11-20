@@ -1,0 +1,248 @@
+---
+title: Next.js
+description: Add e2e to a Next.js app, test it on `next dev` locally and on a production build in CI.
+---
+
+import { SetupPrompt } from '../snippets/setup-prompt-card.jsx';
+
+export const setupPrompt = `Set up e2e end-to-end tests in this Next.js app. Docs: \`https://e2e.com/docs/frameworks/nextjs.md\`
+
+1. Run \`npx e2e init --yes\` (or the pnpm or bun equivalent for this project).
+2. Replace the target in e2e.config.ts with the one on the page: \`next dev\` locally, \`next start\` when CI is set. Use the port and package manager this app uses.
+3. Ask me which model to use for agent steps, and configure it as https://e2e.com/docs/models.md says.
+4. Install dependencies, run the example test, and fix errors until it passes. Check the page's "Fix Next.js problems" section first.
+5. Write one test for the most important user flow in this app, run it, and iterate until it passes.`;
+
+This page adds e2e to an existing Next.js app. The runner starts `next dev`
+on your machine and `next start` in CI, and the web engine tests the app in
+Chromium. For a new app, [start from the example](#start-a-new-app).
+
+<SetupPrompt>
+
+<Prompt description={setupPrompt} children={setupPrompt} actions={["copy", "cursor"]} />
+
+</SetupPrompt>
+
+## Add e2e to your app
+
+In your app's directory, run the wizard:
+
+<CodeGroup>
+```bash npm
+npx e2e init
+```
+
+```bash pnpm
+pnpm dlx e2e init
+```
+
+```bash bun
+bunx e2e init
+```
+</CodeGroup>
+
+Choose **Web (Playwright)** and a model provider. The wizard writes
+`e2e.config.ts` and `tests/example.e2e.ts`, adds dependencies, and adds the
+`.e2e/` run output to `.gitignore`. See the [Quickstart](/quickstart) for
+each choice.
+
+## Start the app from the config
+
+Set `app.command` so the runner starts your app and waits until `app.url`
+answers. Edit the config that `init` wrote to match. Keep its model import
+and its `agents` entry:
+
+```ts title="e2e.config.ts"
+import type { E2EConfig } from 'e2e';
+import { web } from '@e2e-dev/web';
+
+// e2e reads CI the same way: unset, '', '0', and 'false' mean a local run.
+const ci = !['', '0', 'false'].includes(process.env.CI?.trim().toLowerCase() ?? '');
+
+export default {
+  // Keep the `agents` entry that `init` wrote.
+  targets: [{
+    engine: web(),
+    app: {
+      url: 'http://localhost:3000',
+      // CI serves the production build: run `next build` before `e2e run`.
+      command: ci
+        ? { executable: 'npm', args: ['run', 'start'] }
+        : { executable: 'npm', args: ['run', 'dev'], reuseExisting: true },
+    },
+  }],
+} satisfies E2EConfig;
+```
+
+- **Locally**, the runner starts `next dev`. With `reuseExisting: true`, it
+  uses a dev server you already started on that port.
+- **In CI**, the runner starts `next start`, which serves the build.
+  `reuseExisting` doesn't apply there.
+- **The port** in `app.url` must be the port that `dev` and `start` both
+  listen on. Next.js uses 3000. When one script sets `--port`, set the same
+  port in the other.
+
+Then run the tests:
+
+<CodeGroup>
+```bash npm
+npx e2e run
+```
+
+```bash pnpm
+pnpm exec e2e run
+```
+
+```bash bun
+bunx e2e run
+```
+</CodeGroup>
+
+For the other `command` options, such as `log`, `env`, and port `0`, see
+[Starting your app](/web#starting-your-app).
+
+## Run in CI
+
+Build the app before the tests. The CI service sets `CI`, so the config
+starts `next start`:
+
+<CodeGroup>
+```bash npm
+npm run build
+npx e2e run
+```
+
+```bash pnpm
+pnpm build
+pnpm exec e2e run
+```
+
+```bash bun
+bun run build
+bunx e2e run
+```
+</CodeGroup>
+
+For a full workflow, take the [GitHub Actions](/ci/github-actions#web) job
+and add the build step before the e2e step. Leave out its `APP_URL`: this
+config doesn't read it. For CI defaults, see
+[Continuous integration](/ci).
+
+To test each Vercel preview deployment instead, see
+[Vercel Previews](/ci/vercel-previews).
+
+## Fix Next.js problems
+
+<AccordionGroup>
+<Accordion title="The page renders but never hydrates">
+Next.js 16 blocks cross-origin requests to its dev resources. When the
+target opens `127.0.0.1` or `[::1]`, as
+[port `0`](/web#let-the-runner-pick-the-port) does, `next dev` still
+identifies as `localhost`. The page renders, locators resolve, and clicks
+land, but no React handler runs.
+
+Add the host the target opens to `allowedDevOrigins`. Use `'[::1]'` when
+`app.url` opens `http://[::1]:0`:
+
+```ts title="next.config.ts"
+import type { NextConfig } from 'next';
+
+const nextConfig: NextConfig = {
+  allowedDevOrigins: ['127.0.0.1'],
+};
+
+export default nextConfig;
+```
+
+A `localhost` target and a production `next start` target need no entry.
+</Accordion>
+
+<Accordion title="getByRole('alert') finds an extra element">
+The App Router renders an empty `role="alert"` route announcer on every
+page. `screen.getByRole('alert')` matches it too. Pick your alert by its
+text:
+
+```ts title="Test fragment"
+await expect(screen.getByRole('alert').filter({ hasText: 'Enter a name first.' })).toBeVisible();
+```
+
+The agent doesn't see the route announcer, and the
+[replay cache](/cache) doesn't count it as a change.
+</Accordion>
+
+<Accordion title="next dev recompiles while the tests run">
+e2e writes its run output under `.e2e/`: results, logs, traces, and the
+replay cache. A watcher that reads this folder can rebuild the app again
+and again during a run.
+
+- Keep the `.e2e/` entries that `init` adds to `.gitignore`. Tools that
+  scan the project for source files, such as Tailwind CSS, skip ignored
+  files.
+- With webpack, the `next dev` default before Next.js 16, add `.e2e` to
+  the paths the watcher ignores:
+
+```ts title="next.config.ts"
+import type { NextConfig } from 'next';
+
+const nextConfig: NextConfig = {
+  webpack: (config, { dev }) => {
+    if (dev) {
+      config.watchOptions = {
+        ...config.watchOptions,
+        ignored: ['**/.git/**', '**/.next/**', '**/node_modules/**', '**/.e2e/**'],
+      };
+    }
+    return config;
+  },
+};
+
+export default nextConfig;
+```
+
+This list keeps the Next.js defaults. When your config already sets
+`ignored`, add `'**/.e2e/**'` to it instead.
+</Accordion>
+</AccordionGroup>
+
+## Start a new app
+
+Create a Next.js App Router app with e2e already set up, from the
+[`with-next` example](https://github.com/e2e-inc/e2e/tree/main/examples/with-next):
+
+<CodeGroup>
+```bash npm
+npx create-next-app --example https://github.com/e2e-inc/e2e/tree/main/examples/with-next my-app
+cd my-app
+npm run test:e2e
+```
+
+```bash pnpm
+pnpm create next-app --example https://github.com/e2e-inc/e2e/tree/main/examples/with-next my-app
+cd my-app
+pnpm test:e2e
+```
+
+```bash bun
+bun create next-app --example https://github.com/e2e-inc/e2e/tree/main/examples/with-next my-app
+cd my-app
+bun run test:e2e
+```
+</CodeGroup>
+
+The app has three locator tests and two agent tests. The agent tests skip
+until you set `AI_GATEWAY_API_KEY`.
+
+To deploy to Vercel and test every deployment, start from the
+[Next.js with e2e template](https://github.com/e2e-inc/e2e-vercel-previews)
+instead. Its README has a **Deploy** button.
+
+## Next
+
+<CardGroup cols={2}>
+  <Card title="Web" icon="globe" href="/web">
+    Every way to start the app, protected previews, and viewports.
+  </Card>
+  <Card title="Vercel Previews" icon="/images/integrations/vercel.svg" href="/ci/vercel-previews">
+    Test each preview deployment and hold production until the tests pass.
+  </Card>
+</CardGroup>

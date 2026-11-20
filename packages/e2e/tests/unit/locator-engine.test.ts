@@ -3,7 +3,7 @@
  * complete EngineError -> runner taxonomy mapping.
  */
 
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import {
   EngineError,
   type EngineErrorCode,
@@ -20,6 +20,7 @@ import { AttemptBudget } from '@e2e-dev/core/lib/run/budget';
 import { defineEngine, LOCATOR_ACTION_KINDS } from '@e2e-dev/core/lib/engine/index';
 import { createEngineSession } from '@e2e-dev/core/lib/engine/session';
 import { describeExpression, filterExpression, indexExpression, roleQuery, testIdQuery, textQuery } from '@e2e-dev/core/lib/locator/expression';
+import { screenOver } from '../helpers/screen-over.ts';
 import { snapshot } from '../helpers/snapshot.ts';
 import { useFakeTime } from '../helpers/fake-time.ts';
 
@@ -123,6 +124,29 @@ function makeEngine(script: ScreenScript, options: { actionTimeout?: number; bud
   return { engine, calls, origins, resolveTimeouts, performed };
 }
 
+describe('locator.blur', () => {
+  it.each([true, false])('honors the declared capability (supported: %s)', async (supported) => {
+    const locate = vi.fn(async () => [NODE]);
+    const perform = vi.fn(async () => undefined);
+    const { screen } = screenOver({
+      actions: supported ? ['blur'] : ['tap'],
+      locate,
+      perform,
+      observe: () => snapshot([NODE]),
+      timeoutMs: 1_000,
+    });
+    const blur = screen.getByRole('button', 'Submit').blur();
+    if (supported) {
+      await blur;
+      expect(perform).toHaveBeenCalledWith(expect.anything(), { kind: 'blur' }, expect.anything());
+    } else {
+      await expect(blur).rejects.toMatchObject({ code: 'UNSUPPORTED_CAPABILITY' });
+      expect(locate).not.toHaveBeenCalled();
+      expect(perform).not.toHaveBeenCalled();
+    }
+  });
+});
+
 describe('LocatorEngine read retry contract', () => {
   it('shares the original deadline with a resolution after a stale read', async () => {
     const { engine, resolveTimeouts } = makeEngine({ read: [
@@ -173,6 +197,17 @@ describe('LocatorEngine read retry contract', () => {
 });
 
 describe('LocatorEngine resolve retry contract', () => {
+  it('reports a wait that ran out as no shorter than its timeout when the resolve starts after the deadline does', async () => {
+    const { engine } = makeEngine({ resolve: Array.from({ length: 50 }, () => () => []) });
+    const deadline = engine.deadline(101);
+    // The resolve polls 100 ms after its own start, which is the deadline's 101st.
+    vi.advanceTimersByTime(1);
+    await expect(engine.resolveExactlyOne(EXPRESSION, deadline)).rejects.toMatchObject({
+      code: 'LOCATOR_NOT_FOUND',
+      details: { waitedMs: 101 },
+    });
+  });
+
   it('retries retryable frame misses until the engine recovers', async () => {
     const { engine, calls } = makeEngine({ resolve: ['frame', 'stale', () => [REF]] });
     expect(await engine.resolveExactlyOne(EXPRESSION, engine.deadline())).toEqual(REF);
@@ -393,7 +428,7 @@ describe('LocatorEngine step deadline', () => {
   it('waits past the action timeout with timeout 0, until the phase deadline', async () => {
     const budget = new AttemptBudget(new AbortController().signal, new Deadline(600));
     const { engine } = makeEngine({ resolve: Array.from({ length: 50 }, () => () => [] as readonly NodeRef[]) }, { actionTimeout: 100, budget });
-    expect(engine.deadline(0)).toBe(budget.deadline);
+    expect(engine.deadline(0).endsAt).toBe(budget.deadline.endsAt);
     const started = Date.now();
     await expect(engine.perform(EXPRESSION, { kind: 'tap' }, 0)).rejects.toMatchObject({ code: 'LOCATOR_NOT_FOUND' });
     expect(Date.now() - started).toBeGreaterThanOrEqual(550);

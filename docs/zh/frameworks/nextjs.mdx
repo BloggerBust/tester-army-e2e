@@ -1,0 +1,213 @@
+---
+title: Next.js
+description: 为 Next.js 应用添加 e2e，在本地针对 `next dev`、在 CI 中针对生产构建进行测试。
+---
+
+import { SetupPrompt } from '../../snippets/setup-prompt-card.jsx';
+
+export const setupPrompt = `在这个 Next.js 应用中配置 e2e 端到端测试。文档：\`https://e2e.com/docs/frameworks/nextjs.md\`
+
+1. 运行 \`npx e2e init --yes\`（如果项目使用 pnpm 或 bun，请使用对应的命令）。
+2. 将 e2e.config.ts 中的测试目标替换为页面上的配置：本地启动 \`next dev\`，设置了 CI 时启动 \`next start\`。使用这个应用的端口和包管理器。
+3. 询问我智能体步骤使用哪个模型，并按照 https://e2e.com/docs/models.md 进行配置。
+4. 安装依赖项，运行示例测试，并修复错误直到测试通过。先查看页面中的“解决 Next.js 问题”一节。
+5. 为这个应用中最重要的用户流程编写一个测试，运行并反复修改，直到通过。`;
+
+本页介绍如何为现有的 Next.js 应用添加 e2e。运行器在本地启动 `next dev`，在 CI 中启动 `next start`，网页端引擎在 Chromium 中测试应用。新应用请[从示例开始](#start-a-new-app)。
+
+<SetupPrompt>
+
+<Prompt description={setupPrompt} children={setupPrompt} actions={["copy", "cursor"]} />
+
+</SetupPrompt>
+
+## 为应用添加 e2e
+
+在应用目录中运行向导：
+
+<CodeGroup>
+```bash npm
+npx e2e init
+```
+
+```bash pnpm
+pnpm dlx e2e init
+```
+
+```bash bun
+bunx e2e init
+```
+</CodeGroup>
+
+选择 **Web (Playwright)** 和一个模型提供方。向导会生成 `e2e.config.ts` 和 `tests/example.e2e.ts`，添加依赖项，并把 `.e2e/` 运行输出加入 `.gitignore`。各个选项参阅[快速开始](/quickstart)。
+
+## 通过配置启动应用
+
+设置 `app.command` 后，运行器会启动应用并等待 `app.url` 响应。按下面的内容修改 `init` 生成的配置，保留其中的模型导入和 `agents` 条目：
+
+```ts title="e2e.config.ts"
+import type { E2EConfig } from 'e2e';
+import { web } from '@e2e-dev/web';
+
+// e2e reads CI the same way: unset, '', '0', and 'false' mean a local run.
+const ci = !['', '0', 'false'].includes(process.env.CI?.trim().toLowerCase() ?? '');
+
+export default {
+  // Keep the `agents` entry that `init` wrote.
+  targets: [{
+    engine: web(),
+    app: {
+      url: 'http://localhost:3000',
+      // CI serves the production build: run `next build` before `e2e run`.
+      command: ci
+        ? { executable: 'npm', args: ['run', 'start'] }
+        : { executable: 'npm', args: ['run', 'dev'], reuseExisting: true },
+    },
+  }],
+} satisfies E2EConfig;
+```
+
+- **本地**运行时，运行器启动 `next dev`。设置 `reuseExisting: true` 后，它会使用已在该端口上启动的开发服务器。
+- **在 CI 中**，运行器启动 `next start`，由它提供构建产物。CI 中 `reuseExisting` 不生效。
+- `app.url` 中的**端口**必须是 `dev` 和 `start` 都监听的端口。Next.js 使用 3000。如果其中一个脚本设置了 `--port`，在另一个脚本中设置相同的端口。
+
+然后运行测试：
+
+<CodeGroup>
+```bash npm
+npx e2e run
+```
+
+```bash pnpm
+pnpm exec e2e run
+```
+
+```bash bun
+bunx e2e run
+```
+</CodeGroup>
+
+`log`、`env` 和端口 `0` 等其他 `command` 选项，参阅[启动应用](/web#starting-your-app)。
+
+## 在 CI 中运行
+
+在测试之前构建应用。CI 服务会设置 `CI`，因此配置会启动 `next start`：
+
+<CodeGroup>
+```bash npm
+npm run build
+npx e2e run
+```
+
+```bash pnpm
+pnpm build
+pnpm exec e2e run
+```
+
+```bash bun
+bun run build
+bunx e2e run
+```
+</CodeGroup>
+
+完整的工作流可以使用 [GitHub Actions](/ci/github-actions#web) 中的作业，并在 e2e 步骤之前添加构建步骤。去掉其中的 `APP_URL`：这个配置不会读取它。CI 中的默认值参阅[持续集成](/ci)。
+
+要改为测试每个 Vercel 预览部署，参阅 [Vercel Previews](/ci/vercel-previews)。
+
+## 解决 Next.js 问题
+
+<AccordionGroup>
+<Accordion title="页面能渲染但始终无法完成水合">
+Next.js 16 会阻止对开发资源的跨源请求。测试目标打开 `127.0.0.1` 或 `[::1]` 时（例如使用[端口 `0`](/web#let-the-runner-pick-the-port)），`next dev` 仍将自己标识为 `localhost`。页面可以渲染，定位器可以解析，点击也会命中，但 React 处理函数不会运行。
+
+将测试目标打开的主机添加到 `allowedDevOrigins`。当 `app.url` 打开 `http://[::1]:0` 时，使用 `'[::1]'`：
+
+```ts title="next.config.ts"
+import type { NextConfig } from 'next';
+
+const nextConfig: NextConfig = {
+  allowedDevOrigins: ['127.0.0.1'],
+};
+
+export default nextConfig;
+```
+
+`localhost` 测试目标和生产环境的 `next start` 测试目标无需添加条目。
+</Accordion>
+
+<Accordion title="getByRole('alert') 找到多余的元素">
+App Router 会在每个页面上渲染一个空的 `role="alert"` 路由播报器。`screen.getByRole('alert')` 也会匹配它。请按文本选出你的警报：
+
+```ts title="Test fragment"
+await expect(screen.getByRole('alert').filter({ hasText: 'Enter a name first.' })).toBeVisible();
+```
+
+智能体看不到路由播报器，[回放缓存](/cache)也不会把它算作变化。
+</Accordion>
+
+<Accordion title="测试运行时 next dev 反复重新编译">
+e2e 会把运行输出写入 `.e2e/`：结果、日志、追踪记录和回放缓存。读取这个文件夹的监视器可能会在运行期间反复重新构建应用。
+
+- 保留 `init` 添加到 `.gitignore` 的 `.e2e/` 条目。Tailwind CSS 等扫描项目源文件的工具会跳过被忽略的文件。
+- 使用 webpack（Next.js 16 之前 `next dev` 的默认值）时，将 `.e2e` 添加到监视器忽略的路径中：
+
+```ts title="next.config.ts"
+import type { NextConfig } from 'next';
+
+const nextConfig: NextConfig = {
+  webpack: (config, { dev }) => {
+    if (dev) {
+      config.watchOptions = {
+        ...config.watchOptions,
+        ignored: ['**/.git/**', '**/.next/**', '**/node_modules/**', '**/.e2e/**'],
+      };
+    }
+    return config;
+  },
+};
+
+export default nextConfig;
+```
+
+这个列表保留了 Next.js 的默认值。如果你的配置已经设置了 `ignored`，请改为在其中添加 `'**/.e2e/**'`。
+</Accordion>
+</AccordionGroup>
+
+## 创建新应用
+
+从 [`with-next` 示例](https://github.com/e2e-inc/e2e/tree/main/examples/with-next)创建一个已配置好 e2e 的 Next.js App Router 应用：
+
+<CodeGroup>
+```bash npm
+npx create-next-app --example https://github.com/e2e-inc/e2e/tree/main/examples/with-next my-app
+cd my-app
+npm run test:e2e
+```
+
+```bash pnpm
+pnpm create next-app --example https://github.com/e2e-inc/e2e/tree/main/examples/with-next my-app
+cd my-app
+pnpm test:e2e
+```
+
+```bash bun
+bun create next-app --example https://github.com/e2e-inc/e2e/tree/main/examples/with-next my-app
+cd my-app
+bun run test:e2e
+```
+</CodeGroup>
+
+该应用包含三个定位器测试和两个智能体测试。设置 `AI_GATEWAY_API_KEY` 之前，智能体测试会被跳过。
+
+要部署到 Vercel 并测试每次部署，请改为从 [Next.js with e2e 模板](https://github.com/e2e-inc/e2e-vercel-previews)开始。它的 README 中有 **Deploy** 按钮。
+
+## 下一步
+
+<CardGroup cols={2}>
+  <Card title="Web" icon="globe" href="/web">
+    启动应用的所有方式、受保护的预览和视口。
+  </Card>
+  <Card title="Vercel Previews" icon="/images/integrations/vercel.svg" href="/ci/vercel-previews">
+    测试每个预览部署，并在测试通过前暂停生产发布。
+  </Card>
+</CardGroup>

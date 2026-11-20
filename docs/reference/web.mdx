@@ -48,6 +48,7 @@ web({ viewport: { width: 390, height: 844 }, locale: 'de-DE' });
 | Option | Type | Default |
 | --- | --- | --- |
 | [`browser`](#browser) | `BrowserName \| BrowserProvider` | `'chromium'` |
+| [`chromiumSandbox`](#chromiumsandbox) | `boolean` | `true`, `false` on Linux |
 | [`viewport`](#viewport) | `ViewportSize \| null` | 1280 by 720 |
 | [`screencast`](#screencast) | `WebScreencastOptions` | the viewport's size |
 | [`connect`](#connect) | `WebConnectOptions` | launches locally |
@@ -97,6 +98,26 @@ web({ browser: 'firefox' }); // default: 'chromium'
 | Throws | When |
 | --- | --- |
 | `INVALID_CONFIG` | `browser: provider` together with `connect`. |
+
+#### `chromiumSandbox`
+
+Whether a locally launched Chromium runs with its OS sandbox on.
+
+```ts
+web({ chromiumSandbox: true }); // default: true on macOS and Windows, false on Linux
+```
+
+- The sandbox helps contain a renderer exploit on a page the agent reaches;
+  see [Security](/security).
+- On Linux the sandbox needs unprivileged user namespaces, which root, most
+  containers, and Ubuntu 23.10+ block. Set `true` on a host that allows them.
+- A browser reached through `connect` or a provider is launched by its host,
+  and Firefox and WebKit have no such option, so none of them read it.
+
+| Throws | When |
+| --- | --- |
+| `INVALID_CONFIG` | Any value that is not a boolean, at config load. |
+| `ENGINE_FAILURE` | The sandbox is on and cannot start on this host. |
 
 #### `viewport`
 

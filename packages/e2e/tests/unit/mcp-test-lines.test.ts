@@ -13,9 +13,9 @@ import { createGrammarTools } from '@e2e-dev/core/lib/agent/primitives';
 import type { LocatorExpression, NodeRef, SemanticNode } from '@e2e-dev/core/lib/engine/surface';
 import { TestError } from '@e2e-dev/core/lib/internal/errors';
 import { describeExpression } from '@e2e-dev/core/lib/locator/expression';
-import { locateQuery } from '../../src/mcp/catalog.ts';
-import { navigationLine, nodeQueries, SessionTestLines } from '../../src/mcp/test-lines.ts';
-import { invokeTool } from '../../src/mcp/tools.ts';
+import { locateQuery } from '../../src/session-tools/catalog.ts';
+import { navigationLine, nodeQueries, SessionTestLines } from '../../src/session-tools/test-lines.ts';
+import { invokeTool } from '../../src/session-tools/tools.ts';
 import { fakeExecutorContext } from '../helpers/fake-executor-context.ts';
 
 const extra = { signal: new AbortController().signal };

@@ -5,7 +5,7 @@ description: テスト API、データの準備、デバイス操作のツール
 "twitter:image": "https://e2e.com/docs/images/og/tools.png?v=8747047102"
 ---
 
-プロジェクトツールは、目標の実行中にエージェントが呼び出せる AI SDK ツールです。テスト API へのリクエストや、データを準備する処理などに使います。
+プロジェクトツールは、ゴールの実行中にエージェントが呼び出せる AI SDK ツールです。テスト API へのリクエストや、データを準備する処理などに使います。
 
 ## ツールを追加する
 
@@ -64,7 +64,7 @@ await expect(screen.getByText('Order confirmed')).toBeVisible();
 
 ## ツールから画面を観測する
 
-読み取り専用ツールは、`getToolContext` を通して、機密情報をマスキングした画面を観測できます。次の例では、ピクセル画像を取得できる場合に、マスキング済みのスクリーンショットをレポートの証拠として保存します。
+読み取り専用ツールは、`getToolContext` を通して、機密情報を秘匿した画面を観測できます。次の例では、ピクセル画像を取得できる場合に、マスキング済みのスクリーンショットをレポートの証拠として保存します。
 
 ```ts
 import { randomUUID } from 'node:crypto';
@@ -91,13 +91,13 @@ const captureEvidence = defineTool(
 );
 ```
 
-- `observe()` は、機密情報をマスキングしたテキストスナップショットを返します。組み込みエージェントと同じルールで、`tree: true` はノードツリーを、`pixels: true` はマスキング済みのスクリーンショットを追加します。
+- `observe()` は、機密情報を秘匿したテキストスナップショットを返します。組み込みエージェントと同じルールで、`tree: true` はノードツリーを、`pixels: true` はマスキング済みのスクリーンショットを追加します。
 - `mutates: true` のツール内では、`observe()` は `POLICY_DENIED` で失敗します。観測は別の読み取り専用ツールで行ってください。
 - `attachScreenshot(pixels, label)` は、画像をステップのアーティファクトに追加し、そのアーティファクト ID を返します。同じラベルを再利用すると、以前の画像を上書きします。
 
 ## ノードの計算済みスタイルを読む
 
-読み取り専用ツール内で `context.read` を使うと、Web エンジンが列挙したノードの描画スタイルを取得できます。
+Web エンジンでは、読み取り専用ツール内で `context.read` を使うと、ツリーに載っているノードの描画スタイルを取得できます。
 
 ```ts
 const context = getToolContext(executionOptions);
@@ -108,7 +108,7 @@ const result = await context.read({ id: nodeId }, {
 return result.style;
 ```
 
-最新の観測から得たノード ID を渡します。結果には要求したプロパティだけが含まれ、シークレットの値はツリーと同じようにマスキングされます。値は、赤なら `rgb(255, 0, 0)` のように、ブラウザの計算済み CSS 形式です。
+最新の観測から得たノード ID を渡します。結果には要求したプロパティだけが含まれ、シークレットの値はツリーと同じように秘匿されます。値は、赤なら `rgb(255, 0, 0)` のように、ブラウザの計算済み CSS 形式です。
 
 要求できるのは[計算済みスタイルの許可リスト](/reference/engine#rendered-node-properties)にあるプロパティです。カスタムプロパティ、生成コンテンツ、セレクター、ページ内コードは拒否されます。
 
@@ -136,7 +136,7 @@ tools: { ...mobileTools(iphone, pixel), seedCart },
 ## 次のステップ
 
 <CardGroup cols={2}>
-  <Card title="独自のエグゼキューター" icon="gears" href="/executors">
+  <Card title="カスタムエグゼキューター" icon="gears" href="/executors">
     プロンプトや判断のループを置き換えます。
   </Card>
   <Card title="エージェントステップの仕組み" icon="stairs" href="/agent-steps">

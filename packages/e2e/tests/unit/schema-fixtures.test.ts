@@ -211,12 +211,43 @@ describe.each(schemas)('%s schema', (name) => {
       expect(validate.errors).toEqual(expect.arrayContaining([expect.objectContaining({ keyword: 'required', params: { missingProperty: 'interrupted' } })]));
     });
 
+    it('takes fixme and explicit as skip causes, and no unknown cause', () => {
+      const report = readJson('fixtures', 'report-v1.valid.json') as {
+        run: { results: { skip?: { cause: string }; attempts: { skip?: { cause: string } }[] }[] };
+      };
+      const result = report.run.results[1]!;
+      expect([result.skip?.cause, result.attempts[0]?.skip?.cause]).toEqual(['fixme', 'fixme']);
+      const skip = result.attempts[0]!.skip!;
+      skip.cause = 'explicit';
+      expect(validate(report)).toBe(true);
+      skip.cause = 'broken';
+      expect(validate(report)).toBe(false);
+    });
+
+    it('rejects a fixme skip that names a filter, which only a filtered skip does', () => {
+      const report = readJson('fixtures', 'report-v1.invalid.json') as {
+        run: { results: { skip?: Record<string, unknown> }[] };
+      };
+      const index = report.run.results.findIndex((result) => result.skip?.['filter'] !== undefined);
+      const skip = report.run.results[index]!.skip!;
+      expect(skip).toMatchObject({ cause: 'fixme', filter: 'areas' });
+      // The rules the skip's cause breaks; Ajv can report one rule more than once.
+      const causeRules = (): string[] => {
+        validate(report);
+        const errors = (validate.errors ?? []).filter((error) => error.instancePath === `/run/results/${index}/skip/cause`);
+        return [...new Set(errors.map((error) => error.schemaPath))];
+      };
+      expect(causeRules()).toEqual(['#/$defs/skip/allOf/0/then/properties/cause/const']);
+      delete skip['filter'];
+      expect(causeRules()).toEqual([]);
+    });
+
     it('keeps a skip reason on a skipped or failed attempt, never on a passed one', () => {
       const report = readJson('fixtures', 'report-v1.valid.json') as {
         run: { results: { attempts: { status: string; skip?: unknown; error?: unknown }[] }[] };
       };
       const attempt = report.run.results[1]!.attempts[0]!;
-      expect(attempt).toMatchObject({ status: 'skipped', skip: { cause: 'explicit' } });
+      expect(attempt).toMatchObject({ status: 'skipped', skip: { cause: 'fixme' } });
       const { skip } = attempt;
       delete attempt.skip;
       expect(validate(report)).toBe(false);

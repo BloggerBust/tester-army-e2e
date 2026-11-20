@@ -24,7 +24,10 @@
  * - `minted-token`: the value is data-shaped (one token, with a digit: a
  *   code, a count, a reference) and some node showed it as a word of its own.
  *   The digit is a glyph test standing in for provenance: "1" typed beside a
- *   "Row 1" label is flagged too, and the executor runs that part live.
+ *   "Row 1" label is flagged too, and the executor runs that part live. Also
+ *   any value typed into a field the app marks as a one-time code: the app
+ *   issues that code per run, and a code split over one box per digit puts a
+ *   single digit in each fill, which no screen shows as a word of its own.
  * - `date`: a date or a clock time, which the model reckons from today.
  *
  * A bare word inside a sentence is none of these: "one" typed on a page that
@@ -36,6 +39,7 @@
  */
 
 import type { DerivedReason } from '../cache/trace.ts';
+import type { SemanticNode } from '../engine/surface.ts';
 import { CLOCK_TIME, DAY_MONTH_DATE, ISO_DATE, MONTH_DAY_DATE } from '../internal/dates.ts';
 import type { JsonValue } from '../types.ts';
 
@@ -53,6 +57,8 @@ export interface StepEvidence {
    * read off the image and counts as derived.
    */
   readonly pixels?: boolean;
+  /** The purpose the engine reported for the field the value went into (`SemanticNode.inputPurpose`). */
+  readonly inputPurpose?: SemanticNode['inputPurpose'] | undefined;
 }
 
 /**
@@ -67,7 +73,15 @@ export function derivedReason(
   evidence: StepEvidence = {},
 ): DerivedReason | undefined {
   const needle = normalize(value);
-  if (needle === '' || isLiteral(needle, instruction, params)) return undefined;
+  if (needle === '') return undefined;
+  if (evidence.inputPurpose === 'one-time-code') {
+    // One box per digit puts a single character in each fill, and "the
+    // 6-digit code" spells no code: only a longer value the step spells out
+    // whole replays, so neither a lone digit nor a chunk of some other
+    // number ever replays as last run's code.
+    return [...needle].length > 1 && spellsOutWhole(needle, instruction, params) ? undefined : 'minted-token';
+  }
+  if (isLiteral(needle, instruction, params)) return undefined;
   if (evidence.pixels === true) return 'pixels';
   const dataShaped = isDataShaped(needle);
   let mintedToken = false;
@@ -83,6 +97,15 @@ export function derivedReason(
 /** Whether the instruction or a param spells the value out: the step's literal input, which replays verbatim. */
 function isLiteral(needle: string, instruction: string, params: Readonly<Record<string, JsonValue>> | undefined): boolean {
   return normalize(instruction).includes(needle) || paramStrings(params).some((text) => normalize(text).includes(needle));
+}
+
+/**
+ * Whether the instruction carries the value as a word of its own, or a param
+ * is that value: the stricter reading of a literal a one-time-code field
+ * gets, where a chunk of a longer number is no spelling of the code.
+ */
+function spellsOutWhole(needle: string, instruction: string, params: Readonly<Record<string, JsonValue>> | undefined): boolean {
+  return hasWord(normalize(instruction), needle) || paramStrings(params).some((text) => normalize(text) === needle);
 }
 
 /**

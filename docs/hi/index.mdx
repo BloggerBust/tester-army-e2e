@@ -1,0 +1,72 @@
+---
+title: परिचय
+description: वेब और मोबाइल ऐप्स के लिए ओपन सोर्स AI टेस्टिंग। टेस्ट पर कम समय लगाएँ और बनाने पर ज़्यादा।
+---
+
+import { VideoCard } from '../snippets/video-card.jsx';
+
+e2e वेब और मोबाइल ऐप्स के लिए एक ओपन सोर्स टेस्टिंग फ़्रेमवर्क है। कोई टेस्ट
+सटीक [लोकेटर](/core-concepts#locators) और
+[असर्शन](/reference/expect#locator-matchers) इस्तेमाल कर सकता है, सामान्य भाषा में
+लिखे [लक्ष्य](/core-concepts#goals) इस्तेमाल कर सकता है जिन्हें एजेंट पूरा करता है,
+या एक ही टेस्ट में दोनों।
+
+<VideoCard
+  id="NEawZb6Hssw"
+  title="2 मिनट में e2e को समझें"
+  subtitle="एजेंट को दिए गए लक्ष्यों को लोकेटर जाँचों के साथ जोड़ें, एक ही टेस्ट को वेब, iOS और Android पर चलाएँ, और एक मिनट में प्रोजेक्ट सेट अप करें।"
+/>
+
+```ts title="tests/checkout.e2e.ts"
+import { test, expect } from 'e2e';
+
+test('a member upgrades to Pro', async ({ app, agent, screen }) => {
+  await app.open('/settings/billing');
+
+  await agent.act('upgrade the workspace to the Pro plan');
+  await agent.assert('the invoice preview shows a prorated amount');
+
+  await expect(screen.getByRole('status')).toContainText('Pro');
+});
+```
+
+## e2e क्यों
+
+- **टेस्ट पर कम समय।** सेलेक्टर और इंतज़ार वाली स्क्रिप्ट की जगह एक लक्ष्य लिखें।
+  UI बदलने पर एजेंट उसके साथ तालमेल बिठा लेता है, इसलिए आपको कम टेस्ट ठीक करने पड़ते हैं।
+- **सस्ते रन।** जब बाद की कोई जाँच पास होती है, तब e2e `agent.act` चरण को रिकॉर्ड
+  करता है। अगला रन उसे बिना किसी मॉडल कॉल के [रीप्ले करता है](/cache), और ऐप बदल
+  जाने पर काम वापस एजेंट को सौंप देता है। बिल्ट-इन एजेंट के साथ `assert`,
+  `waitFor` और `extract` हमेशा मॉडल को कॉल करते हैं।
+
+## यह कैसे काम करता है
+
+- **टारगेट।** हर टेस्ट हर टारगेट पर एक बार चलता है, जैसे Chromium या कोई iPhone
+  सिम्युलेटर। [वेब इंजन](/web) Playwright के ज़रिए ब्राउज़र चलाता है।
+  [मोबाइल इंजन](/mobile) agent-device के ज़रिए iOS सिम्युलेटर और Android
+  एम्युलेटर चलाता है। आप
+  [अपना इंजन भी लिख सकते हैं](/writing-an-engine)।
+- **एजेंट चरण।** `agent.act` एक लक्ष्य पूरा करता है। `agent.assert`,
+  `agent.waitFor` और `agent.extract` स्क्रीन का आकलन करते हैं। अपना
+  [सब्सक्रिप्शन](/subscriptions), [API कुंजी, या लोकल मॉडल](/models) इस्तेमाल करें।
+  जिन टेस्ट में एजेंट चरण नहीं हैं, उन्हें मॉडल की ज़रूरत नहीं होती।
+- **रिपोर्ट।** रनर मॉडल इनपुट से [रजिस्टर किए गए सीक्रेट छिपा देता है](/security)।
+  वह चरण, विफलताएँ और आर्टिफ़ैक्ट एक [रिपोर्ट](/debugging) में दर्ज करता है, जिसे
+  आप या आपका कोडिंग एजेंट पढ़ सकते हैं।
+
+## शुरू करें
+
+<CardGroup cols={2}>
+  <Card title="क्विकस्टार्ट" icon="rocket" href="/quickstart">
+    अपने कोडिंग एजेंट के लिए एक प्रॉम्प्ट, या हाथ से सेट अप करें।
+  </Card>
+  <Card title="उदाहरण प्रोजेक्ट" icon="folder-open" href="/example-projects">
+    ऐसा स्टैंडअलोन वेब या मोबाइल ऐप चलाएँ जिसमें पहले से e2e टेस्ट हैं।
+  </Card>
+  <Card title="मूल अवधारणाएँ" icon="pen-to-square" href="/core-concepts">
+    लक्ष्य, असर्शन और लोकेटर।
+  </Card>
+  <Card title="कोडिंग एजेंट" icon="robot" href="/coding-agents">
+    अपने कोडिंग एजेंट से टेस्ट लिखवाएँ, चलवाएँ और डीबग करवाएँ।
+  </Card>
+</CardGroup>

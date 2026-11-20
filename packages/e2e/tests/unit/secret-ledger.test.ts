@@ -2,7 +2,7 @@
 
 import { describe, expect, it } from 'vitest';
 import { SecretLedger, StreamRedactor } from '@e2e-dev/core/lib/internal/redact';
-import { redactResult, textResult } from '../../src/mcp/tools.ts';
+import { redactResult, textResult } from '../../src/session-tools/tools.ts';
 
 describe('SecretLedger', () => {
   it('redacts values registered after the redact function was handed out', () => {

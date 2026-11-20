@@ -79,6 +79,12 @@
             ]
           },
           {
+            "group": "Frameworks",
+            "pages": [
+              "frameworks/nextjs"
+            ]
+          },
+          {
             "group": "Features",
             "pages": [
               "cache",

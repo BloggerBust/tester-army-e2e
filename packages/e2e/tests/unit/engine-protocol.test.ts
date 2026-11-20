@@ -11,7 +11,7 @@ import {
   defineEngine,
   describeEngine,
   ENGINE_METHODS,
-  LOCATOR_ACTION_KINDS,
+  KNOWN_LOCATOR_ACTION_KINDS,
   POINTER_ACTION_KINDS,
   EngineError,
   loopbackTransport,
@@ -518,12 +518,12 @@ describe('engine protocol', () => {
       properties: Record<string, { items?: { enum: string[] } }>;
     };
     expect(schema.properties['methods']?.items?.enum).toEqual([...ENGINE_METHODS]);
-    expect(schema.properties['actions']?.items?.enum).toEqual([...LOCATOR_ACTION_KINDS]);
+    expect(schema.properties['actions']?.items?.enum).toEqual([...KNOWN_LOCATOR_ACTION_KINDS]);
     expect(schema.properties['pointerActions']?.items?.enum).toEqual([...POINTER_ACTION_KINDS]);
     const validate = new Ajv2020({ strict: false }).compile(schema);
     const { local } = overLoopback(
       toy({
-        actions: ['tap'],
+        actions: ['tap', 'blur'],
         perform: async () => {},
         pointerActions: ['tap'],
         performAt: async () => {},

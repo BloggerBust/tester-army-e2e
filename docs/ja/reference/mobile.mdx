@@ -350,7 +350,7 @@ export default {
 | `locate` | すべての `screen` クエリ。デバイスはテキストとラベルを親にも重複して報告するため、テキストとラベルのクエリは最も内側の一致を返します（React Native の入力欄は、ホストビューと内部のフィールドの両方にラベルがあります）。Android のテスト ID クエリは、文字列でも RegExp でも、画面上に完全な ID との一致がなければ `<package>:id/` 接頭辞を除いたリソース ID にも一致します。フレームワークの `android` 以外の全パッケージが対象です。`screen.locator('id=…')` は agent-device のセレクターで、完全な ID を指定します。 |
 | `validateApp` | `app.bundleId` または `app.appPath` が必須です。`app.url` は現時点では拒否し、そのプラットフォームのデバイスからこのマシンへ接続する方法を案内します。どちらかを持つターゲットは `native-app` なので、`requires: ['native-app']` でデバイスのターゲットを選択できます。 |
 | `session` | `back`、`restart`、`reset`、`openLink`。`openLink` は `app.linkBase` のあるターゲットで `app.open(path)` から使います。`open` はありません。パスなしの `app.open()` は `restart` で指定アプリを新たに起動します。エージェントの `navigate` は使えず、ディープリンクや Web リンクは `device.openLink(url)` で開きます。 |
-| `artifacts` | 伏せ字処理済みのスクリーンショットを `screenshots/NNN-<label>.png` に保存します。処理できない場合は書き込まずに失敗します。試行の[動画モード](/reference/config#video)が録画する場合は、`video/video.mp4` またはデバイスプロバイダー自身の録画を保存します。 |
+| `artifacts` | マスキング済みのスクリーンショットを `screenshots/NNN-<label>.png` に保存します。マスキングできない場合は書き込まずに失敗します。試行の[動画モード](/reference/config#video)が録画する場合は、`video/video.mp4` またはデバイスプロバイダー自身の録画を保存します。 |
 | `location` | リプレイキャッシュの基準となる `<bundle id> / <screen title>`。タイトルは、iOS ではナビゲーションバー、Android ではツールバーのものです。 |
 | `state` | 宣言していません。`test.setup` と `session:` は使えません。 |
 
@@ -382,6 +382,8 @@ test('offline banner', { platforms: ['android'] }, async ({ app, device, screen 
 | [`setBiometrics`](#setbiometrics) | `Promise<void>` |
 | [`enrollBiometrics`](#enrollbiometrics) | `Promise<void>` |
 | [`installApp`](#installapp) | `Promise<InstalledApp>` |
+| [`uninstallApp`](#uninstallapp) | `Promise<boolean>` |
+| [`isAppInstalled`](#isappinstalled) | `Promise<boolean>` |
 | [`openApp`](#openapp) | `Promise<void>` |
 | [`openLink`](#openlink) | `Promise<void>` |
 | [`closeApp`](#closeapp) | `Promise<void>` |
@@ -662,6 +664,52 @@ await device.openApp(app);
 | `APP_NOT_OPEN` | パスを渡さず、ターゲットにも `app.appPath` がない場合。または `reinstall: true` で `app` を渡さず、対象アプリも決まっていない場合（`app.bundleId` がなく、ビルドもまだ未インストール）。 |
 | `ENGINE_FAILURE` | agent-device が ID を報告せず、`app` も渡されていない場合。ファイルパスを ID として返す代わりに失敗します。[トラブルシューティング](/mobile#troubleshooting)を参照してください。 |
 
+#### `uninstallApp`
+
+```ts
+/**
+ * Removes an app, by bundle id or package, from the device; without one,
+ * the pinned app. Resolves to whether it was installed, so removing an app
+ * id that is not there passes. Without `app.bundleId` on the target,
+ * removing the build `installApp` pinned unpins it: `app.open()` then
+ * needs another install.
+ */
+uninstallApp(app?: string): Promise<boolean>;
+```
+
+```ts
+expect(await device.uninstallApp()).toBe(true);
+expect(await device.isAppInstalled('com.example.app')).toBe(false);
+await device.installApp(); // a fresh install, for a first-launch flow
+```
+
+- 画面に表示中のアプリを削除すると、デバイスはホーム画面に戻り、それ以前に解決したロケーターは何も指さなくなります。テストを続けるには `device.installApp()` で再インストールしてから `device.openApp(app)` で開いてください。
+- デバイスはワーカーの後続のテストでも使われ、削除した状態もそのまま残ります。テストが終わる前に `finally` ブロックでアプリを再インストールしてください。そうしないと、そのワーカーの後続のテストはすべて `app.open()` で失敗します。
+
+| エラー | 発生条件 |
+| --- | --- |
+| `APP_NOT_OPEN` | `app` を渡さず、対象アプリも決まっていない場合（`app.bundleId` がなく、ビルドもまだ未インストール）。 |
+
+#### `isAppInstalled`
+
+```ts
+/**
+ * Whether an app, by bundle id or package, is on the device, system apps
+ * included (Android: launchable apps only); without one, the pinned app.
+ */
+isAppInstalled(app?: string): Promise<boolean>;
+```
+
+```ts
+expect(await device.isAppInstalled('com.example.companion')).toBe(true);
+```
+
+- デバイスが一覧に出すアプリの表示名でも一致します。
+
+| エラー | 発生条件 |
+| --- | --- |
+| `APP_NOT_OPEN` | `app` を渡さず、対象アプリも決まっていない場合。 |
+
 #### `openApp`
 
 ```ts
@@ -713,7 +761,7 @@ await expect(screen.getByText('Order #42')).toBeVisible();
 - アプリを指定しない場合、Android は検証済み App Links の所有アプリまたはブラウザへリンクを送り、セッションはそれを受け取ったパッケージを追跡します。
 - デバイスのリンクは任意のアプリのカスタムスキームを使えるため、Web のように http(s) だけを許可するのではなく、下記のスキームを拒否します。
 - レポートでは、ログイン情報やマジックリンクのトークンが入り得る userinfo（`user:password@` または `token@`）、クエリ、フラグメントを除いて表示します。パースできない文字列は、入力どおりには表示せず `<link>` と表示します。
-- リプレイキャッシュは、リンクの到達先の位置情報を基準にします。[デバイスのリプレイキャッシュ](#replay-cache-on-a-device)を参照してください。
+- リプレイキャッシュは、リンクで開いた先のロケーションを基準にします。[デバイスのリプレイキャッシュ](#replay-cache-on-a-device)を参照してください。
 
 | エラー | 発生条件 |
 | --- | --- |
@@ -905,7 +953,7 @@ tools: mobileTools(iphone, pixel),
 デバイスには `right_click`、`select`、ノード ID による `scroll_to`、`upload`、`navigate` はなく、`select_at` も提供しません。
 
 <Note>
-エンジンがマスクを確認できない画像は、`MASKING_UNPROVEN` として送信を差し止めます。アクセシビリティ情報の取得失敗では、観測を停止します。デバイスのスクリーンショットのマスクは、その取得結果にある機密フィールドの範囲に依存するため、取得できなければ代替のスクリーンショットが安全だと確認できません。
+エンジンがマスキングを確認できない画像は、`MASKING_UNPROVEN` として送信を差し止めます。アクセシビリティ情報の取得失敗では、観測を停止します。デバイスのスクリーンショットのマスキングは、その取得結果にある機密フィールドの範囲に依存するため、取得できなければ代替のスクリーンショットが安全だと確認できません。
 </Note>
 
 #### `unstable_deviceSession`
@@ -937,7 +985,7 @@ tools: { ...mobileTools(iphone, pixel), mobileData },
 - `mobileTools` と同じく、設定で宣言したすべてのデバイスエンジンを渡してください。試行の外では `INVALID_STATE` をスローします。
 - エンジン自身の呼び出しと同じように、呼び出しに `selection` をスプレッドしてください。セッションでアプリを開く前でも、ワーカーのデバイスに到達できます。
 - クライアントの呼び出しはステップになりません。レポートに表示するのはツール呼び出しであり、クライアントが実行した内容ではありません。キャッシュのリプレイでも `mutates: true` のツールはライブ実行します。
-- `unstable_raw` と同じく、クライアントの呼び出しは e2e の保護処理を通りません。ツールが返すスナップショットやスクリーンショットは、シークレット入力後も伏せ字化やマスクをしません。呼び出し後に画面の安定も待ちません。デバイスを変更する呼び出しを行うツールは、`mutates: true` を宣言する必要があります。
+- `unstable_raw` と同じく、クライアントの呼び出しは e2e の保護処理を通りません。ツールが返すスナップショットやスクリーンショットは、シークレットの入力後であっても秘匿もマスキングもされません。呼び出し後に画面の安定も待ちません。デバイスを変更する呼び出しを行うツールは、`mutates: true` を宣言する必要があります。
 - `unstable_raw` と同じく、どのリリースでも変更される可能性があります。
 
 ## ロール

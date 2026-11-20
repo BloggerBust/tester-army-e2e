@@ -608,7 +608,7 @@ $ npx e2e run --debug
 - `discovered` 是运行器收集到的每个测试与测试目标组合，`selected` 是本次运行选中的组合。未选中的组合会以 `selected: false` 出现在 `results` 中，但不计入其他统计。
 - `passed`、`failed`（包括超时）、`interrupted`、`flaky` 和 `skipped` 统计所选结果，总和等于 `selected`。
 - `interrupted` 表示运行在测试得出判定前将其停止（信号、`--max-failures`、`--max-duration`，或 `MODEL_UNAVAILABLE` 等运行级错误），绝不算失败。
-- `executed` 表示至少执行过一次尝试的所选结果。当串行组的某次尝试执行到一个成员时，该成员就算执行过一次：测试主体已开始，包括调用 `test.skip()` 的主体，或该尝试在该成员处失败，例如启动时失败。因钩子失败、前序测试失败或运行中断而未能启动的成员不计入。
+- `executed` 表示至少执行过一次尝试的所选结果。当串行组的某次尝试执行到一个成员时，该成员就算执行过一次：测试主体已开始，包括调用 `test.skip()` 或 `test.fixme()` 的主体，或该尝试在该成员处失败，例如启动时失败。因钩子失败、前序测试失败或运行中断而未能启动的成员不计入。
 
 使用 `--ai-trace` 时，运行还会写入 `<output>/ai-trace.json`，这是一个 AI SDK devtools 数据库。每次模型往返调用对应一个条目：包含确切提示词、工具定义、响应、用量和提供方元数据。其中的观察结果已脱敏，内联图像和文件字节替换为字节数。使用 [unbox-ai](https://github.com/e2e-inc/unbox-ai) 打开：`npx unbox-ai runs .e2e/ai-trace.json` 列出其中的运行。参阅[调试运行](/debugging#agent-steps)。[测试过滤器](/filters)的模型调用不会被记录。
 

@@ -1,0 +1,31 @@
+name: team-label
+
+# Labels a PR `e2e team` when its author is listed in .github/team.txt, one GitHub
+# login per line. The list is explicit because `author_association` reports a
+# member with private org membership as a collaborator, the same as an outside
+# collaborator.
+# pull_request_target so the token can edit labels; the list is read from the
+# default branch and the job never checks out or runs PR code.
+on:
+  pull_request_target:
+    types: [opened, reopened]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  label:
+    runs-on: blacksmith-4vcpu-ubuntu-2404
+    timeout-minutes: 5
+    steps:
+      - name: Add the label
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.pull_request.number }}
+          AUTHOR: ${{ github.event.pull_request.user.login }}
+        run: |
+          team=$(gh api "repos/$GITHUB_REPOSITORY/contents/.github/team.txt" -H 'accept: application/vnd.github.raw')
+          if grep -qixF -- "$AUTHOR" <<< "$team"; then
+            gh api --method POST "repos/$GITHUB_REPOSITORY/issues/$PR/labels" -f 'labels[]=e2e team' --silent
+          fi

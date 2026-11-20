@@ -6,11 +6,20 @@
 
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
+import type { EngineAttemptContext } from '@e2e-dev/core/lib/engine/index';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+import { StepGate } from '../../src/cli/step.ts';
+import { stepPromptText } from '../../src/report/list-steps.ts';
+import type { HeldTestAttachment } from '../../src/run/step-attachment-wire.ts';
 import type { BeforeStep, HeldStep, StepHoldContext } from '../../src/run/step-hold.ts';
 import { createFakeEngine, FAKE_APP } from '../helpers/fake-engine.ts';
+import { gate } from '../helpers/gate.ts';
+import { printedPauseId } from '../helpers/pause-id.ts';
 import {
+  contentsUnder,
+  createProject,
   resultByTitle,
+  runExisting,
   runProject,
   runProjectWithConfigFile,
   workerFakeConfigSource,
@@ -210,6 +219,62 @@ describe('reading the held screen', () => {
     expect(resultByTitle(outcome, 'reads one screen').status).toBe('passed');
     expect(observed).toBe(1);
     expect(screens).toEqual([expect.stringContaining('button "Submit"')]);
+  }, 60_000);
+
+  it('shows distinct pause IDs and the screen of each paused worker', async () => {
+    const stepGate = new StepGate(() => {}, { holdSteps: false });
+    const names = ['alpha', 'beta', 'gamma'];
+    const prompts: Promise<string>[] = [];
+    let held = 0;
+    const { outcome, project } = await runProjectWithConfigFile(
+      Object.fromEntries(names.map((name) => [`tests/${name}.e2e.ts`, `import { test } from 'e2e';
+test('${name} is paused', async ({ app, screen }) => {
+  await app.open('/${name}');
+  await screen.pause();
+});
+`])),
+      {
+        configSource: `import { createFakeEngine, FAKE_APP } from '../../helpers/fake-engine.ts';
+const { engine } = createFakeEngine({ scene: () => [] });
+export default { targets: [{ name: 'fake', platform: 'fake', engine, app: FAKE_APP }], workers: 3 };
+`,
+        runOptions: {
+          hold: {
+            steps: false,
+            ask: async (step, context) => {
+              const paused = stepGate.beforeStep(step, {
+                ...context,
+                show: (prompt) => {
+                  if (prompt !== undefined) {
+                    prompts.push(context.readScreen().then((screen) => stepPromptText(prompt, screen)));
+                  }
+                },
+              });
+
+              if (++held === names.length) {
+                for (let index = 0; index < names.length; index += 1) {
+                  await prompts[index];
+                  stepGate.press('continue', { guard: false });
+                }
+              }
+              await paused;
+            },
+          },
+        },
+      },
+    );
+    try {
+      expect(outcome.exitCode).toBe(0);
+      const shown = await Promise.all(prompts);
+      expect(shown).toHaveLength(3);
+      expect(new Set(shown.map(printedPauseId)).size).toBe(3);
+      for (const name of names) {
+        const prompt = shown.find((text) => text.includes(` in ${name} is paused [fake]:`));
+        expect(prompt).toContain(`Screen:\n  ${FAKE_APP.url}/${name}\n`);
+      }
+    } finally {
+      project.cleanup();
+    }
   }, 60_000);
 });
 
@@ -490,6 +555,124 @@ test('pauses on a frame', async ({ gadget }) => {
   }, 60_000);
 });
 
+it('runs the next test step on resume while an attached action is still in flight', async () => {
+  const started = gate();
+  const finish = gate();
+  let nextRan = false;
+  let log: EngineAttemptContext['appLog'] | undefined;
+  const { engine } = createFakeEngine({
+    onStartAttempt: (context) => {
+      log = context.appLog;
+    },
+    onNavigate: async (url) => {
+      if (new URL(url).pathname === '/attached') {
+        started.open();
+        await finish.promise;
+      } else {
+        nextRan = true;
+        log?.({ level: 'warning', source: 'console', text: 'app logged /next' });
+      }
+    },
+  });
+  let call: ReturnType<HeldTestAttachment['call']> | undefined;
+  const project = createProject({ 'tests/paused.e2e.ts': `import { test } from 'e2e';
+test('opens a page after the pause', async ({ app, screen }) => {
+  await screen.pause();
+  await app.open('/next');
+});
+` });
+  const run = runExisting(project, {
+    config: { targets: [{ name: 'fake', platform: 'fake', engine, app: FAKE_APP }], trace: 'on' },
+    runOptions: {
+      hold: {
+        steps: false,
+        ask: async (step, { attach }) => {
+          const attached = await attach(step.attachId);
+          call = attached.call('navigate', { url: '/attached' });
+          await Promise.race([
+            started.promise,
+            call.then((result) => {
+              throw new Error(`the tool returned before starting the action: ${JSON.stringify(result)}`);
+            }),
+          ]);
+        },
+      },
+    },
+  });
+  try {
+    await vi.waitFor(() => expect(nextRan).toBe(true), { timeout: 5_000 });
+    expect(await call).toMatchObject({
+      isError: true,
+      content: [{ type: 'text', text: expect.stringContaining('the test resumed') }],
+    });
+    finish.open();
+    const outcome = await run;
+    expect(resultByTitle(outcome, 'opens a page after the pause').status).toBe('passed');
+    const traces = contentsUnder(path.join(project.dir, '.e2e/results')).filter(([file]) => file.endsWith('trace.md'));
+    expect(traces).toHaveLength(1);
+    expect(traces[0]?.[1]).toContain('app logged /next');
+  } finally {
+    finish.open();
+    try {
+      await run;
+    } finally {
+      project.cleanup();
+    }
+  }
+});
+
+it('reports a timed-out attached recording in attempt cleanup after the test resumes', async () => {
+  const { engine } = createFakeEngine({
+    video: true,
+    onStopVideo: () => new Promise(() => {}),
+  });
+  const notices: string[] = [];
+  const { outcome, project } = await runProject({
+    'tests/recording.e2e.ts': `import { test } from 'e2e';
+test('continues after the pause', async ({ app, screen }) => {
+  await app.open('/before');
+  await screen.pause();
+  await app.open('/after');
+});
+`,
+  }, {
+    config: {
+      cleanupTimeout: 500,
+      targets: [{ name: 'fake', platform: 'fake', engine, app: FAKE_APP }],
+    },
+    runOptions: {
+      onEvent: (event) => {
+        if (event.type === 'notice') {
+          notices.push(event.message);
+        }
+      },
+      hold: {
+        steps: false,
+        ask: async (step, { attach }) => {
+          const attached = await attach(step.attachId);
+          const started = await attached.call('start_recording', {});
+          expect(started.content).toEqual([
+            { type: 'text', text: expect.stringContaining('Recording 1 started.') },
+          ]);
+        },
+      },
+    },
+  });
+
+  try {
+    const attempt = resultByTitle(outcome, 'continues after the pause').attempts[0];
+    expect(attempt?.status).toBe('passed');
+    expect(attempt?.steps).toEqual(expect.arrayContaining([expect.objectContaining({ label: '/after' })]));
+    expect(attempt?.cleanup).toBe('failed');
+    expect(attempt?.secondaryErrors).toEqual([
+      expect.objectContaining({ code: 'CLEANUP_TIMEOUT', phase: 'cleanup' }),
+    ]);
+    expect(notices.join('\n')).toContain('The running recording could not be saved: stopping the attached recording timed out');
+  } finally {
+    project.cleanup();
+  }
+});
+
 describe('holding steps and the run limits', () => {
   it('stops the time limit while a step is held', async () => {
     const { beforeStep } = holder(3_000);
@@ -622,7 +805,7 @@ describe('hold.ask ending a hold', () => {
               ask: async (step, { show }) => {
                 show({ steps: [{ step, number: 1 }], help: false, holdSteps: true });
                 await sleep(200);
-                shownWhileHeld = stderr.some((text) => text.startsWith('paused at step 1 of waits'));
+                shownWhileHeld = stderr.some((text) => text.startsWith(`paused (${step.attachId}) at step 1 of waits`));
                 show(undefined);
               },
             },

@@ -1,0 +1,223 @@
+---
+title: टेस्ट के बिना एक्सप्लोर करना
+description: एजेंट को टेस्ट फ़ाइल नहीं, एक लक्ष्य दें। वह अपने चरणों की योजना बनाता है, ऐप चलाता है और जो पाता है उसकी रिपोर्ट देता है।
+"og:image": "https://e2e.com/docs/images/og/explore.png?v=8969611dd1"
+"twitter:image": "https://e2e.com/docs/images/og/explore.png?v=8969611dd1"
+---
+
+import { Video } from '../snippets/video.jsx';
+
+`e2e explore` टेस्ट फ़ाइल की जगह एक लक्ष्य के साथ आपके ऐप पर एजेंट चलाता है।
+एजेंट एक चरण की योजना बनाता है, उसे करता है और फ़ाइंडिंग दर्ज करता है, जब तक
+लक्ष्य पूरा न हो जाए या कोई बजट खत्म न हो जाए। फिर वह एक आकलन लिखता है। यह
+`agent.act()` वाले ही मॉडल, टूल और एक्शन नियम इस्तेमाल करता है।
+
+<Video>
+  <video src="/images/explore.mp4" aria-label="e2e explore हेडेड ब्राउज़र में ऐप चलाता है और टर्मिनल में फ़ाइंडिंग दिखाता है।" muted loop playsInline controls />
+
+  `e2e explore --headed` ऐप चलाता है और साथ-साथ फ़ाइंडिंग बताता है।
+</Video>
+
+## एक्सप्लोरेशन शुरू करें
+
+फ़्लो और यूज़र का लक्ष्य बताएँ, और ज़रूरत हो तो सीमाएँ जोड़ें:
+
+<CodeGroup>
+```bash npm
+npx e2e explore 'Explore the checkout flow like a first-time buyer and report anything off'
+```
+
+```bash pnpm
+pnpm exec e2e explore 'Explore the checkout flow like a first-time buyer and report anything off'
+```
+
+```bash bun
+bunx e2e explore 'Explore the checkout flow like a first-time buyer and report anything off'
+```
+</CodeGroup>
+
+सीमा कुछ ऐसी हो सकती है: "ऑर्डर देने से पहले रुकें"। बिना लक्ष्य के explore
+`Explore the app and find bugs` इस्तेमाल करता है। कोई चरण फ़ेल होने पर भी रन
+नहीं रुकता।
+
+अगर `e2e.config.ts` नहीं है, तो explore पहले
+[`e2e init`](/reference/cli#e2e-init) विज़ार्ड चलाता है। अगर हाथ से करने के लिए
+कुछ नहीं बचा, तो एक्सप्लोरेशन उसके तुरंत बाद शुरू होता है। वरना init बाकी
+चरणों की सूची दिखाता है, जैसे `npm install` या मॉडल की कुंजी सेट करना।
+टर्मिनल के बिना, जैसे CI में, explore `CONFIG_NOT_FOUND` के साथ फ़ेल होता है।
+
+## नतीजे पढ़ें
+
+टर्मिनल हर फ़ाइंडिंग और हर पूरा हुआ चरण उसी समय दिखाता है जब वह सामने आता है:
+
+```text
+ ❯  web  Exploring  Explore this bookshop like a careful first-time buyer: browse the catalog, ...
+   ⚑ medium issue  Home greeting exposes an unresolved userName template (/)
+   ⚑ high issue  Neuromancer shows an impossible negative stock availability (/catalog)
+   ✓ 1  Catalog browsing 31.46s · 7 actions · 4 findings
+   ⚑ high issue  Cart total does not update when Hyperion quantity increases (/cart)
+   ⚑ trivial warning  Checkout newsletter label misspells Receive (/checkout)
+   ✓ 2  Cart quantities and removal 19.47s · 4 actions · 3 findings
+   ended: the agent covered the goal
+```
+
+`issue` रन को एग्ज़िट कोड 1 के साथ फ़ेल कर देता है। `warning` ऐसा नहीं करता।
+आख़िरी रिपोर्ट सबसे गंभीर इश्यू सबसे पहले रखती है। हर फ़ाइंडिंग में उसे
+रीप्रोड्यूस करने के चरण होते हैं, और जब हो सके, एक स्क्रीनशॉट भी। किसी फ़ाइंडिंग
+पर कदम उठाने से पहले उसे उसके सबूत से मिलाकर देखें। बाकी एग्ज़िट कोड, JSON
+रिपोर्ट और आर्टिफ़ैक्ट पाथ के लिए [CLI रेफ़रेंस](/reference/cli#e2e-explore) देखें।
+
+## दूसरे स्क्रीन साइज़ जाँचें
+
+अगर टारगेट का इंजन व्यूपोर्ट का साइज़ बदल सकता है (वेब इंजन बदल सकता है), तो
+आप लक्ष्य में दूसरी चौड़ाइयों पर लेआउट देखने को कह सकते हैं:
+
+<CodeGroup>
+```bash npm
+npx e2e explore 'Check the pricing page at desktop, tablet, and phone widths for broken layouts'
+```
+
+```bash pnpm
+pnpm exec e2e explore 'Check the pricing page at desktop, tablet, and phone widths for broken layouts'
+```
+
+```bash bun
+bunx e2e explore 'Check the pricing page at desktop, tablet, and phone widths for broken layouts'
+```
+</CodeGroup>
+
+## साइन इन करके शुरू करें
+
+`--session <name>` जोड़ें, यानी उस सेशन का नाम जिसे कोई
+[सेटअप टेस्ट](/authentication) सेव करता है:
+
+<CodeGroup>
+```bash npm
+npx e2e explore --session admin 'Explore the admin settings and find bugs'
+```
+
+```bash pnpm
+pnpm exec e2e explore --session admin 'Explore the admin settings and find bugs'
+```
+
+```bash bun
+bunx e2e explore --session admin 'Explore the admin settings and find bugs'
+```
+</CodeGroup>
+
+explore सिर्फ़ वही सेटअप टेस्ट चलाता है और सेशन वापस लाता है। एक्सप्लोरर
+जानता है कि ऐप शुरू होते समय यूज़र पहले से साइन इन है, इसलिए वह साइन इन के किसी
+चरण की योजना नहीं बनाता।
+
+स्क्रीनशॉट पासवर्ड फ़ील्ड को मास्क करते हैं। ऐप जो वैल्यू कहीं और दिखाता है, वह
+मॉडल तक पहुँचती है।
+[सीक्रेट भरने के बाद स्क्रीनशॉट](/reference/security#screenshots-after-a-secret-fill) देखें।
+
+## पुल रिक्वेस्ट का बदलाव एक्सप्लोर करें
+
+ब्रांच ने जो बदला है, उसे एक्सप्लोर करने के लिए `--changed-since <ref>` जोड़ें।
+प्लानर ref के साथ मर्ज बेस के बाद के कमिट मैसेज और कमिट किया गया डिफ़ पढ़ता
+है। वह अपने चरण उन स्क्रीन पर खर्च करता है जिन पर बदलाव का असर पड़ सकता है।
+
+<CodeGroup>
+```bash npm
+npx e2e explore --changed-since origin/main
+```
+
+```bash pnpm
+pnpm exec e2e explore --changed-since origin/main
+```
+
+```bash bun
+bunx e2e explore --changed-since origin/main
+```
+</CodeGroup>
+
+सिर्फ़ वही दोष `issue` होता है जो बदलाव से हो सकता है। ऐप में कहीं और का दोष
+`warning` होता है और रन को फ़ेल नहीं करता।
+
+बिना लक्ष्य के, लक्ष्य `Explore what this change affects and find bugs in it`
+होता है। तब प्लानर ऐसा बदलाव स्किप कर सकता है जिसे कोई यूज़र नहीं देख सकता, जैसे
+सिर्फ़ डॉक्स या सिर्फ़ टेस्ट। रन `skipped` पर खत्म होता है और पास होता है।
+प्लानर सिर्फ़ तभी स्किप करता है जब उसने पूरा बदलाव पढ़ा हो। बड़े डिफ़, बाइनरी
+फ़ाइल या बिना कमिट की हुई फ़ाइल के होने पर स्किप नहीं होता।
+
+ब्रांच के अपने कमिट मैसेज और कोड स्किप करने के निर्णय को प्रभावित कर सकते हैं।
+स्किप को साफ़ नतीजे वाले एक्सप्लोरेशन से अलग पहचानने के लिए
+`run.explore.ended` पढ़ें।
+
+मॉडल क्या पढ़ता है, इसके लिए
+[सुरक्षा](/reference/security#mcp-and-explore) देखें।
+
+GitHub Actions पर इसे `pull_request` पर एक अलग जॉब में चलाएँ। कॉन्फ़िग में
+[GitHub रिपोर्टर](/github) होने पर फ़ाइंडिंग अपने अलग पुल रिक्वेस्ट कमेंट में
+जाती हैं। फ़ोर्क का रन पोस्ट नहीं कर सकता।
+[जब कुछ भी पोस्ट नहीं होता](/github#when-nothing-is-posted) देखें।
+
+```yaml title=".github/workflows/explore.yml"
+on: pull_request
+
+jobs:
+  explore:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+    # An issue exits 1. Keep the findings as a review aid, not a merge gate.
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      # ...install, browsers
+      - run: npx e2e explore --changed-since origin/${{ github.base_ref }} --max-steps 4
+        env:
+          AI_GATEWAY_API_KEY: ${{ secrets.AI_GATEWAY_API_KEY }}
+          GITHUB_TOKEN: ${{ github.token }}
+```
+
+`fetch-depth: 0` बेस ब्रांच को चेकआउट में ले आता है। इसके बिना रन
+`INVALID_CHANGED_SINCE` के साथ फ़ेल होता है।
+
+इंस्टॉल और बिल्ड के बाद वर्किंग ट्री साफ़ रखें, वरना रन कभी स्किप नहीं होगा।
+`.e2e/` और बिल्ड आउटपुट को इग्नोर करें। e2e को `npx` से चलाएँ, `pnpm exec` से
+नहीं, क्योंकि `pnpm exec` `pnpm-lock.yaml` को दोबारा लिख सकता है।
+
+<Warning>
+इसे कभी `pull_request_target` पर न चलाएँ। उस रन के पास आपके सीक्रेट होते हैं,
+और मॉडल किसी फ़ोर्क के लिखे डिफ़ और कमिट मैसेज पढ़ता है।
+</Warning>
+
+## अगर रन बहुत जल्दी रुक जाए
+
+रन 8 चरणों या 10 मिनट के बाद रुक जाता है। फ़्लो में और आगे तक पहुँचने के लिए
+`--max-steps <n>` (100 तक) या `--timeout <ms>` (`7200000` तक, यानी 2 घंटे)
+बढ़ाएँ।
+
+अगर मुख्य फ़्लो पूरे करने के बाद समय बचे, तो रन उन्हीं फ़्लो को एज-केस इनपुट,
+एक साथ लगाए गए फ़िल्टर और रीलोड के साथ फिर आज़माता है। अगर एक से ज़्यादा खाते
+कॉन्फ़िगर हैं और `--session` नहीं दिया गया है, तो वह उन्हें दूसरे खाते से भी
+आज़माता है। रन जल्दी सिर्फ़ तब खत्म होता है जब कुछ भी नया पहुँच में न हो।
+
+## टारगेट और एजेंट चुनें
+
+explore `e2e.config.ts` के टारगेट, ऐप कमांड, मॉडल और एजेंट इस्तेमाल करता है।
+इन्हें `--target <name>` और `--agent <name>` से चुनें। `--target` के बिना
+explore पहला टारगेट इस्तेमाल करता है।
+
+## कोड से एक्सप्लोर करें
+
+अपने कोड से एक्सप्लोरेशन शुरू करने के लिए
+[`e2e/runner` से `explore`](/reference/runner#explore) कॉल करें। यह एक कॉन्फ़िग
+वैल्यू लेता है, और कैंसलेशन और प्रोग्रेस इवेंट सपोर्ट करता है।
+
+## आगे
+
+<CardGroup cols={2}>
+  <Card title="Bug Bash" icon="bug" href="/bug-bash">
+    पूरे ऐप या ब्रांच को कई एक्सप्लोरेशन से एक्सप्लोर करें, और हर बग को एक टेस्ट से साबित करें।
+  </Card>
+  <Card title="एजेंट और पर्सोना" icon="users" href="/agents">
+    वे एजेंट जिनके रूप में explore चल सकता है।
+  </Card>
+</CardGroup>

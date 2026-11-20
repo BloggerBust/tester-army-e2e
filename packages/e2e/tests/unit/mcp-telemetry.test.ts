@@ -10,7 +10,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { PassThrough } from 'node:stream';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { sessionTelemetry } from '../../src/cli/mcp.ts';
+import { sessionTelemetry } from '../../src/mcp-command.ts';
 import { serveMcp } from '../../src/mcp/server.ts';
 import { EVENT_MCP_SESSION } from '../../src/telemetry/events.ts';
 import { Telemetry } from '../../src/telemetry/telemetry.ts';
@@ -28,7 +28,7 @@ function tempDir(): string {
 }
 
 describe('e2e mcp telemetry', () => {
-  it('sends each session as it ends, named after the client that opened it', async () => {
+  it('reports standalone and attachment open failures for the client that requested them', async () => {
     const cwd = tempDir();
     const debug: string[] = [];
     const telemetry = new Telemetry({
@@ -65,13 +65,20 @@ describe('e2e mcp telemetry', () => {
     await vi.waitFor(() => expect(events()).toHaveLength(1));
     const [event] = events();
     expect(event!.event).toBe(EVENT_MCP_SESSION);
-    expect(event!.properties).toMatchObject({ client: 'claude-code', client_version: '2.1.0', outcome: 'open-failed', error_code: 'CONFIG_NOT_FOUND' });
+    expect(event!.properties).toMatchObject({ client: 'claude-code', client_version: '2.1.0', outcome: 'open-failed', error_code: 'CONFIG_NOT_FOUND', attached: false });
     expect(JSON.stringify(event)).not.toContain('acme');
+
+    send({ id: 3, method: 'tools/call', params: { name: 'open_session', arguments: { attach: 'missing' } } });
+    await vi.waitFor(() => expect(events()).toHaveLength(2));
+    expect(events()[1]).toMatchObject({
+      event: EVENT_MCP_SESSION,
+      properties: { client: 'claude-code', outcome: 'open-failed', error_code: 'NO_SESSION', attached: true },
+    });
 
     stdin.end();
     await served;
     await telemetry.flush();
-    expect(events().map((item) => item.event)).toEqual([EVENT_MCP_SESSION, 'e2e_cli_session']);
+    expect(events().map((item) => item.event)).toEqual([EVENT_MCP_SESSION, EVENT_MCP_SESSION, 'e2e_cli_session']);
     for (const frame of frames) expect(JSON.parse(frame)).toMatchObject({ jsonrpc: '2.0' });
   });
 });

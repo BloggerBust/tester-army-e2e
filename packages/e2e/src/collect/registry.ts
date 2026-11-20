@@ -11,7 +11,8 @@ import { MAX_TIMER_MS } from '@e2e-dev/core/lib/internal/time';
 import { validateTitle } from '@e2e-dev/core/lib/internal/ids';
 import { realmSlot } from '@e2e-dev/core/lib/internal/realm-slot';
 import { markRunningTestExpectedToFail } from '@e2e-dev/core/lib/internal/expected-failure';
-import { parseModifierCall, skipRunningTest } from '../internal/skip.ts';
+import { setRunningTestTimeout } from '@e2e-dev/core/lib/internal/test-timeout';
+import { fixmeReason, parseModifierCall, skipRunningTest } from '../internal/skip.ts';
 import { formatEachTitle, readRows } from './each.ts';
 import { unknownKeyMessage } from '@e2e-dev/core/lib/internal/options';
 import type { SourceLocation } from '@e2e-dev/core/lib/internal/source';
@@ -38,7 +39,8 @@ export interface GroupNode {
   readonly serial: boolean;
 }
 
-export type TestMode = 'normal' | 'skip' | 'only';
+/** How a test was registered; `fixme` is a skip from `test.fixme(title, fn)`, reported with its own cause. */
+export type TestMode = 'normal' | 'skip' | 'fixme' | 'only';
 
 /**
  * A registered test or hook body. `TestAPI` types what each receives; at run
@@ -737,14 +739,15 @@ function fixtureDefinition(name: string, entry: unknown): Pick<FixtureDefinition
 function createTestAPI(chain: readonly FixtureDefinition[]): TestAPI {
   /**
    * Registers one `test()` call. `api` names the caller in errors. A `skip`
-   * condition comes from `skipIf` or `runIf`: when true, the test is
-   * skipped, keeping any reason its `skip` option gives. Either way a serial
-   * group rejects it, so a file collects the same on every platform.
-   * `namedBy` is passed on to `registerTest`.
+   * condition comes from `skipIf`, `runIf`, or `skip`: when true, the test is
+   * skipped, keeping any reason its `skip` option gives. `fixme` skips it as
+   * fixme, with the reason `fixme`. Either way a serial group rejects it, so
+   * a file collects the same on every platform. `namedBy` is passed on to
+   * `registerTest`.
    */
   const registerOne = (
     api: string,
-    skip: boolean | undefined,
+    skip: boolean | 'fixme' | undefined,
     title: string,
     given: TestOptions,
     fn: TestBody,
@@ -757,14 +760,20 @@ function createTestAPI(chain: readonly FixtureDefinition[]): TestAPI {
           'set skip on the serial describe instead',
       );
     }
-    const options = skip === true
-      ? { ...given, skip: typeof given.skip === 'string' ? given.skip : true }
-      : given;
-    const mode: TestMode = options.only === true ? 'only' : options.skip !== undefined && options.skip !== false ? 'skip' : 'normal';
+    const options = skip === 'fixme'
+      ? { ...given, skip: fixmeReason() }
+      : skip === true
+        ? { ...given, skip: typeof given.skip === 'string' ? given.skip : true }
+        : given;
+    const mode: TestMode = options.only === true
+      ? 'only'
+      : skip === 'fixme'
+        ? 'fixme'
+        : options.skip !== undefined && options.skip !== false ? 'skip' : 'normal';
     return collector.registerTest('test', mode, title, options, [], fn, chain, namedBy);
   };
   /** The `test()` call forms. */
-  const registrar = (api: string, skip?: boolean): TestRegistrar<object> => (
+  const registrar = (api: string, skip?: boolean | 'fixme'): TestRegistrar<object> => (
     title: string,
     optionsOrFn: TestOptions | TestBody,
     maybeFn?: TestBody,
@@ -809,9 +818,17 @@ function createTestAPI(chain: readonly FixtureDefinition[]): TestAPI {
     skip(first?: string | boolean, second?: TestBody | string): TestCase | undefined {
       const call = parseModifierCall(first, second);
       if (call.kind === 'register') {
-        return requireCollector('test.skip()').registerTest('test', 'skip', call.title, { skip: true }, [], call.fn as TestBody, chain);
+        return registrar('test.skip()', true)(call.title, call.fn as TestBody);
       }
-      skipRunningTest(call.condition, call.reason);
+      skipRunningTest('test.skip', call.condition, call.reason);
+      return undefined;
+    },
+    fixme(first?: string | boolean, second?: TestBody | string): TestCase | undefined {
+      const call = parseModifierCall(first, second);
+      if (call.kind === 'register') {
+        return registrar('test.fixme()', 'fixme')(call.title, call.fn as TestBody);
+      }
+      skipRunningTest('test.fixme', call.condition, fixmeReason(call.reason));
       return undefined;
     },
     fail(first?: string | boolean, second?: TestBody | string): TestCase | undefined {
@@ -821,6 +838,9 @@ function createTestAPI(chain: readonly FixtureDefinition[]): TestAPI {
       }
       markRunningTestExpectedToFail(call.condition, call.reason);
       return undefined;
+    },
+    setTimeout(timeout: number): void {
+      setRunningTestTimeout(timeout);
     },
     skipIf(condition: unknown): TestRegistrar<object> {
       return registrar('test.skipIf()', readCondition('test.skipIf()', condition));

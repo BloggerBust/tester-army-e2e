@@ -48,19 +48,24 @@ const QUERIES: ReadonlySet<string> = new Set([...SURFACE.locator].flatMap(([name
 /** What the secret ledger writes where a value was. */
 const SECRET_MARKER = '<secret:';
 
+/** The parts of the attempt a statement uses. */
+type RunCodeAttempt = Pick<StandaloneAttempt, 'agentRuntime' | 'budget' | 'session' | 'runId' | 'attemptId'> & {
+  readonly fixtures: Pick<StandaloneAttempt['fixtures'], 'app'>;
+};
+
 /** What the session hands `run_code`. */
 export interface RunCodeSession {
-  /** The session's attempt: its fixtures, agent runtime, budget, and engine session. */
-  readonly attempt: StandaloneAttempt;
+  /** The fixtures, runtime, and budget for this call on the session's attempt. */
+  readonly attempt: (signal: AbortSignal | undefined) => RunCodeAttempt;
   /** The fixtures the target's engine contributes, which `run_code` names in a refusal and never runs. */
   readonly engineFixtures: readonly string[];
 }
 
 interface RunCodeOptions extends RunCodeSession {
   /** The session step, observed once the statements ran. */
-  readonly context: StepExecutorContext;
+  readonly context: Pick<StepExecutorContext, 'observe'>;
   /** The session's presenter, so the screen comes back as changes since the one the agent holds. */
-  readonly screen: ScreenPresenter;
+  readonly screen: Pick<ScreenPresenter, 'update'>;
   /** Told the source of every statement that passed and is not a read, in the order they ran, for `test_lines`. */
   readonly record?: ((passed: readonly string[]) => void) | undefined;
 }
@@ -81,7 +86,6 @@ type Outcome = { readonly statement: Statement; readonly value: unknown } | { re
 
 /** The `run_code` catalog tool. */
 export function runCodeTool(options: RunCodeOptions): ToolSet[string] {
-  const runner = new LineRunner(options.attempt);
   return {
     description: [
       'Run e2e test code against the live session before writing it into a test.',
@@ -104,18 +108,20 @@ export function runCodeTool(options: RunCodeOptions): ToolSet[string] {
         .optional()
         .describe(`How long each statement may wait, in milliseconds; default ${String(RUN_CODE_TIMEOUT_MS)}`),
     }).strict(),
-    execute: (args: RunCodeArgs, call: ToolExecutionOptions<unknown>) => runCode(options, runner, args, call.abortSignal),
+    execute: (args: RunCodeArgs, call: ToolExecutionOptions<unknown>) => runCode(options, args, call.abortSignal),
     toModelOutput: ({ output }: { readonly output: RunCodeResult }) => ({ type: output.failed ? ('error-text' as const) : ('text' as const), value: output.text }),
   };
 }
 
 /** Parses the code, runs its statements until one fails, and renders what happened. */
-async function runCode(options: RunCodeOptions, runner: LineRunner, args: RunCodeArgs, signal: AbortSignal | undefined): Promise<RunCodeResult> {
+async function runCode(options: RunCodeOptions, args: RunCodeArgs, signal: AbortSignal | undefined): Promise<RunCodeResult> {
   const statements = parseCode(args.code, { fixtures: options.engineFixtures });
-  const { agentRuntime: runtime, budget } = options.attempt;
+  const attempt = options.attempt(signal);
+  const { agentRuntime: runtime, budget } = attempt;
   refuseMarkerExpectations(statements);
   if (runtime.config.allSecrets.size > 0) refuseLocatorsByPart(statements);
   const timeout = args.timeout ?? RUN_CODE_TIMEOUT_MS;
+  const runner = new LineRunner(attempt);
   const outcomes: Outcome[] = [];
   for (const statement of statements) {
     if (signal?.aborted === true) break;
@@ -223,7 +229,7 @@ function findsByPart(call: Call): boolean {
  * A screen over the attempt's engine session whose every read passes the
  * secret ledger, wired like the attempt's own through the same factory.
  */
-function redactingScreen(attempt: StandaloneAttempt): Screen {
+function redactingScreen(attempt: RunCodeAttempt): Screen {
   const runtime = attempt.agentRuntime;
   const redaction: NodeRedaction = { redact: runtime.redact, redactCut: runtime.redactCut };
   return createScreen(
@@ -255,7 +261,7 @@ class LineRunner {
   private readonly screen: Screen;
   private readonly app: App;
 
-  constructor(private readonly attempt: StandaloneAttempt) {
+  constructor(private readonly attempt: RunCodeAttempt) {
     this.screen = redactingScreen(attempt);
     this.app = attempt.fixtures.app;
   }

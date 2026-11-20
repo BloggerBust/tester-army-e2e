@@ -9,7 +9,7 @@ description: トレースページと証拠を確認し、ブラウザの動作�
 
 ## 失敗を読み解く
 
-`list` レポーターの `Failed Tests` セクションには、エラー、失敗した行、ロケーターが失敗した場合の近い候補、アプリのログ、トレースページが表示されます。アプリの最初の 3 件のエラー（コンソールエラー、未捕捉の例外、失敗したリクエスト、5xx 応答）も、トレースページと同じように機密情報をマスキングして引用します。`.e2e/summary.md` にも表示されます。
+`list` レポーターの `Failed Tests` セクションには、エラー、失敗した行、ロケーターが失敗した場合の近い候補、アプリのログ、トレースページが表示されます。アプリの最初の 3 件のエラー（コンソールエラー、未捕捉の例外、失敗したリクエスト、5xx 応答）も、トレースページと同じように機密情報を秘匿して引用します。`.e2e/summary.md` にも表示されます。
 
 ```text
  FAIL  |web| tests/todos.e2e.ts > shows the remaining count
@@ -124,9 +124,9 @@ remaining"`）は、アプリの更新とタイミングが競合しています
 
 | アーティファクト | 保存されるタイミング |
 | --- | --- |
-| スクリーンショット | エンジンが対応していれば、失敗した試行で撮影します。組み込みの `agent.assert` は、`screenshot: false` でなければ判定の成否にかかわらず撮影します。`app.screenshot('label')` でも撮影できます。マスキングされるのはセキュアなフィールドだけです。[シークレット入力後のスクリーンショット](/reference/security#screenshots-after-a-secret-fill)を参照してください。 |
+| スクリーンショット | エンジンが対応していれば、失敗した試行で撮影します。組み込みの `agent.assert` は、`screenshot: false` でなければ判定の成否にかかわらず撮影します。`app.screenshot('label')` でも撮影できます。マスキングされるのは機密フィールドだけです。[シークレット入力後のスクリーンショット](/reference/security#screenshots-after-a-secret-fill)を参照してください。 |
 | ダウンロード | `browser.waitForDownload` で保存したファイルを `download` として、アプリが提供した内容で保存します。ランナーがシークレットをマスキングする条件は[ダウンロード](/reference/security#downloads)を参照してください。 |
-| 動画 | [録画を有効にした場合](#watch-it-happen)。動画は何もマスキングしません。[マスキングの限界](/reference/security#where-redaction-stops)を参照してください。 |
+| 動画 | [録画を有効にした場合](#watch-it-happen)。動画は何もマスキングしません。[秘匿の対象外](/reference/security#where-redaction-stops)を参照してください。 |
 | エージェントのトランスクリプト | [`--debug`](#agent-steps) を指定した場合。 |
 
 ## スクリプトから読む report.json
@@ -276,7 +276,7 @@ Next: e2e run --step next to run it, e2e run --step rest to run the rest, or e2e
 | `e2e run --step stop` | 別のコマンドが待機中でも、`q` と同様に停止。終了コード 130 |
 
 - 各応答の冒頭には、前のコマンド以降の出力が付きます。上の最初の行のように、実行したステップごとに 1 行表示し、失敗した場合はその下にエラーを表示します。最後の応答は実行サマリーと `The stepped run has ended.` で終わり、コマンドは実行全体の終了コードで終了します。
-- 画面はトレースページと同様にアプリのノードを列挙し、シークレットをマスキングします。
+- 画面はトレースページと同様にアプリのノードを列挙し、シークレットを秘匿します。
 - ひとつのディレクトリでステップ実行できるのはひとつだけです。最初の実行が終わるまで、2 つ目の `--step` は終了コード 2 で終了します。
 - `next` と `rest` は、コマンドが表示済みのステップだけを進めます。待機中のコマンドを強制終了した場合、次のコマンドは見逃した内容を表示します。ステップなら実行せずに表示し、実行が終わっていれば終了を表示します。ステップ実行中に送った `next` や `rest` は、操作せずに次の待機ステップを待ちます。どちらの場合も、操作を適用しなかったことを示す行で応答が始まります。
 - コマンドなしでステップが 30 分待機すると、実行を停止します。
@@ -357,7 +357,7 @@ hello from the test
 
 ファイルの最上位やレポーターなど、テスト外の出力は `stdout | runner` または `stderr | runner` の下に表示します。両ストリームとも `list` と同じ場所、つまり標準出力、`json` と併用する場合は標準エラー出力に表示します。`list` レポーターも、[`onOutput`](/reference/reporters#onoutput) でターミナルに出力する他のレポーターもなければ、各出力は元のストリームにそのまま流れます。ただし `json` レポーター（`--reporter json` または `reporters` 内）では、標準出力をレポート専用にし、その他は標準エラー出力に流します。設定読み込み中の出力は実行ヘッダーより前に表示されます。読み込みが失敗した場合は警告に置き換わります。
 
-ランナーはシークレットの値を[マスキング](/reference/security#redaction)します。レポートにコンソール出力は含まれないため、後から読む人に必要な情報は `expect` またはアーティファクトを使って残してください。
+ランナーはシークレットの値を[秘匿](/reference/security#redaction)します。レポートにコンソール出力は含まれないため、後から読む人に必要な情報は `expect` またはアーティファクトを使って残してください。
 
 ## エージェントステップ
 
@@ -392,7 +392,7 @@ bunx e2e run --no-cache  # run the agent live instead of replaying
   assert "the list shows groceries"      1.2s    1.1s     88ms     0ms      1  3120/41        0% (0)       $0.0114
 ```
 
-`--ai-trace` は `.e2e/ai-trace.json` を書きます。エージェントステップごとに 1 実行、モデル呼び出しごとに 1 エントリーがあり、入力は機密情報をマスキングし、画像のバイト列はサイズに置き換えます。[unbox-ai](https://github.com/e2e-inc/unbox-ai) で、プロンプト、ツール呼び出し、トークン使用量を確認できます。
+`--ai-trace` は `.e2e/ai-trace.json` を書きます。エージェントステップごとに 1 実行、モデル呼び出しごとに 1 エントリーがあり、入力は機密情報を秘匿し、画像のバイト列はサイズに置き換えます。[unbox-ai](https://github.com/e2e-inc/unbox-ai) で、プロンプト、ツール呼び出し、トークン使用量を確認できます。
 
 <CodeGroup>
 ```bash npm
@@ -424,7 +424,7 @@ bunx unbox-ai summary .e2e/ai-trace.json --run 0
 | `ASSERTION_FAILED` | 期待値が違う、状態の確定に 5 秒以上かかる、または `agent.assert` が偽と判定した | スクリーンショットと比較。マッチャーに `{ timeout }` を指定。質問を書き直す |
 | `ASSERTION_INCONCLUSIVE` | `agent.assert` や `agent.extract` が、別ページ、読み込み中、画像だけの情報など、画面に現れていない内容を尋ねた | 正しい画面を開くか待つ。答えが画像内にある場合は `vision: true` を追加（メッセージにも表示） |
 | `ACTION_FAILED` | 要素が覆われている、無効、削除済み、または操作がタイムアウトした | 先に `expect` で適切な条件を待つ。オーバーレイを閉じる |
-| `STEP_BUDGET_EXHAUSTED`、`STEP_TIMEOUT` | エージェントの操作数、モデル呼び出し数、時間が尽きた | 目標を 1 ステップに絞る。予算ならエージェントの `maxSteps` または `maxModelCalls`、`act` の時間なら設定の `timeout`、`assert`、`waitFor`、`extract` ならエージェントの `judgmentTimeout` を増やす |
+| `STEP_BUDGET_EXHAUSTED`、`STEP_TIMEOUT` | エージェントの操作数、モデル呼び出し数、時間が尽きた | ゴールを 1 ステップに絞る。予算ならエージェントの `maxSteps` または `maxModelCalls`、`act` の時間なら設定の `timeout`、`assert`、`waitFor`、`extract` ならエージェントの `judgmentTimeout` を増やす |
 | `MODEL_UNAVAILABLE` | 設定にモデルが作られていない、または GitHub Copilot がアカウントにモデルを提供していない | [モデル](/models)を参照。Copilot では[モデルを選ぶ](/subscriptions#pick-a-model)を参照 |
 | `MODEL_PROVIDER_FAILED` | キーが不正、レート制限、残高不足、またはひとつのリクエストの全試行が 120 秒応答なし | プロバイダーが読むキーと利用枠を確認。遅いローカルモデルでは画面を小さくする（`agents.<name>.maxObservationBytes`）か、高速なモデルを使う |
 | `MODEL_REFUSED` | モデルがプロンプトを拒否した（終了理由 `content-filter`）。終了コード 1 | 指示を言い換えるか、別のモデルに切り替える |

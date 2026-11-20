@@ -80,6 +80,50 @@ describe('derivedReason', () => {
     expect(derivedReason('123', 'enter the code', undefined, { shown: ['Your code is 123', '123'] })).toBe('whole-node');
   });
 
+  it('names the token rule for any value typed into a one-time-code field, one digit per box included', () => {
+    const shown = ['Your code is 482913'];
+    const goal = 'type the code shown on the page into the code boxes';
+    // One digit per box: no screen shows a lone digit as a word of its own,
+    // so only the field's purpose tells the fill is this run's code.
+    for (const digit of '482913') {
+      expect(derivedReason(digit, goal, undefined, { shown }), digit).toBeUndefined();
+      expect(derivedReason(digit, goal, undefined, { shown, inputPurpose: 'one-time-code' }), digit).toBe('minted-token');
+    }
+    expect(derivedReason('482913', goal, undefined, { inputPurpose: 'one-time-code' })).toBe('minted-token');
+    // Any other purpose keeps the rules above.
+    expect(derivedReason('4', goal, undefined, { shown, inputPurpose: 'username' })).toBeUndefined();
+    expect(derivedReason('4', goal, undefined, { shown, inputPurpose: 'none' })).toBeUndefined();
+  });
+
+  it('replays a whole one-time code the instruction or the params spell out', () => {
+    const otp = { inputPurpose: 'one-time-code' } as const;
+    expect(derivedReason('482913', 'enter the code 482913', undefined, otp)).toBeUndefined();
+    expect(derivedReason('482913', 'enter the code', { code: '482913' }, otp)).toBeUndefined();
+  });
+
+  it('never replays a lone digit in a one-time-code box, whatever the instruction or the params say', () => {
+    const otp = { inputPurpose: 'one-time-code' } as const;
+    // "6-digit" contains a 6, which is no spelling of the code: a code that
+    // starts with 6 must not replay its first box as last run's.
+    expect(derivedReason('6', 'enter the 6-digit code shown on the page', undefined, otp)).toBe('minted-token');
+    // Accepted cost: a fixed code passed in the params and typed one digit
+    // per box runs live instead of replaying, since a lone digit cannot tell
+    // that code from one the app minted.
+    expect(derivedReason('4', 'enter the code', { code: '482913' }, otp)).toBe('minted-token');
+  });
+
+  it('never replays a chunk of a longer number in a one-time-code field', () => {
+    const otp = { inputPurpose: 'one-time-code' } as const;
+    // A code split three and three: each half sits inside a longer param or
+    // word, which spells neither the code nor the half.
+    expect(derivedReason('482', 'enter the code', { phone: '4825551234' }, otp)).toBe('minted-token');
+    expect(derivedReason('482', 'enter the code', { code: '482913' }, otp)).toBe('minted-token');
+    expect(derivedReason('482', 'enter the code 482913', undefined, otp)).toBe('minted-token');
+    // A half the step spells out on its own still replays.
+    expect(derivedReason('482', 'enter 482 then 913', undefined, otp)).toBeUndefined();
+    expect(derivedReason('482', 'enter the code', { first: '482' }, otp)).toBeUndefined();
+  });
+
   it('never treats an empty value as derived', () => {
     expect(derivedReason('', 'anything', undefined)).toBeUndefined();
     expect(derivedReason('   ', 'anything', undefined)).toBeUndefined();

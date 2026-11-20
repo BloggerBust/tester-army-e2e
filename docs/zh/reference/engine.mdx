@@ -89,7 +89,7 @@ export interface EngineHandle<Fixtures extends object = {}> extends Engine {
 | `observe`、`readStyle`、`locate`、`perform`、`performAt`、`prepare`、`finish`、`doctor`、`init`、`startAttempt`、`settleAttempt`、`endAttempt`、`dispose`、`validateApp` | 不是函数。 |
 | 任何其他顶层键 | 对象字面量中出现此类键，包括 `app`：应在测试目标上声明应用，并在 `validateApp` 中检查。不会检查类实例的自有字段。 |
 | `readStyle`、`perform`、`locate`、`performAt`、`keyboard` | 已声明，但未声明 `observe`。 |
-| `perform`、`actions` | 只声明了其中一个。`actions` 列表为空、包含重复的种类，或指定了 `LOCATOR_ACTION_KINDS` 之外的种类。 |
+| `perform`、`actions` | 只声明了其中一个。`actions` 列表为空、包含重复的种类，或指定了 `KNOWN_LOCATOR_ACTION_KINDS` 之外的种类。 |
 | `performAt`、`pointerActions` | 只声明了其中一个。`pointerActions` 列表为空、包含重复的种类，或指定了 `POINTER_ACTION_KINDS` 之外的种类。 |
 | `tapModifiers` | 不是布尔值，或设为 `true` 但未声明 `perform`。 |
 | `isolation` | 不是 `'attempt'` 或 `'worker'`。 |
@@ -1050,6 +1050,7 @@ return {
 | `check` | - | 是 | - |
 | `uncheck` | - | 是 | - |
 | `focus` | - | 是 | - |
+| `blur` | - | 是 | - |
 | `hover` | - | 是 | 是 |
 | `scrollIntoView` | - | 是 | - |
 | `selectOption` | `value` | 是 | - |
@@ -1096,6 +1097,7 @@ export type LocatorAction =
         | 'uncheck'
         | 'clear'
         | 'focus'
+        | 'blur'
         | 'hover'
         | 'scrollIntoView';
     }
@@ -1114,7 +1116,7 @@ export type LocatorAction =
 /** Every action kind; what an engine declares in `actions`. */
 export type LocatorActionKind = LocatorAction['kind'];
 
-/** The closed list of action kinds, in contract order; the type is derived from it. */
+/** The locator action kinds of SPI v1. List newer kinds explicitly. Use KNOWN_LOCATOR_ACTION_KINDS to check an action kind. */
 export const LOCATOR_ACTION_KINDS = [
   'tap',
   'doubleTap',
@@ -1133,6 +1135,9 @@ export const LOCATOR_ACTION_KINDS = [
   'dragTo',
   'swipe',
 ] as const satisfies readonly LocatorActionKind[];
+
+/** Every action kind understood by this version of core. */
+export const KNOWN_LOCATOR_ACTION_KINDS = [...LOCATOR_ACTION_KINDS, 'blur'] as const satisfies readonly LocatorActionKind[];
 ```
 
 #### 指针操作
@@ -2169,7 +2174,7 @@ return context.fixture('printer', printer, { print: { kind: 'resource' } });
 
 ### 导出的名称
 
-`EngineCleanupContext`、`EngineDisposeContext`、`OperationContext`、`TextPattern`、`SemanticQuery`、`LocatorExpression`、`NodeRef`、`SemanticNode`、`ViewportPoint`、`ViewportSize`、`ObservationPixels`、`LocatorAction`、`LocatorActionKind`、`PointerAction`、`PointerActionKind`、`ScrollDirection`、`Momentum`、`SelectOption`、`Key`、`KeyModifier`、`KeyName`、`ParsedKey`、`ENGINE_SPI_VERSION`、`LOCATOR_ACTION_KINDS`、`POINTER_ACTION_KINDS`、`KEY_MODIFIERS`、`KEY_NAMES`、`parseKey`、`ENGINE_ERROR_CODES`、`RETRYABLE_ENGINE_ERROR_CODES`、`Secret`、`isSecret`、`TextMatch`、`JsonValue`、`JsonValueRules`、`ResolveExpressionOptions`、`PollConditionOptions`、`WithoutUndefined`、`FixtureOperation`、`EngineIsolation`、`OBSERVED_NAME_LIMIT` 和 `OBSERVED_TEXT_LIMIT` 均从 `e2e/engine` 导出。[引擎协议](/reference/engine-protocol)的 `connectEngine`、`serveEngine`、`describeEngine`、`spawnTransport`、`socketTransport`、`loopbackTransport`、`ENGINE_METHODS`、`ENGINE_PROTOCOL_VERSION` 及其类型也从这里导出。
+`EngineCleanupContext`、`EngineDisposeContext`、`OperationContext`、`TextPattern`、`SemanticQuery`、`LocatorExpression`、`NodeRef`、`SemanticNode`、`ViewportPoint`、`ViewportSize`、`ObservationPixels`、`LocatorAction`、`LocatorActionKind`、`PointerAction`、`PointerActionKind`、`ScrollDirection`、`Momentum`、`SelectOption`、`Key`、`KeyModifier`、`KeyName`、`ParsedKey`、`ENGINE_SPI_VERSION`、`LOCATOR_ACTION_KINDS`、`KNOWN_LOCATOR_ACTION_KINDS`、`POINTER_ACTION_KINDS`、`KEY_MODIFIERS`、`KEY_NAMES`、`parseKey`、`ENGINE_ERROR_CODES`、`RETRYABLE_ENGINE_ERROR_CODES`、`Secret`、`isSecret`、`TextMatch`、`JsonValue`、`JsonValueRules`、`ResolveExpressionOptions`、`PollConditionOptions`、`WithoutUndefined`、`FixtureOperation`、`EngineIsolation`、`OBSERVED_NAME_LIMIT` 和 `OBSERVED_TEXT_LIMIT` 均从 `e2e/engine` 导出。[引擎协议](/reference/engine-protocol)的 `connectEngine`、`serveEngine`、`describeEngine`、`spawnTransport`、`socketTransport`、`loopbackTransport`、`ENGINE_METHODS`、`ENGINE_PROTOCOL_VERSION` 及其类型也从这里导出。
 
 ### `SemanticNode`
 

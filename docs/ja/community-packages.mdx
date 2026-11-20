@@ -5,7 +5,7 @@ description: e2e を拡張するサードパーティーパッケージを探し
 
 コミュニティパッケージは、ツール、エンジン、レポーターで e2e を拡張します。保守とサポートは、e2e のコアチームではなく各パッケージのメンテナーが行います。掲載は推奨を意味しません。
 
-対応する e2e のバージョンとセットアップ要件は、各パッケージのドキュメントで確認してください。以下のバージョン情報は、2026 年 11 月 12 日に公開済みパッケージを確認した記録であり、e2e チームによる互換性テストの結果ではありません。
+対応する e2e のバージョンとセットアップ要件は、各パッケージのドキュメントで確認してください。以下のバージョン情報は、各エントリーの追加時に公開済みパッケージを確認した記録であり、e2e チームによる互換性テストの結果ではありません。
 
 ## パッケージを探す
 
@@ -49,6 +49,14 @@ iOS と Android の実機、シミュレーター、エミュレーター、デ�
 
 [npm](https://www.npmjs.com/package/@testomatio/reporter) · [リポジトリと使用例](https://github.com/testomatio/reporter/tree/2.x/example/e2e)
 
+### `@waitcher/cli`
+
+Runs `*.e2e.ts` tests from your repository on a schedule as Waitcher monitors and alerts when a run fails. Browser tests use `@e2e-dev/web` with Chromium; API tests use `e2e`. Waitcher is a hosted commercial service with a free plan, and the CLI has a proprietary license.
+
+Maintainer: [Sławomir Radzymiński](https://github.com/slawekradzyminski). Version `0.2.28`, published November 19, 2026, runs tests on `e2e 0.24.0` and `@e2e-dev/web 0.16.1`.
+
+[npm](https://www.npmjs.com/package/@waitcher/cli) · [Documentation and example](https://waitcher.dev/docs/repository-workflow)
+
 ## 関連する連携を探す
 
 e2e チームは、[ホスト型ブラウザとデバイスの連携](/integrations)、[GitHub レポーター](/github)、[組み込みレポーター](/reference/reporters)を保守しています。
@@ -60,7 +68,7 @@ e2e チームは、[ホスト型ブラウザとデバイスの連携](/integrati
 [このページを編集する](https://github.com/e2e-inc/e2e/edit/main/docs/community-packages.mdx)プルリクエストを作成し、次の情報を含めてください。
 
 - パッケージ名、公開パッケージへのリンク、リポジトリまたはドキュメント。
-- e2e とどのように連携するかの短い説明と、その根拠または使用例。
+- e2e とどのように連携するかの短い説明と、ソースコードまたは使用例。
 - メンテナー、対応プラットフォーム、e2e の互換性要件。
 - 追加時に確認したバージョンと公開日。
 
@@ -69,6 +77,6 @@ e2e チームは、[ホスト型ブラウザとデバイスの連携](/integrati
 ## 次のステップ
 
 <CardGroup cols={2}>
-  <Card title="独自のツール" href="/tools">アプリ固有の操作をエージェントに公開します。</Card>
+  <Card title="プロジェクトツール" href="/tools">アプリ固有の操作をエージェントに公開します。</Card>
   <Card title="フィクスチャ" href="/fixtures">テスト間でセットアップとリソースを共有します。</Card>
 </CardGroup>

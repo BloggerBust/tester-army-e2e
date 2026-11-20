@@ -175,6 +175,7 @@ await agent.act('sign in as {username}', { params: { username: ada.username, pas
 | 对被测应用调用 `driver.terminateApp(id)` | `device.closeApp()`。它会结束会话，因此接下来需要打开应用 |
 | `terminateApp` 后接 `activateApp` | `app.restart()` |
 | `mobile: clearApp`, `driver.installApp(path)` | `app.clearState()`, `device.installApp(path)` |
+| `driver.removeApp(id)`, `driver.isAppInstalled(id)` | `device.uninstallApp(id)`、`device.isAppInstalled(id)`，两者都返回布尔值 |
 | `driver.background(seconds)` | `device.home()`，然后 `device.openApp(id)` |
 | `driver.url('myapp://x')`, `mobile: deepLink` | `device.openLink('myapp://x')` |
 | `driver.back()`、`driver.hideKeyboard()`、用于 Home 的 `pressKeyCode` | `app.back()`, `device.dismissKeyboard()`, `device.home()` |
@@ -297,7 +298,7 @@ bunx e2e run --target ios --reporter list,junit
 | Appium | 当前可用方案 |
 | --- | --- |
 | `driver.getLogs('logcat')`, `'syslog'`, `'crashlog'` | 在钩子中运行 `adb logcat` 或 `xcrun simctl spawn <udid> log stream` |
-| `driver.removeApp(id)`, `isAppInstalled(id)`, `queryAppState(id)` | 通过 [`unstable_raw`](/reference/mobile#unstable_raw) 调用 `client.apps.uninstall` 或 `.list` |
+| `driver.queryAppState(id)` | 部分对应：`device.isAppInstalled(id)` 判断是否安装，`device.foregroundApp()` 获取前台应用。后台运行状态没有对应方法 |
 | `driver.lock()`、`unlock()`、电源和音量按钮 | 通过 [`unstable_raw`](/reference/mobile#unstable_raw) 调用 `client.command.hardwareButton` |
 | `driver.openNotifications()`, `mobile: pushNotification` | 从顶部边缘执行 `screen.swipe({ from, to })`；在 Node 中运行 `xcrun simctl push` |
 | `driver.pushFile()`, `pullFile()`, `pullFolder()` | 在 Node 中运行 `adb push`、`adb pull` 或 `xcrun simctl addmedia`；仅限本地设备 |

@@ -1,0 +1,125 @@
+---
+title: Agentique ou déterministe
+description: Choisissez des actions et des assertions agentiques ou déterministes pour vos tests de bout en bout (end-to-end).
+---
+
+Les tests agentiques vous permettent de décrire l'intention d'un utilisateur et le
+résultat attendu en langage naturel. L'agent peut choisir les actions à effectuer
+et juger si l'écran répond à vos attentes. Votre test se concentre
+sur le résultat, sans sélecteurs à maintenir quand l'UI change.
+
+Les tests déterministes définissent les actions et les vérifications dans le code. Les deux
+approches peuvent tester des résultats utilisateur, et e2e vous permet de les combiner dans un même test.
+
+## Quand utiliser des tests agentiques ?
+
+Utilisez des tests agentiques quand les changements d'UI vous obligent sans cesse à mettre à jour les sélecteurs
+de vos tests. Ils conviennent aussi aux parcours qui demandent de nombreuses interactions mais sont
+faciles à décrire en langage courant, comme remplir et envoyer un formulaire.
+
+`agent.act` vous permet de décrire une intention de l'utilisateur, comme appliquer un
+code de réduction. L'agent détermine quels contrôles utiliser et quoi faire.
+`agent.assert` vérifie si l'écran affiche le résultat que vous décrivez,
+comme une réduction appliquée au total.
+
+Par exemple, dans un test avec les fixtures `app` et `agent` :
+
+```ts
+await app.open('/checkout');
+await agent.act('apply the discount code SUMMER');
+await agent.assert('the checkout shows code SUMMER applied with a 10% discount');
+```
+
+Vous n'avez pas besoin de nommer le champ de réduction, le bouton qui l'applique,
+ni l'élément qui affiche le résultat.
+
+Les tests liés à des classes CSS ou à des test IDs doivent être modifiés quand ces identifiants
+changent. Déplacez un bouton ou refondez un formulaire, et l'agent peut toujours réaliser
+l'intention de l'utilisateur à partir de ce qui est à l'écran.
+
+Les tests agentiques permettent une surveillance avec des données réelles en staging ou en production
+sans injecter de données déterministes, car les agents s'adaptent à votre application.
+Utilisez-y un compte de test : le modèle voit ce qui est à l'écran. Consultez
+[Sécurité](/security).
+
+Pour un parcours complexe, écrivez une séquence d'objectifs en langage courant. Limitez
+chaque objectif à un seul résultat et vérifiez-le avant de continuer. Consultez
+[Objectifs](/core-concepts#goals) pour savoir comment découper un parcours en étapes.
+
+## Quand utiliser des assertions agentiques ?
+
+Les assertions agentiques sont utiles quand plusieurs formulations ou mises en page
+satisfont la même exigence. Par exemple, un message de validation peut
+expliquer le problème sans correspondre à une phrase exacte :
+
+```ts
+await agent.assert('the error message explains that an email address is required');
+```
+
+Pour une vérification visuelle, ajoutez `vision: true` pour que le modèle voie aussi une capture d'écran :
+
+```ts
+await agent.assert('the chart trends upward', { vision: true });
+```
+
+`agent.assert` vérifie l'écran actuel et échoue si l'énoncé est
+faux ou si les éléments sont insuffisants. Utilisez `agent.waitFor` quand l'UI
+a encore besoin de temps pour atteindre l'état attendu. Consultez
+[Assertions](/core-concepts#assertions) pour les deux méthodes.
+
+## Quand utiliser des tests déterministes ?
+
+Utilisez des locators pour des parcours courts et stables où vous savez déjà quels contrôles
+utiliser. Vous définissez chaque champ et chaque bouton dans le code, comme dans ce test de réduction :
+
+```ts
+await app.open('/checkout');
+await screen.getByLabel('Discount code').fill('SUMMER');
+await screen.getByRole('button', 'Apply').tap();
+await expect(screen.getByRole('status')).toHaveText('10% off');
+```
+
+Ces actions et vérifications ne font aucun appel au modèle. Privilégiez les rôles et les libellés pour
+que le test désigne des contrôles que l'utilisateur reconnaît. Les tests déterministes n'ont pas
+à dépendre de classes CSS ou de test IDs.
+
+Utilisez des assertions déterministes quand vous pouvez exprimer le résultat attendu
+sous forme de valeur, de nombre ou d'état exact. Elles le vérifient sans jugement du modèle.
+Si un message de validation doit utiliser une formulation précise, vérifiez ce texte avec
+`expect`.
+
+## Combiner tests agentiques et déterministes
+
+Choisissez les actions et les assertions indépendamment. Vous pouvez laisser l'agent trouver
+son chemin dans une UI qui change, puis vérifier une valeur exacte avec `expect` :
+
+```ts
+await agent.act('apply the discount code SUMMER');
+await expect(screen.getByRole('status')).toHaveText('10% off');
+```
+
+Vous pouvez aussi utiliser des locators pour remplir et envoyer un formulaire, puis utiliser
+`agent.assert` pour vérifier si son message de validation explique le problème.
+
+L'adaptation suit l'objectif que vous écrivez. Une instruction vague peut autoriser un
+résultat que vous n'aviez pas prévu. Si un chemin précis compte, nommez-le dans l'objectif
+ou utilisez des locators pour ces actions. Un `expect` après `agent.act` détecte
+un objectif qui a réussi de la mauvaise manière.
+
+Les actions et assertions pilotées par le modèle ajoutent de la latence et un coût, et peuvent se
+tromper. Le [cache de rejeu](/cache) peut répéter les actions `agent.act` enregistrées
+sans appel au modèle. Les assertions s'exécutent à nouveau à chaque exécution du test.
+Quand un enregistrement ne correspond plus, l'agent peut s'adapter à l'UI
+modifiée, sauf si le mode de cache strict est activé. Consultez
+[Tests auto-réparateurs](/self-healing) pour savoir comment cela fonctionne.
+
+## Pour aller plus loin
+
+<CardGroup cols={2}>
+  <Card title="Concepts clés" icon="lightbulb" href="/core-concepts">
+    Écrivez des objectifs, des assertions et des étapes avec locators.
+  </Card>
+  <Card title="Tests auto-réparateurs" icon="bandage" href="/self-healing">
+    Découvrez comment un agent se rétablit quand un parcours enregistré change.
+  </Card>
+</CardGroup>

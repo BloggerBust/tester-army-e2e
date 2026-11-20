@@ -75,8 +75,8 @@ cp -R "$repo/plugins/e2e" ~/.cursor/plugins/local/
 新しいセッションを開始してください。Cursor では **Developer: Reload Window** を実行します。
 Cursor Teams と Enterprise でローカルプラグインを使うには、管理者設定の **Allow Local Plugin Imports**
 を有効にするか、管理者が `e2e-inc/e2e` をチームのマーケットプレイスとしてインポートする必要があります。
-プラグインは `e2e`、`create-verification-skill`、`migrate-to-e2e` の各スキルと
-[MCP サーバー](/mcp-server) を追加します。npm パッケージは追加しません。
+プラグインは `e2e`、`create-verification-skill`、`migrate-to-e2e` の各スキルを追加します。npm パッケージは追加しません。
+Codex と Cursor では [MCP サーバー](/mcp-server) も追加します。Claude Code と Grok Build では、サーバーをプロジェクトに登録してください。
 後者 2 つのスキルは、Claude Code では `/e2e:<skill>`、Codex では `$e2e:<skill>`、
 Cursor では `/<skill>` で呼び出します。
 
@@ -262,7 +262,7 @@ bunx skills add e2e-inc/e2e --skill migrate-to-e2e
 次に、エージェントに `/migrate-to-e2e` を依頼します。
 選んだ範囲を移植し、移植した各テストをすべてのターゲットで 3 回実行します。
 `MIGRATION.md` に進捗を記録し、次のセッションで再開できます。
-任意で、チェックアウトの合計を間違えるなどの一時的なバグをアプリに入れ、両スイートが失敗するか確認できます。
+任意で、エージェントはチェックアウトの合計を間違えるなどの一時的なバグをアプリに入れ、両スイートが失敗するか確認します。
 古いテストを削除するのは、ユーザーの確認後だけです。
 最初に、対象ランナーの移行ガイドを読みます。
 [Playwright](/migrate/playwright)、[Cypress](/migrate/cypress)、

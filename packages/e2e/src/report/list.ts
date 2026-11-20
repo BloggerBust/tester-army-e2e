@@ -306,10 +306,8 @@ export function list(options: ListReporterOptions = {}): Reporter {
 }
 
 /**
- * The terminal reporters share one view of the run's events and output.
- * A run's first event starts a fresh view, since
- * `--watch` hands one reporter every run and a run whose config fails to
- * load starts without `run-started`.
+ * Create the view on first use because a configuration error can skip `run-started`.
+ * Watch reruns can reuse the reporter, so release its view after each run.
  */
 export function runView(id: 'list' | 'dot' | 'line', stream: 'stdout' | 'stderr', asId: boolean, create: (output: Required<ListReporterOutput>) => ListReporter): Reporter {
   const output = {
@@ -1248,7 +1246,6 @@ export class ListReporter {
     });
   }
 
-  /** Prints the failure block shared by immediate and end-of-run reporting. */
   private printFailure({ group, title, status, error, videos, failure, screenPath, appLog, skipReason }: Failure, page: string | undefined): void {
     const { pc } = this;
     this.print(

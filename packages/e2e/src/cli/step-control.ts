@@ -10,7 +10,8 @@
  * directory only this user can open, keyed by the working directory, so one
  * directory has one stepped run at a time. A run without `--step` starts
  * listening on the same socket at its first `screen.pause()`. The commands
- * can then resume the test.
+ * can then resume the test. An MCP client connects to the same socket to
+ * drive the app while the test waits.
  */
 
 import { spawn } from 'node:child_process';
@@ -27,7 +28,15 @@ import { writeTerminal } from '../run/process-output.ts';
 import { run, type RunOptions, type RunOutcome } from '../run/runner.ts';
 import type { RunnerOutput } from '../run/process-output.ts';
 import type { BeforeStep, HeldStep, StepHoldContext, StepPrompt } from '../run/step-hold.ts';
-import { parseLine, stepAddress, type StepAddress } from '../run/step-socket.ts';
+import {
+  ATTACH_PROTOCOL,
+  AttachHello,
+  type AttachReply,
+  AttachRequest,
+  type HeldTestAttachment,
+  NO_HELD_TEST,
+} from '../run/step-attachment-wire.ts';
+import { parseLine, readSocketLines, stepAddress, type StepAddress } from '../run/step-socket.ts';
 import { Keyboard } from './keyboard.ts';
 import type { SignalLadder } from './signals.ts';
 import { STEP_ACTIONS, StepGate, stepKeyOf, type StepAction, type StepKey } from './step.ts';
@@ -246,36 +255,286 @@ function answerWaiting(waiting: Map<net.Socket, string>, reply: StepReply, sent:
   waiting.clear();
 }
 
-/**
- * Reads the first request on each connection and sends it to `step`. A
- * connection that sends anything else is closed.
- */
-function commandServer(handle: {
-  readonly step: (client: net.Socket, request: z.infer<typeof StepRequest>) => void;
-}): net.Server {
-  return net.createServer((client) => {
-    let received = '';
-    client.setEncoding('utf8');
-    client.on('error', () => undefined);
-    const onData = (chunk: string): void => {
-      received += chunk;
-      const end = received.indexOf('\n');
+type AttachmentSocketOptions = {
+  readonly attach: () => StepHoldContext['attach'] | undefined;
+  readonly onError: (cause: unknown) => void;
+};
 
-      if (end === -1) {
-        return;
+type CommandServerOptions = AttachmentSocketOptions & {
+  readonly version: string;
+  readonly step: (client: net.Socket, request: z.infer<typeof StepRequest>) => void;
+};
+
+/** Handles requests on one attachment connection. */
+function attachmentConnection(client: net.Socket, options: AttachmentSocketOptions) {
+  const connection = new AbortController();
+  const calls = new Map<string, AbortController>();
+  let attachRequested = false;
+  let attachment: HeldTestAttachment | undefined;
+  let detachRequested = false;
+
+  /** Sends a reply while the connection is open for writes. */
+  const write = (reply: AttachReply): void => {
+    if (!client.destroyed && !client.writableEnded) {
+      client.write(`${JSON.stringify(reply)}\n`);
+    }
+  };
+
+  /** Sends the last reply before closing the socket. */
+  const closeWithReply = (reply: AttachReply): void => {
+    if (client.destroyed || client.writableEnded) {
+      return;
+    }
+
+    client.end(`${JSON.stringify(reply)}\n`);
+    client.destroySoon();
+  };
+
+  /** Notifies the client when the run ends its attachment. */
+  const onAttachmentEnd = (): void => {
+    if (attachment === undefined || detachRequested) {
+      return;
+    }
+
+    detachRequested = true;
+    write({
+      type: 'ended',
+      reason: errorMessage(attachment.signal.reason),
+    });
+    void attachment.detach().then(
+      (text) => closeWithReply({ type: 'recording', text }),
+      (cause: unknown) => {
+        const { category, code, message } = classifyError(cause);
+
+        closeWithReply({ type: 'error', category, code, message });
+      },
+    );
+  };
+
+  client.once('close', () => {
+    connection.abort();
+    attachment?.signal.removeEventListener('abort', onAttachmentEnd);
+
+    if (!detachRequested) {
+      void attachment?.detach().catch(options.onError);
+    }
+  });
+
+  /** Gets the session for a request that requires an open attachment. */
+  const requireAttachment = (): HeldTestAttachment => {
+    if (attachment === undefined || detachRequested) {
+      throw new ConfigurationError('NO_SESSION', "this connection doesn't have an open attachment");
+    }
+
+    return attachment;
+  };
+
+  /** Handles one request. Several calls may be pending on the connection. */
+  const dispatch = async (request: AttachRequest): Promise<void> => {
+    let requestIdToClear: string | undefined;
+
+    try {
+      switch (request.type) {
+        case 'attach': {
+          if (attachRequested) {
+            throw new ConfigurationError('INVALID_ARGUMENT', 'this connection already requested an attachment');
+          }
+
+          attachRequested = true;
+          const attach = options.attach();
+
+          if (attach === undefined) {
+            throw new ConfigurationError('NO_SESSION', NO_HELD_TEST);
+          }
+
+          const opened = await attach(request.id, connection.signal, request.sessionId);
+
+          if (connection.signal.aborted || client.writableEnded) {
+            await opened.detach();
+            return;
+          }
+
+          attachment = opened;
+
+          if (opened.signal.aborted) {
+            onAttachmentEnd();
+            return;
+          }
+
+          opened.signal.addEventListener('abort', onAttachmentEnd, { once: true });
+          write({ type: 'opening', opening: opened.opening });
+          return;
+        }
+
+        case 'detach': {
+          if (detachRequested && attachment?.signal.aborted === true) {
+            return;
+          }
+
+          const attached = requireAttachment();
+          detachRequested = true;
+
+          const recording = await attached.detach();
+          closeWithReply({ type: 'detached', recording });
+          return;
+        }
+
+        case 'cancel':
+          calls.get(request.requestId)?.abort();
+          return;
+
+        case 'detail': {
+          const attached = requireAttachment();
+          const { requestId, name } = request;
+
+          requestIdToClear = requestId;
+          const text = await attached.detail(name);
+          write({ type: 'detail', requestId, text });
+
+          return;
+        }
+
+        case 'call': {
+          const attached = requireAttachment();
+          const { requestId, name, args } = request;
+          const cancel = new AbortController();
+
+          requestIdToClear = requestId;
+          calls.set(requestId, cancel);
+          const { errorCode, ...result } = await attached.call(name, args, cancel.signal);
+          write({ type: 'result', requestId, result, errorCode });
+
+          return;
+        }
+      }
+    } catch (cause) {
+      const { category, code, message } = classifyError(cause);
+
+      if (request.type === 'call' || request.type === 'detail') {
+        write({
+          type: 'error',
+          requestId: request.requestId,
+          category,
+          code,
+          message,
+        });
+      } else {
+        closeWithReply({ type: 'error', category, code, message });
+      }
+    } finally {
+      if (requestIdToClear !== undefined) {
+        calls.delete(requestIdToClear);
+      }
+    }
+  };
+
+  return {
+    closeWithReply,
+    /** Reads a request line. Returns false when the socket can't take another request. */
+    read: (line: string): boolean => {
+      if (client.writableEnded) {
+        return false;
       }
 
-      client.off('data', onData);
-      const request = parseLine(received.slice(0, end), StepRequest);
+      const request = parseLine(line, AttachRequest);
+
+      if (request === undefined) {
+        client.destroy();
+        return false;
+      }
+
+      void dispatch(request);
+      return !client.writableEnded;
+    },
+  };
+}
+
+/** Routes the first line to a step command or an attachment handshake. */
+function commandServer(options: CommandServerOptions) {
+  const connections = new Map<net.Socket, ReturnType<typeof attachmentConnection>['closeWithReply']>();
+  let runEnded = false;
+
+  const server = net.createServer((client) => {
+    client.on('error', () => undefined);
+    let receive: ((line: string) => boolean) | undefined;
+
+    readSocketLines(client, (line) => {
+      if (receive !== undefined) {
+        return receive(line);
+      }
+
+      const hello = parseLine(line, AttachHello);
+
+      if (hello !== undefined) {
+        let error: Extract<AttachReply, { type: 'error' }> | undefined;
+
+        if (hello.protocol !== ATTACH_PROTOCOL) {
+          error = {
+            type: 'error',
+            category: 'configuration',
+            code: 'UNSUPPORTED_CAPABILITY',
+            message: 'attachment protocol mismatch between ' +
+              `e2e mcp (e2e ${hello.version}) and e2e run (e2e ${options.version}). ` +
+              'Run the same e2e version for e2e mcp and e2e run.',
+          };
+        } else if (runEnded) {
+          error = {
+            type: 'error',
+            category: 'configuration',
+            code: 'NO_SESSION',
+            message: NO_HELD_TEST,
+          };
+        }
+
+        if (error !== undefined) {
+          client.end(`${JSON.stringify(error)}\n`);
+          client.destroySoon();
+          return false;
+        }
+
+        const connection = attachmentConnection(client, options);
+        connections.set(client, connection.closeWithReply);
+        client.once('close', () => connections.delete(client));
+
+        const reply = {
+          type: 'hello',
+          protocol: ATTACH_PROTOCOL,
+          version: options.version,
+        } satisfies AttachReply;
+
+        client.write(`${JSON.stringify(reply)}\n`);
+        receive = connection.read;
+        return true;
+      }
+
+      const request = parseLine(line, StepRequest);
 
       if (request === undefined) {
         client.destroy();
       } else {
-        handle.step(client, request);
+        options.step(client, request);
       }
-    };
-    client.on('data', onData);
+
+      return false;
+    });
   });
+
+  return {
+    server,
+    /** Closes attachments with a final reply so clients get a reason before the run exits. */
+    endAttachments(sent: Promise<unknown>[]): void {
+      runEnded = true;
+
+      for (const [client, closeWithReply] of connections) {
+        if (client.destroyed || client.writableEnded) {
+          continue;
+        }
+
+        sent.push(new Promise((resolve) => client.once('close', resolve)));
+        closeWithReply({ type: 'ended', reason: 'the run ended' });
+      }
+    },
+  };
 }
 
 /**
@@ -289,7 +548,7 @@ function commandServer(handle: {
  * command killed by its shell's timeout loses nothing; a run that ends
  * before any command got an answer keeps its log for the starting command.
  */
-export async function serveSteps(options: RunOptions, signals: SignalLadder, address: StepAddress): Promise<RunOutcome> {
+export async function serveSteps(options: RunOptions, version: string, signals: SignalLadder, address: StepAddress): Promise<RunOutcome> {
   /** The held step no command has printed yet. */
   let unseen: UnseenPrompt | undefined;
   let stopping = false;
@@ -388,11 +647,18 @@ export async function serveSteps(options: RunOptions, signals: SignalLadder, add
     answerSoon();
   };
 
-  const server = commandServer({ step: handle });
+  let attach: StepHoldContext['attach'] | undefined;
+  const { server, endAttachments } = commandServer({
+    version,
+    step: handle,
+    attach: () => attach,
+    onError: (cause) => process.stderr.write(`closing an attachment failed: ${codedMessage(cause)}\n`),
+  });
   await claim(server, address, ALREADY_GOING);
 
-  const beforeStep: BeforeStep = (step, context) =>
-    gate.beforeStep(step, {
+  const beforeStep: BeforeStep = (step, context) => {
+    attach = context.attach;
+    return gate.beforeStep(step, {
       ...context,
       show: (shown) => {
         unseen = shown === undefined ? undefined : { prompt: shown, readScreen: context.readScreen };
@@ -401,6 +667,7 @@ export async function serveSteps(options: RunOptions, signals: SignalLadder, add
         answerSoon();
       },
     });
+  };
   const plain = picocolors.createColors(false);
   // Beside the list reporter's lines, not as the runner's own console output.
   const print = (line: string): void => writeTerminal('stdout', `${line}\n`);
@@ -427,6 +694,7 @@ export async function serveSteps(options: RunOptions, signals: SignalLadder, add
   } finally {
     clearTimeout(joining);
     clearTimeout(idle);
+    endAttachments(sent);
     const sending = new Promise<void>((resolve) => {
       const timer = setTimeout(resolve, IDLE_STOP_MS);
       endSent = () => {
@@ -444,12 +712,13 @@ export async function serveSteps(options: RunOptions, signals: SignalLadder, add
 }
 
 /**
- * Runs tests without `--step`. Each `screen.pause()` waits for a person to
- * resume the test or stop the run, every time the call is reached.
+ * Runs tests with pauses at `screen.pause()` and at held steps in a
+ * terminal `--step` run. Resume each pause or stop the run to continue.
  *
  * - In a terminal, `stdin` is read only while a pause is shown. Between
  *   pauses, the terminal is left as it was. Under `--watch`, `keys` is
  *   paused while a pause prompt is shown, so the keys reach the prompt.
+ *   In a terminal stepped run, the keyboard stays active throughout.
  * - From the same directory, `e2e run --step next` and `rest` resume the
  *   shown test. `stop` stops the run, as `q` does. The command returns at
  *   the next pause or when the run ends.
@@ -466,9 +735,11 @@ export async function serveSteps(options: RunOptions, signals: SignalLadder, add
  */
 export async function servePauses(
   options: RunOptions & { readonly processOutput: RunnerOutput },
+  version: string,
   stop: () => void,
   stdin: NodeJS.ReadStream | undefined,
   keys?: Pick<Keyboard<unknown>, 'pause' | 'resume'>,
+  steps = false,
 ): Promise<RunOutcome> {
   /** The first pause on the prompt currently shown. */
   let shown: HeldStep | undefined;
@@ -483,7 +754,7 @@ export async function servePauses(
   /** Reads keys while a pause prompt is shown in a terminal. */
   let keyboard: Keyboard<StepKey> | undefined;
 
-  const gate = new StepGate(stop, { holdSteps: false });
+  const gate = new StepGate(stop, { holdSteps: steps });
   // Print beside the list reporter's lines. Keep stdout free for reporters that use it.
   const print = (line: string): void => options.processOutput.printLine(line);
   /**
@@ -497,7 +768,11 @@ export async function servePauses(
       idle = setTimeout(stop, IDLE_STOP_MS);
     }
   };
-  const server = commandServer({
+  let attach: StepHoldContext['attach'] | undefined;
+  const { server, endAttachments } = commandServer({
+    version,
+    attach: () => attach,
+    onError: (cause) => print(`closing an attachment failed: ${codedMessage(cause)}`),
     step: (client, { action, log }) => {
       // Reject a start command here. It waits for the run it started to fail.
       if (log !== undefined) {
@@ -536,6 +811,29 @@ export async function servePauses(
     keyboard = undefined;
     keys?.resume();
   };
+
+  /** Opens the keyboard listener so Ctrl-C is handled between held steps too. */
+  const openKeyboard = (): void => {
+    if (stdin === undefined || keyboard !== undefined) {
+      return;
+    }
+
+    keys?.pause();
+    const opened = new Keyboard(stdin, stepKeyOf);
+    opened.listen((key) => {
+      if (key === 'suspend') {
+        opened.suspend();
+      } else if (steps || (key !== 'test' && key !== 'rest')) {
+        gate.press(key);
+      }
+    });
+    keyboard = opened;
+  };
+
+  if (steps) {
+    openKeyboard();
+  }
+
   /**
    * Shows a pause under its test in a terminal, reading keys while it's
    * shown. Without a terminal, it prints the pause in the run's output.
@@ -544,21 +842,12 @@ export async function servePauses(
    */
   const show = (prompt: StepPrompt | undefined, context: StepHoldContext): void => {
     if (stdin !== undefined) {
-      if (prompt === undefined) {
+      if (prompt === undefined && !steps) {
         closeKeyboard();
-      } else if (keyboard === undefined) {
-        keys?.pause();
-        const opened = new Keyboard(stdin, stepKeyOf);
-        opened.listen((key) => {
-          if (key === 'suspend') {
-            opened.suspend();
-          } else if (key !== 'test' && key !== 'rest') {
-            // `n` and `a` act on held steps, but this run doesn't hold any.
-            gate.press(key);
-          }
-        });
-        keyboard = opened;
+      } else if (prompt !== undefined) {
+        openKeyboard();
       }
+
       context.show(prompt);
     }
 
@@ -597,6 +886,7 @@ export async function servePauses(
     });
   };
   const onPause: BeforeStep = async (step, context) => {
+    attach = context.attach;
     // In a terminal, keys resume the test even if another run owns the socket.
     claimed ??= Promise.resolve()
       .then(() => claim(server, stepAddress(options.cwd ?? process.cwd()), ALREADY_GOING_AT_PAUSE))
@@ -622,6 +912,7 @@ export async function servePauses(
     closeKeyboard();
     // Wait for a pending claim so it can't start listening after the server closes.
     await Promise.allSettled([claimed]);
+    endAttachments(sent);
     server.close();
     ended = reply;
     answerWaiting(waiting, reply, sent);
@@ -630,7 +921,7 @@ export async function servePauses(
 
   let outcome: RunOutcome;
   try {
-    outcome = await run({ ...options, hold: { ask: onPause, steps: false } });
+    outcome = await run({ ...options, hold: { ask: onPause, steps } });
   } catch (cause) {
     await end({ text: `error: ${codedMessage(cause)}\n${RUN_ENDED}`, exitCode: exitCodeForCategory(classifyError(cause).category) });
     throw cause;

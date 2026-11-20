@@ -137,6 +137,7 @@ test('shows the home screen', async ({ agent, app, screen }) => {
 | `device.launchApp({ launchArgs, permissions })` | `device.openApp(id, { relaunch: true, launchArguments, permissions })` |
 | `device.resetAppState()` | `app.clearState()` |
 | `device.launchApp({ delete: true })` | `device.installApp(path, { reinstall: true })`, then `app.open()` |
+| `device.uninstallApp()` | `device.uninstallApp(id)`; without an id, the pinned app |
 | `device.launchApp({ url })`, `device.openURL({ url })` | `device.openLink(url)` |
 | `device.terminateApp()`, `sendToHome()`, `pressBack()` | `device.closeApp()`, `home()`, `back()` |
 | `device.setLocation(lat, lon)`, `setOrientation('landscape')` | `device.setLocation({ latitude, longitude })`, `setOrientation('landscape-left')` |
@@ -164,7 +165,7 @@ on purpose.
 | `.setDatePickerDate()`, `.setColumnToValue()`, `.adjustSliderToPosition()` | An `agent.act` goal, or `screen.swipe({ from, to })` on a slider |
 | `.toHaveValue(v)` outside a form control | `expect(device.locator('id=x value="v"')).toBeVisible()` |
 | `permissions` for `health`, `homekit`, `speech`, `faceid`, `userTracking`; values `always`, `inuse`, `limited` | Tap the prompt's button, or `device.alert('accept')` |
-| `device.sendUserNotification()`, `device.uninstallApp()`, `.pinch()` | `client.apps.push()`, `client.apps.uninstall()`, `client.interactions.pinch()` on [`unstable_raw`](/reference/mobile#unstable_raw) |
+| `device.sendUserNotification()`, `.pinch()` | `client.apps.push()`, `client.interactions.pinch()` on [`unstable_raw`](/reference/mobile#unstable_raw) |
 | `launchApp({ languageAndLocale })` | On iOS, `app.launchArguments: ['-AppleLanguages', '(fr)', '-AppleLocale', 'fr_FR']`, see [Run the app in another language](/mobile#run-the-app-in-another-language) |
 | Jest `globalSetup`, `globalTeardown` | Start dependencies before the run |
 | `device.reverseTcpPort()` | Run `adb reverse` in a CI step |

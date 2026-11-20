@@ -242,6 +242,9 @@ const { app } = await device.installApp('./build/MyApp.app', { reinstall: true }
 await device.openApp(app);
 ```
 
+`device.uninstallApp(id)` removes an app and `device.isAppInstalled(id)`
+checks for one; without an id, both use the pinned app.
+
 `device.openApp` takes a bundle id, package, or display name, never a link.
 `device.openLink` opens a deep link or a web link into the pinned app, or
 the `app` in its options, for magic-link sign-in and deep-link routes:

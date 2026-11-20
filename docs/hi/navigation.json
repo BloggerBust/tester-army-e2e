@@ -1,0 +1,23 @@
+{
+  "tabs": {
+    "Documentation": "दस्तावेज़",
+    "Reference": "रेफ़रेंस",
+    "Examples": "उदाहरण"
+  },
+  "groups": {
+    "Get started": "शुरू करें",
+    "Platforms": "प्लेटफ़ॉर्म",
+    "Features": "फ़ीचर",
+    "Models and agents": "मॉडल और एजेंट",
+    "Run in CI": "CI में चलाएँ",
+    "Hosted browsers and devices": "होस्टेड ब्राउज़र और डिवाइस",
+    "Extend": "विस्तार करें",
+    "Engines": "इंजन",
+    "Deep dive": "गहराई से",
+    "Migrate": "माइग्रेट करें",
+    "Test API": "टेस्ट API",
+    "Project": "प्रोजेक्ट",
+    "Web": "वेब",
+    "Mobile": "मोबाइल"
+  }
+}

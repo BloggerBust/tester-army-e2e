@@ -86,7 +86,7 @@ tests: ['tests/**/*.e2e.ts', '!tests/wip/**'], // default: 'tests/**/*.e2e.ts'
 ```
 
 - glob では `*`、`?`、セグメント全体を占める `**` を使えます。`?` は絵文字を含む 1 Unicode コードポイントに一致します。
-- `!` で始まるエントリは除外です。この例は `tests/wip/` 配下を除く全テストファイルを選びます。
+- `!` で始まるエントリーは除外です。この例は `tests/wip/` 配下を除く全テストファイルを選びます。
 - リストの順序にかかわらず、含める glob に一致し、どの除外にも一致しないファイルを選びます。
 - 検出時は、一致する可能性があるディレクトリだけを調べます。全体が除外されるディレクトリには入らず、`node_modules` をスキップし、シンボリックリンクを無視します。
 - ドットで始まるディレクトリを含めるには、glob の対応するセグメントもドットで始まる必要があります。
@@ -95,8 +95,8 @@ tests: ['tests/**/*.e2e.ts', '!tests/wip/**'], // default: 'tests/**/*.e2e.ts'
 | 投げるエラー | 発生条件 |
 | --- | --- |
 | `INVALID_CONFIG` | リストが除外だけの場合。 |
-| `INVALID_GLOB` | ワイルドカードのないエントリがディレクトリを指す場合（`'!tests/wip'`）。glob はファイルを指定するため、エラーには書くべき glob（`'!tests/wip/**'`）を示します。 |
-| `NO_TESTS` | `e2e run` に渡したファイルが除外された場合。該当するエントリをエラーに示します。 |
+| `INVALID_GLOB` | ワイルドカードのないエントリーがディレクトリを指す場合（`'!tests/wip'`）。glob はファイルを指定するため、エラーには書くべき glob（`'!tests/wip/**'`）を示します。 |
+| `NO_TESTS` | `e2e run` に渡したファイルが除外された場合。該当するエントリーをエラーに示します。 |
 
 #### `timeout`
 
@@ -389,13 +389,13 @@ linkBase: 'shopapp://', // app.open('/orders/42') opens shopapp://orders/42
 
 #### `identity`
 
-リプレイキャッシュとセッションのエントリのキーに使う、安定した識別情報です。
+リプレイキャッシュとセッションのエントリーのキーに使う、安定した識別情報です。
 
 ```ts
 identity: 'checkout-web', // default: the URL's origin and base path, else bundleId, else appPath
 ```
 
-プレビュー URL やバージョン付きのビルドパスをまたいでエントリを再利用するには、安定した値を設定してください。[空きポート](#free-ports)を使う場合、デフォルト値は宣言した `:0` から導出するため、ポートが変わってもキャッシュやセッションのエントリは変わりません。
+プレビュー URL やバージョン付きのビルドパスをまたいでエントリーを再利用するには、安定した値を設定してください。[空きポート](#free-ports)を使う場合、デフォルト値は宣言した `:0` から導出するため、ポートが変わってもキャッシュやセッションのエントリーは変わりません。
 
 <Note>
 異なるアプリには異なる識別情報が必要です。同じ識別情報を共有すると、アプリをまたいで記録をリプレイします。
@@ -493,7 +493,7 @@ command: {
 | `APP_UNREACHABLE` | コマンドの生成失敗、`log` を開けない、`startupTimeout` の超過、準備完了前のコマンド終了、`e2e run` 中の予期しない終了。 |
 
 <Warning>
-`log` には秘匿処理をしていない生の出力を保存します。Git の無視対象ディレクトリに置いてください。
+`log` には秘匿していない生の出力を保存します。Git の無視対象ディレクトリに置いてください。
 </Warning>
 
 完全な宣言は [`CommandConfig`](#commandconfig) を参照してください。
@@ -621,7 +621,7 @@ async put(artifact) {
 ```
 
 - すべてのストアで必須です。
-- `artifact.redaction` はレポートのラベルです。ランナーが秘匿処理を保証できるものだけを外部に出すストアでは、`incomplete` の成果物を渡さないようにします。動画や、ランナーが書き換えていないダウンロードが該当します。
+- `artifact.redaction` はレポートのラベルです。ランナーが秘匿を保証できるものだけを外部に出すストアでは、`incomplete` の成果物を渡さないようにします。動画や、ランナーが書き換えていないダウンロードが該当します。
 
 #### `putLink`
 
@@ -736,7 +736,7 @@ video: 'retain-on-failure', // default: 'off'
 
 ### agents
 
-名前付きのエージェントです。各エントリは通常のオブジェクトで、組み込みエージェントのオプション、またはカスタムの実行ロジックを使う `{ executor }` を指定します。
+名前付きのエージェントです。各エントリーは通常のオブジェクトで、組み込みエージェントのオプション、または独自の実行ロジックを使う `{ executor }` を指定します。
 
 ```ts title="e2e.config.ts"
 import type { E2EConfig } from 'e2e';
@@ -778,7 +778,7 @@ export default {
 
 - `e2e run --agent <name>`、テストやグループのオプション、`agent.*` の呼び出しで別のものを選ばなければ、テストは `default` エージェントを使います。`{ agent: ['buyer', 'admin'] }` のテストは、各エージェントで 1 回ずつ実行します。
 - 設定にエージェントの宣言がなくても `default` は存在しますが、モデルはありません。
-- 各エントリは組み込みのデフォルトから始めます。エージェント同士で継承はしません。上の `ux` は `default` の `context` を受け取りません。省略したキーにはデフォルト値を使い、別のエントリの値は使いません。
+- 各エントリーは組み込みのデフォルトから始めます。エージェント同士で継承はしません。上の `ux` は `default` の `context` を受け取りません。省略したキーにはデフォルト値を使い、別のエントリーの値は使いません。
 - 各ワーカーはこの設定モジュールから、自身のエージェントを作成します。
 - 名前には ASCII の英字、数字、`_`、`-`、`.` を使えます。成果物のパス要素になるため、ドットだけにはできません。
 
@@ -823,7 +823,7 @@ judge: gateway('anthropic/claude-opus-5'), // default: model
 ```
 
 - 判定は、呼び出しごとに 8192 出力トークンまで使えます。
-- 判定には、指示、そのパラメーター、エージェントのコンテキスト、現在位置を含む現在の画面を渡します。
+- 判定には、指示、そのパラメーター、エージェントのコンテキスト、ロケーションを含む現在の画面を渡します。
 
 [専用のジャッジ](/models#a-judge-of-its-own)を参照してください。
 
@@ -849,7 +849,7 @@ system: 'You are a first-time buyer.',
 
 #### `tools`
 
-`defineTool`（`e2e/agent`）で作成したプロジェクトのツールです。組み込みツールと一緒に提供します。
+`defineTool`（`e2e/agent`）で作成したプロジェクトツールです。組み込みツールと一緒に提供します。
 
 ```ts
 tools: { lookupOrder },
@@ -859,7 +859,7 @@ tools: { lookupOrder },
 
 #### `executor`
 
-`agent.act()` が組み込みエージェントの代わりに呼び出す、カスタムの実行ロジックです。
+`agent.act()` が組み込みエージェントの代わりに呼び出す、独自の実行ロジックです。
 
 ```ts
 house: { executor: houseBrain, model: gateway('openai/gpt-6-luna-fast'), maxModelCalls: 10 },
@@ -938,9 +938,9 @@ OpenAI と Azure OpenAI の Responses 呼び出しには、ここで指定しな
 
 | 以前の指定 | 現在の指定 |
 | --- | --- |
-| エントリに直接指定した `StepExecutor` | `{ executor }` |
+| エントリーに直接指定した `StepExecutor` | `{ executor }` |
 | `timeout` | `judgmentTimeout` |
-| `maxTurns`（エントリまたは `createToolLoopExecutor` 上） | `maxModelCalls` |
+| `maxTurns`（エントリーまたは `createToolLoopExecutor` 上） | `maxModelCalls` |
 | トップレベルの `limits.maxModelTokensPerCall` | 各エージェントの `maxInputTokens` |
 | トップレベルの `limits.maxAgentContextBytes`、`maxLedgerBytes`、`maxEventsPerStep` | 削除済み。ランナーがそれぞれ 16384 バイト、8192 バイト、1000 イベントに固定します |
 
@@ -970,7 +970,7 @@ export default {
 
 ### credentials
 
-名前付きのアカウントです。各エントリはユーザー名と、モデルには見せないパスワードを持ちます。
+名前付きのアカウントです。各エントリーはユーザー名と、モデルには見せないパスワードを持ちます。
 
 ```ts
 credentials: {
@@ -983,12 +983,12 @@ credentials: {
 | [`username`](#username) | `string` |
 | [`password`](#password) | `string \| SecretProvider` |
 
-- 認証情報とシークレットは別の名前空間です。`secrets.get(name)` が返すのは `secrets` のエントリだけです。認証情報のパスワードには `credentials.user(name).password` でだけアクセスできます。
+- 認証情報とシークレットは別の名前空間です。`secrets.get(name)` が返すのは `secrets` のエントリーだけです。認証情報のパスワードには `credentials.user(name).password` でだけアクセスできます。
 - エージェント、リプレイキャッシュ、レポートは、そのパスワードを `<name>.password` というシークレット名（`<secret:admin.password>`）で扱います。そのため `credentials.admin` と `secrets.admin` は両方存在できます。
 
 | 投げるエラー | 発生条件 |
 | --- | --- |
-| `INVALID_CONFIG` | `admin` の認証情報と、名前が完全に `admin.password` の `secrets` エントリを併用した場合。 |
+| `INVALID_CONFIG` | `admin` の認証情報と、名前が完全に `admin.password` の `secrets` エントリーを併用した場合。 |
 | `INVALID_CONFIG` | `svc-a` と `svc_a` のように、2 つの認証情報の名前が同じ `E2E_USER_<NAME>_*` 上書き変数になる場合（[環境変数](/reference/environment)を参照）。 |
 
 [認証](/authentication)を参照してください。宣言は [`CredentialConfig`](#credentialconfig) にあります。
@@ -1001,7 +1001,7 @@ credentials: {
 username: 'admin@example.com',
 ```
 
-`E2E_USER_<NAME>_USERNAME` が設定値より優先されます。どちらもなければ、そのエントリは `INVALID_CONFIG` です。
+`E2E_USER_<NAME>_USERNAME` が設定値より優先されます。どちらもなければ、そのエントリーは `INVALID_CONFIG` です。
 
 #### `password`
 
@@ -1017,7 +1017,7 @@ password: () => readFile('.secrets/admin', 'utf8'),
 
 #### `credentials.user()`
 
-テスト内で、設定済みエントリを `Credential` に解決します。
+テスト内で、設定済みエントリーを `Credential` に解決します。
 
 ```ts
 const admin = credentials.user('admin');
@@ -1036,29 +1036,29 @@ secrets: {
 },
 ```
 
-| エントリ | 例 | 検証タイミング |
+| エントリー | 例 | 検証タイミング |
 | --- | --- | --- |
 | 静的な値 | `'sk_test_51Hx…'` | 設定の読み込み時 |
 | プロバイダー | `() => readFile('.secrets/api-key', 'utf8')` | 承認された入力のたび |
 
 - プロバイダーは承認された入力のたびに実行します（保管庫への問い合わせ、その時点の TOTP の計算など）。設定のダイジェストには名前だけを記録します。
 - `E2E_SECRET_<NAME>` による上書きが、どちらよりも優先されます。
-- 各エントリは、6 文字（コードポイント）以上の文字列または関数に解決される必要があります。それ以外は `INVALID_CONFIG` です。プロバイダーの値にも入力時に同じ最小長を適用し、満たさなければ `SECRET_UNAVAILABLE` です。
-- 最小長は秘匿処理のためにあります。値の全出現箇所を `<secret:name>` にするため、短い値ではレポートや出力の通常のテキストまで置き換わってしまいます。
-- `api-key` と `api_key` のように、2 つのエントリの名前が同じ変数になる場合は `INVALID_CONFIG` です。
+- 各エントリーは、6 文字（コードポイント）以上の文字列または関数に解決される必要があります。それ以外は `INVALID_CONFIG` です。プロバイダーの値にも入力時に同じ最小長を適用し、満たさなければ `SECRET_UNAVAILABLE` です。
+- 最小長は秘匿のためにあります。値の全出現箇所を `<secret:name>` にするため、短い値ではレポートや出力の通常のテキストまで置き換わってしまいます。
+- `api-key` と `api_key` のように、2 つのエントリーの名前が同じ変数になる場合は `INVALID_CONFIG` です。
 
 宣言は [`SecretConfig`](#secretconfig) にあります。[パスワード以外のシークレット](/authentication#secrets-that-are-not-passwords)を参照してください。
 
 #### `secrets.get()`
 
-設定済みエントリの不透明な `Secret` を返します。
+設定済みエントリーの不透明な `Secret` を返します。
 
 ```ts
 await screen.getByLabel('API key').fill(secrets.get('apiKey'));
 ```
 
 - 平文を取得する手段はなく、`locator.fill` と `agent.act` のパラメーターだけが受け取れます。
-- ランナーはフィールドに入力し、すべての観測で値をマスキングし、ログ、トレース、レポートから秘匿します。
+- ランナーはフィールドに入力し、すべての観測で値をマスキングし、ログ、トレース、レポートでは秘匿します。
 - 未設定の名前は `SECRET_UNAVAILABLE` を投げます。
 
 #### エンジンオプション内のシークレット
@@ -1069,8 +1069,8 @@ await screen.getByLabel('API key').fill(secrets.get('apiKey'));
 engine: web({ basicAuth: { username, password: secrets.get('previewPassword') } }),
 ```
 
-- エンジンが参照を宣言します。その名前の `secrets` エントリがなければ、設定の読み込みは `INVALID_CONFIG` で失敗します。認証情報のパスワードは対象外なので、エンジンオプションに必要な値は `secrets` に宣言してください。
-- エンジンは試行の開始ごとに値を解決するため、プロバイダーも毎回動きます。その値は試行の秘匿処理に登録します。ページではなくエンジンに渡すため、フィールド入力に伴うスクリーンショットの制約は適用しません。
+- エンジンが参照を宣言します。その名前の `secrets` エントリーがなければ、設定の読み込みは `INVALID_CONFIG` で失敗します。認証情報のパスワードは対象外なので、エンジンオプションに必要な値は `secrets` に宣言してください。
+- エンジンは試行の開始ごとに値を解決するため、プロバイダーも毎回動きます。その値は試行の秘匿対象に登録します。ページではなくエンジンに渡すため、フィールド入力に伴うスクリーンショットの制約は適用しません。
 - ダイジェストには名前だけを記録します。
 - 参照は値ではありません。文字列化（テンプレートリテラル、`String()`、`+`、`JSON.stringify`）すると `INVALID_CONFIG` を投げます。`app.command` の `args` 要素や `env` 値に参照を渡した場合も同じです。これらは文字列とプレースホルダーだけを受け取ります。アプリの API キーなど、文字列として必要な値は、自分で `process.env` から読み取ってください。
 
@@ -1101,8 +1101,8 @@ cache: 'read-write', // default: 'read-write' locally, 'read-only' in CI
 
 | モード | 動作 |
 | --- | --- |
-| `'read-write'` | エントリをリプレイし、新しいものを記録します。 |
-| `'read-only'` | 既存のエントリをリプレイし、書き込みません。 |
+| `'read-write'` | エントリーをリプレイし、新しいものを記録します。 |
+| `'read-only'` | 既存のエントリーをリプレイし、書き込みません。 |
 | `'off'` | 両方を無効にします。 |
 
 - 明示したモードがデフォルトより優先されます。CI 自身のキャッシュサービスから復元する場合は、`'read-write'` を明示してください。
@@ -1110,7 +1110,7 @@ cache: 'read-write', // default: 'read-write' locally, 'read-only' in CI
 
 #### `store`
 
-ファイルストアを置き換える、カスタムのエントリストアです。
+ファイルストアを置き換える、独自のエントリーストアです。
 
 ```ts
 cache: { store: createStore(cacheUrl) },
@@ -1148,7 +1148,7 @@ cache: { strict: true }, // default: false
 
 #### リプレイキャッシュのコミット
 
-`e2e init` は `.gitignore` に `.e2e/cache/` を追加するため、エントリのコミットは任意です。CI やチームメンバーとリプレイを共有するには、その行を削除してください。CI は `cache: 'read-write'` を設定しない限り `read-only` のままです。[キャッシュ](/cache#commit-the-replay-cache)を参照してください。
+`e2e init` は `.gitignore` に `.e2e/cache/` を追加するため、エントリーのコミットは任意です。CI やチームメンバーとリプレイを共有するには、その行を削除してください。CI は `cache: 'read-write'` を設定しない限り `read-only` のままです。[キャッシュ](/cache#commit-the-replay-cache)を参照してください。
 
 ## 実行の上限
 
@@ -1178,7 +1178,7 @@ cache: { strict: true }, // default: false
 | モデルの認証情報 | プロバイダーパッケージ固有の変数、または作成時に渡したキー。プロバイダーが最初のモデル呼び出し時に読みます |
 | 認証情報のユーザー名とパスワード | `E2E_USER_*` 変数、次に設定値 |
 
-組み込みエージェントは、実行ごとに 1 回、`agent` フィクスチャを初めて取得するときにモデルの未設定を確認し、未設定なら終了コード 2 で実行を止めます。カスタムの[エグゼキューター](#executor)は、モデルなしで `act` と `assert` を実装できます。
+組み込みエージェントは、実行ごとに 1 回、`agent` フィクスチャを初めて取得するときにモデルの未設定を確認し、未設定なら終了コード 2 で実行を止めます。カスタム[エグゼキューター](#executor)は、モデルなしで `act` と `assert` を実装できます。
 `waitFor` と `extract` には引き続きモデルが必要です。
 
 ### CI

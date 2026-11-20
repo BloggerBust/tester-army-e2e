@@ -30,7 +30,7 @@ import { relativeToProjectRoot } from '@e2e-dev/core/lib/internal/paths';
 import { describeExpression, roleQuery, testIdQuery, textQuery } from '@e2e-dev/core/lib/locator/expression';
 import type { LocatorEngine } from '@e2e-dev/core/lib/locator/engine';
 import type { AgentTool, Role } from '@e2e-dev/core/lib/types';
-import { recordingTools, type SessionRecorder } from './recording.ts';
+import { recordingTools, type RecordingControls } from './recording.ts';
 import { SessionTestLines, type TestLineFills } from './test-lines.ts';
 import { runCodeTool, type RunCodeSession } from './run-code.ts';
 
@@ -57,18 +57,20 @@ export interface SessionCatalog {
 export interface CatalogOptions {
   readonly context: StepExecutorContext;
   readonly screen: ScreenPresenter;
-  readonly locator: LocatorEngine;
-  readonly session: TargetSession;
+  readonly locator: Pick<LocatorEngine, 'resolveNow' | 'operation'>;
+  readonly session: Pick<TargetSession, 'read'> & {
+    readonly artifacts: Pick<TargetSession['artifacts'], 'screenshot'>;
+  };
   /** The agent's project tools (`agents.<name>.tools`), served beside the built-in ones. */
   readonly tools: Readonly<Record<string, AgentTool>>;
   /** The attempt's secret ledger: what `locate` shows of a node passes through it, as `observe` does. */
   readonly redaction: NodeRedaction;
   /** Where a relative `screenshot` path resolves. */
   readonly projectRoot: string;
-  /** The attempt's artifact directory, where the engine writes a screenshot before `screenshot` copies it out. */
-  readonly attemptDir: string;
+  /** Set to the attempt's artifact directory to allow `screenshot` to save a file. */
+  readonly attemptDir?: string;
   /** The session's recorder, when the engine records video. */
-  readonly recorder: SessionRecorder | undefined;
+  readonly recorder: RecordingControls | undefined;
   /** The target's app URL, which a navigation's test line is made relative to. */
   readonly appBase?: { readonly href: string; readonly origin: string } | undefined;
   /** The credentials and secrets a fill's test line names. */
@@ -84,7 +86,7 @@ export interface CatalogOptions {
 
 /** Builds the session's catalog from the step context and the target. */
 export function createSessionCatalog(options: CatalogOptions): SessionCatalog {
-  const { screen, locator } = options;
+  const { screen, locator, attemptDir } = options;
   const lines = new SessionTestLines({
     query: locateQuery,
     resolve: (expression) => locator.resolveNow(expression),
@@ -100,7 +102,7 @@ export function createSessionCatalog(options: CatalogOptions): SessionCatalog {
   const { observe: _diffObserve, ...verbs } = grammarTools(context, {
     screen,
     onActionFailed: options.onActionFailed,
-    saveScreenshot: (file) => saveScreenshot(options, file),
+    ...(attemptDir === undefined ? {} : { saveScreenshot: (file: string) => saveScreenshot(options, attemptDir, file) }),
   });
   const recording = options.recorder === undefined ? {} : recordingTools(options.recorder);
   const builtIn: ToolSet = {
@@ -131,14 +133,28 @@ export function createSessionCatalog(options: CatalogOptions): SessionCatalog {
  * As with `upload`, a path outside the project or under a hidden directory
  * is refused.
  */
-async function saveScreenshot(options: CatalogOptions, file: string): Promise<string> {
+async function saveScreenshot(
+  options: Pick<CatalogOptions, 'projectRoot' | 'session' | 'locator' | 'redaction'>,
+  attemptDir: string,
+  file: string,
+): Promise<string> {
   const destination = path.resolve(options.projectRoot, file);
   const relative = relativeToProjectRoot(options.projectRoot, destination);
   if (relative === undefined) throw new ConfigurationError('POLICY_DENIED', `${JSON.stringify(file)} is outside the project root; screenshots are saved inside the project`);
   if (relative.split(path.sep).some((segment) => segment.startsWith('.'))) {
     throw new ConfigurationError('POLICY_DENIED', `${JSON.stringify(file)} is a hidden file or sits under a hidden directory; screenshots are never saved there`);
   }
-  const source = path.join(options.attemptDir, await options.session.artifacts.screenshot(path.basename(destination, path.extname(destination)), options.locator.operation()));
+  if (options.redaction.redact(relative) !== relative) {
+    throw new ConfigurationError('POLICY_DENIED', 'screenshot paths cannot contain a secret value');
+  }
+
+  const source = path.join(
+    attemptDir,
+    await options.session.artifacts.screenshot(
+      path.basename(destination, path.extname(destination)),
+      options.locator.operation(),
+    ),
+  );
   mkdirSync(path.dirname(destination), { recursive: true });
   copyFileSync(source, destination);
   rmSync(source, { force: true });
@@ -151,7 +167,7 @@ async function saveScreenshot(options: CatalogOptions, file: string): Promise<st
  * for the testing agent; a coding agent that asks to look wants everything,
  * and the presenter takes that screen as the new baseline for later changes.
  */
-function fullObserveTool(context: StepExecutorContext, screen: ScreenPresenter): ToolSet[string] {
+function fullObserveTool(context: Pick<StepExecutorContext, 'observe'>, screen: Pick<ScreenPresenter, 'initial'>): ToolSet[string] {
   return {
     description:
       'Look at the whole current screen: every node with its id, role, name, and state. Action results report only what changed since the screen you last received; call this to see everything again or after waiting for something in progress.',
@@ -161,7 +177,7 @@ function fullObserveTool(context: StepExecutorContext, screen: ScreenPresenter):
 }
 
 /** The session's `locate`: a semantic locator tried against the live screen, with the verdict a test would get. */
-function locateTool(locator: LocatorEngine, session: TargetSession, redaction: NodeRedaction): ToolSet[string] {
+function locateTool(locator: CatalogOptions['locator'], session: Pick<TargetSession, 'read'>, redaction: NodeRedaction): ToolSet[string] {
   return {
     description:
       'Try a semantic locator against the live screen before writing it into a test: screen.getByRole(role, name), getByText, getByLabel, getByPlaceholder, or getByTestId. Returns how many nodes match and which, plus the test code to use. Exactly one of role, text, label, placeholder, or testId; name narrows a role query. Matching is exact unless exact is false.',

@@ -382,6 +382,8 @@ test('offline banner', { platforms: ['android'] }, async ({ app, device, screen 
 | [`setBiometrics`](#setbiometrics) | `Promise<void>` |
 | [`enrollBiometrics`](#enrollbiometrics) | `Promise<void>` |
 | [`installApp`](#installapp) | `Promise<InstalledApp>` |
+| [`uninstallApp`](#uninstallapp) | `Promise<boolean>` |
+| [`isAppInstalled`](#isappinstalled) | `Promise<boolean>` |
 | [`openApp`](#openapp) | `Promise<void>` |
 | [`openLink`](#openlink) | `Promise<void>` |
 | [`closeApp`](#closeapp) | `Promise<void>` |
@@ -660,6 +662,52 @@ await device.openApp(app);
 | --- | --- |
 | `APP_NOT_OPEN` | 未传入路径且测试目标没有 `app.appPath`；或设置了 `reinstall: true`，但未传入 `app` 且未指定应用（没有 `app.bundleId`，构建产物尚未安装）。 |
 | `ENGINE_FAILURE` | agent-device 未报告 ID，且未传入 `app`；此时会失败，不会将文件路径当作 ID。参阅[故障排查](/mobile#troubleshooting)。 |
+
+#### `uninstallApp`
+
+```ts
+/**
+ * Removes an app, by bundle id or package, from the device; without one,
+ * the pinned app. Resolves to whether it was installed, so removing an app
+ * id that is not there passes. Without `app.bundleId` on the target,
+ * removing the build `installApp` pinned unpins it: `app.open()` then
+ * needs another install.
+ */
+uninstallApp(app?: string): Promise<boolean>;
+```
+
+```ts
+expect(await device.uninstallApp()).toBe(true);
+expect(await device.isAppInstalled('com.example.app')).toBe(false);
+await device.installApp(); // a fresh install, for a first-launch flow
+```
+
+- 删除当前显示的应用后，设备会回到主屏幕，之前解析的定位器不再指向任何元素。要继续测试，请先用 `device.installApp()` 重新安装，再用 `device.openApp(app)` 打开。
+- 设备会为之后在其上运行的测试保留删除的状态。请在测试结束前（在 `finally` 块中）重新安装应用，否则之后在该设备上打开该应用的测试都会在 `app.open()` 处失败。
+
+| 抛出错误 | 发生条件 |
+| --- | --- |
+| `APP_NOT_OPEN` | 未传入 `app`，也没有固定的应用（没有 `app.bundleId`，构建也尚未安装）。 |
+
+#### `isAppInstalled`
+
+```ts
+/**
+ * Whether an app, by bundle id or package, is on the device, system apps
+ * included (Android: launchable apps only); without one, the pinned app.
+ */
+isAppInstalled(app?: string): Promise<boolean>;
+```
+
+```ts
+expect(await device.isAppInstalled('com.example.companion')).toBe(true);
+```
+
+- 设备列表中应用的显示名称也能匹配。
+
+| 抛出错误 | 发生条件 |
+| --- | --- |
+| `APP_NOT_OPEN` | 未传入 `app`，也没有固定的应用。 |
 
 #### `openApp`
 

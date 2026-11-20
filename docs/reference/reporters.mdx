@@ -428,6 +428,10 @@ Receives the [`--step`](/debugging#step-through-a-test) prompt to show on
 the terminal, or `undefined` to take it down. `--step` in the background
 answers each prompt over its socket instead and calls no reporter.
 
+Each held step has an `attachId`. Use it to
+[attach over MCP](/reference/mcp#attaching-to-a-held-test). The ID stays
+the same across holds of the attempt.
+
 ```ts
 onStepPrompt(prompt) {
   overlay.show(prompt === undefined ? '' : `Step ${prompt.steps[0].number}: ${prompt.steps[0].step.label}`);

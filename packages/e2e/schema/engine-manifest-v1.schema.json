@@ -92,7 +92,8 @@
           "selectOption",
           "setInputFiles",
           "dragTo",
-          "swipe"
+          "swipe",
+          "blur"
         ]
       }
     },

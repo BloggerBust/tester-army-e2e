@@ -4,7 +4,7 @@ import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import type { EngineHandle } from '@e2e-dev/core/lib/engine/index';
 import { createFakeEngine } from '../helpers/fake-engine.ts';
-import { gate, hostHarness, sdkExpect } from '../helpers/open-host.ts';
+import { gate, hostHarness, sdkExpect, sdkTest } from '../helpers/open-host.ts';
 
 describe('openHost: deadline', { timeout: 60_000 }, () => {
   const { host, config } = hostHarness();
@@ -23,6 +23,17 @@ describe('openHost: deadline', { timeout: 60_000 }, () => {
     expect(operation?.timeoutMs).toBeGreaterThan(200);
     expect(operation?.runId).toBe(opened.runId);
     expect(await second.close()).toEqual([]);
+  });
+
+  it('refuses test.setTimeout in a hosted session, which runs no e2e test', async () => {
+    const fake = createFakeEngine();
+    const opened = await host(fake.engine);
+    const session = await opened.openSession({ name: 'hosted setTimeout', timeout: 5_000 });
+    expect(() => sdkTest.setTimeout(60_000)).toThrow(expect.objectContaining({
+      code: 'INVALID_ARGUMENT',
+      message: expect.stringContaining('a hosted session runs none'),
+    }));
+    expect(await session.close()).toEqual([]);
   });
 
   it('caps contributed fixture calls at the session deadline and refuses dispatch after expiry', async () => {

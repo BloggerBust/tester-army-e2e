@@ -192,6 +192,7 @@ declares `requires: ['device']` on those tests.
 | `driver.terminateApp(id)` on the app under test | `device.closeApp()`. It ends the session, so open an app next |
 | `terminateApp`, then `activateApp` | `app.restart()` |
 | `mobile: clearApp`, `driver.installApp(path)` | `app.clearState()`, `device.installApp(path)` |
+| `driver.removeApp(id)`, `driver.isAppInstalled(id)` | `device.uninstallApp(id)`, `device.isAppInstalled(id)`. Both resolve to a boolean |
 | `driver.background(seconds)` | `device.home()`, then `device.openApp(id)` |
 | `driver.url('myapp://x')`, `mobile: deepLink` | `device.openLink('myapp://x')` |
 | `driver.back()`, `driver.hideKeyboard()`, `pressKeyCode` for Home | `app.back()`, `device.dismissKeyboard()`, `device.home()` |
@@ -318,7 +319,7 @@ is not a step, so it skips the report and secret redaction.
 | Appium | Use today |
 | --- | --- |
 | `driver.getLogs('logcat')`, `'syslog'`, `'crashlog'` | Run `adb logcat` or `xcrun simctl spawn <udid> log stream` from a hook |
-| `driver.removeApp(id)`, `isAppInstalled(id)`, `queryAppState(id)` | `client.apps.uninstall` or `.list` through [`unstable_raw`](/reference/mobile#unstable_raw) |
+| `driver.queryAppState(id)` | Partial: `device.isAppInstalled(id)` for installed, `device.foregroundApp()` for the app in front. Running in the background has no equivalent |
 | `driver.lock()`, `unlock()`, power and volume buttons | `client.command.hardwareButton` through [`unstable_raw`](/reference/mobile#unstable_raw) |
 | `driver.openNotifications()`, `mobile: pushNotification` | `screen.swipe({ from, to })` from the top edge; `xcrun simctl push` from Node |
 | `driver.pushFile()`, `pullFile()`, `pullFolder()` | `adb push`, `adb pull`, or `xcrun simctl addmedia` from Node; local devices only |
