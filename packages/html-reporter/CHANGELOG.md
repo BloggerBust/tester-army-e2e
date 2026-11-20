@@ -1,5 +1,11 @@
 # @e2e-dev/html-reporter
 
+## 0.0.3
+
+### Patch Changes
+
+- [#1936](https://github.com/e2e-inc/e2e/pull/1936) [`eddf577`](https://github.com/e2e-inc/e2e/commit/eddf5775264134b61ce5ac986370dce2bf75844b) Thanks [@KrzysztofMoch](https://github.com/KrzysztofMoch)! - The built-in reporters are built on the public `Reporter` contract. Ids such as `'list'` and `'junit'` work as before; to pass options, call the factory from `e2e/reporters` instead: `list()`, `dot()`, `json()`, `junit({ outputFile })`, and `markdown({ outputFile })`. A reporter of your own can now do everything the built-ins do: take what user code prints (`onOutput`), show the `--step` prompt (`onStepPrompt`), print every reporter's summary rows (`onSummary`), and return files the runner writes atomically, even after a second Ctrl-C (`reportFiles`). `printsTo` names the terminal stream a reporter prints to, one reporter per stream; beside `json`, `list` and `dot` print to stderr unless given a `stream`, so `--reporter list,json` now works like `dot,json`. `--reporter` keeps the options of a built-in the config configured. `@e2e-dev/html-reporter` writes `report.html` through `reportFiles`.
+
 ## 0.0.2
 
 ### Patch Changes

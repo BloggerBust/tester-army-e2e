@@ -1,5 +1,11 @@
 # @e2e-dev/github
 
+## 0.4.7
+
+### Patch Changes
+
+- [#1887](https://github.com/e2e-inc/e2e/pull/1887) [`198d25f`](https://github.com/e2e-inc/e2e/commit/198d25f038c5f69c697224ce22e2d73b38c97766) Thanks [@samanyudas](https://github.com/samanyudas)! - After a rerun, the merged report counts a serial test that calls `test.fixme()` in its body as executed, as it does for `test.skip()`. The pull request comment does not change.
+
 ## 0.4.6
 
 ### Patch Changes

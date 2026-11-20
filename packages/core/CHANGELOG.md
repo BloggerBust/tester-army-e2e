@@ -1,5 +1,40 @@
 # @e2e-dev/core
 
+## 0.25.0
+
+### Minor Changes
+
+- [#1887](https://github.com/e2e-inc/e2e/pull/1887) [`198d25f`](https://github.com/e2e-inc/e2e/commit/198d25f038c5f69c697224ce22e2d73b38c97766) Thanks [@samanyudas](https://github.com/samanyudas)! - **Breaking:** `report-1` reports can now contain the `skip.cause` value `fixme`.
+  Update pinned copies of `schema/report-v1.schema.json` from this release and
+  handle `fixme` in exhaustive skip-cause checks. The report's `schemaVersion`
+  stays `report-1`.
+  
+  The new `test.fixme` API skips tests at registration or from inside their
+  bodies. The report gives the reason as `fixme`, or `fixme: <reason>` when you
+  give a non-blank reason.
+
+### Patch Changes
+
+- [#1993](https://github.com/e2e-inc/e2e/pull/1993) [`e939a65`](https://github.com/e2e-inc/e2e/commit/e939a65668b07679b1b2271a66e34a8459eb0fe1) Thanks [@kdy1](https://github.com/kdy1)! - The built-in agent's rules (`BASE_RULES`) now tell the model not to press a save or submit control again when the first press shows no change or is still in progress. The model must first check the screen for a confirmation, an error, a new location, or the changed record. It presses again only when that check shows the first press did not commit, or when the tap only closed the on-screen keyboard, and does not press again when it cannot tell. A step that asks for several commits still presses once for each. It also stays on the step's screen instead of navigating away to confirm a save, so a save that shows no confirmation on that screen can end the step `failed`; name the check in the step ("save the product, then confirm it appears in the product list"). A first press that reached nothing and left no trace, such as a click before the page was ready, is not pressed again either, since it looks the same as a save with no feedback; wait for the page before the save. The loop guard gives the built-in looks more room while a save is still in progress: `observe` and plain `screenshot`, in any order, now warn at six looks with no change and force a verdict at ten, where every other tool keeps three and five; a look whose listing, location, or tabs changed starts the count again, a change in pixels alone does not, and a wait that keeps changing is warned at twelve looks and ended at twenty. Before, the same look repeated stopped at five; such a wait, in a step or in an exploring `agent.assert` with a raised budget, can now spend up to five more model calls on an unchanged screen and up to fifteen more on one that keeps changing. A wait that mixes `observe` and `screenshot` fell under the cycle limits before and now has the same limits of ten and twenty looks. The step budget and deadline still bound the whole step.
+
+- [#2005](https://github.com/e2e-inc/e2e/pull/2005) [`3e7d19d`](https://github.com/e2e-inc/e2e/commit/3e7d19de16ea916ddfd761be3909cc873dd08a73) Thanks [@Toraastrta](https://github.com/Toraastrta)! - The replay cache now also reads a CJK count followed by a copula, such as `42件です`, `42건입니다` or `42건이에요`, as a count, so a growing tally no longer makes the next replay stale.
+
+- [#1919](https://github.com/e2e-inc/e2e/pull/1919) [`e88153b`](https://github.com/e2e-inc/e2e/commit/e88153b2f3b4f6f6b00352dca3960bfe0967975b) Thanks [@WellDunDun](https://github.com/WellDunDun)! - Add `locator.blur()` to remove focus from a web element.
+
+- [#2001](https://github.com/e2e-inc/e2e/pull/2001) [`991b522`](https://github.com/e2e-inc/e2e/commit/991b522830e2c5ede57d4d2f92b2fbb87a9a20ba) Thanks [@okwasniewski](https://github.com/okwasniewski)! - The `waitedMs` of a `LOCATOR_NOT_FOUND` is now counted from the moment the step's timeout started. It was counted from a later clock read, so a wait that ran its whole timeout could report 1 ms less, such as `Waited: 399ms` on a 400 ms timeout.
+
+- [#1972](https://github.com/e2e-inc/e2e/pull/1972) [`25eb2f8`](https://github.com/e2e-inc/e2e/commit/25eb2f8c5a265c083f0e8f41d3109bb7cbf24b2e) Thanks [@satya164](https://github.com/satya164)! - Attach to a test held at `screen.pause()` or `e2e run --step` with
+  `open_session {attach: "k3f9"}` in `e2e mcp`. Use the ID from the pause
+  header. The attached session has the same tools as a normal session on
+  that target. If the run already records the attempt, `start_recording`
+  returns an error with the run's video directory. `close_session` detaches
+  and leaves the test held. Resume continues the test right away while any
+  attached recording saves in the background.
+
+- [#1934](https://github.com/e2e-inc/e2e/pull/1934) [`160cbfe`](https://github.com/e2e-inc/e2e/commit/160cbfe7a06df443d531060fc0e7467cb9db8368) Thanks [@yehomak](https://github.com/yehomak)! - The replay cache now records a value typed into an `autocomplete="one-time-code"` field as a run-time gap, so a code typed one digit per box no longer replays the previous run's code.
+
+- [#1921](https://github.com/e2e-inc/e2e/pull/1921) [`a5d1788`](https://github.com/e2e-inc/e2e/commit/a5d178897a42e3736a5458a27ad3d17dfadbf8c6) Thanks [@imranbarbhuiya](https://github.com/imranbarbhuiya)! - Add `test.setTimeout(timeout)` to change the running test's timeout from its body or a `beforeEach` hook, or a `beforeAll` hook's own timeout.
+
 ## 0.24.0
 
 ### Minor Changes

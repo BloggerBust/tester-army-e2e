@@ -1,5 +1,17 @@
 # @e2e-dev/web
 
+## 0.17.0
+
+### Minor Changes
+
+- [#1621](https://github.com/e2e-inc/e2e/pull/1621) [`a06b931`](https://github.com/e2e-inc/e2e/commit/a06b931b8d51b693760f9db34781192eb676e603) Thanks [@Varshith-Kali](https://github.com/Varshith-Kali)! - **Release:** Chromium launches with its OS sandbox on by default on macOS and Windows, which helps contain a renderer exploit on a page the agent reaches. `web({ chromiumSandbox })` turns it on for Linux, where it stays off by default, or off elsewhere.
+
+### Patch Changes
+
+- [#1976](https://github.com/e2e-inc/e2e/pull/1976) [`8eb3cc2`](https://github.com/e2e-inc/e2e/commit/8eb3cc27eabaf663a35c9930b861c851e0fbff81) Thanks [@okwasniewski](https://github.com/okwasniewski)! - A config that infers `web()` or `mobile()` type-checks again under pnpm with `declaration: true`. It failed with TS2883 since e2e 0.24.0. The factories now return `WebEngine` and `MobileEngine`, exported from each package.
+
+- [#1919](https://github.com/e2e-inc/e2e/pull/1919) [`e88153b`](https://github.com/e2e-inc/e2e/commit/e88153b2f3b4f6f6b00352dca3960bfe0967975b) Thanks [@WellDunDun](https://github.com/WellDunDun)! - Add `locator.blur()` to remove focus from a web element.
+
 ## 0.16.1
 
 ### Patch Changes
