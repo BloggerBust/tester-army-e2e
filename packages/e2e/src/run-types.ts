@@ -90,10 +90,8 @@ export interface ReporterOutput {
 }
 
 /**
- * A reporter in `reporters`, the contract the built-in `list`, `dot`, `line`,
- * `json`, `junit`, and `markdown` reporters are built on, with nothing the runner
- * gives them alone. Every hook is optional, but a reporter has at least one,
- * and every reporter that has a hook gets it.
+ * Built-in and custom reporters use the same hooks. A reporter implements
+ * at least one, and the runner invokes each one provided.
  *
  * - `onEvent` sees every run event as it happens and must not block: a
  *   throw quarantines it for the rest of the run. Event types are added

@@ -1,5 +1,9 @@
+import { realmSlot } from '@e2e-dev/core/lib/internal/realm-slot';
 import type { ResultStatus } from '@e2e-dev/core/lib/run/records';
 import type { OutputStream } from '../run/process-output.ts';
+
+/** A line view consumes this grant at startup if the runner has reserved the cursor row for it. */
+export const cursorRow = realmSlot<{ exclusive: boolean }>('e2e.reporter.cursor-row');
 
 /** A selected test as a progress row names it. */
 export interface TerminalProgressTest {

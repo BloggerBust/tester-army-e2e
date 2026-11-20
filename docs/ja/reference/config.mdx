@@ -217,7 +217,7 @@ reporters: ['list', 'junit'], // default: ['list']
 | `'json'`、`json()` | レポートを stdout に出力します。併用すると、`list`、`dot`、`line` は `stream` を指定しない限り stderr に出力します。 |
 | その他の `Reporter` オブジェクト | 組み込みレポーターと一緒に実行します。`--reporter` では取り除かれません。 |
 
-同じストリームに出力できるレポーターは 1 つだけです。`['list', 'line']` は、どちらもデフォルトで stdout に出力するため `INVALID_CONFIG` になります。併用するには `['list', line({ stream: 'stderr' })]` を使います。
+同じストリームに出力できるレポーターは 1 つだけです。`['list', 'line']` は、どちらもデフォルトで stdout に出力するため `INVALID_CONFIG` になります。stdout と stderr が同じ端末に出力される場合は、進捗の更新で他のレポーターの出力が消えないよう、端末用のレポーターは 1 つだけ使ってください。
 
 ID は、そのファクトリーをオプションなしで呼び出したものと同じです。未知の ID は `INVALID_CONFIG` です。[レポーター](/reference/reporters)を参照してください。
 

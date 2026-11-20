@@ -24,8 +24,8 @@ To pass a built-in reporter options, call its factory from `e2e/reporters`
 in place of the id: `junit({ outputFile: 'reports/junit.xml' })`. An id is
 its factory called with no options.
 
-The built-in reporters use only the [`Reporter`](#custom-reporters) contract,
-so a reporter of your own can do anything they do.
+Built-in and custom reporters receive run events, output, and summary rows
+through the same [`Reporter`](#custom-reporters) hooks.
 
 ## Reference
 
@@ -109,9 +109,11 @@ The row shows the target and `file > title`. A count of `[2/10]` means two of
 the ten selected tests have a final result. Each test counts once, after any
 retries.
 
-The reporter clears the row before printing logs, failure details, or the
-summary. For non-interactive output, such as a pipe or redirection, it prints
-one progress line per final result. It does the same with `TERM=dumb`.
+The reporter clears the progress row before printing logs, failure details, or
+the summary. When cursor updates could interfere with other output, it appends
+one line per final result. This also applies to redirected output, `TERM=dumb`,
+and watch reruns. Some terminals may leave fragments of the old progress row
+when the window narrows.
 
 If the final result is a failure or timeout, `line` prints the error and any
 available diagnostics immediately. The final `Failed` summary lists the paths

@@ -14,8 +14,8 @@ import type { ModuleRegistration, RegisteredTest, TestBody } from '../collect/re
 import { selectTargets } from '../collect/select.ts';
 import { discoverConfig, loadConfigModule, missingConfigError } from '../config/load.ts';
 import { missingModelError, resolveAgentConfig } from '@e2e-dev/core/lib/config/agent';
-import { type ResolvedConfig, type ResolvedCredential, type ResolvedTarget } from '@e2e-dev/core/lib/config/resolve';
-import { resolveConfig } from '../config/resolve-run.ts';
+import { resolveProjectConfig, type ResolvedConfig, type ResolvedCredential, type ResolvedTarget } from '@e2e-dev/core/lib/config/resolve';
+import { resolveRunSettings } from '../config/resolve-run.ts';
 import { launchesPinnedApp } from '@e2e-dev/core/lib/config/targets';
 import { ConfigurationError } from '@e2e-dev/core/lib/internal/errors';
 import type { ReportExplore } from '../report/build.ts';
@@ -31,7 +31,7 @@ import { STEP_BOUNDS, TIMEOUT_BOUNDS } from './bounds.ts';
 import { changeContext, readExploreChange, type ChangeBrief, type ExploreChange } from './change.ts';
 import { explorerAgent, withFindingTool } from './executor.ts';
 import { signedInContext, type PlanAccount } from './plan.ts';
-import { ExploreState } from './state.ts';
+import { clip, ExploreState } from './state.ts';
 
 const DEFAULT_GOAL = 'Explore the app and find bugs';
 /** The goal with `--changed-since` and none given: the change is the scope. */
@@ -138,24 +138,32 @@ export async function explore(options: ExploreOptions = {}): Promise<ExploreOutc
 
   // The config's secrets are known to the process before what its top-level
   // code printed is released, as `run` loads its config.
-  const loadConfig = async (): Promise<{ raw: E2EConfig; projectRoot: string; resolved: ResolvedConfig }> => {
+  const loadConfig = async () => {
     const { raw, projectRoot } = await loadRawConfig(options, cwd);
-    const resolved = resolveConfig(raw, {
-      projectRoot, env,
-      cli: {
-        ...(options.agent === undefined ? {} : { agents: [options.agent] }),
-        ...(options.reporters === undefined ? {} : { reporters: options.reporters }),
-      },
-    });
+    const cli = {
+      ...(options.agent === undefined ? {} : { agents: [options.agent] }),
+      ...(options.reporters === undefined ? {} : { reporters: options.reporters }),
+    };
+    const resolved = resolveProjectConfig(raw, { projectRoot, env, cli });
+    const settings = resolveRunSettings(raw, cli);
+    const reporterConflict = 'conflict' in settings ? settings.conflict : undefined;
+    if (reporterConflict !== undefined && options.reporters === undefined) throw reporterConflict;
     registerStaticSecrets(resolved.allSecrets);
-    // Reserve stdout before releasing config logs so they cannot corrupt
-    // a report written there.
-    if (resolved.reporters.some(keepsStdout)) options.processOutput?.keepStdoutForReport();
-    return { raw, projectRoot, resolved };
+    // Reserve stdout before releasing config logs when a reporter needs it.
+    if (options.reporters?.includes('json') || ('reporters' in settings && settings.reporters.some(keepsStdout))) options.processOutput?.keepStdoutForReport();
+    return { raw, projectRoot, resolved, reporterConflict };
   };
-  const { raw, projectRoot, resolved } = await (options.processOutput === undefined
+  const { raw, projectRoot, resolved, reporterConflict } = await (options.processOutput === undefined
     ? loadConfig()
     : options.processOutput.withholdDuring(loadConfig));
+  if (reporterConflict !== undefined) {
+    const goal = givenGoal ?? (options.changedSince === undefined ? DEFAULT_GOAL : DEFAULT_CHANGE_GOAL);
+    // Bound the reported goal without hiding the configuration error.
+    const redacted = staticSecretLedger(resolved.allSecrets).redact(goal);
+    const record = new ExploreState(clip(redacted, MAX_GOAL_CHARS), budgets).snapshot();
+    const outcome = await run({ ...options, cwd: projectRoot }, { error: reporterConflict, explore: record });
+    return { ...outcome, explore: record };
+  }
   const target = pickTarget(resolved.targets, options.target, notice);
   const change = await exploreChange(options.changedSince, projectRoot, resolved.allSecrets, options.interruptSignal, notice);
   const goal = givenGoal ?? (change === undefined ? DEFAULT_GOAL : DEFAULT_CHANGE_GOAL);

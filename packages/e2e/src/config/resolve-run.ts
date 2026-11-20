@@ -41,22 +41,20 @@ export function resolveConfig(
   },
 ): ResolvedRunConfig {
   const resolved = resolveProjectConfig(raw, options);
-  return { ...resolved, reporters: resolveReporters(raw, options.cli ?? {}), filters: resolveTestFilters(raw.filters) };
+  const settings = resolveRunSettings(raw, options.cli ?? {});
+  if ('conflict' in settings) throw settings.conflict;
+  return { ...resolved, ...settings };
 }
 
 /**
- * Resolves `reporters` into reporter objects, an id into its built-in
- * factory's reporter with default options. `--reporter` replaces the
- * built-ins only, keeping the options of one the config configured: a
- * third-party reporter has no id to name on the command line, so a CI flag
- * choosing `list,junit` never drops the upload a config asked for. One
- * reporter at most prints to each terminal stream: a `list`, `dot`, or `line` id,
- * or its factory called without a `stream`, prints to stderr beside
- * `json`, leaving stdout to the report. An id named twice runs once.
- * Workers resolve this too and never call a reporter, which the factories
- * allow: constructing one has no side effects.
+ * Resolves reporters and filters. Returns stream conflicts so `explore` can
+ * register secrets before reporting the error.
+ *
+ * CLI reporter IDs replace configured built-ins while preserving their options
+ * and any custom reporters. Factories must have no construction side effects
+ * because workers also load the configuration.
  */
-function resolveReporters(raw: E2EConfig, cli: RunCliOverrides): readonly Reporter[] {
+export function resolveRunSettings(raw: E2EConfig, cli: RunCliOverrides): Pick<ResolvedRunConfig, 'reporters' | 'filters'> | { conflict: ConfigurationError } {
   const configured = raw.reporters ?? ['list'];
   if (!Array.isArray(configured)) {
     throw new ConfigurationError(
@@ -93,12 +91,13 @@ function resolveReporters(raw: E2EConfig, cli: RunCliOverrides): readonly Report
     const printers = reporters.filter((reporter) => reporter.printsTo === printsTo);
     if (printers.length < 2) continue;
     const names = printers.map((reporter) => `"${reporter.name}"`);
-    throw new ConfigurationError(
+    const error = new ConfigurationError(
       'INVALID_CONFIG',
       `reporters ${names.slice(0, -1).join(', ')} and ${names.at(-1)} both print to ${printsTo}, where they would garble each other; run one of them`,
     );
+    return { conflict: error };
   }
-  return reporters;
+  return { reporters, filters: resolveTestFilters(raw.filters) };
 }
 
 /** One entry of `reporters`: a built-in id, or an object checked structurally, never with `instanceof`. */

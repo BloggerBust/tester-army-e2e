@@ -1,7 +1,7 @@
 import type { Reporter } from '../run-types.ts';
 import { ListReporter, runView } from './list.ts';
 import { bounded, fitColumns } from './format.ts';
-import type { TerminalProgress, TerminalProgressResult, TerminalProgressTest } from './progress.ts';
+import { cursorRow, type TerminalProgress, type TerminalProgressResult, type TerminalProgressTest } from './progress.ts';
 
 /** Options of the built-in `line` reporter. */
 export interface LineReporterOptions {
@@ -12,15 +12,21 @@ export interface LineReporterOptions {
 /** Shows the active test or latest selected result on one terminal row. */
 export function line(options: LineReporterOptions = {}): Reporter {
   const stream = options.stream ?? 'stdout';
-  return runView('line', stream, options.stream === undefined, (output) => {
+  const cursor = { exclusive: false };
+  const reporter = runView('line', stream, options.stream === undefined, (output) => {
     const destination = process[stream];
+    // Consume the grant so it cannot carry into another run.
+    const granted = cursor.exclusive;
+    cursor.exclusive = false;
     const progress = new LineProgress({
       write: output.raw,
-      interactive: destination.isTTY === true && process.env.TERM !== 'dumb',
+      interactive: granted && destination.isTTY === true && process.env.TERM !== 'dumb',
       columns: () => destination.columns || 80,
     });
     return new ListReporter(output, { progress });
   });
+  cursorRow.set(reporter, cursor);
+  return reporter;
 }
 
 interface LineProgressOutput {

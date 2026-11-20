@@ -6,8 +6,9 @@
  * when no reporter prints to the terminal.
  */
 
-import { spawnSync } from 'node:child_process';
-import { readFileSync } from 'node:fs';
+import { spawn, spawnSync } from 'node:child_process';
+import { once } from 'node:events';
+import { appendFileSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -287,6 +288,7 @@ test('second', () => { console.log('test log'); });
         'e2e.config.ts': fakeConfig('{}', "reporters: ['line'],"),
         'tests/line.e2e.ts': `import { existsSync, writeFileSync } from 'node:fs';
 import { test } from 'e2e';
+test.setup('selected auth', { sessions: ['member'], requires: ['state'] }, () => {});
 test('selected pass', () => {});
 test('selected retry', { retries: 1 }, () => {
   const marker = new URL('./first-attempt', import.meta.url);
@@ -309,6 +311,74 @@ test('left out', () => {});
     expect(stdout.split('\n').filter((line) => line.includes('selected pass'))).toEqual(rows.filter((row) => row.includes('selected pass')));
     expect(stdout).toMatch(/Tests\s+1 passed.*1 flaky.*1 skipped/u);
   });
+
+  it.each([
+    { hook: 'onOutput', declared: false, wrapped: false },
+    { hook: 'onEvent', declared: true, wrapped: false },
+    { hook: 'onEvent', declared: false, wrapped: false },
+    { hook: 'onEvent', declared: false, wrapped: true },
+  ])('preserves partial terminal writes from $hook (declared: $declared, wrapped: $wrapped)', ({ hook, declared, wrapped }) => {
+    const reporter = wrapped ? "{ ...line({ stream: 'stderr' }), name: 'wrapped' }" : "line({ stream: 'stderr' })";
+    const config = "import { writeSync } from 'node:fs';\nimport { line } from 'e2e/reporters';\nObject.defineProperty(process.stderr, 'isTTY', { configurable: true, value: true });\n" + fakeConfig('{}', `
+  reporters: [${reporter}, {
+    name: 'mirror',
+    ${declared ? "printsTo: 'stdout'," : ''}
+    async ${hook}(event) {
+      if (event.text !== 'test log\\n') return;
+      process.stderr.write('mirror line\\n');
+      await Promise.resolve();
+      writeSync(2, 'mirror fragment');
+    },
+  }],`);
+    const { exitCode, stderr } = cli({
+      'e2e.config.ts': config,
+      'tests/log.e2e.ts': "import { test } from 'e2e';\ntest('logs', () => console.log('test log'));\n",
+    }, ['run'], { TERM: 'xterm' });
+    expect(exitCode, stderr).toBe(0);
+    expect(stderr).toContain('mirror line\n');
+    expect(stderr).toContain('test log\n');
+    expect(stderr).toMatch(/mirror fragment[\s\S]*\[1\/1\] \[fake\] tests\/log\.e2e\.ts > logs \(passed\)/u);
+    expect(stderr).not.toContain('\u001b[2K');
+  });
+
+  it('preserves a delayed summary write across a watch config reload', async () => {
+    const config = `import { writeSync } from 'node:fs';
+import { line } from 'e2e/reporters';
+Object.defineProperty(process.stderr, 'isTTY', { configurable: true, value: true });
+const previous = globalThis.releaseSummary;
+previous?.();
+const summary = {
+  name: 'summary',
+  async onSummary() {
+    await new Promise(resolve => { globalThis.releaseSummary = resolve; });
+    writeSync(2, 'delayed summary fragment');
+  },
+};
+` + fakeConfig('{}', "reporters: previous ? [line({ stream: 'stderr' })] : [line({ stream: 'stderr' }), summary],");
+    const project = fixture({ 'e2e.config.ts': config, 'tests/watch.e2e.ts': "import { test } from 'e2e'; test('watched', () => {});" });
+    const child = spawn(process.execPath, [CLI, 'run', '--watch'], {
+      cwd: project.dir, env: { ...process.env, CI: '', NO_COLOR: '1', TERM: 'xterm' },
+      stdio: ['ignore', 'pipe', 'pipe'], timeout: 30_000, killSignal: 'SIGKILL',
+    });
+    const exit = once(child, 'close');
+    let stderr = '';
+    child.stderr.setEncoding('utf8').on('data', (chunk: string) => { stderr += chunk; });
+    let stdout = '';
+    let runs = 0;
+    child.stdout.setEncoding('utf8').on('data', (chunk: string) => {
+      stdout += chunk;
+      if (!stdout.includes('Waiting for file changes')) return;
+      stdout = '';
+      if (++runs === 1) appendFileSync(path.join(project.dir, 'e2e.config.ts'), '\n');
+      else child.kill('SIGINT');
+    });
+    expect((await exit)[0], stderr).toBe(0);
+    expect(runs).toBe(2);
+    const [first, second] = stderr.split('delayed summary fragment');
+    expect(first).toContain('(running)');
+    expect(second).toContain('[1/1] [fake] tests/watch.e2e.ts > watched (passed)');
+    expect(second).not.toContain('\u001b[2K');
+  }, 40_000);
 
   it('reports a selected skip when engine preparation fails before the plan', () => {
     const config = `import { defineEngine } from 'e2e/engine';
@@ -427,7 +497,7 @@ console.log('config log');
   agents: {
     default: { model: installFakeModel(() => extracted({ decision: 'finish', title: '', instruction: '', summary: 'Finished' })) },
   },
-  reporters: [${source === 'config' ? 'line(), json(),' : ''}
+  reporters: [${source === 'config' ? 'line(), json(),' : "'list', 'dot',"}
   {
     name: 'progress logger',
     onEvent(event) {
@@ -446,6 +516,25 @@ console.log('config log');
   expect(stderr).toMatch(/^\[1\/1\] \[fake\] explore > Check the app \(passed\)$/mu);
   expect(stderr).toMatch(/^config log$/mu);
   expect(stderr).toMatch(/^custom reporter log$/mu);
+});
+
+it.each([
+  { configured: "['list']", cliReporters: 'list,dot,json', stream: 'stderr' },
+  // Redacting the secret takes this otherwise valid goal over the report's length limit.
+  { configured: "['list', 'dot', 'json']", cliReporters: 'list,dot,json', stream: 'stderr', goal: 'config-secret'.padEnd(2_000, 'x') },
+  { configured: "['json', { name: 'mirror-config-secret', printsTo: 'stdout', onRunFinished() {} }]", cliReporters: 'json', stream: 'stdout' },
+])('reports the effective $stream conflict before checking the explore model with $configured', ({ configured, cliReporters, stream, goal = 'Check the app' }) => {
+  const config = "console.log('loading explore config: config-secret');\n" +
+    fakeConfig('{}', `reporters: ${configured}, secrets: { token: 'config-secret' },`);
+  const { exitCode, stdout, stderr } = cli({ 'e2e.config.ts': config }, ['explore', goal, '--reporter', cliReporters]);
+  expect(exitCode).toBe(2);
+  const report = JSON.parse(stdout) as Report1Document;
+  assertValidReport(report);
+  expect(report.run.exitCode).toBe(2);
+  expect(report.run.errors).toEqual([expect.objectContaining({ phase: 'config', code: 'INVALID_CONFIG', message: expect.stringContaining(`both print to ${stream}`) })]);
+  expect(report.run.explore?.ended).toBe('aborted');
+  expect(stderr).toMatch(/^loading explore config: <secret:token>$/mu);
+  expect(stdout + stderr).not.toContain('config-secret');
 });
 
 describe('fixture rules through the CLI', () => {

@@ -114,6 +114,38 @@ test('callback', async () => {
     expect(result.stdout).toContain('secret:sentinel');
   });
 
+  it('preserves a delayed summary write during the next public run', async () => {
+    const { stderr } = await inHost({
+      'host.mjs': `import { run } from 'e2e/runner';
+import { line } from 'e2e/reporters';
+import assert from 'node:assert/strict';
+${config}
+Object.defineProperty(process.stderr, 'isTTY', { value: true, configurable: true });
+process.env.TERM = 'xterm';
+const release = Promise.withResolvers();
+const written = Promise.withResolvers();
+const summary = {
+  name: 'late summary', printsTo: 'stderr',
+  async onSummary() {
+    await release.promise;
+    process.stderr.write('delayed summary fragment');
+    written.resolve();
+  },
+};
+assert.equal((await run({ config: { ...config, reporters: [summary] } })).exitCode, 0);
+const reporter = line({ stream: 'stderr' });
+delete reporter.onOutput;
+globalThis.duringTest = () => {
+  release.resolve();
+  return written.promise;
+};
+assert.equal((await run({ config: { ...config, reporters: [reporter] } })).exitCode, 0);`,
+      'tests/one.e2e.ts': `import { test } from 'e2e'; test('one', async () => { await globalThis.duringTest?.(); });`,
+    });
+    expect(stderr).toMatch(/delayed summary fragment[\s\S]*\[1\/1\] \[noop\] tests\/one\.e2e\.ts > one \(passed\)/u);
+    expect(stderr).not.toContain('\u001b[2K');
+  });
+
   it('keeps progress callback work in the caller output context after a run', async () => {
     const result = await inHost({
       'host.mjs': `import { run } from 'e2e/runner';
