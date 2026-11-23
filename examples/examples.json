@@ -2092,6 +2092,347 @@
           "web"
         ]
       }
+    },
+    {
+      "slug": "t3-code",
+      "title": "Testing T3 Code's web, desktop, and mobile apps with e2e",
+      "shortTitle": "T3 Code",
+      "description": "Over a hundred regression scenarios for T3 Code's React app and its iOS client, each one a bug reproduced as a test.",
+      "source": "community",
+      "repository": "https://github.com/pingdotgg/t3code/tree/1bc44f2732ce0a24c0608626d59409f1a0893db4/scripts/scenarios",
+      "readme": false,
+      "author": {
+        "name": "Ping.gg",
+        "github": "pingdotgg"
+      },
+      "license": "MIT",
+      "licenseUrl": "https://github.com/pingdotgg/t3code/blob/1bc44f2732ce0a24c0608626d59409f1a0893db4/LICENSE",
+      "tags": {
+        "framework": [
+          "react",
+          "vite",
+          "electron"
+        ],
+        "platform": [
+          "web",
+          "ios"
+        ]
+      }
+    },
+    {
+      "slug": "rocket-chat-react-native",
+      "title": "Testing Rocket.Chat's React Native app with e2e",
+      "shortTitle": "Rocket.Chat",
+      "description": "Onboarding, rooms, deep links, and admin flows of the Rocket.Chat mobile app, on an iOS simulator and an Android emulator.",
+      "source": "community",
+      "repository": "https://github.com/RocketChat/Rocket.Chat.ReactNative/tree/776c0681c6b76c6ea3059ef6755265f32cada088/e2e",
+      "author": {
+        "name": "Rocket.Chat",
+        "github": "RocketChat"
+      },
+      "license": "MIT",
+      "licenseUrl": "https://github.com/RocketChat/Rocket.Chat.ReactNative/blob/776c0681c6b76c6ea3059ef6755265f32cada088/LICENSE",
+      "tags": {
+        "framework": [
+          "react-native"
+        ],
+        "useCase": [
+          "deep-links"
+        ],
+        "platform": [
+          "ios",
+          "android"
+        ]
+      }
+    },
+    {
+      "slug": "app-store-screenshots",
+      "title": "Testing the App Store Screenshots editor template with e2e",
+      "shortTitle": "App Store Screenshots",
+      "description": "The Next.js editor template behind an AI skill for App Store screenshots, tested in Google Chrome.",
+      "source": "community",
+      "repository": "https://github.com/ParthJadhav/app-store-screenshots/tree/e889033b68f418952cc65ba897fe2b1ec63d1564/skills/app-store-screenshots/template",
+      "author": {
+        "name": "Parth Jadhav",
+        "github": "ParthJadhav"
+      },
+      "license": "MIT",
+      "licenseUrl": "https://github.com/ParthJadhav/app-store-screenshots/blob/e889033b68f418952cc65ba897fe2b1ec63d1564/LICENSE",
+      "tags": {
+        "framework": [
+          "nextjs",
+          "react"
+        ],
+        "platform": [
+          "web"
+        ]
+      }
+    },
+    {
+      "slug": "dashi-taskboard",
+      "title": "Testing the Dashi task board with e2e",
+      "shortTitle": "Dashi Taskboard",
+      "description": "Projects, issue filters, and the board, list, and Gantt views of an embeddable React task board, against a local server.",
+      "source": "community",
+      "repository": "https://github.com/chuspeeism/dashi-taskboard/tree/bc25451c5c49a14abb6c4e8250b62c626b007f8a/tests",
+      "readme": false,
+      "author": {
+        "name": "Dashi AI Lab",
+        "github": "chuspeeism"
+      },
+      "license": "Apache-2.0",
+      "licenseUrl": "https://github.com/chuspeeism/dashi-taskboard/blob/bc25451c5c49a14abb6c4e8250b62c626b007f8a/LICENSE",
+      "tags": {
+        "framework": [
+          "react",
+          "vite"
+        ],
+        "platform": [
+          "web"
+        ]
+      }
+    },
+    {
+      "slug": "tiez-clipboard",
+      "title": "Testing TieZ's clipboard UI with a mocked Tauri backend",
+      "shortTitle": "TieZ",
+      "description": "The real React UI of a Tauri clipboard manager run in a browser, with tests asserting the calls it sends to a mocked backend.",
+      "source": "community",
+      "repository": "https://github.com/jimuzhe/tiez-clipboard/tree/bb96eececaf941dc09df73199280f114c2182c5d/e2e",
+      "author": {
+        "name": "LongDz",
+        "github": "jimuzhe"
+      },
+      "license": "GPL-3.0",
+      "licenseUrl": "https://github.com/jimuzhe/tiez-clipboard/blob/bb96eececaf941dc09df73199280f114c2182c5d/LICENSE",
+      "tags": {
+        "framework": [
+          "react",
+          "vite"
+        ],
+        "platform": [
+          "web"
+        ]
+      }
+    },
+    {
+      "slug": "idonthavespotify",
+      "title": "Testing I Don't Have Spotify's link conversion with e2e",
+      "shortTitle": "I Don't Have Spotify",
+      "description": "Converting a music link between streaming services at desktop and phone widths, with every provider API served from fixtures.",
+      "source": "community",
+      "repository": "https://github.com/sjdonado/idonthavespotify/tree/e65bca26d53712bdf5be4f0cae62fb9c2602fcd0/e2e",
+      "readme": false,
+      "author": {
+        "name": "Juan Rodriguez Donado",
+        "github": "sjdonado"
+      },
+      "license": "MIT",
+      "licenseUrl": "https://github.com/sjdonado/idonthavespotify/blob/e65bca26d53712bdf5be4f0cae62fb9c2602fcd0/LICENSE",
+      "tags": {
+        "framework": [
+          "nodejs"
+        ],
+        "platform": [
+          "web"
+        ]
+      }
+    },
+    {
+      "slug": "easywatermark",
+      "title": "Testing EasyWatermark's Android edit and export with e2e",
+      "shortTitle": "EasyWatermark",
+      "description": "An agent watermarks a photo and exports it in a native Android app on an emulator, with screenshots after each assertion.",
+      "source": "community",
+      "repository": "https://github.com/rosuH/EasyWatermark/tree/46c1808189a4218080af3f26138850a0ad1bc55d/tests/testmap/runner",
+      "author": {
+        "name": "rosuH",
+        "github": "rosuH"
+      },
+      "license": "MIT",
+      "licenseUrl": "https://github.com/rosuH/EasyWatermark/blob/46c1808189a4218080af3f26138850a0ad1bc55d/LICENSE",
+      "tags": {
+        "framework": [
+          "jetpack-compose"
+        ],
+        "platform": [
+          "android"
+        ]
+      }
+    },
+    {
+      "slug": "gustobot",
+      "title": "Testing GustoBot's knowledge Q&A app with e2e",
+      "shortTitle": "GustoBot",
+      "description": "Chat, conversation history, the graph explorer, and the admin pages of a Vue app for knowledge-graph question answering.",
+      "source": "community",
+      "repository": "https://github.com/skygazer42/GustoBot/tree/246b846e1a2cad0d6c068832a345e2049abe0297/web/tests",
+      "readme": false,
+      "author": {
+        "name": "skygazer42",
+        "github": "skygazer42"
+      },
+      "license": "Apache-2.0",
+      "licenseUrl": "https://github.com/skygazer42/GustoBot/blob/246b846e1a2cad0d6c068832a345e2049abe0297/LICENSE",
+      "tags": {
+        "framework": [
+          "vue",
+          "vite"
+        ],
+        "useCase": [
+          "ai-chat"
+        ],
+        "platform": [
+          "web"
+        ]
+      }
+    },
+    {
+      "slug": "react-native-naver-map",
+      "title": "Testing react-native-naver-map with e2e",
+      "shortTitle": "react-native-naver-map",
+      "description": "Map views, marker clustering, info windows, and a failed API key in the library's example app, on iOS and Android.",
+      "source": "community",
+      "repository": "https://github.com/mym0404/react-native-naver-map/tree/17ac3d128f4613fac2db8e5a5b085ce992bc1894/e2e",
+      "readme": false,
+      "author": {
+        "name": "MJ Studio",
+        "github": "mym0404"
+      },
+      "license": "MIT",
+      "licenseUrl": "https://github.com/mym0404/react-native-naver-map/blob/17ac3d128f4613fac2db8e5a5b085ce992bc1894/LICENSE",
+      "tags": {
+        "framework": [
+          "react-native"
+        ],
+        "platform": [
+          "ios",
+          "android"
+        ]
+      }
+    },
+    {
+      "slug": "react-native-kakao",
+      "title": "Testing react-native-kakao with e2e",
+      "shortTitle": "react-native-kakao",
+      "description": "Share, sign-in errors, channel URLs, and navigation screens of the Kakao SDK's example app, on iOS and Android.",
+      "source": "community",
+      "repository": "https://github.com/mym0404/react-native-kakao/tree/871d7469a6662baade6253b9cdc49763b883efff/script/e2e",
+      "readme": false,
+      "author": {
+        "name": "MJ Studio",
+        "github": "mym0404"
+      },
+      "license": "MIT",
+      "licenseUrl": "https://github.com/mym0404/react-native-kakao/blob/871d7469a6662baade6253b9cdc49763b883efff/LICENSE",
+      "tags": {
+        "framework": [
+          "react-native"
+        ],
+        "platform": [
+          "ios",
+          "android"
+        ]
+      }
+    },
+    {
+      "slug": "vibestart",
+      "title": "Testing vibestart's generated full-stack apps with e2e",
+      "shortTitle": "vibestart",
+      "description": "The e2e test templates vibestart adds to a generated TypeScript app: home, auth, account, health, and hydration checks.",
+      "source": "community",
+      "repository": "https://github.com/VinkyDev/vibestart/tree/8565902dfdd3d1d2530a46f8051cd038bfba7d04/packages/integrations/templates/testing/e2e",
+      "readme": false,
+      "author": {
+        "name": "Vinky",
+        "github": "VinkyDev"
+      },
+      "license": "MIT",
+      "licenseUrl": "https://github.com/VinkyDev/vibestart/blob/8565902dfdd3d1d2530a46f8051cd038bfba7d04/LICENSE",
+      "tags": {
+        "framework": [
+          "tanstack-start",
+          "nextjs",
+          "react"
+        ],
+        "useCase": [
+          "authentication"
+        ],
+        "platform": [
+          "web"
+        ]
+      }
+    },
+    {
+      "slug": "codexmate",
+      "title": "Testing Codexmate's web dashboard with e2e",
+      "shortTitle": "Codexmate",
+      "description": "Navigation, settings tabs, language switching, and a rejected visit without a token, at a desktop and a compact viewport.",
+      "source": "community",
+      "repository": "https://github.com/SakuraByteCore/codexmate/tree/7424707b538fd37ce7395ae01da20715c7f66208/tests/e2e-browser",
+      "readme": false,
+      "author": {
+        "name": "SakuraByteCore",
+        "github": "SakuraByteCore"
+      },
+      "license": "Apache-2.0",
+      "licenseUrl": "https://github.com/SakuraByteCore/codexmate/blob/7424707b538fd37ce7395ae01da20715c7f66208/LICENSE",
+      "tags": {
+        "framework": [
+          "nodejs"
+        ],
+        "platform": [
+          "web"
+        ]
+      }
+    },
+    {
+      "slug": "tidytv",
+      "title": "Testing TidyTV's Play Store screenshot editor with e2e",
+      "shortTitle": "TidyTV",
+      "description": "The Next.js editor that builds TidyTV's Play Store screenshots, tested in Google Chrome.",
+      "source": "community",
+      "repository": "https://github.com/jolan94/tidytv/tree/ed2067d0836f52bb8b839347bfa7bbcf165b2710/tools/playstore-shots",
+      "author": {
+        "name": "Joe Jeyaseelan",
+        "github": "jolan94"
+      },
+      "license": "MIT",
+      "licenseUrl": "https://github.com/jolan94/tidytv/blob/ed2067d0836f52bb8b839347bfa7bbcf165b2710/LICENSE",
+      "tags": {
+        "framework": [
+          "nextjs",
+          "react"
+        ],
+        "platform": [
+          "web"
+        ]
+      }
+    },
+    {
+      "slug": "bbplayer",
+      "title": "Testing BBPlayer's mobile app with e2e",
+      "shortTitle": "BBPlayer",
+      "description": "A smoke test and a regular listening flow of an Expo media player, on Android and iOS.",
+      "source": "community",
+      "repository": "https://github.com/bbplayer-app/BBPlayer/tree/ae847fbca02d906a098b3defed1f12e1ce0ce3eb/tests/mobile",
+      "readme": false,
+      "author": {
+        "name": "BBPlayer",
+        "github": "bbplayer-app"
+      },
+      "license": "MIT",
+      "licenseUrl": "https://github.com/bbplayer-app/BBPlayer/blob/ae847fbca02d906a098b3defed1f12e1ce0ce3eb/LICENSE",
+      "tags": {
+        "framework": [
+          "expo",
+          "react-native"
+        ],
+        "platform": [
+          "android",
+          "ios"
+        ]
+      }
     }
   ]
 }

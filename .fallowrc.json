@@ -54,7 +54,7 @@
     "@expo/repack-app",
     "@oxc-project/runtime"
   ],
-  "ignoreBinaries": ["eas"],
+  "ignoreBinaries": ["eas", "vhs"],
   "ignoreExports": [
     {
       "file": "packages/core/src/types.ts",

@@ -30,7 +30,7 @@ export function ErrorBlock({
       aria-label={secondary ? 'Also failed' : 'Error'}
       className={`flex flex-col gap-e2e-2 border-l-2 bg-shade-800 p-e2e-2 ${secondary ? 'border-shade-600' : 'border-status-failed'}`}
     >
-      <span className="type-caption flex flex-wrap items-baseline gap-x-e2e-2 normal-case">
+      <span className="type-caption flex flex-wrap items-baseline gap-x-e2e-2">
         <span className={secondary ? 'text-shade-400' : 'text-status-failed'}>{error.code}</span>
         {error.source === undefined ? null : (
           <span className="text-shade-500">
@@ -205,7 +205,7 @@ export function CodeFrame({ source, model, failed = false }: { source: Source; m
           );
         })}
       </pre>
-      <figcaption className="type-caption normal-case text-shade-500">
+      <figcaption className="type-caption text-shade-500">
         {source.file}:{source.line}:{source.column}
       </figcaption>
     </figure>

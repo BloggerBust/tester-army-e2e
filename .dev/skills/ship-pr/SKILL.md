@@ -61,6 +61,12 @@ it touches: the built CLI on the testbed or a benchmark, the MCP server, a
 scratch project for `init`, or the docs site. Bug fixes capture main against
 the branch. Keep the output and any video for the PR.
 
+Capture the evidence `## Verified` will need while the builds are warm
+([writing-pr](../writing-pr/SKILL.md) has the table): the
+`pnpm bench:ab` table for a perf claim or a runner, agent, or engine change,
+and a `pnpm record:terminal` recording, main beside the branch, when the
+terminal output or UI changes.
+
 ## 3. Self-review in a fresh context
 
 The agent that wrote the change does not get to judge it. Spawn a reviewer
@@ -77,8 +83,14 @@ prompt yourself, and say so in the handoff.
 
 - Branch off an up-to-date `origin/main`. Commits follow Conventional
   Commits.
-- Title and body with the [writing-pr](../writing-pr/SKILL.md) skill. The
-  body carries the verification evidence from step 2.
+- Title and body with the [writing-pr](../writing-pr/SKILL.md) skill:
+  `## What`, `## Why`, `## How it works`, and the evidence from step 2 under
+  `## Verified`. The body is the source of truth for the change, so check it
+  against `git diff --stat origin/main...HEAD` before opening: every area
+  the diff touches is in a step, and the body claims nothing the diff does
+  not do. Finish with the
+  [unslop](../../../.claude/skills/unslop/SKILL.md) pass on the title and
+  body.
 - Open it ready, not draft:
   `gh pr create --base main --title ... --body-file <file> --attach <each screenshot and video>`
   (`gh` 2.99+). The body must carry the `## Verified` section `writing-pr`
@@ -94,11 +106,19 @@ babysit bottom-up; a layer is labeled only when it is ready on its own.
 On a PR from a fork the label comes from a `/ready` comment; babysit's
 "From a fork" section has the gates.
 
+## After it is open
+
+Any later push to the PR, from you or a later session, goes through
+[writing-pr, After every push to an open PR](../writing-pr/SKILL.md#after-every-push-to-an-open-pr):
+update the description to match the change, then babysit again, because
+the push removed the label.
+
 ## Handoff
 
 Reply to the human with:
 
-- the PR URL and its label state
+- the PR URL and its label state. The PR body explains the change, so do
+  not repeat it here
 - how it was verified (surface, what you ran, what you saw, the media)
 - what you fixed from review, what you dismissed and why
 - anything left for them: escalated threads, parts you could not verify,

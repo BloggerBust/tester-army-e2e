@@ -128,7 +128,7 @@ function RunHeader({ model, counts, target }: { model: ReportModel; counts: Reco
   return (
     <header className="flex flex-col gap-e2e-3">
       <div className="flex items-end justify-between gap-e2e-3">
-        <h1 className="type-h3 lowercase">{target === undefined ? `tests ${run.status === 'error' ? 'errored' : run.status}` : `tests on ${target}`}</h1>
+        <h1 className="type-h3">{target === undefined ? `tests ${run.status === 'error' ? 'errored' : run.status}` : `tests on ${target}`}</h1>
         <p className="flex shrink-0 flex-col items-end gap-e2e-half">
           <span className="type-caption text-shade-500">passed</span>
           <span className="type-number-l">
@@ -185,7 +185,7 @@ function FileGroup({ file, model, showTarget }: { file: Suite; model: ReportMode
       <h2 className="pb-e2e-1">
         <button
           type="button"
-          className="type-caption flex cursor-pointer items-center gap-e2e-half normal-case text-shade-400"
+          className="type-caption flex cursor-pointer items-center gap-e2e-half text-shade-400"
           aria-expanded={open}
           onClick={() => setOpen(!open)}
         >

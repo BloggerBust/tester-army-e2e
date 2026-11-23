@@ -98,7 +98,10 @@
   --color-status-interrupted: light-dark(var(--color-e2e-neutral-600), var(--color-e2e-neutral-400));
 }
 
-/* The design system's type scale, the sizes the page uses. Captions and headings are lowercase there too. */
+/*
+ * The design system's type scale, the sizes the page uses. It lowercases captions and headings in CSS; here the copy
+ * is written lowercase instead, since they also show names from the user's code (a hook, a target, a URL).
+ */
 @utility type-h3 {
   font-family: var(--font-sans);
   font-size: 1.8125rem;
@@ -132,7 +135,6 @@
   font-size: 0.75rem;
   line-height: 1.2;
   letter-spacing: 0.04em;
-  text-transform: lowercase;
 }
 
 @utility type-number-l {

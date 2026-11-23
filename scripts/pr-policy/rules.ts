@@ -34,7 +34,7 @@ const TITLE = /^(feat|fix|docs|chore|refactor|test|perf|ci|build|revert)(\([^)]+
 /** Types that need a linked issue; the rest are exempt. */
 const ISSUE_EXEMPT = new Set(['feat', 'docs', 'refactor']);
 
-const TEMPLATE_PLACEHOLDERS = new Set(['-', 'Ran it locally: yes | no - <why>']);
+const TEMPLATE_PLACEHOLDERS = new Set(['-', '1.', 'Ran it locally: yes | no - <why>']);
 
 export interface Author {
   login: string;
@@ -122,7 +122,7 @@ export function problems(pr: PullRequest): string[] {
     found.push(`A \`${type}\` PR needs an existing issue. Open one if there is none, then add \`Fixes #123\` under \`## Issue\`.`);
   }
   if (!described(pr.body)) {
-    found.push('The description is empty. Say what changes and why, in a few bullets.');
+    found.push('The description is empty. Fill in `## What`, `## Why`, and `## How it works`.');
   }
   if (!filled(section(pr.body, 'Verified'))) {
     found.push('`## Verified` is missing or empty. Say how you checked the change works.');

@@ -17,9 +17,19 @@ const template = `<!--
 Title: Conventional Commits.
 -->
 
-## What and why
+## What
+
+<!-- The change as a user meets it. -->
 
 -
+
+## Why
+
+-
+
+## How it works
+
+1.
 
 ## Issue
 
@@ -36,9 +46,17 @@ Ran it locally: yes | no - <why>
 - [ ] Changeset added.
 `;
 
-const filled = `## What and why
+const filled = `## What
 
 - Keeps the cursor after a reload.
+
+## Why
+
+- A reload moved it to the start of the field.
+
+## How it works
+
+1. The reload handler restores the saved selection.
 
 ## Issue
 
@@ -97,6 +115,12 @@ test('a description without the template heading counts', () => {
   assert.equal(problems({ title: 'fix: x', body: body.replace('- Keeps the cursor after a reload.', ''), closingIssues: 0 }).length, 1);
 });
 
+test('one filled description section is enough, placeholders are not', () => {
+  const body = template.replace('1.', '1. The reload handler restores the saved selection.').replace('yes | no - <why>', 'yes');
+  assert.deepEqual(problems({ title: 'feat: x', body, closingIssues: 0 }), []);
+  assert.match(problems({ title: 'feat: x', body: body.replace('1. The reload handler restores the saved selection.', '1.'), closingIssues: 0 })[0] ?? '', /description is empty/);
+});
+
 test('an unclosed HTML comment hides the rest of the body', () => {
   assert.equal(section('## Verified\n\nyes <!-- note\n## Issue\n#1', 'Verified'), 'yes');
   assert.equal(section('## Verified\n\na <!-- x --> b', 'Verified'), 'a  b');
@@ -104,7 +128,7 @@ test('an unclosed HTML comment hides the rest of the body', () => {
 
 test('section stops at the next heading and drops comments', () => {
   assert.equal(section(template, 'Issue'), '');
-  assert.equal(section(filled, 'what and why'), '- Keeps the cursor after a reload.');
+  assert.equal(section(filled, 'what'), '- Keeps the cursor after a reload.');
   assert.equal(section(filled, 'Missing'), undefined);
 });
 

@@ -30,7 +30,7 @@ run, and after switching branches.
 | Change | Run | Proves |
 | --- | --- | --- |
 | Runner, collect, locator, config, sessions, CLI flags | the testbed suite, or the file covering it | The built CLI end to end on a deterministic app |
-| Reporters (list, json, markdown, junit) | the testbed file plus `test:stress` | The printed and written output, hostile titles included |
+| Reporters (list, json, markdown, junit) | the testbed file plus `test:stress`, recorded with `pnpm record:terminal` | The printed and written output, hostile titles included |
 | `@e2e-dev/web` | the testbed file, then the web benchmark's `tests/` | Real Chromium on plain and hard surfaces |
 | Agent (`src/agent/`), prompts, trace cache | the web benchmark's `tests-agent/` replay, then `--no-cache --ai-trace` | Replay still hits, and the live agent still reaches the goal |
 | `@e2e-dev/mobile` | the mobile benchmark on a simulator or emulator | Real devices; see `apps/mobile-benchmark` |
@@ -104,6 +104,26 @@ ran, and what you saw, with media:
 - **Terminal output:** paste the relevant lines of the CLI output as a
   fenced `text` block (ANSI stripped, paths trimmed). This is the primary
   evidence for runner, CLI, and reporter changes.
+- **Terminal recording:** when the change alters what the terminal shows
+  (CLI output, a reporter, a prompt, watch or pause UI), record it in a real
+  TTY with `pnpm record:terminal`, which needs
+  [VHS](https://github.com/charmbracelet/vhs) on `PATH` (`brew install vhs`,
+  or prefix the command with `nix shell nixpkgs#vhs -c`):
+
+  ```bash
+  pnpm record:terminal --cwd apps/testbed --out /tmp/branch.gif -- node node_modules/e2e/dist/cli/bin.js run tests/todos.e2e.ts
+  ```
+
+  It ends when the prompt returns, so a failing run records too. Record the
+  same command with `--cwd /tmp/e2e-main/apps/testbed` for the main side.
+  A UI that takes keys gets `--tape <file>` with VHS commands (`Type`,
+  `Enter`, `Ctrl+C`, `Wait+Screen /regex/`). Watch the result before
+  attaching it. A recording that stops before the frame you meant to show
+  proves nothing.
+- **Benchmarks:** `pnpm bench:ab` for a perf claim and for any change to the
+  runner, the agent loop, or an engine. It builds the merge base beside the
+  working tree and prints the main-vs-branch table for the PR body
+  (`AGENTS.md`, "Measuring a change against main").
 - **Video:** `--video` (add `--headed` to watch it) records every attempt, on
   an engine that records video, to
   `.e2e/results/<test>/attempt-<n>/video/`: `video.webm` from

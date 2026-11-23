@@ -31,6 +31,12 @@ did not write it. Assume it has bugs and find them.
    passes with every import stubbed proves nothing. An agentic assertion
    needs a paired deterministic check.
 
+7. When the change already has a PR or a drafted body, read it as the claim
+   under review: a behavior change in the diff that the body does not
+   describe, a step under `## How it works` the diff does not do, or
+   evidence under `## Verified` that the diff could not have produced is an
+   `important` finding.
+
 Report only findings you can defend with a concrete scenario. For each:
 `file:line`, severity (`critical` = wrong behavior, security, or a contract
 break; `important` = maintainability or a guardrail break; skip nits lint

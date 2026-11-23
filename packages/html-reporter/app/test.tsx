@@ -33,7 +33,7 @@ export function TestView({ model, result, attemptParam }: { model: ReportModel; 
         <a href="#" className="e2e-action flex items-center gap-e2e-1">
           <Icon name="arrow-left" /> all tests
         </a>
-        <span className="type-caption normal-case text-shade-500">
+        <span className="type-caption text-shade-500">
           {result.source.file}:{result.source.line} · {result.targetId}
           {result.agent === 'default' ? '' : ` · agent ${result.agent}`}
         </span>

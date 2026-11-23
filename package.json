@@ -38,7 +38,8 @@
     "test:desktop-testbed": "pnpm run build && pnpm --filter @e2e-dev/desktop-testbed run build:app && pnpm --filter @e2e-dev/desktop-testbed test",
     "test:agent": "pnpm run build && pnpm --filter @e2e-dev/testbed test:agent",
     "test:scripts": "node --test \"scripts/**/*.test.ts\"",
-    "bench:ab": "node scripts/bench-ab.ts"
+    "bench:ab": "node scripts/bench-ab.ts",
+    "record:terminal": "node scripts/record-terminal.ts"
   },
   "contributors": [
     "Oskar Kwaśniewski <oskar@e2e.com>",

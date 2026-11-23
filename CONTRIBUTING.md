@@ -50,7 +50,7 @@ A bot checks every community PR:
 - `fix`, `chore`, `test`, `perf`, `ci`, `build`, and `revert` PRs link an
   existing issue: `Fixes #123` under `## Issue`. `feat`, `docs`, and
   `refactor` PRs are exempt.
-- The description says what changes and why, and `## Verified` from the
+- The description is filled in, and `## Verified` from the
   [PR template](./.github/PULL_REQUEST_TEMPLATE.md) says how you checked it.
 
 A PR that fails the check gets the `needs:compliance` label and a comment
@@ -59,9 +59,23 @@ Once a day, community PRs open for more than a month with fewer than 2
 positive reactions (👍 ❤️ 🎉 🚀) and no maintainer approval are closed too.
 If one was closed by mistake, say so on the PR.
 
+The PR description is the source of truth for the change. Reviewers read it
+before the diff, so it follows the template:
+
+- `## What`: the change as a user or caller meets it.
+- `## Why`: the problem that led to it.
+- `## How it works`: numbered steps a reviewer can follow through the diff.
+- `## Verified`: evidence that it works. The command you ran and what you
+  saw; `main` beside your branch for a fix; the `pnpm bench:ab` table for a
+  speedup; a `pnpm record:terminal` recording when the terminal output or UI
+  changes.
+
+Keep it true to the latest commit: when a push changes the behavior, the
+scope, or a number, edit the description too.
+
 Keep PRs small, and write the description yourself, briefly. Long
 AI-generated descriptions may be ignored. If you can't explain the change in
-a few lines, the PR is probably too big.
+a few lines per section, the PR is probably too big.
 
 ### Ready for Human Review
 

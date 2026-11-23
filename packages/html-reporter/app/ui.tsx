@@ -140,7 +140,7 @@ export function Tag({
       {children}
       <span
         aria-hidden
-        className={`e2e-panel type-body-s pointer-events-none invisible absolute bottom-full z-10 mb-e2e-1 w-max max-w-72 px-e2e-1 py-e2e-half text-xs whitespace-normal normal-case text-shade-200 group-hover/tag:visible ${align === 'end' ? 'right-0' : 'left-0'}`}
+        className={`e2e-panel type-body-s pointer-events-none invisible absolute bottom-full z-10 mb-e2e-1 w-max max-w-72 px-e2e-1 py-e2e-half text-xs whitespace-normal text-shade-200 group-hover/tag:visible ${align === 'end' ? 'right-0' : 'left-0'}`}
       >
         {hint}
       </span>

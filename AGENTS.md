@@ -457,9 +457,19 @@ thread handled, and labeled `Ready for Human Review`. "It compiles" and
   iterating and before the PR: the built CLI on the testbed or a benchmark,
   the `e2e` MCP server (`.mcp.json`), a scratch project for `init`, the docs
   site. If you cannot verify something, say so; never imply you did.
-- Every PR body states under `## Verified` whether it was run locally, with
-  CLI output, screenshots, or video when it was, and a main-vs-branch table
-  for fixes (`writing-pr` skill).
+- The PR body is the source of truth for the change (`writing-pr` skill):
+  `## What`, `## Why`, `## How it works` as numbered steps through the diff,
+  then `## Verified`. It describes the head commit. After every push to a
+  branch with an open PR, whatever the task was, run the `writing-pr`
+  skill's "After every push to an open PR" steps. A push that changes how
+  the PR works, its scope, or a measured number edits the body in the same
+  step and captures stale evidence again. Run the `unslop` pass on the
+  text you edit. A body and a diff that disagree are a review finding.
+- `## Verified` states whether the change was run locally and carries the
+  evidence: CLI output, a main-vs-branch table for fixes, the `pnpm bench:ab`
+  table for a perf claim or a runner, agent, or engine change, a
+  `pnpm record:terminal` recording when terminal output or UI changes, and
+  the run's video for on-screen behavior.
 - Open every PR through the `ship-pr` skill (`.dev/skills/ship-pr`):
   checks, verification, fresh-context self-review, the PR, then the
   `babysit` skill (`.dev/skills/babysit`) until the label is on. Asking
@@ -599,6 +609,31 @@ CROSSCHECK_BENCHMARK_URL=http://127.0.0.1:4280 pnpm --filter @e2e-dev/web exec v
   Playwright's copy, MPL-2.0). Its disagreements live in
   `tests/conformance/expected.txt` the same way, grouped by reason; a line
   that starts with `Bug:` is a fix waiting to be made, and the fix deletes it.
+## Recording the terminal
+
+`pnpm record:terminal` records a command in a real TTY as a video for the PR
+body, at one size and font so recordings compare. It drives
+[VHS](https://github.com/charmbracelet/vhs), which must be on `PATH`
+(`brew install vhs`, or `nix shell nixpkgs#vhs -c pnpm record:terminal ...`).
+Use it whenever a change alters what the terminal shows: CLI output, a
+reporter, a prompt, watch or pause UI.
+
+```bash
+pnpm record:terminal --cwd apps/testbed --out /tmp/branch.gif -- node node_modules/e2e/dist/cli/bin.js run tests/todos.e2e.ts
+pnpm record:terminal --cwd /tmp/e2e-main/apps/testbed --out /tmp/main.gif -- node node_modules/e2e/dist/cli/bin.js run tests/todos.e2e.ts
+pnpm record:terminal --cwd apps/testbed --out /tmp/watch.gif --tape /tmp/watch.tape
+```
+
+The recording ends when the prompt returns, whatever the exit code. Several
+arguments after `--` are a program and its arguments; one is a shell line
+(`"a && b"`). A UI
+that takes keys needs `--tape <file>` with the VHS commands to play (`Type`,
+`Enter`, `Ctrl+C`, `Wait+Screen /regex/`, `Sleep`); the script owns the
+output, shell, and size. `.gif` renders inside a markdown table, `.mp4` and
+`.webm` as players at the end of the body. The options are in the header of
+`scripts/record-terminal.ts`; the tape builder is tested in
+`scripts/record-terminal/` (`pnpm test:scripts`).
+
 ## Measuring a change against main
 
 `pnpm bench:ab` runs a benchmark suite through two builds, the merge base

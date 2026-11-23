@@ -1,6 +1,6 @@
 ---
 name: babysit
-description: Drive an open e2e-inc/e2e PR through conflicts, review bots, and CI until it is green with every thread handled, then label it Ready for Human Review. Use after opening a PR, or when asked to babysit, watch, monitor, check on, or get a PR green.
+description: Drive an open e2e-inc/e2e PR through conflicts, review bots, and CI until it is green with every thread handled and its description matching the final change, then label it Ready for Human Review. Use after opening a PR, or when asked to babysit, watch, monitor, check on, or get a PR green.
 metadata:
   internal: true
 ---
@@ -84,9 +84,14 @@ your own sleep loop.
       answered in one attributed PR comment.
 3. Fixes that change behavior get re-verified with the
    [verify](../verify/SKILL.md) skill before the push, not after.
-4. Push, then reply on each thread citing the commit, and resolve the ones
-   you fixed or disproved. Replies go after the push so they can cite it.
-5. `--watch` until the verdict changes. Repeat from step 1.
+4. Push, then run `writing-pr`, "After every push to an open PR". When the
+   push changed behavior, API, scope, or a number in the body, rewrite the
+   steps under `## How it works`, capture again or remove any output,
+   benchmark, or recording it made stale, and run the `unslop` pass on what
+   you rewrote. Never describe the new behavior only in a thread reply.
+5. Reply on each thread citing the commit, and resolve the ones you fixed
+   or disproved. Replies go after the push so they can cite it.
+6. `--watch` until the verdict changes. Repeat from step 1.
 
 ## Replying
 
@@ -117,9 +122,10 @@ so in the reply and move on. Never churn code just to quiet a bot.
 
 On `READY`:
 
-1. Re-read the PR body. It must describe the change as it now stands and
-   carry verification evidence (`writing-pr` skill). Update it if fixes
-   changed the story.
+1. Re-read the PR body against the final diff
+   (`gh pr diff <pr> --name-only`). It must describe the change as it now
+   stands, step by step, and its evidence must come from the current head
+   (`writing-pr` skill). Fix whatever drifted.
 2. Confirm everything in `escalated` is a thread you deliberately left for
    the human.
 3. `gh pr edit <pr> --add-label "Ready for Human Review"`, then snapshot
