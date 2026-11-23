@@ -1,0 +1,195 @@
+---
+title: Agentes e personas
+description: Configure vários agentes em uma suíte, fixe testes neles e rode um fluxo como cada persona.
+"og:image": "https://e2e.com/docs/images/og/agents.png?v=94dc88725f"
+"twitter:image": "https://e2e.com/docs/images/og/agents.png?v=94dc88725f"
+---
+
+import { Video } from '../snippets/video.jsx';
+
+Um agente é uma entrada nomeada em `agents`, com seu próprio modelo,
+instruções e ferramentas. Os testes usam `default`, a menos que você selecione
+outro agente. Nomeie mais agentes para comparar modelos ou para rodar um fluxo
+como várias personas.
+
+## Defina agentes nomeados
+
+```ts title="e2e.config.ts"
+import type { E2EConfig } from 'e2e';
+import { web } from '@e2e-dev/web';
+import { gateway } from 'ai';
+
+const vocabulary = 'Plans are called tiers. Billing lives under Settings. "Approve" on an order refunds it.';
+
+export default {
+  targets: [{ engine: web(), app: { url: 'http://localhost:3000' } }],
+  agents: {
+    default: { model: gateway('openai/gpt-6-luna-fast'), context: vocabulary },
+    thorough: {
+      model: gateway('anthropic/claude-opus-5'),
+      system: 'Verify every claim on screen before concluding a step.',
+      context: vocabulary,
+    },
+    buyer: { model: gateway('openai/gpt-6-luna-fast'), system: 'You are a first-time buyer.', context: vocabulary },
+    admin: { model: gateway('openai/gpt-6-luna-fast'), system: 'You manage orders and approve refunds.', context: vocabulary },
+  },
+} satisfies E2EConfig;
+```
+
+Uma entrada contém o `model`, um [`judge`](/models#a-judge-of-its-own)
+opcional, `system`, `context`, [ferramentas](/tools), orçamentos e
+`providerOptions`. `maxSteps` limita as ações de um passo e `maxModelCalls`
+as chamadas ao modelo dele: 25 por padrão, 100 no máximo. Veja a
+[referência da configuração](/reference/config#agents).
+
+As entradas não herdam de `default`. Dê a cada uma o modelo e o contexto de
+que ela precisa, por exemplo a partir de uma constante compartilhada, como
+acima.
+
+Um [executor personalizado](/executors) fica em `executor`. O modelo, o juiz,
+o contexto e os orçamentos continuam valendo. `system` e `tools` são
+rejeitados, já que o executor traz seu próprio prompt e suas próprias
+ferramentas.
+
+## Instruções e vocabulário
+
+| | `system` | `context` |
+|---|---|---|
+| Responde | Como o agente que executa as ações deve trabalhar? | Como este app chama as coisas? |
+| Quem lê | Somente o loop de act | Toda chamada ao modelo: os turnos de act e os juízes por trás de `assert`, `waitFor` e `extract` |
+| O que vai aqui | Persona, cautela, o que verificar antes de terminar, como tratar diálogos inesperados | Nomes de telas e menus, onde fica um recurso, qual botão envia um formulário, termos do domínio |
+| Definido em | `agents.<name>.system` | `agents.<name>.context`, no máximo 16 KiB |
+
+Um juiz nunca vê `system`, então “um passo termina quando o formulário fecha”
+não pode baixar a exigência de um veredito. Regra prática: o que vale para
+qualquer testador neste app vai em `context`; o que vale para este testador
+em qualquer app vai em `system`.
+
+Um teste ou grupo acrescenta seu próprio vocabulário ao `context` com
+`agentContext`. Use-o para fatos que só aquele teste conhece, como dados
+pré-carregados ou uma feature flag que muda um rótulo:
+
+```ts title="tests/billing.e2e.ts"
+import { describe, test } from 'e2e';
+
+describe('billing', { agentContext: 'The seeded workspace is called "Acme Trial".' }, () => {
+  test('upgrades the tier', async ({ agent }) => { /* ... */ });
+});
+```
+
+Não coloque instruções em `agentContext`: ele chega aos juízes também.
+
+Em `e2e run`, todo prompt também carrega o caminho do título do teste, como
+`Test: billing > upgrades the tier`. Os juízes também o leem, então dê a um
+teste o nome do que ele cobre, não do veredito que você espera.
+
+## Escolha um agente por execução
+
+`--agent` escolhe o agente para os testes que não selecionam um. Vários nomes
+rodam cada teste uma vez por agente:
+
+<CodeGroup>
+```bash npm
+npx e2e run --agent thorough tests/checkout.e2e.ts
+npx e2e run --agent buyer,admin
+```
+
+```bash pnpm
+pnpm exec e2e run --agent thorough tests/checkout.e2e.ts
+pnpm exec e2e run --agent buyer,admin
+```
+
+```bash bun
+bunx e2e run --agent thorough tests/checkout.e2e.ts
+bunx e2e run --agent buyer,admin
+```
+</CodeGroup>
+
+## Fixe um agente na suíte
+
+Um teste, um bloco describe ou uma chamada pode selecionar um agente. A
+configuração mais próxima vence: a chamada, depois o teste, depois os grupos
+que o contêm, depois a execução.
+
+```ts title="tests/checkout.e2e.ts"
+import { describe, test } from 'e2e';
+
+describe('checkout as a first-time buyer', { agent: 'buyer' }, () => {
+  test('pays for one item', async ({ app, agent }) => { /* ... */ });
+
+  describe('refunds', { agent: 'admin' }, () => {
+    test('refunds the order', async ({ agent }) => { /* ... */ });
+  });
+
+  test('reorders, and the admin approves', async ({ app, agent }) => {
+    await app.open('/orders');
+    await agent.act('reorder the most recent order');
+    // The admin's act call sees what the earlier steps of this test did.
+    await agent.act('approve the pending reorder', { agent: 'admin' });
+    await agent.assert('the reorder shows as approved');
+  });
+});
+```
+
+`--agent` não substitui um agente que um teste seleciona. Um agente
+desconhecido em um teste ou grupo falha durante a coleta. Um agente
+desconhecido em uma chamada lança `INVALID_ARGUMENT`. Os relatórios registram
+o agente de cada passo.
+
+## Um fluxo, várias personas
+
+<Video>
+  <video src="/images/personas.mp4" aria-label="Quatro agentes, cada um uma persona que lê um idioma, rodam os mesmos testes de localização. A execução em árabe falha em um botão que ficou em inglês." muted loop playsInline controls />
+
+  Quatro personas, uma por idioma, rodam a mesma suíte de localização.
+</Video>
+
+Selecione vários agentes para rodar o mesmo teste uma vez com cada um:
+
+```ts title="tests/checkout.e2e.ts"
+import { describe, test } from 'e2e';
+
+describe('checkout', { agent: ['buyer', 'admin'] }, () => {
+  test('pays for one item', async ({ app, agent }) => { /* runs once per persona */ });
+  test('applies a promo code', async ({ app, agent }) => { /* ... */ });
+});
+```
+
+Cada agente recebe seu próprio diretório de resultados e de artefatos. Os
+nomes dos testes no terminal e no JUnit incluem o agente, como `[admin]`.
+
+`--agent` seleciona entre os agentes fixados e nunca adiciona um. Aqui,
+`--agent admin` roda somente `admin`. `--agent thorough` não corresponde a
+nenhum dos dois, então ambos ainda rodam.
+
+Um grupo serial roda como uma unidade por agente, e seus membros compartilham
+os agentes fixados no grupo. Um teste de preparação fixa no máximo um agente.
+
+Cada agente grava suas próprias entradas no [cache de replay](/cache),
+indexadas pelo nome e pelo contexto dele. `buyer` nunca reproduz os passos de
+`admin`, e um `agentContext` alterado grava de novo.
+
+Um agente não é um usuário autenticado. Para personas autenticadas, combine cada agente
+com uma `session` em um bloco describe separado. Veja
+[Autenticação](/authentication#several-signed-in-users).
+
+## Personalize o agente
+
+Quando um passo falha ou usa chamadas demais, abra o relatório dele ou rode
+com `--debug` para ver a transcrição. Corrija primeiro a instrução, usando os
+rótulos da tela. Quando o problema afeta vários testes, corrija o agente:
+vocabulário em `context`, instruções em `system` ou uma
+[ferramenta](/tools) para uma operação como pré-carregar um carrinho por meio
+de uma API de teste. Para comparar modelos ou `providerOptions`, rode os
+mesmos testes com `--agent <name>`.
+
+## Próximos passos
+
+<CardGroup cols={2}>
+  <Card title="Ferramentas do projeto" icon="wrench" href="/tools">
+    Dê ao agente uma API de teste ou um kit de ferramentas para dispositivos.
+  </Card>
+  <Card title="Executores personalizados" icon="gears" href="/executors">
+    Mude como o agente escolhe e executa as ações.
+  </Card>
+</CardGroup>

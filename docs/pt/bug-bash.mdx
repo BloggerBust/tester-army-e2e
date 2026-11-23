@@ -1,0 +1,130 @@
+---
+title: Bug bashes
+description: Rode muitas sessões de explore ao mesmo tempo e depois prove cada bug com um teste que falha.
+"og:image": "https://e2e.com/docs/images/og/bug-bash.png?v=eb59f8290c"
+"twitter:image": "https://e2e.com/docs/images/og/bug-bash.png?v=eb59f8290c"
+---
+
+import { ShowMore } from '../snippets/show-more.jsx';
+import { Video } from '../snippets/video.jsx';
+
+Um bug bash roda muitas sessões de `e2e explore` ao mesmo tempo, cada uma em
+uma área do app. Depois, um agente de código escreve um teste para cada achado
+e só o relata como bug quando o teste falha.
+
+<Video>
+  <video src="/images/bug-bash.mp4" aria-label="Um agente de código roda um bug bash em navegadores headed." muted loop playsInline controls />
+
+  Cada navegador é uma sessão de explore.
+</Video>
+
+## Antes de começar
+
+- Garanta que o app consiga atender muitos exploradores ao mesmo tempo.
+  Inicie o app uma vez e defina `reuseExisting: true` no `app.command` do
+  alvo, ou defina a porta `0` na URL do app para que cada execução inicie sua
+  própria cópia. Quando `CI` está definido, o e2e ignora `reuseExisting`. Use
+  a porta `0`. Veja [Iniciar seu app](/web#starting-your-app).
+- No mobile, declare um alvo para cada simulador ou emulador. Cada explorador
+  precisa do próprio dispositivo.
+- Cada sessão de explore usa chamadas ao modelo. Cada execução termina
+  mostrando seus tokens, custo e duração.
+- Em um site publicado que outras pessoas usam, não altere dados.
+
+O agente faz o resto da configuração, como as contas pré-carregadas e o
+login, a partir da skill.
+
+## Instale a skill
+
+O agente de código roda o bug bash a partir da [skill `e2e`](/coding-agents),
+que o `e2e init` instala. Para instalá-la sem o `init`:
+
+<CodeGroup>
+```bash npm
+npx skills add e2e-inc/e2e
+```
+
+```bash pnpm
+pnpm dlx skills add e2e-inc/e2e
+```
+
+```bash bun
+bunx skills add e2e-inc/e2e
+```
+</CodeGroup>
+
+## Inicie um bug bash
+
+Dê um prompt ao seu agente de código:
+
+```text
+Bug bash the checkout and account settings on this branch.
+```
+
+## O que o agente faz
+
+<ShowMore id="bug-bash-steps">
+
+1. Lê as rotas do app. Em uma branch, também lê o diff.
+2. Escreve de 5 a 10 charters. Um charter é um objetivo de uma frase para uma
+   área, com uma postura: usuário novo, números e textos, entrada de caso de
+   borda, estado depois de recarregar ou caminhos de erro.
+3. Roda um `e2e explore` para cada charter, 4 ao mesmo tempo, cada um com sua
+   própria persona (`--agent`) e seu próprio diretório de saída (`--output`).
+4. Junta os achados de todos os charters.
+5. Rejeita os achados que têm uma causa conhecida. A causa pode ser um limite
+   do explorador (por exemplo, um link que abre uma nova aba), o ambiente
+   local, o design pretendido ou os dados pré-carregados.
+6. Escreve um teste de reprodução para cada achado restante: os passos do
+   achado como chamadas `agent.act` e o comportamento esperado dele como o
+   `agent.assert` final. Ele pode iniciar um subagente por área.
+7. Roda os testes de reprodução. O achado só é um bug quando o teste dele
+   falha no defeito relatado: `ASSERTION_FAILED` na verificação final, ou um
+   `act` que falha no próprio defeito.
+8. Relata, nesta ordem: bugs confirmados, riscos de produção que ele não
+   consegue verificar localmente, achados rejeitados por motivo e avisos.
+
+</ShowMore>
+
+Cada bug confirmado tem o próprio teste de reprodução e os passos. Ele também
+tem a captura de tela e o vídeo do explorador quando a engine os grava.
+
+<Warning>
+O vídeo não é mascarado. Se o explorador digitou uma senha, confira o vídeo
+antes de compartilhá-lo.
+</Warning>
+
+Para ler o procedimento completo, rode `npx e2e guide bug-bash`.
+
+## Testes de reprodução
+
+Um teste de reprodução falha até que o bug seja corrigido. O agente marca
+cada um com a tag `bugbash`. Deixe-os fora da execução que bloqueia merges:
+
+<CodeGroup>
+```bash npm
+npx e2e run --exclude-tag bugbash
+```
+
+```bash pnpm
+pnpm exec e2e run --exclude-tag bugbash
+```
+
+```bash bun
+bunx e2e run --exclude-tag bugbash
+```
+</CodeGroup>
+
+Depois da correção, o teste passa. Remova a tag e mantenha o teste como um
+teste de regressão.
+
+## Próximos passos
+
+<CardGroup cols={2}>
+  <Card title="Explorar sem um teste" icon="compass" href="/explore">
+    O que faz uma execução de `e2e explore`, com seus orçamentos e seu relatório.
+  </Card>
+  <Card title="Servidor MCP" icon="plug" href="/mcp-server">
+    Sessões ao vivo para agentes de código, várias ao mesmo tempo.
+  </Card>
+</CardGroup>

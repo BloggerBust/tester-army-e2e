@@ -1,0 +1,224 @@
+---
+title: Explorar sem um teste
+description: Dê ao agente um objetivo, não um arquivo de teste. Ele planeja os passos, opera o app e relata o que encontra.
+"og:image": "https://e2e.com/docs/images/og/explore.png?v=8969611dd1"
+"twitter:image": "https://e2e.com/docs/images/og/explore.png?v=8969611dd1"
+---
+
+import { Video } from '../snippets/video.jsx';
+
+`e2e explore` roda o agente no seu app com um objetivo em vez de um arquivo
+de teste. O agente planeja um passo, executa-o e registra achados até cobrir
+o objetivo ou esgotar um orçamento, e depois escreve uma avaliação. Ele usa o
+mesmo modelo, as mesmas ferramentas e as mesmas regras de ação que
+`agent.act()`.
+
+<Video>
+  <video src="/images/explore.mp4" aria-label="e2e explore controla o app em um navegador headed e relata os achados no terminal." muted loop playsInline controls />
+
+  `e2e explore --headed` controla o app e relata os achados à medida que avança.
+</Video>
+
+## Inicie uma exploração
+
+Indique o fluxo e o objetivo do usuário e, se necessário, adicione limites:
+
+<CodeGroup>
+```bash npm
+npx e2e explore 'Explore the checkout flow like a first-time buyer and report anything off'
+```
+
+```bash pnpm
+pnpm exec e2e explore 'Explore the checkout flow like a first-time buyer and report anything off'
+```
+
+```bash bun
+bunx e2e explore 'Explore the checkout flow like a first-time buyer and report anything off'
+```
+</CodeGroup>
+
+Um limite pode ser “pare antes de fazer o pedido”. Sem um objetivo, o explore
+usa `Explore the app and find bugs`. Um passo que falha não interrompe a
+execução.
+
+Sem um `e2e.config.ts`, o explore roda primeiro o assistente do
+[`e2e init`](/reference/cli#e2e-init). A exploração começa logo em seguida
+quando não resta nada a fazer à mão. Caso contrário, o init lista os passos
+que faltam, como `npm install` ou definir a chave do modelo.
+Sem um terminal, como na CI, o explore falha com `CONFIG_NOT_FOUND`.
+
+## Leia os resultados
+
+O terminal mostra cada achado e cada passo concluído à medida que acontecem:
+
+```text
+ ❯  web  Exploring  Explore this bookshop like a careful first-time buyer: browse the catalog, ...
+   ⚑ medium issue  Home greeting exposes an unresolved userName template (/)
+   ⚑ high issue  Neuromancer shows an impossible negative stock availability (/catalog)
+   ✓ 1  Catalog browsing 31.46s · 7 actions · 4 findings
+   ⚑ high issue  Cart total does not update when Hyperion quantity increases (/cart)
+   ⚑ trivial warning  Checkout newsletter label misspells Receive (/checkout)
+   ✓ 2  Cart quantities and removal 19.47s · 4 actions · 3 findings
+   ended: the agent covered the goal
+```
+
+Um achado `issue` faz a execução falhar com o código de saída 1. Um achado
+`warning` não. O relatório final coloca primeiro os problemas mais graves.
+Cada achado tem os passos para reproduzi-lo e, quando possível, uma captura
+de tela. Compare cada achado com as evidências dele antes de agir. Para os
+outros códigos de saída, o relatório JSON e os caminhos dos artefatos, veja a
+[referência da CLI](/reference/cli#e2e-explore).
+
+## Verifique outros tamanhos de tela
+
+Quando a engine do alvo consegue redimensionar o viewport (a engine web
+consegue), um objetivo pode pedir layouts em outras larguras:
+
+<CodeGroup>
+```bash npm
+npx e2e explore 'Check the pricing page at desktop, tablet, and phone widths for broken layouts'
+```
+
+```bash pnpm
+pnpm exec e2e explore 'Check the pricing page at desktop, tablet, and phone widths for broken layouts'
+```
+
+```bash bun
+bunx e2e explore 'Check the pricing page at desktop, tablet, and phone widths for broken layouts'
+```
+</CodeGroup>
+
+## Comece com o login feito
+
+Adicione `--session <name>`, o nome de uma sessão que um
+[teste de preparação](/authentication) salva:
+
+<CodeGroup>
+```bash npm
+npx e2e explore --session admin 'Explore the admin settings and find bugs'
+```
+
+```bash pnpm
+pnpm exec e2e explore --session admin 'Explore the admin settings and find bugs'
+```
+
+```bash bun
+bunx e2e explore --session admin 'Explore the admin settings and find bugs'
+```
+</CodeGroup>
+
+O explore roda só esse teste de preparação e restaura a sessão. O explorador
+sabe que o app começa com o login feito e não planeja nenhum passo de login.
+
+As capturas de tela mascaram o campo de senha. Um valor que o app mostra em
+qualquer outro lugar chega ao modelo. Veja
+[capturas de tela após o preenchimento de um segredo](/reference/security#screenshots-after-a-secret-fill).
+
+## Explore a mudança de um pull request
+
+Adicione `--changed-since <ref>` para explorar o que a branch mudou. O
+planejador lê as mensagens de commit e o diff já commitado desde a base de
+merge com a ref. Ele gasta os passos nas telas que a mudança pode afetar.
+
+<CodeGroup>
+```bash npm
+npx e2e explore --changed-since origin/main
+```
+
+```bash pnpm
+pnpm exec e2e explore --changed-since origin/main
+```
+
+```bash bun
+bunx e2e explore --changed-since origin/main
+```
+</CodeGroup>
+
+Só um defeito que a mudança pode causar conta como `issue`. Um defeito em
+outra parte do app conta como `warning` e não faz a execução falhar.
+
+Sem um objetivo, o objetivo é `Explore what this change affects and find bugs in
+it`. O planejador pode então pular uma mudança que nenhum usuário vê, como
+uma que só mexe em docs ou em testes. A execução termina como `skipped` e
+passa. Ele só pula quando leu a mudança inteira. Um diff grande, um arquivo
+binário ou um arquivo sem commit impede que ele pule.
+
+As mensagens de commit e o código da própria branch podem influenciar essa
+decisão. Para distinguir uma execução pulada de uma exploração limpa, leia
+`run.explore.ended`.
+
+Para saber o que o modelo lê, veja
+[Segurança](/reference/security#mcp-and-explore).
+
+No GitHub Actions, rode-o em um job próprio no `pull_request`. Com o
+[reporter do GitHub](/github) na configuração, os achados vão para um
+comentário próprio no pull request. A execução de um fork não consegue
+postar; veja [quando nada é postado](/github#when-nothing-is-posted).
+
+```yaml title=".github/workflows/explore.yml"
+on: pull_request
+
+jobs:
+  explore:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+    # An issue exits 1. Keep the findings as a review aid, not a merge gate.
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      # ...install, browsers
+      - run: npx e2e explore --changed-since origin/${{ github.base_ref }} --max-steps 4
+        env:
+          AI_GATEWAY_API_KEY: ${{ secrets.AI_GATEWAY_API_KEY }}
+          GITHUB_TOKEN: ${{ github.token }}
+```
+
+`fetch-depth: 0` coloca a branch base no checkout. Sem ele, a execução
+falha com `INVALID_CHANGED_SINCE`.
+
+Mantenha a árvore de trabalho limpa depois da instalação e do build, ou a
+execução nunca é pulada. Ignore `.e2e/` e a saída do build. Rode o e2e com
+`npx`, não com `pnpm exec`, que pode reescrever o `pnpm-lock.yaml`.
+
+<Warning>
+Nunca o rode em `pull_request_target`. Essa execução tem acesso aos seus
+segredos, e o modelo lê o diff e as mensagens de commit que um fork escreveu.
+</Warning>
+
+## Se a execução parar cedo demais
+
+Uma execução é interrompida depois de 8 passos ou 10 minutos. Para ir mais fundo no
+fluxo, aumente `--max-steps <n>` (até 100) ou `--timeout <ms>` (até
+`7200000`, 2 horas).
+
+Uma execução que ainda tem tempo depois dos fluxos principais volta a eles
+com entradas de casos de borda, filtros combinados, recarregamentos e, com
+mais de uma conta configurada e sem `--session`, outra conta. Ela só termina
+mais cedo quando não há nada novo ao alcance.
+
+## Escolha o alvo e o agente
+
+O explore usa os alvos, o comando do app, os modelos e os agentes do
+`e2e.config.ts`. Escolha-os com `--target <name>` e `--agent <name>`.
+Sem `--target`, o explore usa o primeiro alvo.
+
+## Explore a partir do código
+
+Para iniciar uma exploração a partir do seu próprio código, com um valor de
+configuração, cancelamento e eventos de progresso, chame
+[`explore` de `e2e/runner`](/reference/runner#explore).
+
+## Próximos passos
+
+<CardGroup cols={2}>
+  <Card title="Bug bashes" icon="bug" href="/bug-bash">
+    Explore um app ou uma branch inteira com muitas explorações e prove cada bug com um teste.
+  </Card>
+  <Card title="Agentes e personas" icon="users" href="/agents">
+    Os agentes com os quais o explore pode rodar.
+  </Card>
+</CardGroup>

@@ -1,0 +1,476 @@
+---
+title: Cache
+description: Reproduza ações verificadas do agente sem chamadas ao modelo e deixe o agente assumir quando o app mudar.
+"og:image": "https://e2e.com/docs/images/og/cache.png?v=d035986b13"
+"twitter:image": "https://e2e.com/docs/images/og/cache.png?v=d035986b13"
+---
+
+O cache de replay grava as ações de um passo `agent.act()` depois que uma
+verificação posterior confirma o resultado. Na próxima execução, o runner
+reproduz essas ações sem chamada ao modelo. Quando um controle ou o estado
+final esperado não corresponde mais, o agente assume a partir da tela atual.
+Veja [Testes com autocorreção](/self-healing).
+
+`agent.assert`, `agent.waitFor` e `agent.extract` sempre rodam ao vivo. O
+resumo da execução conta os resultados:
+
+```text
+           AI  4.1k tokens · 2 model calls · openai/gpt-6-luna-fast
+        Cache  4 replayed · 1 handed off · 1 missed · 1 not saved
+```
+
+`not saved` conta os passos de testes que passaram e de testes instáveis cujo
+[`step.cache.write`](#when-a-recording-is-written) é `unconfirmed`,
+`no-change` ou `not-written` na tentativa que passou.
+
+## Quando uma gravação é salva
+
+Termine o teste com uma verificação do resultado dele. No modo `read-write`, o
+runner salva a gravação de cada `act` no fim da tentativa quando um passo de
+verificação posterior passou. Uma verificação no fim confirma todo `act`
+anterior a ela.
+
+```ts title="tests/cart.e2e.ts"
+import { expect, test } from 'e2e';
+
+test('adds an item', async ({ app, agent, screen }) => {
+  await app.open('/cart');
+
+  await agent.act('add one item to the cart');
+
+  await expect(screen.getByRole('status')).toHaveText('1 item');
+});
+```
+
+| Conta como verificação | Não conta |
+| --- | --- |
+| `expect(locator).toHaveText(...)` e outros matchers de localizador | `expect(value).toBe(...)` sobre um valor simples |
+| `expect(browser).toHaveURL(...)` e outras asserções da engine | `expect.poll(...)` |
+| `locator.waitFor()`, `browser.waitForURL()` | `locator.textContent()` e outras leituras |
+| `agent.assert(...)`, `agent.waitFor(...)` | `agent.extract(...)`, outro `act`, a tentativa passar |
+
+`step.cache.write`, presente só no relatório, diz o que aconteceu com a
+gravação quando a tentativa terminou:
+
+| `step.cache.write` | Significado |
+| --- | --- |
+| `saved` | Gravada para a próxima execução. |
+| `kept` | A entrada fica como está. |
+| `unconfirmed` | Não salva: nenhuma verificação passou depois do passo. Termine o teste com uma asserção de localizador ou da engine ou com `agent.assert`, ou espere pelo estado com `locator.waitFor()` ou `agent.waitFor`. |
+| `evicted` | A entrada foi apagada: o replay dela terminou em uma falha ou em um reparo, ou nenhuma verificação a confirmou antes de a tentativa falhar. |
+| `no-change` | Nada gravado: nenhum controle apareceu, sumiu ou mudou de estado, e a rota continuou a mesma. Isso inclui um passo cuja única mudança fica dentro de um [frame de outro site](/browser#reach-into-an-iframe). Um passo assim roda ao vivo em toda execução. |
+| `not-written` | Não salva: o armazenamento rejeitou a escrita ou recusou a gravação, por exemplo uma acima do limite de tamanho do armazenamento em arquivos. |
+
+Um passo que não executou nenhuma ação não grava nada e não informa `write`.
+
+Uma tentativa que falha ainda salva os passos verificados antes da falha. Ela
+apaga as entradas não verificadas e os replays envolvidos na falha. Para
+manter gravados os objetivos de preparação enquanto você corrige uma asserção
+que falha, termine a preparação com uma espera pelo estado dela, como
+`locator.waitFor()`. Um armazenamento personalizado precisa de um método
+`delete` para isso. Cancelar uma execução deixa o cache inalterado.
+
+<Accordion title="Falhas em que nenhum modelo respondeu">
+Uma tentativa cujas únicas falhas são aquelas em que nenhum modelo respondeu
+não remove nada, já que elas não dizem nada sobre o app:
+
+- `MODEL_UNAVAILABLE`: nenhum modelo está configurado, ou o GitHub Copilot não
+  o disponibiliza para a conta.
+- `MODEL_PROVIDER_FAILED`: o provedor retornou um erro, como uma chave ausente
+  ou rejeitada, um limite de requisições ou um 5xx, ou uma requisição ficou sem
+  resposta por 120 segundos.
+
+Assim, uma execução `read-write` sem acesso a modelo mantém suas gravações,
+incluindo um passo reproduzido antes de um `agent.assert` que não conseguiu
+alcançar o modelo dele.
+
+Contam como falha do fluxo: uma resposta inutilizável do modelo
+(`MODEL_OUTPUT_INVALID`, `CONTEXT_OVERFLOW`), uma recusa (`MODEL_REFUSED`),
+`STEP_TIMEOUT` (mesmo com uma requisição ainda aberta) e qualquer outra falha
+na mesma tentativa, como uma asserção em `afterEach`.
+</Accordion>
+
+## O que precisa corresponder
+
+Uma entrada do cache pertence a um teste, um alvo, uma instrução, um conjunto
+de parâmetros e um agente. Cada uma destas mudanças causa um cache miss:
+
+- renomear o teste, o grupo `describe` dele ou o alvo, ou mover o arquivo de
+  teste,
+- mudar a instrução ou um parâmetro comum,
+- rodar com outro agente configurado (`agent: ['buyer', 'admin']`
+  grava uma entrada para cada um), ou mudar o `context` do agente ou o
+  `agentContext` do teste (um segredo nele entra na chave apenas pelo nome),
+- trocar para outra engine, ou mudar o id do projeto ou a identidade do
+  app.
+
+Trocar o modelo não causa um cache miss, e atualizar a engine também não: um
+nó que a nova versão resolve de outro jeito não é encontrado no replay.
+
+Use `--no-cache` para avaliar um modelo novo. Os replays expõem
+`step.cache.recordedBy` quando a entrada tem procedência; entradas mais
+antigas ou sem atribuição o omitem.
+
+Um timestamp ou um endereço de e-mail novo daria cache miss em toda execução.
+Envolva esses valores em `unique()`, e o runner coloca o valor atual no
+replay:
+
+```ts
+import { unique } from 'e2e';
+
+const name = `E2E ${Date.now()} Company`;
+await agent.act('create a company named {name}', { params: { name: unique(name) } });
+await expect(screen.getByRole('heading', { name })).toBeVisible();
+```
+
+Use `unique()` para dados que o fluxo insere ou verifica, e parâmetros comuns
+para escolhas que mudam o fluxo, como o nome de um plano. A substituição
+também cobre o valor como uma URL o escreve (`%20`, `+`) e um valor de várias
+linhas como a tela o mostra, em uma linha só. Quando um valor `unique()`
+é igual ao valor de outro parâmetro ou está contido nele, o passo não é
+gravado: `step.cache.notRecorded` traz `param-collision`, e a próxima execução
+o grava.
+
+Para URLs de preview que mudam a cada deploy, defina
+[`app.identity`](/reference/config#the-app-under-test) para manter uma única
+identidade de cache. Em dispositivos, o replay usa o
+[título da tela](/reference/mobile#replay-cache-on-a-device) como caminho.
+
+## Rode um teste de novo enquanto o corrige
+
+Enquanto você corrige um teste que falha, mantenha o cache ligado no modo
+`read-write`, o padrão local, e fora do
+[modo estrito](#fail-on-a-stale-recording), que nunca escreve. Com `CI`
+definido, um modo não definido é `read-only`. Uma execução que falhou mantém
+as gravações que uma verificação
+[confirmou](#when-a-recording-is-written) antes da falha. A próxima execução
+reproduz esses objetivos sem chamadas ao modelo, desde que cada replay ainda
+corresponda à tela.
+
+1. Rode só esse teste, pela linha em que o seu `test(` começa:
+   `npx e2e run tests/cart.e2e.ts:3`.
+2. Não renomeie o teste nem reescreva um objetivo que passa. Cada um
+   [causa um cache miss](#what-must-match): renomear, para todos os
+   objetivos do teste; reescrever um objetivo, para ele mesmo.
+3. Quando as novas tentativas estiverem ligadas (`retries` na configuração,
+   ou `CI` definido), adicione `--retries 0`. Uma opção `retries` no teste ou
+   no `describe` dele tem precedência sobre a flag. Uma nova tentativa não
+   reproduz, então roda todos os objetivos ao vivo.
+4. Quando o teste passar, rode-o uma vez com `--no-cache`. Todos os objetivos
+   rodam ao vivo, o que mostra que o agente ainda os alcança sem uma gravação.
+
+## Como um replay funciona
+
+1. Verificar a tela inicial: ela precisa estar na mesma rota.
+2. Encontrar cada controle gravado por papel, nome, test id e contexto ao
+   redor, e repetir a ação dele. O runner espera pelos controles ausentes e
+   interrompe o replay quando uma correspondência é ambígua.
+3. Verificar a rota final e o que o passo original mudou: os controles que
+   apareceram, com o estado marcado, selecionado, expandido ou pressionado, e
+   os que sumiram.
+4. Terminar sem chamada ao modelo, ou deixar o agente continuar com um
+   registro do que rodou e do motivo pelo qual o replay parou.
+
+Valores digitados são reproduzidos como foram gravados. O preenchimento de um
+segredo resolve o valor atual pelo nome e passa pela autorização de novo.
+
+Um replay termina assim que as mudanças gravadas aparecem, o que pode
+acontecer antes de o conteúdo abaixo delas carregar. Para verificar um
+conteúdo que carrega depois do passo, use `agent.waitFor`, que espera por ele,
+em vez de `agent.assert`, que avalia a tela uma vez.
+
+<Accordion title="O que conta como a mesma rota">
+Uma rota é a origem, o caminho e a query. O id do registro e o fragmento não
+contam. Ids, tokens, timestamps e cache busters no caminho ou na query são
+lidos como um placeholder de id, então `/orders/42?t=1727780000`
+e `/orders/7?t=1727780999` são uma só rota.
+
+Todos os outros valores da query fazem parte da rota: `?mode=safe` e
+`?mode=unsafe` são diferentes, assim como `/companies` e `/companies?tab=notes`,
+ou um novo parâmetro de rastreamento. `/products/summer-sneaker` e
+`/products/winter-boot` também são rotas diferentes.
+
+Uma localização na própria origem do app é comparada pelo caminho, então uma
+gravação acompanha o app até um deploy de preview que compartilha o
+`app.identity` dele. Uma página em qualquer outra origem é outra rota.
+</Accordion>
+
+<Accordion title="Como a verificação final lê a tela">
+- Pelo menos uma mudança gravada precisa acontecer durante o replay. Um
+  resultado que já estava na tela antes das ações não prova nada. Quando a
+  última ação do passo levou a outra rota, essa mudança de rota é a evidência.
+- Um alerta que o replay gerou e que a gravação nunca viu interrompe o
+  replay. A engine web não observa o route announcer do App Router do
+  [Next.js](/frameworks/nextjs#fix-next-js-problems), então o eco do título
+  dele nunca conta.
+- Um texto que muda a cada execução, como uma data, uma duração ou um id, é
+  ignorado enquanto existir uma mudança estável em qualquer um dos lados do
+  delta do passo, seja algo que apareceu ou que sumiu. Sem mais nada, ele é
+  mantido, e um valor alterado passa o replay para o agente. Em um alerta, ele
+  é lido como um placeholder. Um nó conhecido só por um test id que o app gera
+  (`node-<uuid>`) é ignorado da mesma forma. Quando mantido, um nó que
+  apareceu pode ter qualquer id com esse padrão; um que sumiu ainda é
+  verificado pelo id exato.
+- Uma contagem que nomeia o que conta, como `3 records imported` ou
+  `42件`, precisa aparecer igual no replay quando o passo a fez aparecer na
+  tela em que agiu. Uma contagem que só mudou (`41 items` para `42 items`),
+  ou uma em uma tela para a qual o passo navegou, é ignorada somente quando o
+  próprio lado dela no delta tem uma mudança estável. Caso contrário, a
+  contagem é mantida, mesmo quando o lado oposto tem uma mudança estável. Um
+  número isolado, como um badge, segue a regra de texto acima.
+- Um controle sem nome é encontrado pela posição entre os controles sem nome
+  do mesmo tipo dentro da mesma linha, item de lista ou grupo com nome. Um
+  controle conhecido só por um test id gerado é encontrado pelo padrão do id
+  da mesma forma, ou quando era o único com esse padrão.
+</Accordion>
+
+## Por que um passo não foi reproduzido
+
+Cada passo `act` informa `step.cache`, ausente quando o cache está desligado
+para o passo. `agent.act()` o retorna como `result.cache`, sem `write`, e a
+[página de trace](/debugging#traces) o mostra abaixo do passo.
+
+| Resumo da execução | `step.cache.mode` | Significado |
+| --- | --- | --- |
+| `replayed` | `self-finalized` | A gravação terminou sem chamada ao modelo. |
+| `handed off` | `agent-concluded` | O replay começou e depois o agente assumiu. |
+| `missed` | `missed` | O agente rodou o passo desde o início. |
+
+Ambos trazem `step.cache.reason`, e `step.cache.detail` diz onde o replay
+parou e por quê (`at action 2 of 3, tap button "Apply": ...`). Depois
+de um `end-mismatch`, ele nomeia os nós gravados que não apareceram, os que
+não sumiram e qualquer alerta que a gravação nunca viu, ou diz que o
+resultado já aparecia antes de o replay agir.
+`step.cache.entry` é a chave da entrada e o nome do arquivo dela
+(`<entry>.json`) no armazenamento em arquivos.
+
+| Motivo | O que aconteceu | O que fazer |
+| --- | --- | --- |
+| `no-entry` | Nenhuma gravação corresponde a este passo e aos parâmetros dele. | A próxima execução verificada que passar o grava, a menos que o `step.cache.write` do passo seja `no-change`. |
+| `retry` | Novas tentativas nunca reproduzem, exceto com `--strict-cache` ou `cache.strict`. | Nada. |
+| `invalid-entry` | O arquivo está ilegível, tem mais de 1 MiB ou é de outra versão do schema. | `npx e2e cache clear`. |
+| `truncated` | A gravação atingiu um limite, veja [abaixo](#limits-and-gaps). | Divida o passo, ou passe o segredo como um `Secret`. |
+| `wrong-context` | O app estava em uma rota diferente da que tinha quando o passo foi gravado. Veja [Como um replay funciona](#how-a-replay-works). | Abra a mesma tela antes do passo. |
+| `target-not-found` | Um controle gravado não apareceu em 15 segundos, ou ele não tem nome nem um contêiner com nome que o diferencie dos gêmeos dele. | A UI mudou: a próxima execução que passar o grava de novo. Para um controle sem nome, dê a ele um rótulo ou coloque-o em uma linha ou grupo com nome. |
+| `target-ambiguous` | O número de controles correspondentes mudou. | Dê nomes distintos aos controles repetidos ou use dados de teste únicos. |
+| `gap` | Uma ação não pode ser reproduzida, veja [abaixo](#limits-and-gaps). | O agente faz essa parte ao vivo. Coloque valores estáveis em `params`. |
+| `action-failed` | O app rejeitou uma ação reproduzida. | Verifique o app. |
+| `action-uncertain` | Uma ação reproduzida falhou, e não se sabe se ela teve efeito. O agente é instruído a verificar antes de agir de novo. | Verifique o app. |
+| `viewport-changed` | Um toque, hover ou arraste por coordenadas foi gravado em um viewport de outro tamanho. | Mantenha o viewport fixo. |
+| `end-mismatch` | Todas as ações rodaram, mas a [verificação final](#how-a-replay-works) falhou. | Dados que sobraram de uma execução anterior, um banner que aparece e some, ou uma regressão. Dados de teste únicos e limpeza em `afterEach` ajudam. |
+
+Para descartar o cache como causa de uma falha, rode uma vez sem ele:
+
+<CodeGroup>
+```bash npm
+npx e2e run --no-cache
+```
+
+```bash pnpm
+pnpm exec e2e run --no-cache
+```
+
+```bash bun
+bunx e2e run --no-cache
+```
+</CodeGroup>
+
+### Limites e lacunas
+
+Uma gravação é `truncated` quando o passo:
+
+- executou mais de 50 ações, o que só é possível com `maxSteps` acima de 50,
+- digitou um valor ou URL com mais de 4.096 caracteres, ou um que contém um
+  segredo registrado,
+- agiu sobre um controle sem uma descrição utilizável.
+
+Um `gap` é uma ação que o cache não consegue repetir: uma
+[ferramenta do projeto](/tools) que altera estado, ou um valor que o agente
+leu da tela, digitou depois de ver uma captura de tela ou deduziu a partir da
+data. `step.cache.derived` nomeia a regra: `whole-node` (o nome ou o texto
+inteiro de um controle), `minted-token` (um código ou id que o app mostrou
+como uma palavra própria, ou qualquer valor digitado em um campo marcado com
+`autocomplete="one-time-code"`, ou no campo em foco em um passo que mostrou um
+campo assim), `date` ou `pixels`. Valores da instrução ou de `params`, e
+valores que o agente compôs sozinho, são reproduzidos, exceto em um campo de
+código de uso único ou no campo em foco em um passo que mostrou um campo
+assim: ali só é reproduzido um valor inteiro de dois ou mais caracteres que
+aparece literalmente na instrução ou em `params`.
+
+Valores digitados em sequência em vários campos, com apenas toques ou `Tab`
+entre eles, também são avaliados como um só. Um código que a página mostrou,
+digitado um dígito por caixa ou de três em três, torna a gravação uma lacuna a
+partir do primeiro pedaço, mesmo quando nenhum campo declara uma finalidade,
+o que nenhum campo faz no iOS e no Android.
+
+## O que uma gravação contém
+
+Cada entrada é um arquivo JSON em `.e2e/cache/`, nomeado por um hash da chave
+dela. Ela contém ações, descrições dos controles-alvo, texto digitado, um
+resumo do passo e as verificações finais: a rota e até oito controles que
+apareceram e oito que sumiram. As entradas não contêm prompts, conversas,
+capturas de tela, árvores observadas nem valores de segredos. O preenchimento
+de um segredo armazena só o nome do segredo.
+
+<Warning>
+Outros valores digitados são armazenados como foram digitados. Revise as
+gravações antes de compartilhá-las. Veja
+[confiança no cache](/reference/security#cache-trust).
+</Warning>
+
+## Modos
+
+| Modo | Reproduz | Grava | Padrão |
+| --- | --- | --- | --- |
+| `'read-write'` | sim | sim | localmente |
+| `'read-only'` | sim | não | na CI quando `cache` não está definido |
+| `'off'` | não | não | `--no-cache` para uma execução |
+
+```ts title="e2e.config.ts fragment"
+cache: 'off',
+// or
+cache: { mode: 'read-write', dir: '.e2e/cache' },
+```
+
+`--no-cache` sobrescreve a configuração. No modo `read-only`, entradas
+desatualizadas ficam até que uma execução `read-write` as substitua. Um
+`cache.store` personalizado substitui o armazenamento em arquivos e não usa
+`read-only` por padrão na CI. As sessões de `e2e explore` e de
+`e2e mcp` não usam o cache. Um teste que uma sessão roda
+([`open_session {test}`](/reference/mcp#running-a-test)) usa o cache da
+mesma forma que a primeira tentativa de uma execução.
+
+## Compartilhe o cache entre checkouts
+
+Aponte todos os checkouts de um projeto para um único diretório com
+`E2E_CACHE_DIR`, ou `--cache-dir` para uma execução. Qualquer um dos dois
+substitui `cache.dir`, é resolvido a partir da raiz do projeto (`~` ou um
+`~/` no início é o seu diretório home) e não muda o modo. Com um
+`cache.store` personalizado, `--cache-dir` é um erro e `E2E_CACHE_DIR` é
+ignorado. Execuções em paralelo podem compartilhar o diretório: cada escrita
+substitui o arquivo dela de forma atômica. As entradas são indexadas por
+projeto, então dê a todos os checkouts o mesmo `projectId` (ou, no
+`package.json`, o `name`); sem nenhum dos dois, o caminho de cada checkout
+vira a identidade dele e nada é reproduzido entre eles.
+
+- Os checkouts compartilham entradas: uma execução que falha em qualquer um
+  deles remove a entrada, e checkouts com a mesma identidade de app, mas
+  código de app diferente, sobrescrevem as entradas uns dos outros (a última
+  escrita vence).
+- Enquanto a substituição estiver definida, um cache commitado em `cache.dir`
+  não é lido.
+- Use um diretório por projeto. Dois projetos em um mesmo diretório podem
+  falhar com um `REPLAY_STALE` falso com `cache.strict`.
+
+```bash
+E2E_CACHE_DIR=~/.cache/my-app/e2e npx e2e run
+```
+
+## Faça commit do cache de replay
+
+<span id="commit-your-traces" />
+
+`e2e init` adiciona `.e2e/cache/` ao `.gitignore`, então cada máquina grava o
+seu próprio cache e a CI começa sem nenhum. Para compartilhar replays, remova
+essa linha e faça commit do diretório. A CI continua `read-only` a menos que
+você defina `cache: 'read-write'`. Trate as entradas commitadas como dados de
+teste e revise-as no pull request que as gravou de novo.
+
+Execuções locais deixam um diretório commitado limpo, a menos que algo tenha
+mudado. Um passo reproduzido nunca reescreve a entrada dele, e uma gravação ao
+vivo com as mesmas ações, caminhos e âncoras não é escrita. Assim, uma entrada
+de uma UI que muda aos poucos só é reparada quando um controle não pode mais
+ser encontrado. Um arquivo muda quando:
+
+- um passo é gravado pela primeira vez, ou depois que o agente assumiu,
+- um passo falha depois de um replay, termina em um `end-mismatch` que o
+  agente precisou reparar, passa sem nada para gravar ou não é confirmado até
+  o fim da tentativa, o que apaga a entrada,
+- uma atualização do `e2e` muda o critério de correspondência das entradas,
+  o que dá a cada entrada uma nova chave, então a próxima execução as grava de
+  novo.
+
+## Falhe quando uma gravação estiver desatualizada
+
+Por padrão, uma gravação commitada que deixa de ser reproduzida não faz nada
+falhar: o agente assume o passo, e cada execução na CI paga por chamadas ao
+modelo até que alguém o grave de novo. Com `--strict-cache` (ou
+`cache: { strict: true }`), o passo falha com `REPLAY_STALE` e não faz nenhuma
+chamada ao modelo:
+
+<CodeGroup>
+```bash npm
+CI=1 npx e2e run --strict-cache
+```
+
+```bash pnpm
+CI=1 pnpm exec e2e run --strict-cache
+```
+
+```bash bun
+CI=1 bunx e2e run --strict-cache
+```
+</CodeGroup>
+
+`REPLAY_STALE` sai com código 2 e não é tentado novamente.
+
+| Falha no modo estrito | Ainda roda ao vivo |
+| --- | --- |
+| `invalid-entry`, `wrong-context`, `target-not-found`, `target-ambiguous`, `viewport-changed`, `action-failed`, `action-uncertain`, `end-mismatch`: o app ou a entrada mudou | Um passo nunca gravado (uma instrução ou parâmetros novos ou editados) |
+| `no-entry`, quando o diretório do cache contém uma gravação do mesmo passo sob outra chave | Um `gap` ou uma gravação `truncated` |
+| | Um passo cuja leitura do armazenamento falha |
+| | Um passo cujo `testId` do teste em `report.json`, nome do alvo ou nome do agente tem mais de 300 caracteres, quando uma versão anterior do `e2e` o gravou sob outra chave e nenhuma execução `read-write` desta versão o reproduziu desde então |
+
+Uma gravação sob outra chave vem de uma atualização do `e2e` que mudou as
+chaves, ou de uma mudança no id do projeto, na identidade do app ou no
+contexto do agente. A mensagem nomeia esse arquivo e, para uma gravação feita
+por uma versão atual, o que mudou. Apague o arquivo quando nada o reproduzir.
+Esta verificação não cobre um `cache.store` personalizado.
+
+Uma execução estrita nunca escreve nem apaga uma entrada, mesmo no modo
+`read-write`, então um passo novo só é gravado em uma execução sem o modo
+estrito. Na CI, prefira `--strict-cache` a `cache.strict` na configuração.
+Para corrigir uma entrada desatualizada:
+
+1. Rode o teste no modo `read-write` sem a flag. Desligue `cache.strict` se a
+   configuração o definir.
+2. Faça commit da entrada alterada. Um `cache.store` personalizado recebe a
+   entrada nova dessa execução no lugar disso.
+
+## Inspecione o cache
+
+<CodeGroup>
+```bash npm
+npx e2e cache ls      # one row per entry: test, target, instruction digest, age, actions
+npx e2e cache stats   # entry count and size
+npx e2e cache clear   # delete every entry
+```
+
+```bash pnpm
+pnpm exec e2e cache ls      # one row per entry: test, target, instruction digest, age, actions
+pnpm exec e2e cache stats   # entry count and size
+pnpm exec e2e cache clear   # delete every entry
+```
+
+```bash bun
+bunx e2e cache ls      # one row per entry: test, target, instruction digest, age, actions
+bunx e2e cache stats   # entry count and size
+bunx e2e cache clear   # delete every entry
+```
+</CodeGroup>
+
+<Note>
+A porcentagem `cached` no uso de IA é o cache de prompt do provedor. Ela reduz
+o custo de uma chamada ao modelo. O cache de replay evita a chamada.
+</Note>
+
+## Próximos passos
+
+<CardGroup cols={2}>
+  <Card title="Referência da configuração" icon="sliders" href="/reference/config#cache">
+    `mode`, `store`, `dir`.
+  </Card>
+  <Card title="Referência da CLI" icon="terminal" href="/reference/cli#e2e-cache">
+    `e2e cache ls`, `stats`, `clear`.
+  </Card>
+</CardGroup>

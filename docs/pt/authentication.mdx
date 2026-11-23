@@ -1,0 +1,306 @@
+---
+title: Autenticação
+description: Faça login uma vez, reutilize a sessão entre os testes e passe segredos sem expô-los ao modelo.
+"og:image": "https://e2e.com/docs/images/og/authentication.png?v=6e061842b8"
+"twitter:image": "https://e2e.com/docs/images/og/authentication.png?v=6e061842b8"
+---
+
+Um teste de preparação faz login uma vez e salva uma sessão nomeada. Outros
+testes restauram essa sessão e já começam autenticados. Senhas e outros
+segredos são referências: o runner digita o valor e mostra `<secret:name>` no
+lugar dele na entrada do modelo e nos relatórios, com
+[algumas limitações](/reference/security#where-redaction-stops).
+
+<a id="sign-in-once-in-a-setup-test" />
+
+## Reutilize sessões autenticadas
+
+Salve a sessão no corpo de um `test.setup`. Restaure-a com a opção
+`session`. O runner roda a preparação de que um teste precisa, mesmo quando
+você seleciona apenas esse teste:
+
+<Tabs>
+  <Tab title="tests/auth.setup.e2e.ts">
+
+```ts
+import { test } from '@e2e-dev/web';
+import { expect, credentials } from 'e2e';
+
+test.setup('authenticate as admin', { sessions: ['admin'] }, async ({ app, screen, session, browser }) => {
+  const admin = credentials.user('admin');
+
+  await app.open('/login');
+  await screen.getByLabel('Username').fill(admin.username);
+  await screen.getByLabel('Password').fill(admin.password);
+  await screen.getByRole('button', 'Sign in').tap();
+
+  await expect(browser).toHaveURL('/dashboard');
+  await expect(screen.getByRole('status', 'Greeting')).toContainText('admin');
+
+  await session.save('admin');
+});
+```
+
+  </Tab>
+  <Tab title="tests/dashboard.e2e.ts">
+
+```ts
+import { test } from '@e2e-dev/web';
+import { expect } from 'e2e';
+
+test('the dashboard opens directly', { session: 'admin' }, async ({ app, screen, browser }) => {
+  await app.open('/dashboard');
+
+  await expect(browser).toHaveURL('/dashboard');
+  await expect(screen.getByRole('status', 'Greeting')).toHaveText(
+    'Welcome back, admin!',
+  );
+});
+```
+
+  </Tab>
+</Tabs>
+
+<Note>
+`session.save()` não verifica se o login deu certo. Antes de salvar, faça uma
+asserção sobre a URL ou sobre um elemento que só aparece após o login.
+</Note>
+
+## Regras de sessão
+
+| Regra | Se você a quebrar |
+| --- | --- |
+| Testes de preparação ficam no nível superior, nunca dentro de `describe` | erro de coleta |
+| Cada nome de sessão é declarado por exatamente um teste de preparação | erro de coleta |
+| Todo nome em `sessions` é salvo pelo corpo | falha `SESSION_CONTRACT` |
+| Apenas os nomes declarados são salvos | falha `SESSION_CONTRACT` |
+| A engine do alvo salva e restaura o estado | erro de coleta, antes de qualquer teste rodar; um navegador hospedado reservado a cada tentativa não faz isso |
+
+Quando um teste de preparação falha, o runner pula os testes que dependem dele
+com a causa `setup-failed`. Os outros testes continuam rodando.
+
+Em um alvo de navegador, uma sessão guarda cookies, local storage e IndexedDB,
+não o estado do servidor ou do banco de dados. Uma restauração não deixa
+nenhuma página aberta, então cada teste chama `app.open()` primeiro.
+
+Uma sessão dura uma execução. O runner a criptografa com uma chave mantida
+apenas em memória e a apaga na limpeza. Veja
+[Sessões](/reference/security#sessions).
+
+## Credenciais
+
+Declare cada conta na configuração. Leia a senha do ambiente:
+
+```ts title="e2e.config.ts"
+import type { E2EConfig } from 'e2e';
+import { web } from '@e2e-dev/web';
+
+export default {
+  targets: [{ engine: web(), app: { url: 'http://127.0.0.1:3000' } }],
+  credentials: {
+    admin: {
+      username: 'admin@example.test',
+      password: process.env.ADMIN_PASSWORD ?? '',
+    },
+  },
+} satisfies E2EConfig;
+```
+
+O carregamento da configuração verifica cada senha. Enquanto `ADMIN_PASSWORD`
+não estiver definida ou tiver menos de 6 caracteres, todo comando falha com
+`INVALID_CONFIG`, inclusive `e2e list`. Uma
+[substituição](#override-a-value-per-run) válida toma o lugar dela.
+
+<Accordion title="Mantenha o valor fora do ambiente">
+
+Qualquer processo que o runner inicia pode ler uma string de `process.env`.
+`password` também aceita uma função, `username` não. O runner chama a função
+apenas para um preenchimento autorizado, no processo do runner, então o valor
+pode vir de um cofre de segredos ou ser um código de uso único recém-gerado:
+
+```ts title="e2e.config.ts"
+import type { E2EConfig } from 'e2e';
+import { web } from '@e2e-dev/web';
+import { vault } from './support/vault.ts';
+
+export default {
+  targets: [{ engine: web(), app: { url: 'http://127.0.0.1:3000' } }],
+  credentials: {
+    admin: {
+      username: 'admin@example.test',
+      password: () => vault.read('e2e/admin-password'),
+    },
+  },
+} satisfies E2EConfig;
+```
+
+O valor só é ocultado a partir do primeiro preenchimento. Se o app puder
+mostrar o valor antes de um teste digitá-lo, use uma string. O mesmo vale para
+uma entrada de `secrets`.
+
+</Accordion>
+
+## A senha é uma referência
+
+`credentials.user(name)` retorna o nome de usuário como uma string simples e a
+senha como um `Secret` chamado `<name>.password`. Um `Secret` não tem
+`.value`. Passe-o para um `fill` ou para os `params` de um passo do agente:
+
+```ts
+await agent.act('Sign in', {
+  params: { username: admin.username, password: admin.password },
+});
+```
+
+O modelo vê apenas o nome e a finalidade do segredo. Quando o modelo preenche
+uma senha, o runner exige um campo de senha e digita o valor. Veja as
+[regras de preenchimento de segredos](/reference/security#secret-fills). O
+agente não consegue ler um campo seguro, então, em vez disso, faça uma
+asserção de que o login deu certo.
+
+As capturas de tela mascaram o campo de senha. Um valor que o app mostra em
+qualquer outro lugar chega ao modelo. Veja
+[capturas de tela após o preenchimento de um segredo](/reference/security#screenshots-after-a-secret-fill).
+
+<Warning>
+A ocultação compara strings. Um valor transformado, como os quatro últimos
+caracteres de uma chave, ainda pode aparecer. Mantenha a digitação de segredos
+nos testes de preparação e faça uma asserção sobre o resultado do envio. Veja
+[onde a ocultação termina](/reference/security#where-redaction-stops).
+</Warning>
+
+## Segredos que não são senhas
+
+Use `secrets` para chaves de API, tokens de webhook e outros valores que um
+teste digita:
+
+```ts title="e2e.config.ts"
+import type { E2EConfig } from 'e2e';
+import { web } from '@e2e-dev/web';
+
+export default {
+  targets: [{ engine: web(), app: { url: 'http://127.0.0.1:3000' } }],
+  secrets: {
+    'stripe-key': process.env.STRIPE_TEST_KEY ?? '',
+    'webhook-token': process.env.WEBHOOK_TOKEN ?? '',
+  },
+} satisfies E2EConfig;
+```
+
+`secrets.get()` retorna uma referência. Use-a como uma senha:
+
+```ts
+import { secrets } from 'e2e';
+
+await screen.getByLabel('Secret key').fill(secrets.get('stripe-key'));
+await agent.act('Connect Stripe with the given key', {
+  params: { apiKey: secrets.get('stripe-key') },
+});
+```
+
+Uma entrada de `secrets` pode preencher qualquer campo editável. Um nome não
+configurado lança `SECRET_UNAVAILABLE`. Um campo comum não é mascarado, então
+as capturas de tela mostram o valor enquanto o campo o contém, inclusive as do
+modelo. `secrets.get()` retorna apenas entradas de `secrets`, então
+`credentials.admin` e `secrets.admin` podem existir ao mesmo tempo.
+
+Em `e2e.config.ts`, `secrets.get()` pode passar um segredo para uma opção da
+engine que declare aceitar segredos, como
+[`basicAuth`](/web#protected-previews). O carregamento da configuração
+verifica o nome. As capturas de tela continuam ativadas, então os pixels do
+app não são mascarados. Veja
+[Segredos em opções da engine](/reference/security#secrets-in-engine-options).
+
+## Substitua um valor por execução
+
+Uma variável de ambiente substitui um valor da configuração durante uma
+execução:
+
+| Entrada | Variável |
+| --- | --- |
+| `credentials.admin.username` | `E2E_USER_ADMIN_USERNAME` |
+| `credentials.admin.password` | `E2E_USER_ADMIN_PASSWORD` |
+| `secrets['stripe-key']` | `E2E_SECRET_STRIPE_KEY` |
+
+A variável contém o nome da entrada em maiúsculas, com cada caractere fora de
+`A-Z` e `0-9` trocado por `_`. Quando duas entradas correspondem à mesma
+variável, como `stripe-key` e `stripe_key`, o carregamento da configuração
+falha com `INVALID_CONFIG`.
+
+<CodeGroup>
+```bash npm
+E2E_USER_ADMIN_PASSWORD=... E2E_SECRET_STRIPE_KEY=sk_test_... npx e2e run
+```
+
+```bash pnpm
+E2E_USER_ADMIN_PASSWORD=... E2E_SECRET_STRIPE_KEY=sk_test_... pnpm exec e2e run
+```
+
+```bash bun
+E2E_USER_ADMIN_PASSWORD=... E2E_SECRET_STRIPE_KEY=sk_test_... bunx e2e run
+```
+</CodeGroup>
+
+## Vários usuários autenticados
+
+Salve uma sessão por usuário. Depois rode os mesmos testes com cada sessão e
+cada [agente](/agents):
+
+<Tabs>
+  <Tab title="tests/personas.setup.e2e.ts">
+
+```ts
+import { test } from '@e2e-dev/web';
+import { expect, credentials } from 'e2e';
+
+const PERSONAS = ['buyer', 'admin'] as const;
+
+test.setup('sign in each persona', { sessions: [...PERSONAS] }, async ({ app, screen, session, browser }) => {
+  for (const name of PERSONAS) {
+    const user = credentials.user(name);
+    await app.open('/login');
+    await screen.getByLabel('Username').fill(user.username);
+    await screen.getByLabel('Password').fill(user.password);
+    await screen.getByRole('button', 'Sign in').tap();
+    await expect(browser).toHaveURL('/dashboard');
+    await session.save(name);
+    await app.open('/logout');
+  }
+});
+```
+
+  </Tab>
+  <Tab title="tests/checkout.e2e.ts">
+
+```ts
+import { describe, test } from '@e2e-dev/web';
+
+for (const persona of ['buyer', 'admin'] as const) {
+  describe(`checkout as ${persona}`, { agent: persona, session: persona, tags: [persona] }, () => {
+    test('pays for one item', async ({ app, agent }) => {
+      await app.open('/cart');
+      await agent.act('pay for the item in the cart');
+      await agent.assert('the order confirmation is shown');
+    });
+  });
+}
+```
+
+  </Tab>
+</Tabs>
+
+Cada nome se refere a uma entrada de `agents`, a uma entrada de `credentials`
+e a uma sessão salva. Quando as personas não precisam de sessões separadas,
+[rode um fluxo como vários agentes](/agents#one-flow-several-personas) em vez
+disso.
+
+## Próximos passos
+
+<CardGroup cols={2}>
+  <Card title="Referência de test" icon="flask" href="/reference/test">
+    `test.setup`, `sessions` e a opção `session`.
+  </Card>
+  <Card title="Referência da configuração" icon="sliders" href="/reference/config#credentials">
+    Os blocos `credentials` e `secrets`.
+  </Card>
+</CardGroup>
