@@ -222,8 +222,7 @@ lines you changed:
   ask before adding a test framework, and name any existing framework.
 - Live MCP tools need an `e2e mcp` server in the client: the e2e plugin's
   (Codex and Cursor), or one registered in the project (topic `mcp`). In a directory with no e2e config, a live look still
-  works: `open_session {engine: "@e2e-dev/web", app: {url: "http://localhost:3000"}}` opens a session
-  on the engine's defaults. Tests need a config and run with the CLI.
+  works (topic `mcp`). Tests need a config and run with the CLI.
   Keep a session open across runs while you write or fix a web test; topic
   `mcp` says when a run can go beside it, and what to do on
   `APP_ALREADY_RUNNING`.
