@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import picocolors from 'picocolors';
 import { resultId } from '@e2e-dev/core/lib/internal/ids';
 import { visibleWidth } from '../../src/report/format.ts';
 import { DotProgress } from '../../src/report/dot.ts';
@@ -2604,12 +2605,20 @@ describe('line progress', () => {
 });
 
 describe('colors of a view that paints', () => {
-  afterEach(() => vi.unstubAllEnvs());
+  // picocolors decides at import, from stdout and `CI`: a view on stderr beside a piped stdout gets false.
+  const supported = picocolors.isColorSupported;
+  beforeEach(() => {
+    picocolors.isColorSupported = false;
+  });
+  afterEach(() => {
+    picocolors.isColorSupported = supported;
+    vi.unstubAllEnvs();
+  });
 
   it.each([
     { env: '', colored: true },
     { env: '1', colored: false },
-  ])('NO_COLOR=$env on a terminal: colored $colored, for list and line', ({ env, colored }) => {
+  ])('NO_COLOR=$env on a terminal picocolors sees none on: colored $colored, for list and line', ({ env, colored }) => {
     vi.stubEnv('NO_COLOR', env);
     for (const progress of [undefined, new LineProgress()]) {
       const lines: string[] = [];
