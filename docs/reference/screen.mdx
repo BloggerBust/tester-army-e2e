@@ -267,7 +267,13 @@ await screen.getByTestId('memory-list', { visible: true }).getByRole('listitem')
 and `waitFor()`: what renders, as Playwright reads it.
 
 - Hidden: `display: none`, `visibility: hidden`, a box with no size, a closed
-  `<details>` body, and content under `content-visibility: hidden`.
+  `<details>` body, shadow and slotted content included, and content under
+  `content-visibility: hidden`.
+- Not hidden: a closed `<details>` body the page's CSS shows through
+  `::details-content`, and content under `content-visibility: hidden` set on an
+  element whose box does not skip it (`display: contents`, an inline element,
+  a table, a table row, ruby). An inline `<svg>`, `<button>`, or `<fieldset>`
+  makes a box of its own, so content under one still reads hidden.
 - Not hidden: `aria-hidden`, since a decorative spinner marked with it still
   paints, so `toBeHidden()` on one waits until it leaves.
 - A child that sets `visibility: visible` under a hidden parent is visible.
@@ -390,16 +396,21 @@ await screen.getByRole('row').nth(2).getByRole('checkbox').check();
 Use it for a pin on a canvas or a control the tree does not list.
 
 ```ts
-/** Taps a viewport point, with no node behind it. */
-tapAt(point: Point, options?: ActionOptions): Promise<void>;
+/** Taps a viewport point, in pixels or percentages, with no node behind it. */
+tapAt(point: ScreenPoint, options?: ActionOptions): Promise<void>;
 ```
 
 ```ts
 const map = (await screen.getByRole('image', 'Map').boundingBox())!;
 await screen.tapAt({ x: map.x + 360, y: map.y + 70 });
+
+await screen.tapAt({ x: '50%', y: '50%' });
 ```
 
-- The point is in CSS pixels, the space `boundingBox()` reports in.
+- Each coordinate is CSS pixels, the space `boundingBox()` reports in, or a
+  percentage of the viewport from `'0%'` through `'100%'`, rounded to the
+  nearest pixel (`'100%'` is the last one). They may mix: `{ x: '50%', y: 120 }`.
+- A percentage reads the screen once for its size.
 - Nothing is resolved or waited for; the page decides what the tap lands on.
 - Uses `config.actionTimeout`.
 - Prefer a locator when the tree lists the control, since a point moves with
@@ -408,7 +419,7 @@ await screen.tapAt({ x: map.x + 360, y: map.y + 70 });
 
 | Throws | When |
 | --- | --- |
-| `INVALID_ARGUMENT` | A negative or non-finite coordinate. |
+| `INVALID_ARGUMENT` | A negative or non-finite coordinate, or a string that is not a percentage from `'0%'` through `'100%'`. |
 | `UNSUPPORTED_CAPABILITY` | The engine does not list `tap` in its pointer actions. |
 
 <Note>
@@ -420,22 +431,22 @@ await screen.tapAt({ x: map.x + 360, y: map.y + 70 });
 Use it to double-tap a viewport point when the tree does not list the target.
 
 ```ts
-/** Double-taps a viewport point, with no node behind it. */
-doubleTapAt(point: Point, options?: ActionOptions): Promise<void>;
+/** Double-taps a viewport point, in pixels or percentages, with no node behind it. */
+doubleTapAt(point: ScreenPoint, options?: ActionOptions): Promise<void>;
 ```
 
 ```ts
 await screen.doubleTapAt({ x: 120, y: 240 }, { timeout: 1_000 });
 ```
 
-- Use viewport coordinates in the same units as `boundingBox()`.
+- Takes a `ScreenPoint`, pixels or percentages, as [`tapAt`](#screen-tapat) does.
 - The page or device decides what receives the gesture. On web, this sends a primary-button double-click.
 - On a device, this sends two presses at the point, as `doubleTap()` does on a node. See [Known device limitations](/mobile#known-device-limitations) for their timing on iOS.
 - Defaults to `config.actionTimeout`.
 
 | Throws | When |
 | --- | --- |
-| `INVALID_ARGUMENT` | A negative or non-finite coordinate, or an unknown option. |
+| `INVALID_ARGUMENT` | A negative or non-finite coordinate, a string that is not a percentage from `'0%'` through `'100%'`, or an unknown option. |
 | `UNSUPPORTED_CAPABILITY` | The engine does not list `doubleTap` in its pointer actions. |
 
 <Note>
@@ -458,6 +469,8 @@ await screen.swipe({
   to: { x: row.x + 10, y: row.y + row.height / 2 },
   duration: 300,
 });
+
+await screen.swipe({ from: { x: '50%', y: '80%' }, to: { x: '50%', y: '20%' } });
 ```
 
 `{ direction, momentum? }` is a scroll gesture on the screen:
@@ -473,6 +486,8 @@ points: a touch swipe on a device, a pointer drag on a document platform.
 Use it to reveal a row action, dismiss a sheet, or drag a card between
 columns.
 
+- `from` and `to` are `ScreenPoint`s, pixels or percentages, as
+  [`tapAt`](#screen-tapat) takes.
 - `duration` is how long the gesture takes, an integer from 16 through
   10000 ms. Omitted, it is the engine's default.
 
@@ -481,7 +496,7 @@ Uses `config.actionTimeout` and takes no `timeout` option.
 | Throws | When |
 | --- | --- |
 | `ACTION_FAILED` | The gesture is rejected. |
-| `INVALID_ARGUMENT` | A mix of the two shapes, an out-of-range duration, a coordinate off the plane, or a `timeout` key. |
+| `INVALID_ARGUMENT` | A mix of the two shapes, an out-of-range duration, a coordinate off the plane or not a percentage from `'0%'` through `'100%'`, or a `timeout` key. |
 | `UNSUPPORTED_CAPABILITY` | The engine does not list `swipe` in its actions (a direction) or `swipeTo` in its pointer actions (a path). |
 
 #### `screen.scrollUntilVisible`
@@ -917,21 +932,24 @@ await screen.getByRole('button', 'Account').hover();
 #### `setInputFiles`
 
 ```ts
-/** Sets the files of exactly one file input, or of a control that opens a file chooser; paths resolve from the project root, and an empty array clears the input. */
-setInputFiles(paths: string | readonly string[], options?: ActionOptions): Promise<void>;
+/** Sets the files of exactly one file input, or of a control that opens a file chooser; paths resolve from the project root, payloads supply bytes in memory, and an empty array clears the input. */
+setInputFiles(files: string | readonly string[] | FilePayload | readonly FilePayload[], options?: ActionOptions): Promise<void>;
 ```
 
 ```ts
 await screen.getByLabel('Receipt').setInputFiles('fixtures/receipt.pdf');
+await screen.getByLabel('Receipt').setInputFiles({
+  name: 'receipt.txt', mimeType: 'text/plain', buffer: Buffer.from('Receipt total: 12.00'),
+});
 await screen.getByLabel('Receipt').setInputFiles([]);
 ```
 
-Web only. An empty array clears the input and fires `input` and `change`. It also takes a button that opens a file chooser.
+Web only. Pass a plain object with only the fields of `FilePayload`: `name: string`, `mimeType: string`, and `buffer: Buffer`. Pass one payload or an array of payloads; do not mix paths and payloads in an array. The combined payload size must be less than 50 MiB. For larger files, use a path if the target supports transferring files of that size. An empty array clears the input and fires `input` and `change`. A button that opens a file chooser accepts the same inputs.
 
 | Throws | When |
 | --- | --- |
-| `INVALID_ARGUMENT` | A blank path. |
-| `UNSUPPORTED_CAPABILITY` | On a device, which has no file input. |
+| `INVALID_ARGUMENT` | A blank or missing path, a path under a directory the runner cannot search, an invalid payload, mixed paths and payloads, or payloads totaling 50 MiB or more. |
+| `UNSUPPORTED_CAPABILITY` | On a device, or for payloads on an engine that does not declare `setInputFilePayloads`. |
 | `ACTION_FAILED` | A button that opens no file chooser. |
 
 #### `dragTo`
@@ -1394,9 +1412,9 @@ export interface SwipeOptions {
 /** A swipe along a path between two viewport points: a touch swipe on a device, a pointer drag on a document platform. */
 export interface SwipePathOptions {
   /** Where the finger goes down. */
-  from: Point;
+  from: ScreenPoint;
   /** Where it lifts. */
-  to: Point;
+  to: ScreenPoint;
   /** Gesture duration, an integer from 16 through 10000 ms; omitted = the engine's default. */
   duration?: number;
   direction?: never;
@@ -1404,12 +1422,21 @@ export interface SwipePathOptions {
 }
 
 /**
- * A point in CSS pixels. For `screen.tapAt`, `screen.doubleTapAt`, and `screen.swipe` the origin is
- * the viewport's top-left corner, the space `boundingBox()` reports in; for
- * `tap({ position })` it is the node's own top-left corner, inside its
- * border on a document platform.
+ * A point in CSS pixels. For `tap({ position })` the origin is the node's own
+ * top-left corner, inside its border on a document platform. A `Point` is
+ * also a `ScreenPoint`, whose origin is the viewport's top-left corner, the
+ * space `boundingBox()` reports in.
  */
 export type Point = ViewportPoint; // { x: number; y: number }
+
+/** CSS pixels, or a percentage of the viewport's width (`x`) or height (`y`), `'0%'` through `'100%'`. */
+export type ScreenCoordinate = number | `${number}%`;
+
+/** A viewport point in pixels, percentages, or both: `{ x: '50%', y: 120 }`. */
+export interface ScreenPoint {
+  readonly x: ScreenCoordinate;
+  readonly y: ScreenCoordinate;
+}
 
 /** `tap`, `click`, `doubleTap`, `dblclick`, and `secondaryTap` options: the action timeout and the keys held for the click. */
 export interface ClickOptions extends ActionOptions {

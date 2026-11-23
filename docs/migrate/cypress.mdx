@@ -95,14 +95,16 @@ describe('todos', () => {
 | `cy.get('[data-cy=x]')`, `.find('[data-cy=x]')` | `screen.getByTestId('x')`, `row.getByTestId('x')` |
 | `cy.get('css')` | `browser.locator('css')`, web only; prefer a role or label |
 | `cy.contains('text')`, `cy.contains('li', 'text')` | `screen.getByText('text', { exact: false })`, `screen.getByRole('listitem').filter({ hasText: 'text' })` |
-| `.click()`, `.dblclick()`, `.clear()`, `.check()`, `.uncheck()`, `.focus()`, `.first()`, `.last()`, `.scrollIntoView()` | The same |
+| `.click()`, `.dblclick()`, `.clear()`, `.check()`, `.uncheck()`, `.focus()`, `.blur()`, `.first()`, `.last()`, `.scrollIntoView()` | The same |
 | `.rightclick()`, `.eq(n)`, `.selectFile(path)` | `.secondaryTap()`, `.nth(n)`, `.setInputFiles(path)` |
 | `.type('text')`, `.type('{enter}')`, `.clear().type('text')` | `.pressSequentially('text')` appends with key events, `.press('Enter')`, `.fill('text')` |
 | `.select('Pro')` | `.selectOption('Pro')` matches the label; a value needs `{ value: 'pro' }`, an index `{ index: 1 }` |
 | `.should('be.visible')`, `be.checked`, `be.disabled`, `be.focused`, `exist` | `await expect(locator).toBeVisible()`, `toBeChecked()`, `toBeDisabled()`, `toBeFocused()`, `toBeAttached()` |
+| `.should($el => ...)` | Use [`expect(fn).toPass()`](/reference/expect#retrying-a-block) for several assertions. Use [`expect.poll`](/reference/expect#polling-a-value) for a single changing value |
 | `have.text`, `contain`, `have.value`, `have.attr`, `have.length`, `not.exist` | `toHaveText`, `toContainText`, `toHaveValue`, `toHaveAttribute`, `toHaveCount(n)`, `toHaveCount(0)` |
 | `cy.url().should('include', p)`, `cy.title()` | `expect(browser).toHaveURL(/p/)`, `expect(browser).toHaveTitle(t)` |
 | `cy.intercept('/api/users', body)` | `browser.route('**/api/users', route => route.fulfill({ json: body }))`, a glob on the full URL |
+| `cy.intercept('POST', '/api/users', body)` | `browser.route({ method: 'POST', url: '**/api/users' }, route => route.fulfill({ json: body }))` |
 | `cy.on('window:confirm')`, `cy.on('window:alert')` | `await browser.onDialog('accept')` before the action, `'dismiss'` to cancel |
 | `cy.session` | `test.setup` and `{ session }` |
 | `cy.task`, `cy.exec`, `cy.request`, `cy.fixture` | Node code: `fetch`, `fs`, your database client, `import data from './fixture.json'` |
@@ -117,10 +119,10 @@ Planned gaps are on the roadmap, and Not yet gaps have no date. Not planned gaps
 | Cypress | Use today |
 | --- | --- |
 | `.find('css')`, `.filter('css')`, `.not('css')` | Chain a `getBy*` query, or write one selector: `browser.locator('li.active >> .title')` |
-| `.invoke()`, `.its()`, `.then($el => ...)`, `.should($el => ...)` | `getAttribute()`, `textContent()`, `inputValue()`, else `browser.evaluate`; wrap in `expect.poll` to retry |
+| `.invoke()`, `.its()`, `.then($el => ...)` | `getAttribute()`, `textContent()`, `inputValue()`, else `browser.evaluate`; wrap in `expect.poll` to retry |
 | `have.class`, `have.css`, `have.prop`, `be.empty` | `expect(browser).toHaveClass(locator, /regexp/)`, `expect(locator).toHaveText('')`; else `expect.poll(() => browser.evaluate(...))` |
-| `.trigger()`, `cy.scrollTo()`, `.blur()` | `hover()`, `dragTo()`, `scrollIntoView()`, `press('Tab')`; else `browser.evaluate` |
-| `cy.intercept('POST', url)` and other method or header matchers | Check `route.request.method` in the handler, else call `route.fallback()` |
+| `.trigger()`, `cy.scrollTo()` | `hover()`, `dragTo()`, `scrollIntoView()`; for other synthetic events use `browser.evaluate` |
+| `cy.intercept({ headers })` and other header matchers | Check `route.request.headers` in the handler, else call `route.fallback()` |
 | `cy.wait('@alias')`, `.its('request.body')`, `@alias.all` | Start `browser.waitForResponse(pattern)` before the action; read the request in a `browser.route` handler |
 | `Cypress.on('uncaught:exception')` | An app error doesn't fail a test. To fail on one, collect `window.onerror` in `browser.addInitScript`, then assert the list is empty with `browser.evaluate` |
 | `--browser chrome`, `edge`, `electron`, `before:browser:launch` | `web({ browser: 'chromium' })`, or attach to your own Chrome with `web({ connect: { cdpEndpoint } })` |

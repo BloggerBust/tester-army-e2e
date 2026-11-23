@@ -1,10 +1,11 @@
 /** The running attempt, published for expectations that have no fixture to hang off. */
 
 import { attemptBrand } from '../internal/brands.ts';
-import { InfrastructureError } from '../internal/errors.ts';
+import { InfrastructureError, type TestError } from '../internal/errors.ts';
 import { realmSlot } from '../internal/realm-slot.ts';
 import type { AttemptBudget } from '../run/budget.ts';
 import type { AttemptGuests } from '../run/guest-steps.ts';
+import type { PassOptions } from '../types.ts';
 import type { SoftFailures } from './soft.ts';
 import type { PollScope } from './poll-scope.ts';
 
@@ -16,6 +17,10 @@ export interface PublishedAttempt {
   readonly testKind: 'test' | 'setup';
   /** The config default for a poll's `timeout`. */
   readonly assertionTimeout: number;
+  /** Config defaults for `toPass`. Absent in an older runner's slot. */
+  readonly toPass?: Readonly<Required<PassOptions>>;
+  /** Callback for the last failed assertion when the phase timeout is the primary error. */
+  readonly recordSecondaryError?: (error: TestError) => void;
   /** Read at call time: the running phase's signal and deadline. */
   readonly budget: AttemptBudget;
   /** Where `expect.soft` keeps its failures until the body settles. */

@@ -145,6 +145,7 @@ const shot = await app.screenshot('after-checkout');
 | Throws | When |
 | --- | --- |
 | `UNSUPPORTED_CAPABILITY` | The engine takes no screenshots. |
+| `POLICY_DENIED` | On iOS and Android, a secure field on screen has no bounds to mask. |
 | `ENGINE_FAILURE` | The capture failed. |
 
 <Note>

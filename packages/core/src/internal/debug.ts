@@ -127,6 +127,7 @@ export function table(
 }
 
 export function formatMs(value: number): string {
-  if (value >= 10_000) return `${(value / 1000).toFixed(1)}s`;
-  return `${Math.round(value)}ms`;
+  const rounded = Math.round(value);
+  if (rounded >= 10_000) return `${(value / 1000).toFixed(1)}s`;
+  return `${rounded}ms`;
 }

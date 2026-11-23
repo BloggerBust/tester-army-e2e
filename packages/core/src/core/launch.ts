@@ -5,6 +5,7 @@
  * one at a time. Parallel work is more hosts.
  */
 
+import { randomBytes } from 'node:crypto';
 import { mkdtemp, rm } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
@@ -180,6 +181,9 @@ export async function launch<Fixtures extends object = {}>(engine: EngineHandle<
       const notice = options.onNotice;
       const host = await openCoreHost({
         config, target, env, headed: options.headed ?? false,
+        // Hosts name their targets alike, so the engine gets a token per host to keep what it holds apart: a device session.
+        // Random, so hosts in other processes, worker threads, or copies of this package differ too.
+        hostId: randomBytes(12).toString('hex'),
         signal: anySignal(options.signal, seat?.signal),
         ...(notice === undefined ? {} : { notice: (_target: string, message: string) => notice(message) }),
       });

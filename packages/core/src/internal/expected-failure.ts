@@ -39,7 +39,7 @@ export function markRunningTestExpectedToFail(condition: boolean, reason: string
   const attempt = currentAttempt();
   if (attempt === undefined) {
     throw new CollectionError(
-      'test.fail(condition, reason) marks the running test and must be called inside a test body; to mark at collection, use test.fail(title, fn) or pass { fail: true } or a reason string as the test option',
+      'test.fail(condition, reason) marks the running test and must be called inside a test body; to mark at collection, use test.fail(title, fn) or describe.fail(title, fn), or pass { fail: true } or a reason string as the test or describe option',
     );
   }
   if (!condition) return;

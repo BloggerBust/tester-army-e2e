@@ -121,7 +121,7 @@ const CHECKABLE_ROLES = new Set(['switch', 'checkbox']);
 const CHECKED_VALUES = new Set(['1', 'on', 'true', 'checked', 'selected']);
 const UNCHECKED_VALUES = new Set(['0', 'off', 'false', 'unchecked']);
 /** Platform element types that are the soft keyboard or one of its keys, as agent-device names them. */
-export const KEYBOARD_KINDS: ReadonlySet<string> = new Set(['keyboard', 'key']);
+const KEYBOARD_KINDS: ReadonlySet<string> = new Set(['keyboard', 'key']);
 
 /**
  * Whether a raw node is the soft keyboard: the keyboard element or one of
@@ -131,6 +131,42 @@ export const KEYBOARD_KINDS: ReadonlySet<string> = new Set(['keyboard', 'key']);
  */
 function isKeyboardElement(node: RawNode): boolean {
   return KEYBOARD_KINDS.has(kindOf(node)) || node.identifier === 'SystemInputAssistantView';
+}
+
+/**
+ * Whether the tree lists the soft keyboard drawn on screen: a keyboard or a
+ * key with a nonzero frame that overlaps the screen. The suggestion strip
+ * alone is not one: with a hardware keyboard, XCTest lists the strip and no
+ * keys. A keyboard left in the tree off screen after it was dismissed is not
+ * one either, and with no viewport and no window to bound the screen nothing
+ * counts, since the tree's own extent would hold the keyboard it is asked
+ * about.
+ */
+export function keyboardOnScreen(nodes: readonly RawNode[], viewport: ViewportSize | undefined): boolean {
+  const screen = viewport ?? screenOf(nodes);
+  return screen !== undefined && onScreenRects(drawnKeyboardRects(nodes, (node) => KEYBOARD_KINDS.has(kindOf(node))), screen).length > 0;
+}
+
+/**
+ * The top edge of the highest keyboard element drawn on `viewport`, the
+ * suggestion strip included, so a drag that starts above it starts on
+ * neither the keys nor the strip; undefined when there is none.
+ */
+export function keyboardElementsTop(nodes: readonly RawNode[], viewport: ViewportSize): number | undefined {
+  const onScreen = onScreenRects(drawnKeyboardRects(nodes), viewport);
+  return onScreen.length === 0 ? undefined : Math.min(...onScreen.map((rect) => rect.y));
+}
+
+/** The rects that overlap a screen of this size. */
+function onScreenRects(rects: readonly Rect[], screen: ViewportSize): Rect[] {
+  return rects.filter((rect) => rect.x < screen.width && rect.x + rect.width > 0 && rect.y < screen.height && rect.y + rect.height > 0);
+}
+
+/** The frames of the tree's drawn nodes (a nonzero frame, not hidden from the user) that `include` picks, by default every keyboard element. */
+function drawnKeyboardRects(nodes: readonly RawNode[], include: (node: RawNode) => boolean = isKeyboardElement): Rect[] {
+  return nodes.flatMap((node) =>
+    node.rect !== undefined && node.rect.width > 0 && node.rect.height > 0 && node.visibleToUser !== false && include(node) ? [node.rect] : [],
+  );
 }
 
 /**
@@ -149,11 +185,7 @@ export function keyboardBand(
 ): Rect | undefined {
   if (fact?.kind === 'visible' || fact?.kind === 'derived') return fact.frame;
   if (fact?.kind === 'absent' || fact?.kind === 'tree-rejected' || (fact?.kind === 'visibility-only' && !fact.visible)) return undefined;
-  const boards = nodes.flatMap((node) =>
-    node.rect !== undefined && node.rect.width > 0 && node.rect.height > 0 && node.visibleToUser !== false && isKeyboardElement(node)
-      ? [node.rect]
-      : [],
-  );
+  const boards = drawnKeyboardRects(nodes);
   if (boards.length === 0) return undefined;
   const left = Math.min(...boards.map((rect) => rect.x));
   const right = Math.max(...boards.map((rect) => rect.x + rect.width));
@@ -312,7 +344,7 @@ function isAndroidClass(type: string | undefined): boolean {
 }
 
 /** One element-type spelling for `NavigationBar`, `XCUIElementTypeNavigationBar`, `navigation-bar`, and `android.widget.NavigationBar` alike. */
-export function normalizeKind(type: string): string {
+function normalizeKind(type: string): string {
   const simple = type.slice(type.lastIndexOf('.') + 1).replace(/^XCUIElementType(?=[A-Z])/, '');
   return simple
     .replaceAll(/([a-z0-9])([A-Z])/g, '$1-$2')
@@ -404,6 +436,23 @@ function nonEmpty(value: string | undefined): string | undefined {
 function editableRole(role: string | undefined, editable: boolean | undefined): string | undefined {
   if (editable !== true) return role;
   return role !== undefined && TEXT_INPUT_ROLES.has(role) ? role : 'textbox';
+}
+
+/**
+ * A text field's read-only state, where the platform says whether it takes
+ * text: Android's `TextView.isTextEditable()`. iOS has no such fact:
+ * agent-device fills in `editable: true` for every text field and text view
+ * from its element type, so an iOS node carries no state rather than call a
+ * read-only text view editable. agent-device leaves the flag out where it does
+ * not know, and so does the node. A combobox is editable only when the
+ * platform says it takes text; a picker that takes none is not read-only, so
+ * it gets no state.
+ */
+function readOnlyState(role: string | undefined, editable: boolean | undefined, android: boolean): { readonly?: boolean } {
+  if (!android || editable === undefined) return {};
+  if (role === 'combobox') return editable ? { readonly: false } : {};
+  if (role !== 'textbox' && role !== 'searchbox') return {};
+  return { readonly: !editable };
 }
 
 function checkedOf(role: string | undefined, value: string | undefined): boolean | undefined {
@@ -584,6 +633,7 @@ export function projectSnapshot(
       ...(secure ? { secure: true } : {}),
       ...(checked === undefined ? {} : { checked }),
       ...(spelled?.states.expanded === undefined ? {} : { expanded: spelled.states.expanded }),
+      ...readOnlyState(role, source.editable, android),
     };
     const node: SemanticNode = {
       ref: { id, revision: '' },
@@ -676,15 +726,7 @@ function quoteTerm(value: string): string {
  * snapshot with no geometry at all.
  */
 export function viewportOf(raw: readonly RawNode[]): ViewportSize | undefined {
-  // The largest window, not the first: a system bar can be a window too, and
-  // a 63-pixel screen would keep every bar as "too tall to be a bar".
-  let screen: ViewportSize | undefined;
-  for (const node of raw) {
-    if (!SCREEN_KINDS.has(kindOf(node)) || node.rect === undefined) continue;
-    const { width, height } = node.rect;
-    if (width <= 0 || height <= 0) continue;
-    if (screen === undefined || width * height > screen.width * screen.height) screen = { width, height };
-  }
+  const screen = screenOf(raw);
   if (screen !== undefined) return screen;
   let width = 0;
   let height = 0;
@@ -694,6 +736,20 @@ export function viewportOf(raw: readonly RawNode[]): ViewportSize | undefined {
     height = Math.max(height, node.rect.y + node.rect.height);
   }
   return width > 0 && height > 0 ? { width, height } : undefined;
+}
+
+/** The screen's logical size from the largest application or window node; undefined when the tree has none. */
+function screenOf(raw: readonly RawNode[]): ViewportSize | undefined {
+  // The largest window, not the first: a system bar can be a window too, and
+  // a 63-pixel screen would keep every bar as "too tall to be a bar".
+  let screen: ViewportSize | undefined;
+  for (const node of raw) {
+    if (!SCREEN_KINDS.has(kindOf(node)) || node.rect === undefined) continue;
+    const { width, height } = node.rect;
+    if (width <= 0 || height <= 0) continue;
+    if (screen === undefined || width * height > screen.width * screen.height) screen = { width, height };
+  }
+  return screen;
 }
 
 /**

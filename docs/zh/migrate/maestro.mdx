@@ -40,7 +40,7 @@ e2e 用 TypeScript 测试替代 Maestro 的 YAML 流程。每条命令变为一�
 | --- | --- |
 | 每个流程顶部的 `appId` | 测试目标上的 `app: { bundleId: 'com.example.app' }`，即 `app.open()` 启动的应用 |
 | 每个流程使用不同的 `appId`，或流程中途使用第二个应用 ID | 在测试中调用 `device.openApp(id)`，或每个应用使用一个配置 |
-| `--platform`、`--device` | `mobile({ platform: 'ios', device: 'iPhone 17' })`，每个平台一个测试目标；`device` 列表是设备池 |
+| `--platform`、`--device` | `mobile({ platform: 'ios', device: 'iPhone 17' })`，每个平台一个测试目标；`device` 列表是设备池。仅本次运行使用时，`e2e run --target ios --device 'iPhone 17'` |
 | `.maestro/config.yaml` `flows`、`'!helper.yaml'` | `tests: ['tests/**/*.e2e.ts', '!tests/helpers/**']` |
 | `tags`、`--include-tags`、`--exclude-tags` | 测试或分组上的 `{ tags: [...] }`；CLI 的 `--tag`、`--exclude-tag` |
 | `env` 和 `${VAR}` | 模块常量，以及目标中的 `params`：`agent.act('sign in as {email}', { params: { email } })` |
@@ -165,7 +165,6 @@ test('asks for the email', async ({ app, agent, screen }) => {
 | Maestro Cloud | 你的 [CI](/ci) 配合[托管设备提供方](/mobile#hosted-devices) |
 | `pressKey: lock`、`power`、`volume up`、`volume down` | [`unstable_raw`](/reference/mobile#unstable_raw) 上的 `client.command.hardwareButton`：Android 支持电源和音量键，iPhone 真机支持音量键 |
 | JUnit `properties`、通过 `--output` 设置 JUnit 路径 | 将 ID 放入标签或标题；运行后复制 `.e2e/junit.xml` |
-| 命令行中的 `--device` | 配置中的 `device: process.env.DEVICE` |
 
 ### 尚未支持
 

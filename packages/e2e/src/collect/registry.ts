@@ -10,7 +10,7 @@ import { CollectionError } from '@e2e-dev/core/lib/internal/errors';
 import { MAX_TIMER_MS } from '@e2e-dev/core/lib/internal/time';
 import { validateTitle } from '@e2e-dev/core/lib/internal/ids';
 import { realmSlot } from '@e2e-dev/core/lib/internal/realm-slot';
-import { markRunningTestExpectedToFail } from '@e2e-dev/core/lib/internal/expected-failure';
+import { expectedFailureOption, markRunningTestExpectedToFail } from '@e2e-dev/core/lib/internal/expected-failure';
 import { setRunningTestTimeout } from '@e2e-dev/core/lib/internal/test-timeout';
 import { fixmeReason, parseModifierCall, skipRunningTest } from '../internal/skip.ts';
 import { formatEachTitle, readRows } from './each.ts';
@@ -19,7 +19,9 @@ import type { SourceLocation } from '@e2e-dev/core/lib/internal/source';
 import { fixtureNames, type FixtureUserFn } from './fixture-names.ts';
 import { checkDeclaredFixtures, describeFixture, describeUser } from './fixture-plan.ts';
 import type {
+  DescribeAPI,
   DescribeOptions,
+  DescribeRegistrar,
   EachFn,
   EachRegistrar,
   FixtureFn,
@@ -253,11 +255,13 @@ class Collector {
     return Object.freeze({ [testCaseBrand]: true as const });
   }
 
-  registerDescribe(title: string, options: DescribeOptions, body: () => unknown): void {
-    this.assertOpen('describe()');
+  registerDescribe(title: string, given: DescribeOptions, body: () => unknown, api: string, markFail: boolean): void {
+    this.assertOpen(api);
     const normalizedTitle = this.title(title);
     if (typeof body !== 'function') throw new CollectionError('describe body must be a function');
-    validateDescribeOptions(options, this.currentGroup);
+    // The caller's own options are checked, not the copy that adds the mark, which keeps only enumerable keys.
+    validateDescribeOptions(given, this.currentGroup, markFail);
+    const options = markFail ? { ...given, fail: true } : given;
     const group: GroupNode = {
       title: normalizedTitle,
       options,
@@ -396,6 +400,7 @@ const DESCRIBE_OPTION_KEYS: readonly string[] = Object.keys({
   retries: true,
   tags: true,
   skip: true,
+  fail: true,
   platforms: true,
   requires: true,
   session: true,
@@ -503,10 +508,7 @@ function insideSerial(group: GroupNode | undefined): boolean {
 function validateTestOptions(options: TestOptions, group: GroupNode | undefined, kind: 'test' | 'setup'): void {
   if (kind === 'setup') validateCommonOptions(options, 'setup options', SETUP_OPTION_KEYS);
   else validateCommonOptions(options, 'test options', TEST_OPTION_KEYS);
-  const fail: unknown = options.fail;
-  if (fail !== undefined && typeof fail !== 'boolean' && typeof fail !== 'string') {
-    throw new CollectionError(`test options: fail must be true, false, or a reason string, got ${describeValue(fail)}`);
-  }
+  validateFailOption(options.fail, 'test options');
   if (insideSerial(group)) {
     const forbidden: (keyof TestOptions)[] = [
       'retries',
@@ -529,10 +531,24 @@ function validateTestOptions(options: TestOptions, group: GroupNode | undefined,
   }
 }
 
-function validateDescribeOptions(options: DescribeOptions, parent: GroupNode | undefined): void {
+function validateFailOption(fail: unknown, label: string): void {
+  if (fail !== undefined && typeof fail !== 'boolean' && typeof fail !== 'string') {
+    throw new CollectionError(`${label}: fail must be true, false, or a reason string, got ${describeValue(fail)}`);
+  }
+}
+
+function validateDescribeOptions(options: DescribeOptions, parent: GroupNode | undefined, markFail: boolean): void {
   validateCommonOptions(options, 'describe options', DESCRIBE_OPTION_KEYS);
+  validateFailOption(options.fail, 'describe options');
   if (options.serial === true && insideSerial(parent)) {
     throw new CollectionError('nested serial groups are collection errors');
+  }
+  // A serial group's members cannot be marked expected to fail, so neither can the group.
+  if ((markFail || options.fail !== undefined) && (options.serial === true || insideSerial(parent))) {
+    throw new CollectionError('describe option "fail" cannot be set on or inside a serial group, which runs as one unit');
+  }
+  if (options.serial === true && groupChain(parent).some((group) => expectedFailureOption(group.options.fail) !== undefined)) {
+    throw new CollectionError('a serial group cannot sit inside a group marked fail; its members cannot be expected to fail');
   }
   // The serial group records as one unit, so a describe inside it cannot choose its own recordings.
   for (const kind of ['trace', 'video'] as const) {
@@ -814,6 +830,27 @@ function createTestAPI(chain: readonly FixtureDefinition[]): TestAPI {
     };
   };
 
+  /** The `describe()` call forms; `describe.fail` marks the group as if it had `fail: true`, so it takes no `fail` of its own. */
+  const groupRegistrar = (api: string, fail: boolean): DescribeRegistrar => <Result>(
+    title: string,
+    optionsOrBody: DescribeOptions | (() => Result),
+    maybeBody?: () => Result,
+  ): void => {
+    const given = typeof optionsOrBody === 'function' ? {} : optionsOrBody;
+    const body = typeof optionsOrBody === 'function' ? optionsOrBody : maybeBody;
+    if (body === undefined) throw new CollectionError('describe body function is required');
+    const collector = requireCollector(api);
+    // Non-object options reach validation untouched, exactly as describe() passes them.
+    const marks = fail && typeof given === 'object' && given !== null;
+    if (marks && given.fail !== undefined) {
+      throw new CollectionError(`${api} takes no fail option; give a reason with describe(title, { fail: 'reason' }, fn)`);
+    }
+    collector.registerDescribe(title, given, body, api, marks);
+  };
+  const describe: DescribeAPI = Object.assign(groupRegistrar('describe()', false), {
+    fail: groupRegistrar('describe.fail()', true),
+  });
+
   const api: TestAPI = Object.assign(testFunction, {
     skip(first?: string | boolean, second?: TestBody | string): TestCase | undefined {
       const call = parseModifierCall(first, second);
@@ -864,16 +901,7 @@ function createTestAPI(chain: readonly FixtureDefinition[]): TestAPI {
       const { sessions, ...rest } = options;
       return requireCollector('test.setup()').registerTest('setup', 'normal', title, rest, sessions, fn, chain);
     },
-    describe<Result>(
-      title: string,
-      optionsOrBody: DescribeOptions | (() => Result),
-      maybeBody?: () => Result,
-    ): void {
-      const options = typeof optionsOrBody === 'function' ? {} : optionsOrBody;
-      const body = typeof optionsOrBody === 'function' ? optionsOrBody : maybeBody;
-      if (body === undefined) throw new CollectionError('describe body function is required');
-      requireCollector('describe()').registerDescribe(title, options, body);
-    },
+    describe,
     beforeEach(fn: TestBody): void {
       requireCollector('beforeEach()').registerHook({ kind: 'beforeEach', fn, fixtures: chain });
     },

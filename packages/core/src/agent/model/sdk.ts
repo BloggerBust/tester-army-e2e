@@ -18,6 +18,7 @@ import { AgentError, isAgentError } from '../error.ts';
 import { isContextOverflow } from './overflow.ts';
 import { providerHints, type ProviderModelRef } from './provider-hints.ts';
 import { withStallGuard } from './stall.ts';
+import { isToolChoiceViolation } from './tool-choice.ts';
 import {
   imageTokenUpperBound,
   ModelOutputInvalidError,
@@ -293,9 +294,9 @@ interface FinishedCall {
 
 /** Whether an AI SDK `NoObjectGeneratedError` or `ToolChoiceViolationError` says the model refused the call. */
 export function isModelRefusal(error: unknown): boolean {
-  const { NoObjectGeneratedError, ToolChoiceViolationError } = aiSdk();
+  const { NoObjectGeneratedError } = aiSdk();
   return (
-    (NoObjectGeneratedError.isInstance(error) || ToolChoiceViolationError.isInstance(error)) &&
+    (NoObjectGeneratedError.isInstance(error) || isToolChoiceViolation(error)) &&
     error.finishReason === 'content-filter'
   );
 }

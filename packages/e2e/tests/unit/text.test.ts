@@ -38,6 +38,14 @@ describe('compareText', () => {
     expect(compareText('Hello World', { kind: 'string', value: 'world', exact: true }, contains)).toBe(false);
   });
 
+  it('folds case for an exact string under ignoreCase, and always for a non-exact one', () => {
+    const folded = { mode: 'equals', normalize: true, ignoreCase: true } as const;
+    expect(compareText('  HELLO   world ', { kind: 'string', value: 'hello world', exact: true }, folded)).toBe(true);
+    expect(compareText('Hello World!', { kind: 'string', value: 'hello world', exact: true }, folded)).toBe(false);
+    expect(compareText('Hello World!', { kind: 'string', value: 'WORLD', exact: true }, { ...folded, mode: 'contains' })).toBe(true);
+    expect(compareText('Hello World!', { kind: 'string', value: 'WORLD', exact: false }, raw)).toBe(true);
+  });
+
   it('normalize: false compares the raw strings, newlines and trailing spaces included', () => {
     const value = 'line1\n\nline2  ';
     expect(compareText(value, { kind: 'string', value: 'line1 line2', exact: true }, raw)).toBe(false);

@@ -436,6 +436,17 @@ describe('e2e run argument parsing', () => {
     expect(written(stderrSpy)).toBe("error: unknown command 'frobnicate'\n(add --help for usage)\n");
   });
 
+  it('passes --device to the run trimmed, and refuses a blank one with exit code 2', async () => {
+    await invoke('run', '--target', 'ios', '--device', '  iPad Pro 13-inch (M5) ');
+    expect(lastRunOptions().device).toBe('iPad Pro 13-inch (M5)');
+    runMock.mockClear();
+    stderrSpy.mockClear();
+    await invoke('run', '--device', '   ');
+    expect(runMock).not.toHaveBeenCalled();
+    expect(process.exitCode).toBe(2);
+    expect(written(stderrSpy)).toContain("option '--device <name>' argument '   ' is invalid. must name a simulator, emulator, or phone");
+  });
+
   it('parses numeric --retries and --workers', async () => {
     await invoke('run', '--retries', '2', '--workers', '4');
     const options = lastRunOptions();
@@ -884,6 +895,7 @@ describe('e2e --version and --help', () => {
       '--shard',
       '--pass-with-no-tests',
       '--headed',
+      '--device',
       '--agent',
       '--workers',
       '--retries',

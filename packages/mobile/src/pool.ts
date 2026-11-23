@@ -22,7 +22,7 @@ import {
   type EnginePrepareResult,
 } from '@e2e-dev/core/engine';
 import { bindingsVariable, decodeBindings, deviceLabel, encodeBindings, pinnedApp, type DeviceSource, type SlotBinding } from './bindings.ts';
-import { isRunnerFailure, message, runCommand } from './errors.ts';
+import { isNoSession, isRunnerFailure, message, runCommand } from './errors.ts';
 import type { AgentDeviceClient, MobileOptions, MobilePlatform, ClientFactory } from './options.ts';
 import { asDeviceProvider, LeasedDevices, type RecordingDeviceProvider } from './provider.ts';
 
@@ -66,8 +66,20 @@ export function bootRequest(selection: DeviceSelection): DeviceSelection & Pick<
   return named === undefined ? { ...selection, pick: 'newest' } : selection;
 }
 
-/** The agent-device session slot `slot` of a target drives: the `session` option or `e2e-<target>`, then `-<slot>`. */
-type SessionNamer = (targetName: string, slot: number) => string;
+/** A session `warm` opened, under the name `finish` reports it by. */
+interface WarmedSession {
+  readonly session: string;
+  readonly client: AgentDeviceClient;
+}
+
+/** What names a slot's session: the target, and the `launch()` host holding it, if one does. */
+export interface SessionOwner {
+  readonly targetName: string;
+  readonly hostId?: string | undefined;
+}
+
+/** The agent-device session slot `slot` of a target drives; see `DevicePool.session`. */
+type SessionNamer = (owner: SessionOwner, slot: number) => string;
 
 /** Whether the `device` option names a pool of devices rather than one device or a provider. */
 export function isDeviceList(device: unknown): device is readonly string[] {
@@ -135,8 +147,8 @@ class BootedDevices implements DeviceSource {
   ) {}
 
   async bind(info: EnginePrepareInfo): Promise<readonly SlotBinding[]> {
-    const booted = await this.inventory(info.targetName, info.signal);
-    const own = new Set(Array.from({ length: info.slots }, (_, slot) => this.session(info.targetName, slot)));
+    const booted = await this.inventory(info, info.signal);
+    const own = new Set(Array.from({ length: info.slots }, (_, slot) => this.session(info, slot)));
     const held = booted.filter((device) => device.claimedBy !== undefined && !own.has(device.claimedBy));
     const chosen = booted.filter((device) => !held.includes(device)).slice(0, info.slots);
     const heldBy = held.map((device) => `${device.name} by session "${device.claimedBy}"`).join(', ');
@@ -157,8 +169,8 @@ class BootedDevices implements DeviceSource {
   }
 
   /** Every booted device of the platform, by stable id and name, with the session holding it, in agent-device's inventory order. */
-  private async inventory(targetName: string, signal: AbortSignal): Promise<BootedDevice[]> {
-    const client = this.createClient(this.session(targetName, 0));
+  private async inventory(owner: SessionOwner, signal: AbortSignal): Promise<BootedDevice[]> {
+    const client = this.createClient(this.session(owner, 0));
     const inventory: unknown = await runCommand('devices', () => client.devices.list({ platform: this.platform }), signal);
     if (!Array.isArray(inventory)) return [];
     return inventory
@@ -186,13 +198,13 @@ export class DevicePool {
   /** What this process's `prepare` bound, per target: a handle may serve several targets and runs. */
   private readonly bound = new Map<string, readonly SlotBinding[]>();
   /** The clients `warm` opened sessions with, per target, held for `finish` to close whatever `warm` got to. */
-  private readonly warmed = new Map<string, AgentDeviceClient[]>();
+  private readonly warmed = new Map<string, WarmedSession[]>();
 
   constructor(
     private readonly options: MobileOptions,
     private readonly createClient: ClientFactory,
   ) {
-    this.source = sourceFor(options, createClient, (targetName, slot) => this.session(targetName, slot));
+    this.source = sourceFor(options, createClient, (owner, slot) => this.session(owner, slot));
   }
 
   /**
@@ -214,9 +226,22 @@ export class DevicePool {
     return this.source.size;
   }
 
-  /** The agent-device session a worker slot drives its device under: the `session` option or `e2e-<target>`, then `-<slot>`. */
-  session(targetName: string, slot: number): string {
-    return `${this.options.session ?? `e2e-${targetName}`}-${slot}`;
+  /**
+   * Whether `e2e run --device` can name the device: a local pool can bind
+   * any device by name or id, and a provider's leases have none to name.
+   */
+  get selectsDevice(): boolean {
+    return !(this.source instanceof LeasedDevices);
+  }
+
+  /**
+   * The agent-device session a worker slot drives its device under: the
+   * `session` option or `e2e-<target>`, then `-<slot>`. A `launch()` host's
+   * id follows the target, since every unnamed host's target is named alike.
+   */
+  session(owner: SessionOwner, slot: number): string {
+    const host = owner.hostId === undefined ? '' : `-${owner.hostId}`;
+    return `${this.options.session ?? `e2e-${owner.targetName}${host}`}-${slot}`;
   }
 
   /**
@@ -228,8 +253,8 @@ export class DevicePool {
    * invariant: the runner caps the target at the workers this engine
    * declared or reported.
    */
-  binding(targetName: string, slot: number, env: Readonly<Record<string, string | undefined>>): SlotBinding | undefined {
-    const bindings = this.bound.get(targetName) ?? decodeBindings(env[bindingsVariable(targetName)]) ?? this.source.fallback;
+  binding({ targetName, hostId }: SessionOwner, slot: number, env: Readonly<Record<string, string | undefined>>): SlotBinding | undefined {
+    const bindings = this.bound.get(targetName) ?? decodeBindings(env[bindingsVariable(targetName, hostId)]) ?? this.source.fallback;
     if (bindings === undefined) return undefined;
     const binding = bindings[slot];
     if (binding === undefined) {
@@ -251,10 +276,11 @@ export class DevicePool {
    */
   async prepare(info: EnginePrepareInfo): Promise<EnginePrepareResult> {
     if (info.slots === 0) return {};
-    const bindings = await this.source.bind(info);
+    const source = info.device === undefined ? this.source : new ConfiguredDevices([namedDevice(info.device)]);
+    const bindings = await source.bind(info);
     await this.warm(bindings, info);
     this.bound.set(info.targetName, bindings);
-    return { workers: bindings.length, env: { [bindingsVariable(info.targetName)]: encodeBindings(bindings) } };
+    return { workers: bindings.length, env: { [bindingsVariable(info.targetName, info.hostId)]: encodeBindings(bindings) } };
   }
 
   /**
@@ -262,16 +288,37 @@ export class DevicePool {
    * what the source acquired. This is the normal run-end close for leased
    * slots and a fallback for local sessions or a failed `prepare`. Session
    * closes and source release run concurrently under the hook's cleanup
-   * budget, so a hung close does not delay lease release.
+   * budget, so a hung close does not delay lease release. A `launch()`
+   * host's session that stays open fails the hook: no later host or run
+   * shares its name, so nothing would take its device back.
    */
   async finish(info: EngineFinishInfo): Promise<void> {
-    const clients = this.warmed.get(info.targetName) ?? [];
+    const sessions = this.warmed.get(info.targetName) ?? [];
     this.warmed.delete(info.targetName);
+    // A released lease's daemon must not serve a later init, and an engine reused across hosts must not pile up their bindings.
+    this.bound.delete(info.targetName);
+    const open = new Map<string, string>(sessions.map(({ session }) => [session, 'the close did not finish in time']));
     const closing = withinCleanupBudget(
-      Promise.allSettled(clients.map((client) => client.sessions.close())),
+      Promise.all(sessions.map(async ({ session, client }) => {
+        try {
+          await client.sessions.close();
+          open.delete(session);
+        } catch (cause) {
+          // A session that is gone was closed by its worker first.
+          if (isNoSession(cause)) open.delete(session);
+          else open.set(session, message(cause));
+        }
+      })),
       info,
     );
     await Promise.all([closing, this.source.finish?.(info)]);
+    if (info.hostId === undefined || this.options.session !== undefined || open.size === 0) return;
+    const held = Array.from(open, ([session, why]) => `"${session}" (${why})`).join(', ');
+    throw new EngineError(
+      'ENGINE_FAILURE',
+      `agent-device session ${held} did not close, so its device stays held; close it with \`agent-device close --session <name>\``,
+      { retryable: false },
+    );
   }
 
   /**
@@ -299,10 +346,10 @@ export class DevicePool {
     for (const [slot, binding] of bindings.entries()) {
       const label = deviceLabel(binding) ?? `a booted ${this.options.platform} device`;
       const where = deviceSelection(this.options.platform, binding);
-      const session = this.session(info.targetName, slot);
+      const session = this.session(info, slot);
       const at = `session ${session} on ${label}`;
       const client = this.createClient(session, binding);
-      this.retain(info.targetName, client);
+      this.retain(info.targetName, { session, client });
       info.log(`booting ${label} (${slot + 1} of ${bindings.length})`);
       const took: string[] = [];
       try {
@@ -329,10 +376,10 @@ export class DevicePool {
   }
 
   /** Holds a warm-up client for `finish`, before its first command: a boot that fails still opened the session. */
-  private retain(targetName: string, client: AgentDeviceClient): void {
-    const clients = this.warmed.get(targetName) ?? [];
-    clients.push(client);
-    this.warmed.set(targetName, clients);
+  private retain(targetName: string, warmed: WarmedSession): void {
+    const sessions = this.warmed.get(targetName) ?? [];
+    sessions.push(warmed);
+    this.warmed.set(targetName, sessions);
   }
 }
 

@@ -37,6 +37,17 @@ describe('detectVcs', () => {
     ).toEqual({ commit: SHA, branch: 'feature' });
   });
 
+  it('accepts only complete SHA-1 or SHA-256 IDs in CI provenance', async () => {
+    for (const length of [40, 64]) {
+      expect(await detectVcs(outside, { GITHUB_SHA: 'a'.repeat(length) })).toMatchObject({
+        commit: 'a'.repeat(length),
+      });
+    }
+    for (const length of [39, 41, 60, 63, 65]) {
+      expect(await detectVcs(outside, { GITHUB_SHA: 'a'.repeat(length) })).toBeUndefined();
+    }
+  });
+
   it('records nothing when neither git nor CI knows the commit', async () => {
     expect(await detectVcs(outside, {})).toBeUndefined();
     expect(await detectVcs(outside, { GITHUB_SHA: 'not-a-sha' })).toBeUndefined();

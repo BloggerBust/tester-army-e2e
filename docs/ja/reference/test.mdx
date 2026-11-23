@@ -41,6 +41,7 @@ describe('checkout', { tags: ['billing'] }, () => {
 | [`test.setup`](#test-setup) | `TestCase` |
 | [`test.extend`](#test-extend) | `TestAPI` |
 | [`describe`](#describe) | `void` |
+| [`describe.fail`](#describe-fail) | `void` |
 | [フック](#hooks) | `void` |
 
 `describe` と 4 つのフックはトップレベルからもエクスポートされます。`test.describe`、`test.beforeEach` などと同じ関数です。`import { describe, beforeEach, test } from 'e2e'` のように使えます。
@@ -232,6 +233,8 @@ test.fail('known gap'); // inside a body, always
 test('exports a PDF', { fail: 'PDF export is broken' }, async ({ app }) => {}); // by option
 ```
 
+To mark every test in a group, use [`describe.fail`](#describe-fail).
+
 - 呼び出し後もテスト本体は続行します。`beforeEach` フックから印を付けることもできます。
 - アサーションやアクションの失敗、スローされたエラー、タイムアウトは、テストを `passed` にします。レポートには理由とエラーが残ります。
 - 成功した場合は `UNEXPECTED_PASS` で `failed` になります。原因が修正されたら印を外してください。
@@ -347,6 +350,29 @@ describe('checkout', { tags: ['smoke'], serial: true }, () => {
 | `COLLECTION_ERROR` | 本体が `async` の場合。型エラーにもなります。 |
 | `COLLECTION_ERROR` | 本体内に `test.setup` がある場合。 |
 
+#### `describe.fail`
+
+Declares a group whose tests are all expected to fail, the same as
+`fail: true` on `describe`. For a reason, use the [`fail`](#fail) option.
+
+```ts
+describe.fail('legacy checkout', () => {
+  test('pays by card', async ({ screen }) => {}); // expected to fail
+  test('applies a coupon', async ({ screen }) => {}); // expected to fail
+});
+describe('legacy checkout', { fail: 'old payment form' }, () => {}); // with a reason
+```
+
+- Each test is judged on its own, as with [`test.fail`](#test-fail): a
+  failure passes it, and a pass fails it with `UNEXPECTED_PASS`.
+- A `fail` reason on a test or an inner group wins over an outer one.
+  `fail: false` on a test or an inner group does not unmark it.
+
+| Throws | When |
+| --- | --- |
+| `COLLECTION_ERROR` | The group is serial or inside a serial group, or a serial group is inside it. |
+| `COLLECTION_ERROR` | A `fail` option on `describe.fail`. It is also a type error. |
+
 ### フック
 
 | フック | 実行タイミング |
@@ -410,11 +436,11 @@ test.beforeAll(async ({ database, device }) => {
 モバイルターゲットでは、次のように動作します。
 
 - テストが入るスコープの `beforeAll` フックは、専用の短いエンジン試行 1 回の中でまとめて実行します。この試行は何も起動しません。テストが出るスコープの `afterAll` フックも同様です。
-- この試行は、`device`、`app`、`screen` のいずれか、またはそのいずれかを指定するワーカーフィクスチャを指定した最初のフックのために開きます。どれも指定しないフックは、試行を開きません。
+- この試行は、`device`、`app`、`screen` のいずれかを指定した最初のフックで開かれます。これらのいずれかを指定するワーカーフィクスチャを使うフックも同じ扱いです。どれも指定しないフックは、試行を開きません。
 - 直列実行グループ、または `e2e mcp` セッションが実行するテストでは、フックはすでに開いている試行の上で実行します。
 - その試行を開けない場合や、実行が中断された場合も、フックは実行します。その場合、`device`、`app`、`screen` を読み取ると、理由を示す例外をスローします。試行を開けなかった失敗は、フェーズ `launch` の 1 件の実行エラーになります。
 
-スイートのフックが実行したステップは、どのテストの記録にも含まれません。失敗には、フックのスコープを示します。
+スイートのフックが実行したステップは、どのテストの記録にも含まれません。失敗した場合、エラーにはそのフックのスコープが示されます。
 
 各 `beforeAll` フックは設定の `timeout` で動きます。その中で [`test.setTimeout`](#test-settimeout) を呼ぶとそのフックのタイムアウトが変わり、そのフックがセットアップするワーカーフィクスチャも変更後のタイムアウトで動きます。
 
@@ -468,7 +494,7 @@ afterAll(async () => {
 | [`serial`](#serial) | `boolean` | - |
 | [`sessions`](#sessions) | `readonly string[]` | 必須 |
 
-`test` は `serial` と `sessions` 以外を受け付けます。`describe` は `only`、`fail`、`sessions` 以外を受け付けます。`test.setup` では `sessions` が必須で、`session`、`only`、`skip`、`fail` は受け付けません。
+`test` は `serial` と `sessions` 以外を受け付けます。`describe` は `only` と `sessions` 以外を受け付けます。`test.setup` では `sessions` が必須で、`session`、`only`、`skip`、`fail` は受け付けません。
 
 優先順位は、テスト、最も近いグループ、外側のグループ、設定、組み込みのデフォルト値の順です。[直列実行グループ](#serial)内では、グループの `retries`、`trace`、`video` を適用します。
 
@@ -516,10 +542,11 @@ test('exports a PDF', { skip: 'PDF export is off on staging' }, async ({ app }) 
 
 #### `fail`
 
-テストの失敗を期待します。[`test.fail`](#test-fail) を参照してください。文字列は理由になります。直列実行グループ内では使えません。
+テストの失敗を期待します。[`test.fail`](#test-fail) を参照してください。文字列は理由になります。 A layer with `true` or any string marks, and the innermost reason wins. Not allowed on, inside, or around a serial group.
 
 ```ts
 test('exports a PDF', { fail: 'PDF export is broken' }, async ({ app }) => {});
+describe('legacy checkout', { fail: 'old payment form' }, () => {});
 ```
 
 #### `only`
@@ -583,7 +610,7 @@ test('checks out', { agent: ['fast', 'smart'] }, async ({ agent }) => {}); // on
 
 - リストを指定すると、各エージェントでテストを 1 回ずつ実行し、それぞれを 1 件の結果にします。
 - 最も内側の指定を優先します。各呼び出し自身の `agent` オプションは、さらに優先されます。
-- `--agent` はリストを両方に含まれる名前に絞ります。フラグに含まれない名前への固定指定を、別の名前で上書きすることはありません。
+- `--agent` は、リストを `--agent` とリストの両方にある名前に絞ります。テストで固定したエージェントが `--agent` に含まれない場合も、その固定を上書きしません。
 - セットアップテストはターゲットごとに 1 回実行するため、指定できるエージェントは最大 1 つです。
 
 | エラー | 発生条件 |
@@ -784,6 +811,19 @@ export const test = base.extend({
 ### `TestAPI`
 
 ```ts
+/** The two call forms of `describe`. */
+export interface DescribeRegistrar<Options = DescribeOptions> {
+  /** Declares a group synchronously. */
+  <Result>(title: string, body: SynchronousBody<Result>): void;
+  /** Declares a configured group synchronously. */
+  <Result>(title: string, options: Options, body: SynchronousBody<Result>): void;
+}
+
+export interface DescribeAPI extends DescribeRegistrar {
+  /** Declares a group whose tests are expected to fail, as if it had `fail: true`; a reason goes in the `fail` option of `describe`. */
+  fail: DescribeRegistrar<Omit<DescribeOptions, 'fail'>>;
+}
+
 /** The two call forms of `test`, shared with what `test.skipIf` and `test.runIf` return. */
 export interface TestRegistrar<Fixtures = TestFixtures & WorkerFixtures> {
   /** Registers one test synchronously during module evaluation. */
@@ -949,14 +989,8 @@ export interface TestAPI<Fixtures = TestFixtures, Worker = WorkerFixtures> exten
   extend<Extra = {}, ExtraWorker = {}>(
     fixtures: FixtureDefinitions<Fixtures & Worker, Extra, Worker, ExtraWorker>,
   ): TestAPI<Fixtures & Extra, Worker & ExtraWorker>;
-  /** Declares a group synchronously. */
-  describe<Result>(title: string, body: SynchronousBody<Result>): void;
-  /** Declares a configured group synchronously. */
-  describe<Result>(
-    title: string,
-    options: DescribeOptions,
-    body: SynchronousBody<Result>,
-  ): void;
+  /** Declares a group synchronously; `describe.fail` declares one whose tests are expected to fail. */
+  describe: DescribeAPI;
   /** Registers a test-attempt setup hook: it runs after the test's fixtures are set up. */
   beforeEach(fn: TestHookFn<Fixtures & Worker>): void;
   /** Registers a test-attempt teardown hook: it runs before the test's fixtures are torn down. */
@@ -989,8 +1023,9 @@ export interface TestOptions {
   skip?: boolean | string;
   /**
    * Expects the test to fail; a string is the reason. A test failure then
-   * passes it, and a pass fails it with `UNEXPECTED_PASS`. Not allowed inside
-   * a serial group.
+   * passes it, and a pass fails it with `UNEXPECTED_PASS`. A layer with `true`
+   * or any string marks; the innermost reason wins. Not allowed on, inside, or
+   * around a serial group.
    */
   fail?: boolean | string;
   /** Focuses the test locally. CI rejects it with `ONLY_IN_CI`. */
@@ -1027,7 +1062,7 @@ export interface TestOptions {
   video?: RecordingMode;
 }
 
-export interface DescribeOptions extends Omit<TestOptions, 'only' | 'fail'> {
+export interface DescribeOptions extends Omit<TestOptions, 'only'> {
   /** Runs the group as one ordered retry unit with shared app state. Nesting one serial group in another is a `COLLECTION_ERROR`. */
   serial?: boolean;
 }

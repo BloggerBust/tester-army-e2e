@@ -226,7 +226,7 @@ await device.openApp(app);
 `device.uninstallApp(id)` はアプリを削除し、`device.isAppInstalled(id)` はアプリがあるかを確かめます。ID を省略すると、どちらも固定したアプリを対象にします。
 
 `device.openApp` はバンドル ID、パッケージ、表示名を受け取ります。リンクは受け取りません。
-`device.openLink` は、固定されたアプリ、またはオプションの `app` に、ディープリンクや Web リンクを開きます。
+`device.openLink` は、ディープリンクや Web リンクを、固定したアプリ（またはオプションの `app`）で開きます。
 マジックリンクによるサインインや、ディープリンクのルートに使えます。
 
 ```ts
@@ -307,7 +307,7 @@ Android ではウィンドウ、トランジション、アニメーターの各
 <Accordion title="ピッカーのテスト用の写真">
 `device` はライブラリに写真を追加できないため、`app.open()` の前にホストから追加します。
 iOS シミュレーターでは `xcrun simctl addmedia` を使い、`deviceId` はシミュレーターの UDID です。
-`addmedia` は呼び出しごとにコピーを追加しますが、エージェントステップは同じ写真を区別できません。
+`addmedia` は呼び出すたびにコピーを追加します。また、エージェントステップは同じ写真が複数あっても見分けられません。
 そのため、例ではシミュレーター自身のデータディレクトリにマーカーファイルを残し、写真を 1 回だけ追加します。
 シミュレーターを消去すると、マーカーもライブラリと一緒に消えます。
 
@@ -357,9 +357,9 @@ Android エミュレーターでは、`adb` でファイルを転送し、メデ
 `device.fold(pose)` は、iPhone Duo シミュレーターや折りたたみ式 Android エミュレーター
 （Pixel Fold プロファイル、または汎用の「7.6in Foldable」）のヒンジを指定の姿勢にします。
 `closed` は外側、`half-open` と `open` は内側のディスプレイを点灯します。
-Duo では、ヒンジが指定の姿勢になると戻ります。通常 10〜16 秒かかるため、`actionTimeout` は 20 秒以上にしてください。
+Duo では、ヒンジが指定の姿勢になった時点で呼び出しが完了します。通常 10〜16 秒かかるため、`actionTimeout` は 20 秒以上にしてください。
 Duo の `half-open` は 130° の本のような姿勢です。
-Android エミュレーターでは、Android が対応するデバイス状態を確定すると数秒以内に戻ります。
+Android エミュレーターでは、Android が対応するデバイス状態を確定すると、数秒以内に呼び出しが完了します。
 `half-open` はプロファイル固有の角度（Pixel Fold 系では 90°）です。
 カバーディスプレイへ切り替えると、エミュレーターが表示する「Swipe up to continue」のロック画面も閉じます。
 次の観測では、もう一方のディスプレイ上のアプリを読み取ります。
@@ -440,8 +440,8 @@ mobile({ platform: 'ios', device: ['iPhone 17', 'iPhone 17 Pro'] })
 `device` を省略すると、ワーカー数を上限として起動済みデバイスを使います。
 ペアリング済みで USB またはネットワーク経由で到達できる iPhone や iPad も起動済みとみなします。
 起動済みがなければ、停止中のデバイスを起動します。
-iOS では iPhone、iPad、Apple TV の順、Android ではテレビよりスマートフォンやタブレットを優先し、
-その後は OS が新しい順、名前の順で選びます。2 つのワーカーが同じデバイスを操作することはありません。
+iOS では iPhone、iPad、Apple TV の順に、Android ではテレビよりスマートフォンやタブレットを優先して選びます。
+優先順位が同じデバイスの中では OS が新しいものを優先し、OS も同じなら名前の順で選びます。2 つのワーカーが同じデバイスを操作することはありません。
 
 ## エージェントのツール
 
@@ -540,9 +540,9 @@ ID ではなく名前を使ってください。
   `device.clipboard`、`device.setClipboard`、`device.fold` も同様です。
 - iPhone で初期状態から始めるには、`device.installApp(path, { reinstall: true })` で再インストールします。
   agent-device が削除対象を特定できるよう、`app.bundleId` または `app` オプションを設定してください。
-- `xcrun devicectl list devices` に載らない古い iPhone は、CoreDevice なしで操作します。
+- `xcrun devicectl list devices` に表示されない古い iPhone は、agent-device が CoreDevice を使わずに操作します。
   タップ、入力、画面の取得は動きます。インストール、`--video`、`device.openLink`、`app.launchArguments` は失敗します。
-  Xcode からビルドをインストールし、`app.bundleId` を固定してください。
+  Xcode からビルドをインストールし、`app.bundleId` を指定してください。
 - Android 実機の `device.setLocation` は使えず、エミュレーター専用です。
   `device.setBiometrics('fingerprint', ...)` は、端末が `cmd fingerprint` を公開している場合だけ動きます。
 - iPhone の `--video` は約 15 fps のスクリーンショットから作られ、フレーム落ちがあります。
@@ -741,7 +741,7 @@ export function cloudDevices(options: { provider: string; device: string; osVers
 | Web | デバイス |
 | --- | --- |
 | `app.open('/path')` とエージェントの `navigate` 操作 | アプリの URL も `navigate` もありません。`app.open()` は `app.bundleId` を新たに起動し、`device.openLink(url)` はそのアプリにリンクを開きます。[`app.linkBase`](/reference/config#linkbase) があれば、`app.open('/path')` はパスをリンクとして開きます |
-| `test.setup` でセッションを保存し、`session:` で復元 | 利用できません。シミュレーターには持ち運べるセッションスナップショットがないため、テストごとにサインインするか、アプリにデータを投入します |
+| `test.setup` でセッションを保存し、`session:` で復元 | 利用できません。シミュレーターには、ほかのテストで再利用できるセッションのスナップショットがありません。テストごとにサインインするか、アプリにデータを投入します |
 | シークレットの入力 | `type_secret` と `screen.getByLabel(...).fill(secret)` が、宣言済みシークレットを機密フィールドに入力します |
 | `--video` は WebM の画面録画を保存 | `--video` はタップ表示付きのデバイス画面を MP4 で保存します（`videoTouches: false` で非表示）。またはデバイスプロバイダー独自の録画を保持します |
 | キャッシュの基準はページのパス | キャッシュの基準は `<bundle id> / <screen title>` という場所です。タイトルは iOS のナビゲーションバー、Android のツールバーから読み取ります |

@@ -114,7 +114,7 @@ reporters: ['list', 'junit'],
 ```
 
 - `e2e/reporters` の `junit({ outputFile: 'reports/junit.xml' })` を使うと、プロジェクトルートからのパスで別の場所に書き込みます。デフォルトは[出力ディレクトリ](/reference/config#output)の `junit.xml` です。
-- [`reportFiles`](#reportfiles) で `run.report` を 1 つのファイルに変換し、`JUnit` 行を付けます。レポーターの最小限の完全な実装例で、レポートが書き込まれなかった場合は何も書き込みません。
+- [`reportFiles`](#reportfiles) で `run.report` を 1 つのファイルに変換し、`JUnit` 行を付けます。完全に動くレポーターとしては最も小さな例です。レポートが書き込まれなかった場合は何も書き込みません。
 - 失敗、タイムアウト、リトライ後にのみ成功、または [`test.fail`](/reference/test#fail) の期待どおりに失敗したテストで、失敗時のスクリーンショットを記録している場合、`<testcase>` 内に `<system-out>[[ATTACHMENT|<path>]]</system-out>` としてリンクします。GitLab CI はこれをパイプラインのテストレポートに表示します。パスは `$CI_PROJECT_DIR`、未設定ならプロジェクトルートからの相対パスです。その外にあるスクリーンショットにはリンクしません。
 
 #### `markdown`
@@ -318,6 +318,8 @@ interface ReporterOutput {
 
 ターミナルに表示する [`--step`](/debugging#step-through-a-test) のプロンプト、または消すための `undefined` を受け取ります。バックグラウンドの `--step` は、代わりにソケット経由で各プロンプトに応答し、レポーターを呼び出しません。
 
+待機中の各ステップには `attachId` があります。[MCP でアタッチする](/reference/mcp#attaching-to-a-held-test)には、この ID を使います。ID は、その試行の中で何度一時停止しても変わりません。
+
 ```ts
 onStepPrompt(prompt) {
   overlay.show(prompt === undefined ? '' : `Step ${prompt.steps[0].number}: ${prompt.steps[0].step.label}`);
@@ -382,12 +384,12 @@ type ReporterSummary = readonly { label: string; text: string }[];
 - ランナーは `onRunFinished` を呼ぶ前に、トレースページ `results/<test>/trace.md` を書き込みます。
 
 <Note>
-すべてのリクエストとタイマーに `signal` を渡してください。CLI は待機をやめたレポーターを待たずに終了し、残りの処理も打ち切ります。[`e2e/runner`](/reference/runner) では、その処理が残るとプロセスも動き続けます。
+すべてのリクエストとタイマーに `signal` を渡してください。CLI は、待つのをやめたレポーターの完了を待たずに終了します。そのレポーターがまだ続けている処理は途中で止まります。[`e2e/runner`](/reference/runner) では、その処理が残るとプロセスも動き続けます。
 </Note>
 
 ##### サマリー行
 
-レポーターが resolve 時に返す行と、ラベル付きのレポートファイルの行は、すべての [`onSummary`](#onsummary) に届きます。`list`、`dot`、`line` は、それらを自身のサマリーの下に、自身の行と同じレイアウトで表示します。`json` レポーターには含めません。
+レポーターが戻り値として返す行と、ラベル付きのレポートファイルの行は、すべての [`onSummary`](#onsummary) に届きます。`list`、`dot`、`line` は、それらを自身のサマリーの下に、自身の行と同じレイアウトで表示します。`json` レポーターには含めません。
 
 ```
    Test Files  2 passed (2)

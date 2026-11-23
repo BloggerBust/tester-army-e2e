@@ -1,4 +1,4 @@
-/** Which phase of a test owns an `expect.poll`, so one left running fails that phase and nothing later. */
+/** Which phase of a test owns an `expect.poll` or `toPass` call, so one left running fails that phase and nothing later. */
 
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { markAbandonedRejection, relocateStack } from '../internal/abandoned.ts';
@@ -75,7 +75,7 @@ export class PollScope {
     const more = polls.length > 1 ? ` and ${polls.length - 1} more` : '';
     const error = new TestError(
       'STEP_NOT_AWAITED',
-      withHint(`${this.owner} returned before ${first.label}${more} finished`, 'put `await` in front of every expect.poll call'),
+      withHint(`${this.owner} returned before ${first.label}${more} finished`, 'put `await` in front of every expect.poll matcher and toPass call'),
     );
     relocateStack(error, first.stack);
     return error;
@@ -92,8 +92,10 @@ export class PollScope {
 /** Which scope the polls of one async lineage go to; a fixture's lineage moves to its teardown's scope. */
 interface PollOwner {
   scope: PollScope | undefined;
-  /** Set inside one `expect.poll` read: the steps it calls are part of the poll, which `e2e run --step` never holds. */
+  /** Set inside one `expect.poll` read or `toPass` block: the steps it calls are part of the poll or block, which `e2e run --step` never holds. */
   readonly reading?: true;
+  /** Signal for cancelling steps when a poll read or `toPass` try is cut short. */
+  readonly readSignal?: AbortSignal | undefined;
   /** Set for work that outlives the test it started in, a worker fixture: what it opens is its own to end. */
   readonly outlives?: true;
 }
@@ -101,16 +103,21 @@ interface PollOwner {
 /** The runner's async context, shared through `globalThis` so a test module's copy of `expect` reads it. */
 interface PollScopes {
   current(): PollScope | undefined;
-  read<T>(run: () => T): T;
+  read<T>(run: () => T, signal?: AbortSignal): T;
   reading(): boolean;
+  readSignal(): AbortSignal | undefined;
   outlives(): boolean;
 }
 
 const storage = new AsyncLocalStorage<PollOwner>();
 const scopes: PollScopes = {
   current: () => storage.getStore()?.scope,
-  read: (run) => enter({ ...storage.getStore(), scope: storage.getStore()?.scope, reading: true }, run),
+  read: (run, signal) => {
+    const owner = storage.getStore();
+    return enter({ ...owner, scope: owner?.scope, reading: true, readSignal: signal }, run);
+  },
   reading: () => storage.getStore()?.reading === true,
+  readSignal: () => storage.getStore()?.readSignal,
   outlives: () => storage.getStore()?.outlives === true,
 };
 const slot = realmSlot<PollScopes>(pollScopesBrand);
@@ -158,13 +165,14 @@ export function currentPollScope(): PollScope | undefined {
 }
 
 /**
- * Runs one `expect.poll` read, marked so `insidePollRead` sees it in every
- * step the read calls. A runner from before the marker publishes a slot
- * without it, and the read then runs unmarked.
+ * Runs one `expect.poll` read or `toPass` block, marked so `insidePollRead` sees it in every
+ * step the read or block calls. A runner from before the marker publishes a slot
+ * without it, and the read or block then runs unmarked.
  */
-export function pollRead<T>(run: () => T): T {
+export function pollRead<T>(run: () => T, signal: AbortSignal): T {
   const shared: Partial<PollScopes> | undefined = slot.get(globalThis);
-  return typeof shared?.read === 'function' ? shared.read(run) : run();
+  if (shared === undefined) return scopes.read(run, signal);
+  return typeof shared.read === 'function' ? shared.read(run, signal) : run();
 }
 
 /**
@@ -177,8 +185,14 @@ export function outlivesTest(): boolean {
   return typeof shared?.outlives === 'function' && shared.outlives();
 }
 
-/** Whether this async context is inside an `expect.poll` read. */
+/** Whether this async context is inside an `expect.poll` read or a `toPass` block. */
 export function insidePollRead(): boolean {
   const shared: Partial<PollScopes> | undefined = slot.get(globalThis);
   return typeof shared?.reading === 'function' && shared.reading();
+}
+
+/** Returns the signal for the poll read or `toPass` try in the current async context. */
+export function pollReadSignal(): AbortSignal | undefined {
+  const shared: Partial<PollScopes> | undefined = slot.get(globalThis);
+  return shared?.readSignal?.();
 }

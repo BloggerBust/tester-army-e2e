@@ -231,6 +231,16 @@ export class StepTraceSession {
     this.recorder?.recordDerivedGap(reason);
   }
 
+  /** How many actions the step's recording holds, gaps included; undefined when this step records nothing. */
+  get recordedCount(): number | undefined {
+    return this.recorder?.recordedCount;
+  }
+
+  /** Turns the recording from `index` on into a replay-ending gap for this run's data (`TraceRecorder.gapFrom`). */
+  gapFrom(index: number, reason: DerivedReason): void {
+    this.recorder?.gapFrom(index, reason);
+  }
+
   /**
    * Opens the step: reads the cache entry, captures the write-side
    * preconditions — the start path and, when this step may write, the

@@ -5,18 +5,12 @@
  * root, and what the server received is what `/upload` answers with.
  */
 
-/*
- * Not ported:
- * - should set from memory: `setInputFiles` takes file paths, not `{ name, mimeType, buffer }` payloads.
- * - input event.composed should be true and cross shadow dom boundary: sets a `{ name, mimeType, buffer }` payload, whose events Playwright dispatches itself.
- */
-
 import { test, type Browser } from '@e2e-dev/web';
 import { expect } from 'e2e';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { asset, content, PREFIX } from './helpers.ts';
+import { asset, content, failure, PREFIX } from './helpers.ts';
 
 const EMPTY_PAGE = `${PREFIX}/empty.html`;
 
@@ -65,6 +59,93 @@ const recordEvents = (selector: string): string => `() => {
 test.describe('page set input files', { requires: ['browser'], tags: ['playwright'] }, () => {
   test.afterEach(() => {
     for (const dir of outputDirs.splice(0)) fs.rmSync(dir, { recursive: true, force: true });
+  });
+
+  test('should set from memory', async ({ browser }) => {
+    await browser.goto(content('<input type=file>'));
+    await browser.locator('input').setInputFiles({
+      name: 'test.txt', mimeType: 'text/plain', buffer: Buffer.from('this is a test'),
+    });
+    expect(await browser.evaluate("() => document.querySelector('input').files.length")).toBe(1);
+    expect(await browser.evaluate("() => document.querySelector('input').files[0].name")).toBe('test.txt');
+  });
+
+  test('input event.composed should be true and cross shadow dom boundary', async ({ browser }) => {
+    await browser.goto(content(`<body><script>
+      const div = document.createElement('div');
+      const shadowRoot = div.attachShadow({ mode: 'open' });
+      shadowRoot.innerHTML = '<input type=file>';
+      document.body.appendChild(div);
+      window.firedEvents = [];
+      window.firedBodyEvents = [];
+      for (const event of ['input', 'change']) {
+        document.body.addEventListener(event, e => window.firedBodyEvents.push(e.type + ':' + e.composed));
+        shadowRoot.querySelector('input').addEventListener(event, e => window.firedEvents.push(e.type + ':' + e.composed));
+      }
+    </script></body>`));
+    await browser.locator('input').setInputFiles({
+      name: 'test.txt', mimeType: 'text/plain', buffer: Buffer.from('this is a test'),
+    });
+    expect(await browser.evaluate('() => window.firedEvents')).toEqual(['input:true', 'change:false']);
+    expect(await browser.evaluate('() => window.firedBodyEvents')).toEqual(['input:true']);
+  });
+
+  test('rejects an oversized payload without closing the engine connection', async ({ browser }) => {
+    await browser.goto(content('<input type=file>'));
+    const error = await failure(() => browser.locator('input').setInputFiles({
+      name: 'large.bin', mimeType: 'application/octet-stream', buffer: Buffer.alloc(50 * 1024 * 1024),
+    }));
+    expect(error).toHaveProperty('code', 'INVALID_ARGUMENT');
+    expect(error).toHaveProperty('message', 'Cannot set buffer larger than 50Mb, please write it to a file and pass its path instead.');
+    await browser.locator('input').setInputFiles({ name: 'small.txt', mimeType: 'text/plain', buffer: Buffer.from('still connected') });
+    expect(await browser.evaluate(readFirstFile('input'))).toBe('still connected');
+  });
+
+  test('uploads an in-memory file through the public locator API', async ({ browser }) => {
+    await browser.goto('/input/fileupload.html');
+    await browser.locator('input[type=file]').setInputFiles({
+      name: 'résumé.txt', mimeType: 'text/plain', buffer: Buffer.from('In-memory résumé'),
+    });
+    expect(await browser.evaluate("() => document.querySelector('input').files[0].name")).toBe('résumé.txt');
+    expect(await browser.evaluate("() => document.querySelector('input').files[0].type")).toBe('text/plain');
+    expect(await browser.evaluate(readFirstFile('input'))).toBe('In-memory résumé');
+  });
+
+  test('blurs a focused field, then uploads and clears an in-memory file', async ({ browser }) => {
+    await browser.goto(content('<input id="field"><input type="file">'));
+    const field = browser.locator('#field');
+    await field.focus();
+    await expect(field).toBeFocused();
+    await field.blur();
+    await expect(field).not.toBeFocused();
+
+    const input = browser.locator('input[type=file]');
+    await input.setInputFiles({ name: 'notes.txt', mimeType: 'text/plain', buffer: Buffer.from('notes') });
+    expect(await browser.evaluate(readFirstFile('input[type=file]'))).toBe('notes');
+    await input.setInputFiles([]);
+    expect(await browser.evaluate("() => document.querySelector('input[type=file]').files.length")).toBe(0);
+  });
+
+  test('uploads in-memory binary files and clears them', async ({ browser }) => {
+    await browser.goto('/input/fileupload-multi.html');
+    await browser.locator('input[type=file]').setInputFiles([
+      { name: 'binary.bin', mimeType: 'application/octet-stream', buffer: Buffer.from([0, 128, 255]) },
+      { name: 'empty.txt', mimeType: 'text/plain', buffer: Buffer.alloc(0) },
+    ]);
+    expect(await browser.evaluate(`async () => Promise.all([...document.querySelector('input').files].map(async file => ({
+      name: file.name, mimeType: file.type, bytes: [...new Uint8Array(await file.arrayBuffer())],
+    })))`)).toEqual([
+      { name: 'binary.bin', mimeType: 'application/octet-stream', bytes: [0, 128, 255] },
+      { name: 'empty.txt', mimeType: 'text/plain', bytes: [] },
+    ]);
+    await browser.locator('input[type=file]').setInputFiles([]);
+    expect(await browser.evaluate("() => document.querySelector('input').files.length")).toBe(0);
+  });
+
+  test('uploads an in-memory file through a chooser button', async ({ browser }) => {
+    await browser.goto(content(`<button onclick="document.querySelector('input').click()">Choose file</button><input type="file" hidden>`));
+    await browser.locator('button').setInputFiles({ name: 'receipt.txt', mimeType: 'text/plain', buffer: Buffer.from('receipt') });
+    expect(await browser.evaluate(readFirstFile('input'))).toBe('receipt');
   });
 
   test('should upload the file', async ({ browser }) => {

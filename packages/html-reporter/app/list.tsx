@@ -97,7 +97,7 @@ export function ListView({ model, status, search, target }: { model: ReportModel
 function RunHeader({ model, counts, target }: { model: ReportModel; counts: Record<StatusFilter, number>; target: string | undefined }) {
   const { run } = model;
   const { usage } = run;
-  const duration = Date.parse(run.finishedAt) - Date.parse(run.startedAt);
+  const duration = run.durationMs ?? Date.parse(run.finishedAt) - Date.parse(run.startedAt);
   const scope = run.targets
     .filter((runTarget) => model.targetIds.has(runTarget.id) && (target === undefined || runTarget.id === target))
     .map((runTarget) => `${runTarget.id} (${runTarget.engine.name})`)

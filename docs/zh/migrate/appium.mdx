@@ -179,6 +179,7 @@ await agent.act('sign in as {username}', { params: { username: ada.username, pas
 | `driver.background(seconds)` | `device.home()`，然后 `device.openApp(id)` |
 | `driver.url('myapp://x')`, `mobile: deepLink` | `device.openLink('myapp://x')` |
 | `driver.back()`、`driver.hideKeyboard()`、用于 Home 的 `pressKeyCode` | `app.back()`, `device.dismissKeyboard()`, `device.home()` |
+| `driver.isKeyboardShown()` | `device.isKeyboardShown()`。它读取的是当前屏幕，因此在打开或关闭键盘的操作之后，用 `expect.poll` 轮询 |
 | `driver.getPageSource()` | `screen.tree()`，或使用 `screen.debug()` 输出它 |
 | `driver.takeScreenshot()` | `app.screenshot('label')`，安全字段会被遮罩 |
 | `startRecordingScreen()`, `stopRecordingScreen()` | `app.startRecording()`、`app.stopRecording()`，或 `npx e2e run --video` |
@@ -286,7 +287,7 @@ bunx e2e run --target ios --reporter list,junit
 | Appium | 当前可用方案 |
 | --- | --- |
 | 读取标签、ID 或类的 `.getAttribute()`、`.isSelected()`、`.getTagName()` | 对标签使用 `toHaveAccessibleName`，对选中状态使用 `toBeSelected`。没有读取 ID、类或标签名的方法 |
-| `pressKeyCode(code)`, `driver.keys('Backspace')`, `isKeyboardShown()` | `.press()` 接受 `Enter`、`Space` 或单个字符。使用 `.clear()` 和 `.fill()` |
+| `pressKeyCode(code)`, `driver.keys('Backspace')` | `.press()` 接受 `Enter`、`Space` 或单个字符。使用 `.clear()` 和 `.fill()` |
 | `driver.getWindowRect()`, `getWindowSize()`, `mobile: deviceInfo` | 按方向滑动，或读取全屏元素的 `.boundingBox()` |
 | `UiScrollable` 的 `scrollToEnd()`、`scrollToBeginning()` | 循环调用 `locator.swipe({ direction: 'down' })`，直到 `allTextContents()` 不再变化；回到开头使用 `'up'` |
 | `mobile: selectPickerWheelValue`、日期和时间选择器、滑块值 | 滑动滚轮并读取 `.inputValue()`，或使用 `agent.act` 目标 |

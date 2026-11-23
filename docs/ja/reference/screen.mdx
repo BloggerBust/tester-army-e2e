@@ -85,7 +85,7 @@ Web エンジンは、HTML-AAM と同じように HTML からロールを導き�
 名前も同じルールに従います。
 
 - `<legend>`、`<figcaption>`、`<caption>` は、それぞれ fieldset、figure、table に名前を付けます。そのため、`toHaveAccessibleName` は `getByRole('group', { name })` が一致した名前を読み取ります。
-- accname が内容から名前を得るロール（ボタン、リンク、見出し、タブ、メニュー項目、オプション、チェックボックス、ラジオボタン、スイッチ、セル、行または列の見出し、行、ツリー項目、ツールチップ）は、子孫から名前を得ます。カスタム要素のシャドウツリーも含みます。そのため、`<div role="checkbox">` について `getByRole('checkbox', { name })` と `toHaveAccessibleName(name)` は一致します。独自のロールを持ち、それがテキストや構造ではない子孫（`status` バッジ、ツリー項目の子 `group`、`img`）からは、ラベルまたは `title` だけを加えます。`Inbox <span role="status">3</span>` を含むタブの名前は `Inbox` です。
+- accname が内容から名前を得るロール（ボタン、リンク、見出し、タブ、メニュー項目、オプション、チェックボックス、ラジオボタン、スイッチ、セル、行または列の見出し、行、ツリー項目、ツールチップ）は、子孫から名前を得ます。カスタム要素のシャドウツリーも含みます。そのため、`<div role="checkbox">` について `getByRole('checkbox', { name })` と `toHaveAccessibleName(name)` は一致します。子孫がそれ自身のロールを持ち、それがテキストや構造のロールでない場合（`status` バッジ、ツリー項目の子 `group`、`img`）は、その子孫のラベルまたは `title` だけを名前に加えます。`Inbox <span role="status">3</span>` を含むタブの名前は `Inbox` です。
 - `value` のない `<input type="submit">` または `type="reset"` は、`Submit` または `Reset` と読み取ります。
 
 ##### デバイスのロール
@@ -321,7 +321,7 @@ await screen.tapAt({ x: map.x + 360, y: map.y + 70 });
 | `UNSUPPORTED_CAPABILITY` | エンジンのポインターアクションに `tap` がない場合。 |
 
 <Note>
-`tapAt` はスコープで範囲が変わりません。ロケーターから呼んでも、ビューポート上の座標をタップします。
+`tapAt` はロケーターのスコープの影響を受けません。ロケーターから呼んでも、ビューポート上の座標をタップします。
 </Note>
 
 #### `screen.doubleTapAt`
@@ -348,7 +348,7 @@ await screen.doubleTapAt({ x: 120, y: 240 }, { timeout: 1_000 });
 | `UNSUPPORTED_CAPABILITY` | エンジンのポインターアクションに `doubleTap` がない場合。 |
 
 <Note>
-`doubleTapAt` はスコープで範囲が変わりません。ロケーターから呼んでも、ビューポート上の座標をダブルタップします。
+`doubleTapAt` はロケーターのスコープの影響を受けません。ロケーターから呼んでも、ビューポート上の座標をダブルタップします。
 </Note>
 
 #### `screen.swipe`
@@ -414,7 +414,7 @@ await screen.getByTestId('feed').scrollUntilVisible(row);
 
 - `momentum` の意味は [`screen.swipe`](#screen-swipe) と同じです。1 回の移動を大きくすると速くなりますが、仮想化された一覧などで、対象が表示範囲を通り過ぎて見逃されないようにしてください。
 - `timeout` は独自のデフォルト値を持ち、`config.actionTimeout` ではありません。各スワイプを含め、スクロール全体を制限します。
-- ロケーターから呼ぶと、各ステップでそのノードをスワイプします。そのため、独立したスクロールコンテナのフィードやテーブルも、先にポインターを重ねることなく送れます。
+- ロケーターから呼ぶと、各ステップでそのノードをスワイプします。そのため、それ自体がスクロールコンテナであるフィードやテーブルも、先にポインターを重ねずにスクロールできます。
 - 非表示ではない最初の一致ノードで停止します。デバイスでは、ソフトウェアキーボードに覆われたノードは非表示なので、スクロールを続けます（[モバイルの可視性](/reference/mobile#visibility)）。
 
 | エラー | 発生条件 |
@@ -475,7 +475,7 @@ await screen.debug();
 
 #### `screen.pause`
 
-アプリを開いたまま、再開されるまでテストをこの行で一時停止します。キーとコマンドは[テストを一時停止する](/debugging#pause-a-test)を参照してください。
+アプリを開いたまま、再開されるまでテストをこの行で一時停止します。キーとコマンドは[テストを一時停止する](/debugging#pause-a-test)を参照してください。[MCP でアタッチする](/reference/mcp#attaching-to-a-held-test)には、一時停止の ID を使います。
 
 ```ts
 /**
@@ -632,7 +632,7 @@ await screen.getByLabel('Password').fill(credentials.user('member').password);
 `Secret` は呼び出し直前にホスト側で解決し、ログ、レポート、モデルには一切送りません。
 
 <Note>
-`fill` は値を直接設定し、キーイベントは発生させません。`keydown` や `keyup` に紐付いたオートコンプリート、逐次検索欄、入力マスク付きフィールドは反応しません。それらには [`pressSequentially`](#presssequentially) を使ってください。
+`fill` は値を直接設定し、キーイベントは発生させません。`keydown` や `keyup` で動くオートコンプリート、入力に合わせて検索するボックス、入力マスク付きのフィールドは、`fill` に反応しません。それらには [`pressSequentially`](#presssequentially) を使ってください。
 </Note>
 
 #### `pressSequentially`
@@ -654,7 +654,7 @@ await screen.getByLabel('City').pressSequentially('War', { delay: 50 });
 
 - `delay` は文字間の待ち時間をミリ秒で指定します。各文字を別々のキーボード呼び出しで送ります。省略すると、テキスト全体を 1 回で送ります。
 - フォーカス、待機、キー入力は、1 つのアクションの期限を共有します。期限に達したら待機を打ち切り、それ以降は文字を送りません。
-- [キーボードの契約](/reference/engine#engine)に依存します。`type` は人が入力するのと同じようにテキストを送る必要があり、プラットフォームにキーイベントがある場合はアプリに届きます。
+- [キーボードの契約](/reference/engine#engine)に依存します。`type` は、人が入力するのと同じようにテキストを送る必要があります。そうすることで、キーイベントのあるプラットフォームでは、キーイベントもアプリに届きます。
 - `fill` と同じく、ステップにはテキストではなくロケーターを記録します。
 
 | エラー | 発生条件 |
@@ -777,12 +777,15 @@ await screen.getByRole('button', 'Account').hover();
 #### `setInputFiles`
 
 ```ts
-/** Sets the files of exactly one file input, or of a control that opens a file chooser; paths resolve from the project root, and an empty array clears the input. */
-setInputFiles(paths: string | readonly string[], options?: ActionOptions): Promise<void>;
+/** Sets the files of exactly one file input, or of a control that opens a file chooser; paths resolve from the project root, payloads supply bytes in memory, and an empty array clears the input. */
+setInputFiles(files: string | readonly string[] | FilePayload | readonly FilePayload[], options?: ActionOptions): Promise<void>;
 ```
 
 ```ts
 await screen.getByLabel('Receipt').setInputFiles('fixtures/receipt.pdf');
+await screen.getByLabel('Receipt').setInputFiles({
+  name: 'receipt.txt', mimeType: 'text/plain', buffer: Buffer.from('Receipt total: 12.00'),
+});
 await screen.getByLabel('Receipt').setInputFiles([]);
 ```
 

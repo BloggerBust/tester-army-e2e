@@ -88,12 +88,53 @@ try {
 | --- | --- |
 | Ownership | Each `launch` takes its own engine instance: `launch(web())`. A second host on the same instance fails with `WORKER_PROTOCOL`. |
 | Sessions | One session at a time on a host. Close it before `newSession()`. For parallel work, launch more hosts. |
+| Devices | A `mobile()` host drives a device under an agent-device session of its own. See [Several hosts on devices](#several-hosts-on-devices). |
 | Timeouts | An action, a wait, or a read gets 30000 ms. `app.open()` and `app.restart()` get 120000 ms. `launch({ timeout })` or `session.setDefaultTimeout(ms)` sets one value for all of them. There is no session deadline. |
 | Cancellation | `launch({ signal })` and `newSession({ signal })` stop what is running. |
 | Ctrl-C | The host closes on SIGINT, SIGTERM, and SIGHUP, so its browser or device session does not stay behind. Then the program ends by the signal, unless it listens for the signal itself. Turn it off with `handleSignals: false`. |
 | Files | Screenshots and downloads go to a temp directory that is deleted when the host closes. Set `artifactsDir` to keep them. |
 
 The [reference](/reference/core) lists every option.
+
+### Several hosts on devices
+
+Without a `session` option, each `mobile()` host drives its device under an
+agent-device session of its own, named after its target and a random token
+(`e2e-ios-<token>-0`). A host never takes over a device another session
+holds, whether that is another host or a worker of `e2e run`.
+
+- Boot one free device per host. Inside a test, the run's workers hold their
+  devices first: by default a local run drives as many booted devices as it
+  has workers and test files. Leave one free with `--workers`, or name the
+  run's devices in the target's `device` option.
+- Two hosts that open at the same moment can pick the same free device. The
+  later one fails with `ENGINE_FAILURE`. Open device hosts one after another.
+- A host holds its device from the moment its app opens. A target that names
+  only `appPath` opens no app at launch, so a second host launched before the
+  first one opens its app can pick the same device. Call
+  `device.installApp()` and then `app.open()` on each host's session before
+  you launch the next one, or name each host's device in its `device` option.
+- A program that ends without closing a host it opened an app on
+  (`process.exit()`, a kill) leaves its device held, and so does a host
+  whose session fails to close: its `close()` throws an error that names the
+  session. Later hosts and `e2e run` skip that device until you close the
+  session the error names.
+  Replace `SESSION` with that name:
+
+<CodeGroup>
+```bash npm
+npx agent-device close --session "SESSION"
+```
+
+```bash pnpm
+pnpm dlx agent-device close --session "SESSION"
+```
+
+```bash bun
+bunx agent-device close --session "SESSION"
+```
+</CodeGroup>
+
 
 ## Drive an app on a device
 

@@ -41,6 +41,7 @@ describe('checkout', { tags: ['billing'] }, () => {
 | [`test.setup`](#test-setup) | `TestCase` |
 | [`test.extend`](#test-extend) | `TestAPI` |
 | [`describe`](#describe) | `void` |
+| [`describe.fail`](#describe-fail) | `void` |
 | [钩子](#hooks) | `void` |
 
 `describe` 和四个钩子也作为顶层导出提供，与 `test.describe`、`test.beforeEach` 等是相同的函数：`import { describe, beforeEach, test } from 'e2e'`。
@@ -232,6 +233,8 @@ test.fail('known gap'); // inside a body, always
 test('exports a PDF', { fail: 'PDF export is broken' }, async ({ app }) => {}); // by option
 ```
 
+To mark every test in a group, use [`describe.fail`](#describe-fail).
+
 - 调用后主体继续执行。`beforeEach` 钩子也可以标记测试。
 - 断言失败、操作失败、抛出错误或超时会使测试状态为 `passed`。报告保留原因和错误。
 - 通过则使测试以 `UNEXPECTED_PASS` 变为 `failed`。原因修复后应移除标记。
@@ -346,6 +349,29 @@ describe('checkout', { tags: ['smoke'], serial: true }, () => {
 | --- | --- |
 | `COLLECTION_ERROR` | 主体为 `async`。这也是类型错误。 |
 | `COLLECTION_ERROR` | 主体中包含 `test.setup`。 |
+
+#### `describe.fail`
+
+Declares a group whose tests are all expected to fail, the same as
+`fail: true` on `describe`. For a reason, use the [`fail`](#fail) option.
+
+```ts
+describe.fail('legacy checkout', () => {
+  test('pays by card', async ({ screen }) => {}); // expected to fail
+  test('applies a coupon', async ({ screen }) => {}); // expected to fail
+});
+describe('legacy checkout', { fail: 'old payment form' }, () => {}); // with a reason
+```
+
+- Each test is judged on its own, as with [`test.fail`](#test-fail): a
+  failure passes it, and a pass fails it with `UNEXPECTED_PASS`.
+- A `fail` reason on a test or an inner group wins over an outer one.
+  `fail: false` on a test or an inner group does not unmark it.
+
+| Throws | When |
+| --- | --- |
+| `COLLECTION_ERROR` | The group is serial or inside a serial group, or a serial group is inside it. |
+| `COLLECTION_ERROR` | A `fail` option on `describe.fail`. It is also a type error. |
 
 ### 钩子
 
@@ -468,7 +494,7 @@ afterAll(async () => {
 | [`serial`](#serial) | `boolean` | - |
 | [`sessions`](#sessions) | `readonly string[]` | 必填 |
 
-`test` 接受除 `serial` 和 `sessions` 外的所有选项。`describe` 接受除 `only`、`fail` 和 `sessions` 外的所有选项。`test.setup` 要求提供 `sessions`，且不接受 `session`、`only`、`skip` 或 `fail`。
+`test` 接受除 `serial` 和 `sessions` 外的所有选项。`describe` 接受除 `only` 和 `sessions` 外的所有选项。`test.setup` 要求提供 `sessions`，且不接受 `session`、`only`、`skip` 或 `fail`。
 
 解析顺序为：测试、最近的分组、外层分组、配置、内置默认值。在[串行分组](#serial)中，使用分组的 `retries`、`trace` 和 `video`。
 
@@ -516,10 +542,11 @@ test('exports a PDF', { skip: 'PDF export is off on staging' }, async ({ app }) 
 
 #### `fail`
 
-预期测试失败；参阅 [`test.fail`](#test-fail)。字符串表示原因。不允许在串行分组内使用。
+预期测试失败；参阅 [`test.fail`](#test-fail)。字符串表示原因。 A layer with `true` or any string marks, and the innermost reason wins. Not allowed on, inside, or around a serial group.
 
 ```ts
 test('exports a PDF', { fail: 'PDF export is broken' }, async ({ app }) => {});
+describe('legacy checkout', { fail: 'old payment form' }, () => {});
 ```
 
 #### `only`
@@ -784,6 +811,19 @@ export const test = base.extend({
 ### `TestAPI`
 
 ```ts
+/** The two call forms of `describe`. */
+export interface DescribeRegistrar<Options = DescribeOptions> {
+  /** Declares a group synchronously. */
+  <Result>(title: string, body: SynchronousBody<Result>): void;
+  /** Declares a configured group synchronously. */
+  <Result>(title: string, options: Options, body: SynchronousBody<Result>): void;
+}
+
+export interface DescribeAPI extends DescribeRegistrar {
+  /** Declares a group whose tests are expected to fail, as if it had `fail: true`; a reason goes in the `fail` option of `describe`. */
+  fail: DescribeRegistrar<Omit<DescribeOptions, 'fail'>>;
+}
+
 /** The two call forms of `test`, shared with what `test.skipIf` and `test.runIf` return. */
 export interface TestRegistrar<Fixtures = TestFixtures & WorkerFixtures> {
   /** Registers one test synchronously during module evaluation. */
@@ -949,14 +989,8 @@ export interface TestAPI<Fixtures = TestFixtures, Worker = WorkerFixtures> exten
   extend<Extra = {}, ExtraWorker = {}>(
     fixtures: FixtureDefinitions<Fixtures & Worker, Extra, Worker, ExtraWorker>,
   ): TestAPI<Fixtures & Extra, Worker & ExtraWorker>;
-  /** Declares a group synchronously. */
-  describe<Result>(title: string, body: SynchronousBody<Result>): void;
-  /** Declares a configured group synchronously. */
-  describe<Result>(
-    title: string,
-    options: DescribeOptions,
-    body: SynchronousBody<Result>,
-  ): void;
+  /** Declares a group synchronously; `describe.fail` declares one whose tests are expected to fail. */
+  describe: DescribeAPI;
   /** Registers a test-attempt setup hook: it runs after the test's fixtures are set up. */
   beforeEach(fn: TestHookFn<Fixtures & Worker>): void;
   /** Registers a test-attempt teardown hook: it runs before the test's fixtures are torn down. */
@@ -989,8 +1023,9 @@ export interface TestOptions {
   skip?: boolean | string;
   /**
    * Expects the test to fail; a string is the reason. A test failure then
-   * passes it, and a pass fails it with `UNEXPECTED_PASS`. Not allowed inside
-   * a serial group.
+   * passes it, and a pass fails it with `UNEXPECTED_PASS`. A layer with `true`
+   * or any string marks; the innermost reason wins. Not allowed on, inside, or
+   * around a serial group.
    */
   fail?: boolean | string;
   /** Focuses the test locally. CI rejects it with `ONLY_IN_CI`. */
@@ -1027,7 +1062,7 @@ export interface TestOptions {
   video?: RecordingMode;
 }
 
-export interface DescribeOptions extends Omit<TestOptions, 'only' | 'fail'> {
+export interface DescribeOptions extends Omit<TestOptions, 'only'> {
   /** Runs the group as one ordered retry unit with shared app state. Nesting one serial group in another is a `COLLECTION_ERROR`. */
   serial?: boolean;
 }

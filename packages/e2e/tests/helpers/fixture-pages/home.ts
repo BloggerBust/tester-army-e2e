@@ -328,6 +328,33 @@ line2  </textarea>
   <div data-testid="plain">Plain</div>
 </body>
 </html>`),
+  // What toBeEditable reads: native readonly, aria-readonly, the disabled
+  // state a fieldset gives, an editing host and what is inside it, and a role
+  // that cannot be read-only. A native tag reads readonly alone, an ARIA role
+  // aria-readonly alone, as Playwright's getReadonly does.
+  '/editable-matcher': constant(`<!doctype html>
+<html>
+<head><title>Editable matcher</title></head>
+<body>
+  <input aria-label="Name" />
+  <textarea aria-label="Notes" readonly></textarea>
+  <div role="textbox" aria-label="Total" aria-readonly="true">42</div>
+  <select aria-label="Size"><option>S</option><option>M</option></select>
+  <select aria-label="Size locked" readonly><option>S</option></select>
+  <select aria-label="Size aria" aria-readonly="true"><option>S</option></select>
+  <fieldset disabled><input aria-label="Locked" /></fieldset>
+  <div contenteditable="true" data-testid="editor">Draft<p data-testid="editor-line">Line</p></div>
+  <input aria-label="Secret" type="password" readonly value="marker-3b9d" />
+  <input aria-label="Aria on input" aria-readonly="true" />
+  <div role="textbox" aria-label="Upper case" aria-readonly="TRUE">7</div>
+  <input type="radio" aria-label="Pick" readonly />
+  <div role="textbox" aria-label="Attribute on div" readonly>8</div>
+  <div contenteditable="true" role="textbox" aria-label="Locked editor" aria-readonly="true">Fixed</div>
+  <div contenteditable="true" data-testid="plain-host" aria-readonly="true">Open</div>
+  <table role="grid"><tr><td contenteditable="true" data-testid="grid-cell" aria-readonly="true">5</td></tr></table>
+  <button>Save</button>
+</body>
+</html>`),
   '/downloads': constant(
     '<!doctype html><html><head><title>Downloads</title></head><body><h1>Downloads</h1>' +
       '<a href="/report.csv" download>Download report</a></body></html>',

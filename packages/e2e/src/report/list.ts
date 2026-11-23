@@ -55,6 +55,7 @@ import {
   sumUsage,
   tally,
   terminalColumns,
+  terminalRows,
   usageText,
   type AiUsage,
   type CacheTally,
@@ -65,7 +66,7 @@ import {
 import { leftOutTests } from './left-out.ts';
 import { ExploreView } from './list-explore.ts';
 import { isShownEvent, type ConfiguredModel, type FileGroup, type PausedTest, type ReplayNotice, type RunningTest, type TestLine } from './list-model.ts';
-import { replayLine, replayNotices, stepLine, stepPromptLine } from './list-steps.ts';
+import { replayLine, replayNotices, stepLine, stepPromptLine, stepPromptRows } from './list-steps.ts';
 import { LiveWindow } from './live-window.ts';
 import { repeatGroups, repeatLine, repeatSummary, type RepeatRun } from './repeats.ts';
 import { RunningTree } from './running-tree.ts';
@@ -360,6 +361,7 @@ export class ListReporter {
    * while a first-run download narrates above the live window.
    */
   private startedAt: Date | undefined;
+  private holdTiming: RunEventOf<'run-hold'> | undefined;
   /** File groups keyed `${target}\u0000${file}`, in first-seen order. */
   private readonly groups = new Map<string, FileGroup>();
   /** Pairs that started and whose result is still to come, keyed by `pairKey`, in start order. */
@@ -471,6 +473,9 @@ export class ListReporter {
       case 'setup':
         this.setupStep(event);
         break;
+      case 'run-hold':
+        this.holdTiming = event;
+        break;
       case 'test-started':
         this.testStarted(event);
         break;
@@ -509,8 +514,8 @@ export class ListReporter {
   };
 
   /**
-   * Shows the `e2e run --step` prompt under its test in the live window, or
-   * takes it down. Without a window it prints once, as a permanent line.
+   * Shows the held steps under their test and the keys below the summary.
+   * Without a live window, the prompt is printed once as a permanent line.
    */
   showStepPrompt(prompt: StepPrompt | undefined): void {
     this.prompt = prompt;
@@ -1077,7 +1082,7 @@ export class ListReporter {
    * there (a config or collection failure, a failed download) counts from
    * the launch instead, so the time it took to fail is still on record.
    */
-  private summaryRows(final: boolean): string[] {
+  private summaryRows(final: boolean, durationMs?: number): string[] {
     const { pc } = this;
     const files = this.fileCounters();
     const tests = this.testCounters();
@@ -1115,8 +1120,9 @@ export class ListReporter {
     }
     const startedAt = this.startedAt ?? (final ? this.launchedAt : undefined);
     if (startedAt !== undefined) {
+      const elapsed = durationMs ?? (this.holdTiming?.heldSince ?? Date.now()) - startedAt.getTime() - (this.holdTiming?.heldMs ?? 0);
       rows.push(padTitle(pc, 'Start at') + formatClock(startedAt));
-      rows.push(padTitle(pc, 'Duration') + durationText(pc, Date.now() - startedAt.getTime(), this.startupMs));
+      rows.push(padTitle(pc, 'Duration') + durationText(pc, elapsed, this.startupMs));
     }
     return rows;
   }
@@ -1159,14 +1165,15 @@ export class ListReporter {
     return this.interrupted ? pc.yellow(`${cut} (interrupted)`) : pc.dim(none);
   }
 
-  /** The live window: the running tree, then the summary. */
-  /** The block's rows for `room` screen rows under the permanent log. */
+  /** Formats the running tree, summary, and keys for `room` rows under the permanent log. */
   private renderWindow(room: number): string[] {
     const running = [...this.pairs.values()].filter((test) => test.executing);
     if (this.explore !== undefined) {
       return this.explore.liveRows(this.exploreBadge(), running[0]?.current?.events, this.summaryRows(false), Date.now(), room);
     }
-    return this.tree.render(running, this.summaryRows(false), Date.now(), room, { setup: this.inFlight, paused: this.paused() });
+    const footer = this.prompt === undefined ? [] : stepPromptRows(this.pc, this.prompt).slice(0, terminalRows() - 1);
+
+    return this.tree.render(running, this.summaryRows(false), Date.now(), room, { setup: this.inFlight, paused: this.paused(), footer });
   }
 
   /** The running test the `--step` prompt holds, with the prompt. */
@@ -1395,7 +1402,7 @@ export class ListReporter {
     this.printFailures('Skipped After Failure', this.skippedFailures, pages);
     this.printErrors();
     this.print('');
-    for (const row of this.summaryRows(true)) this.print(row);
+    for (const row of this.summaryRows(true, event.durationMs)) this.print(row);
     // The report is for scripts, so a run names it only when it is missing: `--last-failed` reads it next.
     if (event.reportPath === undefined) this.print(padTitle(pc, 'Report') + pc.dim('(not written)'));
     const paged = Object.values(pages);

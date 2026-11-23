@@ -1,17 +1,16 @@
 /** expect.poll: re-reads a value until a synchronous matcher passes. */
 
-import { ConfigurationError, isE2EError, TestError } from '@e2e-dev/core/lib/internal/errors';
-import { abortError, cancelledError, Deadline, POLL_INTERVAL_MS, sleep, withAbort, withTimeout } from '@e2e-dev/core/lib/internal/time';
+import { DEFAULT_PASS_OPTIONS } from '@e2e-dev/core/lib/config/validate';
+import { errorMessage, isE2EError } from '@e2e-dev/core/lib/internal/errors';
+import { runningSuiteHook } from '@e2e-dev/core/lib/internal/test-timeout';
 import type { PollExpectation, PollOptions, ValueExpectation, ValueMatcherName } from '@e2e-dev/core/lib/types';
 import { currentAttempt } from '@e2e-dev/core/lib/expect/attempt';
-import { currentPollScope, pollRead } from '@e2e-dev/core/lib/expect/poll-scope';
+import { checkOptions, retry } from './retry.ts';
 import { createValueExpectation } from './values.ts';
 
-/** Outside an attempt (a standalone script) there is no config to read `assertionTimeout` from. */
+/** Outside an attempt or hook (a standalone script) there is no config to read `assertionTimeout` from. */
 const DEFAULT_TIMEOUT_MS = 5000;
-
-/** Frames kept for the line a poll was called on; the user's line is a few frames up. */
-const CALL_STACK_FRAMES = 20;
+const WARNED_INTERVAL = Symbol.for('e2e.expect.poll.interval.warned');
 
 /** `satisfies` keeps this list equal to the ValueExpectation matcher set. */
 const MATCHERS = {
@@ -37,137 +36,38 @@ const MATCHERS = {
 
 type Matcher = (this: ValueExpectation<unknown>, ...args: unknown[]) => unknown;
 
-/** A read that outlived the deadline, as opposed to one that failed. */
-class ReadHung extends Error {}
-
-/** The attempt ended while a read was in flight. */
-class ReadAborted extends Error {}
-
-function describeError(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
-}
-
 function isNotYet(error: unknown): boolean {
   return isE2EError(error) && error.code === 'ASSERTION_FAILED';
 }
 
-function cancelled(signal: AbortSignal | undefined): Error {
-  return signal === undefined ? cancelledError() : abortError(signal, cancelledError);
-}
-
-/** One read, cut at the deadline and at the attempt signal; a hung read's outcome is dropped. */
-function sample(
-  read: () => unknown,
-  deadline: Deadline,
-  signal: AbortSignal | undefined,
-): Promise<unknown> {
-  const bounded = withTimeout(pollRead(async () => read()), deadline.remaining(), () => new ReadHung());
-  return signal === undefined ? bounded : withAbort(bounded, signal, () => new ReadAborted());
-}
-
-/** The stack at a poll's call, for the error that names it when its phase did not await it. */
-function callStack(): string | undefined {
-  const limit = Error.stackTraceLimit;
-  Error.stackTraceLimit = CALL_STACK_FRAMES;
-  try {
-    return new Error().stack;
-  } finally {
-    Error.stackTraceLimit = limit;
-  }
-}
-
-function matcherLabel(negated: boolean, name: ValueMatcherName): string {
-  return `expect.poll(...).${negated ? 'not.' : ''}${name}(...)`;
-}
-
-/**
- * The poll's own deadline capped by its phase's. A poll without one of its
- * own (`timeout: 0`) waits for the phase's, so it needs a phase to bound it.
- */
-function pollDeadline(own: Deadline | undefined, phase: Deadline | undefined): Deadline {
-  if (own === undefined) {
-    if (phase === undefined) {
-      throw new ConfigurationError('INVALID_CONFIG', 'expect.poll timeout 0 waits for the test deadline, so it runs only inside a test; pass a positive timeout');
-    }
-    return phase;
-  }
-  return phase === undefined ? own : Deadline.min(own, phase);
-}
-
-async function pollMatcher(
+/** Runs the chosen value matcher on each completed read. */
+function pollMatcher(
   read: () => unknown,
   options: PollOptions,
   negated: boolean,
   name: ValueMatcherName,
   args: unknown[],
-  scopeSignal: AbortSignal | undefined,
 ): Promise<unknown> {
-  const attempt = currentAttempt();
-  const timeout = options.timeout ?? attempt?.assertionTimeout ?? DEFAULT_TIMEOUT_MS;
-  const interval = options.interval ?? POLL_INTERVAL_MS;
-  const startedAt = Date.now();
-  const own = timeout === 0 ? undefined : new Deadline(timeout, startedAt);
-  // Inside an attempt the poll ends with the phase it runs in (the test
-  // deadline in the body, the hook's cleanup budget in afterEach) and stops
-  // the moment the attempt is cancelled, so a timed-out test never keeps
-  // reading through teardown. A timeout of 0 sets no deadline of its own.
-  const deadline = pollDeadline(own, attempt?.budget.deadline);
-  // The phase that started the poll cancels it when it returns without
-  // awaiting it, so the poll can never fail whatever runs after.
-  const signals = [attempt?.budget.signal, scopeSignal].filter((signal) => signal !== undefined);
-  const signal = signals.length === 0 ? undefined : AbortSignal.any(signals);
-  let last: string | undefined;
-  while (!deadline.expired()) {
-    if (signal?.aborted === true) throw cancelled(signal);
-    let value: unknown;
-    try {
-      value = await sample(read, deadline, signal);
-    } catch (error) {
-      if (error instanceof ReadHung) break;
-      if (error instanceof ReadAborted) throw cancelled(signal);
-      last = describeError(error);
-      await sleep(Math.min(interval, deadline.remaining()), signal);
-      continue;
-    }
-    const expectation = createValueExpectation(value);
+  const context = currentAttempt() ?? runningSuiteHook();
+  return retry(read, (result) => {
+    if ('error' in result) return { last: errorMessage(result.error) };
+
+    const expectation = createValueExpectation(result.value);
     const target = negated ? expectation.not : expectation;
     try {
-      return (target[name] as Matcher).apply(target, args);
+      return { value: (target[name] as Matcher).apply(target, args) };
     } catch (error) {
       if (!isNotYet(error)) throw error;
-      last = describeError(error);
+      return { last: errorMessage(error) };
     }
-    await sleep(Math.min(interval, deadline.remaining()), signal);
-  }
-  const ending =
-    deadline === own
-      ? `timed out after ${timeout} ms`
-      : `stopped at the attempt deadline after ${Date.now() - startedAt} ms`;
-  throw new TestError(
-    'ASSERTION_FAILED',
-    [
-      `${matcherLabel(negated, name)} ${ending}`,
-      ...(options.message === undefined ? [] : [options.message]),
-      `last: ${last ?? 'no read completed'}`,
-    ].join('\n'),
-  );
-}
-
-/** A malformed option would poll forever; it is refused before the first read. */
-function checkOptions(options: PollOptions): void {
-  const { timeout, interval } = options;
-  if (timeout !== undefined && !(Number.isFinite(timeout) && timeout >= 0)) {
-    throw new ConfigurationError(
-      'INVALID_CONFIG',
-      `expect.poll timeout must be a finite number of milliseconds, 0 or more; got ${String(timeout)}`,
-    );
-  }
-  if (interval !== undefined && !(Number.isFinite(interval) && interval > 0)) {
-    throw new ConfigurationError(
-      'INVALID_CONFIG',
-      `expect.poll interval must be a finite number of milliseconds above 0; got ${String(interval)}`,
-    );
-  }
+  }, {
+    api: 'expect.poll',
+    label: `expect.poll(...).${negated ? 'not.' : ''}${name}(...)`,
+    timeout: options.timeout ?? context?.assertionTimeout ?? DEFAULT_TIMEOUT_MS,
+    intervals: options.intervals ?? (options.interval === undefined ? DEFAULT_PASS_OPTIONS.intervals : [options.interval]),
+    message: options.message,
+    noSample: 'no read completed',
+  }, context);
 }
 
 function build<T>(
@@ -178,13 +78,7 @@ function build<T>(
   const matchers = Object.fromEntries(
     (Object.keys(MATCHERS) as ValueMatcherName[]).map((name) => [
       name,
-      (...args: unknown[]) => {
-        const scope = currentPollScope() ?? currentAttempt()?.polls;
-        if (scope === undefined) return pollMatcher(read, options, negated, name, args, undefined);
-        return scope.track(matcherLabel(negated, name), callStack(), (signal) =>
-          pollMatcher(read, options, negated, name, args, signal),
-        );
-      },
+      (...args: unknown[]) => pollMatcher(read, options, negated, name, args),
     ]),
   );
   return {
@@ -200,6 +94,10 @@ export function createPollExpectation<T>(
   read: () => T | Promise<T>,
   options: PollOptions = {},
 ): PollExpectation<T> {
-  checkOptions(options);
+  checkOptions('expect.poll', options);
+  if (options.interval !== undefined && Reflect.get(process, WARNED_INTERVAL) !== true) {
+    Object.defineProperty(process, WARNED_INTERVAL, { value: true });
+    process.stderr.write('e2e: [warning] expect.poll interval is deprecated. Pass intervals: [<ms>].\n');
+  }
   return build(read, options, false);
 }

@@ -98,7 +98,7 @@ const agent = { model: opencodeConsole('deepseek-v4.1-flash') };
 const goAgent = { model: opencodeConsole('go/deepseek-v4.1-flash') };
 ```
 
-Anthropic 経由では、`maxOutputTokens` を設定しない呼び出しは 8192 を要求します。Anthropic SDK は OpenCode がそこで提供する ID を認識しておらず、そのままでは警告を出すだけでリクエストを 4096 トークンに制限するためです。
+Anthropic 経由では、`maxOutputTokens` を設定しない呼び出しは 8192 を要求します。Anthropic SDK は OpenCode がそこで提供する ID を認識しておらず、そのままではリクエストを 4096 トークンに制限し、警告を出すだけだからです。
   </Tab>
   <Tab title="SuperGrok">
 <CodeGroup>
@@ -211,7 +211,7 @@ CI では API キーを使ってください。Claude Max と Team は、もと�
 
 `@e2e-dev/acp` は、[Agent Client Protocol](https://agentclientprotocol.com) 経由で、Claude Code または Codex に `agent.act` と `agent.assert` を実行させます。エージェント自身のログインまたは API キーで認証するため、e2e 側にモデルプロバイダーは不要です。
 
-エージェントには `complete_step` と、ターゲットのエンジンが対応する動詞に応じた組み込みエージェントの操作ツールが渡されます。ランナーがすべての操作を記録するため、エージェントを使わずに[キャッシュ](/cache)から再生できます。テストの変更は不要です。
+エージェントには `complete_step` と、ターゲットのエンジンが対応する動詞に応じた組み込みエージェントの操作ツールが渡されます。ランナーがすべての操作を記録するため、ステップはエージェントを使わずに[キャッシュ](/cache)から再生できます。テストの変更は不要です。
 
 <Tabs>
   <Tab title="Claude Code">
@@ -281,7 +281,7 @@ export default {
 | `system` | 最初のステップで渡すルールに追記するテキスト。 |
 | `name` | レポートに表示するエグゼキューター名。 |
 
-予期しない転送エラーが発生すると ACP セッションが停止し、ランナーの失敗出力にシークレットを秘匿して表示します。HTTP クライアントには、例外のテキストを含めず、一般的なエラーまたはストリームの終了が返されます。
+予期しない転送エラーが起きると ACP セッションは停止し、エラーはシークレットを秘匿した状態でランナーの失敗出力に表示されます。HTTP クライアントには、例外のテキストを含めず、一般的なエラーまたはストリームの終了が返されます。
 
 ### エージェントが使えるもの
 

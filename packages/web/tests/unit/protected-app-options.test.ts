@@ -215,6 +215,53 @@ describe('web({ screencast })', () => {
   });
 });
 
+describe('web({ browser })', () => {
+  it('rejects a name the engine does not launch, which would run chromium under it', () => {
+    for (const browser of ['firefx', 'Firefox', 'chrome', 'edge', '']) {
+      expect(() => web({ browser } as unknown as Parameters<typeof web>[0])).toThrow(
+        expect.objectContaining({ code: 'INVALID_CONFIG', message: `web({ browser }) must be one of chromium, firefox, webkit, or a browser provider, got ${JSON.stringify(browser)}` }),
+      );
+    }
+  });
+
+  it('rejects a value that is neither a name nor a provider, naming only its kind', () => {
+    for (const [browser, kind] of [[null, 'null'], [5, 'a number'], [true, 'a boolean'], [['chromium'], 'an array']] as const) {
+      expect(() => web({ browser } as unknown as Parameters<typeof web>[0])).toThrow(
+        expect.objectContaining({ code: 'INVALID_CONFIG', message: expect.stringMatching(new RegExp(`got ${kind}$`)) }),
+      );
+    }
+  });
+
+  it('takes the three browser names', () => {
+    for (const browser of ['chromium', 'firefox', 'webkit'] as const) {
+      expect(() => web({ browser })).not.toThrow();
+    }
+  });
+});
+
+describe('web({ viewport })', () => {
+  it('rejects a viewport that is not a size of whole pixels, each side at least 1', () => {
+    const invalid = [390, [390, 844], 'large', {}, { width: 390 }, { width: '390', height: '844' }, { width: Number.NaN, height: 10 }, { width: 1.5, height: 10 }, { width: 10, height: -5 }, { width: 0, height: 0 }, { width: 100, height: 0 }];
+    for (const viewport of invalid) {
+      expect(() => web({ viewport } as unknown as Parameters<typeof web>[0])).toThrow(
+        expect.objectContaining({ code: 'INVALID_CONFIG', message: 'web({ viewport }) must be { width, height } in whole pixels, each at least 1' }),
+      );
+    }
+  });
+
+  it('names a key a size does not have', () => {
+    expect(() => web({ viewport: { width: 390, height: 844, deviceScaleFactor: 2 } } as unknown as Parameters<typeof web>[0])).toThrow(
+      expect.objectContaining({ code: 'INVALID_CONFIG', message: 'web({ viewport }) has unknown key "deviceScaleFactor"; it is { width, height }' }),
+    );
+  });
+
+  it('takes a size, and null for the browser window', () => {
+    for (const viewport of [{ width: 390, height: 844 }, { width: 1, height: 1 }, null]) {
+      expect(() => web({ viewport })).not.toThrow();
+    }
+  });
+});
+
 describe('web() option keys', () => {
   const refused = (message: string) => expect.objectContaining({ code: 'INVALID_CONFIG', message });
 

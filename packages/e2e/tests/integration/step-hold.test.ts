@@ -502,7 +502,7 @@ test('pauses on a frame', async ({ gadget }) => {
     // The poll retries the failing read. Its error names the last refusal.
     expect(resultByTitle(outcome, 'pauses in a poll read').attempts[0]?.error).toMatchObject({
       code: 'ASSERTION_FAILED',
-      message: expect.stringContaining('last: screen.pause() was called inside another step (an onAction hook or a project tool) or an expect.poll read'),
+      message: expect.stringContaining('last: screen.pause() was called inside another step (an onAction hook or a project tool), an expect.poll read, or a toPass block'),
     });
     expect(resultByTitle(outcome, 'pauses on a locator').attempts[0]?.error).toMatchObject({
       code: 'INVALID_ARGUMENT',

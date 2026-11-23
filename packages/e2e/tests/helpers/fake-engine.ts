@@ -110,11 +110,15 @@ export interface FakeEngineBehavior {
   observe?(operation: OperationContext, attemptIndex: number): void | Promise<void>;
   /** Overrides the observed tree; default is one Submit button. A scene replaces it. */
   tree?: SemanticNode;
-  /** Pixels an observation that asks for them returns, with the regions masked in them; none when it returns undefined. */
+  /**
+   * Pixels an observation that asks for them returns, with the regions masked
+   * in them; none when it returns undefined or neither field. A count without
+   * pixels is a screenshot the engine withheld.
+   */
   pixels?(
     options: EngineObserveOptions,
     attemptIndex: number,
-  ): { readonly pixels: ObservationPixels; readonly maskedRegionCount?: number } | undefined;
+  ): { readonly pixels?: ObservationPixels; readonly maskedRegionCount?: number } | undefined;
   /**
    * A scripted screen, built once per attempt with a stage for timed
    * mutations: `observe` reports it, `locate` resolves over it with the
@@ -303,7 +307,8 @@ export function createFakeEngine(behavior: FakeEngineBehavior = {}): FakeEngineH
         location: scene?.location ?? location,
         root: scene?.root() ?? tree,
         viewport: FAKE_VIEWPORT,
-        ...(captured === undefined ? {} : { pixels: captured.pixels, maskedRegionCount: captured.maskedRegionCount ?? 0 }),
+        ...(captured?.pixels === undefined ? {} : { pixels: captured.pixels }),
+        ...(captured?.maskedRegionCount === undefined ? {} : { maskedRegionCount: captured.maskedRegionCount }),
       };
     },
     actions: behavior.actions ?? LOCATOR_ACTION_KINDS.filter((kind) => kind !== 'swipe'),

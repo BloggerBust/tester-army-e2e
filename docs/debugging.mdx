@@ -258,8 +258,13 @@ The held step shows under its test, below the steps that already ran:
  ❯ |web| tests/checkout.e2e.ts 0/1
    └── pays with a card (k3f9)
        ✓ app.open "/checkout" 412ms
-       ▶ step 2  locator.fill "getByLabel("Email")"  tests/checkout.e2e.ts:9
-         press enter to run this step, press h to show help, press q to quit
+       ⏸ step 2  locator.fill "getByLabel("Email")"  tests/checkout.e2e.ts:9
+
+ Test Files  0 passed (1)
+      Tests  0 passed (1)
+
+Paused (k3f9) at step 2
+  press enter to run this step, press h to show help, press q to quit
 ```
 
 The keys follow [`--watch`](/reference/cli#watch-mode). These work at a prompt:
@@ -267,20 +272,33 @@ The keys follow [`--watch`](/reference/cli#watch-mode). These work at a prompt:
 | Key | Does |
 | --- | --- |
 | Enter | runs the held step and holds the next one |
+| `s` | shows the screen's accessibility tree |
+| `l` | shows the current attempt's app log, starting at the newest lines |
 | `n` | runs the rest of this test, retries included, and holds at the next test |
 | `a` | runs the rest of the run without holding steps |
 | `h` | shows every key under the prompt, or hides them |
 | `q`, Esc | stops the run as Ctrl-C does: the test ends `interrupted`, the rest are skipped, exit 130 |
 
+You can scroll through the screen or app log while the test stays paused.
+
+| Viewer key | Does |
+| --- | --- |
+| Up, Down, `k`, `j` | Scroll one line |
+| Page Up, Page Down, `b`, Space | Scroll one page |
+| `g`, `G` | Go to the top or bottom |
+| `s`, `l` | Switch to the screen or log |
+| `p` | Close the viewer and print its text above the live summary |
+| `q`, Esc | Return to the prompt |
+
 - A key pressed within 150 ms of a prompt is ignored, so a key meant for the
   last step never runs this one. Ctrl-C works at any time, also while a step
-  runs.
+  runs. The same guard applies when you close the viewer.
 - The time a step is held counts toward nothing: not its duration, not the
-  test's `timeout`, not `maxDuration`. A test that hangs after a step still
+  test's `timeout`, not `maxDuration`, and not the run's `Duration`. A test that hangs after a step still
   times out on the time it had left. The test's own duration in the report
   includes the holds.
 - Setup tests, retries, `afterEach` hooks, fixture teardowns, and steps inside
-  an `expect.poll` read run without stopping. An `agent.act` is one step.
+  an `expect.poll` read or a `toPass` block run without stopping. An `agent.act` is one step.
 - Steps started together, as in `Promise.all`, share one prompt and run on one
   Enter, so a `waitForResponse` beside the click that triggers it never waits
   for a key. A step already running when another is held keeps running on its
@@ -390,12 +408,18 @@ In a terminal, the pause is shown under its test:
 ```text
  ❯ |web| tests/checkout.e2e.ts 0/1
    └── pays with a card (k3f9)
-       ▶ paused  screen.pause()  tests/checkout.e2e.ts:5
-         press enter to resume, press h to show help, press q to quit
+       ⏸ paused  screen.pause()  tests/checkout.e2e.ts:5
+
+ Test Files  0 passed (1)
+      Tests  0 passed (1)
+
+Paused (k3f9) at screen.pause()
+  press enter to resume, press h to show help, press q to quit
 ```
 
 Press Enter to resume the test, `h` to list the keys, or `q` to stop the run
 with exit 130, as at a [`--step` prompt](#step-through-a-test).
+Press `s` for the screen or `l` for the app log, then use the [viewer keys](#step-through-a-test).
 
 Without a terminal, as in a coding agent's shell, the pause is printed with
 the screen it waits on:

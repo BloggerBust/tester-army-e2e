@@ -7,10 +7,10 @@
  * the same `resolveUrl` `goto` uses.
  */
 
-import { statSync } from 'node:fs';
 import { types } from 'node:util';
 import { rejectUnknownOptions, TestError, validateJsonValue, type JsonValue } from '@e2e-dev/core/engine';
 import { headerProblem } from './protected-app.ts';
+import { statPath } from './support.ts';
 
 /** What `route.fulfill` hands Playwright once the response is validated. */
 export interface FulfillDecision {
@@ -173,13 +173,8 @@ function requireBody(value: unknown): string | Buffer {
 
 /** Rejects a path that does not name a regular file; synchronous so the check lands before the decision. */
 function requireFile(file: string): void {
-  let isFile = false;
-  try {
-    isFile = statSync(file, { throwIfNoEntry: false })?.isFile() === true;
-  } catch {
-    // A directory on the path the runner may not search (`EACCES`): not a file the route can serve.
-  }
-  if (!isFile) {
+  const stats = statPath(file);
+  if (stats instanceof Error || !stats.isFile()) {
     throw new TestError('INVALID_ARGUMENT', `route.fulfill path is not a readable file: ${file}`);
   }
 }

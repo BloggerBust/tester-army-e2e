@@ -28,6 +28,7 @@ import {
   METHODS,
   SERVED_METHODS,
   decodeError,
+  decodeLocatorAction,
   encodeError,
   encodeSnapshot,
   engineMember,
@@ -38,6 +39,7 @@ import {
   type LifecycleMethod,
   type OperationMethod,
   type WireCleanup,
+  type WireLocatorAction,
   type WireOperation,
   type WireSignal,
 } from './protocol.ts';
@@ -175,7 +177,11 @@ class EngineServer {
   /** The member's arguments, in order, read off its params by name. */
   #operationArgs(spec: OperationMethod, params: unknown): unknown[] {
     const named = params as Readonly<Record<string, unknown>>;
-    return spec.args.map((name) => (name === 'operation' ? this.#operation(named['operation'] as WireOperation) : named[name]));
+    return spec.args.map((name) => {
+      if (name === 'operation') return this.#operation(named['operation'] as WireOperation);
+      if (name === 'action' && spec.member === 'perform') return decodeLocatorAction(named[name] as WireLocatorAction);
+      return named[name];
+    });
   }
 
   #lifecycleHandlers(): Readonly<Record<LifecycleMethod['member'], LifecycleHandler>> {

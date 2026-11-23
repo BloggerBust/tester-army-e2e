@@ -102,6 +102,7 @@ describe('todos', () => {
 | `have.text`、`contain`、`have.value`、`have.attr`、`have.length`、`not.exist` | `toHaveText`、`toContainText`、`toHaveValue`、`toHaveAttribute`、`toHaveCount(n)`、`toHaveCount(0)` |
 | `cy.url().should('include', p)`、`cy.title()` | `expect(browser).toHaveURL(/p/)`、`expect(browser).toHaveTitle(t)` |
 | `cy.intercept('/api/users', body)` | `browser.route('**/api/users', route => route.fulfill({ json: body }))`，对完整 URL 使用 glob 匹配 |
+| `cy.intercept('POST', '/api/users', body)` | `browser.route({ method: 'POST', url: '**/api/users' }, route => route.fulfill({ json: body }))` |
 | `cy.on('window:confirm')`、`cy.on('window:alert')` | 操作前调用 `await browser.onDialog('accept')`，取消则使用 `'dismiss'` |
 | `cy.session` | `test.setup` 和 `{ session }` |
 | `cy.task`、`cy.exec`、`cy.request`、`cy.fixture` | Node 代码：`fetch`、`fs`、你的数据库客户端、`import data from './fixture.json'` |
@@ -119,7 +120,7 @@ describe('todos', () => {
 | `.invoke()`、`.its()`、`.then($el => ...)`、`.should($el => ...)` | `getAttribute()`、`textContent()`、`inputValue()`，其他情况使用 `browser.evaluate`；用 `expect.poll` 包装以重试 |
 | `have.class`、`have.css`、`have.prop`、`be.empty` | `expect(browser).toHaveClass(locator, /regexp/)`、`expect(locator).toHaveText('')`；其他情况使用 `expect.poll(() => browser.evaluate(...))` |
 | `.trigger()`、`cy.scrollTo()`、`.blur()` | `hover()`、`dragTo()`、`scrollIntoView()`、`press('Tab')`；其他情况使用 `browser.evaluate` |
-| `cy.intercept('POST', url)` 和其他方法或请求头匹配器 | 在处理函数中检查 `route.request.method`，否则调用 `route.fallback()` |
+| `cy.intercept({ headers })` 和其他请求头匹配器 | 在处理函数中检查 `route.request.headers`，否则调用 `route.fallback()` |
 | `cy.wait('@alias')`、`.its('request.body')`、`@alias.all` | 在操作前启动 `browser.waitForResponse(pattern)`；在 `browser.route` 处理函数中读取请求 |
 | `Cypress.on('uncaught:exception')` | 应用错误不会使测试失败。要让它导致失败，在 `browser.addInitScript` 中收集 `window.onerror`，然后用 `browser.evaluate` 断言列表为空 |
 | `--browser chrome`、`edge`、`electron`、`before:browser:launch` | `web({ browser: 'chromium' })`，或使用 `web({ connect: { cdpEndpoint } })` 连接你自己的 Chrome |

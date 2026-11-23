@@ -108,7 +108,7 @@ export function scene(stage: Stage): ScriptedNode[] {
       attributes: { placeholder: 'you@example.test', autocomplete: 'email' },
       rect: { x: 10, y: 100, width: 200, height: 30 },
     },
-    { id: 'notes', role: 'textbox', name: 'Notes', value: 'line1\n\nline2  ' },
+    { id: 'notes', role: 'textbox', name: 'Notes', value: 'line1\n\nline2  ', states: { readonly: false } },
     {
       id: 'password',
       role: 'textbox',

@@ -1,5 +1,6 @@
 /** Shared error translation, filename, and swipe helpers for the Playwright engine. */
 
+import { statSync, type Stats } from 'node:fs';
 import { setTimeout } from 'node:timers/promises';
 import type { ElementHandle, FrameLocator, Locator as PwLocator, Mouse, Page } from 'playwright-core';
 import { EngineError, withinCleanupBudget, type EngineCleanupContext, type Momentum, type ScrollDirection, type ViewportPoint, type ViewportSize } from '@e2e-dev/core/engine';
@@ -177,10 +178,27 @@ export async function performPointerDrag(
 // oxlint-disable-next-line no-control-regex -- intentionally matches the ESC control character
 const ANSI_PATTERN = /\u001b\[\d+(?:;\d+)*m/g;
 
+/** A value as an error message shows it: a string quoted, another primitive as written, anything else by its kind, never serialized. */
+export function describe(value: unknown): string {
+  if (typeof value === 'string') return JSON.stringify(value);
+  if (value === null || typeof value === 'number' || typeof value === 'boolean') return String(value);
+  if (Array.isArray(value)) return 'an array';
+  return typeof value === 'object' ? 'an object' : typeof value;
+}
+
 /** A failure's message with terminal control sequences removed. */
 export function message(cause: unknown): string {
   const text = cause instanceof Error ? cause.message : String(cause);
   return text.replace(ANSI_PATTERN, '');
+}
+
+/** Stats a caller-supplied path, or returns Node's error when it is missing or a directory on it may not be searched (`EACCES`). */
+export function statPath(file: string): Stats | Error {
+  try {
+    return statSync(file);
+  } catch (cause) {
+    return cause as Error;
+  }
 }
 
 /** Constrains a caller-supplied artifact label to a safe filename. */

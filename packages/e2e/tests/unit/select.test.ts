@@ -257,6 +257,35 @@ describe('resolveOptions', () => {
     expect(options.requires).toEqual(['web']);
     expect(options.session).toBe('b');
   });
+
+  it('expects a test to fail when it or any group marks it, the innermost reason first', async () => {
+    const col = await collection(() => {
+      test.describe('legacy', { fail: 'legacy checkout' }, () => {
+        test('inherits', noop);
+        test('own reason', { fail: 'card form' }, noop);
+        test('bare mark keeps the group reason', { fail: true }, noop);
+        test('false does not unmark', { fail: false }, noop);
+        test('blank reason keeps the group reason', { fail: ' ' }, noop);
+        test.describe.fail('inner bare', () => test('nested', noop));
+        test.describe('inner false', { fail: false }, () => test('still marked', noop));
+        test.describe('inner reason', { fail: 'coupon API' }, () => test('nested reason', noop));
+      });
+      test.describe.fail('no reason', () => test('default', noop));
+      test.describe('plain', () => test('unmarked', noop));
+    });
+    expect(col.tests.map((entry) => resolveOptions(entry, config()).expectedFailure)).toEqual([
+      'legacy checkout',
+      'card form',
+      'legacy checkout',
+      'legacy checkout',
+      'legacy checkout',
+      'legacy checkout',
+      'legacy checkout',
+      'coupon API',
+      'expected to fail',
+      undefined,
+    ]);
+  });
 });
 
 describe('select', () => {

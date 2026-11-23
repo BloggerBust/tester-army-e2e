@@ -348,6 +348,13 @@ function renderFull(observation: ExecutorObservation): string {
 type PixelEvidence = 'changed' | 'unchanged' | 'none' | 'unavailable';
 
 /**
+ * How each update that reports an action as having no visible effect opens
+ * its paragraph; `reportsNoEffect` looks for them there and nowhere else.
+ */
+const SCREEN_DID_NOT_CHANGE = 'The screen did not change within the wait after this action';
+const NO_LISTED_NODE_CHANGED = 'No listed node changed within the wait after this action';
+
+/**
  * An update with no listed line changed. A screenshot that moved while the
  * listing stood still is said so, whatever was expected: the effect is drawn,
  * and blaming the control would send the model looking for another way to do
@@ -363,12 +370,25 @@ function renderUnchanged(since: string, observation: ExecutorObservation, expect
   if (!expectedChange) return `Screen unchanged since revision ${since} (${looked}); the ids you have stay valid.`;
   switch (pixels) {
     case 'unchanged':
-      return `The screen did not change within the wait after this action (${looked}); the ids you have stay valid. If a change was expected and the control commits something (a save, a submit), it may still have gone through: check before you commit again by any route. Otherwise, if a change was expected, the control had no visible effect here: look for another way rather than repeating it.`;
+      return `${SCREEN_DID_NOT_CHANGE} (${looked}); the ids you have stay valid. If a change was expected and the control commits something (a save, a submit), it may still have gone through: check before you commit again by any route. Otherwise, if a change was expected, the control had no visible effect here: look for another way rather than repeating it.`;
     case 'unavailable':
-      return `No listed node changed within the wait after this action (${looked}); the ids you have stay valid. No screenshot can be taken in this step, so the listing is the only evidence. If a change was expected and the control commits something (a save, a submit), it may still have gone through: check before you commit again by any route. Otherwise, if a change was expected, look for another way rather than repeating it.`;
+      return `${NO_LISTED_NODE_CHANGED} (${looked}); the ids you have stay valid. No screenshot can be taken in this step, so the listing is the only evidence. If a change was expected and the control commits something (a save, a submit), it may still have gone through: check before you commit again by any route. Otherwise, if a change was expected, look for another way rather than repeating it.`;
     case 'none':
-      return `No listed node changed within the wait after this action (${looked}); the ids you have stay valid. The listing shows only what the tree describes: a drawn change needs a screenshot to see.`;
+      return `${NO_LISTED_NODE_CHANGED} (${looked}); the ids you have stay valid. The listing shows only what the tree describes: a drawn change needs a screenshot to see.`;
   }
+}
+
+/**
+ * Whether an action's result reports that the action had no visible effect:
+ * the screen, or at least its listing, stayed as it was though a change was
+ * expected. A screen update with a moved screenshot, or after an action that
+ * expected no change, never says so. Only a paragraph that opens with the
+ * report counts, so app text quoted in a listing of changes, which sits on
+ * lines inside one paragraph, never reads as one.
+ */
+export function reportsNoEffect(text: string): boolean {
+  return text.split('\n\n').some((paragraph) =>
+    paragraph.startsWith(`${SCREEN_DID_NOT_CHANGE} (`) || paragraph.startsWith(`${NO_LISTED_NODE_CHANGED} (`));
 }
 
 /** The keyboard note when the action took the keyboard off the screen. */

@@ -503,10 +503,10 @@ function ranTargets(run: ReportRun, selected: readonly ReportResult[]): readonly
 
 /** `<sub>Tested by e2e 0.13.0 · 2m 15s · web · run artifacts</sub>`: one line of small print. */
 function footer(run: ReportRun, targets: readonly ReportTarget[], options: MarkdownReportOptions): string[] {
-  const duration = formatDuration(Date.parse(run.finishedAt) - Date.parse(run.startedAt));
+  const duration = run.durationMs ?? Date.parse(run.finishedAt) - Date.parse(run.startedAt);
   const shown = targets.slice(0, MAX_FOOTER_TARGETS).map((target) => cell(target.id, MAX_ID_CHARS));
   if (targets.length > shown.length) shown.push(`and ${targets.length - shown.length} more`);
-  const parts = [`Tested by ${link('e2e', SITE_URL)} ${cell(run.runner.version, MAX_ID_CHARS)}`, duration];
+  const parts = [`Tested by ${link('e2e', SITE_URL)} ${cell(run.runner.version, MAX_ID_CHARS)}`, formatDuration(duration)];
   if (targets.length === 1) parts.push(shown[0] ?? '');
   else if (targets.length > 1) parts.push(`${plural(targets.length, 'target')} (${shown.join(', ')})`);
   if (options.artifactsUrl !== undefined) parts.push(link('run artifacts', options.artifactsUrl));

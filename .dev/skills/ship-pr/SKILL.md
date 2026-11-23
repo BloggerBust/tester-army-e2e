@@ -91,6 +91,8 @@ prompt yourself, and say so in the handoff.
 Hand the PR to the [babysit](../babysit/SKILL.md) skill and run it to the
 end: green, threads handled, `Ready for Human Review` label. For a stack,
 babysit bottom-up; a layer is labeled only when it is ready on its own.
+On a PR from a fork the label comes from a `/ready` comment; babysit's
+"From a fork" section has the gates.
 
 ## Handoff
 

@@ -141,8 +141,8 @@ Methods: `setNetwork`, `setAirplaneMode`, `setPermission`, `setLocation`,
 `clearLocation`, `setAppearance`, `setOrientation`, `fold`, `setBiometrics`,
 `enrollBiometrics`, `installApp`, `uninstallApp`, `isAppInstalled`,
 `openApp`, `openLink`, `closeApp`, `clearKeychain`, `foregroundApp`, `home`,
-`back`, `alert`, `dismissKeyboard`, `clipboard`, `setClipboard`, and the
-`locator` accessor.
+`back`, `alert`, `dismissKeyboard`, `isKeyboardShown`, `clipboard`,
+`setClipboard`, and the `locator` accessor.
 
 `device.unstable_raw` is the raw driver session, for what the methods do not
 cover. Its `client` calls are not steps: the report and trace leave them out,

@@ -1,0 +1,129 @@
+{
+  "app": "SpikeForm",
+  "complete": true,
+  "ref_count": 8,
+  "snapshot_id": "s1y1hxmo5pexrl",
+  "tree": {
+    "children": [
+      {
+        "available_actions": [
+          "Click",
+          "RightClick",
+          "SetValue",
+          "SetFocus",
+          "TypeText"
+        ],
+        "name": "Username",
+        "native_id": {
+          "kind": "ax_identifier",
+          "value": "username"
+        },
+        "ref_id": "@s1y1hxmo5pexrl:e1",
+        "role": "textfield",
+        "states": [
+          "focused"
+        ],
+        "value": "bob"
+      },
+      {
+        "available_actions": [
+          "Click",
+          "RightClick",
+          "SetValue",
+          "SetFocus"
+        ],
+        "name": "Password",
+        "native_id": {
+          "kind": "ax_identifier",
+          "value": "password"
+        },
+        "ref_id": "@s1y1hxmo5pexrl:e2",
+        "role": "textfield",
+        "states": [
+          "secure"
+        ]
+      },
+      {
+        "available_actions": [
+          "Click",
+          "Toggle",
+          "SetFocus"
+        ],
+        "name": "Remember me",
+        "native_id": {
+          "kind": "ax_identifier",
+          "value": "remember"
+        },
+        "ref_id": "@s1y1hxmo5pexrl:e3",
+        "role": "checkbox",
+        "value": "0"
+      },
+      {
+        "available_actions": [
+          "Click",
+          "SetFocus",
+          "Expand",
+          "Collapse"
+        ],
+        "name": "Plan",
+        "native_id": {
+          "kind": "ax_identifier",
+          "value": "plan"
+        },
+        "ref_id": "@s1y1hxmo5pexrl:e4",
+        "role": "combobox",
+        "states": [
+          "readonly"
+        ],
+        "value": "Pro"
+      },
+      {
+        "available_actions": [
+          "Click",
+          "SetFocus"
+        ],
+        "name": "Sign in",
+        "native_id": {
+          "kind": "ax_identifier",
+          "value": "sign-in"
+        },
+        "ref_id": "@s1y1hxmo5pexrl:e5",
+        "role": "button"
+      },
+      {
+        "available_actions": [
+          "Click"
+        ],
+        "name": "Close",
+        "ref_id": "@s1y1hxmo5pexrl:e6",
+        "role": "button"
+      },
+      {
+        "available_actions": [
+          "Click",
+          "RightClick"
+        ],
+        "name": "Full Screen",
+        "ref_id": "@s1y1hxmo5pexrl:e7",
+        "role": "button"
+      },
+      {
+        "available_actions": [
+          "Click"
+        ],
+        "name": "Minimize",
+        "ref_id": "@s1y1hxmo5pexrl:e8",
+        "role": "button",
+        "states": [
+          "disabled"
+        ]
+      }
+    ],
+    "name": "Spike Form",
+    "role": "window"
+  },
+  "window": {
+    "id": "w-8032",
+    "title": "Spike Form"
+  }
+}

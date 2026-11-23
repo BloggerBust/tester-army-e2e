@@ -19,6 +19,7 @@ test('every matcher passes on the scripted screen', async ({ app, screen }) => {
   await expect(screen.getByText('Never rendered')).toBeHidden();
   await expect(screen.getByRole('button', { name: 'Submit' })).toBeEnabled();
   await expect(screen.getByRole('button', { name: 'Disabled action' })).toBeDisabled();
+  await expect(screen.getByLabel('Notes')).toBeEditable();
   await expect(screen.getByRole('switch', { name: 'Dark mode' })).toBeChecked();
   await expect(screen.getByRole('tab', { name: 'All' })).toBeSelected();
   await screen.getByRole('button', { name: 'Menu' }).tap();
@@ -253,7 +254,7 @@ describe('scripted engine: expect(locator) matchers', () => {
     const attempt = passed(run.outcome, 'every matcher passes on the scripted screen');
     const apis = new Set(attempt.steps.map((entry) => entry.api));
     for (const matcher of [
-      'toBeVisible', 'toBeHidden', 'toBeAttached', 'toBeEnabled', 'toBeDisabled', 'toBeChecked', 'toBeSelected',
+      'toBeVisible', 'toBeHidden', 'toBeAttached', 'toBeEnabled', 'toBeDisabled', 'toBeEditable', 'toBeChecked', 'toBeSelected',
       'toBeExpanded', 'toBeFocused', 'toHaveText', 'toContainText', 'toHaveValue', 'toHaveAttribute',
       'toHaveAccessibleName', 'toHaveCount', 'toHaveRole',
     ]) {

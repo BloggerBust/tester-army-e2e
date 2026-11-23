@@ -39,7 +39,7 @@ larger budget. [How agent steps work](/agent-steps) explains a step in full.
 | In the prompt | Form |
 | --- | --- |
 | Your instruction and params | Quoted inside `<instruction>` and marked as data. A `Secret` param shows only its name and purpose. |
-| The screen | An accessibility tree with node ids, roles, names, text, test ids, link targets, and states, cut at a size limit. No selectors. A link's query and fragment show only as `?…` and `#…`. Secure fields show as `value=<secure>`. |
+| The screen | An accessibility tree with node ids, roles, names, text, test ids, link targets, and states, cut at a size limit. No selectors. A link's query and fragment show only as `?…` and `#…`. Secure fields show as `value=<secure>`, unless [a page script hides one](#where-redaction-stops). |
 | The location | The current URL, redacted, without userinfo. A judgment gets it as a path on the app's origin and as the whole URL elsewhere, cut at a size limit. On a device, the app and screen title. |
 | A screenshot | When needed or requested, and only if the engine proves secure fields are masked. |
 | Prior steps | `agent.act` receives bounded records from the same test or serial group. Judgments use only the current screen, its location, the instruction and its params, and the agent's context. |
@@ -263,6 +263,13 @@ Redaction matches strings. These pass through:
   are redacted before any provider runs,
 - console output of tests that run in the runner's own process, when an
   embedding host passes the config or tests in memory,
+- on the web engine, a password field that a page script hides from e2e, for
+  example by replacing `Element.prototype.matches`. e2e reads it as a plain
+  field: the observed screen and `inputValue` show its value, and a failed
+  `toHaveValue` prints it. `getAttribute` and `toHaveAttribute` do the same
+  when the HTML `value` attribute holds it. A configured secret's value is
+  still `<secret:name>`. Screenshots still mask the field, unless it is in a
+  closed shadow root and the page also replaces `querySelectorAll`,
 - a screenshot, including one sent to the model: it masks secure fields
   only, so a value the app shows elsewhere is in the image,
 - video: it masks nothing and is labeled `redaction: "incomplete"`. A

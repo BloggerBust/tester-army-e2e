@@ -1,6 +1,6 @@
 /**
  * A first install, the way a new user meets it: packs the built `e2e`,
- * `@e2e-dev/web`, and `@e2e-dev/mobile`, installs them with a given pnpm
+ * `@e2e-dev/web`, `@e2e-dev/mobile`, and `@e2e-dev/desktop`, installs them with a given pnpm
  * into a fresh project outside this repository, installs again from the
  * lockfile, typechecks a custom mobile tool, emits the declaration of a config
  * that infers its engines, and runs a TypeScript test
@@ -36,7 +36,7 @@ if (pnpmVersion === undefined) {
 }
 
 /** The packages a new user installs: the runner and its engines, and the core both build on. */
-const PACKAGES = ['core', 'e2e', 'web', 'mobile'] as const;
+const PACKAGES = ['core', 'e2e', 'web', 'mobile', 'desktop'] as const;
 
 const root = mkdtempSync(join(tmpdir(), 'e2e-install-smoke-'));
 const tarballs = join(root, 'tarballs');
@@ -83,6 +83,7 @@ try {
         e2e: tarball('e2e-0'),
         '@e2e-dev/web': tarball('e2e-dev-web-'),
         '@e2e-dev/mobile': tarball('e2e-dev-mobile-'),
+        '@e2e-dev/desktop': tarball('e2e-dev-desktop-'),
         typescript: mobileManifest.devDependencies['typescript'],
         '@types/node': mobileManifest.devDependencies['@types/node'],
         '@types/json-schema': '7.0.15',
@@ -134,6 +135,7 @@ export async function checkFixture(device: Device) {
   // pnpm links `@e2e-dev/core` only inside the engines' own folders, so a
   // declaration that names a core type has no path this project can import (TS2883).
   writeFileSync(join(project, 'engines.config.ts'), `
+import { desktop } from '@e2e-dev/desktop';
 import { mobile } from '@e2e-dev/mobile';
 import { web } from '@e2e-dev/web';
 import type { E2EConfig } from 'e2e';
@@ -142,6 +144,7 @@ export default {
   targets: [
     { name: 'web', engine: web() },
     { name: 'ios', engine: mobile({ platform: 'ios' }) },
+    { name: 'mac', engine: desktop() },
   ],
 } satisfies E2EConfig;
 `);
@@ -191,11 +194,11 @@ export default {
         name: 'install-smoke-core-only',
         private: true,
         type: 'module',
-        dependencies: { '@e2e-dev/core': tarball('e2e-dev-core-'), '@e2e-dev/web': tarball('e2e-dev-web-'), '@e2e-dev/mobile': tarball('e2e-dev-mobile-') },
+        dependencies: { '@e2e-dev/core': tarball('e2e-dev-core-'), '@e2e-dev/web': tarball('e2e-dev-web-'), '@e2e-dev/mobile': tarball('e2e-dev-mobile-'), '@e2e-dev/desktop': tarball('e2e-dev-desktop-') },
       }),
     );
     writeFileSync(join(coreOnly, 'main-entries.mjs'), `
-for (const [name, factory, options] of [['@e2e-dev/web', 'web', undefined], ['@e2e-dev/mobile', 'mobile', { platform: 'ios' }]]) {
+for (const [name, factory, options] of [['@e2e-dev/web', 'web', undefined], ['@e2e-dev/mobile', 'mobile', { platform: 'ios' }], ['@e2e-dev/desktop', 'desktop', undefined]]) {
   const entry = await import(name);
   entry[factory](options);
   try {

@@ -12,7 +12,12 @@ import { realmSlot } from '../internal/realm-slot.ts';
 import type { ModelInstance } from '../types.ts';
 import { AgentError } from './error.ts';
 
-export type AiSdk = typeof import('ai');
+/**
+ * The SDK as every release in the `ai@^7` peer range exports it. Exports added
+ * in a later 7.x minor are left out, so reading one is a type error rather
+ * than an undefined at runtime; match those errors by name instead.
+ */
+export type AiSdk = Omit<typeof import('ai'), 'ToolChoiceViolationError'>;
 
 /** A live AI SDK language model, as accepted by `generateText`. */
 export type SdkLanguageModel = Exclude<LanguageModel, string>;

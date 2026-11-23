@@ -25,6 +25,8 @@ import {
 export interface StandaloneHostOptions {
   readonly config: ResolvedConfig;
   readonly target: ResolvedTarget;
+  /** Set by a `launch()` host, for its engine; see `EnginePrepareInfo.hostId`. */
+  readonly hostId?: string | undefined;
   readonly headed: boolean;
   readonly env: NodeJS.ProcessEnv;
   readonly signal: AbortSignal;
@@ -87,14 +89,16 @@ function claimEngine(engine: object | undefined): () => void {
 /**
  * An `@e2e-dev/core` host: a worker whose sessions publish no attempt to
  * `globalThis` and hold no process-wide secret registry, so any number of
- * hosts coexist in one process. It owns its engine instance.
+ * hosts coexist in one process. It owns its engine instance. Its artifact
+ * folders are named after `hostId`, never the target, whose name is the
+ * platform an engine reports, and a platform can be a secret's value.
  */
-export function openCoreHost(options: StandaloneHostOptions): Promise<StandaloneHost> {
+export function openCoreHost(options: StandaloneHostOptions & { readonly hostId: string }): Promise<StandaloneHost> {
   return openWorker(options, {
     claimsEngine: true,
     holdsRegistry: false,
     sessions: (sessionOptions) => new EngineSessions(sessionOptions),
-    identity: ({ target }, attemptId) => ({ testId: `core:${attemptId}`, segments: ['core', `${target.name}-${attemptId}`] }),
+    identity: (_worker, attemptId) => ({ testId: `core:${attemptId}`, segments: ['core', `host-${options.hostId}-${attemptId}`] }),
   });
 }
 
@@ -137,7 +141,7 @@ export async function openWorker<Sessions extends EngineSessions, Extra>(
         errors.push(...(executor?.collectedRunErrors().map((error) => error.error) ?? []));
       } catch (cause) { failure(cause); }
       try {
-        await engines.finish({ runId, env: options.env, timeoutMs: config.cleanupTimeout, notice, onFailure: failure });
+        await engines.finish({ runId, hostId: options.hostId, env: options.env, timeoutMs: config.cleanupTimeout, notice, onFailure: failure });
       } catch (cause) { failure(cause); }
       try { await processes?.stop(failure); } catch (cause) { failure(cause); }
       try { sessionStore.cleanup(); } catch (cause) { failure(cause); }
@@ -149,13 +153,13 @@ export async function openWorker<Sessions extends EngineSessions, Extra>(
   };
   try {
     const prepared = await engines.prepare(target, 1, {
-      runId, projectRoot: config.projectRoot, env: options.env, signal, headed: options.headed, notice,
+      runId, hostId: options.hostId, projectRoot: config.projectRoot, env: options.env, signal, headed: options.headed, notice,
     });
     const hooks = { ci: config.ci, env: options.env, notice: (message: string) => notice('app', message) };
     processes = await startDeclaredProcesses([target], config.projectRoot, hooks, signal, debug, options.processes);
     if (signal.aborted) throw new InfrastructureError('CANCELLED', `opening a host on target "${target.name}" was cancelled`);
     executor = policy.sessions({
-      config, target, runId, artifactsRoot: layout.results, sessionStore,
+      config, target, runId, hostId: options.hostId, artifactsRoot: layout.results, sessionStore,
       headed: options.headed, workerSlot: 0, env: { ...prepared?.env, ...options.env },
       interruptSignal: signal, debug,
       events: { onNotice: (message) => notice(target.name, message) },

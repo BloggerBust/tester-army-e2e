@@ -6,8 +6,8 @@ description: "@e2e-dev/eas の expoSimulators() デバイスプロバイダー�
 "twitter:image": "https://e2e.com/docs/images/og/integrations/eas.png?v=d8cb1fd2c5"
 ---
 
-`@e2e-dev/eas` の `expoSimulators()` は、ホスト型の iOS シミュレーターと Android エミュレーターを提供する
-[Expo Simulators](https://expo.dev/services/simulators) 向けの[デバイスプロバイダー](/mobile#hosted-devices)です。
+`@e2e-dev/eas` の `expoSimulators()` は、[Expo Simulators](https://expo.dev/services/simulators) 向けの[デバイスプロバイダー](/mobile#hosted-devices)です。
+Expo Simulators は、ホスト型の iOS シミュレーターと Android エミュレーターを提供します。
 エンジンは、Expo が各デバイスとともに実行する agent-device デーモン経由で操作します。
 Expo がホストするデバイスで e2e を実行する場合、Mac、Xcode、Android SDK は不要です。
 
@@ -153,7 +153,7 @@ Expo は準備完了から `maxDurationMinutes` 後にセッションを停止�
 - 2 分経ってもキュー内にあるセッションは、`still queued at Expo after two minutes` をログに出力します。
 - ターゲットは順番に準備されるため、あるターゲットの準備済みセッションは、次のターゲットのキュー待ちや起動の間、待機します。
 - 他のセッションの準備完了から `maxIdleTimeMinutes` が経ってもキュー内にあるセッションは、リースの取得に失敗します。
-  待機中のセッションを Expo が停止しようとしている可能性があるためです。その後、実行はすべてのセッションを停止します。
+  準備済みのまま待機しているセッションを、Expo が停止しようとしている可能性があるためです。その後、実行はすべてのセッションを停止します。
 
 ## 実行の様子を見る
 
@@ -184,11 +184,11 @@ agent-device は録画停止時にタッチ表示を動画に描画しますが�
 
 `EXPO_TOKEN` も eas-cli のログイン情報もない場合、アカウントで Expo Simulators を利用できない場合、
 またはセッションが起動しない場合は、リースの取得が失敗し、テスト開始前に実行が終了します。
-セッション内のエラー、長すぎるキュー待ち（[セッション](#sessions)を参照）、
-キューを出てから 15 分経っても起動が完了しない場合に、セッションは失敗します。
+セッションは、エラーになった場合、キュー待ちが長すぎる場合（[セッション](#sessions)を参照）、
+キューを出てから 15 分経っても起動中の場合に失敗します。
 
 プロバイダーは失敗したセッションと、その実行の他のセッションを停止します。
-キュー内のセッションはジョブをキャンセルし、後から Expo が起動してアカウントに課金することを防ぎます。
+キュー内のセッションについてはジョブをキャンセルし、Expo が後から起動してアカウントに課金しないようにします。
 
 ## 次のステップ
 

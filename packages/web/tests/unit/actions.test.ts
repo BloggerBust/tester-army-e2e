@@ -5,11 +5,20 @@
  * support.ts).
  */
 
-import type { Locator as PwLocator, Page } from 'playwright-core';
-import { describe, expect, it, vi } from 'vitest';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
+import type { ElementHandle, Locator as PwLocator, Page } from 'playwright-core';
+import { afterAll, describe, expect, it, vi } from 'vitest';
 import { EngineError, TestError, type LocatorAction } from '@e2e-dev/core/engine';
 import { classifyActionError, dispatchLocatorAction, dispatchPointerAction } from '../../src/actions.ts';
 import { dispatchedInput, type ActionTarget } from '../../src/support.ts';
+
+/** A real file: setInputFiles stats every path before it touches the element. */
+const UPLOAD_DIR = mkdtempSync(path.join(tmpdir(), 'e2e-actions-'));
+const UPLOAD = path.join(UPLOAD_DIR, 'a.txt');
+writeFileSync(UPLOAD, 'a');
+afterAll(() => rmSync(UPLOAD_DIR, { recursive: true, force: true }));
 
 vi.mock('node:timers/promises', () => ({
   setTimeout: (ms: number, value?: unknown, options?: { signal?: AbortSignal }) =>
@@ -179,7 +188,7 @@ function stubLocator(box = { x: 10, y: 20, width: 200, height: 100 }, aim: 'poin
 /** An upload target resolving to one element handle, recording the order of the chooser wait, the click, and the file set. */
 function stubUpload(fileInput: boolean) {
   const calls: string[] = [];
-  const chooser = { setFiles: vi.fn(async (_paths: string[], _options: unknown) => void calls.push('setFiles')) };
+  const chooser = { setFiles: vi.fn(async (_paths: Parameters<ElementHandle['setInputFiles']>[0], _options: unknown) => void calls.push('setFiles')) };
   const page = {
     waitForEvent: vi.fn((_event: string, _options: unknown): Promise<unknown> => {
       calls.push('waitForEvent');
@@ -188,7 +197,7 @@ function stubUpload(fileInput: boolean) {
   };
   const element = {
     evaluate: vi.fn(async () => fileInput),
-    setInputFiles: vi.fn(async (_paths: string[], _options: unknown) => undefined),
+    setInputFiles: vi.fn(async (_paths: Parameters<ElementHandle['setInputFiles']>[0], _options: unknown) => undefined),
     click: vi.fn(async (_options: unknown) => void calls.push('click')),
     dispose: vi.fn(async () => undefined),
   };
@@ -235,27 +244,44 @@ describe('dispatchLocatorAction', () => {
 
   it('uploads through a file chooser it awaits before clicking a button', async () => {
     const { element, target, page, chooser, calls } = stubUpload(false);
-    await dispatchLocatorAction(target, { kind: 'setInputFiles', paths: ['/tmp/a.txt'] }, OPERATION, lookup);
+    await dispatchLocatorAction(target, { kind: 'setInputFiles', paths: [UPLOAD] }, OPERATION, lookup);
     expect(calls).toEqual(['waitForEvent', 'click', 'setFiles']);
     expect(page.waitForEvent).toHaveBeenCalledWith('filechooser', { timeout: expect.any(Number) });
-    expect(chooser.setFiles).toHaveBeenCalledWith(['/tmp/a.txt'], { timeout: expect.any(Number) });
+    expect(chooser.setFiles).toHaveBeenCalledWith([UPLOAD], { timeout: expect.any(Number) });
     expect(element.setInputFiles).not.toHaveBeenCalled();
     expect(element.dispose).toHaveBeenCalled();
   });
 
   it('sets a file input directly', async () => {
     const { element, target, page } = stubUpload(true);
-    await dispatchLocatorAction(target, { kind: 'setInputFiles', paths: ['/tmp/a.txt'] }, OPERATION, lookup);
-    expect(element.setInputFiles).toHaveBeenCalledWith(['/tmp/a.txt'], { timeout: expect.any(Number) });
+    await dispatchLocatorAction(target, { kind: 'setInputFiles', paths: [UPLOAD] }, OPERATION, lookup);
+    expect(element.setInputFiles).toHaveBeenCalledWith([UPLOAD], { timeout: expect.any(Number) });
     expect(element.click).not.toHaveBeenCalled();
     expect(page.waitForEvent).not.toHaveBeenCalled();
+  });
+
+  it('shares the payload byte view with Playwright without copying or widening it', async () => {
+    const { element, target } = stubUpload(true);
+    const bytes = new Uint8Array([17, 0, 128, 255, 18]).subarray(1, 4);
+    await dispatchLocatorAction(target, { kind: 'setInputFilePayloads', files: [
+      { name: 'a.bin', mimeType: 'application/octet-stream', buffer: bytes },
+    ] }, OPERATION, lookup);
+    const files = element.setInputFiles.mock.calls[0]?.[0];
+    expect(Array.isArray(files)).toBe(true);
+    if (!Array.isArray(files)) throw new Error('expected file payload array');
+    const file = files[0];
+    if (file === undefined || typeof file === 'string') throw new Error('expected a file payload');
+    expect(file.buffer.buffer).toBe(bytes.buffer);
+    expect(file.buffer.byteOffset).toBe(bytes.byteOffset);
+    expect(file.buffer.byteLength).toBe(bytes.byteLength);
+    expect([...file.buffer]).toEqual([0, 128, 255]);
   });
 
   it('fails as NOT_ACTIONABLE when the click opens no file chooser', async () => {
     const { target, page } = stubUpload(false);
     page.waitForEvent.mockRejectedValue(Object.assign(new Error('Timeout 7ms exceeded'), { name: 'TimeoutError' }));
     await expect(
-      dispatchLocatorAction(target, { kind: 'setInputFiles', paths: ['/tmp/a.txt'] }, OPERATION, lookup),
+      dispatchLocatorAction(target, { kind: 'setInputFiles', paths: [UPLOAD] }, OPERATION, lookup),
     ).rejects.toMatchObject({ code: 'NOT_ACTIONABLE', message: expect.stringContaining('opened no file chooser') });
   });
 
@@ -266,7 +292,7 @@ describe('dispatchLocatorAction', () => {
     page.waitForEvent.mockReturnValue(new Promise((resolve) => (openChooser = resolve)));
     const upload = dispatchLocatorAction(
       target,
-      { kind: 'setInputFiles', paths: ['/tmp/a.txt'] },
+      { kind: 'setInputFiles', paths: [UPLOAD] },
       { timeoutMs: 1000, signal: cancel.signal },
       lookup,
     );
@@ -285,7 +311,7 @@ describe('dispatchLocatorAction', () => {
     Object.assign(page, { waitForEvent: () => pending });
     element.click.mockRejectedValue(new Error('element is not enabled'));
     await expect(
-      dispatchLocatorAction(target, { kind: 'setInputFiles', paths: ['/tmp/a.txt'] }, OPERATION, lookup),
+      dispatchLocatorAction(target, { kind: 'setInputFiles', paths: [UPLOAD] }, OPERATION, lookup),
     ).rejects.toThrow('element is not enabled');
     rejectChooser(Object.assign(new Error('Timeout 7ms exceeded'), { name: 'TimeoutError' }));
     await new Promise((resolve) => setTimeout(resolve, 0));

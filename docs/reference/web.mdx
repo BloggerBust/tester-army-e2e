@@ -98,6 +98,7 @@ web({ browser: 'firefox' }); // default: 'chromium'
 | Throws | When |
 | --- | --- |
 | `INVALID_CONFIG` | `browser: provider` together with `connect`. |
+| `INVALID_CONFIG` | A name other than `'chromium'`, `'firefox'`, or `'webkit'`, or a value that is neither a name nor a provider. |
 
 #### `chromiumSandbox`
 
@@ -130,6 +131,10 @@ web({ viewport: { width: 390, height: 844 } }); // default: { width: 1280, heigh
 `null` emulates no size, so the page fills the browser window
 ([`WebOptions`](#weboptions)). [`browser.setViewport`](#setviewport) still
 fixes one.
+
+| Throws | When |
+| --- | --- |
+| `INVALID_CONFIG` | A value that is not `null` or `{ width, height }` in whole pixels, each at least 1, or a size with any other key. |
 
 #### `screencast`
 
@@ -674,6 +679,10 @@ Adds an attempt-scoped network route.
 await browser.route('**/api/quote', async (route) => {
   await route.fulfill({ json: { cents: 4200 } });
 });
+
+await browser.route({ method: 'POST', url: '**/api/orders' }, async (route) => {
+  await route.fulfill({ json: { id: 7 } });
+});
 ```
 
 `route.fetch()` returns the upstream `{ url, status, headers, body(), text(), json() }`
@@ -685,6 +694,13 @@ It does not follow redirects, which could take it past the navigation rule.
   a string, `*` matches within a path segment, `**` across `/`, `?` any one
   character, and `\` escapes the next. `unroute` and `waitForResponse` take
   the same patterns.
+- `{ method, url }` narrows the pattern to one HTTP method too. `method` is
+  case-insensitive, `url` keeps the string or `RegExp` grammar above, and
+  `unroute` and `waitForResponse` take the same form.
+- A route whose method does not match steps aside for the routes registered
+  before it, then the network, as if its URL had not matched.
+- A method pattern matches that method exactly: a `GET` route does not answer
+  `HEAD`.
 - A route survives `app.restart()`, `app.clearState()`, and session restore.
 - Routes run newest first.
 - The handler must decide exactly once, with `fulfill`, `continue`,
@@ -704,7 +720,7 @@ It does not follow redirects, which could take it past the navigation rule.
 
 | Throws | When |
 | --- | --- |
-| `INVALID_ARGUMENT` | A predicate function as the pattern. Also an option a decision does not take (Playwright's `abort(errorCode)`, a misspelled key): the request is aborted and the next step fails. |
+| `INVALID_ARGUMENT` | A pattern that is not a string, `RegExp`, or `{ method, url }`; a `{ method, url }` pattern with a missing or extra key, a method that is not an HTTP method, or a `url` that is not a string or `RegExp`. Separately, an option a decision does not take (Playwright's `abort(errorCode)`, a misspelled key such as `bodyy`) aborts the request and fails the next step. |
 | `ACTION_FAILED` | The handler decided twice or not at all. |
 | `POLICY_DENIED` | A `continue` URL with a forbidden scheme. |
 | `CLEANUP_TIMEOUT` | A handler outlived the cleanup budget. It fails the attempt. |
@@ -740,6 +756,18 @@ export interface RouteContinueOverrides {
   postData?: string;
 }
 
+/** A URL pattern narrowed to one HTTP method. */
+export interface RouteMatcher {
+  /** The HTTP method to match, case-insensitive: `'POST'` and `'post'` are the same. */
+  readonly method: string;
+  /**
+   * The URL pattern: a string using the same grammar as a plain `route`
+   * pattern, or a `RegExp`. `route` and `waitForResponse` match requests
+   * against it; `unroute` compares it structurally.
+   */
+  readonly url: string | RegExp;
+}
+
 export interface WebRoute {
   /** The intercepted request. */
   readonly request: {
@@ -763,16 +791,19 @@ export interface WebRoute {
 
 #### `unroute`
 
-Removes the attempt-scoped routes that match a pattern, in the
-[`route`](#route) pattern syntax.
+Removes the routes registered with the same pattern: the same string, the
+same `RegExp` source and flags, or the same method and URL. It compares
+patterns rather than matching URLs, so `unroute('**/api/*')` does not remove
+a route registered for `'**/api/orders'`.
 
 ```ts
 await browser.unroute('**/api/quote');
+await browser.unroute({ method: 'POST', url: '**/api/orders' });
 ```
 
 | Throws | When |
 | --- | --- |
-| `INVALID_ARGUMENT` | A predicate function as the pattern. |
+| `INVALID_ARGUMENT` | A pattern that is not a string, `RegExp`, or `{ method, url }`; a `{ method, url }` pattern with a missing or extra key, a method that is not an HTTP method, or a `url` that is not a string or `RegExp`. |
 
 #### `unrouteAll`
 
@@ -793,6 +824,14 @@ const response = await browser.waitForResponse('**/api/orders');
 expect(response.status).toBe(201);
 ```
 
+```ts
+const created = browser.waitForResponse({ method: 'POST', url: '**/api/orders' });
+await screen.getByRole('button', 'Place order').tap();
+expect((await created).status).toBe(201);
+```
+
+- A `{ method, url }` pattern matches only a response to that method;
+  responses to another method pass it by.
 - The deadline bounds the match: the response resolves as soon as its headers
   arrive.
 - `body()`, `text()`, and `json()` wait for the body on a budget of their own,
@@ -803,7 +842,7 @@ expect(response.status).toBe(201);
 
 | Throws | When |
 | --- | --- |
-| `INVALID_ARGUMENT` | A predicate function as the pattern. |
+| `INVALID_ARGUMENT` | A pattern that is not a string, `RegExp`, or `{ method, url }`; a `{ method, url }` pattern with a missing or extra key, a method that is not an HTTP method, or a `url` that is not a string or `RegExp`. |
 | `ACTION_FAILED` | Nothing matches inside the deadline. From `body()`, `text()`, and `json()`: a body still streaming when their budget runs out, or a body the browser could not read (a connection reset short of the declared `Content-Length`, a request the page aborted, or a redirect, whose body the browser never keeps), instead of an empty string. |
 
 ```ts
@@ -1156,7 +1195,7 @@ The package exports these types for typing config helpers and fixtures:
 `BrowserReleaseContext`, `BrowserProviderDownloads`,
 `BrowserDownloadContext`, `PlaywrightLiveSurface`, `Browser`, `FrameScreen`,
 `BrowserExpectation`, `WebRoute`, `RouteFulfillResponse`,
-`RouteContinueOverrides`, `WebResponse`, `Cookie`, `CookieFields`,
+`RouteContinueOverrides`, `RouteMatcher`, `WebResponse`, `Cookie`, `CookieFields`,
 `CookieFilter`, `Dialog`, and `DialogHandler`.
 
 The runtime exports are `web`, [`surfaceOf`](#surfaceof), and `test`,
@@ -1305,18 +1344,22 @@ export interface Browser extends Expectable<BrowserExpectation> {
   addInitScript(script: string | { path: string } | (() => unknown)): Promise<void>;
   /** Adds an init script function called with one JSON argument. */
   addInitScript<Arg extends JsonValue>(script: (arg: Arg) => unknown, arg: Arg): Promise<void>;
-  /** Adds an attempt-scoped network route. */
+  /** Adds an attempt-scoped network route, optionally narrowed to one HTTP method. */
   route(
-    pattern: string | RegExp,
+    pattern: string | RegExp | RouteMatcher,
     handler: (route: WebRoute) => void | Promise<void>,
   ): Promise<void>;
-  /** Removes matching attempt-scoped routes. */
-  unroute(pattern: string | RegExp): Promise<void>;
+  /**
+   * Removes the routes registered with the same pattern: the same string or
+   * `RegExp` source and flags, and the same method for a `{ method, url }`
+   * pattern. It does not URL-match registered routes.
+   */
+  unroute(pattern: string | RegExp | RouteMatcher): Promise<void>;
   /** Removes all routes registered by this browser fixture, preserving the configured headers. */
   unrouteAll(): Promise<void>;
-  /** Waits for a matching response. */
+  /** Waits for a matching response, optionally narrowed to one HTTP method. */
   waitForResponse(
-    pattern: string | RegExp,
+    pattern: string | RegExp | RouteMatcher,
     options?: { timeout?: number },
   ): Promise<WebResponse>;
   /** Returns cookies visible to the current context. */

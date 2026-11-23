@@ -77,7 +77,10 @@ history and retries once if that makes the request smaller, else fails with
 `CONTEXT_OVERFLOW`; `inconclusiveOnOverflow: true` fails the step with
 `ASSERTION_INCONCLUSIVE` instead, for an assertion loop whose earlier screens
 are evidence. `guard()` stops new tool calls when the step is
-concluding and returns a failure to the model as text. `ctx.actions`
+concluding and returns a failure to the model as text. A `complete_step`
+sent in the same turn as other calls waits for the calls before it, and is
+refused when one of them failed or the last one reported no change; calls
+after it don't run. `ctx.actions`
 authorizes, counts, and records each action, so these steps replay from the
 [cache](/cache) and run on any engine that supports `tap`.
 

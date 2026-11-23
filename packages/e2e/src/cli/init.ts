@@ -11,6 +11,7 @@ import {
   execCommand,
   readPackageManifest,
   runScriptCommand,
+  type PackageManager,
 } from '../internal/package-manager.ts';
 import { CONFIG_NAMES, JS_CONFIG_NAMES } from '../config/names.ts';
 import { DOCS_URL } from './docs-url.ts';
@@ -30,6 +31,7 @@ import {
 import {
   CI_SERVICES,
   ciJobs,
+  configRunsScript,
   configStartsApp,
   configTargets,
   configUsesLocalModel,
@@ -50,6 +52,7 @@ import {
 import { MCP_LOCATIONS, type CiChoice } from './init/choices.ts';
 import { loadConfigModule } from '../config/load.ts';
 import { getEnginePreset, getEnginePresets, DEFAULT_ENGINE_IDS, type EngineId } from './init/engines.ts';
+import { detectFramework, productionScripts, type FrameworkApp, type FrameworkManifest } from './init/frameworks.ts';
 import { copyExample, ExampleCopyCancelled, ExampleDownloadError, findExample, isEmptyDirectory, type ExampleCopy } from './init/examples.ts';
 import { DEFAULT_ENDPOINT, GATEWAYS, getGatewayPreset, validateEndpoint, type GatewayId } from './init/gateways.ts';
 import { isCiMode } from '@e2e-dev/core/lib/config/resolve';
@@ -356,7 +359,15 @@ export async function init(root: string, options: InitOptions = {}): Promise<Ini
     return done('invalid-project', 2);
   }
 
-  const scaffold = createScaffold(engines, model);
+  // A new config's web target starts an app init recognizes, such as Next.js, with the project's own scripts.
+  const framework = existingConfig === undefined && engines.includes('web') ? detectFramework(pkg.manifest) : undefined;
+  const app = framework?.kind === 'app' ? framework : undefined;
+  if (framework?.kind === 'app') {
+    clack.log.info(describeApp(framework, manager));
+  } else if (framework?.kind === 'unsupported') {
+    clack.log.warn(`Found ${framework.framework}, but ${framework.reason}; set app.url and app.command in e2e.config.ts, see ${DOCS_URL}${framework.docs}`);
+  }
+  const scaffold = createScaffold(engines, model, app === undefined ? undefined : { app, manager });
   const testPath = (name: string): string => path.join('tests', `${name}.e2e.${javascript ? 'js' : 'ts'}`);
   // A config with several engines keeps one example per engine; a re-run adds no tests/example.e2e.ts beside them.
   const hasEngineExamples = getEnginePresets().some(({ file }) => existsSync(path.join(cwd, testPath(file))));
@@ -510,6 +521,8 @@ export async function init(root: string, options: InitOptions = {}): Promise<Ini
       existingConfig,
       existingConfigText,
       newTargets: engines.map((id) => getEnginePreset(id).platform).map((platform) => ({ name: platform, platform })),
+      newStartsApp: scaffold.startsApp,
+      webBuild: existingConfigText === undefined ? app?.production?.build : servedBuild(manifest, existingConfigText),
       dependsOn: (name) => declaresDependency(manifest, name),
     });
   }
@@ -548,7 +561,9 @@ export async function init(root: string, options: InitOptions = {}): Promise<Ini
   if (options.continueWith !== undefined) {
     const command = options.continueWith.map(shellArgument).join(' ');
     if (before.length === 0) {
-      const target = scaffold.needsAppUrl ? ` on ${process.env['APP_URL'] ?? 'http://localhost:3000'} (set APP_URL for another URL)` : '';
+      const target = app !== undefined
+        ? ` on ${app.url}`
+        : scaffold.needsAppUrl ? ` on ${process.env['APP_URL'] ?? 'http://localhost:3000'} (set APP_URL for another URL)` : '';
       return finish(`Starting ${command}${target}`, true);
     }
     const appUrl = scaffold.needsAppUrl && process.env['APP_URL'] === undefined ? 'APP_URL=http://localhost:3000 ' : '';
@@ -585,6 +600,8 @@ function planWorkflow(input: {
   readonly existingConfigText: string | undefined;
   readonly jobs: CiJobs;
   readonly jobSuffix: string | undefined;
+  readonly newStartsApp: boolean;
+  readonly webBuild: string | undefined;
 }): PlannedWorkflow {
   const { cwd, repositoryRoot } = input;
   // A workspace member installs and caches at the workspace root, with the root's manager.
@@ -609,14 +626,15 @@ function planWorkflow(input: {
     ...(manager === 'bun' && !existsSync(path.join(installRoot, 'bun.lock')) && existsSync(path.join(installRoot, 'bun.lockb')) ? { lockfile: 'bun.lockb' } : {}),
     secrets,
     jobs: input.jobs,
+    ...(input.webBuild === undefined ? {} : { webBuild: input.webBuild }),
     ...(input.jobSuffix === undefined ? {} : { jobSuffix: input.jobSuffix }),
   });
   return {
     content,
     secrets,
     logins: gateways.filter((gateway) => gateway.login !== undefined).map((gateway) => gateway.label),
-    // A new config leaves app.command commented out.
-    startsApp: input.existingConfigText !== undefined && configStartsApp(input.existingConfigText),
+    // A new config starts only an app init detected; otherwise it leaves app.command commented out.
+    startsApp: input.existingConfigText === undefined ? input.newStartsApp : configStartsApp(input.existingConfigText),
     localModel: input.existingConfigText === undefined
       ? input.model?.gateway === 'openai-compatible' && isLoopbackHost(new URL(input.model.endpoint ?? DEFAULT_ENDPOINT).hostname)
       : configUsesLocalModel(input.existingConfigText),
@@ -654,6 +672,10 @@ async function writePipeline(input: {
   readonly existingConfig: string | undefined;
   readonly existingConfigText: string | undefined;
   readonly newTargets: readonly CiTarget[];
+  /** Whether the new config starts the app; an existing config is read for its own `app.command`. */
+  readonly newStartsApp: boolean;
+  /** The script the web job runs before `e2e run`, the production build the config serves in CI. */
+  readonly webBuild: string | undefined;
   readonly dependsOn: (name: string) => boolean;
 }): Promise<void> {
   const { service, file, relative, cwd, existingConfigText } = input;
@@ -680,6 +702,8 @@ async function writePipeline(input: {
     existingConfigText,
     jobs,
     jobSuffix: file.jobSuffix,
+    newStartsApp: input.newStartsApp,
+    webBuild: input.webBuild,
   });
   const absolute = path.join(input.repositoryRoot, file.file);
   mkdirSync(path.dirname(absolute), { recursive: true });
@@ -710,6 +734,25 @@ async function writePipeline(input: {
   if (jobs.web !== undefined && !workflow.startsApp) {
     clack.log.warn(`Nothing starts the app in CI: set app.command in e2e.config.ts so the runner starts it, see ${DOCS_URL}/web#starting-your-app`);
   }
+}
+
+/** The line init prints for a detected app: the framework, the commands the target runs, and its URL. */
+function describeApp(app: FrameworkApp, manager: PackageManager): string {
+  const production = app.production === undefined
+    ? ''
+    : `, and ${runScriptCommand(manager, app.production.start)} in CI after ${runScriptCommand(manager, app.production.build)}`;
+  return `Found ${app.framework}: the web target starts ${runScriptCommand(manager, app.dev)} on ${app.url}${production}`;
+}
+
+/**
+ * The production build an existing config serves in CI: the build script of
+ * an app init recognizes, when the config runs its start script, on any
+ * port. The pipeline builds it before the tests, since the start script
+ * serves only a build.
+ */
+function servedBuild(manifest: FrameworkManifest, config: string): string | undefined {
+  const scripts = productionScripts(manifest);
+  return scripts !== undefined && configRunsScript(config, scripts.start) ? scripts.build : undefined;
 }
 
 /** The major version of the pnpm on this machine, for `pnpm/action-setup`; `latest` when it cannot be read. */

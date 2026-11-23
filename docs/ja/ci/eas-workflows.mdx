@@ -143,7 +143,7 @@ Workflows の構文ページではなく、[カスタムビルド](https://docs.
 ## モデルのキー
 
 `AI_GATEWAY_API_KEY` などのモデルのキーは、
-[Expo の環境変数](https://docs.expo.dev/eas/environment-variables/) に secret の公開範囲で保存します。
+[Expo の環境変数](https://docs.expo.dev/eas/environment-variables/) に、公開範囲を Secret にして保存します。
 カスタムジョブはデフォルトで `production` を読むため、各ジョブに `environment:` を設定してください。
 
 その環境を読むジョブは、信頼できないプルリクエストを実行するものも含め、キーにアクセスできます。

@@ -8,13 +8,12 @@
  * and staleness stay with the runner.
  */
 
-import { matchesText } from '../internal/text.ts';
+import { compileTextMatcher } from '../internal/text.ts';
 import {
   EngineError,
   type LocatorExpression,
   type SemanticNode,
   type SemanticQuery,
-  type TextPattern,
 } from './contract.ts';
 
 export interface ResolveExpressionOptions {
@@ -49,68 +48,90 @@ export function resolveExpression(
   options: ResolveExpressionOptions = {},
 ): SemanticNode[] {
   const tree = indexTree(nodes);
-  return resolve(expression, tree.all, tree, options);
+  return resolve(expression, { start: 0, end: tree.all.length }, tree, options);
 }
 
-/** Every node of a tree in document order, with the parent of each. */
+/**
+ * Every node of a tree in document (DFS pre-order) order, with the index
+ * range of each node's subtree: `all[enter]` is the node itself and
+ * `all[start .. end)` its descendants (`start` is `enter + 1`), so
+ * containment is an interval test rather than a walk up the parents.
+ */
 interface TreeIndex {
   readonly all: readonly SemanticNode[];
-  readonly parents: ReadonlyMap<SemanticNode, SemanticNode>;
+  readonly subtrees: ReadonlyMap<SemanticNode, Range & { readonly enter: number }>;
+}
+
+/** A half-open `[start, end)` range of `TreeIndex.all`. */
+interface Range {
+  readonly start: number;
+  readonly end: number;
 }
 
 function indexTree(roots: readonly SemanticNode[]): TreeIndex {
   const all: SemanticNode[] = [];
-  const parents = new Map<SemanticNode, SemanticNode>();
-  const walk = (node: SemanticNode, parent: SemanticNode | undefined): void => {
+  const subtrees = new Map<SemanticNode, Range & { readonly enter: number }>();
+  const walk = (node: SemanticNode): void => {
+    const enter = all.length;
     all.push(node);
-    if (parent !== undefined) parents.set(node, parent);
-    for (const child of node.children ?? []) walk(child, node);
+    for (const child of node.children ?? []) walk(child);
+    subtrees.set(node, { enter, start: enter + 1, end: all.length });
   };
-  for (const root of roots) walk(root, undefined);
-  return { all, parents };
+  for (const root of roots) walk(root);
+  return { all, subtrees };
 }
 
+/**
+ * Resolves `expression` among the candidates `tree.all[within]`. The
+ * candidates are always one contiguous range: the whole tree, or the
+ * descendants of one `filter` match (a subtree within a range is a range).
+ */
 function resolve(
   expression: LocatorExpression,
-  candidates: readonly SemanticNode[],
+  within: Range,
   tree: TreeIndex,
   options: ResolveExpressionOptions,
 ): SemanticNode[] {
   switch (expression.kind) {
     case 'union': {
-      const matches = new Set([
-        ...resolve(expression.left, candidates, tree, options),
-        ...resolve(expression.right, candidates, tree, options),
-      ]);
-      return candidates.filter((node) => matches.has(node));
+      const left = resolve(expression.left, within, tree, options);
+      const right = resolve(expression.right, within, tree, options);
+      if (left.length === 0 && right.length === 0) return [];
+      const matches = new Set([...left, ...right]);
+      return tree.all.slice(within.start, within.end).filter((node) => matches.has(node));
     }
     case 'query': {
+      const matches: SemanticNode[] = [];
       const pool =
         expression.scope === undefined
-          ? candidates
-          : descendantsOf(resolve(expression.scope, candidates, tree, options), candidates, tree);
-      const matches = pool.filter((node) => matchesQuery(node, expression.query));
+          ? [within]
+          : descendantRanges(resolve(expression.scope, within, tree, options), within, tree);
+      const matchesQuery = compileQueryMatcher(expression.query);
+      for (const { start, end } of pool) {
+        for (let index = start; index < end; index += 1) {
+          const node = tree.all[index]!;
+          if (matchesQuery(node)) matches.push(node);
+        }
+      }
       return INNERMOST_KINDS.has(expression.query.kind) ? innermostOnly(matches, tree) : matches;
     }
     case 'filter': {
-      const source = resolve(expression.source, candidates, tree, options);
+      const source = resolve(expression.source, within, tree, options);
+      const hasText = expression.hasText === undefined ? undefined : compileTextMatcher(expression.hasText);
+      const hasNotText = expression.hasNotText === undefined ? undefined : compileTextMatcher(expression.hasNotText);
       return source.filter((node) => {
-        if (expression.hasText !== undefined && !subtreeHasText(node, candidates, tree, expression.hasText)) {
-          return false;
-        }
-        if (expression.hasNotText !== undefined && subtreeHasText(node, candidates, tree, expression.hasNotText)) {
-          return false;
-        }
+        if (hasText !== undefined && !subtreeHasText(node, within, tree, hasText)) return false;
+        if (hasNotText !== undefined && subtreeHasText(node, within, tree, hasNotText)) return false;
         if (expression.has !== undefined || expression.hasNot !== undefined) {
-          const within = descendantsOf([node], candidates, tree);
-          if (expression.has !== undefined && resolve(expression.has, within, tree, options).length === 0) return false;
-          if (expression.hasNot !== undefined && resolve(expression.hasNot, within, tree, options).length > 0) return false;
+          const inside = descendantRange(node, within, tree);
+          if (expression.has !== undefined && resolve(expression.has, inside, tree, options).length === 0) return false;
+          if (expression.hasNot !== undefined && resolve(expression.hasNot, inside, tree, options).length > 0) return false;
         }
         return true;
       });
     }
     case 'index': {
-      const source = resolve(expression.source, candidates, tree, options);
+      const source = resolve(expression.source, within, tree, options);
       const position =
         expression.index === 'first' ? 0 : expression.index === 'last' ? source.length - 1 : expression.index;
       const picked = source[position];
@@ -124,7 +145,7 @@ function resolve(
           { retryable: false },
         );
       }
-      return [...options.selector(expression.selector, candidates)];
+      return [...options.selector(expression.selector, tree.all.slice(within.start, within.end))];
     }
     case 'frame':
       throw new EngineError(
@@ -144,40 +165,75 @@ const INNERMOST_KINDS: ReadonlySet<SemanticQuery['kind']> = new Set(['text', 'la
  * upwards: iOS reports a React Native Text host view and its StaticText child
  * with the same label, and a container view inherits its descendants' labels,
  * so without this rule every `getByText` on such a screen is ambiguous.
+ *
+ * `matches` is in document order with no repeats, so a match contains another
+ * exactly when it contains the next one: every later match it contains comes
+ * after the next one and before its subtree ends.
  */
 function innermostOnly(matches: readonly SemanticNode[], tree: TreeIndex): SemanticNode[] {
-  return matches.filter((node) => !matches.some((other) => other !== node && isWithin(other, node, tree)));
+  return matches.filter((node, index) => {
+    const next = matches[index + 1];
+    return next === undefined || !contains(node, next, tree);
+  });
 }
 
 /** True when `node` is a strict descendant of `ancestor`. */
-function isWithin(node: SemanticNode, ancestor: SemanticNode, tree: TreeIndex): boolean {
-  for (let current = tree.parents.get(node); current !== undefined; current = tree.parents.get(current)) {
-    if (current === ancestor) return true;
+function contains(ancestor: SemanticNode, node: SemanticNode, tree: TreeIndex): boolean {
+  const outer = tree.subtrees.get(ancestor);
+  const inner = tree.subtrees.get(node);
+  return outer !== undefined && inner !== undefined && inner.enter >= outer.start && inner.enter < outer.end;
+}
+
+/**
+ * The candidates in `within` that are strict descendants of `ancestor`. A
+ * node from outside the tree (a selector hook may answer one) has none.
+ */
+function descendantRange(ancestor: SemanticNode, within: Range, tree: TreeIndex): Range {
+  const subtree = tree.subtrees.get(ancestor);
+  if (subtree === undefined) return { start: within.end, end: within.end };
+  const start = Math.max(within.start, subtree.start);
+  return { start, end: Math.max(start, Math.min(within.end, subtree.end)) };
+}
+
+/**
+ * The candidates in `within` that are strict descendants of any node in
+ * `ancestors`, as disjoint ranges in document order: nested and repeated
+ * ancestors merge, so each candidate is in one range at most.
+ */
+function descendantRanges(ancestors: readonly SemanticNode[], within: Range, tree: TreeIndex): Range[] {
+  const ranges = ancestors
+    .map((ancestor) => descendantRange(ancestor, within, tree))
+    .filter(({ start, end }) => start < end)
+    .toSorted((a, b) => a.start - b.start);
+  const merged: Range[] = [];
+  for (const range of ranges) {
+    const last = merged.at(-1);
+    if (last !== undefined && range.start <= last.end) {
+      merged[merged.length - 1] = { start: last.start, end: Math.max(last.end, range.end) };
+    } else {
+      merged.push(range);
+    }
   }
-  return false;
+  return merged;
 }
 
-/** The candidates that are strict descendants of any node in `ancestors`, in document order. */
-function descendantsOf(
-  ancestors: readonly SemanticNode[],
-  candidates: readonly SemanticNode[],
-  tree: TreeIndex,
-): SemanticNode[] {
-  if (ancestors.length === 0) return [];
-  return candidates.filter((node) => ancestors.some((ancestor) => isWithin(node, ancestor, tree)));
-}
-
-/** Whether the node's own name, text, or value, or a descendant's, matches `pattern`. */
+/** Whether the node's own name, text, or value, or a descendant's within `within`, matches. */
 function subtreeHasText(
   node: SemanticNode,
-  candidates: readonly SemanticNode[],
+  within: Range,
   tree: TreeIndex,
-  pattern: TextPattern,
+  matches: (text: string) => boolean,
 ): boolean {
-  const textsOf = (entry: SemanticNode): (string | undefined)[] => [entry.name, entry.text, entry.value];
   const matchesAny = (entry: SemanticNode): boolean =>
-    textsOf(entry).some((text) => text !== undefined && matchesText(text, pattern));
-  return matchesAny(node) || descendantsOf([node], candidates, tree).some(matchesAny);
+    (entry.name !== undefined && matches(entry.name)) ||
+    (entry.text !== undefined && matches(entry.text)) ||
+    (entry.value !== undefined && matches(entry.value));
+  if (matchesAny(node)) return true;
+  const { start, end } = descendantRange(node, within, tree);
+  for (let index = start; index < end; index += 1) {
+    if (matchesAny(tree.all[index]!)) return true;
+  }
+  return false;
 }
 
 /** The states a role query may require, in contract order. */
@@ -186,44 +242,63 @@ const STATE_KEYS = ['checked', 'disabled', 'selected', 'expanded', 'pressed'] as
 >)[];
 
 /**
- * One node against one semantic query. Role queries skip hidden nodes, as a
+ * Compiles one semantic query to a test of one node, its text patterns
+ * compiled once per pass over the candidates rather than once per node. Role queries skip hidden nodes, as a
  * browser's role query does; the other kinds answer with every node and
  * leave visibility to the action or assertion, unless the query says
  * `visible`, which drops hidden nodes for every kind.
  */
-function matchesQuery(node: SemanticNode, query: SemanticQuery): boolean {
-  if (query.visible === true && node.states?.hidden === true) return false;
+function compileQueryMatcher(query: SemanticQuery): (node: SemanticNode) => boolean {
+  const matches = compileKindMatcher(query);
+  return query.visible === true ? (node) => node.states?.hidden !== true && matches(node) : matches;
+}
+
+function compileKindMatcher(query: SemanticQuery): (node: SemanticNode) => boolean {
   switch (query.kind) {
     case 'role': {
-      if (query.value.kind !== 'string') {
-        throw new EngineError('ENGINE_FAILURE', 'role query value must be a string', { retryable: false });
+      const role = query.value;
+      // Thrown when a node is tested, not here, so a query over no candidates answers nothing.
+      if (role.kind !== 'string') {
+        return () => {
+          throw new EngineError('ENGINE_FAILURE', 'role query value must be a string', { retryable: false });
+        };
       }
-      if ((node.role ?? '') !== query.value.value) return false;
-      if (query.name !== undefined && !matchesText(node.name ?? '', query.name)) return false;
-      if (node.states?.hidden === true) return false;
+      const name = query.name === undefined ? undefined : compileTextMatcher(query.name);
       const wanted = query.states ?? {};
-      for (const key of STATE_KEYS) {
-        const expected = wanted[key];
-        if (expected !== undefined && (node.states?.[key] ?? false) !== expected) return false;
-      }
-      // A tree without heading levels answers a level query with nothing rather than everything.
-      if (query.level !== undefined && node.level !== query.level) return false;
-      return true;
+      return (node) => {
+        if ((node.role ?? '') !== role.value) return false;
+        if (name !== undefined && !name(node.name ?? '')) return false;
+        if (node.states?.hidden === true) return false;
+        for (const key of STATE_KEYS) {
+          const expected = wanted[key];
+          if (expected !== undefined && (node.states?.[key] ?? false) !== expected) return false;
+        }
+        // A tree without heading levels answers a level query with nothing rather than everything.
+        return query.level === undefined || node.level === query.level;
+      };
     }
-    case 'label':
-      return node.name !== undefined && matchesText(node.name, query.value);
+    case 'label': {
+      const matches = compileTextMatcher(query.value);
+      return (node) => node.name !== undefined && matches(node.name);
+    }
     case 'placeholder': {
-      const placeholder = node.attributes?.['placeholder'];
-      return placeholder !== undefined && matchesText(placeholder, query.value);
+      const matches = compileTextMatcher(query.value);
+      return (node) => {
+        const placeholder = node.attributes?.['placeholder'];
+        return placeholder !== undefined && matches(placeholder);
+      };
     }
-    case 'text':
-      return (
-        (node.name !== undefined && matchesText(node.name, query.value)) ||
-        (node.text !== undefined && matchesText(node.text, query.value))
-      );
-    case 'displayValue':
-      return node.value !== undefined && matchesText(node.value, query.value);
-    case 'testId':
-      return node.testId !== undefined && matchesText(node.testId, query.value);
+    case 'text': {
+      const matches = compileTextMatcher(query.value);
+      return (node) => (node.name !== undefined && matches(node.name)) || (node.text !== undefined && matches(node.text));
+    }
+    case 'displayValue': {
+      const matches = compileTextMatcher(query.value);
+      return (node) => node.value !== undefined && matches(node.value);
+    }
+    case 'testId': {
+      const matches = compileTextMatcher(query.value);
+      return (node) => node.testId !== undefined && matches(node.testId);
+    }
   }
 }

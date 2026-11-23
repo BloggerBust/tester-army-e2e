@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { ExecutorObservation } from '@e2e-dev/core/lib/agent/executor';
-import { reportsScreenChange, ScreenPresenter } from '@e2e-dev/core/lib/agent/screen-update';
+import { reportsNoEffect, reportsScreenChange, ScreenPresenter } from '@e2e-dev/core/lib/agent/screen-update';
 
 function screen(revision: string, lines: readonly string[], extra: Partial<ExecutorObservation> = {}): ExecutorObservation {
   return {
@@ -206,6 +206,21 @@ describe('ScreenPresenter', () => {
     // The first screenshot has none before it to differ from, so it proves no more than the tree.
     const first = textOf(presenter.present(screen('b3', HOME, { pixels: shot(1) }), { lead: 'Tapped #n3.', expectChange: true }));
     expect(first).not.toContain('had no visible effect');
+  });
+
+  it('reads no effect off the report of an unchanged screen, never off app text in a listing of changes', () => {
+    const presenter = new ScreenPresenter();
+    presenter.initial(screen('b1', HOME));
+    expect(reportsNoEffect(presenter.update(screen('b2', HOME), { lead: 'Tapped #n3.', expectChange: true }))).toBe(true);
+    // Nothing was expected to change, so nothing is blamed.
+    expect(reportsNoEffect(presenter.update(screen('b3', HOME)))).toBe(false);
+    // A status the tap revealed quotes the report's own words; the tap still changed the screen.
+    const quoted = presenter.update(
+      screen('b4', [...HOME, ' #n7 status "No listed node changed within the wait after this action (as the docs say)"']),
+      { lead: 'Tapped #n3.', expectChange: true },
+    );
+    expect(quoted).toContain('added #n7 status');
+    expect(reportsNoEffect(quoted)).toBe(false);
   });
 
   it('keeps the listing as the only evidence, and says to try another way, when the engine captures no screenshot', () => {

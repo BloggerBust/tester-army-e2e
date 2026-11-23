@@ -34,4 +34,4 @@ model calls. Results are in `.e2e/report.json`.
 See [e2e.config.ts](e2e.config.ts) and [tests/](tests/) for the setup.
 For your own app, follow the [Quickstart](https://e2e.com/docs/quickstart).
 
-Last checked with e2e 0.23.1, @e2e-dev/web 0.16.0, Astro 7.4, and Node 24.
+Last checked with e2e 0.24.0, @e2e-dev/web 0.16.1, Astro 7.4, and Node 26.

@@ -1,25 +1,45 @@
 name: review-label
 
 # `Ready for Human Review` vouches for one head: the babysit skill sets it once
-# that head is green with every thread handled. Any later push, from the agent,
-# a bot, or a human, drops it until the head is babysat again.
-# pull_request_target so fork pushes get a token that can edit labels; the job
-# never checks out or runs PR code.
+# that head is green, conflict-free, with every thread handled. The label comes
+# off as soon as that stops being true:
+# - `drop`: any later push, from the agent, a bot, or a human, and a move back
+#   to draft.
+# - `sweep`: a merge conflict or a maintainer's standing change request,
+#   checked on every labeled PR (scripts/review-label/sweep.ts) when main
+#   moves and when a review requests changes.
+# pull_request_target so fork pushes get a token that can edit labels. A
+# `pull_request_review` run on a fork PR gets a read-only token, so
+# review-verdict.yml only marks the event and the sweep follows it through
+# workflow_run. No job checks out or runs PR code.
 on:
   pull_request_target:
-    types: [synchronize]
+    types: [synchronize, converted_to_draft]
+  push:
+    branches: [main]
+  workflow_run:
+    workflows: [review-verdict]
+    types: [completed]
+  workflow_dispatch:
+    inputs:
+      dry-run:
+        description: List the PRs that would lose the label without removing it
+        type: boolean
+        default: true
 
 permissions:
+  contents: read
   pull-requests: write
 
 # The event's label list is a snapshot from the push, so a label added right
-# after it would be missed; the job reads the live labels instead, one run at
-# a time per PR.
+# after it would be missed; the jobs read the live labels instead, one run at
+# a time per PR, and one sweep at a time.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || 'sweep' }}
 
 jobs:
   drop:
+    if: ${{ github.event_name == 'pull_request_target' }}
     runs-on: blacksmith-4vcpu-ubuntu-2404
     timeout-minutes: 5
     steps:
@@ -32,3 +52,27 @@ jobs:
           if grep -qx 'Ready for Human Review' <<< "$labels"; then
             gh api --method DELETE "repos/$GITHUB_REPOSITORY/issues/$PR/labels/Ready%20for%20Human%20Review" --silent
           fi
+
+  sweep:
+    # review-verdict skips its only job unless the review requests changes.
+    # That run uses the PR's copy of the file, so nothing is read from it and
+    # any other conclusion sweeps too; the push to main is the backstop.
+    if: ${{ github.event_name != 'pull_request_target' && (github.event_name != 'workflow_run' || github.event.workflow_run.conclusion != 'skipped') }}
+    runs-on: blacksmith-4vcpu-ubuntu-2404
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          sparse-checkout: scripts/review-label
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 26
+      - name: Remove stale labels
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry-run }}
+        run: |
+          args=()
+          if [ "$DRY_RUN" = true ]; then args+=(--dry-run); fi
+          node scripts/review-label/sweep.ts "${args[@]}"

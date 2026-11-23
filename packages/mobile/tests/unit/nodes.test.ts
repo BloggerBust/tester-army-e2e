@@ -542,7 +542,7 @@ describe('snapshot projection', () => {
     ]);
     const [, email, password, pin, note] = projected.index.map((entry) => entry.node);
     expect(email).toMatchObject({ role: 'textbox', name: 'Email', value: 'oskar@example.com' });
-    expect(email!.states).toBeUndefined();
+    expect(email!.states).toEqual({ readonly: false });
     expect(email!.inputPurpose).toBeUndefined();
     expect(password).toMatchObject({ role: 'textbox', name: 'Password', inputPurpose: 'password', states: { secure: true }, testId: 'com.example:id/password' });
     expect(password!.value).toBeUndefined();
@@ -551,6 +551,41 @@ describe('snapshot projection', () => {
     expect(pin).toMatchObject({ role: 'textbox', inputPurpose: 'password', states: { secure: true } });
     expect(pin!.value).toBeUndefined();
     expect(note!.role).toBe('text');
+  });
+
+  it('reports a text field read-only only where the platform says whether it takes text', () => {
+    const projected = project([
+      { ref: 'e1', type: 'android.widget.EditText', label: 'Name', editable: true },
+      { ref: 'e2', type: 'android.widget.EditText', label: 'Order id', editable: false },
+      { ref: 'e3', type: 'TextField', label: 'City' },
+      { ref: 'e4', type: 'android.widget.Spinner', label: 'Country', editable: false },
+      { ref: 'e5', type: 'android.widget.TextView', label: 'Hint', editable: false },
+      { ref: 'e6', type: 'android.widget.Spinner', label: 'Search city', editable: true },
+      // agent-device 0.21.40 fills in `editable: true` for every iOS text field
+      // and text view from the element type, so the flag says nothing there.
+      { ref: 'e7', type: 'TextView', label: 'Terms', editable: true },
+      { ref: 'e8', type: 'TextField', label: 'Street', editable: true },
+      { ref: 'e9', type: 'android.widget.EditText', label: 'Zip' },
+    ]);
+    const [name, orderId, city, country, hint, searchCity, terms, street, zip] = projected.index.map((entry) => entry.node);
+    expect(name).toMatchObject({ role: 'textbox', states: { readonly: false } });
+    expect(orderId).toMatchObject({ role: 'textbox', states: { readonly: true } });
+    // No flag: unknown, so no state, rather than an editable guess.
+    expect(city!.role).toBe('textbox');
+    expect(city!.states?.readonly).toBeUndefined();
+    // A picker takes no typed text, yet is not read-only.
+    expect(country!.states?.readonly).toBeUndefined();
+    expect(hint!.states?.readonly).toBeUndefined();
+    // A combobox the platform says takes text is editable.
+    expect(searchCity).toMatchObject({ role: 'combobox', states: { readonly: false } });
+    // An iOS flag is a guess from the element type: no state, so a read-only text view does not pass as editable.
+    expect(terms!.role).toBe('textbox');
+    expect(terms!.states?.readonly).toBeUndefined();
+    expect(street!.role).toBe('textbox');
+    expect(street!.states?.readonly).toBeUndefined();
+    // An Android field with no flag is unknown too, not read-only.
+    expect(zip!.role).toBe('textbox');
+    expect(zip!.states?.readonly).toBeUndefined();
   });
 
   it('keeps a role that already takes text when the platform reports it editable, and trusts the flag on a control role', () => {

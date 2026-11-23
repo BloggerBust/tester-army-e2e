@@ -99,6 +99,43 @@ test('times out', { fail: 'too slow', timeout: 500 }, async () => {
   );
 
   it(
+    'marks every test in a describe.fail group, each judged on its own',
+    async () => {
+      const file = `import { describe, expect, test } from 'e2e';
+
+describe.fail('legacy', () => {
+  test('still broken', async () => {
+    expect(1).toBe(2);
+  });
+  test('fixed since', async () => {});
+});
+
+describe('known gaps', { fail: 'old checkout' }, () => {
+  test('card form', async () => {
+    throw new Error('the gap');
+  });
+});
+
+test('outside the group', async () => {});
+`;
+      const { outcome, project } = await runProject({ 'tests/group.e2e.ts': file }, {});
+      assertValidReport(outcome.report);
+      const byTitle = (title: string) => outcome.report.run.results.find((result) => result.titlePath.at(-1) === title)!;
+
+      expect(byTitle('still broken')).toMatchObject({ status: 'passed', expectedFailure: { reason: 'expected to fail' } });
+      const fixed = byTitle('fixed since');
+      expect(fixed.status).toBe('failed');
+      expect(fixed.attempts[0]?.error).toMatchObject({ code: 'UNEXPECTED_PASS' });
+      expect(byTitle('card form')).toMatchObject({ status: 'passed', expectedFailure: { reason: 'old checkout' } });
+      const outside = byTitle('outside the group');
+      expect(outside.status).toBe('passed');
+      expect(outside.expectedFailure).toBeUndefined();
+      project.cleanup();
+    },
+    120_000,
+  );
+
+  it(
     'takes a mark from a beforeEach hook and refuses one from an afterEach hook',
     async () => {
       const file = `import { afterEach, beforeEach, describe, expect, test } from 'e2e';

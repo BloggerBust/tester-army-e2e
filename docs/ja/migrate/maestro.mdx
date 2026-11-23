@@ -42,7 +42,7 @@ e2e は Maestro の YAML フローを TypeScript のテストに置き換えま�
 | --- | --- |
 | 各フロー冒頭の `appId` | ターゲットの `app: { bundleId: 'com.example.app' }`。`app.open()` が起動するアプリ |
 | フローごとに異なる `appId`、フロー途中の別のアプリ | テスト内の `device.openApp(id)`、またはアプリごとに別の設定 |
-| `--platform`, `--device` | `mobile({ platform: 'ios', device: 'iPhone 17' })`。プラットフォームごとに 1 ターゲット。`device` のリストはプール |
+| `--platform`, `--device` | `mobile({ platform: 'ios', device: 'iPhone 17' })`。プラットフォームごとに 1 ターゲット。`device` のリストはプール。1 回の実行だけなら `e2e run --target ios --device 'iPhone 17'` |
 | `.maestro/config.yaml` の `flows`、`'!helper.yaml'` | `tests: ['tests/**/*.e2e.ts', '!tests/helpers/**']` |
 | `tags`, `--include-tags`, `--exclude-tags` | テストやグループの `{ tags: [...] }`。CLI の `--tag`、`--exclude-tag` |
 | `env` と `${VAR}` | モジュールの定数と、ゴールの `params`: `agent.act('sign in as {email}', { params: { email } })` |
@@ -122,7 +122,7 @@ test('asks for the email', async ({ app, agent, screen }) => {
 | `tapOn` 後の `inputText`、`eraseText`、`pressKey: Enter` | フィールドのロケーターに対する `.fill('text')`、`.clear()`、`.press('Enter')` |
 | `inputRandomEmail`, `inputRandomText`, `faker` | `act` の params の値を `unique()` で囲むと、キャッシュを引き続き再生できます。それ以外は任意の npm の faker |
 | `copyTextFrom`, `pasteText` | `await locator.textContent()` の後に `.fill(text)` |
-| `swipe: { direction: UP }`, `scroll` | `screen.swipe({ direction: 'down' })`。Maestro は指の方向、e2e はコンテンツを進める方向を指定 |
+| `swipe: { direction: UP }`, `scroll` | `screen.swipe({ direction: 'down' })`。Maestro は指が動く方向、e2e はコンテンツをスクロールする方向を指定 |
 | `swipe: { start, end }`, `scrollUntilVisible` | ピクセル単位の `screen.swipe({ from, to })`、`screen.scrollUntilVisible(locator, { direction })` |
 
 </Accordion>
@@ -154,7 +154,7 @@ test('asks for the email', async ({ app, agent, screen }) => {
   画面を一度だけ読み取り、待機しません。複数一致では失敗するため、同じ条件に一致する非表示の要素があり得る場合は
   `{ visible: true }` または `.first()` を追加してください。
 - `below`、`above`、`leftOf`、`rightOf` に対応する機能はありません。[未対応](#not-yet)を参照してください。
-  iOS の通常の React Native `View` では `filter({ has })` やクエリの連結で一致しません。
+  iOS では、通常の React Native `View` に対する `filter({ has })` やクエリの連結は何にも一致しません。
   [既知のデバイス制限](/mobile#known-device-limitations)を参照してください。
 
 ## e2e にまだない機能
@@ -177,7 +177,6 @@ test('asks for the email', async ({ app, agent, screen }) => {
 | Maestro Cloud | [ホスト型デバイスプロバイダー](/mobile#hosted-devices)を使う自身の [CI](/ci) |
 | `pressKey: lock`, `power`, `volume up`, `volume down` | [`unstable_raw`](/reference/mobile#unstable_raw) の `client.command.hardwareButton`。Android では電源と音量、iPhone 実機では音量 |
 | JUnit の `properties`、`--output` による JUnit のパス | タグやタイトルに ID を含める。実行後に `.e2e/junit.xml` をコピー |
-| コマンドラインの `--device` | 設定の `device: process.env.DEVICE` |
 
 ### 未対応
 

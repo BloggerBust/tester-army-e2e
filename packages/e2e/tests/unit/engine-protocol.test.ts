@@ -12,6 +12,7 @@ import {
   describeEngine,
   ENGINE_METHODS,
   KNOWN_LOCATOR_ACTION_KINDS,
+  LOCATOR_ACTION_KINDS,
   POINTER_ACTION_KINDS,
   EngineError,
   loopbackTransport,
@@ -26,6 +27,7 @@ import {
 } from '@e2e-dev/core/lib/engine/index';
 import { resolveConfig } from '../../src/config/resolve-run.ts';
 import { ConfigurationError, TestTimeoutError } from '@e2e-dev/core/lib/internal/errors';
+import { encodeLocatorAction, decodeLocatorAction } from '@e2e-dev/core/lib/engine/protocol/protocol';
 import { protocolEngine } from '@e2e-dev/core/lib/engine/protocol/client';
 import { Connection } from '@e2e-dev/core/lib/engine/protocol/connection';
 import type { EngineTransport } from '@e2e-dev/core/lib/engine/protocol/transport';
@@ -96,6 +98,39 @@ describe('engine protocol', () => {
     expect([...remote.capabilities].toSorted()).toEqual([...local.capabilities].toSorted());
     expect(remote.actions).toEqual(['tap', 'fill']);
     expect(Object.keys(remote.session ?? {}).toSorted()).toEqual(['open', 'reset']);
+  });
+
+  it('encodes only wire payload bytes and keeps ordinary path actions unchanged', () => {
+    const bytes = new Uint8Array([17, 0, 128, 255, 18]).subarray(1, 4);
+    const action = { kind: 'setInputFilePayloads', files: [
+      { name: 'a.bin', mimeType: 'application/octet-stream', buffer: bytes },
+      { name: 'empty.bin', mimeType: 'application/octet-stream', buffer: new Uint8Array() },
+    ] } as const;
+    const wire = encodeLocatorAction(action);
+    expect(wire).toEqual({ kind: 'setInputFilePayloads', files: [
+      { name: 'a.bin', mimeType: 'application/octet-stream', buffer: 'AID/' },
+      { name: 'empty.bin', mimeType: 'application/octet-stream', buffer: '' },
+    ] });
+    expect(decodeLocatorAction(JSON.parse(JSON.stringify(wire)))).toEqual(action);
+    const paths = { kind: 'setInputFiles', paths: ['a.bin'] } as const;
+    expect(encodeLocatorAction(paths)).toBe(paths);
+    expect(decodeLocatorAction(paths)).toBe(paths);
+  });
+
+  it('negotiates payload uploads and preserves their bytes over JSON-RPC', async () => {
+    const perform = vi.fn<NonNullable<Engine['perform']>>(async () => undefined);
+    const { local, remote } = overLoopback(toy({ actions: KNOWN_LOCATOR_ACTION_KINDS, perform }));
+    expect(remote.actions).toContain('setInputFilePayloads');
+    await remote.init!(initInfo());
+    const action = { kind: 'setInputFilePayloads', files: [{ name: 'binary.bin', mimeType: 'application/octet-stream', buffer: new Uint8Array([0, 128, 255]) }] } as const;
+    await local.perform!({ id: 'root', revision: '1' }, action, operation());
+    expect(perform.mock.calls[0]?.[1]).toBe(action);
+    perform.mockClear();
+    await remote.perform!({ id: 'root', revision: '1' }, action, operation());
+    expect(perform).toHaveBeenCalledWith(expect.anything(), action, expect.anything());
+    await remote.dispose!(cleanup);
+    const legacy = overLoopback(toy({ actions: LOCATOR_ACTION_KINDS, perform }));
+    expect(legacy.remote.actions).not.toContain('setInputFilePayloads');
   });
 
   it('carries a snapshot with its pixels byte for byte', async () => {
@@ -538,6 +573,9 @@ describe('engine protocol', () => {
       { ...base, methods: ['engine/readStyle'] },
       { ...base, methods: ['engine/observe'], actions: ['tap'] },
       { ...base, methods: ['engine/observe'], tapModifiers: true },
+      { ...base, methods: ['engine/observe'], selectsDevice: true },
+      // The client serves prepare for finish alone, which would drop the device it never forwards.
+      { ...base, methods: ['lifecycle/finish'], selectsDevice: true },
       { ...base, methods: ['engine/observe'], pointerActions: ['tap'] },
       { ...base, methods: ['engine/locate'] },
       { ...base, methods: ['engine/observe', 'keyboard/type'] },

@@ -36,7 +36,7 @@ e2e では、各ステップを手元のマシンや CI で実行する TypeScri
 ## TesterArmy MCP サーバーへの接続
 
 コーディングエージェントは、`https://tester.army/mcp` のホスト型サーバーからテストを読み取ります。
-手元のマシンのコーディングエージェントに追加します。
+このサーバーを手元のマシンのコーディングエージェントに追加します。
 
 <CodeGroup>
 ```bash npm
@@ -58,7 +58,7 @@ bunx add-mcp --global --name testerarmy https://tester.army/mcp
 クライアントに求められたらログインします。その他の追加方法は
 [TesterArmy の MCP セットアップ](https://tester.army/docs/cli/mcp)に載っています。
 
-移行では TesterArmy からの読み取りのみを行います。そこでテストを編集、削除、実行することはありません。
+移行では TesterArmy から読み取るだけです。TesterArmy 上のテストを編集、削除、実行することはありません。
 
 ## プロジェクトの移行
 

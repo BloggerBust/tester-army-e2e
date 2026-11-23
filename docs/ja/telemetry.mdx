@@ -74,7 +74,7 @@ CLI は、実際のペイロードを `[telemetry] {...}` として標準エラ�
 | `sandbox` | カーネルが名乗る microVM（`firecracker`）。それ以外は `null` |
 | `ci`, `ci_name` | `CI` が設定されているかと、識別情報がある場合のベンダー（`github-actions`、`gitlab`、`circleci` など） |
 | `fleet` | `E2E_TELEMETRY_FLEET` の値。未設定は `null` |
-| `coding_agent` | コマンドを実行したシェルのコーディングエージェント。識別情報がある場合のみ（`claude-code`、`cursor`、`codex` など） |
+| `coding_agent` | コマンドを実行したシェルを動かしているコーディングエージェント。識別情報がある場合のみ（`claude-code`、`cursor`、`codex` など） |
 | `e2e_version`, `package_manager` | e2e のバージョンと、CLI を起動したパッケージマネージャー |
 | `runtime`, `runtime_version`, `node_version` | `node`、`bun`、`deno` とそのバージョン。`node_version` は Node 自身のバージョン、または Bun・Deno の Node 互換バージョン |
 | `$lib`, `$lib_version`, `$process_person_profile`, `$geoip_disable` | `e2e`、そのバージョン、`false`、`true`。PostHog は個人プロフィールを保持せず、位置情報も推定しません |
@@ -171,10 +171,11 @@ CLI は、実際のペイロードを `[telemetry] {...}` として標準エラ�
 
 | プロパティ | 値 |
 | --- | --- |
-| `client`, `client_version` | MCP クライアントが名乗る名前とバージョン（`claude-code`、`cursor-vscode` など）。クライアントが自己紹介する前は `null` |
+| `client`, `client_version` | MCP クライアントが名乗る名前とバージョン（`claude-code`、`cursor-vscode` など）。クライアントが名乗る前は `null` |
 | `outcome`, `error_code` | 開始できたセッションは `closed`。開始失敗は `open-failed` と失敗のランナーコード（`APP_UNREACHABLE`、`ENGINE_FAILURE` など） |
-| `ended_by` | `close_session` は `agent`、アイドル終了は `idle`、セッションの時間制限は `step`、サーバー終了は `server`。開始失敗は `null` |
+| `ended_by` | `close_session` は `agent`、アイドル終了は `idle`、セッションが時間制限に達したときと一時停止中のテストが再開したときは `step`、サーバー終了は `server`。開始失敗は `null` |
 | `platform`, `engine`, `headed` | 通常の実行と同様に、ターゲットのプラットフォーム、エンジンとバージョン、UI を表示したか |
+| `attached` | セッションが一時停止中のテストにアタッチしたか |
 | `duration_ms`, `sessions_open` | セッションの存続時間と、開始時に開いていた他のセッション数 |
 | `calls_total`, `calls_failed`, `calls` | ツール呼び出し数、失敗数、セッション固有のツール名別の回数: `{"observe": 4, "tap": 9, "locate": 2, "screenshot": 1}` |
 | `error_codes` | 各ランナーコードによる呼び出し失敗数: `{"LOCATOR_NOT_FOUND": 2}`。最大 20 コード |
@@ -188,17 +189,17 @@ CLI は、実際のペイロードを `[telemetry] {...}` として標準エラ�
 
 ## CI 環境
 
-CI の実行はマシン単位ではなく CI ベンダーとして集計し、設定ファイルも通知もありません。CI ベンダーの環境ではないのに、コーディングエージェントがシェルで `CI` を設定した場合は、動作するマシンとして数えます。
+CI の実行は、マシンではなく CI ベンダー単位で集計します。設定ファイルは使わず、通知も表示しません。CI ベンダーの環境ではないのに、コーディングエージェントがシェルで `CI` を設定した場合は、そのエージェントが動いているマシンとして数えます。
 
 CI では、環境変数でのみテレメトリーを無効にできます。ジョブの `env` に `E2E_TELEMETRY_DISABLED: '1'` を設定してください。
 
 ## フリート環境
 
-利用者のために新しいマシンで e2e を動かすプラットフォームでは、そのままだと各マシンを新しいユーザーとして数えてしまいます。それらのマシンに `E2E_TELEMETRY_FLEET=<name>` を設定してください。イベントは `fleet:<name>` として集計され、CI と同様に設定ファイルも通知もありません。何も送らない場合は `E2E_TELEMETRY_DISABLED=1` を設定します。
+利用者のために新しいマシンで e2e を動かすプラットフォームでは、そのままだと各マシンを新しいユーザーとして数えてしまいます。それらのマシンに `E2E_TELEMETRY_FLEET=<name>` を設定してください。イベントは `fleet:<name>` として集計されます。CI と同様に、設定ファイルは使わず、通知も表示しません。何も送らない場合は `E2E_TELEMETRY_DISABLED=1` を設定します。
 
 ## 送信先
 
-イベントは、e2e のメンテナーが運用する PostHog プロジェクトの `eu.i.posthog.com` に送られます。PostHog は個人プロフィールを保持せず、リクエスト元アドレスを保存せず、各イベントで GeoIP を使いません。データは集計した状態で読みます。
+イベントは、e2e のメンテナーが運用する PostHog プロジェクトの `eu.i.posthog.com` に送られます。PostHog は個人プロフィールを保持せず、リクエスト元アドレスを保存せず、各イベントで GeoIP を使いません。データは集計した形で参照されます。
 
 テレメトリーには[セキュリティポリシー](https://github.com/e2e-inc/e2e/blob/main/SECURITY.md)が適用されます。実行が行うその他の接続は、[外向きの接続](/reference/security#outbound-connections)に記載しています。
 

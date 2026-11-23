@@ -20,9 +20,11 @@
  * `check-docs-examples.ts` checks on the English page only. A missing
  * navigation label falls back to the English one on the site.
  *
- * It fails only on what needs no language to fix: a translation with no
- * English page (delete or move it with its English page), a translation
- * without a `title`, and a language with no `navigation.json`.
+ * It fails on a translation with no English page (delete or move it with
+ * its English page), a translation without a `title`, and a language with no
+ * `navigation.json`, none of which needs the language to fix, and on a line
+ * that repeats the end of the line above it (`repeatedLines` in
+ * `docs-prose.ts`).
  *
  * Usage: `node scripts/check-docs-translations.ts`, part of `pnpm docs:check`.
  * Prints every warning (as an annotation on GitHub Actions) and exits 1
@@ -34,15 +36,13 @@ import { join, relative, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { DOCS_LANGUAGES } from './docs-languages.ts';
 import { pages } from './docs-pages.ts';
+import { FRONTMATTER, repeatedLines, split } from './docs-prose.ts';
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url));
 const DOCS = join(ROOT, 'docs');
-// MDX components can contain fences indented beyond CommonMark's three spaces.
-const FENCE = /^ *(`{3,}|~{3,})/;
 const HEADING = /^ {0,3}(#{1,4})\s+\S/;
 const ELEMENT = /<(Tab|Accordion)\b([^>]*)>/g;
 const ID = /\bid="([^"]*)"/g;
-const FRONTMATTER = /^---\n([\s\S]*?)\n---\n/;
 
 interface DocsJson {
   navigation: { tabs: { tab: string; groups?: { group: string }[] }[] };
@@ -61,31 +61,6 @@ function docsPath(path: string): string {
 /** A page's source with LF line endings, so the patterns match a CRLF checkout too. */
 function read(path: string): string {
   return readFileSync(path, 'utf8').replaceAll('\r\n', '\n');
-}
-
-/**
- * The page's lines outside code fences, and its code blocks with their fence
- * lines; a fence closes only on the same character at least as long.
- */
-function split(source: string): { prose: string[]; code: string[] } {
-  const prose: string[] = [];
-  const code: string[] = [];
-  let open: { fence: string; lines: string[] } | undefined;
-  for (const line of source.split('\n')) {
-    const fence = FENCE.exec(line)?.[1];
-    if (open) {
-      open.lines.push(line);
-      if (fence && fence[0] === open.fence[0] && fence.length >= open.fence.length && line.trim() === fence) {
-        code.push(open.lines.join('\n'));
-        open = undefined;
-      }
-    } else if (fence) {
-      open = { fence, lines: [line] };
-    } else {
-      prose.push(line);
-    }
-  }
-  return { prose, code };
 }
 
 /** What gives a page its anchors, in order (heading levels, tabs and accordions, explicit ids), and its code. */
@@ -131,6 +106,12 @@ for (const language of DOCS_LANGUAGES) {
     const source = read(page);
     if (!/^title:\s*\S/m.exec(FRONTMATTER.exec(source)?.[1] ?? '')) {
       problems.push(`docs/${file}: the frontmatter has no title`);
+    }
+    for (const { line, text } of repeatedLines(source)) {
+      problems.push(
+        `docs/${file}:${line}: "${text}" repeats the end of the line above it; a review suggestion ` +
+          'likely replaced the wrong lines, so compare the paragraph with the English page',
+      );
     }
     const ours = outline(source);
     const theirs = outline(read(english));
@@ -191,7 +172,7 @@ if (warnings.length > 0) {
 
 if (problems.length > 0) {
   process.stderr.write(
-    `${problems.join('\n')}\n\nA translation sits at the same path as its English page and has a title, and each language has a navigation.json. See authoring-docs, "Translations".\n`,
+    `${problems.join('\n')}\n\nA translation sits at the same path as its English page, has a title, no line repeats the end of the line above it, and each language has a navigation.json. See authoring-docs, "Translations".\n`,
   );
   process.exitCode = 1;
 } else {

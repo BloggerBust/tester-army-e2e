@@ -49,8 +49,8 @@ End-to-end tests use e2e; read .agents/skills/e2e/SKILL.md before writing or run
 
 <Accordion title="Claude Code、Codex、Cursor のプラグインをインストールする">
 
-e2e リポジトリは、Claude Code、Codex、および Claude Code のファイルを読む Grok Build 向けの
-プラグインマーケットプレイスです。Cursor はローカルのプラグインフォルダーから読み込みます。
+e2e リポジトリは、Claude Code と Codex 向けのプラグインマーケットプレイスです。
+Claude Code のファイルを読む Grok Build からも使えます。Cursor はローカルのプラグインフォルダーから読み込みます。
 
 <CodeGroup>
 ```bash Claude
@@ -126,7 +126,8 @@ hermes skills install e2e-inc/e2e/e2e
 
 スキルは、まず設定と既存のテストを読むようエージェントに指示します。
 `e2e mcp` があれば、セッション内でフローをたどりながら各ステップを書きます。
-既知のフィールドや正確な値には、1 つのノードに一致したロケーターから `screen` の呼び出しを書きます。
+既知のフィールドや正確な値は、`screen` の呼び出しで書きます。
+ロケーターには、1 つのノードだけに一致したものを使います。
 
 ```ts title="tests/checkout.e2e.ts"
 import { test, expect, credentials } from 'e2e';
@@ -195,7 +196,8 @@ bunx e2e run tests/checkout.e2e.ts:3 --action-timeout 5000
 エージェントは、その根拠をもとにテストを修正します。失敗した行だけでなく、根拠から修正できるすべての行を直します。
 テストは最初の失敗ステップで止まるため、次の実行前に後続の行も確認します。
 
-ページにない画面を調べる場合は、Web の URL など最短の方法で MCP セッションに開きます。
+ページにない画面を見るには、エージェントは Web なら URL を使うなど最短の方法で、
+その画面を MCP セッションで開きます。
 フローを最初からたどり直すことはしません。
 
 モデル呼び出しの詳細を調べるには、`--ai-trace` を追加して
@@ -236,7 +238,7 @@ bunx skills add e2e-inc/e2e --skill create-verification-skill
 生成されるスキルは、アプリに実際に当てはまる内容だけを記述し、それ以外は e2e スキルへリンクします。
 これは poteto の pstack にある
 [create-verification-skill](https://github.com/cursor/plugins/tree/main/pstack/skills/create-verification-skill)
-をもとに、独自のハーネスを e2e に置き換えたものです。
+をもとに、自前のハーネスの代わりに e2e を使うようにしたものです。
 </Accordion>
 
 ## 既存のスイートを移行する

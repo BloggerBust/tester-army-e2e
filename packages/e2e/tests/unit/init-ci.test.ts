@@ -7,6 +7,7 @@ import { CI_IDS } from '../../src/cli/init/choices.ts';
 import {
   CI_SERVICES,
   ciJobs,
+  configRunsScript,
   configStartsApp,
   configTargets,
   configUsesLocalModel,
@@ -110,6 +111,15 @@ describe('renderGithubWorkflow', () => {
     expect(workflow).toMatch(/uses: pnpm\/action-setup@[0-9a-f]{40} # v\d/u);
   });
 
+  it('builds the app before the web job runs e2e when the config serves a production build', () => {
+    const { steps, step } = githubJob(renderGithubWorkflow({ ...base, manager: 'pnpm', pnpmVersion: '10', webBuild: 'build' }));
+    const names = steps.map((entry) => entry['name']);
+    expect(step('Build the app')['run']).toBe('pnpm build');
+    expect(names.indexOf('Build the app')).toBe(names.indexOf('Run e2e') - 1);
+    expect(renderGithubWorkflow({ ...base, webBuild: 'build' })).toContain('\n\n      # e2e.config.ts serves this build in CI.\n      - name: Build the app\n        run: npm run build\n\n      - name: Run e2e\n');
+    expect(renderGithubWorkflow(base)).not.toContain('Build the app');
+  });
+
   it('sets no env block when the run reads no key', () => {
     expect(githubJob(renderGithubWorkflow(base)).step('Run e2e')).not.toHaveProperty('env');
     expect(githubJob(renderGithubWorkflow({ ...base, jobs: expoJobs }), 'ios').step('Run e2e')).not.toHaveProperty('env');
@@ -195,6 +205,15 @@ describe('renderGitlabPipeline', () => {
     expect(Object.keys(parse(pipeline) as object)).toEqual(['e2e-web']);
     expect(pipeline).not.toContain('self-managed');
     expect(gitlabJob(pipeline)['script']).toContain('npx e2e run --reporter list,junit');
+  });
+
+  it('builds the app right before the web job runs e2e when the config serves a production build', () => {
+    expect(gitlabJob(renderGitlabPipeline({ ...base, webBuild: 'build' }))['script']).toEqual([
+      'npm ci --cache .npm --prefer-offline',
+      'npx e2e-web install chromium --with-deps',
+      'npm run build',
+      'npx e2e run --reporter list,junit',
+    ]);
   });
 
   it('runs the phone jobs on self-managed runners: install, build, a device of their own, then the targets', () => {
@@ -554,5 +573,13 @@ describe('reading an existing config', () => {
   it('tells a command the runner starts from a commented-out one', () => {
     expect(configStartsApp("    command: { executable: 'npm', args: ['run', 'dev'] },")).toBe(true);
     expect(configStartsApp("    // command: { executable: 'npm', args: ['run', 'dev'] },")).toBe(false);
+  });
+
+  it('finds a package.json script the config runs as a command, outside comments', () => {
+    expect(configRunsScript("      ? { executable: 'npm', args: ['run', 'start'] }", 'start')).toBe(true);
+    expect(configRunsScript('      ? { executable: "pnpm", args: [ "run", "start" ] }', 'start')).toBe(true);
+    expect(configRunsScript("      ? { executable: 'npm', args: ['run', 'start:prod'] }", 'start')).toBe(false);
+    expect(configRunsScript("      : { executable: 'npm', args: ['run', 'dev'], reuseExisting: true },", 'start')).toBe(false);
+    expect(configRunsScript("    // command: { executable: 'npm', args: ['run', 'start'] },", 'start')).toBe(false);
   });
 });

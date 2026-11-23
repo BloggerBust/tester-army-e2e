@@ -93,7 +93,8 @@
           "setInputFiles",
           "dragTo",
           "swipe",
-          "blur"
+          "blur",
+          "setInputFilePayloads"
         ]
       }
     },
@@ -115,6 +116,10 @@
       }
     },
     "tapModifiers": {
+      "type": "boolean"
+    },
+    "selectsDevice": {
+      "description": "prepare binds the device e2e run --device names.",
       "type": "boolean"
     },
     "isolation": {
@@ -391,6 +396,27 @@
           "methods": {
             "contains": {
               "const": "artifacts/screenshot"
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "selectsDevice": {
+            "const": true
+          }
+        },
+        "required": [
+          "selectsDevice"
+        ]
+      },
+      "then": {
+        "properties": {
+          "methods": {
+            "contains": {
+              "const": "lifecycle/prepare"
             }
           }
         }

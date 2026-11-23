@@ -722,6 +722,7 @@
         "exitCode": { "enum": [0, 1, 2, 3, 4, 130] },
         "startedAt": { "$ref": "#/$defs/timestamp" },
         "finishedAt": { "$ref": "#/$defs/timestamp" },
+        "durationMs": { "type": "integer", "minimum": 0 },
         "project": {
           "type": "object",
           "additionalProperties": false,

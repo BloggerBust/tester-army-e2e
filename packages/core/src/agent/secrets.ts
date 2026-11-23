@@ -5,7 +5,7 @@ import { unavailableCode } from '../secrets.ts';
 import type { Secret } from '../types.ts';
 import { AgentError, toAgentError } from './error.ts';
 import type { AgentContext } from './invocation.ts';
-import { isEditable } from '../internal/roles.ts';
+import { takesText } from '../internal/roles.ts';
 
 /**
  * The narrow surface a secret fill needs from its step machinery: the act
@@ -38,7 +38,7 @@ export async function authorizeSecretFill(
     host.recordPolicy('secret.sink', 'denied', 'POLICY_DENIED');
     throw new AgentError('POLICY_DENIED', 'the target field is disabled');
   }
-  if (!isEditable(node)) {
+  if (!takesText(node)) {
     host.recordPolicy('secret.sink', 'denied', 'POLICY_DENIED');
     throw new AgentError(
       'POLICY_DENIED',

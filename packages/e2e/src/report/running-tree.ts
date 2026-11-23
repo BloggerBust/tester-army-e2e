@@ -8,8 +8,14 @@
 
 import { bounded, F_POINTER, fitColumns, formatTime, terminalColumns, terminalRows, withActor, type Colors } from './format.ts';
 import type { CurrentStep, FileGroup, PausedTest, RunningTest, SetupInFlight } from './list-model.ts';
-import { eventLine, quotedLabel, stepLine, stepPromptRows } from './list-steps.ts';
+import { eventLine, heldStepRows, quotedLabel, stepLine } from './list-steps.ts';
 import { REPAINT_INTERVAL_MS, WIDTH_MARGIN } from './live-window.ts';
+
+type RunningTreeOptions = {
+  readonly setup?: SetupInFlight | undefined;
+  readonly paused?: PausedTest | undefined;
+  readonly footer?: readonly string[];
+};
 
 const F_DOWN_RIGHT = '↳';
 const F_TREE_MIDDLE = '├──';
@@ -96,17 +102,19 @@ export class RunningTree {
    * summary go to the running tests, each test's detail shares what remains
    * once every test has its own row, and tests that still do not fit fold
    * into one `more running` marker. `room` is the screen under the permanent
-   * log; the block pads out to it so the summary sits at the bottom. A held
-   * test's row shows the attach ID in place of its clock, with the prompt
-   * under its steps. The held test appears first, with enough rows reserved
-   * for its prompt before other tests use the remaining space.
+   * log. The window is padded so the summary and keys stay at the bottom.
+   *
+   * The attach ID is shown in place of the clock on the held test's row.
+   * Held steps are shown below that row. Rows are reserved for the footer
+   * first. The held test is listed first among the running tests. Space is
+   * set aside for its held steps before rows are given to the other tests.
    */
   render(
     running: readonly RunningTest[],
     summary: readonly string[],
     now: number,
     room: number,
-    { setup, paused }: { readonly setup?: SetupInFlight | undefined; readonly paused?: PausedTest | undefined } = {},
+    { setup, paused, footer = [] }: RunningTreeOptions = {},
   ): string[] {
     const { pc } = this;
     const active = new Map<FileGroup, RunningTest[]>();
@@ -115,11 +123,10 @@ export class RunningTree {
       if (tests === undefined) active.set(test.group, [test]);
       else tests.push(test);
     }
-    const capacity = terminalRows() - summary.length - CHROME_ROWS;
+    const capacity = Math.max(0, terminalRows() - summary.length - CHROME_ROWS - footer.length);
     let budget = capacity;
     const columns = terminalColumns() - WIDTH_MARGIN;
-    const maxWidth = columns - DETAIL_INDENT.length;
-    const promptRows = paused === undefined ? 0 : stepPromptRows(pc, paused.prompt, { maxWidth }).length;
+    const promptRows = paused?.prompt.steps.length ?? 0;
     const perTest = Math.max(
       0,
       Math.floor((budget - promptRows - active.size - running.length) / Math.max(1, running.length)),
@@ -169,8 +176,8 @@ export class RunningTree {
     }
     if (hidden > 0) lines.push(pc.dim(`   … ${hidden} more running`));
     this.reservedRows = Math.min(capacity, Math.max(this.reservedRows, lines.length));
-    padToScreen(lines, this.reservedRows, room - FRAME_ROWS - summary.length);
-    return ['', ...lines, '', ...summary, ''];
+    padToScreen(lines, this.reservedRows, room - FRAME_ROWS - summary.length - footer.length);
+    return ['', ...lines, '', ...summary, '', ...footer];
   }
 
   /** The one ticking clock of a running test, on its row. */
@@ -179,13 +186,13 @@ export class RunningTree {
   }
 
   /**
-   * Everything under a running test's row: its finished steps, then the
-   * current step and the `--step` prompt. Those have priority; finished
-   * steps take the rows left and the oldest fold into one marker.
+   * Formats the finished steps, current step, and held steps under a test.
+   * The current and held steps are given space first. The remaining rows
+   * are for finished steps. The oldest are folded into one marker if needed.
    */
   private detailRows(test: RunningTest, maxEvents: number, budget: number, now: number, held: PausedTest | undefined): string[] {
     const maxWidth = terminalColumns() - WIDTH_MARGIN - DETAIL_INDENT.length;
-    const prompt = held === undefined ? [] : fitPrompt(stepPromptRows(this.pc, held.prompt, { maxWidth }), held.prompt.steps.length, budget);
+    const prompt = held === undefined ? [] : heldStepRows(this.pc, held.prompt, maxWidth).slice(0, budget);
     const current = [...this.stepRows(test, maxEvents, budget - prompt.length, now), ...prompt];
     const room = budget - current.length;
     const rendered = (test.ran ?? test.steps).map((step) => stepLine(this.pc, step, { maxWidth }));
@@ -240,14 +247,4 @@ export function waitingRow(pc: Colors, now: number, word: string): string {
   const frame = Math.floor(now / REPAINT_INTERVAL_MS);
   const spinner = pc.cyan(SPINNER_FRAMES[Math.floor(frame / SPINNER_HOLD_FRAMES) % SPINNER_FRAMES.length]!);
   return `${spinner} ${shimmer(pc, word, frame)}`;
-}
-
-/**
- * The prompt's rows in `budget`: its held steps, then its keys. Short of
- * room, held steps go first, so the prompt always says how to answer it.
- */
-function fitPrompt(rows: readonly string[], steps: number, budget: number): string[] {
-  if (rows.length <= budget) return [...rows];
-  const keys = rows.slice(steps);
-  return [...rows.slice(0, Math.max(0, budget - keys.length)), ...keys].slice(0, budget);
 }

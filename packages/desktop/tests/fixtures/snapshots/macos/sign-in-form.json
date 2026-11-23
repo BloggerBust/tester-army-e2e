@@ -1,0 +1,241 @@
+{
+  "app": "SignInForm",
+  "complete": true,
+  "ref_count": 8,
+  "snapshot_id": "sbtip0r53suug",
+  "tree": {
+    "bounds": {
+      "height": 352,
+      "width": 420,
+      "x": 200,
+      "y": 565
+    },
+    "children": [
+      {
+        "bounds": {
+          "height": 21,
+          "width": 167.5,
+          "x": 219,
+          "y": 616
+        },
+        "name": "Sign in to the testbed",
+        "role": "statictext",
+        "value": "Sign in to the testbed"
+      },
+      {
+        "available_actions": [
+          "Click",
+          "RightClick",
+          "SetValue",
+          "SetFocus",
+          "TypeText"
+        ],
+        "bounds": {
+          "height": 26,
+          "width": 262,
+          "x": 219,
+          "y": 643
+        },
+        "name": "Username",
+        "native_id": {
+          "kind": "ax_identifier",
+          "value": "username"
+        },
+        "ref_id": "@sbtip0r53suug:e1",
+        "role": "textfield",
+        "states": [
+          "focused"
+        ]
+      },
+      {
+        "available_actions": [
+          "Click",
+          "RightClick",
+          "SetValue",
+          "SetFocus"
+        ],
+        "bounds": {
+          "height": 26,
+          "width": 262,
+          "x": 219,
+          "y": 675
+        },
+        "name": "Password",
+        "native_id": {
+          "kind": "ax_identifier",
+          "value": "password"
+        },
+        "ref_id": "@sbtip0r53suug:e2",
+        "role": "textfield",
+        "states": [
+          "secure"
+        ]
+      },
+      {
+        "available_actions": [
+          "Click",
+          "Toggle",
+          "SetFocus"
+        ],
+        "bounds": {
+          "height": 18,
+          "width": 112,
+          "x": 219,
+          "y": 707
+        },
+        "name": "Remember me",
+        "native_id": {
+          "kind": "ax_identifier",
+          "value": "remember"
+        },
+        "ref_id": "@sbtip0r53suug:e3",
+        "role": "checkbox",
+        "value": "0"
+      },
+      {
+        "available_actions": [
+          "Click",
+          "SetFocus",
+          "Expand",
+          "Collapse"
+        ],
+        "bounds": {
+          "height": 26,
+          "width": 82.5,
+          "x": 219,
+          "y": 731
+        },
+        "name": "Plan",
+        "native_id": {
+          "kind": "ax_identifier",
+          "value": "plan"
+        },
+        "ref_id": "@sbtip0r53suug:e4",
+        "role": "combobox",
+        "states": [
+          "readonly"
+        ],
+        "value": "Pro"
+      },
+      {
+        "available_actions": [
+          "Click",
+          "SetFocus"
+        ],
+        "bounds": {
+          "height": 26,
+          "width": 67,
+          "x": 219,
+          "y": 763
+        },
+        "name": "Sign in",
+        "native_id": {
+          "kind": "ax_identifier",
+          "value": "sign-in"
+        },
+        "ref_id": "@sbtip0r53suug:e5",
+        "role": "button"
+      },
+      {
+        "bounds": {
+          "height": 18,
+          "width": 362,
+          "x": 219,
+          "y": 795
+        },
+        "name": "Not signed in",
+        "native_id": {
+          "kind": "ax_identifier",
+          "value": "status"
+        },
+        "role": "statictext",
+        "value": "Not signed in"
+      },
+      {
+        "available_actions": [
+          "Click"
+        ],
+        "bounds": {
+          "height": 16,
+          "width": 16,
+          "x": 208,
+          "y": 573
+        },
+        "name": "Close",
+        "ref_id": "@sbtip0r53suug:e6",
+        "role": "button"
+      },
+      {
+        "available_actions": [
+          "Click",
+          "RightClick"
+        ],
+        "bounds": {
+          "height": 16,
+          "width": 16,
+          "x": 254,
+          "y": 573
+        },
+        "children": [
+          {
+            "bounds": {
+              "height": 14,
+              "width": 14,
+              "x": 255,
+              "y": 574
+            },
+            "children": [
+              {
+                "bounds": {
+                  "height": 14,
+                  "width": 14,
+                  "x": 255,
+                  "y": 574
+                },
+                "role": "group"
+              }
+            ],
+            "role": "group"
+          }
+        ],
+        "name": "Full Screen",
+        "ref_id": "@sbtip0r53suug:e7",
+        "role": "button"
+      },
+      {
+        "available_actions": [
+          "Click"
+        ],
+        "bounds": {
+          "height": 16,
+          "width": 16,
+          "x": 231,
+          "y": 573
+        },
+        "name": "Minimize",
+        "ref_id": "@sbtip0r53suug:e8",
+        "role": "button",
+        "states": [
+          "disabled"
+        ]
+      },
+      {
+        "bounds": {
+          "height": 16,
+          "width": 49,
+          "x": 282,
+          "y": 573
+        },
+        "name": "Sign In",
+        "role": "statictext",
+        "value": "Sign In"
+      }
+    ],
+    "name": "Sign In",
+    "role": "window"
+  },
+  "window": {
+    "id": "w-8321",
+    "title": "Sign In"
+  }
+}

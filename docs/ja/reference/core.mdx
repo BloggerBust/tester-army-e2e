@@ -250,7 +250,7 @@ const step = await agent.act('Add the item to the cart', { cacheKey: 'add-to-car
 | `strict` | `boolean` | `false` |
 | `store` | [`CacheStore`](/cache) | ファイルストア |
 
-`cache` を使う場合、各 `act` に `{ cacheKey: '<name>' }` を渡します。ライブ実行する場合は `{ cache: false }` を渡します。記録が保存されるタイミングは[記録したステップをリプレイする](/core#replay-recorded-steps)で説明しています。
+`cache` を使う場合、各 `act` に `{ cacheKey: '<name>' }` を渡します。キャッシュを使わずに実行する場合は `{ cache: false }` を渡します。記録が保存されるタイミングは[記録したステップをリプレイする](/core#replay-recorded-steps)で説明しています。
 
 ## 関連項目
 

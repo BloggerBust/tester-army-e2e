@@ -2,6 +2,8 @@
 Title: Conventional Commits, `!` for a breaking change. It becomes the squash commit.
 Body: a few bullets on what and why, then evidence (code, diagram, before/after).
 See .dev/skills/writing-pr/SKILL.md. No history; run output only as `## Verified` evidence.
+When CI is green and all review feedback is handled, comment `/ready` to ask for human review
+(CONTRIBUTING.md#ready-for-human-review).
 -->
 
 ## What and why

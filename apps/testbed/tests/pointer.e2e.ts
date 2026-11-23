@@ -39,6 +39,19 @@ test('screen.swipe({ from, to }) moves the pointer along the path', async ({ app
   await expect(screen.getByLabel('Pad state')).toHaveText('swiped from 10,20 to 250,20');
 });
 
+test('screen.tapAt and screen.swipe take percentages of the viewport', { requires: ['browser'] }, async ({ app, browser, screen }) => {
+  await browser.setViewport({ width: 1000, height: 800 });
+  await app.open('/pointer');
+  const box = await boxOf(screen.getByRole('image', 'Pointer pad'));
+  const onPad = (x: number, y: number) => `${Math.round(x - box.x)},${Math.round(y - box.y)}`;
+
+  await screen.tapAt({ x: '10%', y: '25%' });
+  await expect(screen.getByLabel('Pad state')).toHaveText(`tapped at ${onPad(100, 200)}`);
+
+  await screen.swipe({ from: { x: '10%', y: '25%' }, to: { x: '30%', y: 200 } });
+  await expect(screen.getByLabel('Pad state')).toHaveText(`swiped from ${onPad(100, 200)} to ${onPad(300, 200)}`);
+});
+
 test('a path swipe drags and drops on the board', async ({ app, screen }) => {
   await app.open('/board');
 

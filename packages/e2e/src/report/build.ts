@@ -48,6 +48,8 @@ export interface BuildReportOptions {
   runId: string;
   config: ResolvedConfig | undefined;
   startedAt: string;
+  /** Time in completed hold intervals. Overlapping time is counted once. */
+  heldMs?: number;
   status: 'passed' | 'failed' | 'error' | 'interrupted';
   exitCode: 0 | 1 | 2 | 3 | 4 | 130;
   results: readonly ResultRecord[];
@@ -421,6 +423,8 @@ export interface Report1Document {
     exitCode: BuildReportOptions['exitCode'];
     startedAt: string;
     finishedAt: string;
+    /** Elapsed run time in milliseconds, excluding intervals when all running workers were held. The field may be absent in older reports. */
+    durationMs?: number;
     project: { id: string; configDigest: string };
     environment: {
       ci: boolean;
@@ -821,6 +825,8 @@ export function buildReport(options: BuildReportOptions): Report1Document {
     .map(serializeSerialGroup);
 
   const summary = computeSummary(options.results, options.serialGroups);
+  const finishedAt = timestamp();
+  const durationMs = Math.max(0, Date.parse(finishedAt) - Date.parse(options.startedAt) - (options.heldMs ?? 0));
 
   return {
     schemaVersion: 'report-1',
@@ -834,7 +840,8 @@ export function buildReport(options: BuildReportOptions): Report1Document {
       status: deriveRunStatus(options.status, options.results, options.serialGroups, options.runErrors, config?.failOnSkippedFailure === true),
       exitCode: options.exitCode,
       startedAt: options.startedAt,
-      finishedAt: timestamp(),
+      finishedAt,
+      durationMs,
       project: {
         id: config?.projectId ?? 'unknown',
         configDigest: config?.configDigest ?? '0'.repeat(64),

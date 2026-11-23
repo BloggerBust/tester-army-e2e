@@ -600,6 +600,7 @@ type RunEventFact =
   | { type: 'output'; target; pair; stream: 'stdout' | 'stderr'; text }
   | { type: 'setup'; step: SetupStep; state: 'started' }
   | { type: 'setup'; step: SetupStep; state: 'finished'; durationMs; outcome?: 'reused' | 'failed' | 'timed-out' }
+  | { type: 'run-hold'; heldMs: number; heldSince: number | null }
   | { type: 'test-started'; testId; agent; repeat; title; file; serialId; target }
   | { type: 'step'; testId; agent; repeat; target; progress: StepProgress }
   | { type: 'test-finished'; result: RunEventResult }
@@ -608,7 +609,7 @@ type RunEventFact =
   | { type: 'run-error'; error: SerializedError }
   | { type: 'run-interrupted'; mode: 'graceful' | 'forced' }
   | { type: 'run-stopped'; failures; limit }
-  | { type: 'run-finished'; status; exitCode; reportPath?; aiTracePath?; traces? };
+  | { type: 'run-finished'; status; exitCode; durationMs?; reportPath?; aiTracePath?; traces? };
 ```
 
 - `run-started` comes first and `run-finished` last.
@@ -632,6 +633,13 @@ type RunEventFact =
   `collect`, `filter` for a test filter's progress and summary, or `run`.
 - `output` is one write a test made to stdout or stderr; `pair` names the
   test running at the time and is undefined between tests.
+- `run-hold` is emitted at the start and end of each interval with every
+  running worker held.
+  `heldMs` is the total time in milliseconds across completed intervals when
+  every running worker was held.
+  `heldSince` is the current interval's start in Unix milliseconds, or `null`
+  when no such interval is open.
+- `durationMs` on `run-finished` matches the report's `run.durationMs`.
 - `test-finished` carries the full result record, including every attempt's
   artifacts.
 - `explore` appears only in an `e2e explore` run: `started`, `planning`,

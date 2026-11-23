@@ -132,8 +132,10 @@ the decision model picks again. For `upload`, the text model lists the
 project-relative paths the goal or params name, and the runner authorizes
 each one. Model output never becomes a selector, a URL, or a key.
 
-Password fields never reach the text model. Only `typeSecret` fills a
-secret, from its declared handle.
+Password fields never reach the text model, unless a page script hides one
+from e2e. Then the text model sees its value, and `type` can fill it
+([where redaction stops](/reference/security#where-redaction-stops)).
+Only `typeSecret` fills a configured secret, from its declared handle.
 
 The text model also answers `waitFor` and `extract`. Instead of
 `textModel`, you can set `model` on the agents entry. With neither, the

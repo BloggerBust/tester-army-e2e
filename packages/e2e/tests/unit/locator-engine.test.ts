@@ -312,6 +312,13 @@ describe('LocatorEngine resolve retry contract', () => {
     await expect(engine.resolveExactlyOne(EXPRESSION, deadline)).rejects.toMatchObject({ code: 'LOCATOR_NOT_FOUND', message: expect.stringContaining('frame missing') });
   });
 
+  it('ends a wait on a frame that stays missing at its deadline, not the next poll tick', async () => {
+    const { engine } = makeEngine({ resolve: Array.from({ length: 50 }, () => 'frame' as const) });
+    const started = Date.now();
+    await expect(engine.resolveExactlyOne(EXPRESSION, new Deadline(350))).rejects.toMatchObject({ code: 'LOCATOR_NOT_FOUND' });
+    expect(Date.now() - started).toBe(350);
+  });
+
   it('keeps a first resolve the deadline cut off a timeout: nothing was ever seen missing', async () => {
     const { engine } = makeEngine({
       resolve: [() => { throw new EngineError('OPERATION_TIMEOUT', 'locate timed out', { retryable: false }); }],
@@ -376,6 +383,43 @@ describe('LocatorEngine perform contract', () => {
       { point: { x: 15, y: 26 }, action: { kind: 'tap' } },
       { point: { x: 23, y: 34 }, action: { kind: 'tap' } },
     ]);
+  });
+
+  it('polls a positioned tap until its node is visible with a box', async () => {
+    const boxed: SemanticNode = { ...NODE, rect: { x: 10, y: 20, width: 100, height: 40 } };
+    const hidden: SemanticNode = { ...boxed, states: { hidden: true } };
+    const { engine, performed, calls } = makeEngine({ read: [() => NODE, () => hidden, () => boxed] });
+    await engine.performWithin(EXPRESSION, { x: 1, y: 2 }, { kind: 'tap' });
+    expect(calls.read).toBe(3);
+    expect(performed.at(-1)).toEqual({ point: { x: 11, y: 22 }, action: { kind: 'tap' } });
+  });
+
+  it('fails a positioned tap whose node never gets a box with LOCATOR_NOT_FOUND, no later than the deadline', async () => {
+    const { engine, performed } = makeEngine({ read: Array.from({ length: 50 }, () => () => NODE) }, { actionTimeout: 350 });
+    const started = Date.now();
+    await expect(engine.performWithin(EXPRESSION, { x: 1, y: 2 }, { kind: 'tap' })).rejects.toMatchObject({
+      code: 'LOCATOR_NOT_FOUND',
+      message: expect.stringContaining('did not become visible with a box to act within'),
+    });
+    // The old loop slept past the deadline and read again at 400 ms.
+    expect(Date.now() - started).toBe(350);
+    expect(performed).toEqual([{ kind: 'scrollIntoView' }]);
+  });
+
+  it('fails a positioned tap with LOCATOR_NOT_FOUND, not ACTION_FAILED, when its box would appear during a read started at the deadline', async () => {
+    const boxed: SemanticNode = { ...NODE, rect: { x: 10, y: 20, width: 100, height: 40 } };
+    const started = Date.now();
+    const { engine, performed } = makeEngine(
+      {
+        // Polls start at 0 (60 ms), 100, 200, and 300 ms (40 ms each), then at the 350 ms deadline with 60 ms to finish.
+        resolve: [() => [REF], slowResolve(60, [REF]), ...Array.from({ length: 50 }, () => slowResolve(40, [REF]))] as unknown as Array<() => readonly NodeRef[]>,
+        read: Array.from({ length: 50 }, () => () => (Date.now() - started >= 375 ? boxed : NODE)),
+      },
+      { actionTimeout: 350 },
+    );
+    await expect(engine.performWithin(EXPRESSION, { x: 1, y: 2 }, { kind: 'tap' })).rejects.toMatchObject({ code: 'LOCATOR_NOT_FOUND' });
+    expect(Date.now() - started).toBe(350);
+    expect(performed).toEqual([{ kind: 'scrollIntoView' }]);
   });
 
   it('marks every action it performs with the test origin, so an engine can act without settling', async () => {

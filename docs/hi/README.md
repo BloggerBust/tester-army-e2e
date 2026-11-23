@@ -46,22 +46,35 @@ translation moves or goes with it in the same change.
 
 ## Style
 
-- Plain, everyday technical Hindi in Devanagari, the way Indian developers
-  talk about their tools. Address the reader as आप, with the matching verb
-  forms (चलाएँ, देखें, करें).
-- Keep a common English tech word as a loanword in Devanagari when that is
-  what developers say (टेस्ट, ब्राउज़र, कॉन्फ़िग, रिपोर्ट). Use a Hindi word
-  where a natural one exists (लक्ष्य, चरण, नियतात्मक). Avoid heavily
-  Sanskritized coinages that readers would have to look up.
+- Write the way one Indian developer explains a tool to another at the next
+  desk: relaxed, direct, and in plain spoken Hindi, not textbook Hindi.
+  Read each sentence aloud. If it sounds like a government notice or a
+  word-for-word copy of the English, rewrite it.
+- Address the reader as आप, with the matching verb forms (चलाएँ, देखें,
+  करें). Casual does not mean तुम.
+- Keep sentences short. Break a long English sentence into two Hindi ones,
+  and move clauses around until the Hindi word order feels natural. Don't
+  copy English sentence structure, such as chains of "जो ... , जिसे ... ,
+  जिससे ...".
+- Prefer the words developers actually say. Keep a common English tech word
+  as a loanword in Devanagari (टेस्ट, स्टेप, ब्राउज़र, कॉन्फ़िग, एरर, ऑप्शन,
+  रिक्वेस्ट). Use an everyday Hindi or Hindustani word where one is what
+  people say (इस्तेमाल, ज़रूरी, अगर, लेकिन, पक्का करें, देता है). Avoid
+  formal or Sanskritized words: not उपयोग, आवश्यक, यदि, किंतु, एवं, अथवा,
+  सुनिश्चित करें, प्रदान करता है, निम्नलिखित, त्रुटि, विकल्प, विफलता,
+  निष्पादित, सत्यापित, पहचानकर्ता.
+- Casual never means less exact. Keep every fact, condition, negation,
+  number, and limit of the English sentence.
 - Keep product, package, and API names in Latin script: e2e, Playwright,
-  `@e2e-dev/web`, MCP, CI, GitHub Actions, iOS, Android, Chromium. Keep
-  literal CLI option labels such as **None** unchanged so readers can find
-  them in the terminal.
+  `@e2e-dev/web`, MCP, CI, GitHub Actions, iOS, Android, Chromium, API key.
+  Keep literal CLI option labels such as **None** unchanged so readers can
+  find them in the terminal.
 - End a Hindi sentence with the पूर्ण विराम `।`, including the bold lead-in
   of a list item (**टेस्ट पर कम समय।**). Use Latin `,`, `?`, `!`, `:`, and
-  `"` quotes. The one exception is a keyboard key, written “की” in curly quotes
-  as Apple's Hindi guides do, so it never reads as the possessive की. A
-  sentence that ends in inline code, a URL, or a Latin name still ends with `।`.
+  `"` quotes. The one exception is “की” in “की” प्रेस (key press), written in
+  curly quotes as Apple's Hindi guides do, so it never reads as the possessive
+  की. Write a keyboard key itself as कीबोर्ड का बटन. A sentence that ends in
+  inline code, a URL, or a Latin name still ends with `।`.
 - Use Western digits (1, 2, 3), not Devanagari digits, so numbers match the
   code and the terminal.
 - Write the nukta in loanwords: फ़ाइल, ब्राउज़र, फ़ीचर, कॉन्फ़िग. Write `ऑ` for
@@ -79,15 +92,15 @@ translation moves or goes with it in the same change.
 | --- | --- | --- |
 | test, test suite | टेस्ट, टेस्ट सूट | m |
 | setup test (`test.setup`) | सेटअप टेस्ट | m |
-| blocked (verdict / status) | अवरुद्ध | |
+| blocked (verdict / status) | ब्लॉक्ड | |
 | schema | स्कीमा | m |
 | agent, agentic | एजेंट, एजेंटिक | m |
-| deterministic | नियतात्मक | |
+| deterministic | डिटर्मिनिस्टिक | |
 | engine | इंजन | m |
 | runner | रनर | m |
 | fixture | फ़िक्स्चर | m |
 | locator | लोकेटर | m |
-| step | चरण | m |
+| step | स्टेप | m |
 | assertion | असर्शन | m |
 | target | टारगेट | m |
 | goal, atomic goal | लक्ष्य, एटॉमिक लक्ष्य | m |
@@ -108,7 +121,7 @@ translation moves or goes with it in the same change.
 | report, reporter | रिपोर्ट, रिपोर्टर | f, m |
 | secret | सीक्रेट | m |
 | session | सेशन | m |
-| judge (config field), to judge | जज मॉडल, आकलन करना | m |
+| judge (config field), to judge | जज मॉडल, परखना | m |
 | decision model | डिसीज़न मॉडल | m |
 | model | मॉडल | m |
 | coding agent | कोडिंग एजेंट | m |
@@ -117,11 +130,11 @@ translation moves or goes with it in the same change.
 | checkout (git working tree) | चेकआउट (git वर्किंग कॉपी) | m |
 | finding (explore, bug bash) | फ़ाइंडिंग (plural also फ़ाइंडिंग) | f |
 | exploration; `explore` in prose | एक्सप्लोरेशन; explore (keep in English) | m |
-| defect | दोष | m |
+| defect | डिफ़ेक्ट | m |
 | secret fill | सीक्रेट भरना (fill as a noun: फ़िल, m) | |
 | visual testing | विज़ुअल टेस्टिंग | f |
 | self-healing | सेल्फ़-हीलिंग | f |
-| pull request | पुल रिक्वेस्ट (PR) | m |
+| pull request | पुल रिक्वेस्ट (PR) | f |
 | config, configuration | कॉन्फ़िग, कॉन्फ़िगरेशन | m, m |
 | config file | कॉन्फ़िग फ़ाइल | f |
 | screen | स्क्रीन | f |
@@ -139,7 +152,12 @@ translation moves or goes with it in the same change.
 | sign in, sign out | साइन इन, साइन आउट | |
 | subscription | सब्सक्रिप्शन | m |
 | prompt | प्रॉम्प्ट | m |
-| API key | API कुंजी | f |
+| API key | API key (keep in English) | f |
+| key (cache key, encryption key) | key (keep in English, not कुंजी) | f |
+| security | सुरक्षा | f |
+| predictable | प्रेडिक्टेबल | |
+| core concepts | बुनियादी कॉन्सेप्ट | m |
+| limits (heading) | सीमाएँ | f |
 | credential | क्रेडेंशियल | m |
 | authentication | ऑथेंटिकेशन | m |
 | selector | सेलेक्टर | m |
@@ -155,7 +173,7 @@ translation moves or goes with it in the same change.
 | open source | ओपन सोर्स | |
 | web, mobile | वेब, मोबाइल | |
 | run (noun), to run | रन, चलाना | m |
-| attempt | प्रयास | m |
+| attempt | अटेम्प्ट | m |
 | verdict | फ़ैसला | m |
 | redact | छिपाना | |
 | redaction (noun) | रेडैक्शन | m |
@@ -164,23 +182,28 @@ translation moves or goes with it in the same change.
 | command | कमांड | f |
 | call (noun) | कॉल | f |
 | lease | लीज़ | f |
-| request | अनुरोध | m |
+| request | रिक्वेस्ट | f |
 | reference (docs) | रेफ़रेंस | m |
 | action | एक्शन | m |
-| permission | इजाज़त | f |
+| permission | परमिशन | f |
 | untrusted (code, pull request) | जिस पर आप भरोसा नहीं करते | |
 | state (of the app, in prose) | स्थिति | f |
 | state (stored or device state) | स्टेट | m |
 | accessibility | ऐक्सेसिबिलिटी | f |
-| account | खाता | m |
+| account | अकाउंट | m |
 | job (CI) | जॉब | m |
 | observation | ऑब्ज़र्वेशन | m |
 | viewport | व्यूपोर्ट | m |
 | origin | ऑरिजिन | m |
 | key press | “की” प्रेस | m |
-| keyboard key | “की” | f |
+| keyboard key | कीबोर्ड का बटन (“की” only inside “की” प्रेस) | m |
 | Next (closing section heading) | आगे | |
 | install | इंस्टॉल करना | |
+| error | एरर | m |
+| option | ऑप्शन | m |
+| failure, to fail | फ़ेलियर, फ़ेल होना | m |
+| identifier | आइडेंटिफ़ायर | m |
+| expected (result) | उम्मीद के मुताबिक | |
 | continuous integration | कंटीन्यूअस इंटीग्रेशन (CI) | m |
 | MCP | MCP (keep in English) | m |
 | CI | CI (keep in English) | m |

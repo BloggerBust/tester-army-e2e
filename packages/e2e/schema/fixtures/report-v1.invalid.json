@@ -4,6 +4,7 @@
     "id": "not-a-uuid",
     "status": "passed",
     "exitCode": 4,
+    "durationMs": -1,
     "targets": [],
     "results": [
       {

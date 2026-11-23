@@ -8,7 +8,9 @@
 import { execFile } from 'node:child_process';
 
 /** A full SHA-1 or SHA-256 object name. */
-export const COMMIT_HASH = /^[a-f0-9]{40,64}$/u;
+// Full Git SHA-1 and SHA-256 object IDs are exactly 40 and 64 digits;
+// intermediate lengths are neither full format and must not certify provenance.
+export const COMMIT_HASH = /^(?:[a-f0-9]{40}|[a-f0-9]{64})$/u;
 
 /** One git call's exit code and output. */
 export interface GitResult {

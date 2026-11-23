@@ -14,6 +14,7 @@ const leftOut = { cause: 'filtered' as const, reason: 'did not fail in the last 
 
 const firstPass = report({
   status: 'failed',
+  durationMs: 2_000,
   results: [
     result({ title: 'steady', status: 'passed', attempts: [attempt({ durationMs: 500 })] }),
     result({ title: 'recovers', status: 'failed', attempts: [failedAttempt, failedAttempt] }),
@@ -24,6 +25,7 @@ const firstPass = report({
 
 const rerun = report({
   status: 'failed',
+  durationMs: 1_000,
   results: [
     result({ title: 'steady', status: 'skipped', selected: false, skip: leftOut }),
     result({ title: 'recovers', status: 'passed', attempts: [attempt({ durationMs: 900 })] }),
@@ -98,10 +100,16 @@ describe('foldLastRun', () => {
     expect(entries.get('never wanted#0')).toMatchObject({ status: 'skipped', skip: { cause: 'explicit' } });
     expect(entries.get('new since#0')).toMatchObject({ status: 'passed', selected: true });
     expect(folded.run.summary).toMatchObject({ discovered: 5, selected: 5, executed: 4, passed: 2, flaky: 1, failed: 1, interrupted: 0, skipped: 1 });
-    // The rerun decides the outcome; the start is the run before's, so the duration spans both.
     expect(folded.run.status).toBe('failed');
     expect(folded.run.startedAt).toBe(firstPass.run.startedAt);
     expect(folded.run.finishedAt).toBe(rerun.run.finishedAt);
+    expect(renderMarkdownReport(folded)).toContain('· 3.0s ·');
+  });
+
+  it('adds the wall time of an older saved run to the rerun duration', () => {
+    const saved = report({ status: 'failed', finishedAt: '2026-07-24T12:00:07.000Z' });
+    delete saved.run.durationMs;
+    expect(renderMarkdownReport(foldLastRun(rerun, saved))).toContain('· 8.0s ·');
   });
 
   it('folds the repeats a plain rerun ran once into its one result, and carries the repeats of a test it left out', () => {

@@ -3,6 +3,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { FinishedRun, Report, Reporter, ReportFile } from 'e2e';
 import { embedPayload, type ReportMedia } from './payload.ts';
+import { formatSize } from './format.ts';
 
 export interface HtmlReporterOptions {
   /**
@@ -179,6 +180,3 @@ function toPosix(relative: string): string {
   return relative.split(path.sep).join('/');
 }
 
-function formatSize(bytes: number): string {
-  return bytes < 1024 * 1024 ? `${Math.ceil(bytes / 1024)} KB` : `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-}

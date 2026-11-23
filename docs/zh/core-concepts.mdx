@@ -161,7 +161,7 @@ test('needs two organizations', async ({ app }) => {
 - 条件为 true 时，`test.skip(condition, reason)` 会停止测试，并将状态设为 `skipped`。
 - 对于跨多个测试的流程，在分组上设置 `{ serial: true }`。这些测试会在同一个工作进程中依次运行，并一起重试。
 - 使用 `test.extend` 进行准备和清理。参阅[编写测试夹具](/fixtures)。
-- 从 `@e2e-dev/web` 或 `@e2e-dev/mobile` 导入 `test`，为 `browser` 或 `device` 测试夹具提供类型。
+- 从 `@e2e-dev/web`、`@e2e-dev/mobile` 或 `@e2e-dev/desktop` 导入 `test`，为 `browser`、`device` 或 `desktop` 测试夹具提供类型。
 
 [测试参考](/reference/test)列出了全部选项。
 

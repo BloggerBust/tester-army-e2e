@@ -146,7 +146,7 @@ test('the dialog slides in', { video: 'off' }, async ({ app, screen }) => {
 });
 ```
 
-- 同時に実行できる録画は 1 つです。エンジンのレコーダーは 1 つなので、テストには `video: 'off'` を設定してください。テストの[動画](/reference/config#video)を録画中に開始すると失敗します。`--video`、`retain-on-failure`、`on-first-retry` で録画されるリトライも対象です。
+- 同時に実行できる録画は 1 つです。エンジンのレコーダーは 1 つなので、テストには `video: 'off'` を設定してください。テストの[動画](/reference/config#video)を録画中に開始すると失敗します。`--video`、`retain-on-failure` による録画と、`on-first-retry` で録画されるリトライも対象です。
 - テスト終了時に録画が続いている場合は、停止して保存します。
 - テストの動画と同様に、録画では何もマスキングしません。
 

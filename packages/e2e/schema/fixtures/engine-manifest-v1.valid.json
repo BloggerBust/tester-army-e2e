@@ -18,6 +18,7 @@
     "session/closeTab",
     "session/restart",
     "session/reset",
+    "lifecycle/prepare",
     "lifecycle/doctor",
     "lifecycle/init",
     "lifecycle/startAttempt",
@@ -25,5 +26,6 @@
   ],
   "actions": ["tap", "doubleTap", "longPress", "fill", "clear", "press", "check", "uncheck", "focus", "scrollIntoView", "dragTo", "swipe"],
   "pointerActions": ["tap", "doubleTap", "longPress", "dragTo", "swipe", "swipeTo"],
+  "selectsDevice": true,
   "isolation": "worker"
 }

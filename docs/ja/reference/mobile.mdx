@@ -162,7 +162,8 @@ export default {
  * agent-device session name, before the worker slot: slot `n` drives its
  * device under `<session>-<n>`, `e2e-<target name>-<n>` by default. One run
  * per session at a time: concurrent runs on the same session interleave
- * taps.
+ * taps. Without this option a `launch()` host
+ * drives `e2e-<target name>-<host token>-<n>`, a session of its own.
  */
 readonly session?: string | undefined;
 ```
@@ -266,7 +267,7 @@ export default {
 - デバイスのターゲットには、`app.bundleId` または `app.appPath` が必要です。
 - `app.open()` はターゲットのアプリを新たに起動します。試行自体は何も起動しないため、テストは前のテストが残したアプリの状態から始まります。
 - ターゲットに [`app.linkBase`](/reference/config#linkbase) があれば、`app.open(path)` はパスをアプリ内のリンクとして開きます。なければ `app.open` にパスは渡せず、リンクは [`device.openLink`](#openlink) で開きます。
-- `app.appPath` は、スイートの実行対象となるビルドです。エンジンは自動ではインストールしません。スイートで指定した箇所で [`device.installApp()`](#installapp) を呼びます。デバイスプロバイダーは、リースしたデバイスにビルドをインストールします。
+- `app.appPath` は、スイートの実行対象となるビルドです。エンジンが自動でインストールすることはありません。インストールするには、スイートの必要な箇所で [`device.installApp()`](#installapp) を呼びます。デバイスプロバイダーは、リースしたデバイスにビルドをインストールします。
 - `bundleId` がなければ、インストールしたビルドのバンドル ID またはパッケージ名が、`app.open()` で起動するアプリになります。
 - バージョンを含むなど、実行ごとにビルドのパスが変わる場合は、名前が変わっても記録を再利用できるように `identity` を宣言してください。
 
@@ -344,7 +345,7 @@ export default {
 | 契約のメンバー | デバイスでの動作 |
 | --- | --- |
 | `observe` | 矩形情報付きのアクセシビリティツリー。[ロール](#roles)の表に従って要素の型をロールに対応付けます。`Switch`、`CheckBox`、Android の `RadioButton` は、デバイスが報告する `checked` 状態を持ちます。`SecureTextField` と、UIAutomator が `password` と判定した Android のフィールドは、機密の `textbox` です。iOS のフィールドはラベルと同じ値も保持します（ラベルのないフィールドにはテキストから名前を付けます）。Android がテキストビューのラベルを値にも重複して報告した場合は、値の方を除きます。アクセシビリティ識別子（iOS）またはリソース ID（Android）がノードの `testId` です。Android のノード名には、アプリが設定した content description（React Native の `accessibilityLabel`）、なければテキストを使います。`text` は表示内容なので、ラベル付きテキストビューや入力済みフィールドは、`getByLabel` ではラベル、`getByText` ではテキストで見つかります。フィールドのヒントは、表示中かどうかにかかわらず `placeholder` 属性です。Compose Multiplatform は iOS でプレースホルダーを報告しません。空のフィールドは、描画するテキストをラベルに追加し（`Name, Ada Lovelace`）、1 つの `StaticText` の子を持ちます。そのテキストをフィールドの `placeholder` とし、子は除外します。空のフィールドには値がありません。Android は表示中のヒントに印を付け、XCTest は空の iOS フィールドのプレースホルダーを値として報告します。そのため、値が前後の空白を除いたプレースホルダーと等しい iOS フィールドは、実際に同じ文字列を入力した場合も含めて空と読みます。Android の `rect` とすべての座標は画面の物理ピクセルです。これはプラットフォームではなく agent-device の仕様で、報告された画面密度はまだ適用していません。Android のステータスバーとナビゲーションバーは除外します。画面端にある全幅の `com.android.systemui` ウィンドウと、その帯の中で agent-device が個別に報告する細いステータスアイコン（時計、電波、電池）が対象です。通知シェード、システムダイアログ、ヘッドアップ通知など左右端から内側にあるポップアップは残します。要求された場合は、すべての機密ノードの範囲を黒く塗った画像を返します。 |
-| `perform` | `tap`、`doubleTap`、`longPress`、`fill`、`clear`、`hover`、`check`、`uncheck`、`press`（`Enter`、`Space`、または 1 文字）、`swipe`、`dragTo`、編集可能なフィールドへの `focus`。`switch` や `checkbox` のタップは最も内側のコントロールを操作します。UIKit が設定行全体をラベル付きの switch とし、本物のトグルを子として報告するためです。`check` と `uncheck` には `checked` 状態が必要です。両プラットフォームの switch と、Android のネイティブ `CheckBox` はこれを報告します。React Native のチェックボックスやラジオボタンは、アプリが `accessibilityState.checked` を設定した場合だけ報告します。状態のないコントロールは `UNSUPPORTED_CAPABILITY` になるため、代わりにタップしてください。`doubleTap` は 2 回押す操作で、iOS では 284〜285 ms 間隔です（agent-device の XCTest タップの周期）。agent-device 自身のダブルタップジェスチャーは、React Native の `Pressable` には 1 回の押下として届くためです。300 ms 以下の検出期間を持つ実装では、2 回の単独タップと判定されることがあります。`longPress` はテストで `duration` を渡さない限り 1 秒押し続けます。React Native の `Pressable` の `delayLongPress`（500 ms）や、アプリが設定する長めの閾値を超えるためです。agent-device 自身のデフォルトは短く、そうした対象ではタップになります。`selectOption`、`setInputFiles`、`scrollIntoView`、`secondaryTap`、`tapModifiers` は宣言していないため、`tap` や `doubleTap` に `modifiers` を渡すと `UNSUPPORTED_CAPABILITY` です。新しいスナップショットで置き換えられたノードへのアクションは、別の要素を操作せず、対象を探し直します。 |
+| `perform` | `tap`、`doubleTap`、`longPress`、`fill`、`clear`、`hover`、`check`、`uncheck`、`press`（`Enter`、`Space`、または 1 文字）、`swipe`、`dragTo`、編集可能なフィールドへの `focus`。`switch` や `checkbox` のタップは最も内側のコントロールを操作します。UIKit が設定行全体をラベル付きの switch とし、本物のトグルを子として報告するためです。`check` と `uncheck` には `checked` 状態が必要です。両プラットフォームの switch と、Android のネイティブ `CheckBox` はこれを報告します。React Native のチェックボックスやラジオボタンは、アプリが `accessibilityState.checked` を設定した場合だけ報告します。状態のないコントロールは `UNSUPPORTED_CAPABILITY` になるため、代わりにタップしてください。`doubleTap` は 2 回押す操作で、iOS では 284〜285 ms 間隔です（agent-device の XCTest タップの周期）。agent-device 自身のダブルタップジェスチャーは、React Native の `Pressable` には 1 回の押下として届くためです。300 ms 以下の検出期間を持つ実装では、2 回の単独タップと判定されることがあります。`longPress` はテストで `duration` を渡さない限り 1 秒押し続けます。React Native の `Pressable` の `delayLongPress`（500 ms）や、アプリが設定する長めの閾値を超えるためです。agent-device 自身のデフォルトは短く、そうした対象ではタップになります。`blur`、`selectOption`、`setInputFiles`、`scrollIntoView`、`secondaryTap`、`tapModifiers` は宣言していないため、`tap` や `doubleTap` に `modifiers` を渡すと `UNSUPPORTED_CAPABILITY` です。新しいスナップショットで置き換えられたノードへのアクションは、別の要素を操作せず、対象を探し直します。 |
 | `performAt` | ノードを指定しない画面座標での `tap`、`doubleTap`、`longPress`、`swipeTo`。`screen.tapAt`、`screen.doubleTapAt`、`tap({ position })`、`screen.swipe({ from, to })`、エージェントの `tap_at` で、ツリーにないコントロールも操作できます。座標だけの `hover`、`secondaryTap`、`dragTo` はありません。タッチではノードなしのこれらの操作がないため、`hover_at` にはツリー内のコントロールが必要です。 |
 | `keyboard` | フォーカス中のフィールドへの `type` と `press`。エージェントの対象なしの `type` と `press`、`type_at` と `press_at` のフォールバック、および `dismiss`（エージェントの `dismiss_keyboard`）で使います。 |
 | `locate` | すべての `screen` クエリ。デバイスはテキストとラベルを親にも重複して報告するため、テキストとラベルのクエリは最も内側の一致を返します（React Native の入力欄は、ホストビューと内部のフィールドの両方にラベルがあります）。Android のテスト ID クエリは、文字列でも RegExp でも、画面上に完全な ID との一致がなければ `<package>:id/` 接頭辞を除いたリソース ID にも一致します。フレームワークの `android` 以外の全パッケージが対象です。`screen.locator('id=…')` は agent-device のセレクターで、完全な ID を指定します。 |
@@ -393,6 +394,7 @@ test('offline banner', { platforms: ['android'] }, async ({ app, device, screen 
 | [`back`](#back) | `Promise<void>` |
 | [`alert`](#alert) | `Promise<void>` |
 | [`dismissKeyboard`](#dismisskeyboard) | `Promise<void>` |
+| [`isKeyboardShown`](#iskeyboardshown) | `Promise<boolean>` |
 | [`clipboard`](#clipboard) | `Promise<string>` |
 | [`setClipboard`](#setclipboard) | `Promise<void>` |
 
@@ -684,7 +686,7 @@ await device.installApp(); // a fresh install, for a first-launch flow
 ```
 
 - 画面に表示中のアプリを削除すると、デバイスはホーム画面に戻り、それ以前に解決したロケーターは何も指さなくなります。テストを続けるには `device.installApp()` で再インストールしてから `device.openApp(app)` で開いてください。
-- デバイスはワーカーの後続のテストでも使われ、削除した状態もそのまま残ります。テストが終わる前に `finally` ブロックでアプリを再インストールしてください。そうしないと、そのワーカーの後続のテストはすべて `app.open()` で失敗します。
+- アプリを削除した状態は、そのデバイスで後から実行するテストにも残ります。テストが終わる前に、`finally` ブロックでアプリを再インストールしてください。そうしないと、そのデバイスで後からアプリを開くテストが `app.open()` で失敗します。
 
 | エラー | 発生条件 |
 | --- | --- |
@@ -876,10 +878,11 @@ await device.alert('accept');
  * screen has one, to avoid pressing a button or toggling a checkbox. A
  * control the tree leaves out, such as pressable text, can still be hit. The
  * simulator's "Speed up your typing" tip goes through its Continue button
- * first. A screen with no clear point above the keyboard, or a keyboard that
- * outlives both drags, fails with `UNSUPPORTED_CAPABILITY`; the message
- * names the alternatives (the app's own Done or close control, or pressing
- * Enter on the field).
+ * first. A screen with no clear point above the keyboard, a keyboard reported
+ * up with no frame and no keyboard element on screen (so no point is known
+ * to be above it), or a keyboard that outlives both drags, fails with
+ * `UNSUPPORTED_CAPABILITY`; the message names the alternatives (the app's
+ * own Done or close control, or pressing Enter on the field).
  */
 dismissKeyboard(): Promise<void>;
 ```
@@ -890,7 +893,42 @@ await device.dismissKeyboard();
 
 | エラー | 発生条件 |
 | --- | --- |
-| `UNSUPPORTED_CAPABILITY` | キーボードより上のすべての点（画面にスクロールビューがあれば、その中）がコントロール上にある場合、または 2 回のドラッグ後もキーボードが残る場合。 |
+| `UNSUPPORTED_CAPABILITY` | キーボードより上のすべての点（画面にスクロールビューがあれば、その中）がコントロール上にある場合、agent-device がキーボード表示中と報告したもののフレームも画面上のキーボード要素もない場合、または 2 回のドラッグ後もキーボードが残る場合。 |
+
+#### `isKeyboardShown`
+
+```ts
+/**
+ * Whether the soft keyboard is on screen, from a capture (taken again,
+ * within the action timeout, while the keyboard is still moving): what
+ * agent-device reported for it (a visibility probe, a measured or derived
+ * keyboard frame, or proof that there is none), else the keyboard or a key
+ * drawn on screen in the accessibility tree (the suggestion strip alone,
+ * as with a hardware keyboard, is not one). Only agent-device's proof
+ * answers `false`. Fails when the capture cannot answer: `ENGINE_FAILURE`
+ * while the keyboard is moving or the tree is still incomplete,
+ * `UNSUPPORTED_CAPABILITY` when agent-device did not prove the keyboard
+ * absent and the tree lists none. It reads the screen as it is now, so
+ * right after an action that opens or closes the keyboard, poll it with
+ * `expect.poll`. A poll reads again after any error: an `ENGINE_FAILURE`
+ * clears once the keyboard settles, while an `UNSUPPORTED_CAPABILITY`
+ * that lasts (a provider that cannot read the keyboard at all) makes the
+ * poll wait out its whole timeout before it fails.
+ * Changes nothing on the device.
+ */
+isKeyboardShown(): Promise<boolean>;
+```
+
+```ts
+await screen.getByTestId('email-input').fill('jane@example.com');
+await device.dismissKeyboard();
+await expect.poll(() => device.isKeyboardShown()).toBe(false);
+```
+
+| エラー | 発生条件 |
+| --- | --- |
+| `ENGINE_FAILURE` | agent-device が何も計測できず、返したツリーが疎か途中で切れている場合。または、キーボードの要素は見つけたもののその位置を棄却し、画面上に描画された要素が 1 つもない場合（キーボードがスライドして出入りしている間など）。もう一度読み取ってください。`expect.poll` は自動で読み直します。 |
+| `UNSUPPORTED_CAPABILITY` | ツリーに画面上に描画されたキーボードやキーがなく（サジェストバーだけではキーボードとみなしません）、agent-device もキーボードがないことを証明していない場合。たとえば、入力メソッドのウィンドウを含まない Android のキャプチャー、キーボードのプローブを持たない WebDriver プロバイダー、キーボードの読み取り結果がまったくない場合です。メッセージに理由が示されます。この状態が続く場合、`expect.poll` はタイムアウトまで待ってから失敗します。 |
 
 #### `clipboard`
 
@@ -1032,7 +1070,7 @@ iOS の `StaticText` と `Text`、Android の `TextView` は `text`、Android �
 
 - キーボードの領域には、agent-device が測定したフレームを使います。取得結果にフレームがなければ、ツリーにあるキーボードの上端から画面下端までを領域とします。
 - 中心がキーボードの下にあるコンテナでも、子が 1 つでもキーボードより上に表示されていれば可視のままです。
-- キーボードが押し上げたフッターなど、ほかのビューの下にあるノードは非表示とはみなしません。タップ時に agent-device が覆う要素を見つけると `ACTION_FAILED` になり、メッセージにその要素を示します。キーボードの下へのタップも同様に失敗します。覆っている要素を閉じるか、対象をスクロールして外に出してください。
+- キーボードが押し上げたフッターなど、ほかのビューの下にあるノードは非表示とはみなしません。タップ時に agent-device が覆う要素を見つけると `ACTION_FAILED` になり、メッセージにその要素を示します。キーボードの下へのタップも同様に失敗します。覆っている要素を閉じるか、対象が隠れない位置までスクロールしてください。
 
 ## 録画のクリーンアップ
 
@@ -1148,7 +1186,7 @@ export type BiometricSensor = 'faceid' | 'touchid' | 'fingerprint';
 /** The raw driver session behind `device`; see `Device.unstable_raw`. */
 export interface DeviceSession {
   readonly platform: MobilePlatform;
-  /** The raw driver session name: `e2e-<target>-<worker slot>`, or `<session>-<worker slot>` with the `session` option. */
+  /** The raw driver session name: `e2e-<target>-<worker slot>` (`e2e-<target>-<hostId>-<worker slot>` for a `launch()` host), or `<session>-<worker slot>` with the `session` option. */
   readonly session: string;
   /** The device id: a simulator UDID or an Android serial. */
   readonly deviceId: string;

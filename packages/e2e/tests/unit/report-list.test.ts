@@ -1310,38 +1310,40 @@ describe('ListReporter', () => {
           title: 'orders a drink',
           api: 'locator.click',
           label: 'getByRole("radio", name: "Latte")',
-          source: {
-            file: 'tests/coffee.e2e.ts',
-            line: 7,
-            column: 3,
-          },
+          source: { file: 'tests/coffee.e2e.ts', line: 7, column: 3 },
         };
-        const shown = () => {
-          const window = chunks.at(-1)!.replace(ANSI_PATTERN, '').split('\n').filter((line) => line.trim() !== '');
-          const row = window.findIndex((line) => line.includes('orders a drink'));
-          return window.slice(row, window.findIndex((line) => line.includes('Test Files')));
-        };
-        reporter.showStepPrompt({ steps: [{ step: held, number: 2 }], help: false, holdSteps: true });
-        expect(shown()).toEqual([
+        const shown = () => chunks.at(-1)!.replace(ANSI_PATTERN, '').split('\n').filter((line) => line.trim() !== '');
+        reporter.showStepPrompt({ steps: [{ step: held, number: 2 }], help: false, holdSteps: true, viewer: true });
+        expect(shown().slice(1, 4)).toEqual([
           '   └── orders a drink (k3f9)',
           '       ✓ app.open "/" 85ms',
-          '       ▶ step 2  locator.click "getByRole("radio", name: "Latte")"  tests/coffee.e2e.ts:7',
-          '         press enter to run this step, press h to show help, press q to quit',
+          '       ⏸ step 2  locator.click "getByRole("radio", name: "Latte")"  tests/coffee.e2e.ts:7',
         ]);
-        reporter.showStepPrompt({ steps: [{ step: held, number: 2 }], help: true, holdSteps: true });
-        expect(shown().slice(3)).toEqual([
-          '         press enter to run this step',
-          '         press n to run this test without holding steps',
-          '         press a to run all without holding steps',
-          '         press q to quit',
-          '         press h to hide help',
+        expect(shown().at(-3)).toContain('Duration');
+        expect(shown().slice(-2)).toEqual([
+          'Paused (k3f9) at step 2',
+          '  press enter to run this step, press h to show help, press q to quit',
+        ]);
+        expect(visibleWidth('⏸')).toBe(1);
+        reporter.showStepPrompt({ steps: [{ step: held, number: 2 }], help: true, holdSteps: true, viewer: true });
+        expect(shown().slice(-7)).toEqual([
+          'Paused (k3f9) at step 2',
+          '  press enter to run this step',
+          '  press s to show the screen',
+          '  press l to show the app log',
+          '  press n to run this test without holding steps',
+          '  press a to run all without holding steps',
+          '  press q to quit',
         ]);
         const pay = { ...held, api: 'locator.click', label: 'getByRole("button", name: "Pay")', source: { file: 'tests/coffee.e2e.ts', line: 8, column: 3 } };
         reporter.showStepPrompt({ steps: [{ step: held, number: 2 }, { step: pay, number: 3 }], help: false, holdSteps: true });
-        expect(shown().slice(2)).toEqual([
-          '       ▶ step 2  locator.click "getByRole("radio", name: "Latte")"  tests/coffee.e2e.ts:7',
-          '       ▶ step 3  locator.click "getByRole("button", name: "Pay")"  tests/coffee.e2e.ts:8',
-          '         press enter to run these 2 steps, press h to show help, press q to quit',
+        expect(shown().slice(3, 5)).toEqual([
+          '       ⏸ step 2  locator.click "getByRole("radio", name: "Latte")"  tests/coffee.e2e.ts:7',
+          '       ⏸ step 3  locator.click "getByRole("button", name: "Pay")"  tests/coffee.e2e.ts:8',
+        ]);
+        expect(shown().slice(-2)).toEqual([
+          'Paused (k3f9) at steps 2, 3',
+          '  press enter to run these 2 steps, press h to show help, press q to quit',
         ]);
         reporter.showStepPrompt(undefined);
         expect(chunks.at(-1)).not.toContain('step 2');
@@ -1411,8 +1413,10 @@ describe('ListReporter', () => {
 
         const window = chunks.at(-1)!.replace(ANSI_PATTERN, '');
         expect(window).toContain('press enter to run these 8 steps');
-        expect(window).toContain('▶ step 2');
-        expect(window).not.toContain('▶ step 9');
+        expect(window).toContain('⏸ step 2');
+        expect(window).not.toContain('⏸ step 9');
+        expect(window.trimEnd().split('\n').at(-1)).toBe('  press enter to run these 8 steps, press h to show help, press q to quit');
+        expect(window.split('\n').length).toBeLessThanOrEqual(18);
       } finally {
         restore();
       }
@@ -1432,14 +1436,14 @@ describe('ListReporter', () => {
         api: 'app.open',
         label: '/cart',
       };
-      reporter.showStepPrompt({ steps: [{ step: held, number: 3 }], help: false, holdSteps: true });
+      reporter.showStepPrompt({ steps: [{ step: held, number: 3 }], help: false, holdSteps: true, viewer: true });
       // `h` adds nothing to a plain line, so it prints nothing.
-      reporter.showStepPrompt({ steps: [{ step: held, number: 3 }], help: true, holdSteps: true });
+      reporter.showStepPrompt({ steps: [{ step: held, number: 3 }], help: true, holdSteps: true, viewer: true });
       reporter.showStepPrompt({ steps: [{ step: held, number: 3 }, { step: { ...held, api: 'locator.click', label: 'Pay' }, number: 4 }], help: true, holdSteps: true });
       reporter.showStepPrompt(undefined);
       expect(lines).toEqual([
         'paused (k3f9) at step 3 of orders a drink [chromium]: app.open "/cart" · press enter to run this step, ' +
-          'n to run this test without holding steps, a to run all without holding steps, q to quit',
+          's to show the screen, l to show the app log, n to run this test without holding steps, a to run all without holding steps, q to quit',
         'paused (k3f9) at steps 3, 4 of orders a drink [chromium]: app.open "/cart"; locator.click "Pay" · press enter to run these 2 steps, ' +
           'n to run this test without holding steps, a to run all without holding steps, q to quit',
       ]);
@@ -1469,17 +1473,22 @@ describe('ListReporter', () => {
         reporter.showStepPrompt({ steps: [{ step: held, number: 0 }], help: false, holdSteps: false });
         const window = chunks.at(-1)!.replace(ANSI_PATTERN, '').split('\n').filter((line) => line.trim() !== '');
         const row = window.findIndex((line) => line.includes('orders a drink'));
-        expect(window.slice(row, row + 3)).toEqual([
+        expect(window.slice(row, row + 2)).toEqual([
           '   └── orders a drink (k3f9)',
-          '       ▶ paused  screen.pause()  tests/coffee.e2e.ts:9',
-          '         press enter to resume, press h to show help, press q to quit',
+          '       ⏸ paused  screen.pause()  tests/coffee.e2e.ts:9',
         ]);
-        reporter.showStepPrompt({ steps: [{ step: held, number: 0 }], help: true, holdSteps: false });
+        expect(window.slice(-2)).toEqual([
+          'Paused (k3f9) at screen.pause()',
+          '  press enter to resume, press h to show help, press q to quit',
+        ]);
+        reporter.showStepPrompt({ steps: [{ step: held, number: 0 }], help: true, holdSteps: false, viewer: true });
         const help = chunks.at(-1)!.replace(ANSI_PATTERN, '').split('\n').filter((line) => line.trim() !== '');
-        expect(help.slice(row + 2, row + 5)).toEqual([
-          '         press enter to resume',
-          '         press q to quit',
-          '         press h to hide help',
+        expect(help.slice(-5)).toEqual([
+          'Paused (k3f9) at screen.pause()',
+          '  press enter to resume',
+          '  press s to show the screen',
+          '  press l to show the app log',
+          '  press q to quit',
         ]);
       } finally {
         restore();
@@ -1838,7 +1847,7 @@ describe('ListReporter', () => {
         reporter.showStepPrompt({ steps: [{ step: held, number: 0 }], help: false, holdSteps: false });
         const window = chunks.at(-1)!.replace(ANSI_PATTERN, '');
         expect(window).toContain('test h (k3f9)');
-        expect(window).toContain('▶ paused  screen.pause()  tests/a.e2e.ts:9');
+        expect(window).toContain('⏸ paused  screen.pause()  tests/a.e2e.ts:9');
         expect(window).toContain('press enter to resume');
       } finally {
         restore();

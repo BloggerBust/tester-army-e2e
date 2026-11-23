@@ -56,6 +56,7 @@ await expect(screen.getByTestId('cart-empty'), 'the cart is empty').toBeVisible(
 | [`toBeAttached`](#tobeattached) | 等待存在一个匹配项 |
 | [`toBeEnabled`](#tobeenabled-and-tobedisabled) | 等待启用状态 |
 | [`toBeDisabled`](#tobeenabled-and-tobedisabled) | 等待禁用状态 |
+| [`toBeEditable`](#tobeeditable) | 等待启用且非只读的控件 |
 | [`toBeChecked`](#tobechecked-tobeselected-and-tobeexpanded) | 等待勾选状态 |
 | [`toBeSelected`](#tobechecked-tobeselected-and-tobeexpanded) | 等待选中状态 |
 | [`toBeExpanded`](#tobechecked-tobeselected-and-tobeexpanded) | 等待展开状态 |
@@ -103,6 +104,21 @@ await expect(screen.getByRole('button', 'Pay')).toBeEnabled({ enabled: false });
 
 - `<fieldset disabled>` 内的控件被禁用，除非它位于该 fieldset 的第一个 `<legend>` 中。
 - 祖先上的 `aria-disabled="true"` 会禁用其下的控件，直到 `aria-disabled="false"` 截断该继承链。
+
+#### `toBeEditable`
+
+等待控件启用且非只读。
+
+```ts
+await expect(screen.getByLabel('Email')).toBeEditable();
+await expect(screen.getByLabel('Order id')).toBeEditable({ editable: false }); // read-only or disabled
+```
+
+- 只读是引擎报告的状态。Web 引擎对原生控件和 `aria-readonly` 遵循 Playwright 的规则，角色使用 e2e 的角色，禁用状态使用 `toBeEnabled()` 报告的状态。`input`、`textarea` 和 `select` 只读取自身的 `readonly` 属性（任意值）。接受 `aria-readonly` 的角色（`textbox`、`searchbox`、`combobox`、`listbox`、`checkbox`、`switch`、`slider`、`spinbutton`、`gridcell` 等）的元素读取 `aria-readonly="true"`（不区分大小写）。编辑宿主只按其 ARIA 角色读取它（显式角色或标签的角色，网格中的 `td` 是 `gridcell`）；普通的 `<div contenteditable>` 没有角色。其他编辑宿主及其内部的任何元素都不是只读的。
+- 禁用的节点也不可编辑，禁用的判定与 [`toBeEnabled`](#tobeenabled-and-tobedisabled) 相同。
+- 其他节点（例如按钮）没有只读状态。无论是否取反，匹配器都会失败，失败信息会说明这一点。
+- 在设备上，只有当平台报告文本字段是否接受输入时（例如 Android），该字段才有只读状态。iOS 不报告，因此 iOS 字段会让匹配器失败，而不是靠猜测通过。
+- 引擎从需要 `e2e` 0.25.0 的 `@e2e-dev/web` 和 `@e2e-dev/mobile` 版本开始报告此状态。使用旧引擎时，每个节点都会以 `no read-only state` 失败：请随 `e2e` 一起更新引擎。
 
 #### `toBeChecked`、`toBeSelected` 和 `toBeExpanded`
 
@@ -695,6 +711,8 @@ export interface AsyncExpectation {
   toBeEnabled(options?: { enabled?: boolean; timeout?: number }): Promise<void>;
   /** Waits for disabled state. */
   toBeDisabled(options?: { timeout?: number }): Promise<void>;
+  /** Waits for an enabled control that is not read-only; `editable: false` waits for a disabled or read-only one. A node with no read-only state, a button included, fails either way. */
+  toBeEditable(options?: { editable?: boolean; timeout?: number }): Promise<void>;
   /** Waits for checked state; `checked: false` waits for unchecked state. */
   toBeChecked(options?: { checked?: boolean; timeout?: number }): Promise<void>;
   /** Waits for selected state. */

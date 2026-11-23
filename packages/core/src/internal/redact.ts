@@ -80,13 +80,18 @@ function compile(values: readonly (readonly [string, string])[]): Compiled {
   const patterns = entries.map(([, value]) => valuePattern(value));
   const pattern = new RegExp(patterns.map(({ source }) => `(${source})`).join('|'), 'gi');
   const rewrite = (text: string): string =>
-    text.replace(pattern, (_occurrence: string, ...rest: unknown[]) => {
-      const matched = rest.slice(0, markers.length).findIndex((group) => group !== undefined);
-      return markers[matched] ?? '';
+    text.replace(pattern, (_occurrence: string, ...groups: unknown[]) => {
+      for (let index = 0; index < markers.length; index += 1) {
+        if (groups[index] !== undefined) return markers[index] ?? '';
+      }
+      return '';
     });
+  // Every marker starts with `MARKER_OPEN`, so text without it has none to cut out. Otherwise
   // `split` on a capturing pattern returns the markers at the odd indexes; those pass through untouched.
   const redact = (text: string): string =>
-    text.split(known).map((piece, index) => (index % 2 === 1 ? piece : rewrite(piece))).join('');
+    text.includes(MARKER_OPEN)
+      ? text.split(known).map((piece, index) => (index % 2 === 1 ? piece : rewrite(piece))).join('')
+      : rewrite(text);
   const valueKeys = entries.map(([, value]) => readingKey(value).key);
   // A reader trims a value's leading whitespace as it trims any text's, so a cut part may begin past it.
   const leadingForms = entries.map(([, value], index) => {
@@ -95,7 +100,7 @@ function compile(values: readonly (readonly [string, string])[]): Compiled {
   });
   const redactCut = (text: string): string => {
     // Only what follows the last marker can end in a value cut short.
-    const tail = text.split(known).at(-1) ?? '';
+    const tail = text.includes(MARKER_OPEN) ? (text.split(known).at(-1) ?? '') : text;
     const tailKey = readingKey(tail);
     let cut = 0;
     let marker = '';
@@ -185,6 +190,16 @@ function whitespaceRun(run: string): Pattern {
   return { source: `${one.source}{1,${count}}`, maxLength: one.maxLength * count };
 }
 
+/** The most characters `characterPatterns` keeps; one past that is built on every use. */
+const CHARACTER_CACHE_LIMIT = 4096;
+/**
+ * Each character's pattern, kept for the process. A pattern depends on its
+ * character alone, never on a ledger, a name, or a value, so every compile
+ * shares them: building one calls six locale case mappings, and a ledger
+ * compiles again at each registration.
+ */
+const characterPatterns = new Map<string, Pattern>();
+
 /**
  * One character in every case form and every spelling of each. A spelling
  * the `i` flag already matches through another (`a` beside `A`, `é` beside
@@ -193,12 +208,16 @@ function whitespaceRun(run: string): Pattern {
  * them across the value.
  */
 function character(ch: string): Pattern {
+  const kept = characterPatterns.get(ch);
+  if (kept !== undefined) return kept;
   const forms = caseForms(ch);
   const single = forms.filter((form) => [...form].length === 1).flatMap(spellings);
   const expanded = forms
     .filter((form) => [...form].length > 1)
     .map((form) => concat([...form].map((part) => alternation(distinct(spellings(part)).map(exact)))));
-  return alternation([...distinct(single).map(exact), ...expanded]);
+  const pattern = alternation([...distinct(single).map(exact), ...expanded]);
+  if (characterPatterns.size < CHARACTER_CACHE_LIMIT) characterPatterns.set(ch, pattern);
+  return pattern;
 }
 
 /** `options` as one alternation, longest first, so a spelling is never cut short by one it starts with. */
@@ -675,14 +694,20 @@ export class SecretLedger {
    * marker move comes first: the other way round it could land inside an
    * occurrence holding a `<`. Occurrences never overlap, so each move is
    * one and what is held stays under twice `maxFormLength` plus a marker.
+   * No occurrence holds a line break unless a value spans lines, so none
+   * runs across a cut that follows one, and the search for one starts at the
+   * cut's own line: a stream of finished lines is searched once, by `redact`.
    */
   holdFrom(text: string): number {
     const { pattern, spansLines, maxFormLength, maxMarkerLength } = this.compile();
     if (pattern === undefined) return text.length;
-    let cut = Math.max(0, text.length - (maxFormLength - 1));
-    if (!spansLines) cut = Math.max(cut, text.lastIndexOf('\n') + 1);
+    const lineStart = spansLines ? 0 : text.lastIndexOf('\n') + 1;
+    let cut = Math.max(lineStart, text.length - (maxFormLength - 1));
+    // An unfinished marker holds no line break, so the cut stays on the line that starts at `lineStart`.
     cut = unfinishedMarkerBefore(text, cut, maxMarkerLength);
-    pattern.lastIndex = 0;
+    if (cut === 0 || cut === text.length) return cut;
+    if (!spansLines && text.charCodeAt(cut - 1) === 0x0a) return cut;
+    pattern.lastIndex = lineStart;
     for (let match = pattern.exec(text); match !== null && match.index < cut; match = pattern.exec(text)) {
       if (match.index + match[0].length > cut) return match.index;
     }

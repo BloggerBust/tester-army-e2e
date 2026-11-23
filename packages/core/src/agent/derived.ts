@@ -28,7 +28,15 @@
  *   any value typed into a field the app marks as a one-time code: the app
  *   issues that code per run, and a code split over one box per digit puts a
  *   single digit in each fill, which no screen shows as a word of its own.
+ *   Typing into the focused field names no field, so in a step whose screens
+ *   listed a one-time-code field its value is judged as if it went into one.
  * - `date`: a date or a clock time, which the model reckons from today.
+ *
+ * Values typed in a row into several fields are also judged joined
+ * (`derivedJoinReason`), after each piece is judged on its own above: a code
+ * the screen showed and the model typed three and three, or one digit per
+ * box, is the whole code once its pieces join, even where no one piece is a
+ * word of the screen. The recording becomes a gap from the first piece on.
  *
  * A bare word inside a sentence is none of these: "one" typed on a page that
  * lists "Row one" is the model's own choice, and the recording replays it.
@@ -57,7 +65,12 @@ export interface StepEvidence {
    * read off the image and counts as derived.
    */
   readonly pixels?: boolean;
-  /** The purpose the engine reported for the field the value went into (`SemanticNode.inputPurpose`). */
+  /**
+   * The purpose of the field the value went into: the one the engine reported
+   * for it (`SemanticNode.inputPurpose`), or, for typing into the focused
+   * field, which names none, `one-time-code` once a screen of the step listed
+   * such a field (`ObservationFeed.oneTimeCodeShown`).
+   */
   readonly inputPurpose?: SemanticNode['inputPurpose'] | undefined;
 }
 
@@ -83,15 +96,43 @@ export function derivedReason(
   }
   if (isLiteral(needle, instruction, params)) return undefined;
   if (evidence.pixels === true) return 'pixels';
+  return shownReason(needle, evidence.shown ?? []) ?? (DATE_OR_TIME.test(value) ? 'date' : undefined);
+}
+
+/**
+ * The rule that makes values typed in a row into several fields this run's
+ * data once joined, or undefined when the join replays. `joined` is the
+ * values with no separator, as a code split one digit per box (or three and
+ * three) reads whole. No piece of such a code is a word the screen showed,
+ * so every piece passes `derivedReason`, which already applied the date,
+ * pixel, and field-purpose rules to each. The join meets only the screen
+ * rules, and a join the instruction or the params spell out is literal.
+ */
+export function derivedJoinReason(
+  joined: string,
+  instruction: string,
+  params: Readonly<Record<string, JsonValue>> | undefined,
+  shown: Iterable<string>,
+): 'whole-node' | 'minted-token' | undefined {
+  const needle = normalize(joined);
+  if (needle === '' || isLiteral(needle, instruction, params)) return undefined;
+  return shownReason(needle, shown);
+}
+
+/**
+ * Whether a screen of the step showed the value: as the whole of a node, or,
+ * for a data-shaped value, as a word of its own inside one. A node that says
+ * exactly the value wins over one that holds it as a word.
+ */
+function shownReason(needle: string, shown: Iterable<string>): 'whole-node' | 'minted-token' | undefined {
   const dataShaped = isDataShaped(needle);
   let mintedToken = false;
-  for (const text of evidence.shown ?? []) {
-    const shown = normalize(text);
-    if (shown === needle) return 'whole-node';
-    if (dataShaped && hasWord(shown, needle)) mintedToken = true;
+  for (const text of shown) {
+    const normalized = normalize(text);
+    if (normalized === needle) return 'whole-node';
+    if (dataShaped && hasWord(normalized, needle)) mintedToken = true;
   }
-  if (mintedToken) return 'minted-token';
-  return DATE_OR_TIME.test(value) ? 'date' : undefined;
+  return mintedToken ? 'minted-token' : undefined;
 }
 
 /** Whether the instruction or a param spells the value out: the step's literal input, which replays verbatim. */

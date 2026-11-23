@@ -72,6 +72,10 @@ app commands run with your operating-system permissions, unsandboxed. Run
 untrusted pull request code in an external sandbox with no secrets or write
 tokens.
 
+A macOS app that [`@e2e-dev/desktop`](/desktop) launches gets only a few
+variables of the run's environment, such as `HOME` and `PATH`, so your
+secrets and model keys never reach it.
+
 ## What leaves your computer
 
 A run connects to your model provider, the app under test, and, unless you

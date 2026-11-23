@@ -1,5 +1,7 @@
+import { ToolChoiceViolationError } from 'ai';
 import { describe, expect, it } from 'vitest';
-import { createModelAdapter } from '@e2e-dev/core/lib/agent/model/sdk';
+import { loadAiSdk } from '@e2e-dev/core/lib/agent/ai-sdk';
+import { createModelAdapter, isModelRefusal } from '@e2e-dev/core/lib/agent/model/sdk';
 import { defineEngine } from '@e2e-dev/core/lib/engine/index';
 import { createEngineSession } from '@e2e-dev/core/lib/engine/session';
 import { resolveConfig } from '../../src/config/resolve-run.ts';
@@ -63,6 +65,21 @@ describe('model refusal', () => {
       message: 'the model anthropic/claude-sonnet-5.5 refused the request (refusal)',
     });
     expect(refusal.attempts()).toBe(1);
+  });
+
+  it('reads a content-filtered ToolChoiceViolationError as a refusal', async () => {
+    await loadAiSdk();
+    const violation = (finishReason: 'content-filter' | 'stop') =>
+      new ToolChoiceViolationError({
+        toolChoice: { type: 'required' },
+        finishReason,
+        provider: 'anthropic',
+        modelId: 'claude-sonnet-5.5',
+        content: [],
+      });
+
+    expect(isModelRefusal(violation('content-filter'))).toBe(true);
+    expect(isModelRefusal(violation('stop'))).toBe(false);
   });
 
   it('keeps a usable answer that finished with content-filter', async () => {

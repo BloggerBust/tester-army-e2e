@@ -63,6 +63,30 @@ Keep PRs small, and write the description yourself, briefly. Long
 AI-generated descriptions may be ignored. If you can't explain the change in
 a few lines, the PR is probably too big.
 
+### Ready for Human Review
+
+Maintainers review PRs that carry the `Ready for Human Review` label. It says
+that everything a machine can check is done, so a person only spends time on
+judgment. Whether you or a coding agent drives the PR, the steps are the same.
+
+Contributors cannot add labels. When the PR is ready, its author comments
+exactly `/ready`, alone in the comment. A workflow adds the label, or replies
+with what is missing, when all of these hold:
+
+- No merge conflict, not a draft, and no `needs:compliance` label.
+- Checks have reported on the latest commit, and none is failing or still
+  running. On your first PR here a maintainer has to approve the CI run
+  before it starts.
+- No maintainer's latest review requests changes.
+- Every review thread, from a maintainer or a review bot, is resolved. Fix it
+  or reply with why it does not apply, then resolve it. A thread someone else
+  opened does not count if you resolved it without replying.
+
+The label vouches for one commit. A push, a merge conflict, a maintainer's
+review that requests changes, or a move back to draft removes it; comment `/ready` again
+once the PR is back in shape. Do not ask for the label while review feedback
+is still open.
+
 ## The contract
 
 There is no separate spec document. The code is the contract, pinned in three
@@ -167,7 +191,8 @@ squash-merged, so the PR title is the commit; the
 [`writing-pr`](./.dev/skills/writing-pr/SKILL.md) skill describes the body,
 including the `## Verified` section every PR carries. Coding agents open PRs
 through the [`ship-pr`](./.dev/skills/ship-pr/SKILL.md) skill and babysit
-them until the `Ready for Human Review` label is on; a later push removes it.
+them until the [`Ready for Human Review`](#ready-for-human-review) label is
+on.
 
 ### Changesets
 
@@ -330,11 +355,11 @@ prompts and tool descriptions.
 
 ### Engine contract
 
-`@e2e-dev/core/engine` (re-exported as `e2e/engine`) is what `@e2e-dev/web` and
-`@e2e-dev/mobile` build against, and what a third-party engine builds against
-too. A change to that contract bumps `@e2e-dev/core`, `e2e`, and both engines
-together in one release, with a changeset for each, so an engine and a runner
-from the same release always match. `e2e` and `@e2e-dev/core` are a changesets
+`@e2e-dev/core/engine` (re-exported as `e2e/engine`) is what `@e2e-dev/web`,
+`@e2e-dev/mobile`, and `@e2e-dev/desktop` build against, and what a third-party
+engine builds against too. A change to that contract bumps `@e2e-dev/core`,
+`e2e`, and every engine together in one release, with a changeset for each,
+so an engine and a runner from the same release always match. `e2e` and `@e2e-dev/core` are a changesets
 `fixed` group: they always share a version, and `e2e` depends on that exact
 `@e2e-dev/core`. Engines declare a peer range on `@e2e-dev/core` that points one way
 only (engine to core, `>=x <1`), plus an optional one on `e2e` for the main

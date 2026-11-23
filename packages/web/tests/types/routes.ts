@@ -1,5 +1,5 @@
 /** Compile-time assertions for route decisions: the options each one takes, and the ones it refuses at runtime too. */
-import type { Browser, Dialog, RouteContinueOverrides, RouteFulfillResponse, WebRoute } from '../../src/index.ts';
+import type { Browser, Dialog, RouteContinueOverrides, RouteFulfillResponse, RouteMatcher, WebResponse, WebRoute } from '../../src/index.ts';
 
 ({ json: { ok: true }, contentType: 'application/vnd.quote+json' }) satisfies RouteFulfillResponse;
 ({ path: 'fixtures/quote.json', status: 201 }) satisfies RouteFulfillResponse;
@@ -20,9 +20,23 @@ import type { Browser, Dialog, RouteContinueOverrides, RouteFulfillResponse, Web
 // @ts-expect-error only a request header can be dropped; a response header is a string.
 ({ headers: { 'x-a': undefined } }) satisfies RouteFulfillResponse;
 
+({ method: 'POST', url: '**/api/orders' }) satisfies RouteMatcher;
+({ method: 'post', url: /\/api\/orders$/ }) satisfies RouteMatcher;
+// @ts-expect-error a method-narrowed pattern needs its url
+({ method: 'POST' }) satisfies RouteMatcher;
+// @ts-expect-error one HTTP method, not a list
+({ method: ['GET', 'POST'], url: '**/api/orders' }) satisfies RouteMatcher;
+// @ts-expect-error a route pattern takes no extra matchers
+({ method: 'POST', url: '**/api/orders', times: 1 }) satisfies RouteMatcher;
+
 declare const browser: Browser;
 void (browser.waitForDownload(async () => {}).then(file => file.absolutePath) satisfies Promise<string>);
 void (browser.unrouteAll() satisfies Promise<void>);
+void (browser.route({ method: 'POST', url: '**/api/orders' }, () => {}) satisfies Promise<void>);
+void (browser.unroute({ method: 'POST', url: '**/api/orders' }) satisfies Promise<void>);
+void (browser.waitForResponse({ method: 'POST', url: '**/api/orders' }) satisfies Promise<WebResponse>);
+// @ts-expect-error a method-narrowed pattern needs its url
+void browser.route({ method: 'POST' }, () => {});
 // @ts-expect-error clearing routes takes no options
 void browser.unrouteAll({ behavior: 'ignoreErrors' });
 

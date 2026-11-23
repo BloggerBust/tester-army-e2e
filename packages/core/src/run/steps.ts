@@ -11,14 +11,14 @@ import { markAbandonedRejection, relocateStack } from '../internal/abandoned.ts'
 import { withAiTraceStep } from '../internal/ai-trace.ts';
 import { classifyError, redactErrorDetails, serializeError, TestError, withHint, type SerializedError } from '../internal/errors.ts';
 import { timestamp } from '../internal/ids.ts';
-import { withAbort } from '../internal/time.ts';
+import { abortError, cancelledError, withAbort } from '../internal/time.ts';
 import { sourceLocation, type SourceLocation } from '../internal/source.ts';
 import type { GuestRecord } from './guest-steps.ts';
 import type { AppLogEntry, AppLogSource } from '../engine/index.ts';
 import { APP_LOG_LIMITS } from '../engine/session.ts';
 import type { AppEvent } from '../engine/surface.ts';
 import { compareScreens, type ScreenText, type StepScreen } from './step-screens.ts';
-import { insidePollRead } from '../expect/poll-scope.ts';
+import { insidePollRead, pollReadSignal } from '../expect/poll-scope.ts';
 
 /** The closed step kind set; the type is derived from it, so the two cannot drift. */
 export const STEP_KINDS = ['agent', 'locator', 'assertion', 'screen', 'app', 'session', 'resource'] as const;
@@ -389,6 +389,8 @@ export interface StepHoldRequest {
    * means the test has reached `screen.pause()`.
    */
   readonly kind: 'step' | 'pause';
+  /** Expected position in the trace, from 1. A pause uses 0. */
+  readonly number: number;
   readonly api: string;
   /** Already redacted. */
   readonly label: string;
@@ -577,13 +579,19 @@ export class StepRecorder {
     body: () => Promise<T>,
     options: StepRunOptions = {},
   ): Promise<T> {
+    const reading = pollReadSignal();
+    if (reading?.aborted === true) {
+      const error = abortError(reading, cancelledError);
+      markAbandonedRejection(error);
+      return Promise.reject(error);
+    }
     // The label is published, reported, and traced as is: a secret the test
     // spelled into an instruction or a locator stops here, once.
     const label = this.redact?.(rawLabel) ?? rawLabel;
     const parent = this.current();
     const stack = stepStack(this.projectRoot);
     // A step inside another (an `onAction` hook's) or inside an `expect.poll`
-    // read is part of what holds it, so only a top-level step waits.
+    // read or a `toPass` block is part of what holds it, so only a top-level step waits.
     if (this.hold?.steps === true && this.holdable && parent === undefined && !insidePollRead()) {
       return this.runHeld(this.hold.ask, { kind, api, label, stack, options, cancel: new AbortController(), promise: Promise.resolve() }, body);
     }
@@ -595,7 +603,7 @@ export class StepRecorder {
    * `hold`, as in a program or an MCP session, it returns right away.
    *
    * With `hold`, the call fails outside a holdable part of the attempt or
-   * inside another step or an `expect.poll` read. The timers there keep
+   * inside another step or an `expect.poll` read or a `toPass` block. The timers there keep
    * running during a pause.
    *
    * The pause and any error that ends it are reported at the test line that
@@ -606,7 +614,7 @@ export class StepRecorder {
       return;
     }
 
-    const request: StepHoldRequest = { kind: 'pause', api: 'screen.pause', label: '' };
+    const request: StepHoldRequest = { kind: 'pause', number: 0, api: 'screen.pause', label: '' };
     const stack = stepStack(this.projectRoot);
     const source = sourceLocation(stack, this.projectRoot);
     const pause: HeldPause = { api: request.api, owner: this.owner, stack, cancel: new AbortController(), promise: Promise.resolve() };
@@ -624,13 +632,13 @@ export class StepRecorder {
         );
       }
 
-      // Another step or an `expect.poll` read has a separate timer that
+      // Another step or an `expect.poll` read or a `toPass` block has a separate timer that
       // counts the pause.
       if (this.current() !== undefined || insidePollRead()) {
         throw new TestError(
           'INVALID_ARGUMENT',
           withHint(
-            `${request.api}() was called inside another step (an onAction hook or a project tool) or an expect.poll read`,
+            `${request.api}() was called inside another step (an onAction hook or a project tool), an expect.poll read, or a toPass block`,
             'call it between steps in fixture setup, a beforeEach hook, or the test body',
           ),
         );
@@ -659,13 +667,16 @@ export class StepRecorder {
    * Waits at the hold, then starts the step as if it were called now: its
    * index, start, and verification boundary are those of its release, so
    * steps called together in one `Promise.all` keep their call order.
+   * The prompt uses the position the step would get if the pending holds
+   * started in order with no other steps recorded between them.
    */
   private runHeld<T>(ask: RecorderHold['ask'], call: HeldCall, body: () => Promise<T>): Promise<T> {
     const source = sourceLocation(call.stack, this.projectRoot);
     this.held.add(call);
+    const number = this.steps.length + this.held.size;
     const promise = (async () => {
       try {
-        await ask({ kind: 'step', api: call.api, label: call.label, ...(source === undefined ? {} : { source }) }, call.cancel.signal);
+        await ask({ kind: 'step', number, api: call.api, label: call.label, ...(source === undefined ? {} : { source }) }, call.cancel.signal);
         // Released in the same turn the body abandoned it: it must not run.
         call.cancel.signal.throwIfAborted();
       } catch (cause) {
@@ -742,10 +753,14 @@ export class StepRecorder {
 
   private async execute<T>(record: StepRecord, body: () => Promise<T>, options: StepRunOptions, verifiesBefore: number): Promise<T> {
     const startedMs = Date.now();
+    const reading = pollReadSignal();
+    const signal = reading === undefined || this.signal === undefined
+      ? reading ?? this.signal
+      : AbortSignal.any([reading, this.signal]);
     try {
       // Model calls made inside the body are attributed to this step.
       const work = this.scope.run(record, () => withAiTraceStep(record.api, record.label, body));
-      const result = await (this.signal === undefined ? work : withAbort(work, this.signal, () => new TestError('CANCELLED', `${record.api} cancelled`)));
+      const result = await (signal === undefined ? work : withAbort(work, signal, () => new TestError('CANCELLED', `${record.api} cancelled`)));
       if (this.abandoned.has(record.id)) return result;
       record.durationMs = Date.now() - startedMs;
       if (options.verifies === true) this.lastVerified = Math.max(this.lastVerified, verifiesBefore);
@@ -769,6 +784,9 @@ export class StepRecorder {
             ? 'blocked'
             : 'failed';
       record.error = serializeError(error, { projectRoot: this.projectRoot, redact: this.redact });
+      if (reading?.aborted === true && (error.code === 'CANCELLED' || thrown === reading.reason)) {
+        markAbandonedRejection(this.redactThrown ? error : cause);
+      }
       if (!this.redactThrown) throw cause;
       if (this.redact !== undefined) redactErrorInPlace(error, this.redact);
       throw error;

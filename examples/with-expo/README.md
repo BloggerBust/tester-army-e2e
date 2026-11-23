@@ -47,7 +47,7 @@ model calls. Results are in `.e2e/report.json`.
 See [e2e.config.ts](e2e.config.ts) and [tests/](tests/) for the setup.
 For your own app, follow the [Quickstart](https://e2e.com/docs/quickstart).
 
-Last checked on 2026-11-11 with Expo SDK 57, e2e 0.23.0, @e2e-dev/web 0.15.5,
-@e2e-dev/mobile 0.12.6, and Xcode 26.3 on an iOS 26.3 simulator.
+Last checked on 2026-11-23 with Expo SDK 57, e2e 0.24.0, @e2e-dev/web 0.16.1,
+@e2e-dev/mobile 0.12.8, and Xcode 27.2 on an iOS 27.2 simulator.
 `npx e2e doctor --target ios` passed, and the three locator tests passed on
 iOS and web. The agent tests and Android were not run.

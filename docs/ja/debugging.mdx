@@ -120,18 +120,18 @@ remaining"`）は、アプリの更新とタイミングが競合しています
 .e2e/results/todos-adds-a-todo-1a2b3c4d5e6f7a8b/attempt-1/screenshots/001-failure.png
 ```
 
-テストの実行まで進む実行は、最初に `results/` を空にします。`--last-failed` による再実行では、再実行元のレポートが参照するファイルを保持し、新しい試行を各テストの `rerun-<n>/` に書きます。
+テストを実行する段階まで進むと、e2e は最初に `results/` を空にします。`--last-failed` による再実行では、再実行元のレポートが参照するファイルを保持し、新しい試行を各テストの `rerun-<n>/` に書きます。
 
 | アーティファクト | 保存されるタイミング |
 | --- | --- |
 | スクリーンショット | エンジンが対応していれば、失敗した試行で撮影します。組み込みの `agent.assert` は、`screenshot: false` でなければ判定の成否にかかわらず撮影します。`app.screenshot('label')` でも撮影できます。マスキングされるのは機密フィールドだけです。[シークレット入力後のスクリーンショット](/reference/security#screenshots-after-a-secret-fill)を参照してください。 |
-| ダウンロード | `browser.waitForDownload` で保存したファイルを `download` として、アプリが提供した内容で保存します。ランナーがシークレットをマスキングする条件は[ダウンロード](/reference/security#downloads)を参照してください。 |
+| ダウンロード | `browser.waitForDownload` で保存したファイルです。アーティファクトの種類は `download` で、アプリが返した内容で保存します。ランナーがシークレットをマスキングする条件は[ダウンロード](/reference/security#downloads)を参照してください。 |
 | 動画 | [録画を有効にした場合](#watch-it-happen)。動画は何もマスキングしません。[秘匿の対象外](/reference/security#where-redaction-stops)を参照してください。 |
 | エージェントのトランスクリプト | [`--debug`](#agent-steps) を指定した場合。 |
 
 ## スクリプトから読む report.json
 
-テストの実行まで進む実行は、[出力ディレクトリ](/reference/config#output)（デフォルトは `.e2e`）に `report.json` も書きます。バージョン付きスキーマで、実行の全結果を保持します。`--reporter json` はこれを標準出力に表示します。
+テストを実行する段階まで進むと、e2e は[出力ディレクトリ](/reference/config#output)（デフォルトは `.e2e`）に `report.json` も書きます。バージョン付きスキーマで、実行の全結果を保持します。`--reporter json` はこれを標準出力に表示します。
 
 ```bash
 jq '.run | {status, exitCode, errors}' .e2e/report.json
@@ -149,7 +149,7 @@ jq '.run.results[] | select(.status != "passed") | .attempts[-1]
 | `appLog` | アプリのログ。各行の `step` は対応するステップの `index` で、最初のステップより前は省略されます。 |
 | `artifacts` | 保存したファイル |
 
-直列実行グループの各テストには、独自の `attempts` はありません。結果は `run.serialGroups` にあり、試行ごとの各テストにひとつのメンバーがあります。実行が中断したリトライや、メンバーの実行まで到達しなかったリトライは `cutRetry: true` で、判定を持たないため読み飛ばしてください。
+直列実行グループの各テストには、独自の `attempts` はありません。結果は `run.serialGroups` にあり、各試行にテストごとのメンバーが 1 つずつあります。実行が中断したリトライや、メンバーの実行まで到達しなかったリトライは `cutRetry: true` で、判定を持たないため読み飛ばしてください。
 
 ```bash
 jq '.run.serialGroups[] | (.attempts | map(select(.cutRetry != true)) | last).members[]? | select(.status != "passed")
@@ -212,7 +212,7 @@ bunx e2e run tests/checkout.e2e.ts --step --headed
 
 ```text
  ❯ |web| tests/checkout.e2e.ts 0/1
-   └── pays with a card paused
+   └── pays with a card (k3f9)
        ✓ app.open "/checkout" 412ms
        ▶ step 2  locator.fill "getByLabel("Email")"  tests/checkout.e2e.ts:9
          press enter to run this step, press h to show help, press q to quit
@@ -259,7 +259,7 @@ bunx e2e run --step next
 
 ```text
 ✓ app.open "/checkout" 124ms
-Paused before step 2 of pays with a card [web]:
+Paused (k3f9) before step 2 of pays with a card [web]:
   locator.fill "getByLabel("Email")" (tests/checkout.e2e.ts:9)
 Screen:
   http://localhost:3000/checkout
@@ -315,7 +315,7 @@ bunx e2e run tests/checkout.e2e.ts --headed
 
 ```text
  ❯ |web| tests/checkout.e2e.ts 0/1
-   └── pays with a card paused
+   └── pays with a card (k3f9)
        ▶ paused  screen.pause()  tests/checkout.e2e.ts:5
          press enter to resume, press h to show help, press q to quit
 ```
@@ -325,7 +325,7 @@ bunx e2e run tests/checkout.e2e.ts --headed
 コーディングエージェントのシェルなどターミナルがない場合は、一時停止が待っている画面とともに表示されます。
 
 ```text
-Paused in pays with a card [web]:
+Paused (k3f9) in pays with a card [web]:
   screen.pause() (tests/checkout.e2e.ts:5)
 Screen:
   http://localhost:3000/checkout
@@ -333,7 +333,9 @@ Screen:
 Next: e2e run --step next to resume the test, or e2e run --step stop to end the run.
 ```
 
-テストを再開するには、同じディレクトリの別のシェルで `e2e run --step next` を実行します。実行を終了コード 130 で終了するには、`e2e run --step stop` を実行します。これらのコマンドは、実行にターミナルがあるかどうかにかかわらず使えます。例外はターミナルでの `--step` 実行で、その場合はキーを使います。`next` の代わりに `rest` も使えます。
+テストを再開するには、同じディレクトリの別のシェルで `e2e run --step next` を実行します。実行を終了コード 130 で終了するには、`e2e run --step stop` を実行します。これらのコマンドは、ターミナルの有無にかかわらず使えます。この一時停止では、`next` の代わりに `rest` も送れます。
+
+同じディレクトリから [MCP でアタッチする](/reference/mcp#attaching-to-a-held-test)には、`open_session {attach: "k3f9"}` のように一時停止のヘッダーにある ID を渡します。
 
 テストが再び一時停止するか実行が終わると、応答が返ります。終了時には `The run has ended.` と実行の終了コードが返ります。各応答の内容は[ターミナルなしでステップ実行する](#step-through-a-test-without-a-terminal)を参照してください。
 

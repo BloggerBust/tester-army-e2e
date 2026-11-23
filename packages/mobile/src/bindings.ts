@@ -92,11 +92,13 @@ const MAX_BINDINGS_ENV_BYTES = 16 * 1024;
 /**
  * The environment variable a target's bindings travel to the workers in: the
  * name made environment-safe for reading, plus a digest of the exact name so
- * `ios-a` and `ios.a` never share a key.
+ * `ios-a` and `ios.a` never share a key. A `launch()` host's `hostId` joins
+ * the digest: a host opened inside a test inherits the run's environment,
+ * where the run's own bindings for a target of the same name already sit.
  */
-export function bindingsVariable(targetName: string): string {
+export function bindingsVariable(targetName: string, hostId?: string): string {
   const readable = targetName.replace(/[^A-Za-z0-9]/g, '_').toUpperCase();
-  const digest = createHash('sha256').update(targetName).digest('hex').slice(0, 8).toUpperCase();
+  const digest = createHash('sha256').update(hostId === undefined ? targetName : `${targetName}\0${hostId}`).digest('hex').slice(0, 8).toUpperCase();
   return `E2E_AGENT_DEVICE_POOL_${readable}_${digest}`;
 }
 

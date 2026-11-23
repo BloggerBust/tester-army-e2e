@@ -40,6 +40,7 @@ export default {
 | [`launchTimeout`](#launchtimeout) | `number` | `60000` |
 | [`actionTimeout`](#actiontimeout) | `number` | `30000` |
 | [`assertionTimeout`](#assertiontimeout) | `number` | `5000` |
+| [`toPass`](#topass) | `PassOptions` | [See defaults](#topass) |
 | [`cleanupTimeout`](#cleanuptimeout) | `number` | `30000` |
 | [`retries`](#retries) | `number` | `0`, `1` in CI |
 | [`failOnSkippedFailure`](#failonskippedfailure) | `boolean` | `false` |
@@ -159,6 +160,31 @@ assertionTimeout: 10_000, // default: 5000
   for that matcher; the test timeout, or `cleanupTimeout` in `afterEach`,
   still bounds it.
 - `--assertion-timeout <ms>` overrides it for one run.
+
+#### `toPass`
+
+The default timeout and pauses for [retrying a block](/reference/expect#retrying-a-block).
+Each call option takes precedence over the corresponding config field.
+
+```ts
+toPass: { timeout: 10_000, intervals: [100, 250, 500] },
+```
+
+| Option | Type | Default |
+| --- | --- | --- |
+| `timeout` | `number` | `0` |
+| `intervals` | `readonly number[]` | `[100, 250, 500, 1000]` |
+
+- `timeout` is an integer in milliseconds from 0 through 2147483647.
+  At `0`, retries are bounded only by the test or hook deadline.
+- `intervals` is a non-empty list of positive integers in milliseconds.
+  The last pause is repeated.
+
+Invalid values or unknown keys are reported as `INVALID_CONFIG` at config load.
+
+In `beforeAll`, `afterAll`, and worker fixture teardown, the configured
+defaults apply to `expect.poll` and `toPass`. Retries are capped by the
+hook deadline.
 
 #### `cleanupTimeout`
 
@@ -377,6 +403,9 @@ target. A target with `app` needs an [engine](#engine).
   `launchArguments`.
 - A `mobile()` target needs `app.bundleId` or `app.appPath`. `app.url` on a
   mobile target is not supported yet.
+- A `desktop()` target needs `app.bundleId` or `app.appPath` and refuses
+  `app.url` and `app.permissions`. With both, it launches the `appPath`
+  build, whose bundle id must equal `bundleId`.
 - `app.linkBase` needs an engine that opens links, such as `mobile()`.
 - An unknown key in `app` or `app.command` fails with a did-you-mean.
 
@@ -411,7 +440,8 @@ url: 'http://localhost:3000',
 #### `bundleId`
 
 The installed app a device launches: a bundle id, an Android package name, or
-a display name the device resolves (`Settings`).
+a display name the device resolves (`Settings`). On a `desktop()` target, the
+bundle id or name of an installed macOS app.
 
 ```ts
 bundleId: 'com.example.app',
@@ -422,7 +452,8 @@ A link is `INVALID_CONFIG`: a test opens one with `device.openLink`.
 #### `appPath`
 
 The build the suite runs against, an iOS `.app` bundle or an Android `.apk`,
-resolved against the project root.
+resolved against the project root. On a `desktop()` target, a macOS `.app`
+bundle.
 
 ```ts
 appPath: './build/App.app',
@@ -1591,6 +1622,8 @@ export interface E2EConfig {
   actionTimeout?: number;
   /** Default `expect` deadline in milliseconds; default 5000. */
   assertionTimeout?: number;
+  /** Default timeout and pauses for `expect(fn).toPass()`. */
+  toPass?: PassOptions;
   /** Budget of each `afterEach` hook, fixture teardown, and engine cleanup in milliseconds; default 30000. */
   cleanupTimeout?: number;
   /** Retries per test, 0 through 10; default 1 in CI, else 0. */

@@ -81,7 +81,8 @@ export interface MobileOptions {
    * agent-device session name, before the worker slot: slot `n` drives its
    * device under `<session>-<n>`, `e2e-<target name>-<n>` by default. One run
    * per session at a time: concurrent runs on the same session interleave
-   * taps.
+   * taps. Without this option a `launch()` host
+   * drives `e2e-<target name>-<host token>-<n>`, a session of its own.
    */
   readonly session?: string | undefined;
   /**

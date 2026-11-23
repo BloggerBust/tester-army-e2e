@@ -880,6 +880,7 @@ describe('coordinate input', () => {
     const performedAt: string[] = [];
     const pointTimeouts: number[] = [];
     const locates: number[] = [];
+    const observes: number[] = [];
     const node = {
       ref: { id: 'pad', revision: '' }, role: 'img', name: 'Pad',
       ...(options.rect === false ? {} : { rect: box }),
@@ -887,7 +888,7 @@ describe('coordinate input', () => {
     };
     const engine = defineEngine({
       name: 'fake', version: '1', spiVersion: 1,
-      observe: async () => snapshot([node]),
+      observe: async () => { observes.push(1); return snapshot([node]); },
       locate: async () => { locates.push(1); return [node]; },
       actions: ['tap', 'scrollIntoView'],
       perform: async (_ref, action) => { performed.push(action.kind); },
@@ -899,16 +900,45 @@ describe('coordinate input', () => {
         performedAt.push(`${action.kind} @ ${point.x},${point.y}${path}`);
       },
     });
-    return { engine, performed, performedAt, locates, pointTimeouts };
+    return { engine, performed, performedAt, locates, pointTimeouts, observes };
   }
 
   it('screen.tapAt dispatches a pointer tap at the viewport point, with no locate, and records the step', async () => {
-    const { engine, performedAt, locates } = pointer();
+    const { engine, performedAt, locates, observes } = pointer();
     const { fixtures, steps } = runtime(engine);
     await fixtures.screen.tapAt({ x: 12.5, y: 40 });
     expect(performedAt).toEqual(['tap @ 12.5,40']);
     expect(locates).toEqual([]);
+    expect(observes).toEqual([]);
     expect(steps.all().at(-1)).toMatchObject({ kind: 'screen', api: 'screen.tapAt', label: '(12.5, 40)', status: 'passed' });
+  });
+
+  it('resolves percentages against one viewport read and labels the step as written', async () => {
+    // The fake engine's viewport is 1280 by 720 (tests/helpers/snapshot.ts).
+    const { engine, performedAt, observes } = pointer();
+    const { fixtures, steps } = runtime(engine);
+    await fixtures.screen.tapAt({ x: '50%', y: '25%' });
+    const step = steps.all().at(-1);
+    expect(step).toMatchObject({ api: 'screen.tapAt', label: '(50%, 25%)', status: 'passed' });
+    expect(step?.events).toContainEqual(expect.objectContaining({ kind: 'engine', detail: 'tap at (640, 180)' }));
+    expect(observes).toEqual([1]);
+    await fixtures.screen.doubleTapAt({ x: '12.5%', y: 40 });
+    await fixtures.screen.tapAt({ x: '100%', y: '100%' });
+    await fixtures.screen.swipe({ from: { x: '50%', y: '90%' }, to: { x: '50%', y: 72 } });
+    expect(performedAt).toEqual(['tap @ 640,180', 'doubleTap @ 160,40', 'tap @ 1279,719', 'swipeTo @ 640,648 -> 640,72']);
+    expect(observes).toEqual([1, 1, 1, 1]);
+  });
+
+  it('refuses a malformed or out-of-range percentage before reading the screen', async () => {
+    const { engine, performedAt, observes } = pointer();
+    const { fixtures } = runtime(engine);
+    for (const x of ['50', '120%', '-5%', '1e2%']) {
+      await expect(fixtures.screen.tapAt({ x, y: 1 } as never)).rejects.toMatchObject({
+        code: 'INVALID_ARGUMENT', message: `tapAt takes a percentage from '0%' through '100%', got ${JSON.stringify(x)}`,
+      });
+    }
+    expect(observes).toEqual([]);
+    expect(performedAt).toEqual([]);
   });
 
   it('screen.doubleTapAt dispatches a bare double tap and records the step', async () => {
@@ -928,11 +958,14 @@ describe('coordinate input', () => {
     const { engine, performedAt } = pointer();
     const { fixtures } = runtime(engine);
     for (const method of ['tapAt', 'doubleTapAt'] as const) {
-      for (const point of [{ x: Number.NaN, y: 1 }, { x: Number.POSITIVE_INFINITY, y: 1 }, { x: 1 }, { x: '1', y: 2 }, undefined]) {
+      for (const point of [{ x: Number.NaN, y: 1 }, { x: Number.POSITIVE_INFINITY, y: 1 }, { x: 1 }, { x: true, y: 2 }, undefined]) {
         await expect(fixtures.screen[method](point as never)).rejects.toMatchObject({
-          code: 'INVALID_ARGUMENT', message: `${method} requires a point { x, y } of finite numbers`,
+          code: 'INVALID_ARGUMENT', message: `${method} requires a point { x, y } of finite numbers or percentages`,
         });
       }
+      await expect(fixtures.screen[method]({ x: '1', y: 2 } as never)).rejects.toMatchObject({
+        code: 'INVALID_ARGUMENT', message: `${method} takes a percentage from '0%' through '100%', got "1"`,
+      });
       await expect(fixtures.screen[method]({ x: -1, y: 0 })).rejects.toMatchObject({
         code: 'INVALID_ARGUMENT', message: `${method} requires a point { x, y } of non-negative numbers`,
       });
@@ -946,9 +979,10 @@ describe('coordinate input', () => {
 
   it('fails UNSUPPORTED_CAPABILITY without a pointer tap, before the locator is resolved', async () => {
     const locates: number[] = [];
+    const observes: number[] = [];
     const engine = defineEngine({
       name: 'fake', version: '1', spiVersion: 1,
-      observe: async () => snapshot([]),
+      observe: async () => { observes.push(1); return snapshot([]); },
       locate: async () => { locates.push(1); return [{ ref: { id: 'pad', revision: '' }, role: 'img', name: 'Pad', rect: box }]; },
       actions: ['tap'],
       perform: async () => undefined,
@@ -959,6 +993,8 @@ describe('coordinate input', () => {
       message: 'the "tap" action at a point is not available on this target: its engine declares no pointer actions',
     };
     await expect(fixtures.screen.tapAt({ x: 1, y: 1 })).rejects.toMatchObject(unsupported);
+    await expect(fixtures.screen.tapAt({ x: '50%', y: '50%' })).rejects.toMatchObject(unsupported);
+    expect(observes).toEqual([]);
     await expect(fixtures.screen.doubleTapAt({ x: 1, y: 1 })).rejects.toMatchObject({
       code: 'UNSUPPORTED_CAPABILITY', message: expect.stringContaining('the "doubleTap" action at a point'),
     });
@@ -992,10 +1028,11 @@ describe('coordinate input', () => {
   });
 
   it('screen.swipe({ from, to }) dispatches a pointer swipe along the path; a direction still needs the swipe action', async () => {
-    const { engine, performedAt } = pointer();
+    const { engine, performedAt, observes } = pointer();
     const { fixtures, steps } = runtime(engine);
     await fixtures.screen.swipe({ from: { x: 10, y: 20 }, to: { x: 10, y: 300 } });
     expect(performedAt).toEqual(['swipeTo @ 10,20 -> 10,300']);
+    expect(observes).toEqual([]);
     expect(steps.all().at(-1)).toMatchObject({ kind: 'screen', api: 'screen.swipe', label: '(10, 20) → (10, 300)', status: 'passed' });
     await fixtures.screen.swipe({ from: { x: 10, y: 20 }, to: { x: 10, y: 300 }, duration: 400 });
     expect(performedAt.at(-1)).toEqual('swipeTo @ 10,20 -> 10,300 for 400ms');
@@ -1021,7 +1058,7 @@ describe('coordinate input', () => {
       code: 'INVALID_ARGUMENT', message: expect.stringContaining('swipe options has no key "duration"'),
     });
     await expect(fixtures.screen.swipe({ from: { x: 1, y: 1 } } as never)).rejects.toMatchObject({
-      code: 'INVALID_ARGUMENT', message: 'swipe to requires a point { x, y } of finite numbers',
+      code: 'INVALID_ARGUMENT', message: 'swipe to requires a point { x, y } of finite numbers or percentages',
     });
     await expect(fixtures.screen.swipe({ direction: 'up' })).rejects.toMatchObject({ code: 'UNSUPPORTED_CAPABILITY' });
     expect(performedAt).toEqual([

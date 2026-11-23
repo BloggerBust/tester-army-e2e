@@ -105,6 +105,30 @@ export class TraceRecorder {
   }
 
   /**
+   * Turns the recording from `index` on into a gap for this run's data, as
+   * `recordDerivedGap` records one: the actions there were the pieces of a
+   * value the step derived (values typed in a row that join into a code the
+   * screen showed), and none of them may replay, so they are dropped. A
+   * recording that never replays (truncated) is left as it is. When an
+   * earlier gap already ends replay before `index`, the pieces are dropped
+   * without a new gap, since replay hands off at that gap and never reaches
+   * them. When the piece at `index` is already a gap, from a one-time-code
+   * field that records each fill as its own gap, the run is left as it is.
+   * Later actions are recorded after the gap.
+   */
+  gapFrom(index: number, reason: DerivedReason): void {
+    if (this.truncated || index < 0 || index >= this.actions.length) return;
+    // The piece at `index` is itself a gap — a one-time-code field records each
+    // fill as its own gap — so the run is already gaps, not the code: leave them.
+    if (this.actions[index]?.name === 'tool') return;
+    // An earlier gap already ends replay before these pieces, so they never
+    // replay: drop them without a new gap rather than keep the code as `type`.
+    const handedOff = this.actions.slice(0, index).some((action) => action.name === 'tool');
+    this.actions.length = index;
+    if (!handedOff) this.recordDerivedGap(reason);
+  }
+
+  /**
    * Concludes recording into a trace, or undefined when nothing was recorded —
    * a step that committed no actions has no flow worth replaying.
    */

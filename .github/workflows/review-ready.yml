@@ -1,0 +1,49 @@
+name: review-ready
+
+# `/ready` from a PR's author asks for the `Ready for Human Review` label,
+# which contributors from forks cannot add themselves. The job adds it when
+# the PR is mergeable and green with no change request and every review
+# thread replied to and resolved (scripts/review-label/ready.ts,
+# CONTRIBUTING.md), and otherwise replies with what is missing.
+#
+# issue_comment runs in this repository with a write token, whoever comments,
+# so the job is built to hold nothing worth taking and to run nothing a
+# commenter controls:
+# - the checkout is the default branch's script, never PR code;
+# - the comment and the PR reach the script as data (the event file and the
+#   API), never through an expression inside `run`;
+# - the only credential is the job's own token, scoped below, and no
+#   repository secret is referenced.
+on:
+  issue_comment:
+    types: [created]
+
+permissions:
+  contents: read
+  actions: read
+  checks: read
+  statuses: read
+  pull-requests: write
+
+jobs:
+  label:
+    # A cheap filter so other comments start no runner; ready.ts decides.
+    if: ${{ github.event.issue.pull_request && github.event.comment.user.id == github.event.issue.user.id && startsWith(github.event.comment.body, '/ready') }}
+    # On the job, so the skipped runs of other comments never queue here and
+    # push a waiting `/ready` out.
+    concurrency:
+      group: ${{ github.workflow }}-${{ github.event.issue.number }}
+    runs-on: blacksmith-4vcpu-ubuntu-2404
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          sparse-checkout: scripts/review-label
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 26
+      - name: Check the PR
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: node scripts/review-label/ready.ts

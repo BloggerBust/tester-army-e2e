@@ -1,0 +1,188 @@
+---
+title: Desktop
+description: Test a native desktop app on macOS through its accessibility tree.
+---
+
+`@e2e-dev/desktop` runs tests on native desktop apps. It reads and drives
+the app through the OS accessibility tree with
+[agent-desktop](https://github.com/vercel-labs/agent-desktop). Tests use the
+same `agent`, `screen`, and `expect` APIs as browser tests.
+
+<Note>
+  The desktop engine is a prototype, and it runs on macOS only. A config with
+  a desktop target still loads on Windows and Linux, so its other targets run
+  there, but the desktop target fails to start.
+</Note>
+
+## Set up
+
+Install the runner and the engine:
+
+<CodeGroup>
+```bash npm
+npm install --save-dev e2e @e2e-dev/desktop
+```
+
+```bash pnpm
+pnpm add --save-dev e2e @e2e-dev/desktop
+```
+
+```bash bun
+bun add --dev e2e @e2e-dev/desktop
+```
+</CodeGroup>
+
+On macOS, the app that starts e2e needs two permissions in **System Settings
+> Privacy & Security**. That app is your terminal, your IDE, or your CI agent.
+
+- **Accessibility**, to read and drive the app.
+- **Screen Recording**, for screenshots.
+
+The first run downloads agent-desktop and checks its SHA-256 digest. To use
+your own install, such as a Homebrew one, set
+`desktop({ binary: '/path/to/agent-desktop' })`.
+
+Check your setup:
+
+<CodeGroup>
+```bash npm
+npx e2e doctor
+```
+
+```bash pnpm
+pnpm exec e2e doctor
+```
+
+```bash bun
+bunx e2e doctor
+```
+</CodeGroup>
+
+It checks agent-desktop, both permissions, and the `appPath` build.
+
+## Point at your app
+
+Set the target's `app.appPath` to a built `.app` bundle. Or set
+`app.bundleId` to an installed app's bundle id or name, such as
+`com.apple.TextEdit`. With both, the `appPath` build is launched, and its
+bundle id must be `bundleId`. `app.launchArguments` go to every launch.
+
+The app gets only these variables of the run's environment: `HOME`, `USER`,
+`LOGNAME`, `SHELL`, `PATH`, `TMPDIR`, `LANG`, `LC_*`, and
+`__CF_USER_TEXT_ENCODING`. Secrets, model keys, and CI tokens in the
+environment never reach it. The engine also sets `E2E_DESKTOP_LAUNCH`, a
+token it uses to find the copy it launched. macOS hides that token in its
+own apps and in a build signed with the `restrict` flag, so an `appPath` to
+one of them is refused. Launch such an app by its `bundleId`: agent-desktop
+then reports the process it started.
+
+```ts title="e2e.config.ts"
+import type { E2EConfig } from 'e2e';
+import { desktop } from '@e2e-dev/desktop';
+
+export default {
+  targets: [
+    {
+      name: 'mac',
+      engine: desktop(),
+      app: { appPath: 'build/MyApp.app' },
+    },
+  ],
+  credentials: {
+    ada: { username: 'ada', password: process.env.ADA_PASSWORD ?? '' },
+  },
+} satisfies E2EConfig;
+```
+
+## Write a test
+
+Import `test` from `@e2e-dev/desktop`. By default, `app.open()` leaves the
+app in the background. Use `desktop({ headed: true })` for apps that need to
+come forward before they show a window. `e2e run --headed` also launches
+the app in the foreground, but only `desktop({ headed: true })` turns on the
+physical input described below. When the engine launched it
+before, it quits that copy first. A copy you opened yourself is left alone,
+and the engine never reads or drives it. Every test ends with the app quit,
+and no window the app saved at its last quit comes back.
+
+```ts title="tests/sign-in.e2e.ts"
+import { test } from '@e2e-dev/desktop';
+import { credentials, expect } from 'e2e';
+
+test('signs in', async ({ app, screen }) => {
+  const ada = credentials.user('ada');
+  await app.open();
+  await screen.getByRole('textbox', 'Username').fill(ada.username);
+  await screen.getByRole('textbox', 'Password').fill(ada.password);
+  await screen.getByRole('combobox', 'Plan').selectOption('Team');
+  await screen.getByRole('button', 'Sign in').tap();
+  await expect(screen.getByTestId('status')).toContainText('Signed in as ada');
+});
+```
+
+Roles use the names the web uses: `textbox`, `checkbox`, `combobox`,
+`button`. Static text has the role `text`, so find it with `getByText`. A
+control's name is the one macOS accessibility gives it: its title, or its
+accessibility label. A button's title is its name and its text, so
+`getByText('Sign in')` finds the button as well as any static text that
+reads the same; `getByRole('button', 'Sign in')` finds only the button.
+`getByPlaceholder` is not supported: macOS reports no placeholder, and
+names a field with no label by its placeholder, so find that field with
+`getByRole('textbox', 'Username')`. `getByTestId` finds the control's
+`AXIdentifier` (`accessibilityIdentifier` in AppKit, SwiftUI's
+`.accessibilityIdentifier`).
+
+The `desktop` fixture lists the app's windows (`desktop.windows()`), picks
+the one `screen` reads (`desktop.useWindow(window)`), and quits the app
+(`desktop.closeApp()`).
+
+## What differs from the web
+
+| Area | On a desktop target |
+| --- | --- |
+| Input | The app runs in the background, and actions use the accessibility API, so your pointer, focus, and typing stay where they are. An app that opens no window in the background, such as a document-based one, fails to open; it needs `headed: true` or `--headed` |
+| Physical input | `doubleTap`, `hover`, `press`, point taps, and typing into whatever has focus need `desktop({ headed: true })`, which brings the app forward and uses the real pointer and keyboard |
+| Keys | agent-desktop sends a key only to the active window, which an app in the background never has. The engine never sends a key by the app's name, which could reach another copy of it. A key goes to a control only while that control has focus, in the window the app sends keys to. `press` takes the named keys, letters, digits, and ``, . / ; ' [ ] \ - = ` ``, and refuses any other character, such as `!` or `é`, before the control gets focus |
+| Select | `selectOption` takes an option's label, not an index. It refuses an editable combo box, which takes any text: `fill()` it instead. A pop-up button with no such option can leave its menu open. The engine closes it with Escape, which reaches the app only while its window is active, as `headed: true` makes it; otherwise the error says the menu is still open |
+| Windows | `screen` reads one window of the app: the one `desktop.useWindow()` picked, else the focused one, else the first visible one. Sheets are part of their window. The window's own Close, Minimize, and Zoom buttons are left out |
+| Reading | Only an app with no window open reads as an empty screen. A window that cannot be read never does, so `not.toBeVisible()` cannot pass on it. A locator reads again until its timeout while the screen is locked or the window is closing, and `app.open()` on a locked screen fails and says so. So does one on a window read only in part, which is deeper than `maxDepth` levels or took too long to read, since its matches cannot be counted. A step on an app that quit fails |
+| Menu bar | The app's menu bar cannot be read yet. Use a key shortcut with `press` and `headed: true` |
+| Web content | Text in a browser window, an Electron app, or a web view is not supported. Test web apps with `@e2e-dev/web` |
+| Workers | One per target, because its workers would share one screen. Two desktop targets run at the same time. With `headed: true` they would share the pointer and keyboard too, so set `workers: 1` in the config |
+| State | `app.clearState()` is not supported |
+| Secrets | A password field shows no value, and screenshots paint it black |
+
+A screenshot that cannot cover a password field is not saved. agent-desktop
+keeps the text of other fields in each worker's private state directory.
+When a worker exits, the engine removes that text. If the app could not be
+quit, the engine keeps a record of the launch for a later desktop run. That
+run quits the app when it can show that the process belongs to the launch:
+by the launch token, or by the process id and the time the process started.
+The next run also does this for a worker that was killed.
+
+## Options
+
+| Option | Type | Default |
+| --- | --- | --- |
+| `binary` | `string` | the downloaded release |
+| `snapshot` | `'full' \| 'interactive'` | `'full'` |
+| `headed` | `boolean` | `false` |
+| `settle` | `number \| false` | `150` |
+| `maxDepth` | `number` | `24` |
+
+`snapshot: 'interactive'` reads only controls, without static text. `settle`
+is how long the engine waits after an agent action before the agent reads
+the screen, in milliseconds. `maxDepth` is how many levels of a window a
+read goes down, from 1 to 255; raise it when locators on a deeply nested app
+time out on a read only in part.
+
+## Next
+
+<CardGroup cols={2}>
+  <Card title="Mobile" icon="mobile" href="/mobile">
+    Run the same tests on iOS simulators and Android emulators.
+  </Card>
+  <Card title="Agent steps" icon="robot" href="/agent-steps">
+    Let the agent fill a form or check the screen.
+  </Card>
+</CardGroup>

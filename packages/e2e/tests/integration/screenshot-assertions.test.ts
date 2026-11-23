@@ -52,6 +52,12 @@ function screenPng(background: Rgb, button: Rgb, scale = 1): ObservationPixels {
   return { data: new Uint8Array(Transformer.fromRgbaPixels(rgba, width, height).pngSync()), mediaType: 'image/png', width, height, scale };
 }
 
+/** The tree with a secure field on screen. */
+const SECURE_TREE: SemanticNode = {
+  ...TREE,
+  children: [...TREE.children!, { ref: { id: 'password', revision: '' }, role: 'textbox', name: 'Password', states: { secure: true, hidden: false } }],
+};
+
 const WHITE: Rgb = [255, 255, 255];
 const BLUE: Rgb = [0, 0, 255];
 const RED: Rgb = [255, 0, 0];
@@ -249,11 +255,7 @@ test('tolerant', async ({ app, screen }) => {
   it(
     'keeps no screenshot when a secure field on screen went unmasked, and keeps one after a secret fill',
     async () => {
-      const secureTree: SemanticNode = {
-        ...TREE,
-        children: [...TREE.children!, { ref: { id: 'password', revision: '' }, role: 'textbox', name: 'Password', states: { secure: true, hidden: false } }],
-      };
-      const { fake } = screenEngine(() => screenPng(WHITE, BLUE), { tree: secureTree });
+      const { fake } = screenEngine(() => screenPng(WHITE, BLUE), { tree: SECURE_TREE });
       const unmasked = await runProject({ 'tests/home.e2e.ts': SCREEN_TEST }, { appUrl: FAKE_APP_URL, config: fakeConfig(fake) });
       try {
         expect(attemptOf(unmasked.outcome, 'home').error).toMatchObject({ category: 'configuration', code: 'POLICY_DENIED' });
@@ -280,6 +282,56 @@ test('after a fill', async ({ app, screen }) => {
         expect(existsSync(path.join(afterFill.project.dir, 'tests', 'fill.e2e.ts-snapshots', `home${SUFFIX}.png`))).toBe(true);
       } finally {
         afterFill.project.cleanup();
+      }
+    },
+    60_000,
+  );
+
+  it(
+    'fails at once with POLICY_DENIED when the engine withholds a screenshot it could not mask',
+    async () => {
+      let captures = 0;
+      const withheld = createFakeEngine({
+        tree: SECURE_TREE,
+        fixtures: true,
+        pixels: () => {
+          captures += 1;
+          return { maskedRegionCount: 0 };
+        },
+      });
+      const { outcome, project } = await runProject({ 'tests/home.e2e.ts': SCREEN_TEST }, { appUrl: FAKE_APP_URL, config: fakeConfig(withheld) });
+      try {
+        expect(attemptOf(outcome, 'home').error).toMatchObject({ category: 'configuration', code: 'POLICY_DENIED' });
+        expect(captures).toBe(1);
+        expect(existsSync(path.join(project.dir, 'tests', 'home.e2e.ts-snapshots'))).toBe(false);
+      } finally {
+        project.cleanup();
+      }
+    },
+    60_000,
+  );
+
+  it(
+    'keeps waiting for a screenshot the engine did not take on a screen with a secure field',
+    async () => {
+      let captures = 0;
+      const fake = createFakeEngine({
+        tree: SECURE_TREE,
+        fixtures: true,
+        pixels: () => {
+          captures += 1;
+          return undefined;
+        },
+      });
+      const { outcome, project } = await runProject({ 'tests/home.e2e.ts': SCREEN_TEST }, { appUrl: FAKE_APP_URL, config: fakeConfig(fake) });
+      try {
+        expect(attemptOf(outcome, 'home').error).toMatchObject({
+          code: 'ASSERTION_FAILED',
+          message: expect.stringContaining('the engine returned no screenshot'),
+        });
+        expect(captures).toBeGreaterThan(1);
+      } finally {
+        project.cleanup();
       }
     },
     60_000,
