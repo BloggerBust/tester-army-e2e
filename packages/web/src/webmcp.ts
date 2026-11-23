@@ -7,6 +7,10 @@
  * tool that threw) comes back as data. A call that rejects on the engine's
  * side is then never the tool's own failure: the page navigated, closed, or
  * ran out of time.
+ *
+ * A result is read from its text, the one form every browser can give.
+ * WebMCP hands a result to its caller as text, which is all Chromium gives;
+ * Firefox gives the value, so the page function writes that text itself.
  */
 
 import type { Page } from 'playwright-core';
@@ -43,9 +47,10 @@ export interface WebMcp {
    * `content` array; a result with `isError: true` comes back as it is,
    * and a tool that resolves with nothing gives `null`.
    * Rejects with `ACTION_FAILED` when the page registers no tool of that
-   * name, naming the ones it does, when the tool throws, and when the call
-   * ends before the tool answers, because the tool navigated the page or
-   * the time ran out; the tool may have run then.
+   * name, naming the ones it does, when the tool throws or resolves with
+   * something JSON cannot hold, and when the call ends before the tool
+   * answers, because the tool navigated the page or the time ran out; the
+   * tool may have run then.
    */
   callTool(name: string, input?: { readonly [key: string]: JsonValue } | null): Promise<JsonValue>;
 }
@@ -93,13 +98,16 @@ interface PageCall {
   readonly input: unknown;
 }
 
+/** How a call ended in the page: the tool threw, resolved with something JSON cannot hold, or gave a result, as its text. */
+type PageOutcome = { readonly threw: string } | { readonly unserializable: string } | { readonly text: string };
+
 /**
  * What the page answered. `outcome` is there when a call was asked for and
  * the page still registers the tool.
  */
 type PageAnswer =
   | { readonly state: 'absent' | 'insecure' }
-  | { readonly state: 'ready'; readonly tools: readonly WebMcpTool[]; readonly outcome?: { readonly threw: string } | { readonly value: unknown } };
+  | { readonly state: 'ready'; readonly tools: readonly WebMcpTool[]; readonly outcome?: PageOutcome };
 
 /**
  * Runs in the page: lists the tools of this frame and, given `call`, calls
@@ -148,27 +156,37 @@ async function askModelContext(call: PageCall | null): Promise<PageAnswer> {
       return 'the tool threw a value that has no text';
     }
   };
+  // The text Chromium gives for a result: JSON for an object, the text itself for a string, and how the value prints otherwise.
+  // A function has no text there; neither has a symbol here, which Chromium 159 crashes on.
+  const textOf = (value: unknown): string => {
+    if (typeof value === 'function' || typeof value === 'symbol') return 'undefined';
+    if (typeof value !== 'object' || value === null) return String(value);
+    const json: unknown = JSON.stringify(value);
+    return typeof json === 'string' ? json : 'undefined';
+  };
+  let resolved: unknown;
+  let text: string | undefined;
   try {
-    if (context.invokeTool !== undefined) return { state: 'ready', tools, outcome: { value: await context.invokeTool(call.name, call.input) } };
-    let result: unknown;
-    try {
-      result = await context.executeTool?.(tool, call.input);
-    } catch (cause) {
-      // Chromium before 156 takes the input as JSON text, and refuses an object before the tool runs.
-      if (!messageOf(cause).includes('Failed to parse input')) throw cause;
-      result = await context.executeTool?.(tool, JSON.stringify(call.input));
-    }
-    // Chromium answers with the tool's result as JSON text, or as the text itself when the tool resolved with a string.
-    if (typeof result !== 'string') return { state: 'ready', tools, outcome: { value: result } };
-    if (result === 'undefined') return { state: 'ready', tools, outcome: { value: undefined } };
-    try {
-      const parsed: unknown = JSON.parse(result);
-      return { state: 'ready', tools, outcome: { value: parsed } };
-    } catch {
-      return { state: 'ready', tools, outcome: { value: result } };
+    if (context.invokeTool !== undefined) {
+      resolved = await context.invokeTool(call.name, call.input);
+    } else {
+      try {
+        resolved = await context.executeTool?.(tool, call.input);
+      } catch (cause) {
+        // Chromium before 156 takes the input as JSON text, and refuses an object before the tool runs.
+        if (!messageOf(cause).includes('Failed to parse input')) throw cause;
+        resolved = await context.executeTool?.(tool, JSON.stringify(call.input));
+      }
+      // `executeTool` answers with the text already.
+      if (typeof resolved === 'string') text = resolved;
     }
   } catch (cause) {
     return { state: 'ready', tools, outcome: { threw: messageOf(cause) } };
+  }
+  try {
+    return { state: 'ready', tools, outcome: { text: text ?? textOf(resolved) } };
+  } catch (cause) {
+    return { state: 'ready', tools, outcome: { unserializable: messageOf(cause) } };
   }
 }
 
@@ -211,22 +229,16 @@ function translateUnanswered(cause: unknown, label: string, tool: string): Error
   return translatePwError(cause, label);
 }
 
-/**
- * A tool's result the way JSON text would carry it: a property that is
- * `undefined` is left out, and an `undefined` array item is `null`. Chromium
- * hands the result over as JSON text and Firefox as the value, so this is
- * what makes both give the same result. Anything else JSON cannot hold is
- * left in place for the caller to refuse.
- */
-function asJsonCarries(value: unknown, ancestors: ReadonlySet<unknown> = new Set()): unknown {
-  if (typeof value !== 'object' || value === null || ancestors.has(value)) return value;
-  const inside = new Set(ancestors).add(value);
-  if (Array.isArray(value)) return value.map((item: unknown) => (item === undefined ? null : asJsonCarries(item, inside)));
-  const prototype: unknown = Object.getPrototypeOf(value);
-  if (prototype !== Object.prototype && prototype !== null) return value;
-  return Object.fromEntries(
-    Object.entries(value).flatMap(([key, item]: [string, unknown]) => (item === undefined ? [] : [[key, asJsonCarries(item, inside)]])),
-  );
+/** A tool's result, read from the text the page gave for it: the JSON it holds, or the text itself. */
+function resultOf(text: string): JsonValue {
+  // A tool that resolves with nothing has no JSON form; `null` is the one JSON value that says so.
+  if (text === 'undefined') return null;
+  try {
+    const parsed: unknown = JSON.parse(text);
+    return parsed as JsonValue;
+  } catch {
+    return text;
+  }
 }
 
 /** Creates `browser.webmcp` for the active tab of `surface`. */
@@ -268,11 +280,10 @@ export function createWebMcp(surface: PlaywrightSurface, context: EngineFixtureC
       // The page dropped the tool between the listing and the call.
       if (answer.outcome === undefined) throw missingTool(label, name, answer.tools);
       if ('threw' in answer.outcome) throw new TestError('ACTION_FAILED', `${label}: the tool ${JSON.stringify(name)} failed: ${answer.outcome.threw}`);
-      // A tool that resolves with nothing has no JSON form; `null` is the one JSON value that says so.
-      const value = asJsonCarries(answer.outcome.value) ?? null;
-      // The browser also carries what JSON cannot hold (a Date, a BigInt, NaN); the return type promises JSON.
-      validateJsonValue(value, `${label}: the tool ${JSON.stringify(name)} ran, and its result`);
-      return value as JsonValue;
+      if ('unserializable' in answer.outcome) {
+        throw new TestError('ACTION_FAILED', `${label}: the tool ${JSON.stringify(name)} ran, and its result has no JSON form: ${answer.outcome.unserializable}`);
+      }
+      return resultOf(answer.outcome.text);
     },
   };
 }

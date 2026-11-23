@@ -1145,10 +1145,13 @@ expect(result).toEqual({ content: [{ type: 'text', text: '42' }] });
 - `callTool(name, input)` resolves with what the tool's `execute` resolved
   to, usually an object with a `content` array. `input` is a JSON object; left out or
   `null`, the tool gets an empty object. A result with `isError: true` comes back as it is, and
-  a tool that resolves with nothing gives `null`. The result is JSON, so a
-  property the tool left `undefined` is not in it. Chromium hands a result
-  over as JSON text, so there a tool that resolves with a string of JSON,
-  such as `'42'`, comes back parsed.
+  a tool that resolves with nothing gives `null`.
+- An object or array comes back as its JSON, the same in Chromium and
+  Firefox: a property left `undefined` is not in it, and a `Date` inside is
+  a string. A tool that resolves with any other value gives its text, parsed
+  when the text is JSON: `'42'` and `42` both give `42`, and a number past
+  2^53 loses digits. An empty string gives `'Operation succeeded'` in
+  Chromium. Resolve with an object to keep the value as it is.
 - A tool that sends the page to another URL ends the call before it answers.
   The call fails with `ACTION_FAILED` once the new page has loaded, and the
   message says the tool may have run. A tool still running when the time runs
@@ -1179,8 +1182,8 @@ export interface WebMcpTool {
 | Throws | When |
 | --- | --- |
 | `UNSUPPORTED_CAPABILITY` | The page has no WebMCP: the browser runs without it, or the page is not a secure context. The message says which, and how to fix it. |
-| `ACTION_FAILED` | `callTool`: the page registers no tool of that name (the message lists the ones it does), the tool threw, or the call ended before the tool answered, because the page navigated or the time ran out. |
-| `INVALID_ARGUMENT` | `callTool`: `name` is not a non-empty string, `input` is not a JSON object, or the tool ran and resolved with something JSON cannot hold (a `Date`, a `BigInt`, `NaN`). |
+| `ACTION_FAILED` | `callTool`: the page registers no tool of that name (the message lists the ones it does), the tool threw or resolved with something JSON cannot hold (a `BigInt` inside, a cycle), or the call ended before the tool answered, because the page navigated or the time ran out. |
+| `INVALID_ARGUMENT` | `callTool`: `name` is not a non-empty string, or `input` is not a JSON object. |
 | `INVALID_CONFIG` | `web({ webmcp: true })` with `connect`, a browser provider, or WebKit. |
 
 ## Installing browsers

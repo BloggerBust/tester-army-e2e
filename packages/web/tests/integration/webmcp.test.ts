@@ -66,14 +66,20 @@ const BROWSER_LIKE_MESSAGES = {
 } as const;
 
 /**
- * A page whose tools resolve with values JSON cannot hold, or with `undefined`
- * inside the result, and tools that throw what a browser would say.
+ * A page whose tools resolve with values that are not plain JSON, some of
+ * which JSON cannot hold at all, and tools that throw what a browser would say.
  */
 const ODD_PAGE = `<!doctype html>
 <title>odd</title>
 <script>
   const context = document.modelContext ?? navigator.modelContext;
-  for (const [name, value] of [['date', () => new Date(0)], ['bigint', () => 1n], ['nan', () => NaN]]) {
+  const cycle = {};
+  cycle.self = cycle;
+  const values = [
+    ['date', () => new Date(0)], ['bigint', () => 1n], ['nan', () => NaN], ['number', () => 42], ['text', () => 'done'], ['jsonText', () => '42'],
+    ['inside', () => ({ at: new Date(0), ratio: NaN })], ['bigintInside', () => ({ total: 1n })], ['cycle', () => cycle],
+  ];
+  for (const [name, value] of values) {
     context?.registerTool({ name, description: 'Resolves with a ' + name, inputSchema: { type: 'object' }, execute: async () => value() });
   }
   context?.registerTool({
@@ -270,21 +276,32 @@ describe('browser.webmcp', () => {
       await engine.session!.open!(`${origin}/`, operation());
     });
 
-    it.skipIf(!installed)('resolves with JSON only: a result JSON cannot hold fails the call, after the tool ran', async () => {
+    it.skipIf(!installed)('reads a result that is not plain JSON from its text, the same in every browser', async () => {
       await engine.session!.open!(`${origin}/odd`, operation());
-      if (name === 'chromium') {
-        // Chromium turns a tool's result into JSON itself before the engine reads it.
-        expect(await browser.webmcp.callTool('date')).toBe('1970-01-01T00:00:00.000Z');
-        expect(await browser.webmcp.callTool('bigint')).toBe(1);
-        expect(await browser.webmcp.callTool('nan')).toBe('NaN');
-      } else {
-        // Firefox hands over the value as the tool resolved it.
-        for (const tool of ['date', 'bigint', 'nan']) {
-          await expect(browser.webmcp.callTool(tool)).rejects.toMatchObject({
-            code: 'INVALID_ARGUMENT',
-            message: expect.stringContaining(`browser.webmcp.callTool: the tool "${tool}" ran, and its result`),
-          });
-        }
+      const results: Record<string, unknown> = {};
+      for (const tool of ['date', 'bigint', 'nan', 'number', 'text', 'jsonText', 'inside']) results[tool] = await browser.webmcp.callTool(tool);
+      expect(results).toStrictEqual({
+        date: '1970-01-01T00:00:00.000Z',
+        bigint: 1,
+        nan: 'NaN',
+        number: 42,
+        text: 'done',
+        jsonText: 42,
+        inside: { at: '1970-01-01T00:00:00.000Z', ratio: null },
+      });
+      await engine.session!.open!(`${origin}/`, operation());
+    });
+
+    it.skipIf(!installed)('fails a call whose tool resolves with something JSON cannot hold', async () => {
+      await engine.session!.open!(`${origin}/odd`, operation());
+      for (const tool of ['bigintInside', 'cycle']) {
+        await expect(browser.webmcp.callTool(tool)).rejects.toMatchObject({
+          code: 'ACTION_FAILED',
+          // Chromium reports it as it reports a tool that throws; Firefox hands over the value, so the engine can say more.
+          message: expect.stringContaining(
+            name === 'firefox' ? `browser.webmcp.callTool: the tool "${tool}" ran, and its result has no JSON form: ` : `browser.webmcp.callTool: the tool "${tool}" failed: Tool execution failed.`,
+          ),
+        });
       }
       await engine.session!.open!(`${origin}/`, operation());
     });
