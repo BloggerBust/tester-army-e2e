@@ -165,7 +165,7 @@ export type RunEventFact =
        * pair, including unselected ones; `files` breaks the reportable pairs
        * (run or explicitly skipped) down per test file and target, so a
        * reporter can tell when a file's results are complete without a side
-       * lookup. Both count a repeated test once per repeat. `tests` is
+       * lookup; a skipped `setup` test gets no result and is not in it. Both count a repeated test once per repeat. `tests` is
        * every pair in selection order, one entry however often it repeats,
        * the ones left out included; a `test` that runs does so
        * `repeatEach` times.

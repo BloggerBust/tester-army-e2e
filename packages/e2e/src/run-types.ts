@@ -8,7 +8,7 @@ import type { Report1Document } from './report/build.ts';
 import type { ProjectConfig } from '@e2e-dev/core/lib/types';
 
 /** The reporters the runner ships, named by id; each is a `Reporter` on the same contract. */
-export type BuiltinReporter = 'list' | 'dot' | 'json' | 'junit' | 'markdown';
+export type BuiltinReporter = 'list' | 'dot' | 'line' | 'json' | 'junit' | 'markdown';
 
 /**
  * The run's report document, the one `.e2e/report.json` holds. Its
@@ -75,7 +75,7 @@ export interface ReportFile {
 }
 
 /**
- * A reporter in `reporters`, the contract the built-in `list`, `dot`,
+ * A reporter in `reporters`, the contract the built-in `list`, `dot`, `line`,
  * `json`, `junit`, and `markdown` reporters are built on, with nothing the runner
  * gives them alone. Every hook is optional, but a reporter has at least one,
  * and every reporter that has a hook gets it.
@@ -109,7 +109,7 @@ export interface Reporter {
   readonly name: string;
   /**
    * Set when the reporter shows the run to a person in the terminal, as
-   * `list` and `dot` do: what user code prints, run errors, and a test
+   * `list`, `dot`, and `line` do: what user code prints, run errors, and a test
    * waiting at a pause. The runner then prints none of them itself; without
    * an interactive reporter, or once its `onEvent` throws, it prints them on
    * stderr. Its hooks write to the terminal directly, past the redaction of
@@ -231,8 +231,8 @@ export interface TestFilterResult {
 export interface E2EConfig extends ProjectConfig {
   /**
    * The run's reporters: built-in ids, each its factory from
-   * `e2e/reporters` with no options, and reporter objects. `list` and `dot`
-   * show the run on stdout, or on stderr beside `json`, which prints the
+   * `e2e/reporters` with no options, and reporter objects. `list`, `dot`, and
+   * `line` show the run on stdout, or on stderr beside `json`, which prints the
    * report there; `junit` writes `<output>/junit.xml` and `markdown`
    * `<output>/summary.md`. `--reporter` replaces the built-ins only.
    */

@@ -11,10 +11,11 @@ import { BUILTIN_REPORTERS } from './builtin-id.ts';
 import { dot } from './dot.ts';
 import { json } from './json.ts';
 import { junit } from './junit.ts';
+import { line } from './line.ts';
 import { list } from './list.ts';
 import { markdown } from './markdown.ts';
 
-/** The ids as prose: `list, dot, json, junit, and markdown`. */
+/** The ids as prose: `list, dot, line, json, junit, and markdown`. */
 export const BUILTIN_REPORTER_LIST = `${BUILTIN_REPORTERS.slice(0, -1).join(', ')}, and ${BUILTIN_REPORTERS.at(-1)}`;
 
 type Stream = 'stdout' | 'stderr';
@@ -22,12 +23,13 @@ type Stream = 'stdout' | 'stderr';
 const FACTORIES: Record<BuiltinReporter, (stream: Stream) => Reporter> = {
   list: (stream) => list({ stream }),
   dot: (stream) => dot({ stream }),
+  line: (stream) => line({ stream }),
   json: () => json(),
   junit: () => junit(),
   markdown: () => markdown(),
 };
 
-/** The built-in `id` with its default options; `list` and `dot` print to `stream`. */
+/** The built-in `id` with its default options; `list`, `dot`, and `line` print to `stream`. */
 export function builtinReporter(id: BuiltinReporter, stream: Stream = 'stdout'): Reporter {
   return FACTORIES[id](stream);
 }

@@ -10,7 +10,7 @@ import type { BuiltinReporter, Reporter } from '../run-types.ts';
 /** A registered symbol, not a module-private one, since the config may import another copy of `e2e`. */
 const BUILTIN_ID = Symbol.for('e2e.reporter.builtin');
 
-export const BUILTIN_REPORTERS = ['list', 'dot', 'json', 'junit', 'markdown'] as const satisfies readonly BuiltinReporter[];
+export const BUILTIN_REPORTERS = ['list', 'dot', 'line', 'json', 'junit', 'markdown'] as const satisfies readonly BuiltinReporter[];
 
 export function isBuiltinReporter(value: string): value is BuiltinReporter {
   return (BUILTIN_REPORTERS as readonly string[]).includes(value);
@@ -21,7 +21,7 @@ interface BuiltinMark {
   readonly id: BuiltinReporter;
   /** Called without the options its id depends on, so it is the id: `list()` prints to stderr beside `json`, as `'list'` does. */
   readonly asId: boolean;
-  /** The terminal stream `list` or `dot` was told to print to; absent for the others. */
+  /** The terminal stream `list`, `dot`, or `line` was told to print to; absent for the others. */
   readonly stream?: 'stdout' | 'stderr';
 }
 

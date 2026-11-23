@@ -5,6 +5,8 @@ import { fileURLToPath } from 'node:url';
 import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { resultId } from '@e2e-dev/core/lib/internal/ids';
 import { visibleWidth } from '../../src/report/format.ts';
+import { DotProgress } from '../../src/report/dot.ts';
+import { LineProgress } from '../../src/report/line.ts';
 import { ListReporter } from '../../src/report/list.ts';
 import { userFrame } from '../../src/report/code-frame.ts';
 import type { CacheWrite } from '@e2e-dev/core/lib/cache/context';
@@ -2484,5 +2486,137 @@ describe('screenshots row', () => {
       ...Array.from({ length: 9 }, (_, index) => `             .e2e/artifacts/s/${index + 1}.png`),
       '             and 2 more (the report lists every artifact)',
     ]);
+  });
+});
+
+describe('line progress', () => {
+  const failed = () => finished(result({ status: 'failed', id: 'b', title: ['beta'], declarationIndex: 1, attempts: [failedAttempt('wrong value')] }));
+
+  it('without a terminal, prints a counted row per result and brings the output heading back after it', () => {
+    const { lines, output } = capture();
+    const reporter = new ListReporter(output, { live: false, colors: false, progress: new LineProgress() });
+    reporter.handle(runStarted());
+    reporter.handle(plan([{ file: 'tests/case.e2e.ts', tests: 2 }]));
+    reporter.handle(testStarted('a', 'alpha', 'chromium'));
+    reporter.handle(testStarted('b', 'beta', 'chromium'));
+    const log = (text: string) => reporter.handle({ type: 'output', target: 'chromium', pair: { testId: 'a', agent: 'default', repeat: 0 }, stream: 'stdout', text });
+    const start = lines.length;
+    log('first\n');
+    reporter.handle(finished(result({ status: 'passed', id: 'b', title: ['beta'], declarationIndex: 1 })));
+    log('second\n');
+    reporter.handle(finished(result({ status: 'timed-out', id: 'a', title: ['alpha'], attempts: [failedAttempt('too slow')] })));
+    const heading = 'stdout | |chromium| tests/case.e2e.ts > alpha';
+    expect(lines.slice(start, start + 6)).toEqual([
+      heading,
+      'first',
+      '[1/2] |chromium| tests/case.e2e.ts > beta (passed)',
+      heading,
+      'second',
+      '[2/2] |chromium| tests/case.e2e.ts > alpha (timed out)',
+    ]);
+  });
+
+  it('prints a failure when its result arrives and not again under Failed Tests, and still closes with its Failed row', () => {
+    const { lines, output } = capture();
+    const reporter = new ListReporter(output, { live: false, colors: false, progress: new LineProgress() });
+    reporter.handle(runStarted());
+    reporter.handle(plan([{ file: 'tests/case.e2e.ts', tests: 2 }]));
+    reporter.handle(failed());
+    expect(lines.slice(-5)).toEqual([
+      '[1/2] |chromium| tests/case.e2e.ts > beta (failed)',
+      '',
+      ' FAIL  |chromium| tests/case.e2e.ts > beta',
+      'ASSERTION_FAILED: wrong value',
+      '',
+    ]);
+    reporter.handle(finished(result({ status: 'passed' })));
+    const page = '.e2e/results/beta/trace.md';
+    reporter.handle({ ...runFinished({ status: 'failed', exitCode: 1 }), traces: { [resultId('b', 'chromium', 'default', 0)]: page } } as RunEventFact);
+    reporter.rows([]);
+    expect(lines.filter((line) => line === 'ASSERTION_FAILED: wrong value')).toHaveLength(1);
+    expect(lines.some((line) => line.includes('Failed Tests'))).toBe(false);
+    expect(lines.slice(-4)).toEqual([
+      '     Failed  × |chromium| tests/case.e2e.ts > beta',
+      '               ASSERTION_FAILED: wrong value',
+      `               trace ${page}`,
+      '',
+    ]);
+  });
+
+  it('leaves the failure for Failed Tests when the progress waits for the end, as dot does', () => {
+    const { lines, output } = capture();
+    const reporter = new ListReporter(output, { live: false, colors: false, progress: new DotProgress('stdout', () => undefined, false) });
+    reporter.handle(runStarted());
+    reporter.handle(plan([{ file: 'tests/case.e2e.ts', tests: 1 }]));
+    reporter.handle(failed());
+    expect(lines).not.toContain('ASSERTION_FAILED: wrong value');
+    reporter.handle(runFinished({ status: 'failed', exitCode: 1 }));
+    expect(lines.filter((line) => line === 'ASSERTION_FAILED: wrong value')).toHaveLength(1);
+    expect(lines.some((line) => line.includes('Failed Tests 1'))).toBe(true);
+  });
+
+  it('on a terminal, keeps one row painted under the log: the test that started or finished last', () => {
+    const restore = withTerminalSize({ columns: 60, rows: 40 });
+    try {
+      const chunks: string[] = [];
+      const lines: string[] = [];
+      const output = { write: (line: string) => lines.push(line), raw: (text: string) => chunks.push(text) };
+      const reporter = new ListReporter(output, { live: true, colors: false, progress: new LineProgress() });
+      /** The rows the last paint left under the log. */
+      const painted = () => chunks.at(-1)!.replace(ANSI_PATTERN, '').split('\n').filter((row) => row !== '');
+      reporter.handle(runStarted());
+      expect(painted()).toEqual([]);
+      reporter.handle(plan([{ file: 'tests/case.e2e.ts', tests: 3 }]));
+      reporter.handle(testStarted('a', 'alpha', 'chromium'));
+      expect(painted()).toEqual(['[0/3] |chromium| tests/case.e2e.ts > alpha (running)']);
+      reporter.handle(testStarted('b', 'beta', 'chromium'));
+      expect(painted()).toEqual(['[0/3] |chromium| tests/case.e2e.ts > beta (running)']);
+      const logged = lines.length;
+      reporter.handle(finished(result({ status: 'passed', id: 'a', title: ['alpha'] })));
+      expect(painted()).toEqual(['[1/3] |chromium| tests/case.e2e.ts > alpha (passed)']);
+      expect(lines.slice(logged)).toEqual([]);
+
+      // A permanent line erases the row and paints it back underneath.
+      reporter.handle({ type: 'output', stream: 'stdout', text: 'runner says hi\n' });
+      expect(lines.slice(logged)).toEqual(['stdout | runner', 'runner says hi']);
+      expect(chunks.at(-2)).toBe('\u001b[1A\u001b[0J');
+      expect(painted()).toEqual(['[1/3] |chromium| tests/case.e2e.ts > alpha (passed)']);
+
+      reporter.handle(failed());
+      expect(lines.slice(-3)).toEqual([' FAIL  |chromium| tests/case.e2e.ts > beta', 'ASSERTION_FAILED: wrong value', '']);
+      expect(painted()).toEqual(['[2/3] |chromium| tests/case.e2e.ts > beta (failed)']);
+
+      // A row wider than the terminal is one row that clips the test and keeps its state, so the erase stays exact.
+      reporter.handle(testStarted('c', `gamma\n${'wide 漢字 '.repeat(12)}`, 'chromium'));
+      expect(painted()).toEqual(['[2/3] |chromium| tests/case.e2e.ts > gamma wide… (running)']);
+      reporter.handle(finished(result({ status: 'timed-out', id: 'c', title: [`gamma ${'wide '.repeat(12)}`], declarationIndex: 2, attempts: [failedAttempt('too slow')] })));
+      expect(painted()).toEqual(['[3/3] |chromium| tests/case.e2e.ts > gamma wi… (timed out)']);
+      expect(visibleWidth(painted()[0]!)).toBe(58);
+
+      const before = chunks.length;
+      reporter.handle(runFinished({ status: 'failed', exitCode: 1 }));
+      expect(chunks.slice(before)).toEqual(['\u001b[1A\u001b[0J']);
+      expect(lines.some((line) => /^\[\d\/3\]/u.test(line))).toBe(false);
+    } finally {
+      restore();
+    }
+  });
+});
+
+describe('colors of a view that paints', () => {
+  afterEach(() => vi.unstubAllEnvs());
+
+  it.each([
+    { env: '', colored: true },
+    { env: '1', colored: false },
+  ])('NO_COLOR=$env on a terminal: colored $colored, for list and line', ({ env, colored }) => {
+    vi.stubEnv('NO_COLOR', env);
+    for (const progress of [undefined, new LineProgress()]) {
+      const lines: string[] = [];
+      const reporter = new ListReporter({ write: (line) => lines.push(line), raw: () => undefined }, { live: true, ...(progress === undefined ? {} : { progress }) });
+      reporter.handle(runStarted());
+      reporter.handle(runFinished());
+      expect(lines.some((line) => line.includes('\u001b['))).toBe(colored);
+    }
   });
 });

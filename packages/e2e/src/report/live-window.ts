@@ -30,7 +30,7 @@ const SYNC_END = `${ESC}[?2026l`;
  * counts physical rows, so a line that wraps would leave stale fragments
  * behind on every repaint. An entry with a line break still paints as one row.
  */
-function clampToWidth(text: string, columns: number): string {
+export function clampToWidth(text: string, columns: number): string {
   text = text.replace(/\r\n?|\n/g, ' ');
   const max = Math.max(4, columns - WIDTH_MARGIN);
   let width = 0;

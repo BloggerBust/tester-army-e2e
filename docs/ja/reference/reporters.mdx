@@ -30,6 +30,7 @@ export default {
 | --- | --- |
 | [`list`](#list) | ターミナルの進捗と実行サマリー |
 | [`dot`](#dot) | 簡潔な進捗と実行サマリー |
+| [`line`](#line) | 1 行の進捗と実行サマリー |
 | [`json`](#json) | レポートを stdout に出力 |
 | [`junit`](#junit) | `<output>/junit.xml` に書き込み |
 | [`markdown`](#markdown) | `<output>/summary.md` に書き込み |
@@ -76,6 +77,27 @@ reporters: ['dot'],
 デフォルトでは stdout に出力し、`dot({ stream: 'stderr' })` で stderr に移せます。`--reporter dot,json` のように `json` と併用すると、`dot` はすべてを stderr に出力するため、stdout には JSON レポートが入ります。
 
 Playwright と異なり、e2e は ASCII の記号を使い、リトライ後の最終結果だけを出力します。リトライした各試行の記号は出力しません。
+
+#### `line`
+
+進捗を 1 行で表示し、失敗は発生した時点で出力します。
+
+```ts
+reporters: ['line'],
+```
+
+```text
+[3/12] |web| tests/cart.e2e.ts > adds an item (running)
+```
+
+- TTY では、最後に開始または完了したテストをこの行に表示します。stdout がターミナルでない場合（パイプ、リダイレクト、多くの CI）は、各テストの完了時にその行を出力します。
+- `[3/12]` は、選択したテストのうち、リトライ後の最終結果が出た件数です。テストを把握する前に実行が止まった場合、総数は `?` になります。
+- 失敗またはタイムアウトしたテストは、最後の `Failed Tests` ではなく、その時点で失敗の詳細を出力します。トレースページは実行の終了時に書き込まれるため、ここには表示されず、最後の `Failed` 行に表示されます。
+- 実行ヘッダー、サマリー、ステップのプロンプト、コードが出力した内容は `list` と同じ形式です。
+
+デフォルトでは stdout に出力し、`line({ stream: 'stderr' })` で stderr に移せます。`--reporter line,json` のように `json` と併用すると、`line` はすべてを stderr に出力するため、stdout には JSON レポートが入ります。
+
+Playwright と異なり、e2e は各試行の開始時ではなく、テストの最終結果が出た時点で数えます。また、この行にステップは表示しません。
 
 #### `json`
 

@@ -30,6 +30,7 @@ export default {
 | --- | --- |
 | [`list`](#list) | 终端进度和运行摘要 |
 | [`dot`](#dot) | 简洁进度和运行摘要 |
+| [`line`](#line) | 单行进度和运行摘要 |
 | [`json`](#json) | 将报告文档输出到 stdout |
 | [`junit`](#junit) | 写入 `<output>/junit.xml` |
 | [`markdown`](#markdown) | 写入 `<output>/summary.md` |
@@ -76,6 +77,27 @@ reporters: ['dot'],
 它默认输出到 stdout；`dot({ stream: 'stderr' })` 可将其改为输出到 stderr。与 `json` 同时使用时（例如 `--reporter dot,json`），`dot` 的全部输出都发送到 stderr，因此 stdout 留给 JSON 报告。
 
 与 Playwright 不同，e2e 使用 ASCII 标记，并且只在重试结束后输出最终结果，不为每次重试单独输出标记。
+
+#### `line`
+
+用一行显示进度，并在失败发生时立即输出。
+
+```ts
+reporters: ['line'],
+```
+
+```text
+[3/12] |web| tests/cart.e2e.ts > adds an item (running)
+```
+
+- 在 TTY 中，这一行显示最后开始或完成的测试。stdout 不是终端时（管道、重定向、大多数 CI），每个测试完成后输出它的那一行。
+- `[3/12]` 统计所选测试中已得出重试后最终结果的数量。运行在确定测试之前停止时，总数为 `?`。
+- 失败或超时的测试会立即输出失败详情，而不是放在末尾的 `Failed Tests` 中。追踪页面在运行结束时才写入，因此这里不显示，由末尾的 `Failed` 行给出。
+- 运行标题、摘要、步骤提示以及你的代码打印的内容均使用与 `list` 相同的格式。
+
+它默认输出到 stdout；`line({ stream: 'stderr' })` 可将其改为输出到 stderr。与 `json` 同时使用时（例如 `--reporter line,json`），`line` 的全部输出都发送到 stderr，因此 stdout 留给 JSON 报告。
+
+与 Playwright 不同，e2e 在测试得出最终结果时计数，而不是在每次尝试开始时计数，并且这一行不显示步骤。
 
 #### `json`
 

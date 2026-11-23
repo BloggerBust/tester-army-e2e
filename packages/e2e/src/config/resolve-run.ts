@@ -50,7 +50,7 @@ export function resolveConfig(
  * built-ins only, keeping the options of one the config configured: a
  * third-party reporter has no id to name on the command line, so a CI flag
  * choosing `list,junit` never drops the upload a config asked for. One
- * interactive reporter at most shows the run. A `list` or `dot` id, or
+ * interactive reporter at most shows the run. A `list`, `dot`, or `line` id, or
  * its factory called without a `stream`, prints to stderr beside `json`,
  * leaving stdout to the report. An id named twice runs once.
  * Workers resolve this too and never call a reporter, which the factories
@@ -65,7 +65,7 @@ function resolveReporters(raw: E2EConfig, cli: RunCliOverrides): readonly Report
     );
   }
   // A built-in named by id is made once the selection is known, since
-  // `list` and `dot` print to stderr beside `json`.
+  // `list`, `dot`, and `line` print to stderr beside `json`.
   type Built = { readonly id: BuiltinReporter; readonly reporter: Reporter | undefined };
   const builtins: Built[] = [];
   const others: Reporter[] = [];

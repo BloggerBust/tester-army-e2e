@@ -274,14 +274,15 @@ reporters: ['list', 'junit'], // default: ['list']
 | Value | Does |
 | --- | --- |
 | `'list'`, `list()` | Terminal progress, failures, and a run summary. |
-| `'dot'`, `dot()` | Compact terminal progress, failures, and a run summary. Excludes `list`: the two together are `INVALID_CONFIG`. |
+| `'dot'`, `dot()` | Compact terminal progress, failures, and a run summary. |
+| `'line'`, `line()` | One row of terminal progress, each failure as it happens, and a run summary. |
 | `'junit'`, `junit()` | Writes `<output>/junit.xml`, or `outputFile`. |
 | `'markdown'`, `markdown()` | Writes `<output>/summary.md`, or `outputFile`. |
-| `'json'`, `json()` | Prints the report on stdout. Beside it, `list` or `dot` prints to stderr unless given a `stream`. |
+| `'json'`, `json()` | Prints the report on stdout. Beside it, `list`, `dot`, or `line` prints to stderr unless given a `stream`. |
 | another `Reporter` object | Runs beside the built-in ones. `--reporter` never removes it. |
 
 An id is its factory called with no options. An unknown id is
-`INVALID_CONFIG`. See [Reporters](/reference/reporters).
+`INVALID_CONFIG`, and so are two of `list`, `dot`, and `line` together. See [Reporters](/reference/reporters).
 
 ### targets
 

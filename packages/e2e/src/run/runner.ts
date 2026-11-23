@@ -554,9 +554,9 @@ export async function run(options: RunOptions = {}): Promise<RunOutcome> {
   // failure still leaves the built-ins the CLI asked for, so the failure
   // renders through them. A quiet run, embedded in another program, runs no
   // interactive reporter: none that shows the run on the terminal, as
-  // `list` and `dot` do.
+  // `list`, `dot`, and `line` do.
   // The fallback runs a repeated id once, as config resolution does, and
-  // the first of `list` and `dot`, which it would reject together.
+  // the first of `list`, `dot`, and `line`, which it would reject together.
   const fallbackIds = [...new Set(options.reporters ?? ['list' as const])];
   const configured =
     loaded.config?.reporters ??
@@ -1550,12 +1550,13 @@ function deviceTarget(targets: readonly ResolvedTarget[], name: string): NonNull
  * The plan's per-file breakdown: reportable pairs (run or explicitly skipped)
  * counted per test file and target, in selection order. Unselected pairs are
  * left out: the list reporter never shows them, so counting them would keep
- * a file's block waiting for results that never print.
+ * a file's block waiting for results that never print. So is a setup test
+ * that will not run, which gets no result either.
  */
 function plannedFiles(selection: Selection): { file: string; target: string; tests: number }[] {
   const files = new Map<string, { file: string; target: string; tests: number }>();
   for (const pair of selection.pairs) {
-    if (pair.disposition === 'filtered') continue;
+    if (pair.disposition === 'filtered' || (pair.test.kind === 'setup' && pair.disposition !== 'run')) continue;
     const key = `${pair.target.name}\u0000${pair.test.file}`;
     const entry = files.get(key);
     if (entry === undefined) {

@@ -35,6 +35,7 @@ so a reporter of your own can do anything they do.
 | --- | --- |
 | [`list`](#list) | Terminal progress and run summary |
 | [`dot`](#dot) | Compact progress and run summary |
+| [`line`](#line) | One progress row and run summary |
 | [`json`](#json) | Report document to stdout |
 | [`junit`](#junit) | Writes `<output>/junit.xml` |
 | [`markdown`](#markdown) | Writes `<output>/summary.md` |
@@ -44,11 +45,11 @@ so a reporter of your own can do anything they do.
 | Throws | When |
 | --- | --- |
 | `INVALID_CONFIG` | `reporters` is not an array. |
-| `INVALID_CONFIG` | An id other than `list`, `dot`, `json`, `junit`, or `markdown`. |
+| `INVALID_CONFIG` | An id other than `list`, `dot`, `line`, `json`, `junit`, or `markdown`. |
 | `INVALID_CONFIG` | A factory not called, such as `junit` for `junit()`. |
 | `INVALID_CONFIG` | An entry that is neither an id nor an object with a `name` and at least one hook. |
 | `INVALID_CONFIG` | More than one [interactive](#interactive) reporter, such as `list` and `dot`. |
-| `INVALID_CONFIG` | `list` or `dot` given `stream: 'stdout'` beside `json`. |
+| `INVALID_CONFIG` | `list`, `dot`, or `line` given `stream: 'stdout'` beside `json`. |
 
 #### `list`
 
@@ -95,6 +96,36 @@ stdout holds the JSON report.
 Unlike Playwright, e2e uses ASCII marks and prints only the final result
 after retries, with no mark for each retried attempt.
 
+#### `line`
+
+Shows progress on one row and prints each failure when it happens.
+
+```ts
+reporters: ['line'],
+```
+
+```text
+[3/12] |web| tests/cart.e2e.ts > adds an item (running)
+```
+
+- On a TTY the row names the test that started or finished last. When
+  stdout is not a terminal (piped, redirected, most CI), each test prints
+  its row as it finishes.
+- `[3/12]` counts the selected tests with a final result, after retries.
+  The total is `?` when the run stops before it knows its tests.
+- A test that failed or timed out prints its failure details right away,
+  not under `Failed Tests` at the end. They name no trace page, which is
+  written when the run ends: the closing `Failed` rows name it.
+- The run header, summary, and step prompts use the same format as `list`,
+  and so does what your code prints.
+
+It prints to stdout by default; `line({ stream: 'stderr' })` moves it. Beside
+`json`, as in `--reporter line,json`, `line` prints all of it to stderr, so
+stdout holds the JSON report.
+
+Unlike Playwright, e2e counts a test when its final result arrives, not each
+attempt when it starts, and the row names no step.
+
 #### `json`
 
 Prints the report document to stdout.
@@ -103,7 +134,7 @@ Prints the report document to stdout.
 reporters: ['json'],
 ```
 
-It is not [interactive](#interactive). Without `list` or `dot` beside it,
+It is not [interactive](#interactive). Without `list`, `dot`, or `line` beside it,
 what your code prints goes to stderr.
 
 #### `junit`
@@ -310,7 +341,7 @@ name: 'upload',
 #### `interactive`
 
 Set it when the reporter shows the run to a person in the terminal, as
-[`list`](#list) and [`dot`](#dot) do. The runner then prints no
+[`list`](#list), [`dot`](#dot), and [`line`](#line) do. The runner then prints no
 [output](#output), run error, or [pause](#pauses) itself.
 
 ```ts
@@ -432,8 +463,8 @@ a reporter it abandoned, cutting off what it still does; under
 ##### Summary rows
 
 The rows a reporter resolves with, and the rows of its labeled report files,
-reach every [`onSummary`](#onsummary). `list` and `dot` print them under
-their summary, in the same layout as their own rows. The `json` reporter
+reach every [`onSummary`](#onsummary). `list`, `dot`, and `line` print them
+under their summary, in the same layout as their own rows. The `json` reporter
 does not carry them.
 
 ```
@@ -612,7 +643,8 @@ interface CollectedTestInfo {
   A `setup` test runs one time.
 - `total` counts every test the run collected, and `files` the `run` and
   `skip` ones per file and target, so a reporter knows when a file's results
-  are complete. Both count a repeated test one time for each repeat, where
+  are complete. A skipped `setup` test gets no result, so `files` leaves it
+  out. Both count a repeated test one time for each repeat, where
   `tests` lists it one time.
 - The event's `at` is the run's start, the report's `startedAt`.
 
@@ -777,8 +809,8 @@ bunx e2e run --reporter list,junit
   `reports/junit.xml`.
 - A config with no [interactive](#interactive) reporter has no run view.
   Run errors still print on stderr, each as `CODE: message`.
-- A config with an interactive reporter of its own refuses `--reporter list`
-  and `--reporter dot`: one reporter at most is interactive.
+- A config with an interactive reporter of its own refuses `--reporter list`,
+  `--reporter dot`, and `--reporter line`: one reporter at most is interactive.
 
 ## Where a reporter runs
 
@@ -794,9 +826,9 @@ reporter every run, each starting with its first event.
 `Reporter`, `FinishedRun`, `ReportFile`, `ReporterSummary`, `Report`,
 `RunEvent`, `RunEventOf`, `CollectedTestInfo`, `PausedStep`, and `PausedKey` are exported from the main
 entrypoint, and so is `renderMarkdownReport(report, options)`. `e2e/reporters`
-exports `list`, `dot`, `json`, `junit`, and `markdown`, with
-`ListReporterOptions`, `DotReporterOptions`, `JunitReporterOptions`, and
-`MarkdownReporterOptions`.
+exports `list`, `dot`, `line`, `json`, `junit`, and `markdown`, with
+`ListReporterOptions`, `DotReporterOptions`, `LineReporterOptions`,
+`JunitReporterOptions`, and `MarkdownReporterOptions`.
 
 ## Related
 

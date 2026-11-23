@@ -9,7 +9,7 @@ import { ConfigurationError, defineEngine } from '@e2e-dev/core/lib/engine/index
 import { protocolEngine } from '@e2e-dev/core/lib/engine/protocol/client';
 import { secrets } from '@e2e-dev/core/lib/secrets';
 import type { CommandConfig, Target, TargetApp } from '@e2e-dev/core/lib/types';
-import { dot, junit, list } from '../../src/reporters.ts';
+import { dot, junit, line, list } from '../../src/reporters.ts';
 import type { BuiltinReporter, E2EConfig, FinishedRun, Reporter, TestFilter } from '../../src/run-types.ts';
 import { snapshot } from '../helpers/snapshot.ts';
 import { invalid } from '../helpers/invalid.ts';
@@ -19,7 +19,7 @@ const BASE_ENV = {} as NodeJS.ProcessEnv;
 const WEB = { name: 'web', platform: 'web' } as const;
 const TARGETS = [WEB];
 
-/** The terminal stream a `list` or `dot` reporter prints its summary rows to. */
+/** The terminal stream a `list`, `dot`, or `line` reporter prints its summary rows to. */
 function streamOf(reporter: Reporter): 'stdout' | 'stderr' | undefined {
   const spies = (['stdout', 'stderr'] as const).map((stream) => [stream, vi.spyOn(process[stream], 'write').mockImplementation(() => true)] as const);
   try {
@@ -607,8 +607,8 @@ describe('resolveConfig', () => {
     expect(() => resolve({ reporters: ['xunit'] as never })).toThrow(/unknown reporter "xunit"/);
   });
 
-  it('moves the list or dot id beside json to stderr', () => {
-    for (const id of ['list', 'dot'] as const) {
+  it('moves the list, dot, or line id beside json to stderr', () => {
+    for (const id of ['list', 'dot', 'line'] as const) {
       const [view, document] = resolve({ reporters: [id, 'json'] }).reporters;
       expect([view!.name, streamOf(view!), document!.name]).toEqual([id, 'stderr', 'json']);
       // Only the view shows the run; the document is not interactive.
@@ -618,14 +618,17 @@ describe('resolveConfig', () => {
     expect(streamOf(cli.reporters[0]!)).toBe('stderr');
     // A factory called without a stream is its id; one given a stream keeps it.
     expect(streamOf(resolve({ reporters: [list(), 'json'] }).reporters[0]!)).toBe('stderr');
+    expect(streamOf(resolve({ reporters: [line(), 'json'] }).reporters[0]!)).toBe('stderr');
+    expect(streamOf(resolve({ reporters: [line({ stream: 'stderr' })] }).reporters[0]!)).toBe('stderr');
+    expect(() => resolve({ reporters: [line({ stream: 'stdout' }), 'json'] })).toThrow(/reporters "line" and "json" both print to stdout/);
     const flagged = resolveConfig({ targets: TARGETS, reporters: [dot(), 'junit'] }, { projectRoot: ROOT, env: BASE_ENV, cli: { reporters: ['dot', 'json'] } });
     expect(streamOf(flagged.reporters[0]!)).toBe('stderr');
     expect(() => resolve({ reporters: [list({ stream: 'stdout' }), 'json'] })).toThrow(/reporters "list" and "json" both print to stdout/);
     expect(streamOf(resolve({ reporters: [list({ stream: 'stdout' }), 'junit'] }).reporters[0]!)).toBe('stdout');
   });
 
-  it.each([['list', 'dot'], ['dot', 'list']] as const)('rejects %s combined with %s reporters', (first, second) => {
-    expect(() => resolve({ reporters: [first, second] })).toThrow(/list.*dot|dot.*list/u);
+  it.each([['list', 'dot'], ['dot', 'list'], ['line', 'list'], ['dot', 'line']] as const)('rejects %s combined with %s reporters', (first, second) => {
+    expect(() => resolve({ reporters: [first, second] })).toThrow(`reporters "${first}" and "${second}" are all interactive`);
   });
 
   it('refuses a second interactive reporter, a built-in or not, whatever their streams, and takes any number of others', () => {

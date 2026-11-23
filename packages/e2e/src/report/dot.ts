@@ -5,6 +5,7 @@ import type { ResultStatus } from '@e2e-dev/core/lib/run/records';
 import type { Reporter } from '../run-types.ts';
 import type { Colors } from './format.ts';
 import { ListReporter, runView } from './list.ts';
+import type { TerminalProgress } from './progress.ts';
 
 type OutputStream = 'stdout' | 'stderr';
 
@@ -22,11 +23,12 @@ export interface DotReporterOptions {
 export function dot(options: DotReporterOptions = {}): Reporter {
   const stream = options.stream ?? 'stdout';
   const write = (to: OutputStream, text: string): void => void process[to].write(text);
-  return runView('dot', stream, options.stream === undefined, (output) => new ListReporter(output, { live: false, dots: new DotProgress(stream, write) }));
+  return runView('dot', stream, options.stream === undefined, (output) => new ListReporter(output, { live: false, progress: new DotProgress(stream, write) }));
 }
 
 /** The marks of the `dot` reporter, and the user output it prints between them. */
-export class DotProgress {
+export class DotProgress implements TerminalProgress {
+  readonly failureTiming = 'at-end';
   private readonly marks: Record<ResultStatus, string>;
   private columns = 0;
   private readonly unfinished = new Set<OutputStream>();
@@ -48,7 +50,7 @@ export class DotProgress {
   }
 
   /** A retry contributes just the one mark its final verdict calls for. */
-  result(status: ResultStatus): void {
+  finished(status: ResultStatus): undefined {
     const prefix = this.unfinished.delete(this.stream) ? '\n' : '';
     this.output(this.stream, prefix + this.marks[status]);
     this.columns += 1;
@@ -65,8 +67,8 @@ export class DotProgress {
     else this.unfinished.add(destination);
   }
 
-  /** Releases any pending text in the destination view once the run is over. */
-  end(): void {
+  /** Ends the row of marks and any user output a newline has not, so a permanent line starts on its own. */
+  settle(): void {
     this.finishMarks();
     for (const stream of this.unfinished) this.output(stream, '\n');
     this.unfinished.clear();

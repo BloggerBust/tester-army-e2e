@@ -148,7 +148,7 @@ Planned gaps are on the roadmap, and Not yet gaps have no date. Not planned gaps
 | `it`, `context`, `specify`, `xit` | `test`, `describe`, `test.skip` |
 | chai `expect(x).to...`, `assert.*` | `toEqual`, `toContain`, `toMatchObject` on `expect(value)`, or import `chai` yourself |
 | `cy.window()`, `cy.document()`, `onBeforeLoad(win)` | `browser.evaluate` and `browser.addInitScript` with JSON values. Tests run in Node, not in the page |
-| Mocha reporters, `reporterOptions` | `list`, `dot`, `json`, `junit`, `markdown`, `htmlReporter()`, `github()`, or your own [reporter](/reference/reporters) |
+| Mocha reporters, `reporterOptions` | `list`, `dot`, `line`, `json`, `junit`, `markdown`, `htmlReporter()`, `github()`, or your own [reporter](/reference/reporters) |
 | Cucumber `.feature` files, `file:preprocessor` | Rewrite features as tests. TypeScript needs no preprocessor |
 | Component testing | Keep it in Cypress. e2e tests a running app |
 | `.parent()`, `.closest()`, `.siblings()`, `.next()` | Locate the ancestor and narrow it: `card.filter({ has: child })` |
