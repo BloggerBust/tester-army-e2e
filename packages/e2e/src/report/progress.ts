@@ -1,9 +1,5 @@
-import { realmSlot } from '@e2e-dev/core/lib/internal/realm-slot';
 import type { ResultStatus } from '@e2e-dev/core/lib/run/records';
 import type { OutputStream } from '../run/process-output.ts';
-
-/** Spreading a reporter copies its hooks without copying this non-enumerable cursor grant. */
-export const cursorRow = realmSlot<{ exclusive: boolean }>('e2e.reporter.cursor-row');
 
 export interface TerminalProgressTest {
   readonly target: string;

@@ -41,20 +41,22 @@ export function resolveConfig(
   },
 ): ResolvedRunConfig {
   const resolved = resolveProjectConfig(raw, options);
-  const settings = resolveRunSettings(raw, options.cli ?? {});
-  if ('conflict' in settings) throw settings.conflict;
-  return { ...resolved, ...settings };
+  return { ...resolved, reporters: resolveReporters(raw, options.cli ?? {}), filters: resolveTestFilters(raw.filters) };
 }
 
 /**
- * Resolves reporters and filters. Returns stream conflicts so `explore` can
- * register secrets before reporting the error.
- *
- * CLI reporter IDs replace configured built-ins while preserving their options
- * and any custom reporters. Factories must have no construction side effects
- * because workers also load the configuration.
+ * Resolves `reporters` into reporter objects, an id into its built-in
+ * factory's reporter with default options. `--reporter` replaces the
+ * built-ins only, keeping the options of one the config configured: a
+ * third-party reporter has no id to name on the command line, so a CI flag
+ * choosing `list,junit` never drops the upload a config asked for. One
+ * reporter at most prints to each terminal stream: a `list`, `line`, or
+ * `dot` id, or its factory called without a `stream`, prints to stderr
+ * beside `json`, leaving stdout to the report. An id named twice runs once.
+ * Workers resolve this too and never call a reporter, which the factories
+ * allow: constructing one has no side effects.
  */
-export function resolveRunSettings(raw: E2EConfig, cli: RunCliOverrides): Pick<ResolvedRunConfig, 'reporters' | 'filters'> | { conflict: ConfigurationError } {
+function resolveReporters(raw: E2EConfig, cli: RunCliOverrides): readonly Reporter[] {
   const configured = raw.reporters ?? ['list'];
   if (!Array.isArray(configured)) {
     throw new ConfigurationError(
@@ -62,8 +64,6 @@ export function resolveRunSettings(raw: E2EConfig, cli: RunCliOverrides): Pick<R
       'reporters must be an array of reporter ids and reporter objects',
     );
   }
-  // A built-in named by id is made once the selection is known, since
-  // terminal reporter ids print to stderr beside `json`.
   type Built = { readonly id: BuiltinReporter; readonly reporter: Reporter | undefined };
   const builtins: Built[] = [];
   const others: Reporter[] = [];
@@ -91,13 +91,12 @@ export function resolveRunSettings(raw: E2EConfig, cli: RunCliOverrides): Pick<R
     const printers = reporters.filter((reporter) => reporter.printsTo === printsTo);
     if (printers.length < 2) continue;
     const names = printers.map((reporter) => `"${reporter.name}"`);
-    const error = new ConfigurationError(
+    throw new ConfigurationError(
       'INVALID_CONFIG',
       `reporters ${names.slice(0, -1).join(', ')} and ${names.at(-1)} both print to ${printsTo}, where they would garble each other; run one of them`,
     );
-    return { conflict: error };
   }
-  return { reporters, filters: resolveTestFilters(raw.filters) };
+  return reporters;
 }
 
 /** One entry of `reporters`: a built-in id, or an object checked structurally, never with `instanceof`. */

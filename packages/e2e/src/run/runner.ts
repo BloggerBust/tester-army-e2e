@@ -39,7 +39,6 @@ import { buildReport, projectSource, type Report1Document, type ReportChanges, t
 import type { TargetProvenance } from '@e2e-dev/core/lib/run/provision';
 import { agentStepTable } from '../report/debug-steps.ts';
 import { writeTracePages, type TracePages } from '../report/traces.ts';
-import { cursorRow } from '../report/progress.ts';
 import { builtinReporter } from '../report/builtin.ts';
 import { failureLine } from '../report/format.ts';
 import { writeJsonReport, writeTextReport } from '../report/write.ts';
@@ -127,8 +126,6 @@ export interface RunOptions {
    * process.
    */
   freshGraph?: boolean | undefined;
-  /** Use append-only line progress on watch reruns, when an earlier reporter may still write to the terminal. */
-  appendProgress?: boolean | undefined;
   /** One shard of the selection, cut once every other flag applied and before the test filters judge it (`--shard 2/3`). */
   shard?: Shard | undefined;
   /**
@@ -453,7 +450,7 @@ export interface RunOutcome {
 const FORCE_KILL_MARGIN_MS = 1_000;
 
 /** Executes one complete run and returns the outcome without exiting. */
-export async function run(options: RunOptions = {}, preflightFailure?: { error: ConfigurationError; explore: ReportExplore }): Promise<RunOutcome> {
+export async function run(options: RunOptions = {}): Promise<RunOutcome> {
   const cwd = options.cwd ?? process.cwd();
   const env = options.env ?? process.env;
   const runId = uuidv7();
@@ -521,7 +518,7 @@ export async function run(options: RunOptions = {}, preflightFailure?: { error: 
    * its own, as `json` does, what the runner prints itself goes to stderr.
    */
   const keepStdoutFor = (reporters: readonly Reporter[]): void => {
-    if (reporters.some(keepsStdout)) processOutput?.keepStdoutForReport();
+    if (keepsStdout(stdoutPrinter(reporters))) processOutput?.keepStdoutForReport();
   };
   const loadConfig = async (): Promise<ResolvedRunConfig> => {
     const config = await loadRunConfig(options, cwd, env, cli, graph);
@@ -529,12 +526,12 @@ export async function run(options: RunOptions = {}, preflightFailure?: { error: 
     keepStdoutFor(config.reporters);
     return allocateAppPorts(config);
   };
-  const loaded = preflightFailure === undefined
-    ? await debug.time('config.load', () => (processOutput === undefined ? loadConfig() : processOutput.withholdDuring(loadConfig))).then(
-        (config) => ({ config, error: undefined }),
-        (cause: unknown) => ({ config: undefined, error: classifyError(cause) }),
-      )
-    : { config: undefined, error: preflightFailure.error };
+  const loaded = await debug
+    .time('config.load', () => (processOutput === undefined ? loadConfig() : processOutput.withholdDuring(loadConfig)))
+    .then(
+      (config) => ({ config, error: undefined }),
+      (cause: unknown) => ({ config: undefined, error: classifyError(cause) }),
+    );
 
   // Every reporter, built-in or configured, is one `Reporter` on one spine,
   // and the runner treats them alike: each gets the hooks it has. A config
@@ -553,7 +550,7 @@ export async function run(options: RunOptions = {}, preflightFailure?: { error: 
   const activeReporters = configured.filter((reporter) => options.quiet !== true || reporter.printsTo === undefined || reporter.onOutput === undefined);
   const printer = stdoutPrinter(activeReporters);
   keepStdoutFor(activeReporters);
-  const live = liveHooks(activeReporters, printer, processOutput, options.quiet !== true && options.appendProgress !== true);
+  const live = liveHooks(activeReporters, printer, processOutput);
   // Until the run is over, what user code prints in this process goes to
   // the reporters that take output, and to the terminal unless a reporter
   // printing to the terminal shows it beside the run.
@@ -660,7 +657,7 @@ export async function run(options: RunOptions = {}, preflightFailure?: { error: 
       targetProvenance,
       changes: changesReport,
       filters: filterReport,
-      explore: preflightFailure?.explore ?? options.tests?.explore?.snapshot(),
+      explore: options.tests?.explore?.snapshot(),
     });
     const carried = lastRun === undefined ? undefined : carryForward(lastRun, document, rerunCollection);
     return carried === undefined ? document : { ...document, run: { ...document.run, carried } };
@@ -1561,9 +1558,9 @@ function redactStaticSecrets(secrets: ResolvedRunConfig['allSecrets'] | undefine
   return (text) => redactFragments(String(text));
 }
 
-/** Whether a reporter reserves stdout for its own output, as the JSON reporter does. */
-export function keepsStdout(reporter: Reporter | undefined): boolean {
-  return reporter?.printsTo === 'stdout' && reporter.onOutput === undefined;
+/** Whether `printer`, the reporter printing to stdout, keeps it to itself: it takes no output to print beside its own. */
+function keepsStdout(printer: Reporter | undefined): boolean {
+  return printer !== undefined && printer.onOutput === undefined;
 }
 
 /**
@@ -1596,7 +1593,7 @@ interface LiveHooks {
  * written, never back to the reporters, so one that logs what it is handed
  * cannot feed itself.
  */
-function liveHooks(reporters: readonly Reporter[], printer: Reporter | undefined, processOutput: RunnerOutput | undefined, rewritableRow: boolean): LiveHooks {
+function liveHooks(reporters: readonly Reporter[], printer: Reporter | undefined, processOutput: RunnerOutput | undefined): LiveHooks {
   const call = <T,>(reporter: Reporter, hook: () => T): T => (reporter.printsTo === undefined ? hook() : uncaptured(hook));
   const terminal = reporters.filter((reporter) => reporter.printsTo !== undefined);
   const broken = new Set<string>();
@@ -1636,13 +1633,6 @@ function liveHooks(reporters: readonly Reporter[], printer: Reporter | undefined
     }
   };
   const takers = reporters.filter((reporter) => reporter.onOutput !== undefined);
-  // Any live hook can write to a terminal file descriptor, even without declaring a stream.
-  const liveReporters = reporters.filter((reporter) =>
-    reporter.onEvent !== undefined || reporter.onOutput !== undefined || reporter.onStepPrompt !== undefined);
-  for (const reporter of liveReporters) {
-    const cursor = cursorRow.get(reporter);
-    if (cursor !== undefined) cursor.exclusive = rewritableRow && liveReporters.length === 1;
-  }
   const prompters = reporters.filter((reporter) => reporter.onStepPrompt !== undefined);
   /** Prints runner output to the terminal as written: stdout goes to stderr while the printer keeps stdout. */
   const print = ({ stream, text }: ReporterOutput): void => writeTerminal(stream === 'stdout' && keepsStdout(printer) ? 'stderr' : stream, text);

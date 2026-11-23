@@ -258,7 +258,7 @@ reporters: ['list', 'junit'], // default: ['list']
 Only one reporter can print to each stream. `['list', 'line']` raises
 `INVALID_CONFIG` because both default to stdout. When stdout and stderr share a
 terminal, use a single terminal reporter so its progress updates cannot erase
-another reporter’s output.
+another reporter's output.
 
 An id is its factory called with no options. An unknown id is
 `INVALID_CONFIG`. See [Reporters](/reference/reporters).
