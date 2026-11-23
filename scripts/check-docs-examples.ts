@@ -71,6 +71,8 @@ const EXAMPLES: Record<string, string> = {
   'docs/examples/filters/areas-filter.ts': 'docs/filters.mdx',
   'docs/examples/filters/e2e.areas.config.ts': 'docs/filters.mdx',
   'docs/examples/filters/tuned-filter.ts': 'docs/filters.mdx',
+  'docs/examples/api-testing/tests/users-api.e2e.ts': 'docs/api-testing.mdx',
+  'docs/examples/api-testing/tests/api.ts': 'docs/api-testing.mdx',
   'docs/examples/skill/e2e.config.ts': 'skills/e2e/SKILL.md',
   'docs/examples/skill/e2e.setup.config.ts': 'skills/e2e/references/setup.md',
 };
