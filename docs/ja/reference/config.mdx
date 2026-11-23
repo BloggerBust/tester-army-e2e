@@ -210,14 +210,11 @@ reporters: ['list', 'junit'], // default: ['list']
 | 値 | 動作 |
 | --- | --- |
 | `'list'`、`list()` | ターミナルに進捗、失敗、実行サマリーを表示します。 |
-| `'dot'`、`dot()` | ターミナルに簡潔な進捗、失敗、実行サマリーを表示します。 |
-| `'line'`、`line()` | 対話型ターミナルで[進捗を 1 行で表示します](/reference/reporters#line)。 |
+| `'dot'`、`dot()` | ターミナルに簡潔な進捗、失敗、実行サマリーを表示します。`list` とは排他で、併用すると `INVALID_CONFIG` です。 |
 | `'junit'`、`junit()` | `<output>/junit.xml`、または `outputFile` に書き込みます。 |
 | `'markdown'`、`markdown()` | `<output>/summary.md`、または `outputFile` に書き込みます。 |
-| `'json'`、`json()` | レポートを stdout に出力します。併用すると、`list`、`dot`、`line` は `stream` を指定しない限り stderr に出力します。 |
+| `'json'`、`json()` | レポートを stdout に出力します。併用すると、`list` または `dot` は `stream` を指定しない限り stderr に出力します。 |
 | その他の `Reporter` オブジェクト | 組み込みレポーターと一緒に実行します。`--reporter` では取り除かれません。 |
-
-同じストリームに出力できるレポーターは 1 つだけです。`['list', 'line']` は、どちらもデフォルトで stdout に出力するため `INVALID_CONFIG` になります。stdout と stderr が同じ端末に出力される場合は、進捗の更新で他のレポーターの出力が消えないよう、端末用のレポーターは 1 つだけ使ってください。
 
 ID は、そのファクトリーをオプションなしで呼び出したものと同じです。未知の ID は `INVALID_CONFIG` です。[レポーター](/reference/reporters)を参照してください。
 
@@ -1063,7 +1060,7 @@ await screen.getByLabel('API key').fill(secrets.get('apiKey'));
 
 #### エンジンオプション内のシークレット
 
-実行がまだ存在しない `e2e.config.ts` の評価中、`secrets.get(name)` は名前による参照を返し、エンジンオプションが保持できます。
+実行が始まる前の `e2e.config.ts` の評価中は、`secrets.get(name)` は名前による参照を返します。エンジンオプションはこの参照を保持できます。
 
 ```ts
 engine: web({ basicAuth: { username, password: secrets.get('previewPassword') } }),
@@ -1239,7 +1236,7 @@ export default {
 ```
 
 - 設定の名前を `e2e.config.js` または `e2e.config.mjs` にします（[設定ファイルの検索](#finding-the-config-file)）。
-- ES モジュールで書いてください。`package.json` に `"type": "module"` を設定するか、ファイル名を `.mjs` にします。どちらもないと、Node.js は読み込むたびに ESM として再解析した警告を出します。
+- ES モジュールで書いてください。`package.json` に `"type": "module"` を設定するか、ファイル名を `.mjs` にします。どちらもないと、Node.js は読み込むたびに、ファイルを ESM として再解析したという警告を出します。
 - [`tests`](#tests) を設定してください。デフォルトは `*.e2e.ts` だけを選びます。`.mjs` のテストには `'tests/**/*.e2e.mjs'` を使います。スイートの移行中に両方を実行するには、`'tests/**/*.e2e.ts'` も列挙してください。
 - `@type` コメントは `satisfies E2EConfig` と同じ役割を果たし、エディターがキーを補完してドキュメントを表示します。テストのフィクスチャは `test` のインポートから型を得るため、注釈は不要です。
 - ランナーは型チェックしません。エディターでエラーを表示するには、ファイルに `// @ts-check`、または `jsconfig.json` に `"checkJs": true` を追加します。

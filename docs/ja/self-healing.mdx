@@ -27,7 +27,7 @@ test('applies a discount code', async ({ app, agent, screen }) => {
 
 1. リプレイが、モデルを呼び出さずに `Discount code` フィールドへ `SUMMER` を入力します。
 2. 記録済みのボタン `Apply` を探します。現在の名前は `Redeem` なので、15 秒以内に一致するコントロールが見つかりません。リプレイは `target-not-found` で停止します。
-3. エージェントには、リプレイが行った操作の記録とともにステップが渡ります。画面を読み、`Redeem` を見つけてタップします。
+3. エージェントは、リプレイが行った操作の記録とともにステップを受け取ります。画面を読み、`Redeem` を見つけてタップします。
 4. `expect` が成功します。試行の終了時、ランナーは `Apply` を `Redeem` に置き換えた新しい記録を保存します。
 5. 次の実行では、モデルを呼び出さずにステップ全体を再生します。
 
@@ -49,7 +49,7 @@ Continue the step from the CURRENT screen state shown below — do NOT redo the 
 - `end-mismatch`: すべての操作は実行されたものの、記録どおりの結果が得られたと確認できません。結果が表示されなかったか、リプレイの操作前から表示されていた場合です。エージェントには、操作する前にステップの効果があったか確認するよう伝えます。
 - `action-uncertain`: 操作が失敗しましたが、アプリには届いている可能性があります。エージェントには、同様の操作を再度試す前に現在の状態を確認するよう伝えます。
 
-再生済みの操作と待機時間は、ステップの[予算](/reference/agent#budgets)と制限時間に含まれます。すべての停止理由は[キャッシュのページ](/cache#why-a-step-was-not-replayed)に記載しています。最初の操作より前にリプレイが止まった場合は、引き継ぎではなくキャッシュミスです。エージェントには通知せず、最初からステップを実行します。
+再生済みの操作と待機時間は、ステップの[予算](/reference/agent#budgets)と制限時間に含まれます。すべての停止理由は[キャッシュのページ](/cache#why-a-step-was-not-replayed)に記載しています。リプレイが最初の操作より前に止まった場合、そのステップは引き継ぎではなくキャッシュミスになります。エージェントは通知を受けずに、ステップを最初から実行します。
 
 ## 記録が修復される仕組み
 
@@ -76,7 +76,7 @@ Continue the step from the CURRENT screen state shown below — do NOT redo the 
 cache: replayed 1 of 2 recorded actions, then the agent took over: a recorded target is not on the screen; recorded with `openai/gpt-6-luna-fast`; at action 2 of 2, tap button "Apply"; recording saved (`.e2e/cache/<entry>.json`)
 ```
 
-`agent.act()` は、`write` を除く同じ記録を `result.cache` として返します。[カスタムエグゼキューター](/executors#replay-cache)には `ctx.replayedPrefix` で引き継がれます。こちらも現在の画面から処理を続ける必要があります。
+`agent.act()` は、`write` を除く同じ記録を `result.cache` として返します。[カスタムエグゼキューター](/executors#replay-cache)は、`ctx.replayedPrefix` で引き継ぎを受け取ります。エグゼキューターも、現在の画面から処理を続ける必要があります。
 
 ## CI で修復のたびにモデルコストがかかるのを防ぐ
 

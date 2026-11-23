@@ -113,7 +113,7 @@ bunx e2e init --yes --gateway openrouter --skills .agents/skills --mcp .mcp.json
 | --- | --- |
 | `[directory]` | Where to scaffold; created when missing. Default: the working directory. |
 | `-y`, `--yes` | Skips the prompts. Each answer not given as a flag takes its default: Web engine, Vercel AI Gateway, skill and MCP config in both locations, no CI pipeline, no install. |
-| `--example <name>` | Starts from an example app: `with-vite`, `with-next`, `with-astro`, `with-angular`, `with-expo`, `with-swiftui`, `with-compose`, `with-kotlin-multiplatform`, `with-flutter`, or `with-maui`. The `with-` prefix is optional. See [Starting from an example](#starting-from-an-example). |
+| `--example [name]` | Starts from an example app: `with-vite`, `with-next`, `with-astro`, `with-angular`, `with-expo`, `with-swiftui`, `with-compose`, `with-kotlin-multiplatform`, `with-flutter`, or `with-maui`. The `with-` prefix is optional. Without a name, lists them to pick from. See [Starting from an example](#starting-from-an-example). |
 | `--engine <ids>` | The engines for a new config: `web`, `mobile`, or `none`. Comma-separated or repeated; `web,mobile` writes a target for each. Default: asked. |
 | `--gateway <id>` | The model gateway for agent steps in a new config: `vercel`, `openrouter`, `openai-compatible`, `chatgpt`, `copilot`, `opencode-console`, `grok`, or `none`. Default: asked. |
 | `--endpoint <url>` | Base URL for `--gateway openai-compatible`, and implies it. HTTPS, or HTTP on a loopback host. Default: asked; `http://127.0.0.1:11434/v1` with `--yes`. |
@@ -132,6 +132,7 @@ bunx e2e init --yes --gateway openrouter --skills .agents/skills --mcp .mcp.json
 | 2 | An unknown flag value. Exits before any write and lists the valid values. |
 | 2 | An invalid `package.json`. Exits before any write. |
 | 2 | No terminal on stdin and stdout, and no `--yes`. The message names the flag. |
+| 2 | `--example` without a name, with `--yes` or without a terminal. The message lists the names. |
 | 2 | `--example` with a directory that has files in it, or the example download failed. Nothing stays behind. |
 | 2 | The dependency installation failed. |
 | 130 | Ctrl-C or SIGTERM while the logo is drawn or the example downloads, or SIGINT during the dependency installation. A partial example is removed. |
@@ -170,6 +171,9 @@ For a new project, the wizard asks for:
   preselects the service the repository's remote, `.github/` folder, or
   `.gitlab-ci.yml` points to. See [CI pipeline](#ci-pipeline).
 
+In a Next.js app, the web target starts the app. See
+[Next.js apps](#nextjs-apps).
+
 After you confirm the file changes, the wizard asks whether to install the
 selected dependencies. The installer follows the project's `packageManager`
 field or lockfile, then the invoking package manager, then npm.
@@ -179,12 +183,34 @@ field or lockfile, then the invoking package manager, then npm.
 | Creates | Content |
 | --- | --- |
 | `package.json` | Created as a private ESM package when missing; otherwise gets only the missing dependencies and scripts. Sibling packages (`@e2e-dev/web`, `@e2e-dev/mobile`) get the caret range of the version released with the CLI, or that exact version when the CLI is a prerelease. Adds a `test:e2e` script that runs `e2e run`, unless one exists |
-| `e2e.config.ts` | One target per selected engine, with the app in its `app`. Playwright reads `APP_URL` (default `http://localhost:3000`) into `app.url` and shows `app.command` in a comment. Mobile sets `app: { bundleId: 'Settings' }` on iOS and `com.android.settings` on Android, and `workers: 1`. With a gateway, `agents.default` is `{ model, system }` |
+| `e2e.config.ts` | One target per selected engine, with the app in its `app`. Playwright reads `APP_URL` (default `http://localhost:3000`) into `app.url` and shows `app.command` in a comment. In a Next.js app, it sets `app.url` and `app.command` instead; see [Next.js apps](#nextjs-apps). Mobile sets `app: { bundleId: 'Settings' }` on iOS and `com.android.settings` on Android, and `workers: 1`. With a gateway, `agents.default` is `{ model, system }` |
 | `tests/example.e2e.ts` | An app-open test that passes against any page, plus a commented agent test. Device setup gets a Settings check instead. With both engines, `tests/web.e2e.ts` and `tests/mobile.e2e.ts` instead, each test with `requires: ['browser']` or `requires: ['device']` so the other target skips it |
 | `.gitignore` | Appends `node_modules/`, `.e2e/results/`, `.e2e/cache/`, `.e2e/sessions/`, `.e2e/report.json`, `.e2e/ai-trace.json`, `.e2e/timings.json`, `.e2e/junit.xml`, `.e2e/summary.md`, `.e2e/logs/`, and `.e2e/videos/`. Committing the cache is opt-in; see [commit the replay cache](/cache#commit-the-replay-cache) |
 | `.agents/skills/e2e/`, `.claude/skills/e2e/` | `SKILL.md` and one `references/<topic>.md` per `e2e guide` topic. With both chosen, the Claude Code directory is a relative symlink (`../../.agents/skills/e2e`) to the copy, the layout `npx skills add` produces |
 | `.mcp.json`, `.cursor/mcp.json`, `.codex/config.toml` | Registers `e2e mcp` without changing other servers |
 | `.github/workflows/e2e.yml`, `.gitlab-ci.yml` | With `--ci`: a job for each platform the targets run on. At the repository root, also for a project in a subfolder. See [CI pipeline](#ci-pipeline) |
+
+<a id="nextjs-apps" />
+##### Next.js apps
+
+`init` finds a Next.js app when `package.json` has `next` in `dependencies`
+or `devDependencies`. The web target then runs the app's own scripts with
+the project's package manager, and `init` prints the commands and the URL
+it wrote:
+
+- `app.url` is `http://localhost:<port>`, with the port from the `--port`
+  or `-p` flag or `PORT=` variable of the `next` command in the `dev`
+  script, else 3000. It's never `127.0.0.1`, which
+  [doesn't hydrate](/frameworks/nextjs#fix-next-js-problems) on `next dev`.
+- Locally, `app.command` runs the `dev` script with `reuseExisting: true`.
+- When the app also has `build` and `start` scripts on the same port,
+  `app.command` runs `start` in CI, on the production build. A
+  [CI pipeline](#ci-pipeline) from `init` runs `build` before the tests.
+  Otherwise, CI runs `dev` too.
+
+Without a `dev` script, or with a port that isn't a fixed number (such as
+`$PORT`) or that another command in the script sets, the target reads
+`APP_URL` as in any other project, and `init` says what to set.
 
 <a id="ci-pipeline" />
 ##### CI pipeline
@@ -252,6 +278,9 @@ bunx e2e init --yes --ci gitlab
   with the `gh` or `glab` command that adds it.
 - For a project in a subfolder, the file goes to the repository root and the
   jobs run in the subfolder.
+- When the config serves a Next.js production build (its `app.command`
+  runs the `start` script), the web job runs the `build` script before
+  `e2e run`.
 - `init` warns when the config has no `app.command`, since nothing else
   starts the app on the runner. It also warns about a subscription gateway,
   whose sign-in stays on your machine, and an OpenAI-compatible `baseURL` on
@@ -273,7 +302,7 @@ bunx e2e init --yes --ci gitlab
 [example apps](https://github.com/e2e-inc/e2e/tree/main/examples) into a
 new or empty directory, then runs the wizard in its e2e project. That is
 the directory itself for a web or Expo app, and its `e2e/` folder for a
-native app.
+native app. Without a name, it lists the examples to pick from.
 
 <CodeGroup>
 ```bash npm
@@ -644,6 +673,7 @@ Test files, directories, or globs relative to the project root:
 | Option | Description |
 | --- | --- |
 | `--headed` | Visible UI when the engine supports it. |
+| `--device <name>` | The simulator, emulator, or phone the selected mobile target runs on for this run, in place of its `device` option: a device name, a simulator UDID, or an emulator serial (`emulator-5554`). It applies to the one selected target that can take a device; the other selected targets (`web()`, or a target whose devices a provider leases) still run as configured. With several selected targets that can take one, pick one with `--target`, or the run fails with `TARGET_REQUIRED`. When none can, it is `UNSUPPORTED_CAPABILITY`. `e2e login --device` is a different flag. |
 | `--agent <names>` | Runs unpinned tests once per selected agent, comma-separated or repeated. Default: `default`. For a test with `{ agent }`, it selects the shared names when they overlap, else keeps the test's own. An unknown name is `INVALID_CONFIG`. |
 | `--retries <n>` | Replaces `config.retries`; an integer 0-10. Default: the config. |
 | `--workers <n>` | Replaces `config.workers`; an integer 1-1024. Default: the config. |
@@ -656,13 +686,13 @@ Test files, directories, or globs relative to the project root:
 | `--strict-cache` | Turns on `cache.strict` for this run. A step whose recording exists but no longer replays fails with `REPLAY_STALE` instead of handing off to the agent. Retries replay too, and the run never writes the cache. See [Fail on a stale recording](/cache#fail-on-a-stale-recording). |
 | `-u`, `--update-snapshots` | Writes each stored screenshot [`toHaveScreenshot`](/reference/expect#screenshot-matchers) finds missing or different, and passes the matcher. Without it, a missing one is written and fails; in CI it is only attached to the results. |
 | `-w`, `--watch` | Runs, then reruns when a test file or the config changes, or on a key. See [Watch mode](#watch-mode). |
-| `--step` | Runs the first step, then holds each later step until a key at its prompt: Enter runs it, `n` runs the rest of the test, `a` the rest of the run, `h` lists the keys, `q` stops with exit 130. Held time counts toward no timeout. Without a terminal, the run goes on in the background and each command returns at the next held step with its screen: `--step next` runs it, `--step rest` runs the rest, `--step stop` ends the run. `--step next`, `rest`, and `stop` also resume or stop a test at a [`screen.pause()`](/debugging#pause-a-test). Runs one worker; refused in CI, with `--watch`, `--workers` above 1, and the json reporter (exit 2). See [Step through a test](/debugging#step-through-a-test) and [without a terminal](/debugging#step-through-a-test-without-a-terminal). |
+| `--step` | Runs the first step, then holds each later step until a key at its prompt: Enter runs it, `s` shows the screen, `l` the app log, `n` runs the rest of the test, `a` the rest of the run, `h` lists the keys, `q` stops with exit 130. Held time counts toward no timeout. Without a terminal, the run goes on in the background and each command returns at the next held step with its screen: `--step next` runs it, `--step rest` runs the rest, `--step stop` ends the run. `--step next`, `rest`, and `stop` also resume or stop a test at a [`screen.pause()`](/debugging#pause-a-test). Runs one worker; refused in CI, with `--watch`, and `--workers` above 1 (exit 2); with the json reporter it needs a terminal. See [Step through a test](/debugging#step-through-a-test) and [without a terminal](/debugging#step-through-a-test-without-a-terminal). |
 
 **Output**
 
 | Option | Description |
 | --- | --- |
-| `--reporter <ids>` | Replaces the built-in reporters in `config.reporters`, comma-separated: `list`, `dot`, `line`, `json`, `junit`, `markdown`. Default: the config. A built-in the config configured, such as `junit({ outputFile })`, keeps its options. With `json`, `list`, `dot`, and `line` default to stderr. Two reporters that print to the same stream cause `INVALID_CONFIG`. [Other reporters](/reference/reporters) in the config keep running. |
+| `--reporter <ids>` | Replaces the built-in reporters in `config.reporters`, comma-separated: `list`, `dot`, `json`, `junit`, `markdown`. Default: the config. A built-in the config configured, such as `junit({ outputFile })`, keeps its options. Beside `json`, `list` and `dot` print to stderr. `dot` with `list` is `INVALID_CONFIG`. [Other reporters](/reference/reporters) in the config keep running. |
 | `--output <dir>` | The results directory for this run, over the config's [`output`](/reference/config#output): the report, the reporter files, the AI trace, `results/`, and `sessions/`. Default: the config, else `.e2e`. Resolved from the project root, and must be a directory inside it, not the root itself; that and the other directories the run cannot own (listed there) are `INVALID_CONFIG`. `results/` is cleared once the tests start; a `--last-failed` rerun keeps what the previous report names. |
 | `--cache-dir <dir>` | The replay cache directory for this run, over [`E2E_CACHE_DIR`](/reference/environment#replay-cache) and [`cache.dir`](/reference/config#cache). Default: `E2E_CACHE_DIR`, else `cache.dir`, else `.e2e/cache`. Resolved from the project root; `~` or a leading `~/` is the home directory. The cache mode stays as configured. With a custom `cache.store` it is `INVALID_CONFIG`. |
 | `--timings <file>` | The [timings history](/ci#cache-the-timings-history) to update when the run ends, over `<output>/timings.json`. With more than one worker, files with no recorded time start first, then the rest longest first. Resolved from the project root. A missing or invalid file is no history, never an error. |
@@ -765,7 +795,6 @@ cache, `-` when it reports no split. The report records the same per step
 | --- | --- |
 | `list` | Terminal progress, failures with code frames, and a run summary. On a TTY, live progress shows the current agent step, model turns, tool calls, and reasoning excerpts; when stdout is not a terminal (piped, redirected, most CI), each test prints as it finishes. The output ends with each failed test's file and line, first error line, and trace page when one was written. Untrusted fields are capped at 8 KiB and stripped of control characters. |
 | `dot` | One mark per selected test result, followed by failure details and a run summary. See [`dot`](/reference/reporters#dot) for marks, colors, and wrapping. With `dot,json`, all terminal output goes to stderr. |
-| `line` | [Updates one progress row in an interactive terminal](/reference/reporters#line). Prints failure details when a test's final result is a failure or timeout, then prints a run summary at the end. With `line,json`, terminal output goes to stderr. |
 | `json` | The report document to stdout, and nothing else there, so `e2e run --reporter json \| jq` works. It is the `<output>/report.json` document, described by `schema/report-v1.schema.json` in the package. The shape changes only with the `schemaVersion` field (`report-1` today). |
 | `junit` | `junit.xml` beside the report. One `<testsuite>` per file, one `<testcase>` per test-target pair named `title > path [target]`. A test-class error is a `<failure>`, any other an `<error>`, a skip a `<skipped>` with its reason. An interrupted test reached no verdict, so it is a `<skipped>` whose message starts `interrupted:`. A test a [test filter](/filters) left out is a `<skipped>` whose message starts `left out by filter <name>:`; other tests the run did not select are not listed. Run-level errors form a `run` suite. |
 | `markdown` | `summary.md` beside the report: counts, cost, errors, and failure details, each naming its trace page when one was kept. Exploration runs show findings. [`@e2e-dev/github`](/github) uses this summary for pull request comments. |
@@ -785,10 +814,10 @@ an interrupt. Its errors are on the terminal and in the exit code. A
 `junit.xml` or `summary.md` that could not be written is a line on stderr,
 never a run error.
 
-The `list`, `dot`, and `line` reporters print run errors under `Run Errors`. Without
-one of them, or another reporter that prints to the terminal with
-[`onOutput`](/reference/reporters#onoutput),
-each run error prints on stderr as `CODE: message`, with `json` too.
+The `list` and `dot` reporters print run errors under `Run Errors`. Without
+either, or another [interactive](/reference/reporters#interactive)
+reporter, each run error prints on stderr as `CODE: message`, with `json`
+too.
 
 `run.summary` in the report counts the results:
 
@@ -951,7 +980,7 @@ bunx e2e explore 'Hunt for broken forms and dead links' --agent thorough --video
 | `--max-steps <n>` | Exploration steps at most, an integer 1-100. Default: `8`. Out of range exits 2. |
 | `--timeout <ms>` | The run's wall clock, an integer 180000-7200000. Default: `600000`. The last minute is kept for the closing assessment. Out of range exits 2. |
 | `--headed` | Requests visible UI when the engine supports it. |
-| `--reporter <ids>` | As for `run`. Default: the resolved config value. `list` prints the exploration rows under its summary. `markdown` writes the findings to `<output>/summary.md`. With `json`, stdout carries the report, including the exploration record. Captured logs go to stderr. |
+| `--reporter <ids>` | As for `run`. Default: the resolved config value. `list` prints the exploration rows under its summary, `json` carries the record in the report, and `markdown` writes the findings to `<output>/summary.md`. |
 | `--output <dir>` | As for `run`. Default: the config, else `.e2e`. A finding's evidence screenshot is an attempt artifact under `<output>/results`. |
 | `--debug` | As for `run`: phase timings and the agent step table. |
 | `--ai-trace` | As for `run`. |
@@ -1475,7 +1504,8 @@ On Bun 1.4.3 or newer, the CLI runs without Node.js. When Node.js is
 installed, `bunx e2e` and `bun run` follow the CLI's `node` shebang and run it
 on Node.js. `bunx --bun e2e` and `bun --bun run` run it on Bun. Without
 Node.js, all of them run it on Bun. The web engine runs on Bun.
-`@e2e-dev/mobile` and the integrations are not verified on Bun yet.
+`@e2e-dev/mobile`, `@e2e-dev/desktop`, and the integrations are not verified
+on Bun yet.
 
 Bun compiles the config and test files with its own TypeScript support. Where
 that differs from Node.js:

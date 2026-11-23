@@ -34,17 +34,25 @@ export function isForcedToolChoiceDowngraded(warning: { readonly type: string; r
 }
 
 /**
+ * Whether the AI SDK threw `AI_ToolChoiceViolationError`: a reply that broke
+ * the forced tool choice. Only the AI SDK 7.0.88 and later throws it, and it
+ * is matched by name, since earlier 7.x releases, which the peer range
+ * allows, export no such class.
+ */
+export function isToolChoiceViolation(
+  error: unknown,
+): error is { readonly finishReason?: unknown; readonly content?: unknown } {
+  return typeof error === 'object' && error !== null && (error as { name?: unknown }).name === 'AI_ToolChoiceViolationError';
+}
+
+/**
  * Whether a turn under a forced choice came back as a finished reply without
- * a tool call. The AI SDK (7.0.88 and later) throws `AI_ToolChoiceViolationError`
- * for that, which is how a downgrading provider's prose answer surfaces. It is
- * matched by name, since earlier 7.x releases export no such class; a reply
- * cut off by the token limit or a content filter says nothing about the
+ * a tool call. That is how a downgrading provider's prose answer surfaces; a
+ * reply cut off by the token limit or a content filter says nothing about the
  * provider and does not count.
  */
 export function isForcedToolCallSkipped(error: unknown): error is { readonly content?: readonly unknown[] } {
-  if (typeof error !== 'object' || error === null) return false;
-  const record = error as { name?: unknown; finishReason?: unknown };
-  return record.name === 'AI_ToolChoiceViolationError' && record.finishReason === 'stop';
+  return isToolChoiceViolation(error) && error.finishReason === 'stop';
 }
 
 /**
@@ -54,12 +62,10 @@ export function isForcedToolCallSkipped(error: unknown): error is { readonly con
  * the turn does not offer, not the provider failing.
  */
 export function isForcedToolCallMismatched(error: unknown): error is { readonly content: readonly unknown[] } {
-  if (typeof error !== 'object' || error === null) return false;
-  const record = error as { name?: unknown; content?: unknown };
   return (
-    record.name === 'AI_ToolChoiceViolationError' &&
-    Array.isArray(record.content) &&
-    record.content.some((part: unknown) => typeof part === 'object' && part !== null && 'type' in part && part.type === 'tool-call')
+    isToolChoiceViolation(error) &&
+    Array.isArray(error.content) &&
+    error.content.some((part: unknown) => typeof part === 'object' && part !== null && 'type' in part && part.type === 'tool-call')
   );
 }
 

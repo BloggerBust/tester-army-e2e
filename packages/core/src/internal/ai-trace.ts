@@ -424,8 +424,8 @@ export class AiTraceRecorder {
       run_id: open.runId,
       step_number: open.stepNumber + 1,
       type: 'generate',
-      model_id: open.modelId,
-      provider: open.provider,
+      model_id: this.redact(open.modelId),
+      provider: open.provider === null ? null : this.redact(open.provider),
       started_at: open.startedAt,
       duration_ms: open.responseTimeMs ?? Date.now() - open.startedMs,
       input: stringify({

@@ -9,6 +9,7 @@
  * concurrent refresh.
  */
 
+import { registerProviderKey } from '@e2e-dev/core/lib/run/secrecy';
 import { withAbort } from '@e2e-dev/core/lib/internal/time';
 import { OAuthError, describeResponse } from './errors.ts';
 import type { CredentialStore, FetchFunction, OAuthCredentials, OAuthProvider } from './types.ts';
@@ -68,7 +69,14 @@ export function createOAuthFetch<Credentials extends OAuthCredentials>(
       );
     }
     // What this process renewed wins over a source that could not keep it; the store holds this provider's own shape.
-    return (shared.renewed.get(provider.id) ?? stored) as Credentials;
+    return known((shared.renewed.get(provider.id) ?? stored) as Credentials);
+  }
+
+  /** `credentials`, once the run redacts them like a provider key: before a token is sent anywhere, to the vendor's API or its token endpoint, an answer that quotes it back is covered. */
+  function known(credentials: Credentials): Credentials {
+    registerProviderKey(`${provider.id}.access-token`, credentials.access);
+    registerProviderKey(`${provider.id}.refresh-token`, credentials.refresh);
+    return credentials;
   }
 
   async function persist(renewed: Credentials): Promise<void> {
@@ -102,7 +110,7 @@ export function createOAuthFetch<Credentials extends OAuthCredentials>(
           try {
             // No deadline: the vendor may rotate the token before a late answer,
             // and dropping that answer loses the login.
-            const renewed = await provider.refresh(latest);
+            const renewed = known(await provider.refresh(latest));
             await persist(renewed);
             return { renewed };
           } catch (cause) {

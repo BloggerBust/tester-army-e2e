@@ -236,6 +236,11 @@ function runnerMessage(
   return `${operation} failed: ${state.headline}${location}: ${message(cause)} The app is fine. ${state.firstMove} ${RUNNER_RECOVERY}`;
 }
 
+/** Whether agent-device refused a command because its session does not exist: closed already, or never opened. */
+export function isNoSession(cause: unknown): boolean {
+  return normalizeAgentDeviceError(cause).code === 'SESSION_NOT_FOUND' || details(cause).reason === NO_SESSION_REASON;
+}
+
 /**
  * Translates an unexpected agent-device error at the contract boundary.
  * `where` names the session and device the command ran under, for the
@@ -247,7 +252,7 @@ export function translateError(cause: unknown, operation: string, where?: string
   const normalized = normalizeAgentDeviceError(cause);
   const text = `${operation} failed: ${withHint(cause, normalized.message)}`;
   const options = { retryable: false, cause };
-  if (normalized.code === 'SESSION_NOT_FOUND' || details(cause).reason === NO_SESSION_REASON) {
+  if (isNoSession(cause)) {
     return new EngineError('INVALID_STATE', text, options);
   }
   if (UNSUPPORTED_CODES.has(normalized.code) || UNSUPPORTED_PATTERN.test(normalized.message)) {

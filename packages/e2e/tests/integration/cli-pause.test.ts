@@ -304,7 +304,10 @@ describe('screen.pause() without a terminal', () => {
     const run = start(dir, ['run']);
     await run.shows(pauseMessage('Paused ({id}) in pauses three times'));
     const id = printedPauseId(run.stdout());
-    expect(run.stdout()).toContain('Next: e2e run --step next to resume the test, or e2e run --step stop to end the run.\n');
+    // The prompt can arrive in more than one read of the pipe.
+    const commands = 'Next: e2e run --step next to resume the test, or e2e run --step stop to end the run.\n';
+    await run.shows(commands);
+    expect(run.stdout()).toContain(commands);
 
     const next = e2e(dir, ['run', '--step', 'next']);
     expect(next.exitCode).toBe(0);
@@ -559,7 +562,7 @@ test('pauses in a step', async ({ app, agent, screen }) => {
     );
     const ran = e2e(dir, ['run']);
     expect(ran.exitCode, ran.stdout + ran.stderr).toBe(1);
-    expect(ran.stdout).toContain('ACTION_FAILED: screen.pause() was called inside another step (an onAction hook or a project tool) or an expect.poll read');
+    expect(ran.stdout).toContain('ACTION_FAILED: screen.pause() was called inside another step (an onAction hook or a project tool), an expect.poll read, or a toPass block');
     expect(ran.stdout).not.toContain('Paused (');
   }, 60_000);
 });
@@ -668,18 +671,39 @@ describe('screen.pause() in --watch without a terminal', () => {
 });
 
 describe('screen.pause() in a terminal', () => {
-  it('resumes the test on Enter, and the test passes', async () => {
+  it('can return from the app log to the pause and resume the test with Enter', async () => {
     const { dir } = project({ 'tests/pause.e2e.ts': PAUSE_SUITE });
     const stdin = fakeStdin();
-    const run = terminalRun(dir, stdin);
-    await run.shows(pauseMessage('paused ({id}) in pauses past its timeout [fake]: screen.pause() (tests/pause.e2e.ts:5)'));
-    expect(stdin.setRawMode.mock.calls.map(([raw]) => raw)).toEqual([true]);
-    await sleep(KEY_GUARD_MS);
+    const tty = Object.getOwnPropertyDescriptor(process.stdout, 'isTTY');
+    Object.defineProperty(process.stdout, 'isTTY', { configurable: true, value: true });
 
-    stdin.write('\r');
-    expect((await run.outcome).exitCode).toBe(0);
-    expect(run.printed()).toContain('1 passed (1)');
-    expect(stdin.setRawMode.mock.calls.map(([raw]) => raw)).toEqual([true, false]);
+    try {
+      const run = terminalRun(dir, stdin);
+      await run.shows('⏸ paused  screen.pause()  tests/pause.e2e.ts:5');
+      await run.shows(pauseMessage('Paused ({id}) at screen.pause()'));
+      expect(run.printed()).toContain(`pauses past its timeout (${printedPauseId(run.printed())})`);
+      await run.shows('press enter to resume, press h to show help, press q to quit');
+      expect(stdin.setRawMode.mock.calls.map(([raw]) => raw)).toEqual([true]);
+      await sleep(KEY_GUARD_MS);
+
+      stdin.write('l');
+      await run.shows('App log · pauses past its timeout [fake]');
+      await run.shows('The app has not logged anything.');
+      stdin.write('qq');
+      await sleep(KEY_GUARD_MS);
+      expect(stdin.setRawMode.mock.calls.map(([raw]) => raw)).toEqual([true]);
+
+      stdin.write('\r');
+      expect((await run.outcome).exitCode).toBe(0);
+      expect(run.printed()).toContain('1 passed (1)');
+      expect(stdin.setRawMode.mock.calls.map(([raw]) => raw)).toEqual([true, false]);
+    } finally {
+      if (tty === undefined) {
+        Reflect.deleteProperty(process.stdout, 'isTTY');
+      } else {
+        Object.defineProperty(process.stdout, 'isTTY', tty);
+      }
+    }
   }, 60_000);
 
   it('stops the run on q', async () => {
@@ -853,6 +877,7 @@ export default {
           cancel.stop,
           stdin,
           keys,
+          { interrupt: () => signals.escalate() },
         ),
       stdin,
       write: output.write,
@@ -907,6 +932,7 @@ export default {
           cancel.stop,
           stdin,
           keys,
+          { interrupt: () => signals.escalate() },
         ),
       stdin,
       write: output.write,

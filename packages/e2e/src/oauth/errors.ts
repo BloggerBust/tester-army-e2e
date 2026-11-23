@@ -1,3 +1,4 @@
+import { processSecrets } from '@e2e-dev/core/lib/run/secrecy';
 import { z } from 'zod';
 
 export type OAuthErrorCode =
@@ -34,6 +35,11 @@ const ErrorBodySchema = z
   })
   .catch({});
 
+/** The start of an error body, redacted before the cut: half a token the vendor quoted back is no longer a match. */
+function excerpt(text: string): string {
+  return processSecrets.redact(text).slice(0, 200);
+}
+
 /** Reads an error body for a message without assuming JSON. */
 export async function describeResponse(response: Response): Promise<string> {
   const text = await response.text().catch(() => '');
@@ -41,9 +47,9 @@ export async function describeResponse(response: Response): Promise<string> {
   try {
     const { error, error_description, message } = ErrorBodySchema.parse(JSON.parse(text));
     const detail = error_description ?? (typeof error === 'object' ? error.message : undefined) ?? message ?? (typeof error === 'string' ? error : undefined);
-    return detail === undefined ? `${response.status}: ${text.slice(0, 200)}` : `${response.status}: ${detail}`;
+    return detail === undefined ? `${response.status}: ${excerpt(text)}` : `${response.status}: ${processSecrets.redact(detail)}`;
   } catch {
-    return `${response.status}: ${text.slice(0, 200)}`;
+    return `${response.status}: ${excerpt(text)}`;
   }
 }
 

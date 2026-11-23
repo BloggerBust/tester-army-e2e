@@ -7,6 +7,8 @@ import type { EngineHandle } from '@e2e-dev/core/lib/engine/index';
 import type { E2EHost } from '../../src/runner.ts';
 import { createFakeEngine, FAKE_APP } from '../helpers/fake-engine.ts';
 import { contentsUnder } from '../helpers/run-project.ts';
+import { installFakeLoopModel } from '../helpers/fake-loop-model.ts';
+import { registerProviderKey } from '@e2e-dev/core/lib/run/secrecy';
 import { credentials, ENGINES, gate, hostHarness, openHost, provisioned, sdkModule, secrets, type GadgetFixtures } from '../helpers/open-host.ts';
 
 describe('openHost: redaction', { timeout: 60_000 }, () => {
@@ -29,6 +31,23 @@ describe('openHost: redaction', { timeout: 60_000 }, () => {
     expect(JSON.stringify(error)).not.toContain(plaintext);
     expect((error as Error).cause).toBeUndefined();
     expect(fake.stats()).toMatchObject({ attemptsStarted: 1, attemptsEnded: 1, disposes: 0 });
+  });
+
+  it('throws an agent step\'s provider failure redacted and without its raw cause', async () => {
+    const key = 'sk-hosted-echo-6d1f9a3c8e2b4705';
+    registerProviderKey('hosted.echo-key', key);
+    const model = installFakeLoopModel(() => {
+      throw Object.assign(new Error(`Incorrect API key provided: ${key}`), { responseBody: JSON.stringify({ error: key }) });
+    });
+    const fake = createFakeEngine();
+    const opened = await host(fake.engine, { config: config(fake.engine, { agents: { default: { model } } }) });
+    const session = await opened.openSession({ name: 'provider echo' });
+    const error: unknown = await session.fixtures.agent.act('look around').catch((cause: unknown) => cause);
+    await session.close();
+    expect(error).toMatchObject({ code: 'MODEL_PROVIDER_FAILED' });
+    expect(String((error as Error).message)).toContain('<secret:hosted.echo-key>');
+    expect(inspect(error, { depth: 10 })).not.toContain(key.slice(-12));
+    expect((error as Error).cause).toBeUndefined();
   });
 
   it('redacts static secrets from host initialization errors', async () => {

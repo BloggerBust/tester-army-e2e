@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
+import { processSecrets } from '@e2e-dev/core/lib/run/secrecy';
 import { EnvCredentialStore, FileCredentialStore } from '../../../src/oauth/store.ts';
 import { OAuthError } from '../../../src/oauth/errors.ts';
 import { createOAuthFetch } from '../../../src/oauth/fetch.ts';
@@ -351,5 +352,53 @@ describe('createOAuthFetch', () => {
       { store, userAgent: 'p' },
     );
     expect(await (await fetch(`${api.url}/original`)).json()).toEqual({ wrapped: { path: '/rewritten', marker: 'tok' } });
+  });
+
+  it('has the run redact the access and refresh tokens before it sends one, so an answer that quotes it back is redacted', async () => {
+    const access = 'oauth-access-token-91be07c4a2d653f8';
+    const refresh = 'oauth-refresh-token-3d8e61f0b7a942c5';
+    const seen: string[] = [];
+    const api = await serve((request, response) => {
+      // What the run would make of the token, at the moment the vendor receives it.
+      seen.push(processSecrets.redact(request.headers['authorization'] ?? ''));
+      json(response, 401, { error: { message: `invalid token ${access}` } });
+    });
+    expect(processSecrets.redact(`${access} ${refresh}`)).toBe(`${access} ${refresh}`);
+    const store = new MemoryCredentialStore({ test: { access, refresh: '', expires: 0 } });
+    const fetch = createOAuthFetch(provider(), { store, userAgent: 'p' });
+    const error = await fetch(api.url).then(() => undefined, (rejection: unknown) => rejection);
+    expect(seen).toEqual(['Bearer <secret:test.access-token>']);
+    expect(error).toMatchObject({ code: 'LOGIN_REQUIRED' });
+    expect(processSecrets.redact((error as Error).message)).toContain('invalid token <secret:test.access-token>');
+    const rotating = new MemoryCredentialStore({ test: { access, refresh, expires: 0 } });
+    await createOAuthFetch(provider(), { store: rotating, userAgent: 'p' })(api.url).catch(() => undefined);
+    expect(processSecrets.redact(refresh)).toBe('<secret:test.refresh-token>');
+  });
+
+  it('has the run redact an expired login before it is sent to be renewed, and the renewed one before it is sent on', async () => {
+    const stale = { access: 'oauth-stale-access-6e0c2a8f4b1d7935', refresh: 'oauth-stale-refresh-9a4d1f7c3e0b5826', expires: 1 };
+    const renewed = { access: 'oauth-renewed-access-2f8b5d1a7c3e9046', refresh: 'oauth-renewed-refresh-5c1e9a3f7b0d2468', expires: Date.now() + 3_600_000 };
+    const atRefresh: string[] = [];
+    const atRequest: string[] = [];
+    const api = await serve((request, response) => {
+      atRequest.push(processSecrets.redact(request.headers['authorization'] ?? ''));
+      json(response, 200, { ok: true });
+    });
+    const store = new MemoryCredentialStore({ test: stale });
+    const fetch = createOAuthFetch(
+      provider({
+        async refresh(credentials) {
+          // What the run would make of an answer from the token endpoint that quotes the grant back.
+          atRefresh.push(processSecrets.redact(`${credentials.access} ${credentials.refresh}`));
+          return renewed;
+        },
+      }),
+      { store, userAgent: 'p' },
+    );
+    expect(processSecrets.redact(stale.refresh)).toBe(stale.refresh);
+    await fetch(api.url);
+    expect(atRefresh).toEqual(['<secret:test.access-token> <secret:test.refresh-token>']);
+    expect(atRequest).toEqual(['Bearer <secret:test.access-token>']);
+    expect(processSecrets.redact(renewed.refresh)).toBe('<secret:test.refresh-token>');
   });
 });

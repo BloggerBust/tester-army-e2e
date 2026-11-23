@@ -74,6 +74,7 @@
             "pages": [
               "web",
               "mobile",
+              "desktop",
               "api-testing",
               "core"
             ]

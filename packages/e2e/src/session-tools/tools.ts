@@ -22,7 +22,7 @@ import { GRAMMAR_TOOL_NAMES } from '@e2e-dev/core/lib/agent/action-names';
 import { isFailedResult } from '@e2e-dev/core/lib/agent/loop-guards';
 import { codedMessage, ConfigurationError, errorMessage, InfrastructureError } from '@e2e-dev/core/lib/internal/errors';
 import { describeIssue } from '@e2e-dev/core/lib/internal/standard-schema';
-import { processSecrets } from '@e2e-dev/core/lib/run/secrecy';
+import { redactError } from '@e2e-dev/core/lib/run/secrecy';
 import type { StandardSchemaV1 } from '@e2e-dev/core/lib/types';
 
 /** One MCP content part this server emits. */
@@ -327,7 +327,8 @@ export function redacting(spec: McpToolSpec): McpToolSpec {
       } catch (cause) {
         result = errorResult(cause);
       }
-      return redactResult(result, (text) => processSecrets.redact(text));
+      // redactError also reads the environment again: a config that failed may have loaded a key into it.
+      return redactResult(result, redactError);
     },
   };
 }

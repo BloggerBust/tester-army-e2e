@@ -8,7 +8,7 @@ import { SetupPrompt } from '../snippets/setup-prompt-card.jsx';
 export const setupPrompt = `Set up e2e end-to-end tests in this Next.js app. Docs: \`https://e2e.com/docs/frameworks/nextjs.md\`
 
 1. Run \`npx e2e init --yes\` (or the pnpm or bun equivalent for this project).
-2. Replace the target in e2e.config.ts with the one on the page: \`next dev\` locally, \`next start\` when CI is set. Use the port and package manager this app uses.
+2. Check that the target init wrote in e2e.config.ts matches the one on the page: \`next dev\` locally, \`next start\` when CI is set, on the port and with the package manager this app uses. Fix it if not.
 3. Ask me which model to use for agent steps, and configure it as https://e2e.com/docs/models.md says.
 4. Install dependencies, run the example test, and fix errors until it passes. Check the page's "Fix Next.js problems" section first.
 5. Write one test for the most important user flow in this app, run it, and iterate until it passes.`;
@@ -46,11 +46,19 @@ Choose **Web (Playwright)** and a model provider. The wizard writes
 `.e2e/` run output to `.gitignore`. See the [Quickstart](/quickstart) for
 each choice.
 
+The wizard finds Next.js in `package.json`, writes a target that starts
+your app, and prints what it wrote:
+
+```text title="Output"
+Found Next.js: the web target starts npm run dev on http://localhost:3000, and npm run start in CI after npm run build
+```
+
 ## Start the app from the config
 
-Set `app.command` so the runner starts your app and waits until `app.url`
-answers. Edit the config that `init` wrote to match. Keep its model import
-and its `agents` entry:
+`app.command` starts your app, and the runner waits until `app.url`
+answers. `init` writes a target like this one, with your package manager
+and the port from your `dev` script. To add it to an existing config, keep
+your model import and `agents` entry:
 
 ```ts title="e2e.config.ts"
 import type { E2EConfig } from 'e2e';
@@ -80,7 +88,8 @@ export default {
   `reuseExisting` doesn't apply there.
 - **The port** in `app.url` must be the port that `dev` and `start` both
   listen on. Next.js uses 3000. When one script sets `--port`, set the same
-  port in the other.
+  port in the other. When they differ, or the app has no `start` script,
+  `init` starts `next dev` in CI too and leaves out the `ci` switch.
 
 Then run the tests:
 
@@ -123,10 +132,11 @@ bunx e2e run
 ```
 </CodeGroup>
 
-For a full workflow, take the [GitHub Actions](/ci/github-actions#web) job
-and add the build step before the e2e step. Leave out its `APP_URL`: this
-config doesn't read it. For CI defaults, see
-[Continuous integration](/ci).
+For a full workflow, run `e2e init --ci github-actions` or `--ci gitlab`:
+the web job it writes runs the build before the tests
+([CI pipeline](/reference/cli#ci-pipeline)). To write the job by hand, add
+the build step to the [GitHub Actions](/ci/github-actions#web) job and leave
+out its `APP_URL`. For CI defaults, see [Continuous integration](/ci).
 
 To test each Vercel preview deployment instead, see
 [Vercel Previews](/ci/vercel-previews).

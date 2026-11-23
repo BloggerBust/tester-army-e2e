@@ -56,6 +56,7 @@ await expect(screen.getByTestId('cart-empty'), 'the cart is empty').toBeVisible(
 | [`toBeAttached`](#tobeattached) | 一致するノードが 1 つ存在するまで待機 |
 | [`toBeEnabled`](#tobeenabled-and-tobedisabled) | 有効になるまで待機 |
 | [`toBeDisabled`](#tobeenabled-and-tobedisabled) | 無効になるまで待機 |
+| [`toBeEditable`](#tobeeditable) | 有効で読み取り専用でないコントロールになるまで待機 |
 | [`toBeChecked`](#tobechecked-tobeselected-and-tobeexpanded) | チェックされるまで待機 |
 | [`toBeSelected`](#tobechecked-tobeselected-and-tobeexpanded) | 選択されるまで待機 |
 | [`toBeExpanded`](#tobechecked-tobeselected-and-tobeexpanded) | 展開されるまで待機 |
@@ -103,6 +104,21 @@ await expect(screen.getByRole('button', 'Pay')).toBeEnabled({ enabled: false });
 
 - `<fieldset disabled>` 内のコントロールは、その fieldset の最初の `<legend>` 内にない限り無効です。
 - 祖先の `aria-disabled="true"` は、その下のウィジェットを無効にします。途中に `aria-disabled="false"` があると、この継承を止めます。
+
+#### `toBeEditable`
+
+コントロールが有効で、読み取り専用でなくなるまで待ちます。
+
+```ts
+await expect(screen.getByLabel('Email')).toBeEditable();
+await expect(screen.getByLabel('Order id')).toBeEditable({ editable: false }); // read-only or disabled
+```
+
+- 読み取り専用かどうかはエンジンが報告する状態です。Web エンジンはネイティブコントロールと `aria-readonly` について Playwright のルールに従い、ロールは e2e のもの、無効状態は `toBeEnabled()` が報告するものを使います。`input`、`textarea`、`select` は自身の `readonly` 属性だけを読みます（値は問いません）。`aria-readonly` を取るロール（`textbox`、`searchbox`、`combobox`、`listbox`、`checkbox`、`switch`、`slider`、`spinbutton`、`gridcell` など）の要素は `aria-readonly="true"` を読みます（大文字小文字は問いません）。編集ホストは ARIA ロール（明示したもの、またはタグのロール。グリッド内の `td` は `gridcell`）でだけこれを読みます。ただの `<div contenteditable>` にはロールがありません。それ以外の編集ホストとその中の要素は読み取り専用になりません。
+- 無効なノードも編集可能ではありません。無効の判定は [`toBeEnabled`](#tobeenabled-and-tobedisabled) と同じです。
+- ボタンなどそれ以外のノードには読み取り専用の状態がありません。否定してもマッチャーは失敗し、失敗メッセージにそのことが表示されます。
+- デバイスでは、プラットフォームがテキストを受け付けるかどうかを報告する場合（Android など）だけ、テキストフィールドに読み取り専用の状態があります。iOS は報告しないので、iOS のフィールドでは推測で成功させずにマッチャーが失敗します。
+- この状態は、`e2e` 0.25.0 を必要とする `@e2e-dev/web` と `@e2e-dev/mobile` のリリースから報告されます。古いエンジンではすべてのノードが `no read-only state` で失敗するので、`e2e` と一緒にエンジンも更新してください。
 
 #### `toBeChecked`、`toBeSelected`、`toBeExpanded`
 
@@ -576,7 +592,7 @@ last: expected "running" not to be "running"
 すべてのポーリングを await してください。ポーリングは、それを開始したフェーズに属します。フェーズは、テスト本体（フィクスチャと `beforeEach` フックを含む）、個々の `afterEach` フックまたはフィクスチャの後処理、個々の `beforeAll` または `afterAll` フックです。ポーリングが動いている間にフェーズが戻ると、そのポーリングをキャンセルし、呼び出し行を指す `STEP_NOT_AWAITED` でフェーズを失敗にします。待てば成功したかどうかは問いません。テスト本体がすでに例外をスローしていれば、元のエラーを維持し、このエラーは `secondaryErrors` に記録します。スイートのフックでは `HOOK_FAILED` として報告します。
 </Note>
 
-ポーリングが後続のテストを失敗させることはありません。タイムアウト後のテスト本体など、フェーズが終了後も残した処理がポーリングを開始した場合、最初の読み取り前にキャンセルします。
+ポーリングが後続のテストを失敗させることはありません。フェーズの終了後も動き続けている処理（タイムアウト後のテスト本体など）が開始したポーリングは、最初の読み取りの前にキャンセルされます。
 
 ## 動作
 
@@ -695,6 +711,8 @@ export interface AsyncExpectation {
   toBeEnabled(options?: { enabled?: boolean; timeout?: number }): Promise<void>;
   /** Waits for disabled state. */
   toBeDisabled(options?: { timeout?: number }): Promise<void>;
+  /** Waits for an enabled control that is not read-only; `editable: false` waits for a disabled or read-only one. A node with no read-only state, a button included, fails either way. */
+  toBeEditable(options?: { editable?: boolean; timeout?: number }): Promise<void>;
   /** Waits for checked state; `checked: false` waits for unchecked state. */
   toBeChecked(options?: { checked?: boolean; timeout?: number }): Promise<void>;
   /** Waits for selected state. */

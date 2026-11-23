@@ -62,7 +62,7 @@ const MARKER_NAME = /^[A-Za-z0-9_.-]*$/;
  * per-character case forms leave out: a sigma lower-cased at the end of a
  * word, a titlecase digraph.
  */
-function compile(values: readonly (readonly [string, string])[]): Compiled {
+function compile(values: readonly (readonly [string, string])[], wholeOnly: ReadonlySet<readonly [string, string]> = new Set()): Compiled {
   const entries = values.filter(([, value]) => value.length > 0).toSorted((a, b) => b[1].length - a[1].length);
   if (entries.length === 0) {
     return {
@@ -78,15 +78,20 @@ function compile(values: readonly (readonly [string, string])[]): Compiled {
   const markers = entries.map(([name]) => `${MARKER_OPEN}${name}>`);
   const known = markerPattern(entries.map(([name]) => name));
   const patterns = entries.map(([, value]) => valuePattern(value));
-  const pattern = new RegExp(patterns.map(({ source }) => `(${source})`).join('|'), 'gi');
+  const pattern = valuesPattern(patterns.map(({ source }) => `(${source})`).join('|'));
   const rewrite = (text: string): string =>
-    text.replace(pattern, (_occurrence: string, ...rest: unknown[]) => {
-      const matched = rest.slice(0, markers.length).findIndex((group) => group !== undefined);
-      return markers[matched] ?? '';
+    text.replace(pattern, (_occurrence: string, ...groups: unknown[]) => {
+      for (let index = 0; index < markers.length; index += 1) {
+        if (groups[index] !== undefined) return markers[index] ?? '';
+      }
+      return '';
     });
+  // Every marker starts with `MARKER_OPEN`, so text without it has none to cut out. Otherwise
   // `split` on a capturing pattern returns the markers at the odd indexes; those pass through untouched.
   const redact = (text: string): string =>
-    text.split(known).map((piece, index) => (index % 2 === 1 ? piece : rewrite(piece))).join('');
+    text.includes(MARKER_OPEN)
+      ? text.split(known).map((piece, index) => (index % 2 === 1 ? piece : rewrite(piece))).join('')
+      : rewrite(text);
   const valueKeys = entries.map(([, value]) => readingKey(value).key);
   // A reader trims a value's leading whitespace as it trims any text's, so a cut part may begin past it.
   const leadingForms = entries.map(([, value], index) => {
@@ -95,13 +100,13 @@ function compile(values: readonly (readonly [string, string])[]): Compiled {
   });
   const redactCut = (text: string): string => {
     // Only what follows the last marker can end in a value cut short.
-    const tail = text.split(known).at(-1) ?? '';
+    const tail = text.includes(MARKER_OPEN) ? (text.split(known).at(-1) ?? '') : text;
     const tailKey = readingKey(tail);
     let cut = 0;
     let marker = '';
     leadingForms.forEach((forms, index) => {
       for (const value of forms) {
-        const length = leadingPartAtEnd(tailKey.key, value, Math.min(FRAGMENT_LENGTH, Math.ceil(value.length / 2)));
+        const length = leadingPartAtEnd(tailKey.key, value, cutMinimum(value, wholeOnly.has(entries[index]!)));
         if (length > cut) {
           cut = length;
           marker = markers[index] ?? '';
@@ -120,7 +125,8 @@ function compile(values: readonly (readonly [string, string])[]): Compiled {
     }
     return `${redact(text.slice(0, text.length - tail.length + start))}${marker}`;
   };
-  const fragments = fragmentOwners(valueKeys);
+  // A provider key shares its prefix with every key of its kind (`sk-proj-`), so only the whole of one is a match.
+  const fragments = fragmentOwners(valueKeys, (index) => wholeOnly.has(entries[index]!));
   const redactPlainFragments = (text: string): string =>
     redact(text)
       .split(known)
@@ -136,6 +142,24 @@ function compile(values: readonly (readonly [string, string])[]): Compiled {
     maxMarkerLength: Math.max(...markers.map((marker) => marker.length)),
     spansLines: entries.some(([, value]) => value.includes('\n') || /\s/.test(value.trim())),
   };
+}
+
+/**
+ * The pattern over every value. A value long enough makes the engine refuse
+ * the pattern, and its error quotes the pattern, values and all: that error
+ * never leaves here.
+ */
+function valuesPattern(source: string): RegExp {
+  try {
+    const pattern = new RegExp(source, 'gi');
+    // The engine compiles a pattern when it first runs it, once for Latin-1 text and once for the rest, and refuses one too large only then.
+    pattern.test('');
+    pattern.test('\u0100');
+    pattern.lastIndex = 0;
+    return pattern;
+  } catch {
+    throw new Error('the secret values are too long to redact: shorten the longest secret, or take it out of the run');
+  }
 }
 
 /** Matches the marker of any known name, captured so `split` keeps the markers. */
@@ -185,6 +209,16 @@ function whitespaceRun(run: string): Pattern {
   return { source: `${one.source}{1,${count}}`, maxLength: one.maxLength * count };
 }
 
+/** The most characters `characterPatterns` keeps; one past that is built on every use. */
+const CHARACTER_CACHE_LIMIT = 4096;
+/**
+ * Each character's pattern, kept for the process. A pattern depends on its
+ * character alone, never on a ledger, a name, or a value, so every compile
+ * shares them: building one calls six locale case mappings, and a ledger
+ * compiles again at each registration.
+ */
+const characterPatterns = new Map<string, Pattern>();
+
 /**
  * One character in every case form and every spelling of each. A spelling
  * the `i` flag already matches through another (`a` beside `A`, `é` beside
@@ -193,12 +227,16 @@ function whitespaceRun(run: string): Pattern {
  * them across the value.
  */
 function character(ch: string): Pattern {
+  const kept = characterPatterns.get(ch);
+  if (kept !== undefined) return kept;
   const forms = caseForms(ch);
   const single = forms.filter((form) => [...form].length === 1).flatMap(spellings);
   const expanded = forms
     .filter((form) => [...form].length > 1)
     .map((form) => concat([...form].map((part) => alternation(distinct(spellings(part)).map(exact)))));
-  return alternation([...distinct(single).map(exact), ...expanded]);
+  const pattern = alternation([...distinct(single).map(exact), ...expanded]);
+  if (characterPatterns.size < CHARACTER_CACHE_LIMIT) characterPatterns.set(ch, pattern);
+  return pattern;
 }
 
 /** `options` as one alternation, longest first, so a spelling is never cut short by one it starts with. */
@@ -434,6 +472,18 @@ function unicodeEscape(ch: string): string {
   return units.map((unit) => `\\u${unit.toString(16).padStart(4, '0')}`).join('');
 }
 
+/**
+ * The fewest leading characters of `value` that count as it cut short. A
+ * secret of the run: `FRAGMENT_LENGTH`, or half of a shorter one. A provider
+ * key: half of it, and at least twice `FRAGMENT_LENGTH`, since every key of a
+ * provider starts alike (`sk-proj-`, a token's header) and text that merely
+ * ends with that start is no key.
+ */
+function cutMinimum(value: string, wholeOnly: boolean): number {
+  const half = Math.ceil(value.length / 2);
+  return wholeOnly ? Math.max(FRAGMENT_LENGTH * 2, half) : Math.min(FRAGMENT_LENGTH, half);
+}
+
 /** The length of the longest leading part of `value`, short of the whole and at least `minimum` long, that `text` ends with; 0 when it ends with none. */
 function leadingPartAtEnd(text: string, value: string, minimum: number): number {
   for (let length = Math.min(text.length, value.length - 1); length >= minimum; length -= 1) {
@@ -447,11 +497,13 @@ function leadingPartAtEnd(text: string, value: string, minimum: number): number 
  * index of the first value holding it; values come longest first, so a run
  * two values share names the longer one. The values come as `readingKey`
  * reads them, so a run in any case or with its whitespace collapsed finds
- * its owner.
+ * its owner. A value `wholeOnly` names owns no run: only the whole of it is
+ * a match.
  */
-function fragmentOwners(values: readonly string[]): Map<string, number> {
+function fragmentOwners(values: readonly string[], wholeOnly: (index: number) => boolean): Map<string, number> {
   const owners = new Map<string, number>();
   values.forEach((value, index) => {
+    if (wholeOnly(index)) return;
     for (let start = 0; start + FRAGMENT_LENGTH <= value.length; start += 1) {
       const run = value.slice(start, start + FRAGMENT_LENGTH);
       if (!owners.has(run)) owners.set(run, index);
@@ -563,10 +615,18 @@ export type SecretList = readonly (readonly [string, string])[];
 
 /** Values a ledger redacts without holding them; see `SecretLedger`. */
 export interface SecretsBeside {
-  /** Moves whenever `values` would return a different set. */
+  /** Moves whenever `values` or `providerKeys` would return a different set. */
   readonly revision: number;
   values(): SecretList;
+  /**
+   * The keys the run's model providers and agents sign in with. These
+   * match whole values only, including when the runner scans a download.
+   */
+  providerKeys(): SecretList;
 }
+
+/** For a ledger that stands alone. */
+const NOTHING_BESIDE: SecretsBeside = { revision: 0, values: () => [], providerKeys: () => [] };
 
 /**
  * The attempt's registered secret values and their redactor, in one owner.
@@ -597,7 +657,7 @@ export class SecretLedger {
    */
   constructor(
     initial: Iterable<readonly [string, string]> = [],
-    private readonly beside?: SecretsBeside,
+    private readonly beside: SecretsBeside = NOTHING_BESIDE,
   ) {
     for (const [name, value] of initial) this.register(name, value);
   }
@@ -610,7 +670,13 @@ export class SecretLedger {
     return true;
   }
 
-  /** Whether the ledger redacts anything at all, its own values or the ones beside it. */
+  /** Whether this ledger or a session beside it holds an app secret value. */
+  get hasAppSecrets(): boolean {
+    return this.values.some(([, value]) => value.length > 0) ||
+      this.beside.values().some(([, value]) => value.length > 0);
+  }
+
+  /** Whether the ledger redacts anything at all: its own values, the ones beside it, or a provider key. */
   get redactsAnything(): boolean {
     return this.compile().pattern !== undefined;
   }
@@ -675,14 +741,20 @@ export class SecretLedger {
    * marker move comes first: the other way round it could land inside an
    * occurrence holding a `<`. Occurrences never overlap, so each move is
    * one and what is held stays under twice `maxFormLength` plus a marker.
+   * No occurrence holds a line break unless a value spans lines, so none
+   * runs across a cut that follows one, and the search for one starts at the
+   * cut's own line: a stream of finished lines is searched once, by `redact`.
    */
   holdFrom(text: string): number {
     const { pattern, spansLines, maxFormLength, maxMarkerLength } = this.compile();
     if (pattern === undefined) return text.length;
-    let cut = Math.max(0, text.length - (maxFormLength - 1));
-    if (!spansLines) cut = Math.max(cut, text.lastIndexOf('\n') + 1);
+    const lineStart = spansLines ? 0 : text.lastIndexOf('\n') + 1;
+    let cut = Math.max(lineStart, text.length - (maxFormLength - 1));
+    // An unfinished marker holds no line break, so the cut stays on the line that starts at `lineStart`.
     cut = unfinishedMarkerBefore(text, cut, maxMarkerLength);
-    pattern.lastIndex = 0;
+    if (cut === 0 || cut === text.length) return cut;
+    if (!spansLines && text.charCodeAt(cut - 1) === 0x0a) return cut;
+    pattern.lastIndex = lineStart;
     for (let match = pattern.exec(text); match !== null && match.index < cut; match = pattern.exec(text)) {
       if (match.index + match[0].length > cut) return match.index;
     }
@@ -690,15 +762,26 @@ export class SecretLedger {
   }
 
   private compile(): Compiled {
-    const revision = this.beside?.revision ?? 0;
-    if (this.compiled === undefined || revision !== this.besideRevision) {
-      this.besideRevision = revision;
-      // A value the ledger holds is usually shared beside it too; one alternative each is enough.
-      const all = new Map<string, readonly [string, string]>();
-      for (const entry of [...this.values, ...(this.beside?.values() ?? [])]) all.set(`${entry[0]}\0${entry[1]}`, entry);
-      this.compiled = compile([...all.values()]);
-    }
+    this.sync();
+    // A provider key that is also a secret of the run comes after it here, so the run's name and its fragments win.
+    const keys = this.beside.providerKeys();
+    this.compiled ??= compile([...this.appValues(), ...keys], new Set(keys));
     return this.compiled;
+  }
+
+  /** Drops what was compiled once `beside` has moved. */
+  private sync(): void {
+    const { revision } = this.beside;
+    if (revision === this.besideRevision) return;
+    this.besideRevision = revision;
+    this.compiled = undefined;
+  }
+
+  /** The ledger's values and the ones shared beside it. A value it holds is usually shared too; one alternative each is enough. */
+  private appValues(): SecretList {
+    const all = new Map<string, readonly [string, string]>();
+    for (const entry of [...this.values, ...this.beside.values()]) all.set(`${entry[0]}\0${entry[1]}`, entry);
+    return [...all.values()];
   }
 }
 

@@ -13,6 +13,7 @@ on:
       - 'docs/**/*.mdx'
       - 'docs/ja/README.md'
       - 'scripts/deepl-review.ts'
+      - 'scripts/docs-pages.ts'
       - 'scripts/check-docs-translations-deepl.ts'
       - '.github/workflows/docs-translations.yml'
 

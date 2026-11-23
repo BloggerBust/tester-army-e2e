@@ -4,9 +4,9 @@ import type { ResolvedConfig } from '../config/resolve.ts';
 import { MIN_SECRET_LENGTH, secretLength } from '../config/secrets.ts';
 import type { TargetSession } from '../engine/surface.ts';
 import { sharedSecretsBrand } from '../internal/brands.ts';
-import { ConfigurationError, setErrorRedactor } from '../internal/errors.ts';
+import { ConfigurationError, ensureErrorRedactor, setErrorRedactor } from '../internal/errors.ts';
 import { realmSlot } from '../internal/realm-slot.ts';
-import { SecretLedger, type SecretList, type SecretsBeside } from '../internal/redact.ts';
+import { createRedactor, SecretLedger, type SecretList, type SecretsBeside } from '../internal/redact.ts';
 import { unavailableCode } from '../secrets.ts';
 import type { Secret } from '../types.ts';
 
@@ -20,12 +20,9 @@ export function pixelsProvenMasked(redaction: { readonly secureNodeCount: number
 }
 
 /**
- * Whether a text-like download of the session is rewritten through its
- * ledger before it is kept: whenever the ledger redacts a value, its own or
- * one shared beside it. A value reaches the app in ways the runner never
- * sees (a URL or a `fill` the test spelled it into, the app's own config, a
- * session open beside this one), so downloads are redacted like every
- * report and observation, not only after a fill.
+ * Whether the ledger knows any value worth looking for in a text download.
+ * App secrets may come from a session beside this one. A provider key can
+ * reach the app through `inheritEnv` and matches only whole.
  */
 export function redactsDownloads(ledger: SecretLedger): boolean {
   return ledger.redactsAnything;
@@ -106,11 +103,164 @@ function share(entries: SecretList): Sharing {
   };
 }
 
+/**
+ * The variables a model provider or a coding agent reads its key from: the
+ * AI SDK providers `e2e init` writes, the gateways, and the agents
+ * `@e2e-dev/acp` starts. A closed list, not a pattern over names: a value
+ * redacted from every report must be one the run is known to sign in with.
+ */
+const PROVIDER_KEY_VARIABLES = [
+  'AIHUBMIX_API_KEY',
+  'AIMLAPI_API_KEY',
+  'AI_GATEWAY_API_KEY',
+  'ALIBABA_API_KEY',
+  'ANTHROPIC_API_KEY',
+  'ANTHROPIC_AUTH_TOKEN',
+  'ANTHROPIC_AWS_API_KEY',
+  'AWS_BEARER_TOKEN_BEDROCK',
+  'AZURE_API_KEY',
+  'BASETEN_API_KEY',
+  'CENCORI_API_KEY',
+  'CEREBRAS_API_KEY',
+  'CHEAPER_INFERENCE_API_KEY',
+  'CLARIFAI_PAT',
+  'CLAUDE_CODE_OAUTH_TOKEN',
+  'CODEX_API_KEY',
+  'COHERE_API_KEY',
+  'CRUSOE_API_KEY',
+  'DEEPINFRA_API_KEY',
+  'DEEPSEEK_API_KEY',
+  'FIREWORKS_API_KEY',
+  'FRIENDLI_TOKEN',
+  'GMI_CLOUD_APIKEY',
+  'GOOGLE_GENERATIVE_AI_API_KEY',
+  'GROQ_API_KEY',
+  'HELICONE_API_KEY',
+  'HUGGINGFACE_API_KEY',
+  'INFERENCE_KEY',
+  'INTERFAZE_API_KEY',
+  'LLM_API_KEY',
+  'MINIMAX_API_KEY',
+  'MISTRAL_API_KEY',
+  'MODELRUSH_API_KEY',
+  'MOONSHOT_API_KEY',
+  'NEARAI_API_KEY',
+  'NEON_AI_GATEWAY_TOKEN',
+  'NIM_API_KEY',
+  'OLLM_API_KEY',
+  'OPENAI_API_KEY',
+  'OPENCODE_API_KEY',
+  'OPENROUTER_API_KEY',
+  'RUNPOD_API_KEY',
+  'SAMBANOVA_API_KEY',
+  'TELNYX_API_KEY',
+  'TOGETHER_API_KEY',
+  'VERCEL_OIDC_TOKEN',
+  'XAI_API_KEY',
+  'ZAI_API_KEY',
+  'ZHIPU_API_KEY',
+];
+
+/**
+ * The fewest characters a provider key may have to be redacted. A key comes
+ * from the environment, not from a `secrets` entry someone wrote for the
+ * run, and a local model server takes any placeholder (`ollama`,
+ * `lm-studio`, `sk-no-key-required`): redacting one would rewrite ordinary
+ * words in titles, instructions, and the screen, and so the replay cache
+ * keys made from them. Every listed provider's keys are longer.
+ */
+const MIN_PROVIDER_KEY_LENGTH = 20;
+
+/**
+ * The most characters a provider key may have to be redacted. A longer value
+ * is no key or token a provider issues, and one long enough is more than a
+ * pattern can hold: the run would stop on a value it picked up by itself.
+ */
+const MAX_PROVIDER_KEY_LENGTH = 8192;
+
+/** What a name may spell inside its `<secret:name>` marker. */
+const PROVIDER_KEY_NAME = /^[A-Za-z0-9_.-]+$/;
+
+/**
+ * The provider keys this process knows, for as long as it lives: a key is
+ * never withdrawn, since a report written after the last session ended can
+ * still quote it. On `globalThis` like the shared secrets, for the same
+ * reason.
+ */
+interface ProviderKeys {
+  /** By name and value. Only ever added to, so its size says when it changed. */
+  readonly values: Map<string, readonly [string, string]>;
+  /** The names and values no pattern could be built for, which are not redacted. */
+  readonly refused: Set<string>;
+}
+
+const providerKeySlot = realmSlot<ProviderKeys>('e2e.providerKeys.v1');
+
+function providerKeys(): ProviderKeys {
+  let state = providerKeySlot.get(globalThis);
+  if (state === undefined) {
+    state = { values: new Map(), refused: new Set() };
+    providerKeySlot.set(globalThis, state);
+  }
+  return state;
+}
+
+/**
+ * Makes every ledger in the process redact `value` as `<secret:name>` from
+ * now on: a key a model provider or an agent signs in with, which is not a
+ * secret of the app. Trimmed, as a provider reads it. A value shorter than
+ * `MIN_PROVIDER_KEY_LENGTH` or longer than `MAX_PROVIDER_KEY_LENGTH` is left
+ * alone, as is one no pattern can be built for, and one that is no string,
+ * as an unset variable is. `name`
+ * is what the marker shows: letters, digits, `_`, `.`, and `-`.
+ */
+export function registerProviderKey(name: string, value: string | null | undefined): void {
+  if (!PROVIDER_KEY_NAME.test(name)) {
+    throw new TypeError(`registerProviderKey: the name ${JSON.stringify(name)} must be letters, digits, "_", ".", or "-"`);
+  }
+  registerKey(name, value);
+}
+
+/** `registerProviderKey` for a name this module wrote itself. */
+function registerKey(name: string, value: string | null | undefined): void {
+  if (typeof value !== 'string') return;
+  const key = value.trim();
+  const length = secretLength(key);
+  if (length < MIN_PROVIDER_KEY_LENGTH || length > MAX_PROVIDER_KEY_LENGTH) return;
+  const state = providerKeys();
+  const id = `${name}\0${key}`;
+  // Known already; building a pattern again for every look at the environment would cost each of them.
+  if (state.values.has(id) || state.refused.has(id)) return;
+  try {
+    // Alone first: a value no pattern can hold (what counts depends on its characters, not only its length) would stop every ledger in the process.
+    createRedactor([[name, key]]);
+  } catch {
+    state.refused.add(id);
+    return;
+  }
+  state.values.set(id, [name, key]);
+}
+
+/** Registers the provider keys `env` holds, under their variable names. */
+export function registerProviderKeys(env: Readonly<Record<string, string | undefined>>): void {
+  for (const name of PROVIDER_KEY_VARIABLES) registerKey(name, env[name]);
+}
+
 const beside: SecretsBeside = {
   get revision() {
-    return shared().revision;
+    return shared().revision + providerKeys().values.size;
   },
   values: () => [...shared().values.values()].map((held) => held.entry),
+  providerKeys: () => [...providerKeys().values.values()],
+};
+
+/** The provider keys alone, for a ledger that shares no session's values. */
+const besideStatic: SecretsBeside = {
+  get revision() {
+    return providerKeys().values.size;
+  },
+  values: () => [],
+  providerKeys: beside.providerKeys,
 };
 
 /**
@@ -120,6 +270,22 @@ const beside: SecretsBeside = {
  * provider-backed values join as they resolve.
  */
 export const processSecrets = new SecretLedger([], beside);
+
+/**
+ * `processSecrets.redact` for an error with no session to redact it. Reads
+ * the environment first: a config that loads its keys itself
+ * (`process.loadEnvFile()`) and then fails has set them since anything
+ * here last looked.
+ */
+export function redactError(text: string): string {
+  registerProviderKeys(process.env);
+  return processSecrets.redact(text);
+}
+
+// Before any config is read: a config that fails to load, or an engine that fails to start, is reported through this redactor too.
+// Only where none is installed: another copy of this module in the process may hold values this one does not.
+registerProviderKeys(process.env);
+ensureErrorRedactor(redactError);
 
 function staticEntries(secrets: ResolvedConfig['allSecrets']): SecretList {
   return [...secrets].flatMap(([name, { value }]) => (typeof value === 'string' ? [[name, value] as const] : []));
@@ -145,9 +311,44 @@ export function staticSecretLedger(secrets: ResolvedConfig['allSecrets']): Pick<
   return ledger;
 }
 
+/** The provider keys alone, with no secret of any session or config. */
+const providerKeyLedger = new SecretLedger([], besideStatic);
+
+/**
+ * `text` with every provider key the process knows replaced by its marker,
+ * and nothing else: no value a test or a session learned, which a text built
+ * outside any one test, such as a coding agent's prompt, may hold by chance.
+ */
+export function redactProviderKeys(text: string): string {
+  return providerKeyLedger.redact(text);
+}
+
+/** The output ledger of each secrets map, built once. */
+const staticOutputLedgers = new WeakMap<ResolvedConfig['allSecrets'], SecretLedger>();
+
+/**
+ * `staticSecretLedger` with the provider keys this process knows beside
+ * it, for text only this process writes: a test filter's note, what a
+ * reporter redacts, a change brief. Never for a title or anything else a
+ * test's id is made of: the runner and a worker need not know the same
+ * keys, and a name they redact differently is a test neither finds.
+ */
+export function staticOutputLedger(secrets: ResolvedConfig['allSecrets']): Pick<SecretLedger, 'redact' | 'redactFragments'> {
+  let ledger = staticOutputLedgers.get(secrets);
+  if (ledger === undefined) {
+    ledger = new SecretLedger(staticEntries(secrets), besideStatic);
+    staticOutputLedgers.set(secrets, ledger);
+  }
+  // A key exported since the process started, by a config file or a setup step.
+  registerProviderKeys(process.env);
+  return ledger;
+}
+
 /** Makes `processSecrets` `serializeError`'s default redactor and seeds it with the static values of `secrets`, which it returns. */
 function seedProcess(secrets: ResolvedConfig['allSecrets']): SecretList {
-  setErrorRedactor(processSecrets.redact);
+  setErrorRedactor(redactError);
+  // A key exported since the process started, by a config file or a setup step.
+  registerProviderKeys(process.env);
   const entries = staticSecretLedger(secrets).entries();
   for (const [name, value] of entries) processSecrets.register(name, value);
   return entries;

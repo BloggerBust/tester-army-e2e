@@ -55,6 +55,13 @@ function parsePositiveInt(value: string): number {
   return parsed;
 }
 
+/** A device name or id for `--device`, trimmed; a blank one would name no device. */
+function parseDevice(value: string): string {
+  const device = value.trim();
+  if (device === '') throw new InvalidArgumentError('must name a simulator, emulator, or phone');
+  return device;
+}
+
 /** Shape check only; the config resolver applies each flag's bounds. */
 function parseNonNegativeInt(value: string): number {
   const parsed = Number(value);
@@ -346,14 +353,19 @@ function rejectWatchIn(command: Command, reporters: readonly Reporter[] | undefi
 /**
  * Where `--step` cannot work: it waits at every step, so not in CI; its
  * prompt is one at a time, so one worker; and it cannot share the keyboard
- * with `--watch` or stdout with the json reporter.
+ * with `--watch`. Beside the json reporter it needs a terminal, on stderr
+ * too, where the prompt is: commands that step the run would print the
+ * report among the steps. The runner
+ * refuses the same for a json reporter the config sets.
  */
 function rejectStepIn(command: Command, options: { watch?: boolean; workers?: number; reporter?: readonly Reporter[] }): void {
   const refuse = (why: string): never => command.error(`error: --step ${why}`, { exitCode: 2 });
   if (isCiMode(process.env)) refuse('waits at every step, so it is refused in CI (CI is set)');
   if (options.watch === true) refuse('cannot be combined with --watch: both read the keyboard');
   if (options.workers !== undefined && options.workers > 1) refuse('runs one test at a time, so it cannot be combined with --workers above 1');
-  if (options.reporter?.includes('json') === true) refuse('cannot be combined with --reporter json: the prompt would land in its stdout document');
+  if (options.reporter?.includes('json') === true && !(hasTerminal() && process.stderr.isTTY === true)) {
+    refuse('cannot be combined with --reporter json without a terminal on stdin, stdout, and stderr: the prompt is on stderr, and the commands that step the run would print the report among the steps');
+  }
 }
 
 /** Whether `--step` can read keys: stdin and stdout are both a terminal. Without one, the run steps from later commands (`step-control.ts`). */
@@ -529,6 +541,7 @@ function createProgram(version: string, telemetry: Telemetry, updateCheck: Updat
           'e2e init',
           'e2e init my-app',
           'e2e init my-app --example with-expo',
+          'e2e init my-app --example',
           'e2e init --yes',
           'e2e init --yes --gateway openrouter --skills .agents/skills --mcp none --install',
           'e2e init --yes --ci github-actions',
@@ -650,6 +663,7 @@ function createProgram(version: string, telemetry: Telemetry, updateCheck: Updat
   selectionOptions(runCommand)
     .optionsGroup('Execution:')
     .option('--headed', 'show the UI while tests run, when the engine supports it')
+    .option('--device <name>', "the simulator, emulator, or phone the selected mobile target runs on, by name or id, over its configured device", parseDevice)
     .option(
       '--agent <names>',
       'the configured agent unpinned tests run with (default: agents.default); comma-separated or repeated names run each such test once per agent',
@@ -668,7 +682,7 @@ function createProgram(version: string, telemetry: Telemetry, updateCheck: Updat
     .option('-w, --watch', 'run, then run again whenever a test or source file or the config changes or a key asks: a (all), r (current), f (failed), u, p, t, q; not in CI')
     .option(
       '--step',
-      'run the first step, then hold each later one until a key: enter runs it, n runs to the next test, a runs all (a test is still paused at screen.pause()), h lists the keys, q stops. Without a terminal the run goes on in the background and returns at each held step with its screen; e2e run --step next runs that step, rest runs the rest, stop ends the run. One worker, not in CI',
+      'run the first step, then hold each later one until a key: enter runs it, s shows the screen, l shows the app log, n runs to the next test, a runs all (a test is still paused at screen.pause()), h lists the keys, q stops with exit 130. Without a terminal the run goes on in the background and returns at each held step with its screen; e2e run --step next runs that step, rest runs the rest, stop ends the run. One worker, not in CI',
     )
     .addOption(new Option('--step-serve <log>').hideHelp())
     .optionsGroup('Output:')
@@ -688,6 +702,7 @@ function createProgram(version: string, telemetry: Telemetry, updateCheck: Updat
         examples([
           'e2e run',
           'e2e run tests/signup.e2e.ts --headed',
+          'e2e run --target ios --device "iPhone 17 Pro"',
           'e2e run tests/checkout.e2e.ts --step --headed',
           'e2e run tests/checkout.e2e.ts --step   # no terminal: then e2e run --step next',
           'e2e run --watch',
@@ -724,6 +739,7 @@ function createProgram(version: string, telemetry: Telemetry, updateCheck: Updat
           config?: string;
           target?: string[];
           headed?: boolean;
+          device?: string;
           agent?: string[];
           retries?: number;
           workers?: number;
@@ -771,6 +787,7 @@ function createProgram(version: string, telemetry: Telemetry, updateCheck: Updat
           targetIds: options.target,
           ...selectionRunOptions(options),
           headed: options.headed,
+          device: options.device,
           agent: options.agent,
           retries: options.retries,
           // A stepped run is one test at a time, so there is one prompt at a time.
@@ -825,6 +842,7 @@ function createProgram(version: string, telemetry: Telemetry, updateCheck: Updat
                     cancel.stop,
                     stdin,
                     keys,
+                    { interrupt: () => signals.escalate() },
                   ).then(record),
                 stdin,
                 write: (text) => writeTerminal('stdout', text),
@@ -848,7 +866,7 @@ function createProgram(version: string, telemetry: Telemetry, updateCheck: Updat
               () => signals.escalate(),
               hasTerminal() ? process.stdin : undefined,
               undefined,
-              options.step === true,
+              { holdSteps: options.step === true },
             );
           });
         } finally {
@@ -932,35 +950,29 @@ function createProgram(version: string, telemetry: Telemetry, updateCheck: Updat
         command: Command,
       ) => {
         if (options.config === undefined && !(await initBeforeExplore(telemetry, command))) return;
-        const output = claimRunnerOutput();
-        try {
-          await runToOutcome(telemetry, command, async (signals) => {
-            const { explore } = await import('../explore/index.ts');
-            return explore({
-              processOutput: output,
-              goal,
-              configPath: options.config,
-              target: options.target,
-              agent: options.agent,
-              session: options.session,
-              changedSince: options.changedSince,
-              maxSteps: options.maxSteps,
-              timeoutMs: options.timeout,
-              headed: options.headed,
-              reporters: options.reporter,
-              output: options.output,
-              debug: options.debug,
-              aiTrace: options.aiTrace,
-              trace: recordingOption(options.trace),
-              video: recordingOption(options.video),
-              interruptSignal: signals.interruptSignal,
-              forceSignal: signals.forceSignal,
-              notice: (message) => process.stderr.write(`e2e explore: ${message}\n`),
-            });
+        await runToOutcome(telemetry, command, async (signals) => {
+          const { explore } = await import('../explore/index.ts');
+          return explore({
+            goal,
+            configPath: options.config,
+            target: options.target,
+            agent: options.agent,
+            session: options.session,
+            changedSince: options.changedSince,
+            maxSteps: options.maxSteps,
+            timeoutMs: options.timeout,
+            headed: options.headed,
+            reporters: options.reporter,
+            output: options.output,
+            debug: options.debug,
+            aiTrace: options.aiTrace,
+            trace: recordingOption(options.trace),
+            video: recordingOption(options.video),
+            interruptSignal: signals.interruptSignal,
+            forceSignal: signals.forceSignal,
+            notice: (message) => process.stderr.write(`e2e explore: ${message}\n`),
           });
-        } finally {
-          output.end();
-        }
+        });
       },
     );
 
@@ -1011,7 +1023,7 @@ function createProgram(version: string, telemetry: Telemetry, updateCheck: Updat
         rejectForwardedFlags(command, files);
         // The config and its test filters run in this process and may print a secret, as under `run`.
         const output = claimRunnerOutput();
-        if (options.reporter === 'json') output.keepStdoutForReport();
+        if (options.reporter === 'json') output.leaveStdout();
         let pairs: readonly ListedPair[];
         try {
           ({ pairs } = await listSelection(
@@ -1056,7 +1068,7 @@ function createProgram(version: string, telemetry: Telemetry, updateCheck: Updat
     .action(async (options: { config?: string; target?: string[]; headed?: boolean; checkModel?: boolean; json?: boolean }) => {
       const { doctor, formatDoctorReport } = await import('./doctor.ts');
       const output = claimRunnerOutput();
-      if (options.json === true) output.keepStdoutForReport();
+      if (options.json === true) output.leaveStdout();
       // Ctrl-C stops the checks, which then report: an engine server is
       // shut down before the process exits instead of left running.
       const signals = new SignalLadder();

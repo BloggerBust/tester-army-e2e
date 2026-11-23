@@ -6,7 +6,7 @@
  */
 
 import type { AgentDeviceClient as DeviceSessionClient } from 'agent-device';
-import type { EngineFixtureContext, Locator } from '@e2e-dev/core/engine';
+import type { EngineFixtureContext, Locator, ViewportSize } from '@e2e-dev/core/engine';
 import { appLabel, linkLabel, linkTarget } from './links.ts';
 import type { DevicePermission, MobilePlatform, PermissionState } from './options.ts';
 import type { DeviceSelection } from './pool.ts';
@@ -40,7 +40,7 @@ export type { DeviceSessionClient };
 /** The raw driver session behind `device`; see `Device.unstable_raw`. */
 export interface DeviceSession {
   readonly platform: MobilePlatform;
-  /** The raw driver session name: `e2e-<target>-<worker slot>`, or `<session>-<worker slot>` with the `session` option. */
+  /** The raw driver session name: `e2e-<target>-<worker slot>` (`e2e-<target>-<hostId>-<worker slot>` for a `launch()` host), or `<session>-<worker slot>` with the `session` option. */
   readonly session: string;
   /** The device id: a simulator UDID or an Android serial. */
   readonly deviceId: string;
@@ -97,6 +97,8 @@ export interface Device {
   setAppearance(mode: 'light' | 'dark'): Promise<void>;
   /** Rotates the device. */
   setOrientation(orientation: DeviceOrientation): Promise<void>;
+  /** Reads the screen size in the coordinate space of screen taps. */
+  viewport(): Promise<ViewportSize>;
   /**
    * Puts a foldable simulator or emulator in a hinge pose. On the iPhone Duo
    * it resolves once agent-device reads the angle back from CoreDevice at
@@ -202,12 +204,32 @@ export interface Device {
    * screen has one, to avoid pressing a button or toggling a checkbox. A
    * control the tree leaves out, such as pressable text, can still be hit. The
    * simulator's "Speed up your typing" tip goes through its Continue button
-   * first. A screen with no clear point above the keyboard, or a keyboard that
-   * outlives both drags, fails with `UNSUPPORTED_CAPABILITY`; the message
-   * names the alternatives (the app's own Done or close control, or pressing
-   * Enter on the field).
+   * first. A screen with no clear point above the keyboard, a keyboard reported
+   * up with no frame and no keyboard element on screen (so no point is known
+   * to be above it), or a keyboard that outlives both drags, fails with
+   * `UNSUPPORTED_CAPABILITY`; the message names the alternatives (the app's
+   * own Done or close control, or pressing Enter on the field).
    */
   dismissKeyboard(): Promise<void>;
+  /**
+   * Whether the soft keyboard is on screen, from a capture (taken again,
+   * within the action timeout, while the keyboard is still moving): what
+   * agent-device reported for it (a visibility probe, a measured or derived
+   * keyboard frame, or proof that there is none), else the keyboard or a key
+   * drawn on screen in the accessibility tree (the suggestion strip alone,
+   * as with a hardware keyboard, is not one). Only agent-device's proof
+   * answers `false`. Fails when the capture cannot answer: `ENGINE_FAILURE`
+   * while the keyboard is moving or the tree is still incomplete,
+   * `UNSUPPORTED_CAPABILITY` when agent-device did not prove the keyboard
+   * absent and the tree lists none. It reads the screen as it is now, so
+   * right after an action that opens or closes the keyboard, poll it with
+   * `expect.poll`. A poll reads again after any error: an `ENGINE_FAILURE`
+   * clears once the keyboard settles, while an `UNSUPPORTED_CAPABILITY`
+   * that lasts (a provider that cannot read the keyboard at all) makes the
+   * poll wait out its whole timeout before it fails.
+   * Changes nothing on the device.
+   */
+  isKeyboardShown(): Promise<boolean>;
   /** Reads the clipboard. */
   clipboard(): Promise<string>;
   /** Writes the clipboard. */
@@ -295,6 +317,10 @@ export function createDeviceFixture(surface: AgentDeviceSurface, context: Engine
     async setOrientation(orientation) {
       await surface.screenCommand('device.setOrientation', (client) => client.command.orientation({ ...surface.selection(), orientation }), context.signal);
     },
+    async viewport() {
+      const operation = context.operation();
+      return surface.viewport(operation, surface.inputBudget('device.viewport', operation));
+    },
     async fold(pose) {
       await surface.fold(pose, context.signal);
     },
@@ -356,6 +382,9 @@ export function createDeviceFixture(surface: AgentDeviceSurface, context: Engine
     async dismissKeyboard() {
       await surface.dismissKeyboard(context.signal, surface.inputBudget('device.dismissKeyboard', { timeoutMs: context.timeouts.action, signal: context.signal }));
     },
+    async isKeyboardShown() {
+      return surface.keyboardShown(context.signal, surface.inputBudget('device.isKeyboardShown', { timeoutMs: context.timeouts.action, signal: context.signal }));
+    },
     async clipboard() {
       const result = await surface.command(
         'device.clipboard',
@@ -377,6 +406,7 @@ export function createDeviceFixture(surface: AgentDeviceSurface, context: Engine
     clearLocation: action,
     setAppearance: { ...action, label: (mode) => mode },
     setOrientation: { ...action, label: (orientation) => orientation },
+    viewport: action,
     fold: { ...action, label: (pose) => pose },
     setBiometrics: action,
     enrollBiometrics: action,
@@ -392,6 +422,7 @@ export function createDeviceFixture(surface: AgentDeviceSurface, context: Engine
     back: action,
     alert: { ...action, label: (value) => value },
     dismissKeyboard: action,
+    isKeyboardShown: action,
     clipboard: action,
     setClipboard: { ...action, label: (text) => `${text.length} chars` },
   });

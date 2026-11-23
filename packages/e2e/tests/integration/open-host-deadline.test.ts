@@ -13,16 +13,27 @@ describe('openHost: deadline', { timeout: 60_000 }, () => {
     const fake = createFakeEngine();
     const opened = await host(fake.engine, { config: config(fake.engine, { assertionTimeout: 40 }) });
     const first = await opened.openSession({ name: 'short poll', timeout: 200 });
-    await expect(sdkExpect.poll(() => false, { interval: 5 }).toBe(true)).rejects.toMatchObject({ code: 'ASSERTION_FAILED', message: expect.stringContaining('timed out after 40 ms') });
+    await expect(sdkExpect.poll(() => false, { intervals: [5] }).toBe(true)).rejects.toMatchObject({ code: 'ASSERTION_FAILED', message: expect.stringContaining('timed out after 40 ms') });
     expect(await first.close()).toEqual([]);
     const second = await opened.openSession({ name: 'fresh deadline', timeout: 5_000 });
     let reads = 0;
-    await sdkExpect.poll(() => ++reads, { interval: 5, timeout: 500 }).toBeGreaterThan(2);
+    await sdkExpect.poll(() => ++reads, { intervals: [5], timeout: 500 }).toBeGreaterThan(2);
     await second.fixtures.app.open();
     const operation = fake.operations.find((entry) => entry.attemptId === second.attemptId);
     expect(operation?.timeoutMs).toBeGreaterThan(200);
     expect(operation?.runId).toBe(opened.runId);
     expect(await second.close()).toEqual([]);
+  });
+
+  it('applies the project toPass timeout in a hosted session', async () => {
+    const fake = createFakeEngine();
+    const opened = await host(fake.engine, { config: config(fake.engine, { toPass: { timeout: 40 } }) });
+    const session = await opened.openSession({ name: 'configured toPass', timeout: 5_000 });
+    await expect(sdkExpect(() => {}).not.toPass()).rejects.toMatchObject({
+      code: 'ASSERTION_FAILED',
+      message: 'expect(...).not.toPass() timed out after 40 ms\nlast: the block passed',
+    });
+    expect(await session.close()).toEqual([]);
   });
 
   it('refuses test.setTimeout in a hosted session, which runs no e2e test', async () => {
@@ -126,12 +137,15 @@ describe('openHost: deadline', { timeout: 60_000 }, () => {
     const fake = createFakeEngine();
     const opened = await host(fake.engine);
     const session = await opened.openSession({ name: 'session deadline', timeout: 100 });
-    // The poll stops itself at the deadline, or the session's cut lands first on a slow host: both tell the truth.
-    const error: unknown = await sdkExpect.poll(() => false, { timeout: 30_000, interval: 5 }).toBe(true).catch((cause: unknown) => cause);
-    expect(error).toSatisfy((cause: { code: string; message: string }) =>
-      (cause.code === 'ASSERTION_FAILED' && cause.message.includes('attempt deadline')) || (cause.code === 'TEST_TIMEOUT' && cause.message.includes('session timed out')));
-    // The poll's rejection is the caller's; close reports the session's own cut whether or not its timer ran first.
-    expect((await session.close()).map((failure) => failure.code)).toEqual(['TEST_TIMEOUT']);
+    const timeout = { code: 'TEST_TIMEOUT', message: 'session timed out after 100 ms' };
+    await expect(sdkExpect.poll(() => 'running', { timeout: 30_000, intervals: [5] }).toBe('done')).rejects.toMatchObject(timeout);
+    const secondary = expect.objectContaining({
+      code: 'ASSERTION_FAILED',
+      phase: 'body',
+      message: expect.stringMatching(/stopped at the attempt deadline after \d+ ms\nlast: expected "running" to be "done"$/),
+    });
+    expect(await session.close()).toEqual([expect.objectContaining(timeout), secondary]);
+    expect(session.report()?.run.results[0]?.attempts[0]?.secondaryErrors).toEqual([secondary]);
     expect(readFileSync(session.tracePath, 'utf8')).toContain('· timed out ·');
     const next = await opened.openSession({ name: 'after timeout', timeout: 5_000 });
     await sdkExpect.poll(() => true).toBe(true);
@@ -177,7 +191,7 @@ describe('openHost: deadline', { timeout: 60_000 }, () => {
     const onUnhandled = (cause: unknown) => { unhandled.push(cause); };
     process.on('unhandledRejection', onUnhandled);
     try {
-      sdkExpect.poll(() => ++reads, { timeout: 30_000, interval: 5 }).toBe(-1);
+      sdkExpect.poll(() => ++reads, { timeout: 30_000, intervals: [5] }).toBe(-1);
       session.fixtures.gadget.hang();
       const failures = await session.close();
       expect(failures.map((failure) => failure.code)).toContain('STEP_NOT_AWAITED');

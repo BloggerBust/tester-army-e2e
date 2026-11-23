@@ -304,7 +304,7 @@ Left out: the built-in fixtures an engine contributes (`browser`, `device`),
 | `INVALID_ARGUMENT` | Code that doesn't parse or is outside the grammar, such as another name, a call it lacks, an assignment, or a function. The message quotes it with its line and column, and no statement runs. |
 | `INVALID_ARGUMENT` | A matcher that expects `<secret:name>`, since a test compares the real value. No statement runs. |
 | `POLICY_DENIED` | A secret `fill` into a field that fails the `type_secret` checks. Nothing is typed. |
-| `POLICY_DENIED` | A read of a password field. |
+| `POLICY_DENIED` | A read of a secure field, such as a password input. |
 | `POLICY_DENIED` | When the config declares a secret or credential, a locator found by part of a text: a regular expression, an `exact` other than `true`, or `hasText`. Find it by its exact text. No statement runs. |
 
 #### `test_lines`
@@ -512,8 +512,8 @@ options, or to name an export, write `engine` as an object:
 | `options` | object | The options the factory takes, as in an `e2e.config.ts`. |
 
 - **A package name alone** calls the package's default export with no
-  options. `@e2e-dev/web` and `@e2e-dev/mobile` export their factory this
-  way. [Your own engine](/writing-an-engine#open-it-by-name) can do the same.
+  options. `@e2e-dev/web`, `@e2e-dev/mobile`, and `@e2e-dev/desktop` export
+  their factory this way. [Your own engine](/writing-an-engine#open-it-by-name) can do the same.
 - **An option can be another factory call.** The server reads an option
   value as a call when it has `package` and no key other than `export` and
   `options`. It makes that call first and passes the result as the option.
@@ -539,7 +539,8 @@ options, or to name an export, write `engine` as an object:
   run it, such as one in a sandbox without network access, asks you to.
 - **`app`** takes `url`, `bundleId`, and `appPath`, as a target's
   [`app`](/reference/config#the-app-under-test) does. `@e2e-dev/web` needs
-  `url`. `@e2e-dev/mobile` needs `bundleId` or `appPath`.
+  `url`. `@e2e-dev/mobile` and `@e2e-dev/desktop` need `bundleId` or
+  `appPath`.
 - **Files.** The project root is the server's working directory, and the
   session writes `.e2e/` there.
 - **Tests.** `e2e run` and `open_session {test}` need a config. To keep

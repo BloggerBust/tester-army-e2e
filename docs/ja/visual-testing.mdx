@@ -40,7 +40,7 @@ tests/checkout.e2e.ts-snapshots/pay-button-web-linux.png
 
 フォントや描画が異なるため、ファイルはターゲットと OS ごとに分かれます。名前を指定しなければ、`checkout-looks-right-1-web-linux.png` のようにテスト名を使います。
 
-アプリを意図して変更した場合は、差分のあるスクリーンショットを更新し、足りないものを作成します。この実行は成功します。
+アプリを意図して変更した場合は、次のように実行すると、差分のあるスクリーンショットが更新され、足りないものが作成されます。この実行は成功します。
 
 <CodeGroup>
 ```bash npm
@@ -60,7 +60,7 @@ bunx e2e run --update-snapshots
 
 スクリーンショットは、CI で描画するのと同じマシンで撮影してください。Web と Android では Linux ランナー、iOS では同じシミュレーターを備えた macOS ランナーを使います。
 
-`--update-snapshots` がない CI 実行は、プロジェクトに書き込みません。スクリーンショットがないとテストは失敗し、テスト結果内の `snapshots/<path in the project>` に画像を保存します。これをダウンロードしてコミットできます。一度にすべて書き出すには、テストジョブと同様のジョブで `--update-snapshots` を実行します。
+`--update-snapshots` がない CI 実行は、プロジェクトに書き込みません。スクリーンショットがない場合、テストは失敗し、撮影した画像がテスト結果内の `snapshots/<path in the project>` に保存されます。これをダウンロードしてコミットできます。一度にすべて書き出すには、テストジョブと同様のジョブで `--update-snapshots` を実行します。
 
 ```yaml title=".github/workflows/screenshots.yml"
 name: Update screenshots
@@ -81,7 +81,7 @@ jobs:
 
 ## 比較が失敗した場合
 
-マッチャーは、一致するスクリーンショットが得られるか、アサーションのタイムアウト（`assertionTimeout`、5 秒）に達するまで撮影を続けます。一致しなかった場合は、異なるピクセル数と、テスト結果に保存した 3 枚の画像を示します。変化したピクセルを赤で示す `-diff`、`-actual`、`-expected` です。
+マッチャーは、一致するスクリーンショットが得られるか、アサーションのタイムアウト（`assertionTimeout`、5 秒）に達するまで撮影を続けます。一致しなかった場合、失敗メッセージには、異なるピクセル数と、テスト結果に保存された 3 枚の画像（変化したピクセルを赤で示す `-diff`、`-actual`、`-expected`）が示されます。
 
 ```text
 2173 pixels (0.24% of the image) differ from tests/home.e2e.ts-snapshots/screen-web-darwin.png; run with --update-snapshots to keep this run's
@@ -103,7 +103,7 @@ await expect(screen).toHaveScreenshot('dashboard.png', {
 
 | オプション | デフォルト | 意味 |
 | --- | --- | --- |
-| `threshold` | `0.2` | 同じとみなす 1 ピクセルの色の変化量。0〜1 |
+| `threshold` | `0.2` | 1 ピクセルの色が変わっても同じとみなせる範囲。0〜1 |
 | `maxDiffPixels` | `0` | 異なっていてよいピクセル数 |
 | `maxDiffPixelRatio` | `0` | 異なっていてよいピクセルの割合。0〜1 |
 | `mask` | なし | 実行ごとに変わる内容を比較前に塗りつぶすロケーター |

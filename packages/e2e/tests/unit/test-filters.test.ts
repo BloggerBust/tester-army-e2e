@@ -19,6 +19,7 @@ import type { ResolvedRunConfig as ResolvedConfig } from '../../src/config/resol
 import { resolveConfig } from '../../src/config/resolve-run.ts';
 import { defineEngine } from '@e2e-dev/core/lib/engine/index';
 import { ConfigurationError, type E2EError } from '@e2e-dev/core/lib/internal/errors';
+import { registerProviderKey } from '@e2e-dev/core/lib/run/secrecy';
 import {
   applyTestFilters,
   FILTER_TIMEOUT_MS,
@@ -363,6 +364,29 @@ describe('applyTestFilters', () => {
     expect(redacted).toMatch(/^password <secret:[^>]+>$/);
     expect(applied.excluded.get(idOf(candidates, 'a'))!.reason).toMatch(/^the key <secret:[^>]+> says so$/);
     expect(applied.decisions[0]!.note).toMatch(/^signed in with <secret:[^>]+>$/);
+  });
+
+  it('redacts a provider key in a filter\'s reasons, notes, log lines, and what redact returns, whole and never in part', async () => {
+    const key = 'sk-proj-filter-9e2b7d4a1c6f8035';
+    registerProviderKey('filter.model-key', key);
+    const candidates = await candidatesOf('a', 'b');
+    let redacted = '';
+    const { scope: value, notices } = scope();
+    const applied = await applyTestFilters(
+      [
+        filterOf('jev', (_tests, { log, redact }) => {
+          log(`the provider rejected ${key}`);
+          redacted = redact(`a diff line naming sk-proj-another-key and ${key}`);
+          return { exclude: { [idOf(candidates, 'a')]: `rejected ${key}` }, note: `asked with ${key}` };
+        }),
+      ],
+      candidates,
+      value,
+    );
+    expect(notices).toEqual(['jev: the provider rejected <secret:filter.model-key>']);
+    expect(redacted).toBe('a diff line naming sk-proj-another-key and <secret:filter.model-key>');
+    expect(applied.excluded.get(idOf(candidates, 'a'))!.reason).toBe('rejected <secret:filter.model-key>');
+    expect(applied.decisions[0]!.note).toBe('asked with <secret:filter.model-key>');
   });
 
   it('hands a filter a redact that also masks every run of 8 or more characters of a value, so no part of a key survives a diff that shows its lines only in part', async () => {

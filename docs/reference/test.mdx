@@ -43,6 +43,7 @@ describe('checkout', { tags: ['billing'] }, () => {
 | [`test.setup`](#test-setup) | `TestCase` |
 | [`test.extend`](#test-extend) | `TestAPI` |
 | [`describe`](#describe) | `void` |
+| [`describe.fail`](#describe-fail) | `void` |
 | [Hooks](#hooks) | `void` |
 
 `describe` and the four hooks are also top-level exports, the same functions
@@ -51,9 +52,9 @@ as `test.describe`, `test.beforeEach`, and the rest:
 
 - A per-test hook imported from `e2e` is typed with the [built-in fixtures](#fixtures)
   every engine has.
-- `@e2e-dev/web` and `@e2e-dev/mobile` export `test`, `describe`, and all
-  four hooks typed with their `browser` or `device` fixture, so a test file
-  registers from one import.
+- `@e2e-dev/web`, `@e2e-dev/mobile`, and `@e2e-dev/desktop` export `test`,
+  `describe`, and all four hooks typed with their `browser`, `device`, or
+  `desktop` fixture, so a test file registers from one import.
 - A `test` you extended with your own fixtures registers hooks that see them
   through `test.beforeEach`.
 
@@ -285,6 +286,8 @@ test.fail('known gap'); // inside a body, always
 test('exports a PDF', { fail: 'PDF export is broken' }, async ({ app }) => {}); // by option
 ```
 
+To mark every test in a group, use [`describe.fail`](#describe-fail).
+
 - The body keeps running after the call. A `beforeEach` hook can mark the
   test too.
 - A failed assertion, action, thrown error, or timeout makes the test
@@ -419,6 +422,29 @@ describe('checkout', { tags: ['smoke'], serial: true }, () => {
 | --- | --- |
 | `COLLECTION_ERROR` | An `async` body. It is also a type error. |
 | `COLLECTION_ERROR` | `test.setup` inside the body. |
+
+#### `describe.fail`
+
+Declares a group whose tests are all expected to fail, the same as
+`fail: true` on `describe`. For a reason, use the [`fail`](#fail) option.
+
+```ts
+describe.fail('legacy checkout', () => {
+  test('pays by card', async ({ screen }) => {}); // expected to fail
+  test('applies a coupon', async ({ screen }) => {}); // expected to fail
+});
+describe('legacy checkout', { fail: 'old payment form' }, () => {}); // with a reason
+```
+
+- Each test is judged on its own, as with [`test.fail`](#test-fail): a
+  failure passes it, and a pass fails it with `UNEXPECTED_PASS`.
+- A `fail` reason on a test or an inner group wins over an outer one.
+  `fail: false` on a test or an inner group does not unmark it.
+
+| Throws | When |
+| --- | --- |
+| `COLLECTION_ERROR` | The group is serial or inside a serial group, or a serial group is inside it. |
+| `COLLECTION_ERROR` | A `fail` option on `describe.fail`. It is also a type error. |
 
 ### Hooks
 
@@ -575,7 +601,7 @@ blocked event loop hangs it.
 | [`sessions`](#sessions) | `readonly string[]` | required |
 
 `test` takes every option but `serial` and `sessions`. `describe` takes
-every option but `only`, `fail`, and `sessions`. `test.setup` requires
+every option but `only` and `sessions`. `test.setup` requires
 `sessions` and takes no `session`, `only`, `skip`, or `fail`.
 
 Resolution order: test, nearest group, outer groups, config, built-in
@@ -630,10 +656,12 @@ test('exports a PDF', { skip: 'PDF export is off on staging' }, async ({ app }) 
 #### `fail`
 
 Expects the test to fail; see [`test.fail`](#test-fail). A string is the
-reason. Not allowed inside a serial group.
+reason. A layer with `true` or any string marks, and the innermost reason
+wins. Not allowed on, inside, or around a serial group.
 
 ```ts
 test('exports a PDF', { fail: 'PDF export is broken' }, async ({ app }) => {});
+describe('legacy checkout', { fail: 'old payment form' }, () => {});
 ```
 
 #### `only`
@@ -990,6 +1018,19 @@ export const test = base.extend({
 ### `TestAPI`
 
 ```ts
+/** The two call forms of `describe`. */
+export interface DescribeRegistrar<Options = DescribeOptions> {
+  /** Declares a group synchronously. */
+  <Result>(title: string, body: SynchronousBody<Result>): void;
+  /** Declares a configured group synchronously. */
+  <Result>(title: string, options: Options, body: SynchronousBody<Result>): void;
+}
+
+export interface DescribeAPI extends DescribeRegistrar {
+  /** Declares a group whose tests are expected to fail, as if it had `fail: true`; a reason goes in the `fail` option of `describe`. */
+  fail: DescribeRegistrar<Omit<DescribeOptions, 'fail'>>;
+}
+
 /** The two call forms of `test`, shared with what `test.skipIf` and `test.runIf` return. */
 export interface TestRegistrar<Fixtures = TestFixtures & WorkerFixtures> {
   /** Registers one test synchronously during module evaluation. */
@@ -1155,14 +1196,8 @@ export interface TestAPI<Fixtures = TestFixtures, Worker = WorkerFixtures> exten
   extend<Extra = {}, ExtraWorker = {}>(
     fixtures: FixtureDefinitions<Fixtures & Worker, Extra, Worker, ExtraWorker>,
   ): TestAPI<Fixtures & Extra, Worker & ExtraWorker>;
-  /** Declares a group synchronously. */
-  describe<Result>(title: string, body: SynchronousBody<Result>): void;
-  /** Declares a configured group synchronously. */
-  describe<Result>(
-    title: string,
-    options: DescribeOptions,
-    body: SynchronousBody<Result>,
-  ): void;
+  /** Declares a group synchronously; `describe.fail` declares one whose tests are expected to fail. */
+  describe: DescribeAPI;
   /** Registers a test-attempt setup hook: it runs after the test's fixtures are set up. */
   beforeEach(fn: TestHookFn<Fixtures & Worker>): void;
   /** Registers a test-attempt teardown hook: it runs before the test's fixtures are torn down. */
@@ -1195,8 +1230,9 @@ export interface TestOptions {
   skip?: boolean | string;
   /**
    * Expects the test to fail; a string is the reason. A test failure then
-   * passes it, and a pass fails it with `UNEXPECTED_PASS`. Not allowed inside
-   * a serial group.
+   * passes it, and a pass fails it with `UNEXPECTED_PASS`. A layer with `true`
+   * or any string marks; the innermost reason wins. Not allowed on, inside, or
+   * around a serial group.
    */
   fail?: boolean | string;
   /** Focuses the test locally. CI rejects it with `ONLY_IN_CI`. */
@@ -1233,7 +1269,7 @@ export interface TestOptions {
   video?: RecordingMode;
 }
 
-export interface DescribeOptions extends Omit<TestOptions, 'only' | 'fail'> {
+export interface DescribeOptions extends Omit<TestOptions, 'only'> {
   /** Runs the group as one ordered retry unit with shared app state. Nesting one serial group in another is a `COLLECTION_ERROR`. */
   serial?: boolean;
 }

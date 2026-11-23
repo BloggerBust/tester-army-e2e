@@ -1,6 +1,6 @@
 /** Which package manager a project uses, for install hints that name a runnable command. */
 
-import { existsSync, readFileSync } from 'node:fs';
+import { readFileSync, statSync } from 'node:fs';
 import path from 'node:path';
 import { compileGlob, matchesGlob } from '@e2e-dev/core/lib/internal/globs';
 import { isPlainObject } from '@e2e-dev/core/lib/internal/options';
@@ -28,7 +28,13 @@ function fieldManager(packageManagerField: string | undefined): PackageManager |
 
 /** The manager whose lockfile sits in `dir`, or undefined when none does. */
 function lockfileManager(dir: string): PackageManager | undefined {
-  return LOCKFILES.find(([lock]) => existsSync(path.join(dir, lock)))?.[1];
+  return LOCKFILES.find(([lock]) => {
+    try {
+      return statSync(path.join(dir, lock)).isFile();
+    } catch {
+      return false;
+    }
+  })?.[1];
 }
 
 /**

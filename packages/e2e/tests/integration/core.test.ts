@@ -1,10 +1,12 @@
 /** `e2e/core` (`@e2e-dev/core`): hosts, sessions, saved state, secrets, timeouts, link bases, and the agent's cache. */
-import { mkdirSync, mkdtempSync, readdirSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
+import { Worker } from 'node:worker_threads';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { StepExecutor, StepExecutorContext } from '@e2e-dev/core/lib/agent/executor';
 import { createAgent } from '@e2e-dev/core/agent';
 import { launch, SessionState, type Host, type Session } from '@e2e-dev/core';
+import { defineEngine, ENGINE_SPI_VERSION } from '@e2e-dev/core/engine';
 import { publishAttempt } from '@e2e-dev/core/lib/expect/attempt';
 import { SoftFailures } from '@e2e-dev/core/lib/expect/soft';
 import { Deadline } from '@e2e-dev/core/lib/internal/time';
@@ -115,6 +117,61 @@ describe('e2e/core', { timeout: 60_000 }, () => {
     const fake = createFakeEngine();
     await host(fake.engine);
     await expect(host(fake.engine)).rejects.toMatchObject({ code: 'WORKER_PROTOCOL' });
+  });
+
+  it('hands the engine of each host a token of its own and leaves the target named as the program wrote it', async () => {
+    const fakes = [createFakeEngine(), createFakeEngine(), createFakeEngine()];
+    await Promise.all(fakes.slice(0, 2).map((fake) => host(fake.engine)));
+    await host(fakes[2]!.engine);
+    const ids = fakes.map((fake) => fake.inits[0]?.hostId);
+    expect(new Set(ids).size).toBe(3);
+    for (const id of ids) expect(id).toMatch(/^[0-9a-f]{24}$/);
+    expect(fakes.map((fake) => fake.inits[0]?.targetName)).toEqual(['fake', 'fake', 'fake']);
+    // `prepare`, `init`, and `finish` of one host see one token.
+    const seen: (string | undefined)[] = [];
+    const opened = await host(defineEngine({
+      name: 'hooks', version: '1', spiVersion: ENGINE_SPI_VERSION,
+      async prepare(info) { seen.push(info.hostId); },
+      async init(info) { seen.push(info.hostId); },
+      async finish(info) { seen.push(info.hostId); },
+      async startAttempt() {}, async endAttempt() {},
+    }));
+    await opened.close();
+    expect(seen).toHaveLength(3);
+    expect(seen[0]).toMatch(/^[0-9a-f]{24}$/);
+    expect(new Set(seen).size).toBe(1);
+    // Hosts in two worker threads share the process and load their own copy of the module.
+    const script = path.join(dir, 'thread-host.mjs');
+    writeFileSync(script, [
+      `import { parentPort } from 'node:worker_threads';`,
+      `import { launch } from ${JSON.stringify(import.meta.resolve('@e2e-dev/core'))};`,
+      `import { defineEngine, ENGINE_SPI_VERSION } from ${JSON.stringify(import.meta.resolve('@e2e-dev/core/engine'))};`,
+      `let id;`,
+      `const engine = defineEngine({ name: 'fake', version: '1', spiVersion: ENGINE_SPI_VERSION, init(info) { id = info.hostId; }, startAttempt() {}, endAttempt() {}, dispose() {} });`,
+      `const opened = await launch(engine, { cwd: ${JSON.stringify(dir)}, env: {}, handleSignals: false });`,
+      `await opened.close();`,
+      `parentPort.postMessage(id);`,
+    ].join('\n'));
+    const threadIds = await Promise.all([0, 1].map(() => new Promise((resolve, reject) => {
+      const thread = new Worker(script);
+      thread.once('message', resolve);
+      thread.once('error', reject);
+    })));
+    expect(threadIds[0]).toMatch(/^[0-9a-f]{24}$/);
+    expect(threadIds[1]).not.toBe(threadIds[0]);
+  });
+
+  it('names a host\'s artifact folders after its token, so a platform that is a secret\'s value never reaches a path', async () => {
+    const secret = 'private-label';
+    const artifactsDir = path.join(dir, 'kept');
+    const opened = await host(defineEngine({ name: 'labelled', platform: secret, version: '1', spiVersion: ENGINE_SPI_VERSION, async startAttempt() {}, async endAttempt() {} }), {
+      secrets: { LABEL: secret }, artifactsDir,
+    });
+    await (await opened.newSession()).close();
+    await opened.close();
+    const entries = readdirSync(artifactsDir, { recursive: true }).map(String);
+    expect(entries.some((entry) => /(^|[\\/])core[\\/]host-[0-9a-f]{24}-[^\\/]+$/.test(entry))).toBe(true);
+    expect(entries.filter((entry) => entry.includes(secret))).toEqual([]);
   });
 
   it('refuses what is not an engine, an app key it does not take, and a relative artifactsDir resolves from cwd', async () => {
@@ -388,6 +445,24 @@ describe('e2e/core', { timeout: 60_000 }, () => {
         expect(brain.calls).toBe(1);
       }
       expect(readdirSync(cacheDir, { recursive: true }).filter((file) => String(file).endsWith('.json'))).toHaveLength(1);
+    });
+
+    it('replays a recording another host made, since a host\'s token is not part of the key', async () => {
+      const brain = scripted();
+      const cacheDir = path.join(dir, 'cache');
+      for (const round of [1, 2]) {
+        const opened = await host(createFakeEngine({ scene: shop }).engine, { app: FAKE_APP });
+        const session = await opened.newSession();
+        await session.app.open('/');
+        const agent = createAgent(session, { executor: brain, cache: { dir: cacheDir } });
+        const result = await agent.act('checkout with the coupon', { cacheKey: 'checkout' });
+        await session.screen.getByRole('status', 'Paid').waitFor();
+        expect(result.cache?.mode).toBe(round === 1 ? 'missed' : 'self-finalized');
+        await opened.close();
+      }
+      expect(brain.calls).toBe(1);
+      const entry = readdirSync(cacheDir, { recursive: true }).find((file) => String(file).endsWith('.json'));
+      expect(readFileSync(path.join(cacheDir, String(entry)), 'utf8')).toMatch(/"targetId":\s*"fake"/);
     });
 
     it('keeps a confirmed recording when the host closes the session, and after a failure the program caught', async () => {

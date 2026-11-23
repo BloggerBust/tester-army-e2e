@@ -186,7 +186,7 @@ export async function dispatchAgentStep(
         throw dispatch.settleThrown(error);
       }
       const evidence = await dispatch.captureEvidence();
-      dispatch.settle(validateVerdict(verdict, agent.executor.name), evidence);
+      dispatch.settle(validateVerdict(verdict, agent.executor.name, runtime.redact), evidence);
       await dispatch.conclude('passed');
       return dispatch.result();
     } catch (cause) {

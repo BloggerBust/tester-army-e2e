@@ -35,7 +35,7 @@ bun add @e2e-dev/core @e2e-dev/web
 </CodeGroup>
 
 デバイスを操作するには、`@e2e-dev/web` の代わりに、または一緒に `@e2e-dev/mobile` をインストールします。
-`@e2e-dev/core` に、それを基盤とするテストランナーの `e2e` は不要です。
+テストランナーの `e2e` は `@e2e-dev/core` を基盤にしていますが、`@e2e-dev/core` は `e2e` なしで使えます。
 Node.js 22.x では 22.22.3 以降、それ以外では 24.8 以降が必要です。
 
 <Note>
@@ -84,7 +84,7 @@ try {
 
 | ルール | 動作 |
 | --- | --- |
-| 所有関係 | 各 `launch` に専用のエンジンインスタンスを渡します。例は `launch(web())` です。同じインスタンスで 2 つ目のホストを作ると `WORKER_PROTOCOL` で失敗します。 |
+| 所有関係 | `launch(web())` のように、`launch` ごとに専用のエンジンインスタンスを渡します。同じインスタンスで 2 つ目のホストを作ると `WORKER_PROTOCOL` で失敗します。 |
 | セッション | 1 ホストで同時に使えるセッションは 1 つです。`newSession()` の前に閉じてください。並列処理には複数のホストを起動します。 |
 | タイムアウト | 操作、待機、読み取りは 30000 ms、`app.open()` と `app.restart()` は 120000 ms です。`launch({ timeout })` または `session.setDefaultTimeout(ms)` で、すべてに共通の値を設定できます。セッション全体の期限はありません。 |
 | キャンセル | `launch({ signal })` と `newSession({ signal })` は、実行中の処理を停止します。 |
@@ -121,7 +121,7 @@ iOS シミュレーターでは、カスタムスキームのリンクを開く�
 
 `session.saveState()` は、ブラウザセッションの Cookie とストレージをメモリーに保存します。
 そのセッションを閉じ、`newSession({ state })` で保存した状態から別のセッションを開始します。
-モバイルエンジンには保存できる状態がないため、`UNSUPPORTED_CAPABILITY` で失敗します。
+モバイルエンジンには保存できる状態がないため、`saveState()` は `UNSUPPORTED_CAPABILITY` で失敗します。
 
 ```ts
 const state = await session.saveState();
@@ -164,7 +164,7 @@ await session.screen.getByLabel('Password').fill(shop.secret('SHOP_PASSWORD'));
 エクスポートした状態には、セッションが知っていた値が暗号化して含まれます。
 そのため、値を渡さずに起動したホストでも秘匿できます。
 
-プログラム内のすべてのセッションは、開いているすべてのホストの値を秘匿します。
+プログラムで開いているホストに渡したシークレットの値は、そのプログラム内のどのセッションでも秘匿されます。
 
 エージェントには、パラメーターを通じてシークレットの名前だけを渡します。
 `agent.act('Sign in with {password}', { params: { password: shop.secret('SHOP_PASSWORD') } })`。
@@ -247,7 +247,7 @@ if (order.total <= 39_000) {
 
 `cache` を指定すると、`act` が各フローを記録し、次の実行でモデルを呼び出さずにリプレイします。
 各 `act` には記録名の `cacheKey` を指定するか、`cache: false` でライブ実行します。
-どちらも指定しない `act` は `INVALID_ARGUMENT` で失敗し、`createAgent` の呼び出しに `cache` オプションを直接書いた場合は、TypeScript でも型エラーになります。
+どちらも指定しない `act` は `INVALID_ARGUMENT` で失敗します。`createAgent` の呼び出しに `cache` オプションを直接書いた場合は、そのような `act` は TypeScript の型エラーにもなります。
 
 記録のキーには `cacheKey`、指示、パラメーター、アプリ、セッション内の同じ呼び出しの回数が含まれます。
 実行間で変わる値はパラメーターとして渡してください。

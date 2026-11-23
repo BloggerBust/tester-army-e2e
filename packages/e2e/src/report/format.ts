@@ -8,6 +8,7 @@ import { stripVTControlCharacters } from 'node:util';
 import picocolors from 'picocolors';
 import type { CacheWrite } from '@e2e-dev/core/lib/cache/context';
 import { sanitizeText, truncateUtf8 } from '@e2e-dev/core/lib/internal/errors';
+import { redactError } from '@e2e-dev/core/lib/run/secrecy';
 import type { ResultStatus } from '@e2e-dev/core/lib/run/records';
 import type { StepModelInfo, StepRecord } from '@e2e-dev/core/lib/run/steps';
 
@@ -49,7 +50,7 @@ export function bounded(text: string): string {
  * when no list reporter shows it.
  */
 export function failureLine(error: { readonly code: string; readonly message: string }): string {
-  return `${bounded(error.code)}: ${bounded(error.message)}\n`;
+  return `${bounded(error.code)}: ${bounded(redactError(error.message))}\n`;
 }
 
 /**

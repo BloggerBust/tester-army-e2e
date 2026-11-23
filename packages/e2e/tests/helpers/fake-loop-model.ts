@@ -37,6 +37,8 @@ export interface LoopCall {
   readonly toolCallOptions: readonly unknown[];
   /** Reasoning parts in the assistant messages of the request: what a provider replays as thinking. */
   readonly reasoningParts: number;
+  /** What the assistant messages of the request say, prose and reasoning, oldest first: the model's own words as they are sent back to it. */
+  readonly assistantText: readonly string[];
 }
 
 export interface LoopToolCall {
@@ -48,7 +50,7 @@ export interface LoopToolCall {
 
 /**
  * A turn's scripted answer: tool calls, or prose without any (`{ text }`).
- * Either object form may carry `reasoning`, and the call `warnings` the
+ * The tool-call form may carry prose beside its calls (`text`). Either object form may carry `reasoning`, and the call `warnings` the
  * provider attached to the response.
  */
 export type LoopResponder = (
@@ -56,7 +58,7 @@ export type LoopResponder = (
 ) =>
   | readonly LoopToolCall[]
   | { readonly text: string; readonly reasoning?: string; readonly warnings?: readonly ScriptedWarning[] }
-  | { readonly toolCalls: readonly LoopToolCall[]; readonly reasoning?: string; readonly warnings?: readonly ScriptedWarning[] };
+  | { readonly toolCalls: readonly LoopToolCall[]; readonly text?: string; readonly reasoning?: string; readonly warnings?: readonly ScriptedWarning[] };
 
 /** Recorded calls, newest last. Cleared by every installFakeLoopModel call. */
 export const loopCalls: LoopCall[] = [];
@@ -120,6 +122,13 @@ export function installFakeLoopModel(respond: LoopResponder): ModelInstance {
             : 0),
         0,
       ),
+      assistantText: options.prompt.flatMap((message) =>
+        message.role !== 'assistant'
+          ? []
+          : typeof message.content === 'string'
+            ? [message.content]
+            : message.content.flatMap((part) => ((part.type === 'text' || part.type === 'reasoning') && part.text !== undefined ? [part.text] : [])),
+      ),
     };
     loopCalls.push(call);
     const answer = respond(call);
@@ -135,11 +144,12 @@ export function installFakeLoopModel(respond: LoopResponder): ModelInstance {
     }
     const object = answer as
       | { readonly text: string; readonly reasoning?: string; readonly warnings?: readonly ScriptedWarning[] }
-      | { readonly toolCalls: readonly LoopToolCall[]; readonly reasoning?: string; readonly warnings?: readonly ScriptedWarning[] };
+      | { readonly toolCalls: readonly LoopToolCall[]; readonly text?: string; readonly reasoning?: string; readonly warnings?: readonly ScriptedWarning[] };
     const reasoning =
       object.reasoning === undefined ? [] : [{ type: 'reasoning' as const, text: object.reasoning }];
     if ('toolCalls' in object) {
-      return scriptedResult([...reasoning, ...object.toolCalls.map(toPart)], 'tool-calls', object.warnings);
+      const prose = object.text === undefined ? [] : [{ type: 'text' as const, text: object.text }];
+      return scriptedResult([...reasoning, ...prose, ...object.toolCalls.map(toPart)], 'tool-calls', object.warnings);
     }
     return scriptedResult([...reasoning, { type: 'text' as const, text: object.text }], 'stop', object.warnings);
   });

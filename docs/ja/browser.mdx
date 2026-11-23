@@ -397,7 +397,7 @@ async record(lease, context): Promise<ProviderRecording> {
 
 - `<button><i class="fa fa-sign-in"> Login</i></button>` は `button "Login"` となり、`getByRole('button', 'Login')` で見つかります。
 - 2 つの単語の間にあるグリフは、空白として扱われます。
-- アイコンだけのコントロールに `title` があれば、それが名前として表示されます。ただし、ブラウザ自身は引き続きグリフを名前にするため、そのタイトルを指定した `getByRole` では見つかりません。`aria-label` を追加するか、`browser.locator('[title="Sign out"]')` を使ってください。
+- アイコンだけのコントロールに `title` があれば、その `title` が名前として読み取られます。ただし、ブラウザ自身は引き続きグリフを名前にするため、そのタイトルを指定した `getByRole` では見つかりません。`aria-label` を追加するか、`browser.locator('[title="Sign out"]')` を使ってください。
 - 名前に `RegExp` を指定すると、グリフを含むブラウザ側の名前に照合されます。そのため、`/Login/` のように先頭・末尾のアンカーを付けずに使ってください。
 
 ## inert なコンテンツ

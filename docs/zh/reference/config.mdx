@@ -210,14 +210,11 @@ reporters: ['list', 'junit'], // default: ['list']
 | 值 | 作用 |
 | --- | --- |
 | `'list'`、`list()` | 终端进度、失败信息和运行摘要。 |
-| `'dot'`、`dot()` | 显示简洁的终端进度、失败信息和运行摘要。 |
-| `'line'`、`line()` | 在交互式终端中[用一行显示进度](/reference/reporters#line)。 |
+| `'dot'`、`dot()` | 简洁的终端进度、失败信息和运行摘要。不能与 `list` 同用：两者同时使用会导致 `INVALID_CONFIG`。 |
 | `'junit'`、`junit()` | 写入 `<output>/junit.xml`，或 `outputFile`。 |
 | `'markdown'`、`markdown()` | 写入 `<output>/summary.md`，或 `outputFile`。 |
-| `'json'`、`json()` | 将报告输出到 stdout。与它同时使用时，`list`、`dot` 或 `line` 输出到 stderr，除非为它们指定了 `stream`。 |
+| `'json'`、`json()` | 将报告输出到 stdout。与它同时使用时，`list` 或 `dot` 输出到 stderr，除非为它们指定了 `stream`。 |
 | 其他 `Reporter` 对象 | 与内置报告器一起运行。`--reporter` 不会移除它。 |
-
-每个流只能由一个报告器输出。`['list', 'line']` 会报 `INVALID_CONFIG`，因为两者默认都输出到 stdout。如果 stdout 和 stderr 指向同一终端，请只使用一个终端报告器，以免刷新进度时擦除另一个报告器的输出。
 
 ID 等同于不带选项调用其工厂函数。未知 ID 会导致 `INVALID_CONFIG`。参阅[报告器](/reference/reporters)。
 

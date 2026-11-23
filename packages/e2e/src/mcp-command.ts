@@ -14,6 +14,7 @@ import { onBun } from './internal/runtime.ts';
 import { McpOutput } from './mcp/output.ts';
 import { serveMcp, type ServeOptions } from './mcp/server.ts';
 import { processSecrets } from '@e2e-dev/core/lib/run/secrecy';
+import { warnOfNodeDebug } from './run/node-debug.ts';
 import { claimStrayRejection } from './run/standalone-test.ts';
 import { mcpSessionEvent } from './telemetry/events.ts';
 import type { Telemetry } from './telemetry/telemetry.ts';
@@ -84,6 +85,7 @@ export function sessionTelemetry(telemetry: Telemetry): NonNullable<ServeOptions
 /** Runs the server until the client disconnects or a signal arrives; returns the exit code. */
 export async function mcp(version: string, options: McpCommandOptions, telemetry: Telemetry): Promise<number> {
   const { protocol, output } = claimStdio();
+  warnOfNodeDebug();
   const stop = new AbortController();
   const onSignal = (): void => stop.abort();
   // Node would print an error nobody caught (a project tool's unawaited

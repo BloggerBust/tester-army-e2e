@@ -30,6 +30,8 @@ export interface EngineSessionsOptions {
   readonly config: ResolvedConfig;
   readonly target: ResolvedTarget;
   readonly runId: string;
+  /** The `launch()` host this worker belongs to; see `EnginePrepareInfo.hostId`. */
+  readonly hostId?: string | undefined;
   readonly sessionStore: SessionStore;
   readonly headed: boolean;
   /** This worker's slot among the target's workers; see `EngineInitInfo.workerSlot`. */
@@ -132,6 +134,7 @@ export class EngineSessions {
           init({
             runId: this.options.runId,
             targetName: this.target.name,
+            ...(this.options.hostId === undefined ? {} : { hostId: this.options.hostId }),
             projectRoot: this.config.projectRoot,
             app: engineAppInfo(this.target.app),
             env: this.options.env,

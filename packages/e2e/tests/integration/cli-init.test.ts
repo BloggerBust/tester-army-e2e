@@ -120,6 +120,26 @@ describe('initializing standalone projects', () => {
     },
   );
 
+  it.each([
+    { ci: '', script: 'dev', reuseExisting: true },
+    { ci: '1', script: 'start', reuseExisting: undefined },
+  ])('loads the Next.js scaffold with CI=$ci and starts the $script script', async ({ ci, script, reuseExisting }) => {
+    vi.stubEnv('CI', ci);
+    const app = { kind: 'app', framework: 'Next.js', docs: '/frameworks/nextjs', url: 'http://localhost:3100', dev: 'dev', production: { build: 'build', start: 'start' } } as const;
+    const scaffold = createScaffold(['web'], undefined, { app, manager: 'pnpm' });
+    writeFileSync(path.join(dir, 'package.json'), JSON.stringify({ type: 'module', devDependencies: scaffold.dependencies }));
+    writeFileSync(path.join(dir, 'e2e.config.ts'), scaffold.config);
+    linkPackages('e2e', 'web');
+
+    const raw = await loadConfigModule(path.join(dir, 'e2e.config.ts'));
+    const config = resolveConfig(raw, { projectRoot: dir, env: {} });
+
+    expect(scaffold.needsAppUrl).toBe(false);
+    expect(config.targets[0]!.app.base).toMatchObject({ origin: 'http://localhost:3100' });
+    expect(config.targets[0]!.app.command).toMatchObject({ executable: 'pnpm', args: ['run', script] });
+    expect(config.targets[0]!.app.command?.reuseExisting).toBe(reuseExisting);
+  });
+
   it('loads the engine-less scaffold and collects its HTTP example', async () => {
     const scaffold = createScaffold([], { gateway: 'openrouter' });
     writeFileSync(path.join(dir, 'package.json'), JSON.stringify({ type: 'module', devDependencies: scaffold.dependencies }));

@@ -12,7 +12,6 @@ export type { MarkdownReportOptions } from './report/markdown.ts';
 
 export type * from '@e2e-dev/core/lib/types';
 export type * from './run-types.ts';
-export type { HeldStep, NumberedStep, StepPrompt } from './run/step-hold.ts';
 export type {
   ExecutorActions,
   ExecutorAttempt,
@@ -38,5 +37,5 @@ export type {
   StepVerdictStatus,
 } from '@e2e-dev/core/lib/agent/executor';
 export type { StepTurn, VisionDegradation } from '@e2e-dev/core/lib/run/steps';
-export type { RunEvent, RunEventOf, RunExitCode, RunStatus } from './run/events.ts';
+export type { CollectedTestInfo, PausedKey, PausedStep, RunEvent, RunEventOf, RunExitCode, RunStatus } from './run/events.ts';
 export type { EngineAppDeclaration } from '@e2e-dev/core/lib/engine/index';

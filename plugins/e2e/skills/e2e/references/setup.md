@@ -164,7 +164,7 @@ or `E2E_USER_ADMIN_PASSWORD` first, or defer to fill time with
 | `cleanupTimeout` | `30000` | Each `afterEach` hook, fixture teardown, engine cleanup, ms. |
 | `retries` | `0`, `1` in CI | 0 to 10. |
 | `workers` | half the cores, `1` in CI | Parallel test files, capped by the `workers` the engine declares per target. |
-| `reporters` | `['list']` | `list`, `dot`, `line`, `json`, `junit`, `markdown` ids, the same as factories from `e2e/reporters` (`junit({ outputFile })`), or `{ name, printsTo?, onEvent?, onOutput?, onStepPrompt?, reportFiles?, onRunFinished?, onSummary? }` objects; one reporter at most prints to each of stdout and stderr (beside `json`, the `list`, `dot`, and `line` ids print to stderr), `--reporter` keeps the other objects. |
+| `reporters` | `['list']` | `list`, `dot`, `json`, `junit`, `markdown` ids, the same as factories from `e2e/reporters` (`junit({ outputFile })`), or `{ name, interactive?, onEvent?, reportFiles?, onRunFinished?, onSummary? }` objects; `dot` excludes `list`, and beside `json` the `list` and `dot` ids print to stderr; without `list`, `dot`, or another `interactive` reporter, what the code prints goes to stderr; `--reporter` keeps the other objects. |
 | `cache` | `'read-write'` | `'read-write'`, `'read-only'`, `'off'`, or `{ mode, store, dir, strict }`; CI demotes only a defaulted mode to `'read-only'`. `strict` (`--strict-cache`) fails a step whose recording no longer replays (`REPLAY_STALE`) instead of handing it to the agent; retries replay too, and the run never writes the cache. |
 | `agents` | `{ default: built-in }` | Tests run with `default`, `e2e run --agent <name>` picks another, entries never inherit from `default`. Options: topic `agent`. |
 | `filters` | `[]` | Test filters `{ name, filter(tests, context) }`, unique names, applied in order with `--changed-since <ref>`. Use `filters: [decisionFilter({ model: gateway.decisionModel('typesafe-ai/jev') })]`, with `decisionFilter` from `@e2e-dev/decision` and `gateway` from `ai` (install `@e2e-dev/decision ai`), to run only the tests a pull request can affect. `filter` gets candidates `{ id, file, titlePath, tags, setupFile? }` and a context `{ projectRoot, changes: { base, root, files }, configFile, signal, log, redact }` with repository-relative `files`, and returns `{ exclude: { [id]: reason }, relevance?: { [id]: 0 to 1 }, note? }`; every test it does not name runs, and `relevance` (how likely each test is to fail) makes each target start the likeliest files first. Read files, the environment, or the network inside `filter`, never at config load: workers load the config too. When filters run: topic `running`. |
@@ -205,7 +205,12 @@ Next.js ([guide](https://e2e.com/docs/frameworks/nextjs)): set `app.command` to 
 dev` locally and `next start` when `CI` is set (e2e reads `''`, `0`, and
 `false` as unset; read it the same way in the config), with `next build`
 before `e2e run` in CI; `reuseExisting: true` reuses a dev server already on
-the port, and `dev` and `start` must listen on the `app.url` port.
+the port, and `dev` and `start` must listen on the `app.url` port. `e2e init`
+writes this target in a project with `next` in `dependencies` or
+`devDependencies` and a `dev` script: the `dev` script's `--port` or `-p`
+(else 3000) on `localhost`, `start` in CI only when `build` and `start`
+scripts exist on the same port, and a `build` step in the pipeline `--ci`
+writes.
 
 - A Next.js 16 dev server blocks cross-origin requests to its dev resources,
   so a target that opens `127.0.0.1` or `[::1]` (port `0` included) while
@@ -232,8 +237,8 @@ start a script that brings them up and serves the app.
 
 | Option | Meaning |
 | --- | --- |
-| `browser` | `'chromium'` (default), `'firefox'`, `'webkit'`, or a `BrowserProvider` leasing hosted browsers over CDP ([`browserRun()`](https://e2e.com/docs/integrations/browser-run) from `@e2e-dev/browser-run`, `kernel()` from `@e2e-dev/kernel`, `notte()` from `@e2e-dev/notte`, `smol()` from `@e2e-dev/smol`, `lightpanda()` from `@e2e-dev/lightpanda`, `moli()` from `@e2e-dev/moli`, `testmuBrowsers()` from `@e2e-dev/testmu/web`, `e2bBrowsers()` from `@e2e-dev/e2b/web`, or your own), which implies chromium and excludes `connect`. Scope `'worker'` (default): one browser per worker slot from `prepare` to `finish`; `'attempt'`: one per attempt, with `reconnectEndpoint`'s limits (`lightpanda()`, `moli()`, and `testmuBrowsers()` are worker scope only; `notte()` is attempt scope only). |
-| `viewport` | `{ width, height }`, default 1280x720; `null` follows the browser window (hosted live view, headed run). On a headed hosted browser (Kernel) use `null` and size the service's screen; a fixed size gives a smaller, unmaximized window. |
+| `browser` | `'chromium'` (default), `'firefox'`, `'webkit'`, or a `BrowserProvider` leasing hosted browsers over CDP ([`browserRun()`](https://e2e.com/docs/integrations/browser-run) from `@e2e-dev/browser-run`, `kernel()` from `@e2e-dev/kernel`, `notte()` from `@e2e-dev/notte`, `smol()` from `@e2e-dev/smol`, `lightpanda()` from `@e2e-dev/lightpanda`, `moli()` from `@e2e-dev/moli`, `testmuBrowsers()` from `@e2e-dev/testmu/web`, `e2bBrowsers()` from `@e2e-dev/e2b/web`, or your own), which implies chromium and excludes `connect`; any other name is `INVALID_CONFIG` at load. Scope `'worker'` (default): one browser per worker slot from `prepare` to `finish`; `'attempt'`: one per attempt, with `reconnectEndpoint`'s limits (`lightpanda()`, `moli()`, and `testmuBrowsers()` are worker scope only; `notte()` is attempt scope only). |
+| `viewport` | `{ width, height }` in whole pixels, default 1280x720, else `INVALID_CONFIG` at load; `null` follows the browser window (hosted live view, headed run). On a headed hosted browser (Kernel) use `null` and size the service's screen; a fixed size gives a smaller, unmaximized window. |
 | `connect` | `{ cdpEndpoint }` attaches to a remote Chromium over CDP; `cdpEndpoint` is required, and both it and `reconnectEndpoint` are resolvers `(signal) => url` or `(signal) => ({ endpoint, headers })` for authenticated CDP connections, not strings, else `INVALID_CONFIG` at load. With `reconnectEndpoint` it rides one persistent default context, needs a fresh browser from `cdpEndpoint` every attempt, and reconnects only to the original browser and page. |
 | `headers` | Sent to the app's origin only (scheme, host, and port of `app.url`; Vercel's `x-vercel-protection-bypass`, ngrok's `ngrok-skip-browser-warning`), `agent.act` included; `credentialOrigins: ['https://api.example.com']` adds exact origins for `headers` and `basicAuth`. A request keeps them through its redirects, to any origin. Disables the browser HTTP cache and service workers. |
 | `basicAuth` | `{ username, password }` for a `401` challenge from the app's origin, or one `credentialOrigins` lists (a redirect to `www` or `https:` is another origin; WebKit answers any origin when one is on a default port or an IPv6 host); `password` may be `secrets.get('name')`, resolved per attempt and redacted like any secret, the base64 `Authorization` credential too. |
@@ -452,6 +457,7 @@ export default {
   `setPermission`, `setNetwork`, `setAppearance`, `clearKeychain`, `fold`
   for a foldable's hinge (iPhone Duo, Android foldable emulators), `locator`, more). Portable suites declare
   `requires: ['device']`.
+- `device.viewport()` reads `{ width, height }` fresh on each call, in the coordinate space of `screen.tapAt()`.
 - `device.unstable_raw` gives the session name, device id and name, a
   `selection` to spread into a call, and a
   raw driver `client` bound to the test's session, for what `device`

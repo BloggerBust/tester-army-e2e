@@ -40,7 +40,7 @@ GitHub Actions からその URL に対して e2e を実行し、
 
 ### デプロイの URL を設定する
 
-`APP_URL` を読み取ってデプロイ先をテストします。
+設定ファイルで `APP_URL` を読み取り、その URL のデプロイ先をテストします。
 未設定なら、この構成はローカルのアプリを起動します。コマンドとポートをアプリに合わせてください。
 
 ```ts title="e2e.config.ts"
@@ -79,7 +79,7 @@ Vercel プロジェクトの **Settings → Git** で、
 [`repository_dispatch` イベント](https://vercel.com/docs/git/vercel-for-github#repository-dispatch-events) を有効にします。
 **Settings → Deployment Protection** で、
 [Protection Bypass for Automation](https://vercel.com/docs/deployment-protection/methods-to-bypass-deployment-protection/protection-bypass-automation)
-のシークレットを作成します。設定から `x-vercel-protection-bypass` ヘッダーとして送信されます。
+のシークレットを作成します。e2e の設定で、このシークレットを `x-vercel-protection-bypass` ヘッダーとして送信します。
 
 GitHub の **Settings → Secrets and variables → Actions** に、次を追加します。
 
@@ -159,11 +159,11 @@ status アクションは、そのコミットにジョブの結果を報告し�
 
 <Note>
 デプロイをテストする前に、ワークフローをデフォルトブランチに追加してください。
-プルリクエスト内で編集しても、Vercel が起動するワークフローは変わりません。
+プルリクエストでワークフローを編集しても、Vercel が起動するワークフローは変わりません。
 </Note>
 
 このワークフローは、信頼できるデプロイのコードにだけ使ってください。
-そのコミットのコードを、リポジトリのシークレットと書き込みトークンを渡してインストール・実行します。
+このワークフローは、そのコミットのコードを、リポジトリのシークレットと書き込みトークンを渡してインストールし、実行します。
 [モデルの認証情報](/ci#model-credentials) を参照してください。
 
 ### テスト結果で本番公開を制御する

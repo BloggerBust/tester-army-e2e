@@ -7,6 +7,7 @@ import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { resolveOutputDir } from '@e2e-dev/core/lib/config/resolve';
 import { errorMessage } from '@e2e-dev/core/lib/internal/errors';
+import { redactError } from '@e2e-dev/core/lib/run/secrecy';
 import { discoverConfig, loadConfigModule } from '../config/load.ts';
 import { platformOpenCommand, spawnBrowserCommand } from '../internal/open-browser.ts';
 
@@ -40,7 +41,8 @@ export async function report(options: ReportOptions = {}): Promise<number> {
   try {
     found = await resolveReportFile(cwd, options);
   } catch (cause) {
-    process.stderr.write(`${errorMessage(cause)}\n`);
+    // Redacted: the config may have loaded a key and quoted it as it failed.
+    process.stderr.write(`${redactError(errorMessage(cause))}\n`);
     return 2;
   }
   if (found.filePath === undefined) {

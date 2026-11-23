@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -10,6 +10,20 @@ import {
   runScriptCommand,
   type PackageManager,
 } from '../../src/internal/package-manager.ts';
+
+/** Mirrors cli-init.test.ts: Windows needs special privileges for symlinks. */
+const symlinks = ((): boolean => {
+  const probe = mkdtempSync(path.join(os.tmpdir(), 'e2e-pm-symlink-'));
+  try {
+    writeFileSync(path.join(probe, 'file'), '');
+    symlinkSync(path.join(probe, 'file'), path.join(probe, 'link'));
+    return true;
+  } catch {
+    return false;
+  } finally {
+    rmSync(probe, { recursive: true, force: true });
+  }
+})();
 
 let dir: string;
 
@@ -31,6 +45,20 @@ describe('detectPackageManager', () => {
     expect(detectPackageManager(dir, undefined, { npm_config_user_agent: 'bun/1.2.0' })).toBe('bun');
     expect(detectPackageManager(dir, undefined, { npm_config_user_agent: 'cargo/1' })).toBe('npm');
     expect(detectPackageManager(dir, undefined, {})).toBe('npm');
+  });
+});
+
+describe('lockfile type checks', () => {
+  it('ignores directories named as lockfiles', () => {
+    mkdirSync(path.join(dir, 'pnpm-lock.yaml'));
+    writeFileSync(path.join(dir, 'package-lock.json'), '{}');
+    expect(detectPackageManager(dir, undefined, {})).toBe('npm');
+  });
+
+  it.skipIf(!symlinks)('retains symlinks to regular lockfiles when the host permits symlinks', () => {
+    writeFileSync(path.join(dir, 'package-lock.json'), '{}');
+    symlinkSync('package-lock.json', path.join(dir, 'pnpm-lock.yaml'));
+    expect(detectPackageManager(dir, undefined, {})).toBe('pnpm');
   });
 });
 

@@ -5,6 +5,7 @@
  * one at a time. Parallel work is more hosts.
  */
 
+import { randomBytes } from 'node:crypto';
 import { mkdtemp, rm } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
@@ -16,7 +17,7 @@ import { rejectUnknownKeys, rejectUnknownOptions } from '../internal/options.ts'
 import { MAX_TIMER_MS } from '../internal/time.ts';
 import { builtInFixtures, CORE_FIXTURES } from '../run/fixtures.ts';
 import { redactOpening } from '../run/redact-opening.ts';
-import { processSecrets, sessionLedger, shareStaticSecrets } from '../run/secrecy.ts';
+import { processSecrets, registerProviderKeys, sessionLedger, shareStaticSecrets } from '../run/secrecy.ts';
 import { targetIdentity } from '../run/sessions.ts';
 import { openCoreHost, type StandaloneHost } from '../run/standalone.ts';
 import type { StandaloneAttempt } from '../run/standalone-attempt.ts';
@@ -161,6 +162,8 @@ export async function launch<Fixtures extends object = {}>(engine: EngineHandle<
   try {
     opened = await opening(async () => {
       const env = options.env ?? process.env;
+      // Before the engine prepares with it: a failure there can quote a key only this environment holds.
+      registerProviderKeys(env);
       const resolved = resolveProjectConfig(
         {
           // An engine that declares no platform labels its host with its name.
@@ -180,6 +183,9 @@ export async function launch<Fixtures extends object = {}>(engine: EngineHandle<
       const notice = options.onNotice;
       const host = await openCoreHost({
         config, target, env, headed: options.headed ?? false,
+        // Hosts name their targets alike, so the engine gets a token per host to keep what it holds apart: a device session.
+        // Random, so hosts in other processes, worker threads, or copies of this package differ too.
+        hostId: randomBytes(12).toString('hex'),
         signal: anySignal(options.signal, seat?.signal),
         ...(notice === undefined ? {} : { notice: (_target: string, message: string) => notice(message) }),
       });

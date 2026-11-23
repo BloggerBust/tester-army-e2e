@@ -17,7 +17,7 @@ import { plural } from '../report/markdown-text.ts';
 import { leftOutTests } from '../report/left-out.ts';
 import type { TestFilter, TestFilterCandidate, TestFilterChanges, TestFilterContext } from '../run-types.ts';
 import { findChanges } from './changes.ts';
-import { staticSecretLedger } from '@e2e-dev/core/lib/run/secrecy';
+import { staticOutputLedger } from '@e2e-dev/core/lib/run/secrecy';
 import { relevanceBand } from './units.ts';
 
 /** What `filterSelection` judges a selection with, and where each line about what the gate and the filters decided goes. */
@@ -287,7 +287,7 @@ export async function applyTestFilters(
  */
 async function callFilter(filter: TestFilter, input: readonly TestFilterCandidate[], scope: TestFilterScope): Promise<FilterCall> {
   const { name } = filter;
-  const { redact, redactFragments } = staticSecretLedger(scope.secrets);
+  const { redact, redactFragments } = staticOutputLedger(scope.secrets);
   const interrupted = new E2EError('interrupted', 'INTERRUPTED', `interrupted while filter ${JSON.stringify(name)} ran`);
   if (scope.signal.aborted) throw interrupted;
   const budget = budgetText(scope.timeoutMs);

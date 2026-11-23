@@ -240,6 +240,34 @@ describe('e2e init --example', () => {
     expect(existsSync(target)).toBe(false);
   });
 
+  it('asks which example when the flag has no name, and copies the one picked', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(new Uint8Array(viteTarball()))));
+    vi.mocked(clack.select).mockImplementationOnce(async (prompt) => {
+      expect(prompt.options.map((option) => option.label)).toEqual(EXAMPLES.map((example) => example.label));
+      return findExample('with-vite');
+    });
+    vi.mocked(clack.confirm).mockResolvedValue(true);
+    const target = path.join(dir, 'my-app');
+    const outcome = await init(target, { interactive: true, example: true, skills: [], mcp: [], ci: 'none', install: false });
+    expect(outcome).toMatchObject({ exitCode: 0, result: 'scaffolded', example: 'with-vite' });
+    expect(existsSync(path.join(target, 'e2e.config.ts'))).toBe(true);
+  });
+
+  it('downloads nothing when the example picker is cancelled', async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+    vi.mocked(clack.select).mockResolvedValueOnce(Symbol.for('clack:cancel'));
+    expect(await init(path.join(dir, 'my-app'), { interactive: true, example: true })).toMatchObject({ exitCode: 0, result: 'cancelled', example: null });
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(existsSync(path.join(dir, 'my-app'))).toBe(false);
+  });
+
+  it('names the examples when nobody can answer the picker', async () => {
+    expect(await init(dir, { interactive: false, example: true })).toMatchObject({ exitCode: 2, result: 'not-interactive' });
+    expect(clack.select).not.toHaveBeenCalled();
+    expect(output()).toContain('with-vite');
+  });
+
   it('removes the copied example when the wizard is cancelled, keeping what was there', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => new Response(new Uint8Array(viteTarball()))));
     mkdirSync(path.join(dir, '.git'));

@@ -148,15 +148,15 @@ export interface StepReleaseMessage {
 }
 
 /**
- * A request to read the screen at the held step or pause named by `holdId`.
- * The worker handles it right away, like `step-release`, then sends a
- * `screen-reply`.
+ * A request to read the screen or app log at the held step or pause named by
+ * `holdId`. The worker handles it right away, like `step-release`, then sends
+ * a `screen-reply` or `logs-reply`.
  */
-export interface ScreenRequestMessage {
-  readonly type: 'screen-request';
+export type HoldRequestMessage = {
+  readonly type: 'screen-request' | 'logs-request';
   readonly holdId: string;
   readonly requestId: string;
-}
+};
 
 /**
  * Requests for a held test attachment. The attach request names a hold.
@@ -196,7 +196,7 @@ export type MainToWorker =
   | TerminateMessage
   | PingMessage
   | StepReleaseMessage
-  | ScreenRequestMessage
+  | HoldRequestMessage
   | StepAttachmentRequestMessage
   | StepAttachmentCancelMessage
   | ContinueMessage;
@@ -318,6 +318,13 @@ export interface ScreenReplyMessage {
   readonly requestId: string;
   readonly screen?: string;
 }
+
+/** The reply to `logs-request`. The logs are absent if the wait has ended. */
+type LogsReplyMessage = {
+  readonly type: 'logs-reply';
+  readonly requestId: string;
+  readonly logs?: readonly string[];
+};
 
 /**
  * Replies to attachment requests. The worker redacts each result with the
@@ -446,6 +453,7 @@ export type WorkerToMain =
   | StepHoldMessage
   | StepCancelMessage
   | ScreenReplyMessage
+  | LogsReplyMessage
   | StepAttachmentReplyMessage
   | OutputMessage
   | NoticeMessage

@@ -11,7 +11,7 @@ import path from 'node:path';
 import { isAlias, isMap, isNode, isScalar, isSeq, parseAllDocuments, parseDocument, visit, type Document, type Scalar, type YAMLMap, type YAMLSeq } from 'yaml';
 import { resolvePlatform, targetName } from '@e2e-dev/core/lib/config/targets';
 import { isLoopbackHost } from '@e2e-dev/core/lib/internal/urls';
-import type { PackageManager } from '../../internal/package-manager.ts';
+import { runScriptCommand, type PackageManager } from '../../internal/package-manager.ts';
 import type { E2EConfig } from '../../run-types.ts';
 import type { CiId } from './choices.ts';
 import { GATEWAYS, type GatewayPreset } from './gateways.ts';
@@ -185,6 +185,11 @@ export interface WorkflowContext {
   readonly secrets: readonly string[];
   /** The jobs to write, each with the targets it runs. */
   readonly jobs: CiJobs;
+  /**
+   * The package.json script the web job runs before `e2e run`: the app's
+   * production build, which the config serves in CI.
+   */
+  readonly webBuild?: string;
   /** Appended to every GitLab job name; see {@link CiFile.jobSuffix}. */
   readonly jobSuffix?: string;
 }
@@ -512,7 +517,15 @@ export function renderGithubWorkflow(context: WorkflowContext): string {
     const job = jobs.get('web') as YAMLMap;
     const browsers = byName(job, 'Install browsers');
     browsers.set('run', templateCommand(context.manager, String(browsers.get('run'))));
-    finishGithubJob(doc, job, context, byName(job, 'Run e2e'), context.jobs.web);
+    const run = byName(job, 'Run e2e');
+    if (context.webBuild !== undefined) {
+      const steps = job.get('steps') as YAMLSeq;
+      const build = doc.createNode({ name: 'Build the app', run: runScriptCommand(context.manager, context.webBuild) }) as YAMLMap;
+      build.commentBefore = ' e2e.config.ts serves this build in CI.';
+      build.spaceBefore = true;
+      steps.items.splice(steps.items.indexOf(run), 0, build);
+    }
+    finishGithubJob(doc, job, context, run, context.jobs.web);
   }
   if (context.jobs.ios !== undefined) {
     const job = jobs.get('ios') as YAMLMap;
@@ -620,6 +633,7 @@ export function renderGitlabPipeline(context: WorkflowContext): string {
       ...gitlabInstall(context),
       ...(installDir === projectDir ? [] : projectDir === '' ? ['cd "$CI_PROJECT_DIR"'] : cd(projectDir)),
       templateCommand(manager, browsers!.value),
+      ...(context.webBuild === undefined ? [] : [runScriptCommand(manager, context.webBuild)]),
       templateCommand(manager, run!.value, context.jobs.web),
     ]));
     if (projectDir !== '') {
@@ -744,4 +758,14 @@ export function configUsesLocalModel(config: string): boolean {
 /** Whether a config sets an app `command`, so the runner can start the app on a fresh CI machine. */
 export function configStartsApp(config: string): boolean {
   return config.split('\n').some((line) => !line.trimStart().startsWith('//') && /\bcommand\s*:/u.test(line));
+}
+
+/**
+ * Whether a config runs the package.json script `script` as an app command,
+ * as in `args: ['run', 'start']`, outside a comment.
+ */
+export function configRunsScript(config: string, script: string): boolean {
+  const name = script.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&');
+  const pattern = new RegExp(`args\\s*:\\s*\\[\\s*(['"\`])run\\1\\s*,\\s*(['"\`])${name}\\2`, 'u');
+  return config.split('\n').some((line) => !line.trimStart().startsWith('//') && pattern.test(line));
 }

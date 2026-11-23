@@ -21,8 +21,9 @@ unless the agents entry sets a [custom one](/executors).
 For `act`, the first prompt holds the instruction, the params, the completed
 steps, and a redacted text snapshot of the screen: roles, names, text, and
 states. It holds no raw HTML, cookies, headers, or environment values.
-Password fields are masked, and a configured secret value on screen becomes
-`<secret:name>`.
+Password fields are masked, unless a page script hides one from e2e
+([where redaction stops](/reference/security#where-redaction-stops)).
+A configured secret value on screen becomes `<secret:name>`.
 
 After an action, the model gets the changes to the screen, or a new full
 snapshot when most of it changed. Node ids stay the same while their
@@ -110,6 +111,11 @@ Only `failed` and `blocked` carry an error code.
 
 The [errors reference](/reference/errors#agenterror) lists every code a
 verdict can carry.
+
+When a step only asks for actions, the agent may send its verdict in the
+same turn as the last action, and the step returns without another model
+call. The runner takes that verdict after those actions run, and refuses it
+when one failed or the last one changed nothing.
 
 ## What a step costs
 

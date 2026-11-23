@@ -4,6 +4,7 @@ import { createHash } from 'node:crypto';
 import { createReadStream, mkdirSync } from 'node:fs';
 import { readdir, readFile, rm, rmdir, stat } from 'node:fs/promises';
 import path from 'node:path';
+import { buffer } from 'node:stream/consumers';
 import { pipeline } from 'node:stream/promises';
 import { writeFileAtomic } from '../internal/atomic-write.ts';
 import type { SecretLedger } from '../internal/redact.ts';
@@ -17,10 +18,9 @@ import { redactsDownloads } from './secrecy.ts';
  * screenshot masks secure fields at the source; a log passes through the
  * secret redactor. A recording masks nothing: a secure field renders its own
  * dots, but anything else the screen showed is in the frames. A download
- * is whatever the app served, bytes the runner did not write and does not
- * rewrite: it is `incomplete` unless the sink scanned it (see
- * `redactDownload`), so a store exporting only vouched-for artifacts holds it
- * back.
+ * is whatever the app served. It is `incomplete` unless the sink scanned
+ * it for app secrets (see `redactDownload`), so a store exporting only
+ * vouched-for artifacts holds it back.
  */
 const REDACTION_BY_KIND: Readonly<Record<ArtifactRecord['kind'], ArtifactRecord['redaction']>> = {
   screenshot: 'complete',
@@ -70,8 +70,8 @@ export function createAttemptArtifacts(options: {
   /**
    * The ledger of the session the attempt runs on, read when a download is
    * registered; undefined (no session open yet) leaves every download as
-   * served. While it holds a value (`redactsDownloads`), a text-like
-   * download is rewritten through it before it is hashed or stored.
+   * served. If the ledger knows any values, eligible text downloads are
+   * scanned before being hashed or stored.
    */
   ledger?: () => SecretLedger | undefined;
   /**
@@ -109,7 +109,7 @@ export function createAttemptArtifacts(options: {
       const ledger = kind === 'download' ? options.ledger?.() : undefined;
       pending.push(
         (async () => {
-          if (ledger !== undefined && redactsDownloads(ledger) && isTextLike(record.mediaType)) {
+          if (ledger !== undefined && isTextLike(record.mediaType) && redactsDownloads(ledger)) {
             record.redaction = await redactDownload(absolute, ledger);
           }
           // Without a store the file is streamed for its size and digest only;
@@ -269,20 +269,29 @@ export function attemptSegments(rerunDir: string | undefined, owner: string, att
   return [owner, ...(rerunDir === undefined ? [] : [rerunDir]), `attempt-${attemptIndex + 1}`];
 }
 
+/** Cap the extra scan enabled by provider keys alone. */
+const MAX_PROVIDER_KEY_DOWNLOAD_BYTES = 16 * 1024 * 1024;
+
 /**
- * Rewrites a text-like download through the session's ledger, and returns the redaction the record can claim:
- * `complete` once every registered value is gone from it, changed or not, and
- * `incomplete` when the file is not UTF-8 text or cannot be read or written,
- * in which case it is left as served. A leading byte order mark is kept as
- * part of the text, so a rewritten file starts the way it was served.
+ * Scans UTF-8 downloads for secrets, keeping any leading byte order mark.
+ * Only a successful app-secret scan can label a download complete.
  */
 async function redactDownload(absolute: string, ledger: SecretLedger): Promise<ArtifactRecord['redaction']> {
   try {
-    const bytes = await readFile(absolute);
+    let bytes: Buffer;
+    if (ledger.hasAppSecrets) {
+      bytes = await readFile(absolute);
+    } else {
+      if ((await stat(absolute)).size > MAX_PROVIDER_KEY_DOWNLOAD_BYTES) return 'incomplete';
+      // Read one extra byte to detect growth after stat without an unbounded read.
+      bytes = await buffer(createReadStream(absolute, { end: MAX_PROVIDER_KEY_DOWNLOAD_BYTES }));
+      if (bytes.byteLength > MAX_PROVIDER_KEY_DOWNLOAD_BYTES) return 'incomplete';
+    }
     const text = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(bytes);
+    const hasAppSecrets = ledger.hasAppSecrets;
     const redacted = ledger.redactFragments(text);
     if (redacted !== text) await writeFileAtomic(absolute, redacted);
-    return 'complete';
+    return hasAppSecrets ? 'complete' : 'incomplete';
   } catch {
     return 'incomplete';
   }

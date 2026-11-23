@@ -19,13 +19,16 @@ export type InitFlagValues = Omit<InitOptions, 'directory' | 'interactive' | 'en
 const ENGINE_IDS: readonly EngineId[] = getEnginePresets().map((preset) => preset.id);
 const SKILL_DIRS = SKILL_LOCATIONS.map((location) => location.dir);
 const MCP_FILES = MCP_LOCATIONS.map((location) => location.file);
+const EXAMPLE_IDS = EXAMPLES.map((example) => example.id).join(', ');
 
 /** Adds a flag per wizard question to the `init` command. */
 export function addInitOptions(command: Command): Command {
   return command
     .addOption(
-      new Option('--example <name>', `start from an example app downloaded from GitHub: ${EXAMPLES.map((example) => example.id).join(', ')}`)
-        .argParser(parseExample),
+      new Option(
+        '--example [name]',
+        `start from an example app downloaded from GitHub: ${EXAMPLE_IDS}; without a name, pick one from the list`,
+      ).argParser(parseExample),
     )
     .option('--engine <ids>', `engines for a new config, comma-separated: ${ENGINE_IDS.join(', ')}, or none`, parseNames('engine'))
     .addOption(
@@ -51,16 +54,20 @@ export function addInitOptions(command: Command): Command {
 /**
  * The init flags as `init` takes them. A location list that names an unknown
  * location or combines `none` with others, and an `--endpoint` next to
- * another gateway, fail as usage errors before anything is written.
+ * another gateway, fail as usage errors before anything is written. So does
+ * `--example` without a name next to `--yes`, which leaves nobody to pick one.
  */
 export function checkInitFlags(options: InitFlagValues, command: Command): Omit<InitOptions, 'directory' | 'interactive'> {
   if (options.endpoint !== undefined && options.gateway !== 'openai-compatible') {
     command.error(`error: --endpoint is the base URL for --gateway openai-compatible, not --gateway ${options.gateway}`, { exitCode: 2 });
   }
+  if (options.example === true && options.yes) {
+    command.error(`error: --example without a name asks which example, and --yes skips the prompts; name one of ${EXAMPLE_IDS}`, { exitCode: 2 });
+  }
   if (options.example !== undefined) {
     const conflicts = (['engine', 'gateway', 'endpoint'] as const).filter((flag) => options[flag] !== undefined);
     if (conflicts.length > 0) {
-      command.error(`error: --example ${options.example} brings its own e2e.config.ts; drop ${conflicts.map((flag) => `--${flag}`).join(', ')}`, { exitCode: 2 });
+      command.error(`error: an example brings its own e2e.config.ts; drop ${conflicts.map((flag) => `--${flag}`).join(', ')}`, { exitCode: 2 });
     }
   }
   const { engine, skills, mcp, ...rest } = options;
@@ -95,11 +102,15 @@ function trimSlashes(name: string): string {
   return name.replace(/\/+$/u, '');
 }
 
-/** The `--example` value as its folder name; `expo` and `with-expo` both name `with-expo`. */
+/**
+ * The `--example` value as its folder name; `expo` and `with-expo` both name
+ * `with-expo`. The name is optional, so a directory typed after the flag
+ * lands here; the message says where it goes.
+ */
 function parseExample(value: string): string {
   const example = findExample(value.trim());
   if (example === undefined) {
-    throw new InvalidArgumentError(`unknown example "${value}"; expected ${EXAMPLES.map(({ id }) => id).join(', ')}`);
+    throw new InvalidArgumentError(`unknown example "${value}"; expected ${EXAMPLE_IDS}. A directory goes before --example`);
   }
   return example.id;
 }

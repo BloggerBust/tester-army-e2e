@@ -10,12 +10,13 @@
 
 import path from 'node:path';
 import { modelLabel } from '@e2e-dev/core/lib/config/agent';
+import { collapseText } from '@e2e-dev/core/lib/internal/text';
 import { isLoopbackHost } from '@e2e-dev/core/lib/internal/urls';
 import type { AppLogSource } from '@e2e-dev/core/lib/engine/index';
 import type { AppLogRecord, StepCacheInfo, StepCacheRecord, StepEvent, StepTurn } from '@e2e-dev/core/lib/run/steps';
 import type { Report1Document, ReportError, ReportResult, ReportSource, ReportStep } from './build.ts';
 import { cell, code, formatDuration, link, MAX_CELL_CHARS, MAX_ID_CHARS, MAX_LABEL_CHARS, MAX_PATH_CHARS, MAX_TITLE_CHARS, plural } from './markdown-text.ts';
-import { repeatSuffix, STATUS_WORD, withActor } from './format.ts';
+import { ellipsize, repeatSuffix, STATUS_WORD, withActor } from './format.ts';
 import type { AttemptView, Outcome } from './outcome.ts';
 
 type ReportArtifact = ReportResult['attempts'][number]['artifacts'][number];
@@ -348,10 +349,11 @@ function importantThenLatest(items: readonly PageItem[], max: number): { readonl
   return { shown, left: ordered.length - shown.length };
 }
 
-/** One app log line as a page shows it: `✗ network error: \`GET /api 500\``. */
-function appLogLine(entry: AppLogRecord): string {
+/** One app log line with a source and level, in Markdown or plain text. */
+function appLogLine(entry: AppLogRecord, format: 'markdown' | 'text' = 'markdown'): string {
   const glyph = entry.level === 'error' ? '✗' : entry.level === 'warning' ? '⚠' : 'ℹ';
-  const text = code(shortenLoopback(entry.text), MAX_DETAIL_CHARS);
+  const detail = shortenLoopback(entry.text);
+  const text = format === 'markdown' ? code(detail, MAX_DETAIL_CHARS) : ellipsize(collapseText(detail), MAX_DETAIL_CHARS);
   const source = APP_SOURCE_TEXT[entry.source];
   return entry.level === 'info' ? `${glyph} ${source}: ${text}` : `${glyph} ${source} ${entry.level}: ${text}`;
 }
@@ -388,13 +390,24 @@ const MAX_APP_LOG_LINES = 50;
  * counts what was left out.
  */
 function appLogLines(steps: readonly ReportStep[], appLog: readonly AppLogRecord[]): string[] {
-  const numbers = new Map(steps.map((step, position) => [step.index, position + 1]));
-  const items = appLog.map((entry) => {
-    const number = entry.step === undefined ? undefined : numbers.get(entry.step);
-    return { at: entry.at, important: entry.level !== 'info', line: `${number === undefined ? 'before step 1' : `step ${number}`} · ${appLogLine(entry)}` };
-  });
+  const items = numberedAppLogLines(steps, appLog);
   const { shown, left } = importantThenLatest(items, MAX_APP_LOG_LINES);
   return [...(left === 0 ? [] : [`${left} ${left === 1 ? 'line' : 'lines'} left out`]), ...shown.map((item) => item.line)];
+}
+
+/** Formats app log lines with the position of their step in the attempt's step list. */
+export function numberedAppLogLines(
+  steps: readonly Pick<ReportStep, 'index'>[],
+  appLog: readonly AppLogRecord[],
+  format: 'markdown' | 'text' = 'markdown',
+): PageItem[] {
+  const numbers = new Map(steps.map((step, position) => [step.index, position + 1]));
+
+  return appLog.map((entry) => {
+    const number = entry.step === undefined ? undefined : numbers.get(entry.step);
+    const prefix = number === undefined ? 'before step 1' : `step ${number}`;
+    return { at: entry.at, important: entry.level !== 'info', line: `${prefix} · ${appLogLine(entry, format)}` };
+  });
 }
 
 function cacheLine(cache: StepCacheRecord, cacheDir: string | undefined): string {

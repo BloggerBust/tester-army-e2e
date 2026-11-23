@@ -7,7 +7,7 @@ import type { LocatorAction, LocatorExpression, Observation, SemanticNode } from
 import { locatorBrand } from '../internal/brands.ts';
 import { isSecret } from '../secrets.ts';
 import { TestError } from '../internal/errors.ts';
-import { requireFinitePoint } from '../internal/geometry.ts';
+import { isPercentage, requireFinitePoint } from '../internal/geometry.ts';
 import { isCheckable, isValueControl } from '../internal/roles.ts';
 import { isPlainObject, rejectUnknownOptions } from '../internal/options.ts';
 import { realmSlot } from '../internal/realm-slot.ts';
@@ -16,6 +16,7 @@ import { isTextMatch, normalizeText } from '../internal/text.ts';
 import type {
   ActionOptions,
   ClickOptions,
+  FilePayload,
   LongPressOptions,
   Locator,
   Momentum,
@@ -25,6 +26,8 @@ import type {
   RoleAlias,
   RoleOptions,
   Screen,
+  ScreenCoordinate,
+  ScreenPoint,
   ScrollDirection,
   Secret,
   SelectOption,
@@ -213,17 +216,17 @@ class ScreenImpl implements Screen {
     return new LocatorImpl(this.context, this.build(testIdQuery(id, options, this.scope)));
   }
 
-  async tapAt(point: Point, options?: ActionOptions): Promise<void> {
+  async tapAt(point: ScreenPoint, options?: ActionOptions): Promise<void> {
     rejectUnknownOptions('tapAt', options, ['timeout']);
-    const at = requirePoint(point, 'tapAt');
+    const at = requireScreenPoint(point, 'tapAt');
     await this.context.steps.run('screen', 'screen.tapAt', describePoint(at), () =>
       this.context.engine.performAt(at, { kind: 'tap' }, options?.timeout),
     );
   }
 
-  async doubleTapAt(point: Point, options?: ActionOptions): Promise<void> {
+  async doubleTapAt(point: ScreenPoint, options?: ActionOptions): Promise<void> {
     rejectUnknownOptions('doubleTapAt', options, ['timeout']);
-    const at = requirePoint(point, 'doubleTapAt');
+    const at = requireScreenPoint(point, 'doubleTapAt');
     await this.context.steps.run('screen', 'screen.doubleTapAt', describePoint(at), () =>
       this.context.engine.performAt(at, { kind: 'doubleTap' }, options?.timeout),
     );
@@ -232,8 +235,8 @@ class ScreenImpl implements Screen {
   async swipe(options: SwipeOptions | SwipePathOptions): Promise<void> {
     if (isSwipePath(options)) {
       rejectUnknownOptions('swipe', options, ['from', 'to', 'duration']);
-      const from = requirePoint(options.from, 'swipe from');
-      const to = requirePoint(options.to, 'swipe to');
+      const from = requireScreenPoint(options.from, 'swipe from');
+      const to = requireScreenPoint(options.to, 'swipe to');
       const durationMs = validateSwipeDuration(options.duration);
       await this.context.steps.run(
         'screen',
@@ -539,14 +542,38 @@ class LocatorImpl extends ScreenImpl implements Locator {
     return this.perform('hover', { kind: 'hover' }, options);
   }
 
-  setInputFiles(paths: string | readonly string[], options?: ActionOptions): Promise<void> {
-    const list = typeof paths === 'string' ? [paths] : [...paths];
-    if (list.some((entry) => typeof entry !== 'string' || entry.trim() === '')) {
-      throw new TestError('INVALID_ARGUMENT', 'setInputFiles paths must be non-empty strings');
+  setInputFiles(files: string | readonly string[] | FilePayload | readonly FilePayload[], options?: ActionOptions): Promise<void> {
+    const list: readonly unknown[] = Array.isArray(files) ? [...files] : [files];
+    if (list.some((entry) => typeof entry === 'string') && list.some(isPlainObject)) {
+      throw new TestError('INVALID_ARGUMENT', 'File paths cannot be mixed with buffers');
     }
-    const base = this.context.projectRoot;
-    const resolved = list.map((entry) => (base === undefined ? entry : nodePath.resolve(base, entry)));
-    return this.perform('setInputFiles', { kind: 'setInputFiles', paths: resolved }, options);
+    if (list.length === 0 && !this.context.engine.supports('setInputFiles') &&
+        this.context.engine.supports('setInputFilePayloads')) {
+      return this.perform('setInputFiles', { kind: 'setInputFilePayloads', files: [] }, options);
+    }
+    if (list.length === 0 || typeof list[0] === 'string') {
+      const base = this.context.projectRoot;
+      const paths = list.map((entry) => {
+        if (typeof entry !== 'string' || entry.trim() === '') {
+          throw new TestError('INVALID_ARGUMENT', 'setInputFiles paths must be non-empty strings');
+        }
+        return base === undefined ? entry : nodePath.resolve(base, entry);
+      });
+      return this.perform('setInputFiles', { kind: 'setInputFiles', paths }, options);
+    }
+    const payloads = list.map((entry) => {
+      if (!isPlainObject(entry) || typeof entry['name'] !== 'string' || entry['name'].trim() === '' ||
+          typeof entry['mimeType'] !== 'string' || !Buffer.isBuffer(entry['buffer'])) {
+        throw new TestError('INVALID_ARGUMENT', 'setInputFiles payloads require a non-empty name, a mimeType string, and a Buffer');
+      }
+      rejectUnknownOptions('setInputFiles payload', entry, ['name', 'mimeType', 'buffer']);
+      return { name: entry['name'], mimeType: entry['mimeType'], buffer: entry['buffer'] };
+    });
+    if (payloads.reduce((size, file) => size + file.buffer.byteLength, 0) >= 50 * 1024 * 1024) {
+      throw new TestError('INVALID_ARGUMENT', 'Cannot set buffer larger than 50Mb, please write it to a file and pass its path instead.');
+    }
+    const snapshots = payloads.map((file) => ({ ...file, buffer: new Uint8Array(file.buffer) }));
+    return this.perform('setInputFiles', { kind: 'setInputFilePayloads', files: snapshots }, options);
   }
 
   dragTo(target: Locator, options?: ActionOptions): Promise<void> {
@@ -729,6 +756,27 @@ function requirePoint(point: Point | undefined, what: string): Point {
   return at;
 }
 
+/** Validates a viewport point a test names: non-negative pixels or `'0%'` through `'100%'` per coordinate. */
+function requireScreenPoint(point: ScreenPoint | undefined, what: string): ScreenPoint {
+  const { x, y } = (point ?? {}) as { readonly x?: unknown; readonly y?: unknown };
+  return { x: requireCoordinate(x, what), y: requireCoordinate(y, what) };
+}
+
+/** One coordinate of `requireScreenPoint`. */
+function requireCoordinate(value: unknown, what: string): ScreenCoordinate {
+  if (isPercentage(value)) return value;
+  if (typeof value === 'string') {
+    throw new TestError('INVALID_ARGUMENT', `${what} takes a percentage from '0%' through '100%', got ${JSON.stringify(value)}`);
+  }
+  if (typeof value !== 'number' || !Number.isFinite(value)) {
+    throw new TestError('INVALID_ARGUMENT', `${what} requires a point { x, y } of finite numbers or percentages`);
+  }
+  if (value < 0) {
+    throw new TestError('INVALID_ARGUMENT', `${what} requires a point { x, y } of non-negative numbers`);
+  }
+  return value;
+}
+
 /**
  * Refuses a `selectOption` value that is not one option: a label string or an
  * object with exactly one of `label`, `value`, or a nonnegative integer
@@ -755,7 +803,7 @@ function requireSelectOption(value: unknown): void {
 }
 
 /** A point as the report shows it. */
-function describePoint(point: Point): string {
+function describePoint(point: ScreenPoint): string {
   return `(${point.x}, ${point.y})`;
 }
 

@@ -22,12 +22,14 @@ import { formatMessage, type Outcome, type ReportCounts, type Row, type SecondPa
 
 const MATRIX_JOB = /^(web|android|ios) /;
 
+type NightlyReport = {
+  run: { durationMs?: number; summary: Omit<ReportCounts, 'durationMs'> };
+};
+
 /** The counts and duration of one `report-1` file. */
 function readReport(path: string): ReportCounts | undefined {
   if (!existsSync(path)) return undefined;
-  const { run } = JSON.parse(readFileSync(path, 'utf8')) as {
-    run: { startedAt: string; finishedAt?: string; summary: Omit<ReportCounts, 'durationMs'> };
-  };
+  const { run }: NightlyReport = JSON.parse(readFileSync(path, 'utf8'));
   const { passed, failed, flaky, skipped, interrupted } = run.summary;
   return {
     passed,
@@ -35,7 +37,7 @@ function readReport(path: string): ReportCounts | undefined {
     flaky,
     skipped,
     interrupted,
-    ...(run.finishedAt === undefined ? {} : { durationMs: Date.parse(run.finishedAt) - Date.parse(run.startedAt) }),
+    ...(run.durationMs === undefined ? {} : { durationMs: run.durationMs }),
   };
 }
 

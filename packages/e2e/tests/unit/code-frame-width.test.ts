@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import picocolors from 'picocolors';
 import { afterAll, afterEach, describe, expect, it } from 'vitest';
+import { registerProviderKey } from '@e2e-dev/core/lib/run/secrecy';
 import { codeFrame } from '../../src/report/code-frame.ts';
 import { visibleWidth } from '../../src/report/format.ts';
 
@@ -49,5 +50,26 @@ describe('code-frame terminal columns', () => {
     const rows = render(`${prefix}throw new Error();`, prefix.length + 1, 40);
     expect(rows).toHaveLength(1);
     expect(visibleWidth(rows[0] ?? '')).toBeLessThanOrEqual(35);
+  });
+
+  it('redacts a key the source spells out before clipping the line, and puts the caret after the marker', () => {
+    const key = 'sk-frame-0c7e41a9b35d68f2';
+    registerProviderKey('frame.key', key);
+    const prefix = `const key = '${key}'; `;
+    const rows = render(`${prefix}throw new Error();`, prefix.length + 1, 44);
+    expect(rows[0]).toBe("  1| const key = '<secret:frame.key>';…");
+    expect(rows.join('\n')).not.toContain('sk-frame');
+    const wide = render(`${prefix}throw new Error();`, prefix.length + 1, 120);
+    expect(wide[0]).toBe("  1| const key = '<secret:frame.key>'; throw new Error();");
+    expect(wide[1]).toBe(`   |${' '.repeat("const key = '<secret:frame.key>'; ".length + 1)}^`);
+  });
+
+  it('omits a caret inside a redacted value and keeps a caret before it', () => {
+    const value = 'fixture-code-frame-0123456789abcdef0123456789abcdef';
+    registerProviderKey('frame.inside', value);
+    const prefix = 'const value = "';
+    const source = `${prefix}${value}";`;
+    expect(render(source, prefix.length + 39, 120)).toEqual(['  1| const value = "<secret:frame.inside>";']);
+    expect(render(source, prefix.length + 1, 120)[1]).toBe(`   |${' '.repeat(prefix.length + 1)}^`);
   });
 });

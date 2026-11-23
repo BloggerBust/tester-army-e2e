@@ -3,7 +3,7 @@ import type { ResolvedConfig } from '@e2e-dev/core/lib/config/resolve';
 import type { TargetSession } from '@e2e-dev/core/lib/engine/surface';
 import type { SecretLedger } from '@e2e-dev/core/lib/internal/redact';
 import { serializeError, TestError } from '@e2e-dev/core/lib/internal/errors';
-import { adoptSecrets, carriedSecrets, processSecrets, redactForSession, registerStaticSecrets, redactsDownloads, releaseSessionLedger, sessionLedger, shareStaticSecrets, staticSecretLedger } from '@e2e-dev/core/lib/run/secrecy';
+import { adoptSecrets, carriedSecrets, processSecrets, redactForSession, registerStaticSecrets, registerProviderKey, releaseSessionLedger, sessionLedger, shareStaticSecrets, staticSecretLedger } from '@e2e-dev/core/lib/run/secrecy';
 
 const STATIC_VALUE = 'static-config-password-5521';
 const PROVIDER_VALUE = 'provider-minted-token-8804';
@@ -44,17 +44,20 @@ describe('session secrecy carried across save and restore', () => {
 });
 
 describe('session download redaction', () => {
-  it('rewrites downloads whenever the ledger redacts a value, its own or one of a session open beside it', () => {
+  it('vouches for downloads only when the ledger knows an app secret, its own or one from a session beside it', () => {
+    const key = 'sk-test-session-download-53c5b339';
+    registerProviderKey('OPENAI_API_KEY', key);
     const unsecret = sessionLedger(newSession(), new Map());
-    expect(redactsDownloads(unsecret)).toBe(false);
+    expect(unsecret.redact(key)).toBe('<secret:OPENAI_API_KEY>');
+    expect(unsecret.hasAppSecrets).toBe(false);
     const beside = newSession();
-    expect(redactsDownloads(sessionLedger(beside, secrets))).toBe(true);
+    expect(sessionLedger(beside, secrets).hasAppSecrets).toBe(true);
     // The app may hand the session a file holding what the one beside it typed.
-    expect(redactsDownloads(unsecret)).toBe(true);
+    expect(unsecret.hasAppSecrets).toBe(true);
     releaseSessionLedger(beside);
-    expect(redactsDownloads(unsecret)).toBe(false);
+    expect(unsecret.hasAppSecrets).toBe(false);
     unsecret.register('token', PROVIDER_VALUE);
-    expect(redactsDownloads(unsecret)).toBe(true);
+    expect(unsecret.hasAppSecrets).toBe(true);
   });
 });
 
@@ -99,7 +102,7 @@ describe('secrets shared by the sessions in one process', () => {
       expect(ledger.entries()).toEqual([]);
       expect(carriedSecrets(ledger, none)).toEqual([]);
       // A download of either session may hold the value, so it is rewritten.
-      expect(redactsDownloads(ledger)).toBe(true);
+      expect(ledger.hasAppSecrets).toBe(true);
     }
     expect(redactForSession(undefined, none, `label ${value}`)).toBe('label <secret:invite>');
     withdraw();

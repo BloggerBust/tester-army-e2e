@@ -2,12 +2,16 @@
 
 import { types } from 'node:util';
 import { equals, isAsymmetric, iterableEquality, subsetEquality } from '@vitest/expect';
-import { TestError } from '@e2e-dev/core/lib/internal/errors';
+import { DEFAULT_PASS_OPTIONS } from '@e2e-dev/core/lib/config/validate';
+import { currentAttempt } from '@e2e-dev/core/lib/expect/attempt';
+import { errorMessage, TestError } from '@e2e-dev/core/lib/internal/errors';
 import { testPattern } from '@e2e-dev/core/lib/internal/regexp';
 import { describeIssue, requireStandardSchema } from '@e2e-dev/core/lib/internal/standard-schema';
+import { runningSuiteHook } from '@e2e-dev/core/lib/internal/test-timeout';
 import { toTextPattern } from '@e2e-dev/core/lib/internal/text';
-import type { AsymmetricMatcher, NegatedValueExpectation, PropertyPath, StandardSchemaV1, ValueExpectation } from '@e2e-dev/core/lib/types';
+import type { AsymmetricMatcher, NegatedValueExpectation, PassOptions, PropertyPath, StandardSchemaV1, ValueExpectation } from '@e2e-dev/core/lib/types';
 import { withMessage } from './heading.ts';
+import { checkOptions, retry } from './retry.ts';
 
 function fail(message: string): never {
   throw new TestError('ASSERTION_FAILED', message);
@@ -51,6 +55,32 @@ class ValueExpectationImpl<T> implements ValueExpectation<T> {
 
   get not(): NegatedValueExpectation<T> {
     return new ValueExpectationImpl(this.actual, !this.negated, this.message);
+  }
+
+  /** Retries the function passed to `expect` until the assertion passes or the deadline is reached. */
+  async toPass(options: PassOptions = {}): Promise<void> {
+    const { actual: block, negated, message } = this;
+    const label = `expect(...).${negated ? 'not.' : ''}toPass()`;
+    if (typeof block !== 'function') {
+      throw new TestError('INVALID_ARGUMENT', `${label} requires a function`);
+    }
+
+    checkOptions(label, options);
+    const context = currentAttempt() ?? runningSuiteHook();
+    await retry((): unknown => block(), (result) => {
+      if ('error' in result) {
+        if (negated) return { value: undefined };
+        return { last: errorMessage(result.error), cause: result.error };
+      }
+      return negated ? { last: 'the block passed' } : { value: undefined };
+    }, {
+      api: label,
+      label,
+      timeout: options.timeout ?? context?.toPass?.timeout ?? DEFAULT_PASS_OPTIONS.timeout,
+      intervals: options.intervals ?? context?.toPass?.intervals ?? DEFAULT_PASS_OPTIONS.intervals,
+      message,
+      noSample: 'no try completed',
+    }, context);
   }
 
   /** Messages are thunks: formatting large values is paid only on failure. */

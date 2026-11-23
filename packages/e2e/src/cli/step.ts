@@ -6,11 +6,15 @@
  */
 
 import type { Keypress } from './keyboard.ts';
+import type { PausedKey } from '../run/events.ts';
 import type { BeforeStep, HeldStep, NumberedStep, StepHoldContext, StepPrompt } from '../run/step-hold.ts';
 import { pairKey } from '../run/units.ts';
 
+/** Screen and app log views available at the step prompt. */
+export type StepView = 'screen' | 'logs';
+
 /** A key the step prompt acts on. Ctrl-C, Ctrl-D, and Ctrl-Z arrive as keypresses in raw mode, not as signals. */
-export type StepKey = 'continue' | 'test' | 'rest' | 'help' | 'stop' | 'interrupt' | 'suspend';
+export type StepKey = 'continue' | 'test' | 'rest' | 'help' | 'stop' | 'interrupt' | 'suspend' | StepView;
 
 /**
  * The step key a keypress means, or none. The keys follow `--watch`, as
@@ -32,6 +36,10 @@ export function stepKeyOf(press: Keypress): StepKey | undefined {
       return 'rest';
     case 'h':
       return 'help';
+    case 's':
+      return 'screen';
+    case 'l':
+      return 'logs';
     case 'q':
     case 'escape':
       return 'stop';
@@ -39,6 +47,15 @@ export function stepKeyOf(press: Keypress): StepKey | undefined {
       return undefined;
   }
 }
+
+/** The prompt's keys other than Enter, in `--watch`'s words. */
+const STEP_KEYS: readonly (PausedKey & { readonly needs: 'viewer' | 'steps' | undefined })[] = [
+  { key: 's', does: 'show the screen', needs: 'viewer' },
+  { key: 'l', does: 'show the app log', needs: 'viewer' },
+  { key: 'n', does: 'run this test without holding steps', needs: 'steps' },
+  { key: 'a', does: 'run all without holding steps', needs: 'steps' },
+  { key: 'q', does: 'quit', needs: undefined },
+];
 
 /** What `e2e run --step <action>` asks a stepped run without a terminal to do (`step-control.ts`). */
 export const STEP_ACTIONS = ['next', 'rest', 'stop'] as const;
@@ -55,12 +72,23 @@ const KEY_GUARD_MS = 150;
 /** Options for a `StepGate.press` call. Set `guard` to false to skip the key guard. */
 type PressOptions = { readonly guard: boolean };
 
+type StepGateOptions = {
+  readonly now?: () => number;
+  readonly holdSteps?: boolean;
+  /** Asked at each prompt: a run learns from its config whether the viewer has a terminal. */
+  readonly viewer?: () => boolean;
+  /** False when commands answer the prompt and no keyboard does. */
+  readonly keyboard?: boolean;
+};
+
+/** The numbered hold and its read callbacks for the viewer. */
+export type HeldPromptStep = NumberedStep & { readonly context: StepHoldContext };
+
 /** One held step waiting for its prompt, or showing it. */
-interface Waiting extends NumberedStep {
-  readonly context: StepHoldContext;
+type Waiting = HeldPromptStep & {
   readonly resolve: () => void;
   readonly onAbort: () => void;
-}
+};
 
 /** The test a step belongs to, on its target: what `t` lets through. */
 function testKey(step: HeldStep): string {
@@ -94,13 +122,15 @@ export class StepGate {
   private help = false;
   /** The test `n` let through, until its steps stop coming. */
   private released: string | undefined;
-  /** The test whose steps reached the gate last, and how many of them did. */
-  private current: { readonly key: string; count: number } | undefined;
+  /** The test whose steps reached the gate last. */
+  private current: string | undefined;
   /** The displayed hold's callback, also used to clear its prompt. */
   private show: StepHoldContext['show'] | undefined;
 
   private readonly now: () => number;
   private readonly holdSteps: boolean;
+  private readonly viewer: () => boolean;
+  private readonly keyboard: boolean;
 
   /**
    * `stop` interrupts the run. `holdSteps` is false for a run without
@@ -108,10 +138,12 @@ export class StepGate {
    */
   constructor(
     private readonly stop: () => void,
-    options: { readonly now?: () => number; readonly holdSteps?: boolean } = {},
+    options: StepGateOptions = {},
   ) {
     this.now = options.now ?? Date.now;
     this.holdSteps = options.holdSteps ?? true;
+    this.viewer = options.viewer ?? (() => false);
+    this.keyboard = options.keyboard ?? true;
   }
 
   /** The runner's `hold` hook. */
@@ -119,7 +151,12 @@ export class StepGate {
     // A hold that ended before it arrived has nobody to answer.
     if (context.signal.aborted) return Promise.resolve();
     const key = testKey(step);
-    const number = step.kind === 'pause' ? 0 : this.count(key);
+
+    if (step.kind === 'step' && this.current !== key) {
+      this.current = key;
+      if (this.released !== key) this.released = undefined;
+    }
+
     // The first step runs at once, so the app is open before the first prompt.
     // A pause already has the app open.
     if (step.kind === 'pause') {
@@ -132,7 +169,7 @@ export class StepGate {
     return new Promise<void>((resolve) => {
       const waiting: Waiting = {
         step,
-        number,
+        number: context.number,
         context,
         resolve,
         onAbort: () => {
@@ -150,14 +187,20 @@ export class StepGate {
     });
   };
 
-  /** Acts on one key. Ctrl-C works at any time; the others only on a prompt, once it has been up for the key guard. */
-  press(key: Exclude<StepKey, 'suspend'>, options: PressOptions = { guard: true }): void {
-    if (key === 'interrupt') {
-      this.stop();
-      return;
-    }
-    const shown = this.queue[0];
-    if (shown === undefined || (options.guard && this.now() - this.shownAt < KEY_GUARD_MS)) return;
+  /** Returns the hold available to read once the key guard has passed. */
+  inspect(): HeldPromptStep | undefined {
+    return this.now() - this.shownAt < KEY_GUARD_MS ? undefined : this.queue[0];
+  }
+
+  /** Restarts the key guard so a key from the viewer doesn't reach the prompt after the viewer closes. */
+  guardKeys(): void {
+    this.shownAt = this.now();
+  }
+
+  /** Acts on a prompt key once the key guard has passed. */
+  press(key: Exclude<StepKey, 'interrupt' | 'suspend' | StepView>, options: PressOptions = { guard: true }): void {
+    const shown = options.guard ? this.inspect() : this.queue[0];
+    if (shown === undefined) return;
     const test = testKey(shown.step);
     switch (key) {
       case 'continue':
@@ -187,16 +230,6 @@ export class StepGate {
     return shown !== undefined && samePrompt(shown.step, step);
   }
 
-  /** Numbers the steps of one test as they reach the gate; a new test starts at 1 and ends what `n` let through. */
-  private count(key: string): number {
-    if (this.current?.key !== key) {
-      this.current = { key, count: 0 };
-      if (this.released !== key) this.released = undefined;
-    }
-    this.current.count += 1;
-    return this.current.count;
-  }
-
   /** Lets every waiting step `which` picks run, then shows the next prompt. */
   private release(which: (waiting: Waiting) => boolean): void {
     for (const waiting of this.queue.filter(which)) {
@@ -209,7 +242,7 @@ export class StepGate {
 
   /** Shows the next prompt, or takes the prompt down when no step waits. */
   private showNext(): void {
-    this.shownAt = this.now();
+    this.guardKeys();
     const show = this.queue[0]?.context.show;
     const draw = show ?? this.show;
     this.show = show;
@@ -221,6 +254,18 @@ export class StepGate {
     const [first, ...rest] = this.queue;
     if (first === undefined) return undefined;
     const numbered = ({ step, number }: Waiting): NumberedStep => ({ step, number });
-    return { steps: [numbered(first), ...rest.filter((waiting) => samePrompt(waiting.step, first.step)).map(numbered)], help: this.help, holdSteps: this.holdSteps };
+    const steps: [NumberedStep, ...NumberedStep[]] = [numbered(first), ...rest.filter((waiting) => samePrompt(waiting.step, first.step)).map(numbered)];
+    const keys = this.keyboard
+      ? stepPromptKeys({ pause: first.step.kind === 'pause', steps: steps.length, help: this.help, holdSteps: this.holdSteps, viewer: this.viewer() })
+      : [];
+    return { steps, holdSteps: this.holdSteps, keys };
   }
+}
+
+/** The keys a prompt lists: Enter, then `h` and `q`, or every key once `h` asked for them. */
+export function stepPromptKeys(prompt: { pause: boolean; steps: number; help: boolean; holdSteps: boolean; viewer: boolean }): PausedKey[] {
+  const enter = { key: 'enter', does: prompt.pause ? 'resume' : prompt.steps === 1 ? 'run this step' : `run these ${prompt.steps} steps` };
+  if (!prompt.help) return [enter, { key: 'h', does: 'show help' }, { key: 'q', does: 'quit' }];
+  const offered = STEP_KEYS.filter(({ needs }) => needs === undefined || (needs === 'viewer' ? prompt.viewer : prompt.holdSteps));
+  return [enter, ...offered.map(({ key, does }) => ({ key, does }))];
 }

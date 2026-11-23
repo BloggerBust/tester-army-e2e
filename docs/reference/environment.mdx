@@ -25,7 +25,13 @@ Configure a model in `e2e.config.ts`. Its provider reads the API key:
 `AI_GATEWAY_API_KEY`, `gateway()` uses a
 [Vercel OIDC token](/models#vercel-oidc-instead-of-a-key). A missing
 credential fails on the first model call. Subscription models use a stored
-login instead.
+login instead. The `codex()` coding agent preset from `@e2e-dev/acp` also
+reads the first nonblank of `CODEX_API_KEY` and `OPENAI_API_KEY` to sign
+Codex in when it has no login of its own and `DEFAULT_AUTH_REQUEST` is
+unset, empty, or only spaces. Codex then saves the key as its login with its default
+credential store. While `APP_SERVER_LOGS` is set, `codex()` passes no sign-in
+request at all. See
+[Use your coding agent](/subscriptions#use-your-coding-agent).
 See [Models](/models) and [Subscriptions](/subscriptions).
 
 | Variable | Example | Reading | Effect |
@@ -112,6 +118,7 @@ Replaces [`cache.dir`](/reference/config#cache) for `e2e run` and
 | `FORCE_COLOR` | `FORCE_COLOR=1` | set | Colored CLI output even when piped |
 | `TERM` | `TERM=dumb` | value | `dumb` draws the `e2e init` logo at rest, without animation, as in CI |
 | `GITHUB_SHA`, `GITHUB_HEAD_REF`, `GITHUB_REF_NAME` | `GITHUB_REF_NAME=main` | value | The commit and branch the report records under `run.vcs` when `git` cannot read the project root. `GITHUB_HEAD_REF` wins over `GITHUB_REF_NAME` |
+| `NODE_DEBUG` | `NODE_DEBUG=child_process` | value | Node's own debug output. With `child_process` on, Node prints the environment of every process the run starts, and with `net`, the headers of `node:http` requests, API keys included. In output e2e writes, its secrets and [provider keys](/reference/security#provider-keys) are redacted there and nothing else; a program that calls `openHost` keeps its own stderr. `e2e run`, `e2e mcp`, and `openHost` warn one time on stderr and go on. Agents that `acp()` starts never get the variable |
 
 `--debug` and `--ai-trace` are flags, not variables; see
 [CLI](/reference/cli#e2e-run).

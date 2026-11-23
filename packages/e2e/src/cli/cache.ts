@@ -19,7 +19,9 @@ import { FileCacheStore, MAX_CACHE_WIRE_BYTES } from '@e2e-dev/core/lib/cache/st
 import { discoverConfig, loadConfigModule, missingConfigError } from '../config/load.ts';
 import { resolveConfig } from '../config/resolve-run.ts';
 import { errorMessage } from '@e2e-dev/core/lib/internal/errors';
+import { redactError } from '@e2e-dev/core/lib/run/secrecy';
 import { visibleWidth } from '../report/format.ts';
+import { formatBytes } from './format-bytes.ts';
 import { docsLine, examples } from './help.ts';
 
 type CacheCommand = 'ls' | 'clear' | 'stats';
@@ -75,7 +77,7 @@ async function cache(command: CacheCommand, options: CacheOptions = {}): Promise
   try {
     directory = await resolveCacheDirectory(options);
   } catch (cause) {
-    process.stderr.write(`${errorMessage(cause)}\n`);
+    process.stderr.write(`${redactError(errorMessage(cause))}\n`);
     return 2;
   }
 
@@ -327,9 +329,3 @@ function formatAge(createdAt: string, now: number): string {
   return `${Math.floor(hours / 24)}d`;
 }
 
-function formatBytes(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`;
-  const kib = bytes / 1024;
-  if (kib < 1024) return `${kib.toFixed(1)} KiB`;
-  return `${(kib / 1024).toFixed(1)} MiB`;
-}

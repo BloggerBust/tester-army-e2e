@@ -10,7 +10,7 @@ import path from 'node:path';
 import type { LocatorExpression } from '@e2e-dev/core/lib/engine/surface';
 import { writeFileAtomic } from '@e2e-dev/core/lib/internal/atomic-write';
 import { InfrastructureError, TestError } from '@e2e-dev/core/lib/internal/errors';
-import { compareImages, decodePng, encodePng, type ImageComparison, type RgbaImage } from '@e2e-dev/core/lib/internal/image';
+import { compareImages, decodePng, diffImage, encodePng, type ImageComparison, type RgbaImage } from '@e2e-dev/core/lib/internal/image';
 import { pollReads, type Deadline, type ReadWindow } from '@e2e-dev/core/lib/internal/time';
 import { describeExpression } from '@e2e-dev/core/lib/locator/expression';
 import type { ScreenContext } from '@e2e-dev/core/lib/locator/screen';
@@ -157,7 +157,7 @@ async function matchOrSettle(run: Run, expected: RgbaImage | undefined, deadline
       const images: string[] = [];
       if (unsettled !== undefined) {
         const between = compareImages(unsettled[0], unsettled[1], { threshold: 0, maxDiffPixels: undefined, maxDiffPixelRatio: undefined });
-        if (between.kind === 'pixels') images.push(`diff: ${attach(run, `${run.call.stem}-diff`, between.diff)}`);
+        if (between.kind === 'pixels') images.push(`diff: ${attach(run, `${run.call.stem}-diff`, diffImage(unsettled[0], unsettled[1], 0))}`);
         images.push(`previous: ${attach(run, `${run.call.stem}-previous`, unsettled[0])}`);
         images.push(`actual: ${attach(run, `${run.call.stem}-actual`, unsettled[1])}`);
       }
@@ -238,7 +238,7 @@ function mismatch(
 ): TestError {
   const { stem } = run.call;
   const images = [
-    ...(comparison.kind === 'pixels' ? [`diff: ${attach(run, `${stem}-diff`, comparison.diff)}`] : []),
+    ...(comparison.kind === 'pixels' ? [`diff: ${attach(run, `${stem}-diff`, diffImage(expected, actual, run.call.tolerance.threshold))}`] : []),
     `actual: ${attach(run, `${stem}-actual`, actual)}`,
     `expected: ${attach(run, `${stem}-expected`, expected)}`,
   ];

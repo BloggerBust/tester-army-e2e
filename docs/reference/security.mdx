@@ -39,7 +39,7 @@ larger budget. [How agent steps work](/agent-steps) explains a step in full.
 | In the prompt | Form |
 | --- | --- |
 | Your instruction and params | Quoted inside `<instruction>` and marked as data. A `Secret` param shows only its name and purpose. |
-| The screen | An accessibility tree with node ids, roles, names, text, test ids, link targets, and states, cut at a size limit. No selectors. A link's query and fragment show only as `?…` and `#…`. Secure fields show as `value=<secure>`. |
+| The screen | An accessibility tree with node ids, roles, names, text, test ids, link targets, and states, cut at a size limit. No selectors. A link's query and fragment show only as `?…` and `#…`. Secure fields show as `value=<secure>`, unless [a page script hides one](#where-redaction-stops). |
 | The location | The current URL, redacted, without userinfo. A judgment gets it as a path on the app's origin and as the whole URL elsewhere, cut at a size limit. On a device, the app and screen title. |
 | A screenshot | When needed or requested, and only if the engine proves secure fields are masked. |
 | Prior steps | `agent.act` receives bounded records from the same test or serial group. Judgments use only the current screen, its location, the instruction and its params, and the agent's context. |
@@ -224,8 +224,8 @@ The runner replaces every registered secret value with `<secret:name>` in:
 It also redacts a value passed as a plain string instead of a
 `secrets.get()` handle: test and `describe` titles, step labels (an
 `app.open` URL, a locator's text), a `fill`, an `agent.act` or `agent.assert`
-instruction, the strings in `agent.act` params, `agentContext`, and an
-`e2e explore` goal.
+instruction, the strings in `agent.act` params, `agentContext`, the built-in
+agent's `system`, and an `e2e explore` goal.
 
 | Rule | Detail |
 | --- | --- |
@@ -238,6 +238,53 @@ instruction, the strings in `agent.act` params, `agentContext`, and an
 | Minimum length | A static value shorter than 6 characters is `INVALID_CONFIG`. A provider that returns one fails the fill. |
 | Assertions | Unaffected. Redaction rewrites only what the runner reports. |
 | Cache entries | Secret values and their cut parts never enter them. |
+
+### Provider keys
+
+The keys your model provider or coding agent signs in with are redacted from
+the terminal, reports, trace pages, and what the run sends the model of
+the screen, tool results, the model's own prose, and a `system` text a config writes, of the built-in agent or of `acp()`. A provider or proxy that quotes a rejected key back in its error
+can't put it in a report. Each shows as `<secret:NAME>`.
+
+| Source | Name in the marker |
+| --- | --- |
+| The key variable of each [model provider](/models), such as `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `AI_GATEWAY_API_KEY`, and `OPENROUTER_API_KEY`, plus `ANTHROPIC_AUTH_TOKEN`, `CLAUDE_CODE_OAUTH_TOKEN`, `CODEX_API_KEY`, `LLM_API_KEY`, `OPENCODE_API_KEY`, and `VERCEL_OIDC_TOKEN`, in the environment of the run or of an `acp()` agent | The variable |
+| A [subscription login](/subscriptions) the run sends | `<provider>.access-token`, `<provider>.refresh-token` |
+| The login `codex()` finds in `auth.json` under the agent's `CODEX_HOME`, or `.codex` in its home | `codex.api-key`, `codex.id-token`, `codex.access-token`, `codex.refresh-token` |
+| The API key in an explicit `DEFAULT_AUTH_REQUEST` that `codex()` sends to its adapter | `codex.api-key` |
+| A key you register with [`registerProviderKey`](/executors#provider-keys) | The name you give |
+
+| Rule | Detail |
+| --- | --- |
+| Whole keys only | A key matches as a whole, in the forms above. Cut short at a length limit, it matches when at least half of it is there, and no fewer than 16 characters. Any other part of one isn't a match: keys of one provider start alike. |
+| Length | A value shorter than 20 characters is left alone, so a placeholder for a local model server, such as `ollama`, doesn't rewrite ordinary words. Name a shorter real key under [`secrets`](/reference/config#secrets). A value longer than 8,192 characters is left alone too, as is a shorter one the redactor can't build a pattern for, such as thousands of punctuation characters: neither is a key or token a provider issues. |
+| Output | The run holds back the end of an unfinished line that could still become a key, as it does for a secret. A prompt printed without a newline shows with the next output, and is lost if the test then blocks the process until it is stopped. |
+| Keys loaded during a test | The worker reads the named provider variables again before it records a step and before it records a failed step. A key loaded in `beforeEach` is covered by the following steps. |
+| Downloads | An app can serve a runner key passed through `inheritEnv`. To cover a key supplied only through `command.env`, also declare its value under `secrets`. See [Downloads](#downloads) for scan limits. |
+| Errors | When a step throws `MODEL_PROVIDER_FAILED`, `CONTEXT_OVERFLOW`, or `MODEL_OUTPUT_INVALID`, the caught error has redacted text and omits the provider SDK's raw cause. Match by `error.code`. |
+| Sessions | A provider key is never added to a [session](#sessions)'s saved secrets. What the app keeps in its own state, such as browser storage, is saved as the app wrote it, encrypted. |
+| A key that is also a secret | Stays your secret: its name, and its parts are matched too, as for any secret. |
+
+These keys are not redacted:
+
+- a key passed in code, such as `createOpenAI({ apiKey })`, unless you
+  register it or name it under [`secrets`](/reference/config#secrets),
+- a key in another variable, such as a custom provider's,
+- a key spelled into a test or `describe` title, a skip reason, or an
+  `e2e explore` goal. The runner and its workers build test ids from
+  those, and need not know the same keys. Name it under `secrets`,
+- `command.log`, as for every secret: the runner keeps your app's output
+  as written, and your app gets what `inheritEnv` and `command.env` give it,
+- a login a coding agent keeps in the OS keyring, and Claude Code's own
+  login file,
+- the model's reasoning and the arguments of its own tool calls when
+  they are sent back to the model: a provider signs reasoning and refuses a
+  changed one, and a call is replayed as made. Its prose is redacted,
+- a JSON service key or a key file, such as `AICORE_SERVICE_KEY` and
+  `GOOGLE_APPLICATION_CREDENTIALS`,
+- in what Node prints when `NODE_DEBUG` names `child_process` or `net`,
+  every token and password that isn't a secret of the run or a provider
+  key above. The run [warns](/reference/environment#diagnostics) and goes on.
 
 ### Where redaction stops
 
@@ -263,6 +310,13 @@ Redaction matches strings. These pass through:
   are redacted before any provider runs,
 - console output of tests that run in the runner's own process, when an
   embedding host passes the config or tests in memory,
+- on the web engine, a password field that a page script hides from e2e, for
+  example by replacing `Element.prototype.matches`. e2e reads it as a plain
+  field: the observed screen and `inputValue` show its value, and a failed
+  `toHaveValue` prints it. `getAttribute` and `toHaveAttribute` do the same
+  when the HTML `value` attribute holds it. A configured secret's value is
+  still `<secret:name>`. Screenshots still mask the field, unless it is in a
+  closed shadow root and the page also replaces `querySelectorAll`,
 - a screenshot, including one sent to the model: it masks secure fields
   only, so a value the app shows elsewhere is in the image,
 - video: it masks nothing and is labeled `redaction: "incomplete"`. A
@@ -275,21 +329,22 @@ Redaction matches strings. These pass through:
 
 ### Downloads
 
-A download is what the app served. When the session knows a secret value,
-the runner rewrites a text download (`.txt`, `.csv`, `.json`, `.html`, or
-`.htm`) and labels it `redaction: "complete"`. It replaces with `<secret:name>`:
+The runner scans UTF-8 text downloads (`.txt`, `.csv`, `.json`, `.html`, or
+`.htm`) when the session knows an app secret or a [provider key](#provider-keys).
+When only provider keys are known, it scans files up to 16 MiB. The scan
+runs after saving, so a read immediately after `waitForDownload` can see
+the original bytes. The scan replaces the following with `<secret:name>`:
 
 - every whole occurrence of a value,
-- any run of 8 or more of its characters, whitespace collapsed or not, so
-  unrelated text that shares 8 characters with a value is masked too,
+- for a secret, any run of 8 or more of its characters, whitespace collapsed
+  or not, so unrelated text that shares 8 characters with a value is masked
+  too; a provider key matches only whole,
 - a base64 or base64url run that decodes to either.
 
-Every other download is kept as served and labeled
-`redaction: "incomplete"`:
-
-- any other extension,
-- one that isn't valid UTF-8 or can't be rewritten,
-- any download from a session that knows no secret value.
+A successful scan with an app secret labels the download
+`redaction: "complete"`. A provider-key-only scan keeps the label
+`redaction: "incomplete"` even when it replaces a key. Skipped or failed
+scans leave the download as served and label it `incomplete`.
 
 ### Sessions
 

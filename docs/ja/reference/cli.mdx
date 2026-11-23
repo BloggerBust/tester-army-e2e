@@ -48,7 +48,11 @@ $ npx e2e --version
 - ターミナルまたは CI では色付きで出力し、パイプ出力や `NO_COLOR` の設定時は色なしになります。`FORCE_COLOR` を設定すると色を維持します。
 - コマンドを付けずに `e2e` を実行すると、stderr にヘルプを表示して 2 で終了します。
 - 幅が 52 列以上のターミナルでは、`e2e --help` の冒頭にブロック文字の e2e ロゴを表示します。パイプ出力や幅の狭いターミナルでは、テキストだけを表示します。
-- npm に新しい `e2e` がある場合、ターミナルで実行したコマンドの最後に、そのバージョン、プロジェクトのパッケージマネージャー向けの [`e2e upgrade`](#e2e-upgrade) コマンド、GitHub で e2e にスターを付けるリンクを表示します。レジストリの確認は 1 日 1 回です。CI、stderr がターミナルでない場合、`e2e mcp` と `e2e upgrade`、または `E2E_UPDATE_CHECK_DISABLED=1`、`NO_UPDATE_NOTIFIER=1`、`E2E_TELEMETRY_DISABLED=1`、`DO_NOT_TRACK=1` の設定時は何も表示しません。
+- npm に新しい `e2e` がある場合、ターミナルで実行したコマンドの最後に、そのバージョン、プロジェクトのパッケージマネージャー向けの [`e2e upgrade`](#e2e-upgrade) コマンド、GitHub で e2e にスターを付けるリンクを表示します。レジストリの確認は 1 日 1 回です。次の場合は何も表示しません。
+  - CI で実行したとき
+  - stderr がターミナルでないとき
+  - `e2e mcp` または `e2e upgrade` を実行したとき
+  - `E2E_UPDATE_CHECK_DISABLED=1`、`NO_UPDATE_NOTIFIER=1`、`E2E_TELEMETRY_DISABLED=1`、`DO_NOT_TRACK=1` のいずれかを設定しているとき
 
 ### コマンド
 
@@ -97,7 +101,7 @@ bunx e2e init --yes --gateway openrouter --skills .agents/skills --mcp .mcp.json
 | --- | --- |
 | `[directory]` | 作成先です。なければディレクトリを作ります。デフォルトは作業ディレクトリです。 |
 | `-y`, `--yes` | 質問を省略します。フラグで指定していない回答にはデフォルトを使います。Web エンジン、Vercel AI Gateway、両方の場所へのスキルと MCP 設定、CI パイプラインなし、インストールなしです。 |
-| `--example <name>` | サンプルアプリから始めます。`with-vite`、`with-next`、`with-astro`、`with-angular`、`with-expo`、`with-swiftui`、`with-compose`、`with-kotlin-multiplatform`、`with-flutter`、`with-maui` を指定できます。`with-` は省略可能です。[サンプルから始める](#starting-from-an-example)を参照してください。 |
+| `--example [name]` | サンプルアプリから始めます。`with-vite`、`with-next`、`with-astro`、`with-angular`、`with-expo`、`with-swiftui`、`with-compose`、`with-kotlin-multiplatform`、`with-flutter`、`with-maui` を指定できます。`with-` は省略可能です。名前を省くと、一覧から選べます。[サンプルから始める](#starting-from-an-example)を参照してください。 |
 | `--engine <ids>` | 新しい設定のエンジンです。`web`、`mobile`、`none` を、カンマ区切りまたは繰り返し指定します。`web,mobile` はそれぞれのターゲットを書き込みます。デフォルトでは対話形式で尋ねます。 |
 | `--gateway <id>` | 新しい設定でエージェントステップに使うモデルゲートウェイです。`vercel`、`openrouter`、`openai-compatible`、`chatgpt`、`copilot`、`opencode-console`、`grok`、`none` を指定できます。デフォルトでは対話形式で尋ねます。 |
 | `--endpoint <url>` | `--gateway openai-compatible` のベース URL で、このゲートウェイの指定も兼ねます。HTTPS、またはループバックホストの HTTP を使えます。デフォルトでは対話形式で尋ね、`--yes` では `http://127.0.0.1:11434/v1` です。 |
@@ -115,6 +119,7 @@ bunx e2e init --yes --gateway openrouter --skills .agents/skills --mcp .mcp.json
 | 2 | 未知のフラグ値。書き込み前に終了し、有効な値を列挙します。 |
 | 2 | 不正な `package.json`。書き込み前に終了します。 |
 | 2 | stdin と stdout がターミナルではなく、`--yes` もない場合。メッセージにフラグを示します。 |
+| 2 | 名前のない `--example` に `--yes` を付けた、またはターミナルがない場合。メッセージに名前を列挙します。 |
 | 2 | ファイルのあるディレクトリに `--example` を指定した、またはサンプルのダウンロードに失敗した場合。何も残しません。 |
 | 2 | 依存関係のインストールに失敗した場合。 |
 | 130 | ロゴ描画中やサンプルのダウンロード中の Ctrl-C または SIGTERM、あるいは依存関係のインストール中の SIGINT。途中まで取得したサンプルは削除します。 |
@@ -183,7 +188,7 @@ bunx e2e init --yes --ci gitlab
 - モバイルのジョブはアプリをビルドします。Expo アプリは `expo run:ios` と、`expo prebuild` および Gradle を使います。bare React Native アプリは `ios/*.xcworkspace` を `xcodebuild`（`Gemfile` があれば Bundler 経由）でビルドし、`android/gradlew` を実行します。その他のアプリには、置き換えるまで失敗するビルドステップを生成し、`init` が編集するファイルを示します。
 - モバイルのジョブは、起動したデバイスを `E2E_DEVICE` に設定します。デバイスを指定するターゲットでは、`mobile()` 内の `device: process.env.E2E_DEVICE` で読み取り、そのデバイスを操作します。指定しないターゲットでは、起動済みのデバイスを操作します。
 - GitLab のホスト型ランナーではシミュレーターやエミュレーターを動かせないため、モバイルジョブには自己管理ランナーが必要です。`tags` を設定してください。[GitLab CI/CD](/ci/gitlab#ios-and-android) を参照してください。
-- ファイルは、パッケージの `templates/ci/` に同梱されたテンプレートを基にします。リポジトリルートの npm と Expo アプリ向けの完全なパイプラインです。`init` はコメントを残したまま、プロジェクトに合わせて埋めます。
+- ファイルは、パッケージの `templates/ci/` に同梱されたテンプレートを基にします。テンプレートは、リポジトリのルートで npm を使う Expo アプリを前提にした、完全なパイプラインです。`init` はコメントを残したまま、プロジェクトに合わせて埋めます。
 - ジョブはプロジェクトのパッケージマネージャーと、`.nvmrc` または `.node-version` の Node バージョン（なければ 24）を使います。GitHub はファイルを読むため、正確なバージョンを使います。GitLab の Web ジョブは、そのメジャーバージョンの `node` イメージを使います。たとえば `22.22.3` なら `node:22` です。GitHub のアクションはコミットで固定します。
 - `init` は、`AI_GATEWAY_API_KEY` など追加すべきシークレットや変数と、それを追加する `gh` または `glab` コマンドを示します。
 - サブフォルダー内のプロジェクトでは、ファイルをリポジトリルートに置き、ジョブはサブフォルダーで実行します。
@@ -195,7 +200,7 @@ bunx e2e init --yes --ci gitlab
 <a id="starting-from-an-example" />
 ##### サンプルから始める
 
-`--example` は[サンプルアプリ](https://github.com/e2e-inc/e2e/tree/main/examples)を新しいディレクトリまたは空のディレクトリにコピーし、その e2e プロジェクトでウィザードを実行します。Web または Expo アプリではそのディレクトリ自体、ネイティブアプリでは `e2e/` フォルダーです。
+`--example` は[サンプルアプリ](https://github.com/e2e-inc/e2e/tree/main/examples)を新しいディレクトリまたは空のディレクトリにコピーし、その e2e プロジェクトでウィザードを実行します。Web または Expo アプリではそのディレクトリ自体、ネイティブアプリでは `e2e/` フォルダーです。名前を省くと、一覧から選べます。
 
 <CodeGroup>
 ```bash npm
@@ -506,6 +511,7 @@ e2e run [files...]
 | オプション | 説明 |
 | --- | --- |
 | `--headed` | エンジンが対応していれば UI を表示します。 |
+| `--device <name>` | 選択したモバイルターゲットを、この実行に限り `device` オプションの代わりに、指定したシミュレーター、エミュレーター、実機で実行します。指定できるのはデバイス名、シミュレーターの UDID、エミュレーターのシリアル（`emulator-5554`）です。適用されるのは、選択したターゲットのうちデバイスを指定できる 1 つだけです。ほかの選択したターゲット（`web()` や、プロバイダーがデバイスを貸し出すターゲット）は設定どおりに実行します。デバイスを指定できるターゲットを複数選択している場合は `--target` で 1 つに絞ります。絞らないと `TARGET_REQUIRED` で失敗します。1 つもない場合は `UNSUPPORTED_CAPABILITY` です。`e2e login --device` は別のフラグです。 |
 | `--agent <names>` | エージェントを固定していないテストを、選択したエージェントごとに 1 回実行します。カンマ区切りまたは繰り返し指定し、デフォルトは `default` です。`{ agent }` のあるテストでは、共通の名前があればそれらを選び、なければテスト自身の指定を維持します。未知の名前は `INVALID_CONFIG` です。 |
 | `--retries <n>` | `config.retries` を置き換えます。0〜10 の整数で、デフォルトは設定値です。 |
 | `--workers <n>` | `config.workers` を置き換えます。1〜1024 の整数で、デフォルトは設定値です。 |
@@ -518,13 +524,13 @@ e2e run [files...]
 | `--strict-cache` | この実行で `cache.strict` を有効にします。記録はあるがリプレイできなくなったステップは、エージェントに引き継がず `REPLAY_STALE` で失敗します。リトライもリプレイし、キャッシュには書き込みません。[古くなった記録で失敗させる](/cache#fail-on-a-stale-recording)を参照してください。 |
 | `-u`, `--update-snapshots` | [`toHaveScreenshot`](/reference/expect#screenshot-matchers) が未保存または相違ありと判断したスクリーンショットを書き込み、マッチャーを成功にします。未指定では、未保存のものを書き込んで失敗にし、CI では結果への添付だけを行います。 |
 | `-w`, `--watch` | 実行後、テストファイルや設定の変更、またはキー操作で再実行します。[監視モード](#watch-mode)を参照してください。 |
-| `--step` | 最初のステップを実行し、以後の各ステップはキー入力まで待機します。Enter はそのステップ、`n` はテストの残り、`a` は実行の残りを進め、`h` はキー一覧、`q` は終了コード 130 で停止します。待機時間はどのタイムアウトにも含めません。ターミナルがなければバックグラウンドで進み、各コマンドは次の待機ステップで画面を返します。`--step next` はそのステップ、`--step rest` は残り、`--step stop` は終了です。`--step next`、`rest`、`stop` は、[`screen.pause()`](/debugging#pause-a-test) で一時停止したテストの再開や停止にも使えます。ワーカーは 1 つで、CI、`--watch`、1 を超える `--workers`、json レポーターとの併用は拒否します（終了コード 2）。[ステップごとにテストを進める](/debugging#step-through-a-test)と[ターミナルなしで進める](/debugging#step-through-a-test-without-a-terminal)を参照してください。 |
+| `--step` | 最初のステップを実行し、以後の各ステップはキー入力まで待機します。Enter はそのステップ、`n` はテストの残り、`a` は実行の残りを進め、`h` はキー一覧、`q` は終了コード 130 で停止します。待機時間はどのタイムアウトにも含めません。ターミナルがなければバックグラウンドで進み、各コマンドは次の待機ステップで画面を返します。`--step next` はそのステップ、`--step rest` は残り、`--step stop` は終了です。`--step next`、`rest`、`stop` は、[`screen.pause()`](/debugging#pause-a-test) で一時停止したテストの再開や停止にも使えます。ワーカーは 1 つで、CI、`--watch`、1 を超える `--workers` との併用は拒否します（終了コード 2）。json レポーターとの併用にはターミナルが必要です。[ステップごとにテストを進める](/debugging#step-through-a-test)と[ターミナルなしで進める](/debugging#step-through-a-test-without-a-terminal)を参照してください。 |
 
 **出力**
 
 | オプション | 説明 |
 | --- | --- |
-| `--reporter <ids>` | `config.reporters` の組み込みレポーターを置き換えます。`list`、`dot`、`line`、`json`、`junit`、`markdown` をカンマ区切りで指定します。デフォルトは設定値です。`junit({ outputFile })` のように設定で構成した組み込みレポーターは、そのオプションを保ちます。`json` と併用すると、`list`、`dot`、`line` のデフォルトの出力先は stderr になります。同じストリームに出力するレポーターを 2 つ指定すると `INVALID_CONFIG` になります。設定内の[その他のレポーター](/reference/reporters)は引き続き実行します。 |
+| `--reporter <ids>` | `config.reporters` の組み込みレポーターを置き換えます。`list`、`dot`、`json`、`junit`、`markdown` をカンマ区切りで指定します。デフォルトは設定値です。`junit({ outputFile })` のように設定で構成した組み込みレポーターは、そのオプションを保ちます。`json` と併用すると、`list` と `dot` は stderr に出力します。`dot` と `list` の併用は `INVALID_CONFIG` です。設定内の[その他のレポーター](/reference/reporters)は引き続き実行します。 |
 | `--output <dir>` | 設定の [`output`](/reference/config#output) より優先する、この実行の結果ディレクトリです。レポート、レポーターのファイル、AI トレース、`results/`、`sessions/` を含みます。デフォルトは設定値、なければ `.e2e` です。プロジェクトルートから解決し、その内側のディレクトリである必要があります。ルート自体や、実行が所有できないその他のディレクトリ（リンク先に一覧）は `INVALID_CONFIG` です。テスト開始時に `results/` を消去しますが、`--last-failed` の再実行では前回のレポートが参照するものを残します。 |
 | `--cache-dir <dir>` | [`E2E_CACHE_DIR`](/reference/environment#replay-cache) と [`cache.dir`](/reference/config#cache) より優先する、この実行のリプレイキャッシュディレクトリです。デフォルトは `E2E_CACHE_DIR`、次に `cache.dir`、なければ `.e2e/cache` です。プロジェクトルートから解決し、`~` または先頭の `~/` はホームディレクトリです。キャッシュモードは設定のままです。独自の `cache.store` との併用は `INVALID_CONFIG` です。 |
 | `--timings <file>` | 実行終了時に更新する[所要時間の履歴](/ci#cache-the-timings-history)です。`<output>/timings.json` より優先します。複数ワーカーでは、時間の記録がないファイルを先に、残りを所要時間の長い順に開始します。プロジェクトルートから解決します。ファイルがない、または不正な場合は履歴なしとして扱い、エラーにはしません。 |
@@ -588,7 +594,6 @@ $ npx e2e run --debug
 | --- | --- |
 | `list` | ターミナルの進捗、周辺コード付きの失敗、実行サマリーです。TTY では現在のエージェントステップ、モデルのターン、ツール呼び出し、推論の抜粋をリアルタイムに表示します。stdout がターミナルでなければ（パイプ、リダイレクト、多くの CI）、各テストの完了時に表示します。最後に、失敗した各テストのファイルと行、エラーの最初の行、作成済みならトレースページを示します。信頼できないフィールドは 8 KiB に制限し、制御文字を除きます。 |
 | `dot` | 選択した各テストの結果を 1 文字で表示し、その後に失敗の詳細と実行サマリーを表示します。記号、色、改行については [`dot`](/reference/reporters#dot) を参照してください。`dot,json` では、ターミナル向けの出力をすべて stderr に送ります。 |
-| `line` | [対話型ターミナルで進捗を 1 行で表示します](/reference/reporters#line)。最終結果が失敗またはタイムアウトの場合はすぐに詳細を表示します。実行終了時にはサマリーを表示します。`line,json` ではターミナル向けの出力を stderr に送ります。 |
 | `json` | stdout にレポートドキュメントだけを出すため、`e2e run --reporter json \| jq` を使えます。内容は `<output>/report.json` と同じで、パッケージの `schema/report-v1.schema.json` に定義されています。形式の変更は `schemaVersion` フィールドの変更時だけです（現在は `report-1`）。 |
 | `junit` | レポートと同じ場所の `junit.xml` です。ファイルごとに 1 つの `<testsuite>`、テストとターゲットの組ごとに `title > path [target]` という名前の `<testcase>` を作ります。test 分類のエラーは `<failure>`、それ以外は `<error>`、スキップは理由付きの `<skipped>` です。中断したテストには判定がないため、メッセージが `interrupted:` で始まる `<skipped>` にします。[テストフィルター](/filters)が除外したテストは、`left out by filter <name>:` で始まる `<skipped>` です。それ以外の未選択テストは載せません。実行全体のエラーは `run` スイートにまとめます。 |
 | `markdown` | レポートと同じ場所の `summary.md` です。件数、コスト、エラー、失敗の詳細を載せ、トレースページを残したものにはそのパスを示します。探索実行では発見事項を表示します。[`@e2e-dev/github`](/github) はこのサマリーをプルリクエストのコメントに使います。 |
@@ -601,7 +606,7 @@ $ npx e2e run --debug
 
 テスト開始前に停止した実行は、これらを何も書かず、前回のファイルを残します。設定や収集のエラー、`NO_TESTS`、`NO_LAST_RUN`、`UNSUPPORTED_ARTIFACT`、アプリコマンドの起動失敗、中断が該当します。エラーはターミナルと終了コードで示します。`junit.xml` または `summary.md` の書き込み失敗は stderr の 1 行で示し、実行エラーにはしません。
 
-`list`、`dot`、`line` レポーターは実行エラーを `Run Errors` の下に表示します。いずれも、また [`onOutput`](/reference/reporters#onoutput) でターミナルに出力する他のレポーターもなければ、`json` の場合も含め、各エラーを stderr に `CODE: message` として表示します。
+`list` と `dot` レポーターは実行エラーを `Run Errors` の下に表示します。どちらも、また他の[インタラクティブ](/reference/reporters#interactive)なレポーターもなければ、`json` の場合も含め、各エラーを stderr に `CODE: message` として表示します。
 
 レポートの `run.summary` は結果を集計します。
 
@@ -655,7 +660,7 @@ bunx e2e run --watch tests/checkout.e2e.ts --headed
 | `h` | キー一覧を表示します |
 | `q` | 終了します |
 
-- 実行中にこれらのキー（スペースや `c` も含む）を押すと、中断と同じように実行をキャンセルします。2 回目は強制し、セッションは再び待機します。
+- 実行中にこれらのキー（スペースや `c` も含む）を押すと、中断と同じように実行をキャンセルします。もう一度押すと強制的にキャンセルし、セッションは再び待機状態に戻ります。
 - Ctrl-C または Ctrl-D は実行を中断し、セッションを終了します。`p` や `t` の入力中も同様です。Escape は入力中以外なら同じ動作で、入力中なら入力画面だけを閉じます。Ctrl-Z は通常どおりプロセスを一時停止します。
 - 再実行は毎回完全な実行です。設定を読み込むと、実行対象がない場合を除き、`report.json` とレポーターのファイルを書き、アプリのコマンドを起動・停止します。再実行の間も開発サーバーを維持するには、自分で起動し、コマンドに [`reuseExisting`](/reference/config#command) を設定してください。
 - `--last-failed` とテストフィルターは初回実行だけに適用するため、再実行ではフィルターのモデルを呼びません。何も選ばない再実行は、空のまま成功します。
@@ -708,13 +713,13 @@ bunx e2e explore 'Hunt for broken forms and dead links' --agent thorough --video
 | `[goal]` | 探索する内容を 1 文で指定します。デフォルトは `Explore the app and find bugs` です。 |
 | `--config <path>` | 設定パスを明示します。エラーは `run` と同じで、デフォルトでは自動検出します。設定が見つからず stdin と stdout がどちらもターミナルなら、まず作業ディレクトリで [`e2e init`](#e2e-init) ウィザードを実行します。依存関係のインストール、モデルのキー設定またはサインイン、Web ターゲットの用意が済み、手作業が残っていなければ、そのまま探索へ進みます（探索する URL を示します）。それ以外では、残りの手順と入力どおりの `e2e explore` コマンドを示して init を終えます。ターミナルがなく設定もなければ `CONFIG_NOT_FOUND` です。 |
 | `--target <id>` | 探索する 1 つのターゲットです。デフォルトは最初の設定済みターゲットです。複数あるのにフラグを指定しない場合、最初を探索して stderr にその旨を示します。未知の名前は `UNKNOWN_TARGET` です。 |
-| `--agent <name>` | 探索に使う設定済みエージェントです。デフォルトは `default` で、そのモデル、`system`、ツール、コンテキストを再利用します。独自の `StepExecutor` は組み込みエージェントに置き換え、通知します。カスタムエグゼキューターも含め、モデルのないエントリーは開始前に `MODEL_UNAVAILABLE` になります。未知の名前は `INVALID_CONFIG` です。 |
+| `--agent <name>` | 探索に使う設定済みエージェントです。デフォルトは `default` で、そのモデル、`system`、ツール、コンテキストを再利用します。カスタム `StepExecutor` を設定していても、探索では組み込みエージェントを使い、その旨を通知します。カスタムエグゼキューターも含め、モデルのないエントリーは開始前に `MODEL_UNAVAILABLE` になります。未知の名前は `INVALID_CONFIG` です。 |
 | `--session <name>` | サインイン済みの状態で始めます。設定のテストファイルから、そのセッションを宣言するセットアップテストを先に実行します。`{ session }` を使うテストと同様に、保存した状態を探索で復元します。ほかのテストは実行しません。どのセットアップも宣言していない名前は、アプリプロセスの起動前に `COLLECTION_ERROR` となり、宣言済みの名前を示します。[サインイン済みで始める](/explore#start-signed-in)を参照してください。 |
 | `--changed-since <ref>` | 指定した参照と HEAD のマージベース以降の変更を探索します。プランナーはコミットメッセージとコミット済みの差分を読みます。ゴールを省略すると `Explore what this change affects and find bugs in it` となり、ユーザーに見える影響がない変更はプランナーがスキップできます。その場合、探索は `skipped` で終わり、実行は成功します。空の参照、`-` で始まる参照、git が差分を計測できない参照は `INVALID_CHANGED_SINCE` です。レポートは変更を `run.explore.change` に記録します。[プルリクエストの変更を探索する](/explore#explore-a-pull-requests-change)と、モデルが読む内容についての[セキュリティ](/reference/security#mcp-and-explore)を参照してください。 |
 | `--max-steps <n>` | 探索ステップ数の上限です。1〜100 の整数で、デフォルトは `8` です。範囲外は 2 で終了します。 |
 | `--timeout <ms>` | 実行の実時間の上限です。180000〜7200000 の整数で、デフォルトは `600000` です。最後の 1 分は最終評価用に確保します。範囲外は 2 で終了します。 |
 | `--headed` | エンジンが対応していれば UI の表示を要求します。 |
-| `--reporter <ids>` | `run` と同じです。デフォルトは解決済みの設定値です。`list` はサマリーの下に探索の行を表示します。`markdown` は発見事項を `<output>/summary.md` に書きます。`json` は探索の記録を含むレポートを stdout に出力します。取り込んだログは stderr に出力します。 |
+| `--reporter <ids>` | `run` と同じです。デフォルトは解決済みの設定値です。`list` はサマリーの下に探索の行を表示し、`json` はレポートに記録を含め、`markdown` は発見事項を `<output>/summary.md` に書きます。 |
 | `--output <dir>` | `run` と同じです。デフォルトは設定値、なければ `.e2e` です。発見事項の証拠となるスクリーンショットは、`<output>/results` 内の試行の成果物です。 |
 | `--debug` | `run` と同じく、フェーズ別の時間とエージェントステップの表を出します。 |
 | `--ai-trace` | `run` と同じです。 |
@@ -726,7 +731,7 @@ bunx e2e explore 'Hunt for broken forms and dead links' --agent thorough --video
 ##### レポート
 
 - 実行には仮想ファイル `explore` の下に 1 つの結果があり、ゴールをタイトルに使います。
-- 探索は最初にアプリを開きます。ターゲットの `app.url`、デバイスでは[指定したアプリ](/mobile#point-at-your-app)を新たに起動します。ビルドはインストールしないため、ローカルデバイスのターゲットには `app.bundleId` が必要です。
+- 探索は最初にアプリを開きます。ターゲットの `app.url` を開くか、デバイスでは[指定したアプリ](/mobile#point-at-your-app)を新たに起動します。ビルドはインストールしないため、ローカルデバイスのターゲットには `app.bundleId` が必要です。
 - `--session` があれば、セットアップテストの結果も含めます。プロジェクトのほかのテストは、`run` が位置引数で指定されていないファイルのテストを扱うのと同じく、cause `filtered` でスキップとして載せます。
 - 設定にかかわらず、探索ではリプレイキャッシュを無効にし、リトライを 0 回にします。`--session` のセットアップテストは、設定のエージェント、キャッシュ、リトライを使い、`run` と同じように実行します。
 - `<output>/report.json` には `run.explore` を追加します。ゴール、予算、終了理由（`finished`、`skipped`、`step-limit`、`time`、`stuck`、`aborted`）、評価、`--changed-since` の変更（`base` と `files`）、ステップ、発見事項を含みます。
@@ -1021,12 +1026,12 @@ bunx e2e feedback --type feature -m "Need a way to set the viewport per test" --
 - **バグには `--repro` が必要です。** なければ何も送らず、代わりに入力済みの [GitHub issue](https://github.com/e2e-inc/e2e/issues/new?template=bug_report.yml) へのリンクを表示します。そこなら e2e チームが再現方法を尋ねられます。最小限の再現例を追加し、自分で送信してください。
 - **古いリリースは拒否します。** 送信前に npm レジストリへ最新の e2e リリースを問い合わせます。問題がすでに修正済みの可能性があるため、使用中のものが古ければ 2 で終了し、何も送りません。[`e2e upgrade`](#e2e-upgrade) で更新し、まだ発生することを確認して再送するか、`--allow-outdated` を渡してください。オプトアウトの環境変数が設定されている場合、この確認は省略します。
 - **送信先。** [テレメトリー](/telemetry#feedback)と同じ PostHog プロジェクトに、1 つの `e2e_feedback` イベントを送ります。各テレメトリーイベントに含まれる匿名のマシン情報も付けます。
-- **オプトアウト。** フィードバックはコマンドを実行したときだけ送るため、保存済みの `e2e telemetry disable` では停止しません。`E2E_TELEMETRY_DISABLED=1` と `DO_NOT_TRACK=1` は停止します。どちらかがあれば何も送らず、本来送るはずの報告は 2 で終了します。したがって、オプトアウトした CI ジョブや一括運用環境では、エージェントが実行しても送信しません。`--dry-run`、`E2E_TELEMETRY_DEBUG=1`（`--dry-run` と同じくイベントを表示）、`--repro` のないバグは元から送信しないため、0 で終了します。
+- **オプトアウト。** フィードバックはコマンドを実行したときだけ送るため、保存済みの `e2e telemetry disable` では停止しません。`E2E_TELEMETRY_DISABLED=1` と `DO_NOT_TRACK=1` は停止します。どちらかが設定されていれば、コマンドは何も送りません。これらの変数がなければ報告を送信していた場合は、終了コード 2 で終了します。したがって、オプトアウトした CI ジョブや一括運用環境では、エージェントが実行しても送信しません。`--dry-run`、`E2E_TELEMETRY_DEBUG=1`（`--dry-run` と同じくイベントを表示）、`--repro` のないバグは元から送信しないため、0 で終了します。
 
 | 終了コード | 条件 |
 | --- | --- |
 | 0 | PostHog がイベントを受け取り、参照 ID を表示した場合。`--dry-run`、`E2E_TELEMETRY_DEBUG=1`、`--repro` のない `--type bug` も該当します。これらは送信しないため、オプトアウト変数があっても 0 です。ただし古いリリースの確認が先に動くため、古いインストールでは、`--allow-outdated` またはオプトアウト変数がない限り、これらも 2 で終了します。 |
-| 2 | 空または長すぎるテキスト値、`--allow-outdated` もオプトアウト変数もない古いリリース、または `E2E_TELEMETRY_DISABLED=1`、`DO_NOT_TRACK=1` の設定中に本来送信するはずの報告を行った場合。 |
+| 2 | 空または長すぎるテキスト値、`--allow-outdated` もオプトアウト変数もない古いリリース、または `E2E_TELEMETRY_DISABLED=1` か `DO_NOT_TRACK=1` を設定した状態で報告を送信しようとした場合。 |
 | 3 | PostHog がイベントの受信を確認できなかった場合。届いている可能性もあるため、メッセージに参照 ID を示します。 |
 
 <Warning>

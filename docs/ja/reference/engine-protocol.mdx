@@ -166,6 +166,8 @@ export interface EngineManifest {
   /** Required with `engine/performAt`. */
   readonly pointerActions?: readonly PointerActionKind[];
   readonly tapModifiers?: boolean;
+  /** Requires `lifecycle/prepare`: `prepare` binds the device `e2e run --device` names. */
+  readonly selectsDevice?: boolean;
   /** See `Engine.isolation`; left out for `attempt`. */
   readonly isolation?: 'worker';
 }
@@ -173,7 +175,7 @@ export interface EngineManifest {
 
 ### エンジンメソッド
 
-各メソッドはひとつのエンジンメンバーに対応し、クライアントからサーバーへのリクエストです。パラメーターはメンバーの引数を名前付きで渡し、すべての `OperationContext` は `operation` とします。全メソッドは `ENGINE_METHODS` に列挙されています。
+各メソッドはひとつのエンジンメンバーに対応し、クライアントからサーバーへのリクエストです。パラメーターは、引数名をキーにしてメンバーの引数をまとめたオブジェクトです。`OperationContext` はどれも `operation` という名前で渡します。全メソッドは `ENGINE_METHODS` に列挙されています。
 
 | メソッド | パラメーター | 結果 |
 | --- | --- | --- |

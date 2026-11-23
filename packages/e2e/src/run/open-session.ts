@@ -7,7 +7,8 @@ import { ConfigurationError, type SerializedError } from '@e2e-dev/core/lib/inte
 import type { TestFixtures } from '@e2e-dev/core/lib/types';
 import type { E2EConfig, Report } from '../run-types.ts';
 import { allocateTargetPorts } from './app-ports.ts';
-import { registerStaticSecrets } from '@e2e-dev/core/lib/run/secrecy';
+import { registerProviderKeys, registerStaticSecrets } from '@e2e-dev/core/lib/run/secrecy';
+import { warnOfNodeDebug } from './node-debug.ts';
 import { selectTarget } from './select-target.ts';
 import { openStandaloneHost } from './standalone-kinds.ts';
 import type { StepProgress, StepRecord } from '@e2e-dev/core/lib/run/steps';
@@ -82,6 +83,8 @@ async function openHostWorker<Fixtures extends object>(options: OpenHostOptions)
   try {
     const cwd = options.cwd ?? process.cwd();
     const env = options.env ?? process.env;
+    registerProviderKeys(env);
+    warnOfNodeDebug();
     const loaded = await loadHostConfig(cwd, options.config, env);
     registerStaticSecrets(loaded.allSecrets);
     const { config, target } = await allocateTargetPorts(loaded, selectTarget(loaded, options.target, 'pass `target` to openHost'));

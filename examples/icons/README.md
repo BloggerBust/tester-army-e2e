@@ -35,3 +35,5 @@ list its source below.
 - `vercel.svg`: a copy of `docs/images/integrations/vercel.svg`
 - `lightpanda.svg`: `docs/images/integrations/lightpanda.svg` without its background circle
 - `moli.png`: a copy of `docs/images/integrations/moli.png`
+- `e2b.svg`: a copy of `docs/images/integrations/e2b.svg`
+- `notte.svg`: a copy of `docs/images/integrations/notte.svg`

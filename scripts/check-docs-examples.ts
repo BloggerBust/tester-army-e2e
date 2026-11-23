@@ -43,6 +43,8 @@ const EXAMPLES: Record<string, string> = {
   'docs/examples/nextjs/e2e.config.ts': 'docs/frameworks/nextjs.mdx',
   'docs/examples/quickstart/e2e.common.config.ts': 'docs/quickstart.mdx',
   'docs/examples/javascript/e2e.config.js': 'docs/reference/config.mdx',
+  'docs/examples/desktop/e2e.config.ts': 'docs/desktop.mdx',
+  'docs/examples/desktop/tests/sign-in.e2e.ts': 'docs/desktop.mdx',
   'docs/examples/mobile/device-provider.ts': 'docs/mobile.mdx',
   'docs/examples/mobile/device-cloud-provider.ts': 'docs/mobile.mdx',
   'docs/examples/mobile/testmu.config.ts': 'docs/integrations/testmu.mdx',

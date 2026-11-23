@@ -1,7 +1,8 @@
-/** Where the keyboard-dismissing drag may start on a screen without pressing anything. */
+/** Whether the soft keyboard is up, and where the keyboard-dismissing drag may start on a screen without pressing anything. */
 
+import type { CaptureSnapshotResult } from 'agent-device';
 import type { ViewportSize } from '@e2e-dev/core/engine';
-import { SCREEN_KINDS, type ProjectedSnapshot } from './nodes.ts';
+import { keyboardOnScreen, SCREEN_KINDS, type ProjectedSnapshot } from './nodes.ts';
 import type { Point, Rect } from './support.ts';
 
 /**
@@ -110,4 +111,61 @@ function grow(rect: Rect, margin: number): Rect {
 /** Whether a point lies inside a rect, edges included. */
 function contains(rect: Rect, point: Point): boolean {
   return point.x >= rect.x && point.x <= rect.x + rect.width && point.y >= rect.y && point.y <= rect.y + rect.height;
+}
+
+/** The parts of a capture the keyboard answer reads. */
+export type KeyboardCapture = Partial<Pick<CaptureSnapshotResult, 'nodes' | 'keyboard' | 'viewport'>>;
+
+/** Why a capture cannot say whether the keyboard is shown, as the error `device.isKeyboardShown()` fails with. */
+export type KeyboardUnknown = {
+  readonly code: 'ENGINE_FAILURE' | 'UNSUPPORTED_CAPABILITY';
+  readonly message: string;
+  /** Set when the keyboard is moving, so a later capture can answer. */
+  readonly settling?: true;
+};
+
+const CANNOT_TELL = 'cannot tell whether the keyboard is shown:';
+
+/**
+ * Whether a capture shows the soft keyboard: the one rule behind
+ * `device.isKeyboardShown()`, the dismissing drag, and the keyboard state
+ * an action's target is bound with. An observation's `keyboardVisible`
+ * reports only what agent-device measured, not this answer.
+ * A visibility agent-device reported answers (a probe, or a rejected docked
+ * frame that still says), then a measured or derived frame (`true`) or a
+ * proven `absent` (`false`). A rejected docked frame that does not say
+ * answers from keyboard elements drawn on screen; with none, the keyboard
+ * is moving, or was left in the tree off screen, so the capture cannot
+ * answer yet. Any other reading answers `true` from a keyboard element
+ * drawn on screen ({@link keyboardOnScreen}) and never `false`: only `absent`
+ * proves there is no keyboard, so a tree with no keys fails, as incomplete
+ * when it was sparse or cut (`truncated`), else as unsupported.
+ */
+export function keyboardShownIn(capture: KeyboardCapture, truncated: boolean): boolean | KeyboardUnknown {
+  const fact = capture.keyboard;
+  const nodes = capture.nodes ?? [];
+  if (fact?.kind === 'visibility-only') return fact.visible;
+  if (fact?.kind === 'visible' || fact?.kind === 'derived') return true;
+  if (fact?.kind === 'absent') return false;
+  if (fact?.kind === 'tree-rejected') {
+    if (fact.visible !== undefined) return fact.visible;
+    if (keyboardOnScreen(nodes, capture.viewport)) return true;
+    return {
+      code: 'ENGINE_FAILURE',
+      message: `${CANNOT_TELL} agent-device found keyboard elements but rejected where they sit, and none is drawn on screen, as while the keyboard slides in or out. Read it again once it settles.`,
+      settling: true,
+    };
+  }
+  if (keyboardOnScreen(nodes, capture.viewport)) return true;
+  if (truncated) {
+    return {
+      code: 'ENGINE_FAILURE',
+      message: `${CANNOT_TELL} agent-device measured nothing, and the accessibility tree it returned was incomplete (sparse or cut), so missing keys cannot be read as no keyboard. Read it again once the screen has rendered.`,
+    };
+  }
+  const reading = fact === undefined ? 'it reported no keyboard reading' : `its keyboard reading was unmeasurable (${fact.reason})`;
+  return {
+    code: 'UNSUPPORTED_CAPABILITY',
+    message: `${CANNOT_TELL} the tree shows no keyboard drawn on screen, and agent-device did not prove the keyboard absent: ${reading}`,
+  };
 }

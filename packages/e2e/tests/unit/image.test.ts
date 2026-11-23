@@ -3,7 +3,7 @@
 import { crc32, deflateSync } from 'node:zlib';
 import { Transformer } from '@napi-rs/image';
 import { describe, expect, it } from 'vitest';
-import { clipBox, compareImages, cropImage, decodePng, encodePng, fillBoxes, resampleImage, type RgbaImage } from '@e2e-dev/core/lib/internal/image';
+import { clipBox, compareImages, cropImage, decodePng, diffImage, encodePng, fillBoxes, resampleImage, type RgbaImage } from '@e2e-dev/core/lib/internal/image';
 
 /** A width by height image of one gray level. */
 function gray(width: number, height: number, level: number): RgbaImage {
@@ -207,6 +207,13 @@ describe('image', () => {
     ]);
   });
 
+  it('paints a copy of an image whose bytes are a Buffer at an odd offset, and leaves the image alone', () => {
+    const bytes = Buffer.alloc(1 + 2 * 2 * 4).subarray(1);
+    const painted = fillBoxes({ width: 2, height: 2, data: bytes }, [{ x: 1, y: 0, width: 1, height: 2 }], [1, 2, 3]);
+    expect([...painted.data]).toEqual([0, 0, 0, 0, 1, 2, 3, 255, 0, 0, 0, 0, 1, 2, 3, 255]);
+    expect([...bytes]).toEqual(Array.from({ length: 16 }, () => 0));
+  });
+
   it('averages the pixels each target pixel covers when it resamples', () => {
     const image: RgbaImage = { width: 2, height: 1, data: new Uint8Array([0, 0, 0, 255, 200, 200, 200, 255]) };
     expect([...resampleImage(image, 1, 1).data]).toEqual([100, 100, 100, 255]);
@@ -226,5 +233,14 @@ describe('image', () => {
   it('counts a pixel as the same when its color is within the threshold', () => {
     expect(compareImages(gray(4, 4, 200), gray(4, 4, 204), { ...exact, threshold: 0.2 })).toMatchObject({ kind: 'match' });
     expect(compareImages(gray(4, 4, 200), gray(4, 4, 204), exact)).toMatchObject({ kind: 'pixels', diffPixels: 16 });
+  });
+
+  it('draws the pixels a comparison counts in red over the expected image', () => {
+    const expected = gray(4, 2, 255);
+    const actual = fillBoxes(expected, [{ x: 1, y: 0, width: 2, height: 1 }], [0, 0, 0]);
+    const diff = diffImage(expected, actual, 0);
+    const red = Array.from({ length: 8 }, (_, pixel) => [...diff.data.subarray(pixel * 4, pixel * 4 + 4)].join() === '255,0,0,255');
+    expect(red).toEqual([false, true, true, false, false, false, false, false]);
+    expect({ width: diff.width, height: diff.height }).toEqual({ width: 4, height: 2 });
   });
 });

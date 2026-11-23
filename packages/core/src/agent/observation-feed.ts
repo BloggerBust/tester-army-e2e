@@ -13,7 +13,7 @@ import { validateComputedStyleProperties, type ComputedStyleProperty } from '../
 import { relocateDescriptor } from '../cache/relocate.ts';
 import { asEngineError, TestError } from '../internal/errors.ts';
 import { rejectUnknownOptions } from '../internal/options.ts';
-import { isEditable } from '../internal/roles.ts';
+import { takesText } from '../internal/roles.ts';
 import type { StepAgentDetails, VisionDegradation } from '../run/steps.ts';
 import { describeTarget } from './actions.ts';
 import { AgentError } from './error.ts';
@@ -105,6 +105,8 @@ export class ObservationFeed {
   private pixelsSent = false;
   /** Whether any semantic observation in this step stopped at a capture or byte limit. */
   private observationTruncated = false;
+  /** Whether any screen in this step listed a field marked as taking a one-time code. */
+  private oneTimeCodeSeen = false;
 
   constructor(
     private readonly runtime: AgentContext,
@@ -131,6 +133,15 @@ export class ObservationFeed {
   /** True once a screenshot went to the model in this step; text drawn in it is not in `shownText`. */
   get pixelsShown(): boolean {
     return this.pixelsSent;
+  }
+
+  /**
+   * True once a screen in this step listed a field marked as taking a
+   * one-time code (`autocomplete="one-time-code"`). Focused typing names no
+   * field, so a value it types in such a step may be that code.
+   */
+  get oneTimeCodeShown(): boolean {
+    return this.oneTimeCodeSeen;
   }
 
   /** The newest observation, which an action addresses; before the first look there is nothing to address. */
@@ -428,6 +439,8 @@ export class ObservationFeed {
    */
   private noteShown(observation: SemanticAgentObservation): void {
     for (const node of observation.nodes.values()) {
+      // Checked before the skip below: the field that takes the code is itself an input.
+      if (node.inputPurpose === 'one-time-code') this.oneTimeCodeSeen = true;
       if (echoesInput(node) || (node.children ?? []).some(echoesInput)) continue;
       for (const text of [node.name, node.text]) {
         if (text !== undefined && text !== '') this.shown.add(text);
@@ -519,7 +532,7 @@ export class ObservationFeed {
 
 /** A node whose name or text is what was put into it, not what the screen says. */
 function echoesInput(node: SemanticNode): boolean {
-  return isEditable(node) || node.value !== undefined;
+  return takesText(node) || node.value !== undefined;
 }
 
 /** The error for a target id the newest screen no longer lists. */

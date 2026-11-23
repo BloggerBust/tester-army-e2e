@@ -209,6 +209,17 @@ export const FIXTURE_PAGES: readonly FixturePage[] = [
     `,
   },
   {
+    name: 'layout tables and lists',
+    html: `
+      <table role="presentation"><tbody><tr><td>Billing address</td><td><button>Edit</button></td></tr></tbody></table>
+      <table role="none"><tr><th>Shipping</th><td>Free</td></tr></table>
+      <table role="presentation"><tr role="row"><td>Explicit row</td></tr></table>
+      <ul role="none"><li>Home</li><li><a href="/docs">Docs</a></li></ul>
+      <ol role="presentation"><li>Step</li><li role="listitem">Explicit item</li></ol>
+      <ul role="presentation"><li><ul><li>Nested real item</li></ul></li></ul>
+    `,
+  },
+  {
     name: 'names',
     html: `
       <span id="l1">Billing</span><span id="l2">address</span>
@@ -395,6 +406,55 @@ export const FIXTURE_PAGES: readonly FixturePage[] = [
           connectedCallback() {
             this.attachShadow({ mode: 'open' }).innerHTML = '<div><button>Frame chrome</button><slot></slot></div>';
             this.querySelector('dialog').showModal();
+          }
+        });
+      </script>
+    `,
+  },
+  {
+    name: 'closed details and skipped content across shadow boundaries',
+    html: `
+      <details><summary>Shadow details</summary><shadow-body></shadow-body></details>
+      <slot-details><button>Slotted in open root</button></slot-details>
+      <closed-slot-details><button>Slotted in closed root</button></closed-slot-details>
+      <summary-slot><button slot="s">Slotted in summary</button><button>Slotted in body</button></summary-slot>
+      <closed-skip><button>Skipped in closed root</button></closed-skip>
+      <script>
+        const define = (name, mode, html) => customElements.define(name, class extends HTMLElement {
+          constructor() { super(); this.attachShadow({ mode }).innerHTML = html; }
+        });
+        define('shadow-body', 'open', '<button>Shadow under closed details</button>');
+        define('slot-details', 'open', '<details><summary>Open root details</summary><slot></slot></details>');
+        define('closed-slot-details', 'closed', '<details><summary>Closed root details</summary><slot></slot></details>');
+        define('summary-slot', 'open', '<details><summary><slot name="s"></slot></summary><slot></slot></details>');
+        define('closed-skip', 'closed', '<div style="content-visibility:hidden;width:200px;height:40px"><slot></slot></div>');
+      </script>
+    `,
+  },
+  {
+    name: 'content-visibility on boxes that skip nothing and boxes of their own',
+    html: `
+      <style>.laid-out::details-content { display: contents; }</style>
+      <details class="laid-out"><summary>Laid out</summary><button>Laid out light</button><laid-out-body></laid-out-body></details>
+      <table style="content-visibility:hidden"><tr><th>Column</th></tr><tr><td><button>Table button</button></td></tr></table>
+      <closed-table><button>Slotted in closed table</button></closed-table>
+      <div style="display:inline-table;content-visibility:hidden"><button>Inline table button</button></div>
+      <ruby style="content-visibility:hidden"><button>Ruby button</button></ruby>
+      <ul><li style="display:inline list-item;content-visibility:hidden"><button>Inline item button</button></li></ul>
+      <fieldset style="display:inline;content-visibility:hidden"><button>Inline fieldset button</button></fieldset>
+      <fieldset style="display:contents;content-visibility:hidden"><button>Contents fieldset button</button></fieldset>
+      <ns-slot><button>Namespaced slot attribute</button></ns-slot>
+      <script>
+        const define = (name, mode, html) => customElements.define(name, class extends HTMLElement {
+          constructor() { super(); this.attachShadow({ mode }).innerHTML = html; }
+        });
+        define('laid-out-body', 'open', '<button>Laid out shadow</button>');
+        define('closed-table', 'closed', '<table style="content-visibility:hidden"><tr><td><slot></slot></td></tr></table>');
+        customElements.define('ns-slot', class extends HTMLElement {
+          constructor() {
+            super();
+            this.attachShadow({ mode: 'closed' }).innerHTML = '<details><summary>Namespaced</summary><slot name="x"></slot></details><slot></slot>';
+            this.querySelector('button').setAttributeNS('urn:e2e:not-html', 'slot', 'x');
           }
         });
       </script>

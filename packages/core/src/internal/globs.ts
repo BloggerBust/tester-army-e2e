@@ -263,12 +263,13 @@ export function discoverFiles(root: string, patterns: readonly string[]): string
 
 /** Sorts strings by Unicode code point, the order collection is defined in. */
 export function compareCodePoints(a: string, b: string): number {
-  const aPoints = [...a];
-  const bPoints = [...b];
-  const length = Math.min(aPoints.length, bPoints.length);
-  for (let i = 0; i < length; i += 1) {
-    const diff = aPoints[i]!.codePointAt(0)! - bPoints[i]!.codePointAt(0)!;
+  // Equal code points take the same number of code units, so one index walks both strings.
+  const length = Math.min(a.length, b.length);
+  for (let i = 0; i < length; ) {
+    const point = a.codePointAt(i)!;
+    const diff = point - b.codePointAt(i)!;
     if (diff !== 0) return diff;
+    i += point > 0xffff ? 2 : 1;
   }
-  return aPoints.length - bPoints.length;
+  return a.length - b.length;
 }

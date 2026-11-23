@@ -139,7 +139,7 @@ console.log(result.status, result.explore.ended, result.explore.findings.length)
 - `session` 指定[准备测试](/authentication)保存的会话。该准备测试先运行，探索从它保存的状态开始，与 `--session` 的行为相同。
 - `changedSince` 探索自该引用以来的更改，与 [`--changed-since`](/reference/cli#e2e-explore) 的行为相同。
 - `maxSteps` 范围为 1 至 100。`timeoutMs` 范围为 `180000` 至 `7200000`。
-- `onEvent` 接收与 `run` 相同的事件，此外每次规划决策、步骤和发现都会产生一个 `explore` 事件。`e2e explore` 在运行开始前输出的内容，例如选中的测试目标，会在 `plan` 事件之前以测试目标为 `run` 的 `notice` 事件送达。
+- `onEvent` 接收与 `run` 相同的事件，此外每次规划决策、步骤和发现都会产生一个 `explore` 事件。`e2e explore` 在运行开始前输出的内容，例如选中的测试目标，会在 `collected` 事件之前以测试目标为 `run` 的 `notice` 事件送达。
 - `video`、`trace` 和 `output` 等录制与输出设置来自配置。
 
 ##### 结果

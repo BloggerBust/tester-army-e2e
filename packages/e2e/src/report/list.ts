@@ -14,14 +14,13 @@ import type { SerializedError } from '@e2e-dev/core/lib/internal/errors';
 import { resultId } from '@e2e-dev/core/lib/internal/ids';
 import { packageVersion } from '@e2e-dev/core/lib/internal/package-version';
 import type { RunEventFact, RunEventOf, RunEventResult, SetupStep } from '../run/events.ts';
-import type { StepPrompt } from '../run/step-hold.ts';
 import type { AppLogRecord, StepRecord } from '@e2e-dev/core/lib/run/steps';
 import { cleanupErrorsOf, expectedFailureOf, failureBeforeSkip, type ArtifactRecord, type AttemptRecord, type AttemptStatus, type FailureEvidence, type ResultStatus, type SerialGroupRecord } from '@e2e-dev/core/lib/run/records';
 import type { Reporter, ReporterSummary } from '../run-types.ts';
 import { builtin } from './builtin-id.ts';
 import { projectSource } from './build.ts';
 import { codeFrame, userFrame } from './code-frame.ts';
-import type { TerminalProgress } from './progress.ts';
+import type { DotProgress } from './dot.ts';
 import { appErrorsOf, type AppErrors } from './failure-text.ts';
 import {
   addCacheTally,
@@ -55,6 +54,7 @@ import {
   sumUsage,
   tally,
   terminalColumns,
+  terminalRows,
   usageText,
   type AiUsage,
   type CacheTally,
@@ -65,7 +65,7 @@ import {
 import { leftOutTests } from './left-out.ts';
 import { ExploreView } from './list-explore.ts';
 import { isShownEvent, type ConfiguredModel, type FileGroup, type PausedTest, type ReplayNotice, type RunningTest, type TestLine } from './list-model.ts';
-import { replayLine, replayNotices, stepLine, stepPromptLine } from './list-steps.ts';
+import { pauseLinePrinter, replayLine, replayNotices, stepLine, stepPromptRows } from './list-steps.ts';
 import { LiveWindow } from './live-window.ts';
 import { repeatGroups, repeatLine, repeatSummary, type RepeatRun } from './repeats.ts';
 import { RunningTree } from './running-tree.ts';
@@ -101,8 +101,8 @@ export interface ListViewOptions {
   live?: boolean;
   /** Emit ANSI colors; defaults to picocolors' detection (TTY, CI, FORCE_COLOR). */
   colors?: boolean;
-  /** The compact progress renderer that replaces the live tree and per-test rows. */
-  progress?: TerminalProgress;
+  /** Print compact dot progress in place of the live tree and per-test rows. */
+  dots?: DotProgress;
 }
 
 /**
@@ -297,8 +297,8 @@ export interface ListReporterOptions {
 /**
  * The built-in `list` reporter: the run for a person in the terminal, with a
  * live window of what is running on a TTY. It prints what user code writes,
- * a test's under its title and the runner's under `runner`, the `--step`
- * prompt, and, last, every reporter's summary rows.
+ * a test's under its title and the runner's under `runner`, a test waiting
+ * at a pause with its keys, and, last, every reporter's summary rows.
  */
 export function list(options: ListReporterOptions = {}): Reporter {
   const stream = options.stream ?? 'stdout';
@@ -306,10 +306,12 @@ export function list(options: ListReporterOptions = {}): Reporter {
 }
 
 /**
- * Create the view on first use because a configuration error can skip `run-started`.
- * Watch reruns can reuse the reporter, so release its view after each run.
+ * A reporter that shows the run on `stream` through a `ListReporter`, as
+ * `list` and `dot` do. A run's first event starts a fresh view, since
+ * `--watch` hands one reporter every run and a run whose config fails to
+ * load starts without `run-started`.
  */
-export function runView(id: 'list' | 'dot' | 'line', stream: 'stdout' | 'stderr', asId: boolean, create: (output: Required<ListReporterOutput>) => ListReporter): Reporter {
+export function runView(id: 'list' | 'dot', stream: 'stdout' | 'stderr', asId: boolean, create: (output: Required<ListReporterOutput>) => ListReporter): Reporter {
   const output = {
     write: (line: string) => void process[stream].write(`${line}\n`),
     raw: (text: string) => void process[stream].write(text),
@@ -318,23 +320,15 @@ export function runView(id: 'list' | 'dot' | 'line', stream: 'stdout' | 'stderr'
   const current = (): ListReporter => (view ??= create(output));
   return builtin(id, {
     name: id,
-    printsTo: stream,
-    onEvent: (event) => {
-      // A test's output arrives through `onOutput`, with the runner's, in the order it was printed.
-      if (event.type !== 'output') current().handle(event);
-    },
-    onOutput: ({ stream: from, text, target, pair }) => {
-      if (target === undefined) current().processOutput(from, text);
-      else current().handle({ type: 'output', target, pair, stream: from, text });
-    },
-    onStepPrompt: (prompt) => current().showStepPrompt(prompt),
+    interactive: true,
+    onEvent: (event) => current().handle(event),
     onSummary: (rows) => {
       const finished = current();
       view = undefined;
       finished.endProcessOutput();
       finished.rows(rows);
     },
-  }, asId);
+  }, asId, stream);
 }
 
 /**
@@ -343,7 +337,7 @@ export function runView(id: 'list' | 'dot' | 'line', stream: 'stdout' | 'stderr'
  * spine, so it can only show what every other sink receives.
  */
 export class ListReporter {
-  private readonly progress: TerminalProgress | undefined;
+  private readonly dots: DotProgress | undefined;
   private readonly pc: Colors;
   private readonly window: LiveWindow;
   private readonly tree: RunningTree;
@@ -352,14 +346,15 @@ export class ListReporter {
   private artifactsRoot: string | undefined;
   /** Selected targets in declaration order; decides each badge's color. */
   private targets: readonly string[] = [];
-  /** When the run was launched (`run-started`): what a run that never reached `plan` reports. */
+  /** When the run was launched (`run-started`): what a run that never reached `collected` reports. */
   private launchedAt = new Date();
   /**
-   * When the run began executing (`plan`): the summary's `Start at` and the
+   * When the run began executing (`collected`): the summary's `Start at` and the
    * origin of `Duration`. Undefined until then, so the clock never ticks
    * while a first-run download narrates above the live window.
    */
   private startedAt: Date | undefined;
+  private holdTiming: RunEventOf<'run-hold'> | undefined;
   /** File groups keyed `${target}\u0000${file}`, in first-seen order. */
   private readonly groups = new Map<string, FileGroup>();
   /** Pairs that started and whose result is still to come, keyed by `pairKey`, in start order. */
@@ -368,10 +363,10 @@ export class ListReporter {
   private readonly live: boolean;
   /** The run holds its steps (`e2e run --step`), as `run-started` says: the live window lists every finished step, not only agent ones. */
   private stepping = false;
-  /** The `e2e run --step` prompt up now, shown under its test. */
-  private prompt: StepPrompt | undefined;
-  /** The prompt line printed last without a live window, so `h`, which changes nothing there, prints nothing. */
-  private promptLine: string | undefined;
+  /** The test waiting for a key now, shown under its test with the keys below the summary. */
+  private waiting: RunEventOf<'paused'> | undefined;
+  /** Prints a wait as one permanent line, without a live window. */
+  private readonly printPause = pauseLinePrinter((line) => this.print(line));
   private readonly failures: Failure[] = [];
   private readonly skippedFailures: Failure[] = [];
   /** Every result a test filter left out, in the order they arrived, for the `Left out` row. */
@@ -442,8 +437,8 @@ export class ListReporter {
     private readonly output: ListReporterOutput = DEFAULT_OUTPUT,
     options: ListViewOptions = {},
   ) {
-    this.progress = options.progress;
-    const live = this.progress === undefined && (options.live ?? process.stdout.isTTY === true) && output.raw !== undefined;
+    this.dots = options.dots;
+    const live = this.dots === undefined && (options.live ?? process.stdout.isTTY === true) && output.raw !== undefined;
     this.live = live;
     this.pc = picocolors.createColors(options.colors ?? (live || picocolors.isColorSupported));
     this.separator = this.pc.dim(' > ');
@@ -460,9 +455,8 @@ export class ListReporter {
       case 'run-started':
         this.runStarted(event);
         break;
-      case 'plan':
-        this.plan(event);
-        this.progress?.plan?.(event.files.reduce((count, file) => count + file.tests, 0));
+      case 'collected':
+        this.collected(event);
         break;
       case 'notice':
         if (this.inFlight !== undefined) this.inFlight.narrated = true;
@@ -471,6 +465,9 @@ export class ListReporter {
       case 'setup':
         this.setupStep(event);
         break;
+      case 'run-hold':
+        this.holdTiming = event;
+        break;
       case 'test-started':
         this.testStarted(event);
         break;
@@ -478,10 +475,19 @@ export class ListReporter {
         this.step(event);
         break;
       case 'output':
-        this.testOutput(event);
+        if (event.target === undefined) this.processOutput(event.stream, event.text);
+        else this.testOutput(event);
+        break;
+      case 'paused':
+        // With no key to press there is no prompt to draw: commands answer the wait.
+        this.showPaused(event.keys.length === 0 ? undefined : event);
+        break;
+      case 'resumed':
+        this.showPaused(undefined);
         break;
       case 'test-finished':
         this.testFinished(event.result);
+        if (event.result.selected) this.dots?.result(event.result.status);
         break;
       case 'serial-group':
         this.serialGroup(event.group);
@@ -509,15 +515,13 @@ export class ListReporter {
   };
 
   /**
-   * Shows the `e2e run --step` prompt under its test in the live window, or
-   * takes it down. Without a window it prints once, as a permanent line.
+   * Shows the held steps under their test and the keys below the summary.
+   * Without a live window, the pause is printed once as a permanent line.
    */
-  showStepPrompt(prompt: StepPrompt | undefined): void {
-    this.prompt = prompt;
+  private showPaused(paused: RunEventOf<'paused'> | undefined): void {
+    this.waiting = paused;
     if (!this.live) {
-      const line = prompt === undefined ? undefined : stepPromptLine(prompt);
-      if (line !== undefined && line !== this.promptLine) this.print(line);
-      this.promptLine = line;
+      this.printPause(paused);
       return;
     }
     this.window.redraw();
@@ -525,7 +529,7 @@ export class ListReporter {
 
   /** Writes one permanent line without disturbing the live window. */
   private print(line: string): void {
-    this.progress?.settle();
+    this.dots?.end();
     this.lastOutput = undefined;
     this.window.erase();
     this.output.write(line);
@@ -541,9 +545,9 @@ export class ListReporter {
    * only lines a newline has ended print; the rest waits for the next write,
    * the test's result, or the end of the run.
    */
-  private testOutput(event: RunEventOf<'output'>): void {
-    if (this.progress?.show !== undefined) {
-      this.progress.show(event.stream, event.text);
+  private testOutput(event: Extract<RunEventOf<'output'>, { target: string }>): void {
+    if (this.dots !== undefined) {
+      this.dots.show(event.stream, event.text);
       return;
     }
     const pair = event.pair === undefined ? undefined : pairKey(event.pair.testId, event.pair.agent, event.target, event.pair.repeat);
@@ -558,9 +562,9 @@ export class ListReporter {
    * test's output under a `stdout | runner` heading. The runner hands it
    * here already redacted, only while this reporter shows the run.
    */
-  processOutput(stream: 'stdout' | 'stderr', text: string): void {
-    if (this.progress?.show !== undefined) {
-      this.progress.show(stream, text);
+  private processOutput(stream: 'stdout' | 'stderr', text: string): void {
+    if (this.dots !== undefined) {
+      this.dots.show(stream, text);
       return;
     }
     this.sourcedOutput(stream, this.pc.dim('runner'), undefined, text);
@@ -568,7 +572,7 @@ export class ListReporter {
 
   /** Prints what `processOutput` left unfinished: the runner hands nothing more once the run's events are all dispatched. */
   endProcessOutput(): void {
-    this.progress?.settle();
+    this.dots?.end();
     this.flushOutput();
   }
 
@@ -671,11 +675,11 @@ export class ListReporter {
   }
 
   /**
-   * The plan is settled once collection and every target's `prepare` are
+   * The tests are settled once collection and every target's `prepare` are
    * done, so its arrival is when the run starts executing and the clock
    * starts: a browser downloaded moments earlier is not on it.
    */
-  private plan(event: RunEventOf<'plan'>): void {
+  private collected(event: RunEventOf<'collected'>): void {
     this.startedAt = new Date();
     for (const planned of event.files) {
       this.group(planned.file, planned.target).planned = planned.tests;
@@ -751,18 +755,16 @@ export class ListReporter {
       }
     }
     const key = pairKey(event.testId, event.agent, event.target, event.repeat);
-    const title = this.titledAs(event.title, event.agent, event.repeat);
     this.pairs.set(key, {
       group: this.group(event.file, event.target),
       serialId: event.serialId,
-      title,
+      title: this.titledAs(event.title, event.agent, event.repeat),
       startedMs: Date.now(),
       executing: true,
       current: undefined,
       steps: this.pairs.get(key)?.steps ?? [],
       ran: this.stepping ? (this.pairs.get(key)?.ran ?? []) : undefined,
     });
-    this.progress?.start?.({ target: event.target, file: event.file, title });
     this.window.redraw();
   }
 
@@ -826,7 +828,7 @@ export class ListReporter {
         if (this.live) {
           running.steps.push(step);
           this.window.redraw();
-        } else if (this.progress === undefined) {
+        } else if (this.dots === undefined) {
           const context = `${this.pc.dim(running.title)}${this.separator}`;
           this.print(`${TEST_INDENT}${stepLine(this.pc, step, { context })}`);
         }
@@ -878,8 +880,6 @@ export class ListReporter {
     const title = this.titledAs(result.test.titlePath.join(' > '), result.agent, result.repeat);
     const declared = projectSource(this.projectRoot, result.test.source, result.test.file);
     const declaredLine = declared?.file === result.test.file ? declared.line : undefined;
-    const row = this.progress?.result({ target: result.target.name, file: result.test.file, title, status: result.status });
-    if (row !== undefined) this.print(row);
     if (cleanupErrors.length > 0) {
       this.cleanupFailures.push({ title, error: cleanupErrors[0]! });
     }
@@ -887,7 +887,7 @@ export class ListReporter {
       // The exploration's verdict is its findings; any other error is a failure of its own, unless the run stopped it.
       this.explore.result(result.attempts.flatMap((attempt) => attempt.artifacts));
       if (error !== undefined && result.status !== 'interrupted' && !this.explore.isVerdict(error)) {
-        this.recordFailure({ id, group, title, declaredLine, status: result.status, error, videos, failure, screenPath, appLog });
+        this.failures.push({ id, group, title, declaredLine, status: result.status, error, videos, failure, screenPath, appLog });
       }
       this.window.redraw();
       return;
@@ -906,7 +906,7 @@ export class ListReporter {
       replays,
     };
     group.lines.push(line);
-    if (!this.live && this.progress === undefined) this.printTestRows(line, `${this.badge(group.target)} ${bounded(group.file)}${this.separator}`);
+    if (!this.live && this.dots === undefined) this.printTestRows(line, `${this.badge(group.target)} ${bounded(group.file)}${this.separator}`);
     this.runs.push({
       key: `${result.test.id}@${result.agent}@${result.target.name}`,
       label: `${this.badge(group.target)} ${bounded(group.file)}${this.separator}${this.titledAs(result.test.titlePath.join(' > '), result.agent, 0)}`,
@@ -914,7 +914,7 @@ export class ListReporter {
       run: { repeat: result.repeat, status: result.status, code: error?.code ?? result.attempts.findLast((attempt) => attempt.status !== 'passed')?.error?.code },
     });
     if (statusBucket(result.status) === 'failed') {
-      this.recordFailure({ id, group, title, declaredLine, status: result.status, error, videos, failure, screenPath, appLog, skipReason });
+      this.failures.push({ id, group, title, declaredLine, status: result.status, error, videos, failure, screenPath, appLog, skipReason });
     }
     if (skippedAfter !== undefined) {
       this.skippedFailures.push({ id, group, title, declaredLine, status: result.status, error: skippedAfter.error, videos, ...failureOf(skippedAfter), appLog: undefined });
@@ -953,7 +953,7 @@ export class ListReporter {
   private printGroup(group: FileGroup): void {
     if (group.printed) return;
     group.printed = true;
-    if (this.progress !== undefined) return;
+    if (this.dots !== undefined) return;
     const { pc } = this;
     const counts = tally(group.lines);
     const outcome = fileOutcome(counts);
@@ -1073,11 +1073,11 @@ export class ListReporter {
    * vitest's padded summary, shared by the live window and the final report:
    * files, tests, model usage, the trace cache's part, run errors, start
    * time, and elapsed time. The
-   * clock rows wait for `plan`; the final summary of a run that never got
+   * clock rows wait for `collected`; the final summary of a run that never got
    * there (a config or collection failure, a failed download) counts from
    * the launch instead, so the time it took to fail is still on record.
    */
-  private summaryRows(final: boolean): string[] {
+  private summaryRows(final: boolean, durationMs?: number): string[] {
     const { pc } = this;
     const files = this.fileCounters();
     const tests = this.testCounters();
@@ -1115,8 +1115,9 @@ export class ListReporter {
     }
     const startedAt = this.startedAt ?? (final ? this.launchedAt : undefined);
     if (startedAt !== undefined) {
+      const elapsed = durationMs ?? (this.holdTiming?.heldSince ?? Date.now()) - startedAt.getTime() - (this.holdTiming?.heldMs ?? 0);
       rows.push(padTitle(pc, 'Start at') + formatClock(startedAt));
-      rows.push(padTitle(pc, 'Duration') + durationText(pc, Date.now() - startedAt.getTime(), this.startupMs));
+      rows.push(padTitle(pc, 'Duration') + durationText(pc, elapsed, this.startupMs));
     }
     return rows;
   }
@@ -1159,23 +1160,24 @@ export class ListReporter {
     return this.interrupted ? pc.yellow(`${cut} (interrupted)`) : pc.dim(none);
   }
 
-  /** The live window: the running tree, then the summary. */
-  /** The block's rows for `room` screen rows under the permanent log. */
+  /** Formats the running tree, summary, and keys for `room` rows under the permanent log. */
   private renderWindow(room: number): string[] {
     const running = [...this.pairs.values()].filter((test) => test.executing);
     if (this.explore !== undefined) {
       return this.explore.liveRows(this.exploreBadge(), running[0]?.current?.events, this.summaryRows(false), Date.now(), room);
     }
-    return this.tree.render(running, this.summaryRows(false), Date.now(), room, { setup: this.inFlight, paused: this.paused() });
+    const footer = this.waiting === undefined ? [] : stepPromptRows(this.pc, this.waiting).slice(0, terminalRows() - 1);
+
+    return this.tree.render(running, this.summaryRows(false), Date.now(), room, { setup: this.inFlight, paused: this.paused(), footer });
   }
 
-  /** The running test the `--step` prompt holds, with the prompt. */
+  /** The running test that waits for a key, with its `paused` event. */
   private paused(): PausedTest | undefined {
-    const { prompt } = this;
-    if (prompt === undefined) return undefined;
-    const { testId, agent, target, repeat } = prompt.steps[0].step;
+    const { waiting } = this;
+    if (waiting === undefined) return undefined;
+    const { testId, agent, target, repeat } = waiting;
     const test = this.pairs.get(pairKey(testId, agent, target, repeat));
-    return test === undefined ? undefined : { test, prompt };
+    return test === undefined ? undefined : { test, event: waiting };
   }
 
   /**
@@ -1197,7 +1199,7 @@ export class ListReporter {
   private exploreProgress(progress: RunEventOf<'explore'>['progress']): void {
     if (progress.phase === 'started') {
       this.explore = new ExploreView(this.pc, progress);
-      if (!this.live && this.progress === undefined) {
+      if (!this.live && this.dots === undefined) {
         this.print(this.explore.header(this.exploreBadge(), 'Exploring'));
       }
       this.window.redraw();
@@ -1206,7 +1208,7 @@ export class ListReporter {
     const view = this.explore;
     if (view === undefined) return;
     view.progress(progress);
-    if (!this.live && this.progress === undefined) {
+    if (!this.live && this.dots === undefined) {
       if (progress.phase === 'step-finished' && view.lastStep !== undefined) {
         for (const line of view.stepLines(view.lastStep)) this.print(line);
       } else if (progress.phase === 'finding') {
@@ -1224,7 +1226,7 @@ export class ListReporter {
   private printExplore(): void {
     const view = this.explore;
     if (view === undefined) return;
-    for (const line of view.record(this.exploreBadge(), this.live || this.progress !== undefined)) this.print(line);
+    for (const line of view.record(this.exploreBadge(), this.live || this.dots !== undefined)) this.print(line);
     for (const line of view.findingsSection((target) => this.displayPath(target), this.artifactsRoot)) this.print(line);
     for (const line of view.assessment()) this.print(line);
   }
@@ -1236,41 +1238,27 @@ export class ListReporter {
     this.print('');
     this.print(this.errorBanner(`${heading} ${failures.length}`));
     this.print('');
-    failures.forEach((failure, index) => {
-      this.printFailure(failure, pages[failure.id]);
+    failures.forEach(({ id, group, title, status, error, videos, failure, screenPath, appLog, skipReason }, index) => {
+      this.print(
+        `${pc.bold(pc.bgRed(status === 'skipped' ? ' SKIP ' : ' FAIL '))} ${this.badge(group.target)} ${bounded(group.file)}${this.separator}${title}`,
+      );
+      if (error === undefined) {
+        this.print(pc.red(`${pc.bold(status)}: no error was recorded`));
+      } else {
+        const [first = '', ...rest] = bounded(error.message).split('\n');
+        this.print(pc.red(`${pc.bold(bounded(error.code))}: ${first}`));
+        for (const line of rest) this.print(pc.red(line));
+        this.printFailureLocation(error.stack);
+      }
+      if (skipReason !== undefined) this.print(pc.yellow(` ${pc.dim(F_POINTER)} ${pc.dim('skipped')} ${bounded(skipReason)}`));
+      this.printEvidence(failure, screenPath, pages[id], appLog);
+      this.printVideos(videos);
       const marker = `[${index + 1}/${failures.length}]`;
       const { before, after } = rule(marker, 'right');
       this.print('');
       this.print(pc.red(pc.dim(`${before}${marker}${after}`)));
       this.print('');
     });
-  }
-
-  private printFailure({ group, title, status, error, videos, failure, screenPath, appLog, skipReason }: Failure, page: string | undefined): void {
-    const { pc } = this;
-    this.print(
-      `${pc.bold(pc.bgRed(status === 'skipped' ? ' SKIP ' : ' FAIL '))} ${this.badge(group.target)} ${bounded(group.file)}${this.separator}${title}`,
-    );
-    if (error === undefined) {
-      this.print(pc.red(`${pc.bold(status)}: no error was recorded`));
-    } else {
-      const [first = '', ...rest] = bounded(error.message).split('\n');
-      this.print(pc.red(`${pc.bold(bounded(error.code))}: ${first}`));
-      for (const line of rest) this.print(pc.red(line));
-      this.printFailureLocation(error.stack);
-    }
-    if (skipReason !== undefined) this.print(pc.yellow(` ${pc.dim(F_POINTER)} ${pc.dim('skipped')} ${bounded(skipReason)}`));
-    this.printEvidence(failure, screenPath, page, appLog);
-    this.printVideos(videos);
-  }
-
-  /** Keep each failure for the closing `Failed` rows, which include its trace path if one was written. */
-  private recordFailure(failure: Failure): void {
-    this.failures.push(failure);
-    if (this.progress?.failureTiming !== 'immediate') return;
-    this.print('');
-    this.printFailure(failure, undefined);
-    this.print('');
   }
 
   /** A full-width red rule with a centered `FAIL`-style label. */
@@ -1381,6 +1369,7 @@ export class ListReporter {
 
   private runFinished(event: RunEventOf<'run-finished'>): void {
     const { pc } = this;
+    this.dots?.end();
     if (event.status === 'interrupted') this.interrupted = true;
     this.window.stop();
     this.flushOutput();
@@ -1391,11 +1380,11 @@ export class ListReporter {
     }
     this.printExplore();
     const pages = event.traces ?? {};
-    if (this.progress?.failureTiming !== 'immediate') this.printFailures('Failed Tests', this.failures, pages);
+    this.printFailures('Failed Tests', this.failures, pages);
     this.printFailures('Skipped After Failure', this.skippedFailures, pages);
     this.printErrors();
     this.print('');
-    for (const row of this.summaryRows(true)) this.print(row);
+    for (const row of this.summaryRows(true, event.durationMs)) this.print(row);
     // The report is for scripts, so a run names it only when it is missing: `--last-failed` reads it next.
     if (event.reportPath === undefined) this.print(padTitle(pc, 'Report') + pc.dim('(not written)'));
     const paged = Object.values(pages);

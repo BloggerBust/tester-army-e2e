@@ -65,6 +65,17 @@ test('sequential onboarding echoes the exact values', async ({ app, device, scre
   await expect(screen.getByTestId('echo-phone')).toHaveText('0612435678');
 });
 
+// The Android emulator in CI draws no soft keyboard, even for a tapped field,
+// so the keyboard reads run where one comes up. The email field autofocuses,
+// and the keyboard slides in and out, so both reads poll.
+test('isKeyboardShown follows the keyboard up and through a dismissal', { platforms: ['ios'] }, async ({ app, device, screen }) => {
+  await openScenario({ app, device, screen }, 'Sequential Onboarding');
+  await screen.getByTestId('email-input').fill('jane@example.com');
+  await expect.poll(() => device.isKeyboardShown()).toBe(true);
+  await device.dismissKeyboard();
+  await expect.poll(() => device.isKeyboardShown()).toBe(false);
+});
+
 test('onboarding rejects a malformed email before advancing', async ({ app, device, screen }) => {
   await openScenario({ app, device, screen }, 'Sequential Onboarding');
   await screen.getByTestId('email-input').fill('jane');

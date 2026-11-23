@@ -89,6 +89,11 @@ function summarize(results: readonly ReportResult[], serialGroups: readonly Repo
   return summary;
 }
 
+/** Reads the duration of a pass. Wall time is used for older reports. */
+function runDuration(run: ReportRun): number {
+  return run.durationMs ?? Date.parse(run.finishedAt) - Date.parse(run.startedAt);
+}
+
 /**
  * The rerun folded into the run it selected from. A result the rerun has
  * under the same id is folded with it; a test the rerun left out keeps what
@@ -104,8 +109,8 @@ function summarize(results: readonly ReportResult[], serialGroups: readonly Repo
  * suite hook failure whose scope it did not run again (`run.carried`). Then
  * the page is red, since the suite is not known to pass. A carried test the
  * first pass interrupted reached no verdict: it leaves the outcome alone and
- * the page reads interrupted, not green. The start is the run before's, so
- * the footer's duration spans both. The rerun takes the run before's filter
+ * the page reads interrupted, not green. The first run's start time is kept.
+ * The sum of both run durations is shown in the footer. The rerun takes the run before's filter
  * records and the change they judged, since the rows those filters left out
  * are the run before's too. An `e2e explore` run before leaves the rerun as
  * it is.
@@ -165,6 +170,7 @@ export function foldLastRun(current: Report, lastRun: Report): Report {
       status: carriedFailure && current.run.status === 'passed' ? 'failed' : current.run.status,
       exitCode: carriedFailure && current.run.exitCode === 0 ? 1 : current.run.exitCode,
       startedAt: lastRun.run.startedAt,
+      durationMs: runDuration(lastRun.run) + runDuration(current.run),
       serialGroups,
       results,
       errors: [...current.run.errors, ...carriedErrors],

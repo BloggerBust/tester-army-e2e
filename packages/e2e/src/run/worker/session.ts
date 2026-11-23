@@ -16,7 +16,7 @@ import { abortError, cancelledError } from '@e2e-dev/core/lib/internal/time';
 import { TargetExecutor, type InMemoryAttempts } from '../execute.ts';
 import { encodeResult, type RunError } from '@e2e-dev/core/lib/run/records';
 import type { SessionStore } from '@e2e-dev/core/lib/run/sessions';
-import type { StepHold, StepHoldContext } from '../step-hold.ts';
+import type { HoldReads, StepHold } from '../step-hold.ts';
 import type { HeldTestTools } from './held-test-tools.ts';
 import { countsTowardFailureLimit, disappearedResult } from '../units.ts';
 import type { MainToWorker, RunUnitMessage, WirePair, WorkerToMain } from './protocol.ts';
@@ -73,9 +73,8 @@ export interface TargetWorkerHost {
   finished(): void;
 }
 
-type WorkerHold = {
+type WorkerHold = HoldReads & {
   readonly release: (error: SerializedError | undefined) => void;
-  readonly readScreen: StepHoldContext['readScreen'];
   readonly tools: HeldTestTools;
 };
 
@@ -139,7 +138,7 @@ export class TargetWorker {
         isolated: deps.isolated,
         interruptSignal: this.interruptController.signal,
         hold: {
-          ask: (step, signal, readScreen, tools) => this.holdStep(step, signal, readScreen, tools),
+          ask: (step, signal, reads, tools) => this.holdStep(step, signal, reads, tools),
           steps: deps.holdSteps,
         },
         ...(deps.debug !== undefined ? { debug: deps.debug } : {}),
@@ -273,16 +272,21 @@ export class TargetWorker {
       case 'step-attachment-cancel':
         this.firstHold?.tools.cancel(message.requestId);
         return;
-      case 'screen-request': {
+      case 'screen-request':
+      case 'logs-request': {
         // Handle this right away because the waiting unit is still running.
-        // If its wait has ended, there is no screen to read.
-        const { requestId } = message;
-        const hold = this.holds.get(message.holdId);
-        const screen = hold === undefined ? Promise.resolve(undefined) : hold.readScreen();
+        const { requestId, holdId } = message;
+        const hold = this.holds.get(holdId);
 
-        void screen.then((read) => {
-          this.host.emit({ type: 'screen-reply', requestId, ...(read === undefined ? {} : { screen: read }) });
-        });
+        if (message.type === 'screen-request') {
+          void Promise.resolve(hold?.readScreen()).then((screen) => {
+            this.host.emit({ type: 'screen-reply', requestId, ...(screen === undefined ? {} : { screen }) });
+          });
+        } else {
+          void Promise.resolve(hold?.readLogs()).then((logs) => {
+            this.host.emit({ type: 'logs-reply', requestId, ...(logs === undefined ? {} : { logs }) });
+          });
+        }
         return;
       }
       default:
@@ -294,13 +298,13 @@ export class TargetWorker {
    * Holds one step or pause until the runner releases it, and rejects with
    * the release's error if it has one. A hold that ends first (the step was
    * abandoned, its attempt ended) tells the runner, so its prompt goes away,
-   * and rejects with the signal's reason. The runner can request the screen
-   * through `readScreen` while it's held.
+   * and rejects with the signal's reason. During the hold, the screen is
+   * available through `readScreen` and the app log through `readLogs`.
    */
   private holdStep(
     step: StepHold,
     signal: AbortSignal,
-    readScreen: StepHoldContext['readScreen'],
+    reads: HoldReads,
     tools: HeldTestTools,
   ): Promise<void> {
     const holdId = uuidv7();
@@ -334,7 +338,7 @@ export class TargetWorker {
             reject(new E2EError(error.category, error.code, error.message));
           }
         },
-        readScreen,
+        ...reads,
         tools,
       });
       signal.addEventListener('abort', cancel, { once: true });

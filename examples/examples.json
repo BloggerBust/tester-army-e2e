@@ -1177,6 +1177,8 @@
       "title": "Testing in Notte cloud browsers with e2e",
       "shortTitle": "Notte",
       "description": "Each test attempt runs in its own Notte cloud browser, through a browser provider for e2e's web engine.",
+      "icon": "notte.svg",
+      "invertIcon": true,
       "source": "partner",
       "repository": "https://github.com/nottelabs/notte/tree/704dcf9d4ce534955937cde8e557b302336394d3/examples/e2e",
       "author": {
@@ -1194,6 +1196,35 @@
           "cloud-browsers"
         ],
         "platform": [
+          "web"
+        ]
+      }
+    },
+    {
+      "slug": "e2b",
+      "title": "Testing Android and web apps in E2B sandboxes with e2e",
+      "shortTitle": "E2B",
+      "description": "The game 2048 on Android 16 and Wikipedia in Chromium, each in E2B sandboxes with one scripted test and one agent test, and no Android SDK, emulator, or adb on your machine.",
+      "icon": "e2b.svg",
+      "source": "partner",
+      "repository": "https://github.com/e2b-dev/e2b-cookbook/tree/main/examples/e2e-android-web-tests-js",
+      "author": {
+        "name": "E2B",
+        "github": "e2b-dev",
+        "website": "https://e2b.dev"
+      },
+      "license": "NONE",
+      "licenseUrl": "https://choosealicense.com/no-permission/",
+      "tags": {
+        "framework": [
+          "nodejs"
+        ],
+        "useCase": [
+          "cloud-devices",
+          "cloud-browsers"
+        ],
+        "platform": [
+          "android",
           "web"
         ]
       }

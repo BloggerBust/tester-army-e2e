@@ -24,6 +24,7 @@ import { timestamp } from '@e2e-dev/core/lib/internal/ids';
 import type { FilterOutcome } from '../report/build.ts';
 import { encodeResult, type ResultRecord, type SerialGroupRecord, type WireResultRecord } from '@e2e-dev/core/lib/run/records';
 import type { StepProgress } from '@e2e-dev/core/lib/run/steps';
+import type { SourceLocation } from '@e2e-dev/core/lib/internal/source';
 
 /** The closed set of process exit codes a run can end with. */
 export type RunExitCode = 0 | 1 | 2 | 3 | 4 | 130;
@@ -70,6 +71,47 @@ export type SetupStep =
  */
 export type SetupOutcome = 'reused' | FilterOutcome;
 
+/** One test, target, and agent of the run, as `collected` lists it. */
+export interface CollectedTestInfo {
+  /** Stable test id (`<file>::<titles>`), the `testId` of this test's events and results. */
+  readonly testId: string;
+  readonly target: string;
+  /** The configured agent this pair runs as. */
+  readonly agent: string;
+  /** Project-relative POSIX path of the test file. */
+  readonly file: string;
+  /** `setup` for a test that saves a session for others; it runs once, whatever `repeatEach` says. */
+  readonly kind: 'test' | 'setup';
+  readonly title: string;
+  /** The describe titles, then the test title. */
+  readonly titlePath: readonly string[];
+  readonly tags: readonly string[];
+  /** Where the test is declared; absent when it recorded none. */
+  readonly source?: SourceLocation;
+  /** Set when the test belongs to a serial group. */
+  readonly serialId?: string;
+  /** `run` when it will run, `skip` when the test or the run skips it, `filtered` when the selection left it out. */
+  readonly disposition: 'run' | 'skip' | 'filtered';
+  /** Why it is skipped or filtered, when the run gave a reason. */
+  readonly reason?: string;
+}
+
+/** One key a waiting test's prompt offers, and what it does, in the words a person reads. */
+export interface PausedKey {
+  readonly key: string;
+  readonly does: string;
+}
+
+/** One call a `paused` test waits at. */
+export interface PausedStep {
+  /** Its expected position in the trace; 0 for a pause. */
+  readonly number: number;
+  readonly api: string;
+  readonly label: string;
+  /** Where the test called it; absent when the call site is not in the project. */
+  readonly source?: SourceLocation;
+}
+
 /** One fact about the run; the emitter wraps it in the envelope. */
 export type RunEventFact =
   | {
@@ -101,15 +143,9 @@ export type RunEventFact =
     }
   | {
       /**
-       * What the run will execute, emitted once collection, selection, and
-       * every target's `prepare` are done: from here the run executes, so
-       * this event's `at` is the run's start (the report's `startedAt`, the
-       * list reporter's `Start at`), and a first-run download narrated
-       * before it is not on the clock. `total` counts every test-target
-       * pair, including unselected ones; `files` breaks the reportable pairs
-       * (run or explicitly skipped) down per test file and target, so a
-       * reporter can tell when a file's results are complete without a side
-       * lookup.
+       * @deprecated Read `collected`, which follows it with the same
+       * `total` and `files`. Emitted until e2e drops it, no earlier than
+       * April 1, 2027.
        */
       readonly type: 'plan';
       readonly total: number;
@@ -118,6 +154,32 @@ export type RunEventFact =
         readonly target: string;
         readonly tests: number;
       }[];
+    }
+  | {
+      /**
+       * What the run will execute, emitted once collection, selection, and
+       * every target's `prepare` are done: from here the run executes, so
+       * this event's `at` is the run's start (the report's `startedAt`, the
+       * list reporter's `Start at`), and a first-run download narrated
+       * before it is not on the clock. `total` counts every test-target
+       * pair, including unselected ones; `files` breaks the reportable pairs
+       * (run or explicitly skipped) down per test file and target, so a
+       * reporter can tell when a file's results are complete without a side
+       * lookup. Both count a repeated test once per repeat. `tests` is
+       * every pair in selection order, one entry however often it repeats,
+       * the ones left out included; a `test` that runs does so
+       * `repeatEach` times.
+       */
+      readonly type: 'collected';
+      readonly total: number;
+      readonly files: readonly {
+        readonly file: string;
+        readonly target: string;
+        readonly tests: number;
+      }[];
+      /** How many times each test runs (`--repeat-each`); 1 unless asked. */
+      readonly repeatEach: number;
+      readonly tests: readonly CollectedTestInfo[];
     }
   | {
       /**
@@ -136,12 +198,14 @@ export type RunEventFact =
     }
   | {
       /**
-       * Text a test wrote to stdout or stderr (`console.log` and friends),
-       * as one write of a worker process on `target`. `pair` is the test
-       * executing at the time, or undefined for output between tests (a
-       * module's top level while its file loads). The list reporter prints
-       * it above its live window; without it, the runner prints it
-       * as written unless the run is quiet.
+       * Text user code wrote to stdout or stderr (`console.log` and
+       * friends), redacted, in the pieces it was written in. A test's is one
+       * write of a worker process on `target`; `pair` is the test executing
+       * at the time, or undefined for output between tests (a module's top
+       * level while its file loads). The runner process's own while the run
+       * is underway (a test file's while it is collected, a test filter's,
+       * a reporter's hooks) has no `target`. An interactive reporter prints
+       * it beside the run; without one, the runner prints it on stderr.
        */
       readonly type: 'output';
       readonly target: string;
@@ -150,10 +214,17 @@ export type RunEventFact =
       readonly text: string;
     }
   | {
+      readonly type: 'output';
+      readonly target?: undefined;
+      readonly pair?: undefined;
+      readonly stream: 'stdout' | 'stderr';
+      readonly text: string;
+    }
+  | {
       /**
        * One step of the run's setup, before any test: `started` as it begins,
        * `finished` once it is done, with how long it took. Collection and each
-       * target's engine `prepare` come before `plan`; the services and app
+       * target's engine `prepare` come before `collected`; the services and app
        * commands start after it. A step that fails ends as a `run-error`
        * instead, and a step the interrupt cuts short reports nothing more.
        */
@@ -167,6 +238,14 @@ export type RunEventFact =
       readonly state: 'finished';
       readonly durationMs: number;
       readonly outcome?: SetupOutcome;
+    }
+  | {
+      /** Emitted when an interval with every running worker held begins or ends. */
+      readonly type: 'run-hold';
+      /** Total milliseconds in completed intervals when all running workers were held. */
+      readonly heldMs: number;
+      /** The start of the current held interval as Unix milliseconds, or null outside that interval. */
+      readonly heldSince: number | null;
     }
   | {
       readonly type: 'test-started';
@@ -193,6 +272,38 @@ export type RunEventFact =
       readonly repeat: number;
       readonly target: string;
       readonly progress: StepProgress;
+    }
+  | {
+      /**
+       * A test waits for a person: at steps `e2e run --step` holds, or at
+       * `screen.pause()`. Tests that wait are shown one at a time, so the
+       * next `paused` follows this test's `resumed`. A second `paused` for
+       * the same test replaces the first: a step held beside it joined, or
+       * the keys changed. Reporters only show it; the runner reads the keys.
+       */
+      readonly type: 'paused';
+      readonly testId: string;
+      readonly agent: string;
+      readonly repeat: number;
+      readonly target: string;
+      /** The describe titles, then the test title, as `collected` lists the test. */
+      readonly titlePath: readonly string[];
+      /** `step` before steps `--step` holds, `pause` at `screen.pause()`. */
+      readonly reason: 'step' | 'pause';
+      /** The ID `e2e attach` takes, the same at every wait of this attempt. */
+      readonly attachId: string;
+      /** The calls that wait: one, or every step held together, as in one `Promise.all`. A pause is numbered 0. */
+      readonly steps: readonly [PausedStep, ...PausedStep[]];
+      /** What the keyboard does now, in the order a prompt lists it; empty when no keyboard is read. */
+      readonly keys: readonly PausedKey[];
+    }
+  | {
+      /** The test of the last `paused` is running again, or it ended. Every `paused` gets one before the next test's `paused` and before `run-finished`. */
+      readonly type: 'resumed';
+      readonly testId: string;
+      readonly agent: string;
+      readonly repeat: number;
+      readonly target: string;
     }
   | { readonly type: 'test-finished'; readonly result: RunEventResult }
   | {
@@ -239,6 +350,8 @@ export type RunEventFact =
       readonly type: 'run-finished';
       readonly status: RunStatus;
       readonly exitCode: RunExitCode;
+      /** The report's run time in milliseconds, excluding intervals when all running workers were held. */
+      readonly durationMs?: number | undefined;
       readonly reportPath?: string;
       /** Where `--ai-trace` wrote the run's model calls, once the file exists. */
       readonly aiTracePath?: string;
@@ -269,9 +382,13 @@ export type RunEventOf<Type extends RunEventFact['type']> = Extract<RunEventFact
 export type RunEventSink = (event: RunEvent) => void | Promise<void>;
 
 /** A sink with the label the stderr line names should it be quarantined. */
-interface RunEventSubscriber {
+export interface RunEventSubscriber {
   readonly name: string;
   readonly onEvent: RunEventSink;
+  /** Set for a sink that shows the run: it also gets the events emitted for `'viewers'` alone. */
+  readonly viewer?: true;
+  /** Called once when the sink is quarantined, before the stderr line. */
+  readonly onQuarantine?: () => void;
 }
 
 /** Strips the live target from a result, keeping its stable identity. */
@@ -286,29 +403,37 @@ export function toEventResult(record: ResultRecord): RunEventResult {
  * Builds the run's single event writer over every configured sink. Sinks are
  * quarantined independently, so one broken sink cannot silence the
  * list reporter or vice versa, and each quarantine is one stderr line naming
- * the sink, the event, and the error. Returns a no-op when no sink is
- * configured, so call sites never branch.
+ * the sink, the event, and the error.
+ *
+ * Each event is frozen before any sink sees it: every sink is handed the
+ * same object, and none may rewrite it for the next. The freeze is one
+ * level deep; the records an event carries are shared, read-only by contract.
+ *
+ * An event emitted for `'viewers'` reaches only the sinks that show the run:
+ * what a sink prints while it is handed output, which must not come back to
+ * it or to another sink that would print it again.
  */
 export function createRunEventEmitter(
-  subscribers: readonly (RunEventSubscriber | undefined)[],
-): (fact: RunEventFact) => void {
-  const active = subscribers.filter((subscriber) => subscriber !== undefined);
-  if (active.length === 0) return () => undefined;
+  subscribers: readonly RunEventSubscriber[],
+  warn: (line: string) => void,
+): (fact: RunEventFact, audience?: 'viewers') => void {
   let seq = 0;
+  // A sink that emits while it is handed an event, as one that prints does,
+  // waits its turn: every sink sees the events in `seq` order.
+  const pending: { readonly event: RunEvent; readonly viewers: boolean }[] = [];
+  let delivering = false;
   const quarantined = new Set<RunEventSubscriber>();
   const quarantine = (subscriber: RunEventSubscriber, event: RunEvent, cause: unknown): void => {
     // Several pending promises of one sink may reject; the first names it, the rest are already quarantined.
     if (quarantined.has(subscriber)) return;
     quarantined.add(subscriber);
-    process.stderr.write(
-      `e2e: reporter "${subscriber.name}" threw on ${event.type}: ${errorMessage(cause)}; ignoring it for the rest of the run\n`,
-    );
+    // Told first: the line below is output the sink no longer shows.
+    subscriber.onQuarantine?.();
+    warn(`e2e: reporter "${subscriber.name}" threw on ${event.type}: ${errorMessage(cause)}; ignoring it for the rest of the run\n`);
   };
-  return (fact) => {
-    seq += 1;
-    const event: RunEvent = { seq, at: timestamp(), ...fact };
-    for (const subscriber of active) {
-      if (quarantined.has(subscriber)) continue;
+  const deliver = (event: RunEvent, viewers: boolean): void => {
+    for (const subscriber of subscribers) {
+      if (quarantined.has(subscriber) || (viewers && subscriber.viewer !== true)) continue;
       try {
         const result = subscriber.onEvent(event);
         // An async sink's rejection must neither surface as an unhandled
@@ -317,6 +442,17 @@ export function createRunEventEmitter(
       } catch (cause) {
         quarantine(subscriber, event, cause);
       }
+    }
+  };
+  return (fact, audience) => {
+    seq += 1;
+    pending.push({ event: Object.freeze({ seq, at: timestamp(), ...fact }), viewers: audience === 'viewers' });
+    if (delivering) return;
+    delivering = true;
+    try {
+      for (let next = pending.shift(); next !== undefined; next = pending.shift()) deliver(next.event, next.viewers);
+    } finally {
+      delivering = false;
     }
   };
 }

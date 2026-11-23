@@ -1,10 +1,25 @@
 import type { Report } from 'e2e';
+import { createElement } from 'react';
+import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 import { buildModel, formatDuration, formatTokens, onTarget, selectedTarget, statusTabs, timedVideos, videoName, videoPosition, type Artifact, type Step } from '../../app/data.ts';
+import { ListView } from '../../app/list.tsx';
 import fixture from '../../../e2e/schema/fixtures/report-v1.valid.json' with { type: 'json' };
 
 // The page's own tsconfig checks this file: the model it tests reads the DOM.
 const REPORT = fixture as unknown as Report;
+
+describe('the run summary', () => {
+  it('shows the recorded run duration. For older reports the duration comes from the timestamps', () => {
+    const report = { ...REPORT, run: { ...REPORT.run, durationMs: 765 } };
+    const model = buildModel({ report, media: { mode: 'none' }, resultsDir: '.e2e/results', traces: {}, sources: {} });
+    const page = createElement(ListView, { model, status: 'all', search: '', target: undefined });
+
+    expect(renderToStaticMarkup(page)).toContain('>765ms<');
+    delete model.run.durationMs;
+    expect(renderToStaticMarkup(page)).toContain('>1.0s<');
+  });
+});
 
 describe('serial members', () => {
   it('show their own error, never the group\'s once they passed, and the group\'s when they have none', () => {

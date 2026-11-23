@@ -196,7 +196,9 @@ declares `requires: ['device']` on those tests.
 | `driver.background(seconds)` | `device.home()`, then `device.openApp(id)` |
 | `driver.url('myapp://x')`, `mobile: deepLink` | `device.openLink('myapp://x')` |
 | `driver.back()`, `driver.hideKeyboard()`, `pressKeyCode` for Home | `app.back()`, `device.dismissKeyboard()`, `device.home()` |
+| `driver.isKeyboardShown()` | `device.isKeyboardShown()`. It reads the screen as it is now: after an action that opens or closes the keyboard, poll it with `expect.poll` |
 | `driver.getPageSource()` | `screen.tree()`, or `screen.debug()` to print it |
+| `driver.getWindowSize()` | [`device.viewport()`](/reference/mobile#viewport), `{ width, height }` in CSS pixels |
 | `driver.takeScreenshot()` | `app.screenshot('label')`, secure fields masked |
 | `startRecordingScreen()`, `stopRecordingScreen()` | `app.startRecording()`, `app.stopRecording()`, or `npx e2e run --video` |
 | `mobile: setPermission`, `mobile: changePermissions` | `device.setPermission('camera', 'grant')`, one per call, before `app.open()` |
@@ -307,8 +309,8 @@ is not a step, so it skips the report and secret redaction.
 | Appium | Use today |
 | --- | --- |
 | `.getAttribute()` for a label, id, or class, `.isSelected()`, `.getTagName()` | `toHaveAccessibleName` for a label, `toBeSelected` for the selected state. No read for an id, class, or tag name |
-| `pressKeyCode(code)`, `driver.keys('Backspace')`, `isKeyboardShown()` | `.press()` takes `Enter`, `Space`, or one character. Use `.clear()` and `.fill()` |
-| `driver.getWindowRect()`, `getWindowSize()`, `mobile: deviceInfo` | Swipe by direction, or read `.boundingBox()` of a full-screen element |
+| `pressKeyCode(code)`, `driver.keys('Backspace')` | `.press()` takes `Enter`, `Space`, or one character. Use `.clear()` and `.fill()` |
+| `driver.getWindowRect()`, `mobile: deviceInfo` | `device.viewport()` returns size only. Window position and full device information have no equivalent |
 | `UiScrollable` `scrollToEnd()`, `scrollToBeginning()` | Loop `locator.swipe({ direction: 'down' })` until `allTextContents()` stops changing; `'up'` for the beginning |
 | `mobile: selectPickerWheelValue`, date and time pickers, slider values | Swipe the wheel and read `.inputValue()`, or use an `agent.act` goal |
 | `mobile: pinchOpenGesture`, `mobile: pinch`, `mobile: dragGesture` to coordinates, `mobile: dragFromToForDuration` | `client.interactions.pinch` or `.drag` through [`unstable_raw`](/reference/mobile#unstable_raw) |

@@ -31,16 +31,23 @@ test.describe('device fixture', () => {
     await expect(scheme).toHaveText('scheme: light');
   });
 
-  test('setOrientation rotates the window the app measures', async ({ device, screen }) => {
+  test('setOrientation rotates the window and viewport dimensions', async ({ device, screen }) => {
     const orientation = screen.getByTestId('orientation');
     await expect(orientation).toHaveText('orientation: portrait');
+    const portrait = await device.viewport();
+    expect(Number.isFinite(portrait.width)).toBe(true);
+    expect(Number.isFinite(portrait.height)).toBe(true);
+    expect(portrait.width).toBeGreaterThan(0);
+    expect(portrait.height).toBeGreaterThan(portrait.width);
     try {
       await device.setOrientation('landscape-left');
       await expect(orientation).toHaveText('orientation: landscape');
+      expect(await device.viewport()).toEqual({ width: portrait.height, height: portrait.width });
     } finally {
       await device.setOrientation('portrait');
     }
     await expect(orientation).toHaveText('orientation: portrait');
+    expect(await device.viewport()).toEqual(portrait);
   });
 
   // Android 14 and later ship no shell command for the clipboard service, so

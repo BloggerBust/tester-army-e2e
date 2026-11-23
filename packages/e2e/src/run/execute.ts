@@ -12,7 +12,7 @@ import type { ExecutorAttempt } from '@e2e-dev/core/lib/agent/executor';
 import { isModelUnreachable } from '@e2e-dev/core/lib/agent/error';
 import { withAiTraceScope } from '@e2e-dev/core/lib/internal/ai-trace';
 import { resultId, timestamp, uuidv7 } from '@e2e-dev/core/lib/internal/ids';
-import { Deadline, withAbort, withTimeout } from '@e2e-dev/core/lib/internal/time';
+import { abortError, cancelledError, Deadline, withAbort, withTimeout } from '@e2e-dev/core/lib/internal/time';
 import { createAgentCacheContext, settleStagedTraces } from '@e2e-dev/core/lib/cache/context';
 import { storedRecordingsFor, type StoredRecordings } from '@e2e-dev/core/lib/cache/rekeyed';
 import type { ModuleRegistration, RegisteredTest } from '../collect/registry.ts';
@@ -45,11 +45,12 @@ import { interruptedInPhase, interruptedSkip, pairKey, unitResult, unstartedResu
 import { carriedSecrets, processSecrets, redactForSession, sessionLedger, staticSecretLedger } from '@e2e-dev/core/lib/run/secrecy';
 import { SessionStaging } from '@e2e-dev/core/lib/run/sessions';
 import { isOwnStep, StepRecorder, type StepHoldRequest, type StepProgress } from '@e2e-dev/core/lib/run/steps';
-import { holdAttemptSteps, readHeldScreen, type AttemptHolds, type StepHold, type StepHoldContext } from './step-hold.ts';
+import { holdAttemptSteps, readHeldScreen, type AttemptHolds, type HoldReads, type StepHold } from './step-hold.ts';
 import { HeldTestTools } from './worker/held-test-tools.ts';
 import { WorkerModels } from '@e2e-dev/core/lib/run/worker-models';
 import { classifyAttemptStatus, EngineSessions, type EngineSessionsOptions } from '@e2e-dev/core/lib/run/engine-sessions';
 import type { EngineDisposeContext } from '@e2e-dev/core/lib/engine/index';
+import { numberedAppLogLines } from '../report/failure-text.ts';
 
 export interface ExecutionEvents {
   onResult?(result: ResultRecord): void;
@@ -93,11 +94,12 @@ type ExecutorHold = {
   /**
    * Asks the runner at each pause, and before each step when `steps` is set.
    * The runner can call `readScreen` to read the screen during the wait.
+   * The attempt's app log is available through `readLogs` during the wait.
    */
   readonly ask: (
     step: StepHold,
     signal: AbortSignal,
-    readScreen: StepHoldContext['readScreen'],
+    reads: HoldReads,
     tools: HeldTestTools,
   ) => Promise<void>;
   /**
@@ -724,9 +726,9 @@ export class TargetExecutor extends EngineSessions implements SerialHost {
                   `target "${this.target.name}" has no engine state capability for session.save()`,
                 );
               }
-              const state = await session.captureState(
-                this.op(attemptId, this.config.actionTimeout, attemptAbort.signal),
-              );
+              const signal = budget.signal;
+              const state = await session.captureState(this.op(attemptId, this.config.actionTimeout, signal));
+              if (signal.aborted) throw abortError(signal, cancelledError);
               context.staging.stage(
                 name,
                 state,
@@ -778,7 +780,15 @@ export class TargetExecutor extends EngineSessions implements SerialHost {
             repeat: pair.repeat,
             title: pair.test.titlePath.join(' › '),
           },
-          ask: (step, signal, readScreen) => hold.ask(step, signal, readScreen, tools),
+          ask: (step, signal, readScreen) => hold.ask(
+            step,
+            signal,
+            {
+              readScreen,
+              readLogs: () => Promise.resolve(numberedAppLogLines(steps.all(), steps.appLog(), 'text').map(({ line }) => line)),
+            },
+            tools,
+          ),
           readScreen: (signal: AbortSignal) => readHeldScreen(session, this.op(attemptId, this.config.actionTimeout, signal), screens),
         });
       }
@@ -792,6 +802,10 @@ export class TargetExecutor extends EngineSessions implements SerialHost {
           owner: 'suite',
           testKind: pair.test.kind,
           assertionTimeout: this.config.assertionTimeout,
+          toPass: this.config.toPass,
+          recordSecondaryError: (error) => {
+            secondaryErrors.push(serializeError(error, { phase, projectRoot: this.config.projectRoot, redact }));
+          },
           budget,
           soft,
           ...(context.kind === 'ordinary'

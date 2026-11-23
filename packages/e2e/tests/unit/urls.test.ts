@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  isImplicitTestHost,
   isLoopbackHost,
   normalizeBaseUrl,
   portOf,
@@ -45,6 +46,18 @@ describe('normalizeBaseUrl', () => {
     // A name may resolve to another address than the one the command binds.
     expect(() => normalizeBaseUrl('localhost:0/app')).toThrow(/port 0 .* 127\.0\.0\.1 or \[::1\]/);
     expect(() => normalizeBaseUrl('https://app.test:0')).toThrow(/port 0 .* 127\.0\.0\.1 or \[::1\]/);
+  });
+
+  it('treats root-terminated localhost names as loopback, not remote HTTP', () => {
+    for (const host of ['localhost.', 'app.localhost.']) {
+      expect(isLoopbackHost(host)).toBe(true);
+      expect(normalizeBaseUrl(`${host}:3000`).origin).toBe(`http://${host}:3000`);
+      expect(normalizeBaseUrl(`http://${host}:3000`).origin).toBe(`http://${host}:3000`);
+    }
+    expect(isImplicitTestHost('api.test.')).toBe(true);
+    expect(isLoopbackHost('example.org.')).toBe(false);
+    expect(() => normalizeBaseUrl('http://example.org.:3000')).toThrow(/loopback/);
+    expect(isLoopbackHost('localhost..')).toBe(false);
   });
 
   it('rejects non-http(s) schemes', () => {

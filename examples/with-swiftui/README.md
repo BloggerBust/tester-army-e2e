@@ -43,6 +43,6 @@ For device setup and CI, see the [Mobile guide](https://e2e.com/docs/mobile).
 
 The bundled fonts use the [SIL Open Font License](HelloApp/Fonts/OFL.txt).
 
-Last checked on 2026-11-09 with e2e 0.23.0, @e2e-dev/mobile 0.12.6, and Xcode
-26.3 on an iOS 26.3 simulator. `npx e2e doctor` and the three locator tests
+Last checked on 2026-11-23 with e2e 0.24.0, @e2e-dev/mobile 0.12.8, and Xcode
+27.2 on an iOS 27.2 simulator. `npx e2e doctor` and the three locator tests
 passed. The agent tests were not run.

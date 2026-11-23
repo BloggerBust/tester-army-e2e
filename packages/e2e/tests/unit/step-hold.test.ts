@@ -54,7 +54,7 @@ describe('AttemptHolds', () => {
     // Synchronous work blocks the event loop past the deadline, so its timer never fires.
     const end = Date.now() + 40;
     while (Date.now() < end) {}
-    await holds.hold({ kind: 'step', api: 'app.open', label: '/' }, signal);
+    await holds.hold({ kind: 'step', number: 1, api: 'app.open', label: '/' }, signal);
     await expect(body).rejects.toThrow('timed out');
     expect(ask).not.toHaveBeenCalled();
   });
@@ -69,7 +69,7 @@ describe('AttemptHolds', () => {
     const body = timeout.race(
       (async () => {
         timeout.set(150);
-        await holds.hold({ kind: 'pause', api: 'screen.pause', label: '' }, signal);
+        await holds.hold({ kind: 'pause', number: 0, api: 'screen.pause', label: '' }, signal);
         leftAfterPause = timeout.budget.deadline.remaining();
         return 'resumed';
       })(),
@@ -90,7 +90,7 @@ describe('AttemptHolds', () => {
     const onMoved = vi.fn();
     const timeout = attemptTimeout(10_000, onMoved);
     const holds = new AttemptHolds({ timeout, signal, ask, onResume: () => {} });
-    const held = holds.hold({ kind: 'step', api: 'app.open', label: '/' }, signal);
+    const held = holds.hold({ kind: 'step', number: 1, api: 'app.open', label: '/' }, signal);
     // Held: the clock is stopped, so the change moves what the release hands back and announces nothing yet.
     timeout.set(60_000);
     expect(onMoved).not.toHaveBeenCalled();

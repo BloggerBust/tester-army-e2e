@@ -23,8 +23,8 @@ const CHECKED_ROLES: ReadonlySet<string> = new Set([
   'treeitem',
 ]);
 
-/** True for a node of an editable role. */
-export function isEditable(node: Pick<SemanticNode, 'role'>): boolean {
+/** True for a node of a role that takes typed text. */
+export function takesText(node: Pick<SemanticNode, 'role'>): boolean {
   return EDITABLE_ROLES.has(node.role ?? '');
 }
 

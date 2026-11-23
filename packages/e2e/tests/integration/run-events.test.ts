@@ -18,7 +18,7 @@ import {
   type RunOutcome,
 } from '../helpers/run-project.ts';
 import type { StepExecutor } from '@e2e-dev/core/lib/agent/executor';
-import type { RunEvent } from '../../src/run/events.ts';
+import type { RunEvent, RunEventOf } from '../../src/run/events.ts';
 
 const SUITE = `import { test, expect } from 'e2e';
 
@@ -79,10 +79,14 @@ describe('run events', () => {
     expect(outcome.exitCode).toBe(0);
     const types = events.map((event) => event.type);
     expect(types[0]).toBe('run-started');
-    // Between the header and the plan there are only setup steps (collection,
+    // Between the header and the collected tests there are only setup steps (collection,
     // each target's prepare) and the notices they narrate.
+    // The deprecated `plan` still comes, right before `collected`, with its counts.
     const planIndex = types.indexOf('plan');
     expect(planIndex).toBeGreaterThan(0);
+    expect(types[planIndex + 1]).toBe('collected');
+    const { total, files } = events[planIndex + 1] as RunEventOf<'collected'>;
+    expect(events[planIndex]).toMatchObject({ type: 'plan', total, files });
     expect(types.slice(1, planIndex).filter((type) => type !== 'setup' && type !== 'notice')).toEqual([]);
     expect(types.slice(1, planIndex)).toContain('setup');
     expect(types.at(-1)).toBe('run-finished');
@@ -90,13 +94,56 @@ describe('run events', () => {
     expect(types.indexOf('step')).toBeLessThan(types.indexOf('test-finished'));
   });
 
-  it('starts the run clock with the plan', () => {
+  it('lists every test before the first one starts, and names the line each step was called from', () => {
+    const collected = events.find((event) => event.type === 'collected')!;
+    expect(collected).toMatchObject({
+      total: 1,
+      repeatEach: 1,
+      files: [{ file: 'tests/events.e2e.ts', tests: 1 }],
+      tests: [
+        {
+          testId: outcome.report.run.results[0]!.testId,
+          agent: 'default',
+          file: 'tests/events.e2e.ts',
+          kind: 'test',
+          title: 'increments once',
+          titlePath: ['increments once'],
+          tags: [],
+          source: outcome.report.run.results[0]!.source,
+          disposition: 'run',
+        },
+      ],
+    });
+    expect(collected.seq).toBeLessThan(events.find((event) => event.type === 'test-started')!.seq);
+    // The same call sites the report's step records keep.
+    const started = events.flatMap((event) => (event.type === 'step' && event.progress.phase === 'start' ? [event.progress] : []));
+    const recorded = outcome.report.run.results[0]!.attempts[0]!.steps;
+    expect(started.map((progress) => progress.source)).toEqual(recorded.map((step) => step.source));
+    expect(started.every((progress) => progress.source?.file === 'tests/events.e2e.ts')).toBe(true);
+    expect(started).toHaveLength(3);
+  });
+
+  it('lists a repeated test once, with how many times it runs', async () => {
+    const repeated: RunEvent[] = [];
+    const again = await runExisting(project, {
+      appUrl: app.url,
+      config: { tests: 'tests/**/*.e2e.ts', reporters: [], agents: { default: { executor: oneTapExecutor } }, cache: 'off' as const },
+      runOptions: { repeatEach: 2, onEvent: (event) => void repeated.push(event) },
+    });
+    expect(again.exitCode).toBe(0);
+    const collected = repeated.find((event) => event.type === 'collected')!;
+    expect(collected).toMatchObject({ total: 2, repeatEach: 2, files: [{ tests: 2 }] });
+    expect(collected.type === 'collected' && collected.tests).toHaveLength(1);
+    expect(repeated.filter((event) => event.type === 'test-started')).toHaveLength(2);
+  }, 120_000);
+
+  it('starts the run clock with the collected tests', () => {
     // Collection and engine provisioning happen between run-started and
-    // plan; the report's span begins with the plan, not the launch.
+    // collected; the report's span begins there, not at the launch.
     const at = (type: RunEvent['type']) => Date.parse(events.find((event) => event.type === type)!.at);
     const startedAt = Date.parse(outcome.report.run.startedAt);
     expect(startedAt).toBeGreaterThanOrEqual(at('run-started'));
-    expect(startedAt).toBeLessThanOrEqual(at('plan'));
+    expect(startedAt).toBeLessThanOrEqual(at('collected'));
   });
 
   it('stamps a strictly increasing seq', () => {

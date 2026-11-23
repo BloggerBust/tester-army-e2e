@@ -162,7 +162,8 @@ export default {
  * agent-device session name, before the worker slot: slot `n` drives its
  * device under `<session>-<n>`, `e2e-<target name>-<n>` by default. One run
  * per session at a time: concurrent runs on the same session interleave
- * taps.
+ * taps. Without this option a `launch()` host
+ * drives `e2e-<target name>-<host token>-<n>`, a session of its own.
  */
 readonly session?: string | undefined;
 ```
@@ -393,6 +394,7 @@ test('offline banner', { platforms: ['android'] }, async ({ app, device, screen 
 | [`back`](#back) | `Promise<void>` |
 | [`alert`](#alert) | `Promise<void>` |
 | [`dismissKeyboard`](#dismisskeyboard) | `Promise<void>` |
+| [`isKeyboardShown`](#iskeyboardshown) | `Promise<boolean>` |
 | [`clipboard`](#clipboard) | `Promise<string>` |
 | [`setClipboard`](#setclipboard) | `Promise<void>` |
 
@@ -875,10 +877,11 @@ await device.alert('accept');
  * screen has one, to avoid pressing a button or toggling a checkbox. A
  * control the tree leaves out, such as pressable text, can still be hit. The
  * simulator's "Speed up your typing" tip goes through its Continue button
- * first. A screen with no clear point above the keyboard, or a keyboard that
- * outlives both drags, fails with `UNSUPPORTED_CAPABILITY`; the message
- * names the alternatives (the app's own Done or close control, or pressing
- * Enter on the field).
+ * first. A screen with no clear point above the keyboard, a keyboard reported
+ * up with no frame and no keyboard element on screen (so no point is known
+ * to be above it), or a keyboard that outlives both drags, fails with
+ * `UNSUPPORTED_CAPABILITY`; the message names the alternatives (the app's
+ * own Done or close control, or pressing Enter on the field).
  */
 dismissKeyboard(): Promise<void>;
 ```
@@ -889,7 +892,42 @@ await device.dismissKeyboard();
 
 | 抛出错误 | 发生条件 |
 | --- | --- |
-| `UNSUPPORTED_CAPABILITY` | 键盘上方的每个点（屏幕有滚动视图时，在滚动视图内）都落在控件上，或两次拖动后键盘仍未消失。 |
+| `UNSUPPORTED_CAPABILITY` | 键盘上方的每个点（屏幕有滚动视图时，在滚动视图内）都落在控件上，agent-device 报告键盘已弹出但没有键盘框架、屏幕上也没有键盘元素，或两次拖动后键盘仍未消失。 |
+
+#### `isKeyboardShown`
+
+```ts
+/**
+ * Whether the soft keyboard is on screen, from a capture (taken again,
+ * within the action timeout, while the keyboard is still moving): what
+ * agent-device reported for it (a visibility probe, a measured or derived
+ * keyboard frame, or proof that there is none), else the keyboard or a key
+ * drawn on screen in the accessibility tree (the suggestion strip alone,
+ * as with a hardware keyboard, is not one). Only agent-device's proof
+ * answers `false`. Fails when the capture cannot answer: `ENGINE_FAILURE`
+ * while the keyboard is moving or the tree is still incomplete,
+ * `UNSUPPORTED_CAPABILITY` when agent-device did not prove the keyboard
+ * absent and the tree lists none. It reads the screen as it is now, so
+ * right after an action that opens or closes the keyboard, poll it with
+ * `expect.poll`. A poll reads again after any error: an `ENGINE_FAILURE`
+ * clears once the keyboard settles, while an `UNSUPPORTED_CAPABILITY`
+ * that lasts (a provider that cannot read the keyboard at all) makes the
+ * poll wait out its whole timeout before it fails.
+ * Changes nothing on the device.
+ */
+isKeyboardShown(): Promise<boolean>;
+```
+
+```ts
+await screen.getByTestId('email-input').fill('jane@example.com');
+await device.dismissKeyboard();
+await expect.poll(() => device.isKeyboardShown()).toBe(false);
+```
+
+| 抛出错误 | 发生条件 |
+| --- | --- |
+| `ENGINE_FAILURE` | agent-device 什么也没测到，且返回的树稀疏或被截断；或者它找到了键盘元素，但否定了这些元素的位置，屏幕上也没有绘制出任何一个（例如键盘正在滑入或滑出时）。请再读取一次，`expect.poll` 会自动重读。 |
+| `UNSUPPORTED_CAPABILITY` | 树中没有绘制在屏幕上的键盘或按键（仅有建议栏不算键盘），且 agent-device 没有证明键盘不存在。例如不含输入法窗口的 Android 捕获、没有键盘探测的 WebDriver 提供方，或完全没有键盘读数。错误消息会写明原因。若这种情况持续，`expect.poll` 会等到超时后才失败。 |
 
 #### `clipboard`
 
@@ -1147,7 +1185,7 @@ export type BiometricSensor = 'faceid' | 'touchid' | 'fingerprint';
 /** The raw driver session behind `device`; see `Device.unstable_raw`. */
 export interface DeviceSession {
   readonly platform: MobilePlatform;
-  /** The raw driver session name: `e2e-<target>-<worker slot>`, or `<session>-<worker slot>` with the `session` option. */
+  /** The raw driver session name: `e2e-<target>-<worker slot>` (`e2e-<target>-<hostId>-<worker slot>` for a `launch()` host), or `<session>-<worker slot>` with the `session` option. */
   readonly session: string;
   /** The device id: a simulator UDID or an Android serial. */
   readonly deviceId: string;

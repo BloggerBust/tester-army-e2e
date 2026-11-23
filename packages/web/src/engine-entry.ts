@@ -34,6 +34,7 @@ export type {
   FrameScreen,
   RouteContinueOverrides,
   RouteFulfillResponse,
+  RouteMatcher,
   WebResponse,
   WebRoute,
 } from './browser.ts';

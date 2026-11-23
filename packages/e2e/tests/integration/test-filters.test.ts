@@ -255,7 +255,7 @@ describe('test filters on a run', () => {
 
     // Collection, then the change, then the filter as its own setup step
     // narrating through notices, then its summary, and only then the plan.
-    const plan = events.indexOf('plan');
+    const plan = events.indexOf('collected');
     expect(plan).toBeGreaterThan(0);
     expect(events.slice(0, plan + 1)).toEqual([
       'run-started',
@@ -267,6 +267,7 @@ describe('test filters on a run', () => {
       'setup:filter(areas):finished',
       'notice:filter:areas kept 1 of 3 tests, left out 2',
       'plan',
+      'collected',
     ]);
   });
 
@@ -320,7 +321,7 @@ describe('test filters on a run', () => {
     expect(existsSync(path.join(project.dir, 'prepared'))).toBe(false);
     expect(existsSync(path.join(project.dir, 'startup.log'))).toBe(false);
     expect(events).toContain('notice:filter:areas left out all 3 tests');
-    expect(events).toContain('plan');
+    expect(events).toContain('collected');
     expect(events.filter((event) => event.startsWith('setup:') && !/^setup:(collect|filter)/.test(event))).toEqual([]);
     // The run still began: the earlier evidence is gone and this report replaced it.
     expect(existsSync(stale)).toBe(false);
@@ -638,7 +639,7 @@ describe('starting the likeliest tests first', () => {
     // gamma is in the top band, alpha in a band below it, and no filter scored beta.
     expect(titles).toEqual(['gamma', 'alpha', 'beta']);
     expect(events.filter((event) => event.includes('ranked'))).toEqual([`notice:filter:${RANKED}`]);
-    expect(events.indexOf(`notice:filter:${RANKED}`)).toBeLessThan(events.indexOf('plan'));
+    expect(events.indexOf(`notice:filter:${RANKED}`)).toBeLessThan(events.indexOf('collected'));
     // The line follows the filter's own summary.
     expect(events).toContain('notice:filter:areas kept all 3 tests');
     expect(events.indexOf('notice:filter:areas kept all 3 tests')).toBeLessThan(events.indexOf(`notice:filter:${RANKED}`));

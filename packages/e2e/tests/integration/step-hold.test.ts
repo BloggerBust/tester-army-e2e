@@ -502,7 +502,7 @@ test('pauses on a frame', async ({ gadget }) => {
     // The poll retries the failing read. Its error names the last refusal.
     expect(resultByTitle(outcome, 'pauses in a poll read').attempts[0]?.error).toMatchObject({
       code: 'ASSERTION_FAILED',
-      message: expect.stringContaining('last: screen.pause() was called inside another step (an onAction hook or a project tool) or an expect.poll read'),
+      message: expect.stringContaining('last: screen.pause() was called inside another step (an onAction hook or a project tool), an expect.poll read, or a toPass block'),
     });
     expect(resultByTitle(outcome, 'pauses on a locator').attempts[0]?.error).toMatchObject({
       code: 'INVALID_ARGUMENT',
@@ -774,8 +774,39 @@ describe('hold.ask ending a hold', () => {
     expect(signals.every((signal) => signal.aborted)).toBe(true);
   }, 60_000);
 
-  it('refuses the json reporter, whose stdout the prompt would break', async () => {
-    // Not quiet: a quiet run runs no reporter that claims stdout, so nothing would break.
+  it('steps beside the json reporter in a terminal: the prompt on stderr, only the report on stdout', async () => {
+    const written = { stdout: '', stderr: '' };
+    const spies = (['stdout', 'stderr'] as const).map((stream) =>
+      vi.spyOn(process[stream], 'write').mockImplementation((chunk) => ((written[stream] += String(chunk)), true)),
+    );
+    try {
+      const { outcome, project } = await runProjectWithConfigFile(
+        { 'tests/held.e2e.ts': `import { test } from 'e2e';\ntest('waits', async ({ app }) => { await app.open('/held'); });\n` },
+        {
+          configSource: workerFakeConfigSource(1, `\n  reporters: ['json'],`),
+          runOptions: {
+            quiet: false,
+            hold: {
+              steps: true,
+              keyboard: true,
+              ask: async (step, { show }) => {
+                show({ steps: [{ step, number: 1 }], holdSteps: true, keys: [{ key: 'enter', does: 'run this step' }, { key: 'q', does: 'quit' }] });
+                show(undefined);
+              },
+            },
+          },
+        },
+      );
+      project.cleanup();
+      expect(outcome.exitCode).toBe(0);
+    } finally {
+      for (const spy of spies) spy.mockRestore();
+    }
+    expect(written.stderr).toMatch(/^paused \(\w+\) at step 1 of waits \[.+\]: app\.open "\/held" \(tests\/held\.e2e\.ts:2\) · press enter to run this step, q to quit$/m);
+    expect(JSON.parse(written.stdout)).toMatchObject({ schemaVersion: 'report-1', run: { status: 'passed' } });
+  }, 60_000);
+
+  it('refuses the json reporter when commands answer the steps, whose output would hold the document', async () => {
     const stdout = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
     try {
       const { outcome, project } = await runProjectWithConfigFile(
@@ -784,15 +815,52 @@ describe('hold.ask ending a hold', () => {
       );
       project.cleanup();
       expect(outcome.exitCode).toBe(2);
-      expect(outcome.report.run.errors[0]).toMatchObject({ code: 'INVALID_CONFIG', message: expect.stringContaining('--step cannot run with the reporter "json"') });
+      expect(outcome.report.run.errors[0]).toMatchObject({ code: 'INVALID_CONFIG', message: expect.stringContaining('--step cannot run with the reporter "json" without a terminal') });
     } finally {
       stdout.mockRestore();
     }
   }, 60_000);
+
+  it('tells every reporter of a wait and its end, in a run no keyboard answers too', async () => {
+    const seen: string[] = [];
+    const { outcome, project } = await runProject(
+      { 'tests/held.e2e.ts': `import { test } from 'e2e';\ntest('waits', async ({ app }) => { await app.open('/held'); });\n` },
+      {
+        config: {
+          reporters: [
+            {
+              name: 'watcher',
+              onEvent: (event) => {
+                if (event.type === 'paused') seen.push(`paused ${event.reason} ${event.steps.map((step) => `${step.number}:${step.api}:${step.source?.file}`).join(',')} keys=${event.keys.map(({ key }) => key).join(',')}`);
+                if (event.type === 'resumed') seen.push(`resumed ${event.testId.endsWith('waits')}`);
+              },
+            },
+          ],
+        },
+        runOptions: {
+          hold: {
+            steps: true,
+            ask: async (step, { show }) => {
+              show({ steps: [{ step, number: 1 }], holdSteps: true, keys: [] });
+              show({ steps: [{ step, number: 1 }], holdSteps: true, keys: [{ key: 'enter', does: 'run this step' }, { key: 'q', does: 'quit' }] });
+              show(undefined);
+            },
+          },
+        },
+      },
+    );
+    project.cleanup();
+    expect(outcome.exitCode).toBe(0);
+    expect(seen).toEqual([
+      'paused step 1:app.open:tests/held.e2e.ts keys=',
+      'paused step 1:app.open:tests/held.e2e.ts keys=enter,q',
+      'resumed true',
+    ]);
+  }, 60_000);
   it('prints the prompt itself while the step waits once the reporter showing it rejects', async () => {
     const stderr: string[] = [];
     const write = vi.spyOn(process.stderr, 'write').mockImplementation((chunk) => (stderr.push(String(chunk)), true));
-    const reporter = `{ name: 'broken-prompt', printsTo: 'stdout', async onStepPrompt() { throw new Error('PROMPT_BOOM'); } }`;
+    const reporter = `{ name: 'broken-prompt', interactive: true, async onEvent(event) { if (event.type === 'paused') throw new Error('PROMPT_BOOM'); } }`;
     let shownWhileHeld = false;
     try {
       const { outcome, project } = await runProjectWithConfigFile(
@@ -800,10 +868,12 @@ describe('hold.ask ending a hold', () => {
         {
           configSource: workerFakeConfigSource(1, `\n  reporters: [${reporter}],`),
           runOptions: {
+            // Not quiet: a quiet run runs no interactive reporter.
+            quiet: false,
             hold: {
               steps: true,
               ask: async (step, { show }) => {
-                show({ steps: [{ step, number: 1 }], help: false, holdSteps: true });
+                show({ steps: [{ step, number: 1 }], holdSteps: true, keys: [{ key: 'enter', does: 'run this step' }, { key: 'q', does: 'quit' }] });
                 await sleep(200);
                 shownWhileHeld = stderr.some((text) => text.startsWith(`paused (${step.attachId}) at step 1 of waits`));
                 show(undefined);
@@ -817,7 +887,7 @@ describe('hold.ask ending a hold', () => {
     } finally {
       write.mockRestore();
     }
-    expect(stderr.filter((text) => text.includes('threw in onStepPrompt: PROMPT_BOOM'))).toHaveLength(1);
+    expect(stderr.filter((text) => text.includes('threw on paused: PROMPT_BOOM'))).toHaveLength(1);
     expect(shownWhileHeld).toBe(true);
   }, 60_000);
 });

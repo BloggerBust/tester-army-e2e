@@ -84,6 +84,7 @@ export interface AttemptIdentity {
 export interface AttemptPublication {
   /** Failures the publication holds at close, such as soft assertions; called once. */
   close(): unknown;
+  readonly secondaryErrors?: readonly E2EError[];
   release(): void;
 }
 
@@ -294,6 +295,12 @@ export async function launchAttempt<Sessions extends EngineSessions, Extra>(
       }
       end.abort(reason);
       for (const error of [abandonedStep, abandonedPoll, reservation.publication?.close()]) if (error !== undefined) recordFailure(error, 'body');
+      const secondaryErrors = reservation.publication?.secondaryErrors;
+      if (timedOut && secondaryErrors !== undefined) {
+        // Let cancelled retries record their last failures before closing the report.
+        await new Promise<void>((resolve) => setImmediate(resolve));
+        for (const error of secondaryErrors) recordFailure(error, 'body');
+      }
       try {
         await withTimeout(steps.settleAbandoned(), config.cleanupTimeout, () => new InfrastructureError('CLEANUP_TIMEOUT', 'abandoned session steps did not settle'));
       } catch (cause) { recordFailure(cause, 'cleanup'); }

@@ -173,11 +173,17 @@ export interface SemanticNode {
   /**
    * Boolean states the platform reports. `pressed` is a toggle button's
    * pressed state; `secure` marks a field whose value is never observed.
+   * `readonly` is present only on a node that has a read-only state, as
+   * Playwright's `getReadonly` decides on the web (an input, textarea, or
+   * select by its `readonly` attribute, an element whose ARIA role takes
+   * `aria-readonly` by that attribute, any other editing host `false`), and
+   * only where the platform knows, as Android does: absent means the node has
+   * no read-only state to read, not `false`.
    */
   readonly states?: Readonly<
     Partial<
       Record<
-        'checked' | 'disabled' | 'selected' | 'expanded' | 'pressed' | 'focused' | 'hidden' | 'secure',
+        'checked' | 'disabled' | 'selected' | 'expanded' | 'pressed' | 'focused' | 'hidden' | 'secure' | 'readonly',
         boolean
       >
     >
@@ -293,6 +299,11 @@ export type LocatorAction =
   | { readonly kind: 'press'; readonly key: Key }
   | { readonly kind: 'selectOption'; readonly value: SelectOption }
   | { readonly kind: 'setInputFiles'; readonly paths: readonly string[] }
+  | {
+      readonly kind: 'setInputFilePayloads';
+      /** In-memory files; an empty array clears the input. The protocol encodes bytes only on the wire. */
+      readonly files: readonly { readonly name: string; readonly mimeType: string; readonly buffer: Uint8Array }[];
+    }
   | { readonly kind: 'dragTo'; readonly target: NodeRef }
   | {
       readonly kind: 'swipe';
@@ -324,7 +335,7 @@ export const LOCATOR_ACTION_KINDS = [
 ] as const satisfies readonly LocatorActionKind[];
 
 /** Every action kind understood by this version of core. */
-export const KNOWN_LOCATOR_ACTION_KINDS = [...LOCATOR_ACTION_KINDS, 'blur'] as const satisfies readonly LocatorActionKind[];
+export const KNOWN_LOCATOR_ACTION_KINDS = [...LOCATOR_ACTION_KINDS, 'blur', 'setInputFilePayloads'] as const satisfies readonly LocatorActionKind[];
 
 /**
  * One action `performAt` carries out at a viewport point, with no node
@@ -517,4 +528,14 @@ export class EngineError extends Error {
     this.code = code;
     this.retryable = options.retryable;
   }
+}
+
+/** Who holds a target, for the lifecycle hooks: `prepare`, `init`, `finish`. */
+export interface EngineHostIdentity {
+  /**
+   * Set when a `launch()` host holds the target: a token no other host has.
+   * Hosts name their targets alike, so an engine that names what it holds
+   * after the target (a device session) adds this to keep hosts apart.
+   */
+  readonly hostId?: string | undefined;
 }

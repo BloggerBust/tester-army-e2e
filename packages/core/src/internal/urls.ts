@@ -109,16 +109,21 @@ export function printableUrl(url: string): string {
   return `${parsed.origin}${parsed.pathname}`;
 }
 
+// A final DNS root dot does not change a hostname's reserved-domain status.
+// Keep the URL itself unchanged so origin serialization remains WHATWG-based.
+const withoutRootDot = (hostname: string): string => hostname.endsWith('.') ? hostname.slice(0, -1) : hostname;
+
 export function isLoopbackHost(hostname: string): boolean {
-  if (hostname === 'localhost' || hostname.endsWith('.localhost')) return true;
-  if (hostname === '::1' || hostname === '[::1]') return true;
-  if (/^127(\.\d{1,3}){3}$/.test(hostname)) return true;
+  const host = withoutRootDot(hostname);
+  if (host === 'localhost' || host.endsWith('.localhost')) return true;
+  if (host === '::1' || host === '[::1]') return true;
+  if (/^127(\.\d{1,3}){3}$/.test(host)) return true;
   return false;
 }
 
 /** True when environment may default to `test` (loopback, .localhost, .test hosts). */
 export function isImplicitTestHost(hostname: string): boolean {
-  return isLoopbackHost(hostname) || hostname.endsWith('.test');
+  return isLoopbackHost(hostname) || withoutRootDot(hostname).endsWith('.test');
 }
 
 const NAVIGABLE_PROTOCOLS = new Set(['http:', 'https:']);

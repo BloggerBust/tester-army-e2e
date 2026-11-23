@@ -16,7 +16,7 @@ import path from 'node:path';
 import type { ResolvedConfig, ResolvedTarget } from '@e2e-dev/core/lib/config/resolve';
 import type { TargetSession } from '@e2e-dev/core/lib/engine/surface';
 import type { DebugTrace } from '@e2e-dev/core/lib/internal/debug';
-import { classifyError, ConfigurationError, E2EError, serializeError, type SerializedError } from '@e2e-dev/core/lib/internal/errors';
+import { classifyError, ConfigurationError, E2EError, serializeError, TestTimeoutError, type SerializedError } from '@e2e-dev/core/lib/internal/errors';
 import { uuidv7 } from '@e2e-dev/core/lib/internal/ids';
 import { Deadline, withTimeout } from '@e2e-dev/core/lib/internal/time';
 import { createAttemptArtifacts } from '@e2e-dev/core/lib/run/artifacts';
@@ -142,10 +142,19 @@ export class SuiteAttempt implements SuiteHookSession {
     const acquired = await this.acquire(usesEngine);
     const attempt = isOpen(acquired) ? acquired : undefined;
     const builtIns = isOpen(acquired) ? acquired.builtIns : attemptlessBuiltIns(host.target, unavailable(acquired, label, host.target.engine?.name ?? 'none'));
-    const hookAbort = attempt?.budget.enter(host.interruptSignal, timeoutMs);
+    const hookAbort = attempt?.budget.enter(host.interruptSignal, timeoutMs) ?? new AbortController();
     // On the attempt's budget, so the device calls the code makes stop at the deadline `test.setTimeout` moved.
-    const timeout = attempt === undefined ? AttemptTimeout.alone(timeoutMs) : new AttemptTimeout(attempt.budget, timeoutMs);
-    const hook: RunningSuiteHook = { name: running.name, ...(running.settable ? { setTimeout: (ms: number) => timeout.set(ms) } : {}) };
+    const budget = attempt?.budget ?? new AttemptBudget(AbortSignal.any([host.interruptSignal, hookAbort.signal]), new Deadline(timeoutMs));
+    const timeout = new AttemptTimeout(budget, timeoutMs);
+    const retryMessages: string[] = [];
+    const hook: RunningSuiteHook = {
+      name: running.name,
+      budget,
+      assertionTimeout: config.assertionTimeout,
+      toPass: config.toPass,
+      recordSecondaryError: (error) => { retryMessages.push(error.message); },
+      ...(running.settable ? { setTimeout: (ms: number) => timeout.set(ms) } : {}),
+    };
     const leave = host.workerFixtures.enter(builtIns);
     const owns = (owner: string): void => {
       if (attempt !== undefined) attempt.steps.owner = owner;
@@ -153,8 +162,13 @@ export class SuiteAttempt implements SuiteHookSession {
     owns(`the ${label}`);
     let failure: { readonly cause: unknown } | undefined;
     try {
-      await inSuiteHook(hook, () => runHook(label, () => body(builtIns, owns), timeout, () => hookAbort?.abort()));
+      await inSuiteHook(hook, () => runHook(label, () => body(builtIns, owns), timeout, () => hookAbort.abort()));
     } catch (cause) {
+      if (cause instanceof TestTimeoutError && hookAbort.signal.aborted) {
+        // Let cancelled retries record their last failures before reporting the hook error.
+        await new Promise<void>((resolve) => setImmediate(resolve));
+        if (retryMessages.length > 0) cause.message += `\n${retryMessages.join('\n')}`;
+      }
       failure = { cause };
     }
     // A step the code started and did not await is failed at its call and
@@ -162,7 +176,7 @@ export class SuiteAttempt implements SuiteHookSession {
     // attempt closed, as a stray rejection charged to whichever test ran then.
     const notAwaited = attempt?.steps.abandonRunning();
     if (attempt !== undefined && notAwaited !== undefined) {
-      hookAbort?.abort();
+      hookAbort.abort();
       await withTimeout(attempt.steps.settleAbandoned(), config.cleanupTimeout, () => new Error('abandoned steps did not settle')).catch(() => undefined);
     }
     leave();

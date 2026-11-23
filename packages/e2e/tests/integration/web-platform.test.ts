@@ -121,6 +121,43 @@ test('toHaveRole fails on a secure field without its value', async ({ app, scree
   await expect(screen.getByLabel('Secret')).toHaveRole('searchbox', { timeout: 300 });
 });
 
+test('toBeEditable reads readonly, aria-readonly, and the disabled state', async ({ app, screen }) => {
+  await app.open('/editable-matcher');
+  await expect(screen.getByLabel('Name')).toBeEditable();
+  await expect(screen.getByLabel('Size')).toBeEditable();
+  // A native select reads readonly and ignores aria-readonly.
+  await expect(screen.getByLabel('Size locked')).not.toBeEditable();
+  await expect(screen.getByLabel('Size aria')).toBeEditable();
+  await expect(screen.getByTestId('editor')).toBeEditable();
+  await expect(screen.getByLabel('Notes')).not.toBeEditable();
+  await expect(screen.getByLabel('Total')).toBeEditable({ editable: false });
+  // A fieldset disables the control inside it, though the control has no attribute.
+  await expect(screen.getByLabel('Locked')).not.toBeEditable();
+  await expect(screen.getByLabel('Secret')).not.toBeEditable();
+  // Playwright parity: a native tag ignores aria-readonly, an ARIA role ignores
+  // readonly and folds case, an element inside an editing host is editable.
+  await expect(screen.getByLabel('Aria on input')).toBeEditable();
+  await expect(screen.getByLabel('Upper case')).not.toBeEditable();
+  await expect(screen.getByTestId('editor-line')).toBeEditable();
+  await expect(screen.getByLabel('Pick')).not.toBeEditable();
+  await expect(screen.getByLabel('Attribute on div')).toBeEditable();
+  // An editing host with an aria-readonly role reads that attribute first.
+  await expect(screen.getByLabel('Locked editor')).not.toBeEditable();
+  // An editing host with no ARIA role ignores aria-readonly; a grid cell reads it.
+  await expect(screen.getByTestId('plain-host')).toBeEditable();
+  await expect(screen.getByTestId('grid-cell')).not.toBeEditable();
+});
+
+test('toBeEditable fails on a read-only field', async ({ app, screen }) => {
+  await app.open('/editable-matcher');
+  await expect(screen.getByLabel('Notes')).toBeEditable({ timeout: 500 });
+});
+
+test('toBeEditable fails on a button, negated too', async ({ app, screen }) => {
+  await app.open('/editable-matcher');
+  await expect(screen.getByRole('button', { name: 'Save' })).not.toBeEditable({ timeout: 300 });
+});
+
 test('secure fields refuse value reads', async ({ app, screen }) => {
   await app.open();
   await screen.getByLabel('Password').fill('hunter2');
@@ -501,6 +538,7 @@ describe('web platform integration', () => {
     'toHaveURL ignoreCase folds the comparison',
     'string and RegExp URL patterns match what they name',
     'toHaveRole compares the role the tree reads',
+    'toBeEditable reads readonly, aria-readonly, and the disabled state',
   ])('passes %s', (title) => {
     const result = resultByTitle(outcome, title);
     expect(result.status, JSON.stringify(result.attempts[0]?.error)).toBe('passed');
@@ -585,6 +623,22 @@ describe('web platform integration', () => {
     expect(result.attempts[0]!.error?.code).toBe('ASSERTION_FAILED');
     expect(result.attempts[0]!.error?.message).toContain('expected: role "searchbox"\nobserved: role "textbox"');
     expect(JSON.stringify(result)).not.toContain('marker-7c1f');
+  });
+
+  it('fails toBeEditable on a read-only textarea, naming why', () => {
+    const result = resultByTitle(outcome, 'toBeEditable fails on a read-only field');
+    expect(result.status).toBe('failed');
+    expect(result.attempts[0]!.error?.code).toBe('ASSERTION_FAILED');
+    expect(result.attempts[0]!.error?.message).toContain('expected: editable\nobserved: read-only');
+  });
+
+  it('fails a negated toBeEditable on a button, naming its role', () => {
+    const result = resultByTitle(outcome, 'toBeEditable fails on a button, negated too');
+    expect(result.status).toBe('failed');
+    expect(result.attempts[0]!.error?.code).toBe('ASSERTION_FAILED');
+    expect(result.attempts[0]!.error?.message).toContain(
+      'expected: not editable\nobserved: role "button", no read-only state',
+    );
   });
 
   it('denies secure value reads with POLICY_DENIED', () => {
@@ -693,8 +747,7 @@ describe('web platform integration', () => {
     expect(tapStep?.artifacts ?? []).toHaveLength(0);
     const download = attempt.artifacts.find((artifact) => artifact.kind === 'download');
     expect(download?.path).toContain('downloads/');
-    // Bytes the app served, not rewritten by the runner: the record says so.
-    expect(download).toMatchObject({ redaction: 'incomplete', mediaType: 'text/csv' });
+    expect(download).toMatchObject({ mediaType: 'text/csv', redaction: 'incomplete' });
   });
 
   it('keeps a class assertion polling while the node is missing and passes once it arrives', () => {
@@ -760,7 +813,7 @@ describe('web platform integration', () => {
     expect(result.status).toBe('failed');
     const attempt = result.attempts[0]!;
     expect(attempt.error?.code).toBe('INVALID_ARGUMENT');
-    expect(attempt.error?.message).toContain('string or RegExp');
+    expect(attempt.error?.message).toContain('string, RegExp, or { method, url }');
     expect(attempt.steps.find((step) => step.status === 'failed')?.api).toBe(api);
   });
 

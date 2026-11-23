@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { discoverConfig } from '../../src/config/load.ts';
 import { isCiMode, type CliOverrides } from '@e2e-dev/core/lib/config/resolve';
 import { resolveConfig } from '../../src/config/resolve-run.ts';
@@ -9,8 +9,8 @@ import { ConfigurationError, defineEngine } from '@e2e-dev/core/lib/engine/index
 import { protocolEngine } from '@e2e-dev/core/lib/engine/protocol/client';
 import { secrets } from '@e2e-dev/core/lib/secrets';
 import type { CommandConfig, Target, TargetApp } from '@e2e-dev/core/lib/types';
-import { dot, junit, line, list } from '../../src/reporters.ts';
-import type { BuiltinReporter, E2EConfig, Reporter, TestFilter } from '../../src/run-types.ts';
+import { dot, junit, list } from '../../src/reporters.ts';
+import type { BuiltinReporter, E2EConfig, FinishedRun, Reporter, TestFilter } from '../../src/run-types.ts';
 import { snapshot } from '../helpers/snapshot.ts';
 import { invalid } from '../helpers/invalid.ts';
 
@@ -18,6 +18,17 @@ const ROOT = '/tmp/e2e-config-project';
 const BASE_ENV = {} as NodeJS.ProcessEnv;
 const WEB = { name: 'web', platform: 'web' } as const;
 const TARGETS = [WEB];
+
+/** The terminal stream a `list` or `dot` reporter prints its summary rows to. */
+function streamOf(reporter: Reporter): 'stdout' | 'stderr' | undefined {
+  const spies = (['stdout', 'stderr'] as const).map((stream) => [stream, vi.spyOn(process[stream], 'write').mockImplementation(() => true)] as const);
+  try {
+    reporter.onSummary?.([{ label: 'Report', text: 'report.json' }], {} as FinishedRun);
+    return spies.find(([, spy]) => spy.mock.calls.length > 0)?.[0];
+  } finally {
+    for (const [, spy] of spies) spy.mockRestore();
+  }
+}
 
 function resolve(raw: Partial<E2EConfig>, env: NodeJS.ProcessEnv = BASE_ENV) {
   return resolveConfig({ targets: TARGETS, ...raw }, { projectRoot: ROOT, env });
@@ -84,12 +95,46 @@ describe('resolveConfig', () => {
     expect(config.launchTimeout).toBe(60_000);
     expect(config.actionTimeout).toBe(30_000);
     expect(config.assertionTimeout).toBe(5_000);
+    expect(config.toPass).toEqual({ timeout: 0, intervals: [100, 250, 500, 1000] });
     expect(config.cleanupTimeout).toBe(30_000);
     expect(config.retries).toBe(0);
     expect(config.tests).toEqual(['tests/**/*.e2e.ts']);
     expect(config.targets[0]!.trace).toEqual({ mode: 'retain-on-failure', source: 'default' });
     expect(config.targets[0]!.video).toEqual({ mode: 'off', source: 'default' });
     expect(config.reporters.map((reporter) => reporter.name)).toEqual(['list']);
+  });
+
+  it('defaults each toPass option independently', () => {
+    expect(resolve({ toPass: {} }).toPass).toEqual({ timeout: 0, intervals: [100, 250, 500, 1000] });
+    expect(resolve({ toPass: { timeout: 200 } }).toPass).toEqual({ timeout: 200, intervals: [100, 250, 500, 1000] });
+    expect(resolve({ toPass: { intervals: [5, 10] } }).toPass).toEqual({ timeout: 0, intervals: [5, 10] });
+    expect(resolve({ toPass: { timeout: 0, intervals: [20] } }).toPass).toEqual({ timeout: 0, intervals: [20] });
+    expect(resolve({ toPass: { timeout: 2 ** 31 - 1 } }).toPass.timeout).toBe(2 ** 31 - 1);
+  });
+
+  it.each([
+    { value: null, message: 'toPass must be an object, got null' },
+    { value: [], message: 'toPass must be an object, got an array' },
+    { value: '200', message: 'toPass must be an object, got "200"' },
+    { value: { tiemout: 200 }, message: 'toPass has unknown key "tiemout"; did you mean "timeout"?' },
+    { value: { timeout: -1 }, message: 'toPass.timeout must be a positive safe integer of milliseconds, got -1' },
+    { value: { timeout: 0.5 }, message: 'toPass.timeout must be a positive safe integer of milliseconds, got 0.5' },
+    { value: { timeout: '200ms' }, message: 'toPass.timeout must be a positive safe integer of milliseconds, got "200ms"' },
+    { value: { timeout: Number.NaN }, message: 'toPass.timeout must be a positive safe integer of milliseconds, got NaN' },
+    { value: { timeout: Number.POSITIVE_INFINITY }, message: 'toPass.timeout must be a positive safe integer of milliseconds, got Infinity' },
+    { value: { timeout: 2 ** 31 }, message: 'toPass.timeout must be at most 2147483647 milliseconds, got 2147483648' },
+    { value: { intervals: 10 }, message: 'toPass.intervals must be a non-empty array of milliseconds' },
+    { value: { intervals: [] }, message: 'toPass.intervals must be a non-empty array of milliseconds' },
+    { value: { intervals: [0] }, message: 'toPass.intervals[0] must be a positive safe integer of milliseconds, got 0' },
+    { value: { intervals: [10, -1] }, message: 'toPass.intervals[1] must be a positive safe integer of milliseconds, got -1' },
+    { value: { intervals: [10, '20'] }, message: 'toPass.intervals[1] must be a positive safe integer of milliseconds, got "20"' },
+    { value: { intervals: [undefined] }, message: 'toPass.intervals[0] must be a positive safe integer of milliseconds, got undefined' },
+    { value: { intervals: [Number.NaN] }, message: 'toPass.intervals[0] must be a positive safe integer of milliseconds, got NaN' },
+    { value: { intervals: [Number.POSITIVE_INFINITY] }, message: 'toPass.intervals[0] must be a positive safe integer of milliseconds, got Infinity' },
+    { value: { intervals: [10, 20.5] }, message: 'toPass.intervals[1] must be a positive safe integer of milliseconds, got 20.5' },
+    { value: { intervals: [Number.MAX_SAFE_INTEGER + 1] }, message: 'toPass.intervals[0] must be a positive safe integer of milliseconds, got 9007199254740992' },
+  ])('refuses invalid toPass config with "$message"', ({ value, message }) => {
+    expect(() => resolve(invalid({ toPass: value }))).toThrow(expect.objectContaining({ code: 'INVALID_CONFIG', message }));
   });
 
   it('validates tests as globs at resolution, not at collection', () => {
@@ -557,46 +602,48 @@ describe('resolveConfig', () => {
     expect(reporterNames(['list', 'junit'])).toEqual(['list', 'junit']);
     expect(reporterNames(['json', 'markdown'])).toEqual(['json', 'markdown']);
     const [printer] = resolve({ reporters: ['list'] }).reporters;
-    expect(printer?.printsTo).toBe('stdout');
+    expect(printer?.interactive).toBe(true);
+    expect(streamOf(printer!)).toBe('stdout');
     expect(() => resolve({ reporters: ['xunit'] as never })).toThrow(/unknown reporter "xunit"/);
   });
 
-  it('moves a terminal reporter id beside json to stderr', () => {
-    for (const id of ['list', 'dot', 'line'] as const) {
-      const streams = resolve({ reporters: [id, 'json'] }).reporters.map((reporter) => [reporter.name, reporter.printsTo]);
-      expect(streams).toEqual([[id, 'stderr'], ['json', 'stdout']]);
+  it('moves the list or dot id beside json to stderr', () => {
+    for (const id of ['list', 'dot'] as const) {
+      const [view, document] = resolve({ reporters: [id, 'json'] }).reporters;
+      expect([view!.name, streamOf(view!), document!.name]).toEqual([id, 'stderr', 'json']);
+      // Only the view shows the run; the document is not interactive.
+      expect([view!.interactive, document!.interactive]).toEqual([true, undefined]);
     }
     const cli = resolveConfig({ targets: TARGETS, reporters: ['dot'] }, { projectRoot: ROOT, env: BASE_ENV, cli: { reporters: ['dot', 'json'] } });
-    expect(cli.reporters.map((reporter) => reporter.printsTo)).toEqual(['stderr', 'stdout']);
+    expect(streamOf(cli.reporters[0]!)).toBe('stderr');
     // A factory called without a stream is its id; one given a stream keeps it.
-    expect(resolve({ reporters: [list(), 'json'] }).reporters.map((reporter) => reporter.printsTo)).toEqual(['stderr', 'stdout']);
+    expect(streamOf(resolve({ reporters: [list(), 'json'] }).reporters[0]!)).toBe('stderr');
     const flagged = resolveConfig({ targets: TARGETS, reporters: [dot(), 'junit'] }, { projectRoot: ROOT, env: BASE_ENV, cli: { reporters: ['dot', 'json'] } });
-    expect(flagged.reporters.map((reporter) => reporter.printsTo)).toEqual(['stderr', 'stdout']);
+    expect(streamOf(flagged.reporters[0]!)).toBe('stderr');
     expect(() => resolve({ reporters: [list({ stream: 'stdout' }), 'json'] })).toThrow(/reporters "list" and "json" both print to stdout/);
+    expect(streamOf(resolve({ reporters: [list({ stream: 'stdout' }), 'junit'] }).reporters[0]!)).toBe('stdout');
   });
 
   it.each([['list', 'dot'], ['dot', 'list']] as const)('rejects %s combined with %s reporters', (first, second) => {
     expect(() => resolve({ reporters: [first, second] })).toThrow(/list.*dot|dot.*list/u);
   });
 
-  it('resolves line by stream for a factory, id, or CLI override', () => {
-    expect(resolve({ reporters: [line(), 'line', 'json'] }).reporters.map((reporter) => [reporter.name, reporter.printsTo])).toEqual([
-      ['line', 'stderr'], ['json', 'stdout'],
-    ]);
-    expect(reporterNames([list(), line({ stream: 'stderr' })])).toEqual(['list', 'line']);
-    expect(() => reporterNames(['junit'], ['line', 'dot'])).toThrow(expect.objectContaining({
-      code: 'INVALID_CONFIG', message: expect.stringContaining('both print to stdout'),
-    }));
+  it('refuses a second interactive reporter, a built-in or not, whatever their streams, and takes any number of others', () => {
+    expect(() => resolve({ reporters: [list({ stream: 'stdout' }), dot({ stream: 'stderr' })] })).toThrow(/reporters "list" and "dot" are all interactive/);
+    expect(() => resolve({ reporters: [list(), list({ stream: 'stderr' })] })).toThrow(/reporters "list" and "list" are all interactive/);
+    const dots: Reporter = { name: 'dots', interactive: true, onEvent: () => undefined };
+    expect(() => resolve({ reporters: [list(), dots] })).toThrow(/reporters "list" and "dots" are all interactive/);
+    expect(() => resolve({ reporters: [dots, { ...dots, name: 'bars' }, { ...dots, name: 'pies' }] })).toThrow(/reporters "dots", "bars" and "pies" are all interactive/);
+    // --reporter replaces the built-in view, never a reporter object.
+    expect(reporterNames([dots, 'junit'])).toEqual(['junit', 'dots']);
+    expect(reporterNames([{ ...dots, interactive: false }, 'list'])).toEqual(['list', 'dots']);
+    const live = (name: string): Reporter => ({ name, onEvent: () => undefined, onSummary: () => undefined });
+    expect(reporterNames(['list', live('socket'), live('overlay')])).toEqual(['list', 'socket', 'overlay']);
   });
 
-  it('refuses two reporters printing to one stream, a built-in or not, and takes any number of live ones', () => {
-    const dots: Reporter = { name: 'dots', printsTo: 'stdout', onEvent: () => undefined };
-    expect(() => resolve({ reporters: [list(), dots] })).toThrow(/reporters "list" and "dots" both print to stdout/);
-    expect(() => resolve({ reporters: [list({ stream: 'stderr' }), dot({ stream: 'stderr' })] })).toThrow(/both print to stderr/);
-    expect(reporterNames([list({ stream: 'stderr' }), dots])).toEqual(['list', 'dots']);
-    expect(reporterNames([dots, 'junit'])).toEqual(['junit', 'dots']);
-    const live = (name: string): Reporter => ({ name, onOutput: () => undefined, onStepPrompt: () => undefined, onSummary: () => undefined });
-    expect(reporterNames(['list', live('socket'), live('overlay')])).toEqual(['list', 'socket', 'overlay']);
+  it('rejects a reporter whose interactive is not a flag, and hooks the contract dropped', () => {
+    expect(() => resolve({ reporters: [{ name: 'logs', interactive: 'stdout', onEvent: () => undefined } as never] })).toThrow(/an optional interactive flag/);
+    expect(() => resolve({ reporters: [{ name: 'logs', onOutput: () => undefined } as never] })).toThrow(/at least one of onEvent, reportFiles, onRunFinished, and onSummary/);
   });
 
   it('keeps reporter objects under --reporter and reuses the options of the built-ins it names', () => {
@@ -627,7 +674,7 @@ describe('resolveConfig', () => {
     expect(() => resolve({ reporters: [{ name: '', onRunFinished: handler }] as never })).toThrow(/must be a built-in id/);
     expect(() => resolve({ reporters: [{ name: 'x' }] as never })).toThrow(/must be a built-in id/);
     expect(() => resolve({ reporters: [{ name: 'x', onEvent: 'no' }] as never })).toThrow(/must be a built-in id/);
-    expect(() => resolve({ reporters: [{ name: 'x', printsTo: 'console', onEvent: handler }] as never })).toThrow(/must be a built-in id/);
+    expect(() => resolve({ reporters: [{ name: 'x', interactive: 'console', onEvent: handler }] as never })).toThrow(/must be a built-in id/);
     expect(() => resolve({ reporters: ['list', junit] as never })).toThrow(/reporters\[1\] is the function junit; call it/);
     // A reporter of your own may share a built-in's name; `--reporter` never replaces it.
     expect(reporterNames([{ name: 'json', onRunFinished: handler }], ['list'])).toEqual(['list', 'json']);

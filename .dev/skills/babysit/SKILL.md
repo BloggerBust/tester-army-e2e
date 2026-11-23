@@ -129,8 +129,26 @@ On `READY`:
    declined scope), post one attributed comment listing exactly that.
    Otherwise post nothing.
 
-Then stop. Any later push removes the label (`.github/workflows/review-label.yml`),
-so babysit again after pushing.
+Then stop. A later push, a merge conflict, a change request, or a move back
+to draft removes the label (`.github/workflows/review-label.yml`), so babysit
+again whenever it is gone.
+
+## From a fork
+
+Without triage access `gh pr edit --add-label` fails. The PR's author asks
+for the label with a comment that is exactly `/ready`, and
+`.github/workflows/review-ready.yml` adds it or replies with what is missing.
+Nobody on the team vouches for the PR, so its gates add to `READY`:
+
+- Every review thread is resolved, and each one somebody else opened has
+  your reply. An escalated thread blocks until a maintainer resolves it, so
+  say in the reply that it waits on them.
+- No conflict, no draft, no maintainer's standing change request, no
+  `needs:compliance` label, checks reported and green.
+
+Reach `READY` first, then comment `/ready`. A first PR's CI waits for a
+maintainer's approval, and `/ready` is refused until it has run. Never resolve
+a thread to get past the gate.
 
 ## Learn
 

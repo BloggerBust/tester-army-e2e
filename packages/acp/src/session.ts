@@ -27,6 +27,7 @@ import type {
   ToolCallUpdate,
   Usage,
 } from '@agentclientprotocol/sdk/unstable';
+import { redactSecrets, registerProviderKeys } from 'e2e/agent';
 import { ConfigurationError } from 'e2e/engine';
 import { MCP_SERVER_NAME, serveTools, type ServedTool, type ToolServer } from './mcp.ts';
 
@@ -42,6 +43,9 @@ const AUTH_REQUIRED = -32000;
 /** Variables e2e reads secret and credential values from: the agent never needs them. Any case, since Windows reads names that way. */
 const SECRET_VARIABLE = /^E2E_(?:SECRET|USER)_/i;
 
+/** How much of the agent's stderr is kept for the error of an agent that exits. */
+const STDERR_KEPT = 65_536;
+
 /** How to start one agent and what its session gets. */
 export interface AgentLaunch {
   readonly command: string;
@@ -52,6 +56,8 @@ export interface AgentLaunch {
   readonly sessionMeta?: Readonly<Record<string, unknown>> | undefined;
   /** How the user signs the agent in, for a session it refuses until they do. */
   readonly signIn?: string | undefined;
+  /** What to do when a turn is refused although the session opened: credentials the provider no longer accepts. */
+  readonly loginRefused?: string | undefined;
 }
 
 /** What one prompt turn reported. */
@@ -116,13 +122,17 @@ export async function startSession(
   serving.catch(() => undefined);
   const toolServerFailed = serving.then(started => started.failed);
   toolServerFailed.catch(() => undefined);
+  const env = agentEnvironment({ ...process.env, ...launch.env });
+  // A key the agent gets from its own `env` and not the runner's is one the run has not seen yet.
+  registerProviderKeys(env);
   const child = spawn(launch.command, [...launch.args], {
     stdio: ['pipe', 'pipe', 'pipe'],
-    env: withoutSecrets({ ...process.env, ...launch.env }),
+    env,
   });
   let stderr = '';
-  child.stderr.on('data', (data: Buffer) => {
-    stderr = (stderr + data.toString()).slice(-2000);
+  child.stderr.setEncoding('utf8').on('data', (data: string) => {
+    // Kept raw, and far longer than what is shown of it: a key in pieces across two writes is whole again here.
+    stderr = (stderr + data).slice(-STDERR_KEPT);
   });
   // A dead agent must not take the test worker down with a pipe error.
   child.stdin.on('error', () => undefined);
@@ -227,6 +237,9 @@ export async function startSession(
       const costBefore = turn.cost;
       const started = Date.now();
       const response = await Promise.race([agent.request(methods.agent.session.prompt, { sessionId, prompt: [{ type: 'text', text }] }), toolServerFailed, exited]).catch((error: unknown) => {
+        if (isAuthRequired(error) && launch.loginRefused !== undefined) {
+          throw new Error(`the agent's credentials were refused: ${launch.loginRefused}`, { cause: error });
+        }
         throw withDetails(error);
       });
       const costUsd = turn.cost === undefined ? undefined : turn.cost - (costBefore ?? 0);
@@ -256,9 +269,14 @@ export async function startSession(
   };
 }
 
-/** The agent's environment without the variables e2e reads secrets from, wherever they came from. */
-export function withoutSecrets(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
-  return Object.fromEntries(Object.entries(env).filter(([name]) => !SECRET_VARIABLE.test(name)));
+/**
+ * What a process an executor starts gets of `env`: not the variables e2e
+ * reads secrets from, wherever they came from, and not `NODE_DEBUG`, which
+ * makes a Node agent print the environment of each process it starts in
+ * turn, keys included, to its log or to the run's output.
+ */
+export function agentEnvironment(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+  return Object.fromEntries(Object.entries(env).filter(([name]) => !SECRET_VARIABLE.test(name) && name.toUpperCase() !== 'NODE_DEBUG'));
 }
 
 /** `error` with what the agent said about it beyond its message appended, if anything. */
@@ -397,6 +415,8 @@ function defined<T extends object>(value: T): Partial<T> {
   return Object.fromEntries(Object.entries(value).filter(([, field]) => field !== undefined && field !== null)) as Partial<T>;
 }
 
+/** The end of the last line the agent wrote. Redacted whole, before the line is taken and cut: a value can span lines, and half a key is no longer a match. */
 function lastLine(text: string): string {
-  return text.trim().split('\n').at(-1) ?? '';
+  const written = redactSecrets(text.trim());
+  return written.slice(written.lastIndexOf('\n') + 1).slice(-2000);
 }

@@ -11,7 +11,7 @@ import { createAgentCacheContext } from '@e2e-dev/core/lib/cache/context';
 import { storedRecordingsFor } from '@e2e-dev/core/lib/cache/rekeyed';
 import { publishAttempt } from '@e2e-dev/core/lib/expect/attempt';
 import { SoftFailures } from '@e2e-dev/core/lib/expect/soft';
-import type { SerializedError } from '@e2e-dev/core/lib/internal/errors';
+import type { SerializedError, TestError } from '@e2e-dev/core/lib/internal/errors';
 import { resultId } from '@e2e-dev/core/lib/internal/ids';
 import { Deadline } from '@e2e-dev/core/lib/internal/time';
 import { holdSecretRegistry } from '@e2e-dev/core/lib/secrets';
@@ -56,10 +56,14 @@ export function openStandaloneHost(options: StandaloneHostOptions): Promise<Stan
     reserve: ({ config }, { attemptId, budget, polls }) => {
       const soft = new SoftFailures();
       const publication = new AbortController();
-      publishAttempt({ attemptId, owner: 'host', testKind: 'test', assertionTimeout: config.assertionTimeout, budget, soft, polls }, publication.signal);
+      const secondaryErrors: TestError[] = [];
+      publishAttempt({
+        attemptId, owner: 'host', testKind: 'test', assertionTimeout: config.assertionTimeout, toPass: config.toPass, budget, soft, polls,
+        recordSecondaryError: (error) => { secondaryErrors.push(error); },
+      }, publication.signal);
       // The live attempt's secrets resolve against its own config while other hosts hold theirs.
       const releaseRegistry = holdSecretRegistry(config, { live: true });
-      return { close: () => soft.close(), release: () => { publication.abort(); releaseRegistry(); } };
+      return { close: () => soft.close(), secondaryErrors, release: () => { publication.abort(); releaseRegistry(); } };
     },
     launched: () => ({ report: undefined }),
     closed: async ({ worker, extra, identity, agent, options: opened, tracePath, redact, record }) => {

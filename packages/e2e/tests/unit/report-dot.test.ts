@@ -19,7 +19,7 @@ describe('dot progress output', () => {
     const reporter = new DotProgress('stdout', output.write, false);
 
     reporter.show(stream, 'tail');
-    reporter.settle();
+    reporter.end();
 
     expect(output.text[stream]).toBe('tail\n');
     expect(output.text[stream === 'stdout' ? 'stderr' : 'stdout']).toBe('');
@@ -32,7 +32,7 @@ describe('dot progress output', () => {
     reporter.show('stdout', 'stdout tail');
     reporter.show('stderr', 'stderr tail');
     reporter.show('stdout', '\n');
-    reporter.settle();
+    reporter.end();
 
     expect(output.text).toEqual({ stdout: 'stdout tail\n', stderr: 'stderr tail\n' });
   });
@@ -43,7 +43,7 @@ describe('dot progress output', () => {
 
     reporter.show('stdout', 'stdout tail');
     reporter.show('stderr', 'stderr tail');
-    reporter.settle();
+    reporter.end();
 
     expect(output.text).toEqual({ stdout: '', stderr: 'stdout tailstderr tail\n' });
   });
@@ -52,11 +52,11 @@ describe('dot progress output', () => {
     const output = capture();
     const reporter = new DotProgress('stdout', output.write, false);
 
-    reporter.result({ status: 'passed' });
+    reporter.result('passed');
     reporter.show('stdout', '');
     reporter.show('stderr', '');
-    reporter.result({ status: 'passed' });
-    reporter.settle();
+    reporter.result('passed');
+    reporter.end();
 
     expect(output.text).toEqual({ stdout: '..\n', stderr: '' });
   });
@@ -67,8 +67,8 @@ describe('dot progress output', () => {
 
     reporter.show('stdout', 'complete\n');
     reporter.show('stderr', 'tail');
-    reporter.settle();
-    reporter.settle();
+    reporter.end();
+    reporter.end();
 
     expect(output.text).toEqual({ stdout: 'complete\n', stderr: 'tail\n' });
   });
@@ -78,8 +78,8 @@ describe('dot progress output', () => {
     const reporter = new DotProgress('stdout', output.write, false);
 
     reporter.show('stdout', 'tail');
-    reporter.result({ status: 'passed' });
-    reporter.settle();
+    reporter.result('passed');
+    reporter.end();
 
     expect(output.text).toEqual({ stdout: 'tail\n.\n', stderr: '' });
   });
@@ -88,8 +88,8 @@ describe('dot progress output', () => {
     const output = capture();
     const dots = new DotProgress('stdout', output.write, false);
 
-    for (const status of ['passed', 'flaky', 'failed', 'timed-out', 'interrupted', 'skipped'] as const) dots.result({ status });
-    dots.settle();
+    for (const status of ['passed', 'flaky', 'failed', 'timed-out', 'interrupted', 'skipped'] as const) dots.result(status);
+    dots.end();
 
     expect(output.text).toEqual({ stdout: '.~FTI-\n', stderr: '' });
   });
@@ -98,8 +98,8 @@ describe('dot progress output', () => {
     const output = capture();
     const dots = new DotProgress('stdout', output.write, colors);
 
-    for (let index = 0; index < 2_000; index++) dots.result({ status: 'passed' });
-    dots.settle();
+    for (let index = 0; index < 2_000; index++) dots.result('passed');
+    dots.end();
 
     expect(stripVTControlCharacters(output.text.stdout)).toBe(`${Array.from({ length: 25 }, () => '.'.repeat(80)).join('\n')}\n`);
     expect(output.text.stderr).toBe('');
@@ -109,11 +109,11 @@ describe('dot progress output', () => {
     const output = capture();
     const dots = new DotProgress('stdout', output.write, false);
 
-    for (let index = 0; index < 79; index++) dots.result({ status: 'passed' });
+    for (let index = 0; index < 79; index++) dots.result('passed');
     dots.show('stdout', 'user output\n');
-    dots.result({ status: 'passed' });
-    dots.result({ status: 'failed' });
-    dots.settle();
+    dots.result('passed');
+    dots.result('failed');
+    dots.end();
 
     expect(output.text.stdout).toBe(`${'.'.repeat(79)}\nuser output\n.F\n`);
   });
@@ -122,8 +122,8 @@ describe('dot progress output', () => {
     const output = capture();
     const dots = new DotProgress('stdout', output.write, true);
 
-    for (const status of ['passed', 'flaky', 'failed', 'skipped'] as const) dots.result({ status });
-    dots.settle();
+    for (const status of ['passed', 'flaky', 'failed', 'skipped'] as const) dots.result(status);
+    dots.end();
 
     expect(stripVTControlCharacters(output.text.stdout)).toBe('.~F-\n');
     expect(output.text.stdout).toContain('\u001b[32m.');

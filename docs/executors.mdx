@@ -77,7 +77,10 @@ history and retries once if that makes the request smaller, else fails with
 `CONTEXT_OVERFLOW`; `inconclusiveOnOverflow: true` fails the step with
 `ASSERTION_INCONCLUSIVE` instead, for an assertion loop whose earlier screens
 are evidence. `guard()` stops new tool calls when the step is
-concluding and returns a failure to the model as text. `ctx.actions`
+concluding and returns a failure to the model as text. A `complete_step`
+sent in the same turn as other calls waits for the calls before it, and is
+refused when one of them failed or the last one reported no change; calls
+after it don't run. `ctx.actions`
 authorizes, counts, and records each action, so these steps replay from the
 [cache](/cache) and run on any engine that supports `tap`.
 
@@ -262,6 +265,27 @@ export default {
 Direct Playwright calls skip action authorization and the replay cache,
 and leave no artifacts. The step deadline and the verdict record still
 apply.
+
+## Provider keys
+
+The run redacts the [provider keys](/reference/security#provider-keys) it
+finds in the environment from whatever an executor returns. Four functions
+from `e2e/agent` cover the rest:
+
+| Function | Use |
+| --- | --- |
+| `registerProviderKey(name, value)` | A key your agent signs in with that no listed variable holds, such as one it reads from its own login file. Shows as `<secret:name>` from then on. `name` takes letters, digits, `_`, `.`, and `-`; a value shorter than 20 characters, longer than 8,192, or not a string is left alone. |
+| `registerProviderKeys(env)` | The listed variables of an environment you start an agent with, when it isn't the run's own. |
+| `redactSecrets(text)` | Text you cut short or keep before returning it. Redact first: half a key is no longer a match. |
+| `redactStepText(ctx, text)` | Text you send your agent that the run did not build, such as a prompt with your own `system`: the step's secrets and the provider keys known now, and no value an earlier test learned. Call it right before the text leaves. |
+
+A model built with a key in code can register it in `e2e.config.ts` too:
+
+```ts
+import { registerProviderKey } from 'e2e/agent';
+
+registerProviderKey('llm-key', apiKey);
+```
 
 ## Next
 

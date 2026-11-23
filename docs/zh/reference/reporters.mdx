@@ -20,7 +20,7 @@ export default {
 
 要为内置报告器传入选项，请用 `e2e/reporters` 中的工厂函数调用代替 ID：`junit({ outputFile: 'reports/junit.xml' })`。ID 等同于不带选项调用其工厂函数。
 
-内置报告器和自定义报告器通过相同的 [`Reporter`](#custom-reporters) 钩子接收运行事件、输出和摘要行。
+内置报告器只使用 [`Reporter`](#custom-reporters) 契约，因此你自己的报告器能做到它们能做的一切。
 
 ## 参考
 
@@ -30,7 +30,6 @@ export default {
 | --- | --- |
 | [`list`](#list) | 终端进度和运行摘要 |
 | [`dot`](#dot) | 简洁进度和运行摘要 |
-| [`line`](#line) | 单行进度和运行摘要 |
 | [`json`](#json) | 将报告文档输出到 stdout |
 | [`junit`](#junit) | 写入 `<output>/junit.xml` |
 | [`markdown`](#markdown) | 写入 `<output>/summary.md` |
@@ -40,10 +39,11 @@ export default {
 | 抛出 | 条件 |
 | --- | --- |
 | `INVALID_CONFIG` | `reporters` 不是数组。 |
-| `INVALID_CONFIG` | ID 不是 `list`、`dot`、`line`、`json`、`junit` 或 `markdown`。 |
+| `INVALID_CONFIG` | ID 不是 `list`、`dot`、`json`、`junit` 或 `markdown`。 |
 | `INVALID_CONFIG` | 工厂函数未被调用，例如写成 `junit` 而不是 `junit()`。 |
 | `INVALID_CONFIG` | 条目既不是 ID，也不是包含 `name` 和至少一个钩子的对象。 |
-| `INVALID_CONFIG` | 两个报告器[输出到](#printsto)同一个流，例如 `list` 和 `dot`。 |
+| `INVALID_CONFIG` | 有多个[交互式](#interactive)报告器，例如 `list` 和 `dot`。 |
+| `INVALID_CONFIG` | 与 `json` 同时使用的 `list` 或 `dot` 指定了 `stream: 'stdout'`。 |
 
 #### `list`
 
@@ -53,8 +53,8 @@ export default {
 reporters: ['list'], // default
 ```
 
-- `list({ stream })` 设置它[输出到](#printsto)的终端流：`'stdout'` 或 `'stderr'`。未设置时，`list` 输出到 stdout；与 `json` 同时使用时输出到 stderr。
-- 它显示的事件与 [`onEvent`](#onevent) 接收的相同，并显示你的代码打印的内容（[`onOutput`](#onoutput)）和 `--step` 提示（[`onStepPrompt`](#onstepprompt)）。
+- `list({ stream })` 设置它输出到的终端流：`'stdout'` 或 `'stderr'`。未设置时，`list` 输出到 stdout；与 `json` 同时使用时输出到 stderr。
+- 它是[交互式](#interactive)报告器。它显示的事件与 [`onEvent`](#onevent) 接收的相同，并显示你的代码打印的内容（[输出](#output)）和在[暂停](#pauses)处等待的测试。
 - 在 TTY 中，实时视图显示正在运行的测试。stdout 不是终端时（管道、重定向、大多数 CI），每个测试完成后才输出。
 - 它的 [`onSummary`](#onsummary) 在其摘要下方输出每个报告器的摘要行。
 - 输出末尾会为每个失败测试显示一行 `Failed`：文件和行号、错误的第一行，以及已写入的追踪页面。因此 `e2e run | tail` 仍会指出哪里出了问题。
@@ -77,24 +77,6 @@ reporters: ['dot'],
 
 与 Playwright 不同，e2e 使用 ASCII 标记，并且只在重试结束后输出最终结果，不为每次重试单独输出标记。
 
-#### `line`
-
-在交互式终端中，`line` 报告器用同一行显示进度。测试开始或得出最终结果时，报告器会更新这一行。
-
-```ts
-reporters: ['line'],
-```
-
-进度行显示测试目标和 `file > title`。`[2/10]` 表示选中的 10 个测试中已有 2 个得出最终结果。每个测试只在得出最终结果时计数一次，即使发生重试也是如此。
-
-输出日志、失败详情或摘要前，报告器会先清除进度行。如果移动光标可能影响其他输出，报告器就会逐行追加最终结果。重定向输出、设置 `TERM=dumb` 或在 `--watch` 模式下重新运行测试时，也会采用这种格式。缩窄窗口后，有些终端可能会保留原进度行的一部分。
-
-如果最终结果为失败或超时，`line` 会立即输出错误和可用的诊断信息。最后的 `Failed` 摘要会列出这些失败对应的追踪记录页面路径。
-
-Playwright 统计测试的开始次数，包括重试的开始次数。它的进度行包含 `file:line:col` 位置信息，也可以显示当前步骤。测试结果为 `flaky` 或 `interrupted` 时，Playwright 也会立即输出失败详情。
-
-未指定 `stream` 时，`line` 默认输出到 stdout，与 `json` 一起使用时则输出到 stderr。也可以用 `line({ stream: 'stderr' })` 直接指定 stderr。
-
 #### `json`
 
 将报告文档输出到 stdout。
@@ -103,7 +85,7 @@ Playwright 统计测试的开始次数，包括重试的开始次数。它的进
 reporters: ['json'],
 ```
 
-它[输出到 stdout](#printsto)，且不接收输出，因此你的代码打印的内容会发送到 stderr。
+它不是[交互式](#interactive)报告器。没有同时使用 `list` 或 `dot` 时，你的代码打印的内容会发送到 stderr。
 
 #### `junit`
 
@@ -223,24 +205,20 @@ export default {
 | 成员 | 类型 |
 | --- | --- |
 | [`name`](#name) | `string` |
-| [`printsTo`](#printsto) | `'stdout' \| 'stderr'` |
+| [`interactive`](#interactive) | `boolean` |
 | [`onEvent`](#onevent) | `(event: RunEvent) => void` |
-| [`onOutput`](#onoutput) | `(output: ReporterOutput) => void` |
-| [`onStepPrompt`](#onstepprompt) | `(prompt) => void` |
 | [`reportFiles`](#reportfiles) | `(run, signal) => ReportFile[]` |
 | [`onRunFinished`](#onrunfinished) | `(run, signal) => Promise<…>` |
-| [`onSummary`](#onsummary) | `(rows: ReporterSummary) => void` |
+| [`onSummary`](#onsummary) | `(rows, run) => void` |
 
 ```ts
 interface Reporter {
   readonly name: string;
-  readonly printsTo?: 'stdout' | 'stderr';
+  readonly interactive?: boolean;
   onEvent?(event: RunEvent): void;
-  onOutput?(output: ReporterOutput): void;
-  onStepPrompt?(prompt: StepPrompt | undefined): void;
   reportFiles?(run: FinishedRun, signal: AbortSignal): readonly ReportFile[] | Promise<readonly ReportFile[]>;
   onRunFinished?(run: FinishedRun, signal: AbortSignal): Promise<ReporterSummary | void>;
-  onSummary?(rows: ReporterSummary): void;
+  onSummary?(rows: ReporterSummary, run: FinishedRun): void;
 }
 ```
 
@@ -254,19 +232,23 @@ interface Reporter {
 name: 'upload',
 ```
 
-#### `printsTo`
+#### `interactive`
 
-报告器输出到的终端流，像 [`list`](#list) 和 [`json`](#json) 输出到 stdout。两个报告器输出到同一个流会互相打乱，所以每个流只能有一个设置它。
+报告器在终端中向人展示运行时设置它，如 [`list`](#list) 和 [`dot`](#dot)。设置后，运行器自己不再打印[输出](#output)、运行错误和[暂停](#pauses)。
 
 ```ts
-printsTo: 'stdout',
+interactive: true, // default: false
 ```
 
-- 它的钩子直接写入 `process.stdout` 或 `process.stderr`。运行器不会对这些输出脱敏，所以只输出事件和报告中的内容：它们已经脱敏。
-- 输出到 stdout 的报告器没有 [`onOutput`](#onoutput) 时（如 `json`），运行器自己打印的内容改到 stderr，因此 stdout 只包含该报告器输出的内容。
-- `--step` 需要输出到 stdout 的报告器有 [`onStepPrompt`](#onstepprompt)，像 `list` 一样。
+- 处理 `output`、`run-error`、`paused` 和 `resumed` [事件](#events)。提前停止的运行（例如因 `NO_TESTS` 停止）只会显示报告器打印的内容。
+- 它的钩子直接写入 `process.stdout` 或 `process.stderr`。运行器不会对这些输出脱敏，因此只打印事件和报告中的内容：它们已经脱敏。
+- 与 `json` 一起使用时，它写入 stdout 的内容会输出到 stderr。
+- 没有交互式报告器时，运行器在 stderr 上打印输出、运行错误和暂停。运行器从不写入 stdout，因此 stdout 只包含报告器在那里打印的内容，例如 `json` 报告。
+- 其他报告器在 [`onSummary`](#onsummary) 之外打印的内容视为你的代码的输出：脱敏后与其他输出一样显示。
+- 交互式报告器的 `onEvent` 抛出异常或返回被拒绝的 Promise 后，运行器会在本次运行的剩余时间内代它打印。
 - 第二次 Ctrl-C 不会停止它的 `onRunFinished`：它的输出在本地。
-- 通过 [`e2e/runner`](/reference/runner) 嵌入的运行不会运行同时具有 `onOutput` 的这类报告器，例如 `list` 和 `dot`。
+- 最多只能有一个交互式报告器。
+- 通过 [`e2e/runner`](/reference/runner) 嵌入的运行不会运行任何交互式报告器，你的代码打印的内容留在原来的流上。
 
 #### `onEvent`
 
@@ -286,45 +268,8 @@ onEvent(event) {
 所有事件见[事件](#events)。
 
 <Note>
-`onEvent` 不得阻塞，也不得抛出异常。耗时操作应放在 `onRunFinished` 中。抛出异常会使报告器在本次运行的剩余时间内被停用，并在 stderr 输出一行，包含报告器名称、事件类型和错误。运行结果不变。
+`onEvent` 是唯一在运行期间调用的钩子。它不得阻塞，也不得抛出异常。耗时操作应放在 `onRunFinished` 中。抛出异常会使报告器在本次运行的剩余时间内被停用，并在 stderr 输出一行，包含报告器名称、事件类型和错误。运行结果不变。
 </Note>
-
-#### `onOutput`
-
-在你的代码打印时实时接收打印的内容，已脱敏：测试的输出，以及运行进行期间运行器进程打印的内容（加载中的测试文件、测试筛选器、其他报告器）。
-
-```ts
-onOutput({ stream, text, target, pair }) {
-  socket.send(JSON.stringify({ source: target === undefined ? 'runner' : pair?.testId, stream, text }));
-},
-```
-
-```ts
-interface ReporterOutput {
-  readonly stream: 'stdout' | 'stderr';
-  readonly text: string;   // one write, which may end mid-line
-  readonly target?: string; // the target of a test's output; absent for the runner's
-  readonly pair?: { testId: string; agent: string; repeat: number }; // the test running then
-}
-```
-
-- 除非某个[输出到终端](#printsto)的报告器有 `onOutput`（如 `list` 和 `dot`），运行器也会把输出和运行错误原样打印到终端。只记录输出的报告器不会让终端静默。
-- 输出到终端且有 `onOutput` 的报告器也要输出运行错误：处理 `run-error` [事件](#events)，否则提前停止的运行（例如因 `NO_TESTS` 停止）不会输出任何内容。
-- 它的 `onOutput` 抛出异常或返回被拒绝的 Promise 后，运行器会在本次运行的剩余时间内自行打印输出和运行错误。
-- 测试的输出也是一个 `output` [事件](#events)。
-- 报告器在 `onOutput` 中，或在其中启动的工作中打印的内容，会原样打印到终端，不会再交给 `onOutput`。
-
-#### `onStepPrompt`
-
-接收要在终端上显示的 [`--step`](/debugging#step-through-a-test) 提示，或用于撤下提示的 `undefined`。在后台运行的 `--step` 改为通过其套接字回答每个提示，不调用任何报告器。
-
-```ts
-onStepPrompt(prompt) {
-  overlay.show(prompt === undefined ? '' : `Step ${prompt.steps[0].number}: ${prompt.steps[0].step.label}`);
-},
-```
-
-除非某个[输出到终端](#printsto)的报告器有它，提示也会在 stderr 上打印为一行。该报告器的 `onStepPrompt` 抛出异常或返回被拒绝的 Promise 后，之后的每个提示也是如此，包括运行正在等待的那个提示。
 
 #### `reportFiles`
 
@@ -343,7 +288,7 @@ interface ReportFile {
 }
 ```
 
-- 它与 `onRunFinished` 有相同的一分钟期限和 `signal`，但第二次 Ctrl-C 不会停止它。上一次运行的文件不会留在新报告旁边。
+- 它与 `onRunFinished` 有相同的一分钟期限和 `signal`。第二次 Ctrl-C 之后它还剩 5 秒，因此上一次运行的文件很少会留在新报告旁边。
 - 写到 `report.json` 路径的文件、无法写入的文件，或不是文件列表的返回值，会在 stderr 上输出一行。
 
 #### `onRunFinished`
@@ -377,7 +322,7 @@ type ReporterSummary = readonly { label: string; text: string }[];
 
 - 所有报告器并发运行，每个都有一分钟的截止时间。
 - 超时、异常或无效返回值会报告到 stderr。运行状态、退出码和报告不变。
-- 按一次 Ctrl-C 仍会让报告器完成。第二次按 Ctrl-C 会停止等待它们，设置了 [`printsTo`](#printsto) 的报告器除外。
+- 按一次 Ctrl-C 仍会让报告器完成。第二次按 Ctrl-C 会停止等待它们，[交互式](#interactive)报告器除外。
 - 预算耗尽或运行被强制停止时，`signal` 会触发中止。
 - 运行器在调用 `onRunFinished` 之前写入追踪页面 `results/<test>/trace.md`。
 
@@ -387,7 +332,7 @@ type ReporterSummary = readonly { label: string; text: string }[];
 
 ##### 摘要行
 
-报告器完成时返回的行，以及其带标签的报告文件的行，会传给每个 [`onSummary`](#onsummary)。`list`、`dot` 和 `line` 将它们显示在自身摘要下方，布局与其自身的行相同。`json` 报告器不包含这些行。
+报告器完成时返回的行，以及其带标签的报告文件的行，会传给每个 [`onSummary`](#onsummary)。`list` 和 `dot` 将它们显示在自身摘要下方，布局与其自身的行相同。`json` 报告器不包含这些行。
 
 ```
    Test Files  2 passed (2)
@@ -422,7 +367,7 @@ type ReporterSummary = readonly { label: string; text: string }[];
 
 #### `onSummary`
 
-接收所有报告器的摘要行：先是内置报告器，再按 `reporters` 顺序是其他报告器；每个报告器先是其带标签的报告文件的行，再是其 `onRunFinished` 返回的行。
+接收所有报告器的摘要行：先是内置报告器，再按 `reporters` 顺序是其他报告器；每个报告器先是其带标签的报告文件的行，再是其 `onRunFinished` 返回的行。第二个参数是[已完成的运行](#onrunfinished)。
 
 ```ts
 onSummary(rows) {
@@ -432,6 +377,8 @@ onSummary(rows) {
 
 它在所有 `onRunFinished` 完成或被放弃后最后运行，第二次 Ctrl-C 之后也会运行。
 
+在这里打印。除非报告器是[交互式](#interactive)的，否则 `onSummary` 写入的内容会先脱敏。内容输出到写入的流，包括 stdout，因此报告器可以在那里打印自己的文档。与 `json` 一起使用时，stdout 只包含 JSON 报告，其他报告器写入 stdout 的内容会输出到 stderr。
+
 ## 事件
 
 `onEvent` 接收以下事件之一。每个事件还包含序号 `seq` 和 ISO 时间戳 `at`。
@@ -439,13 +386,16 @@ onSummary(rows) {
 ```ts
 type RunEventFact =
   | { type: 'run-started'; runId; projectId; projectRoot; artifactsRoot; ci; targets; agents?; model?; judge?; stepping? }
-  | { type: 'plan'; total; files: { file; target; tests }[] }
+  | { type: 'plan'; total; files: { file; target; tests }[] } // deprecated
+  | { type: 'collected'; total; files: { file; target; tests }[]; repeatEach; tests: CollectedTestInfo[] }
   | { type: 'notice'; target; message }
-  | { type: 'output'; target; pair; stream: 'stdout' | 'stderr'; text }
+  | { type: 'output'; target?; pair?; stream: 'stdout' | 'stderr'; text }
   | { type: 'setup'; step: SetupStep; state: 'started' }
   | { type: 'setup'; step: SetupStep; state: 'finished'; durationMs; outcome?: 'reused' | 'failed' | 'timed-out' }
   | { type: 'test-started'; testId; agent; repeat; title; file; serialId; target }
   | { type: 'step'; testId; agent; repeat; target; progress: StepProgress }
+  | { type: 'paused'; testId; agent; repeat; target; titlePath; reason: 'step' | 'pause'; attachId; steps: PausedStep[]; keys: { key; does }[] }
+  | { type: 'resumed'; testId; agent; repeat; target }
   | { type: 'test-finished'; result: RunEventResult }
   | { type: 'serial-group'; group: SerialGroupRecord }
   | { type: 'explore'; progress: ExploreProgress }
@@ -455,15 +405,44 @@ type RunEventFact =
   | { type: 'run-finished'; status; exitCode; reportPath?; aiTracePath?; traces? };
 ```
 
-- `run-started` 最先出现，`run-finished` 最后出现。
+- `run-started` 最先出现。`run-finished` 之后只可能出现两种事件：`output`，即报告器在处理它时打印的内容；以及 `run-interrupted`，即报告器收尾期间收到 Ctrl-C。
 - `run-started` 上的 `targets` 按配置顺序列出运行通过 `--target` 选择的测试目标；未指定该选项时列出全部配置的测试目标。`--target` 指定未知测试目标时也列出全部，并以 `UNKNOWN_TARGET` 导致运行失败。报告中的 `run.targets` 始终列出全部配置的测试目标。
 - `run-started` 上的 `judge` 是运行所用智能体的判定模型，仅在判定使用不同于 `model` 的模型时存在。运行为 `--step` 暂停每个步骤时，`stepping` 为 `true`。
 - `setup` 标记测试开始前工作的起止。其 `step.kind` 为 `collect`、`filter`（一个[测试筛选器](/filters)，以 `name` 标识）、`prepare`、`service` 或 `app`。`app` 步骤的 `url` 是就绪探针轮询的 URL，已填入空闲端口，且不含用户信息或查询参数。服务或应用命令连接到已在该 URL 提供服务的进程时，`outcome` 为 `reused`；筛选器抛出异常或返回无效结果时为 `failed`；筛选器运行超过 5 分钟时为 `timed-out`。
 - `notice` 在 `target` 中指出该行的主题：某个测试目标、`app`、`collect`、表示测试筛选器进度和摘要的 `filter`，或 `run`。
-- `output` 是测试对 stdout 或 stderr 的一次写入；`pair` 标识当时正在运行的测试，在测试之间为 undefined。
+- `collected` 在测试收集并选定之后、任何测试运行之前发出一次。参见[已收集的测试](#collected-tests)。
+- `plan` 已弃用：请读取紧随其后、带有相同 `total` 和 `files` 的 `collected`。最早于 2027 年 4 月 1 日移除。
+- `output` 参见[输出](#output)，`paused` 和 `resumed` 参见[暂停](#pauses)。
 - `test-finished` 携带完整结果记录，包括每次尝试的产物。
 - `explore` 仅出现在 `e2e explore` 运行中：`started`、`planning`、`step-started`、`step-finished`、`finding` 和 `finished`。完整记录位于报告的 `run.explore` 中。
+- 所有报告器收到的是同一个事件对象。事件自身的字段是冻结的，它携带的记录是共享的：要修改的内容请先复制。
 - 新事件类型会陆续加入。处理你认识的类型，忽略其余类型；将 `switch` 的 `default` 分支留空。
+
+### 已收集的测试
+
+`collected` 在第一个测试开始前列出本次运行的所有测试，因此报告器可以预先绘制整个运行。
+
+```ts
+interface CollectedTestInfo {
+  readonly testId: string;  // the `testId` of the test's events and results
+  readonly target: string;
+  readonly agent: string;
+  readonly file: string;    // from the project root, POSIX separators
+  readonly kind: 'test' | 'setup'; // `setup` saves a session for other tests
+  readonly title: string;
+  readonly titlePath: readonly string[]; // the describe titles, then the title
+  readonly tags: readonly string[];
+  readonly source?: { file: string; line: number; column: number }; // where it is declared
+  readonly serialId?: string; // its serial group
+  readonly disposition: 'run' | 'skip' | 'filtered';
+  readonly reason?: string; // why it is skipped or filtered
+}
+```
+
+- `tests` 按选择顺序，为每个测试、目标和代理的组合包含一项。被过滤器、`--grep` 或分片排除的测试为 `filtered`。
+- 会运行的 `test` 运行 `repeatEach` 次：没有 `--repeat-each` 时为 1。`setup` 测试只运行一次。
+- `total` 统计运行收集到的所有测试。`files` 按文件和目标统计 `run` 和 `skip` 的项，因此报告器能知道某个文件的结果何时齐全。两者都会按重复次数统计重复运行的测试。
+- 该事件的 `at` 是运行的开始时间，即报告中的 `startedAt`。
 
 ### 测试与尝试
 
@@ -487,7 +466,7 @@ type RunEventFact =
 
 ```ts
 type StepProgress = (
-  | { phase: 'start'; kind: StepKind; api: string; label: string }
+  | { phase: 'start'; kind: StepKind; api: string; label: string; source?: { file: string; line: number; column: number } }
   | {
       phase: 'end';
       kind: StepKind;
@@ -505,6 +484,8 @@ type StepProgress = (
 ) & { identity?: StepProgressIdentity };
 ```
 
+`start` 阶段的 `source` 是调用该步骤的测试文件行：相对于项目根目录、使用 POSIX 分隔符的路径，以及从 1 开始的行号和列号。调用位置在项目之外时省略。
+
 `end` 阶段的 `error` 和 `explanation` 已脱敏。保留其 `status`，包括 `blocked` 和 `cancelled`。不要把所有未通过的步骤都视为产品缺陷。
 
 运行器发送的每个步骤阶段都包含 `progress.identity`：
@@ -519,6 +500,51 @@ type StepProgress = (
 - 使用 `stepId` 匹配 start、activity、event、replay 和 end 阶段，包括嵌套步骤。
 - 当步骤运行的会话不是测试自身的会话时，`actor` 给出该会话的名称：即测试用 [`launch()`](/core#open-a-host-inside-a-test) 打开的会话。
 - 类型中的 `identity` 是可选的，因此报告器也能接受旧版事件流。
+
+### 输出
+
+`output` 是对 stdout 或 stderr 的一次写入，已脱敏：`console.log` 及类似调用。一次写入可能在行中间结束。
+
+```ts
+onEvent(event) {
+  if (event.type !== 'output') return;
+  socket.send(JSON.stringify({ source: event.target === undefined ? 'runner' : event.pair?.testId, stream: event.stream, text: event.text }));
+},
+```
+
+- 测试的输出带有 `target`。`pair` 标识当时正在运行的测试，在测试之间为 undefined。
+- 没有 `target` 的输出来自运行期间的运行器进程：加载中的测试文件、测试过滤器、其他报告器。
+- 除非有[交互式](#interactive)报告器在运行，运行器也会在 stderr 上打印输出。只记录输出的报告器不会让终端静默。
+- 报告器在处理 `output` 事件时，或在其中启动的工作中打印的内容，不会再作为事件返回。运行器会对其脱敏并自行打印。
+
+### 暂停
+
+`paused` 表示测试在等待人操作：在 [`--step`](/debugging#step-through-a-test) 暂挂的步骤之前（`reason: 'step'`），或在 [`screen.pause()`](/debugging#pause-a-test) 处（`reason: 'pause'`）。`resumed` 表示该测试继续运行。
+
+```ts
+onEvent(event) {
+  if (event.type === 'paused') overlay.show(`Paused at ${event.steps[0].source?.file}:${event.steps[0].source?.line}`);
+  if (event.type === 'resumed') overlay.hide();
+},
+```
+
+```ts
+interface PausedStep {
+  readonly number: number; // its position in the trace; 0 for a pause
+  readonly api: string;
+  readonly label: string;
+  readonly source?: { file: string; line: number; column: number };
+}
+```
+
+- 报告器只显示暂停。按键以及回答暂停的 `e2e run --step` 命令由运行器处理。
+- `steps` 包含一个调用，或一起暂挂的所有步骤，例如同一个 `Promise.all` 中的步骤。
+- `keys` 按提示显示的顺序列出键盘现在能做的操作，例如 `{ key: 'enter', does: 'run this step' }`。不读取键盘时为空，例如[用命令单步执行](/debugging#step-through-a-test-without-a-terminal)的运行。
+- 等待中的测试一次显示一个。同一测试的第二个 `paused` 会替换第一个：有步骤加入，或按键发生了变化。
+- 每个 `paused` 都有对应的 `resumed`，测试或运行先结束时也一样。
+- `titlePath` 是各 describe 标题加上测试标题，与 [`collected`](#collected-tests) 中的相同。
+- 使用 `attachId` [通过 MCP 附加](/reference/mcp#attaching-to-a-held-test)。该 ID 在同一次尝试的各次暂停之间保持不变。
+- 除非有[交互式](#interactive)报告器在运行，由键盘回答的暂停也会在 stderr 上打印为一行。
 
 ## `--reporter` 对报告器对象的影响
 
@@ -539,7 +565,8 @@ bunx e2e run --reporter list,junit
 </CodeGroup>
 
 - 配置为 `reporters: ['list', junit({ outputFile: 'reports/junit.xml' })]` 时，`--reporter junit` 只运行该 `junit`，仍写入 `reports/junit.xml`。
-- 如果配置中没有通过 [`onOutput`](#onoutput) 输出到终端的报告器，就没有运行视图。运行错误仍会输出到 stderr，每条格式为 `CODE: message`。
+- 如果配置中没有[交互式](#interactive)报告器，就没有运行视图。运行错误仍会输出到 stderr，每条格式为 `CODE: message`。
+- 配置中有自己的交互式报告器时，`--reporter list` 和 `--reporter dot` 会被拒绝：最多只能有一个交互式报告器。
 
 ## 报告器在哪里运行
 
@@ -550,7 +577,7 @@ bunx e2e run --reporter list,junit
 
 ## 类型
 
-`Reporter`、`FinishedRun`、`ReportFile`、`ReporterOutput`、`ReporterSummary`、`StepPrompt`、`Report`、`RunEvent` 和 `RunEventOf` 从主入口导出，`renderMarkdownReport(report, options)` 也一样。`e2e/reporters` 导出 `list`、`dot`、`line`、`json`、`junit` 和 `markdown`，以及 `ListReporterOptions`、`DotReporterOptions`、`LineReporterOptions`、`JunitReporterOptions` 和 `MarkdownReporterOptions`。
+`Reporter`、`FinishedRun`、`ReportFile`、`ReporterSummary`、`Report`、`RunEvent`、`RunEventOf`、`CollectedTestInfo`、`PausedStep` 和 `PausedKey` 从主入口导出，`renderMarkdownReport(report, options)` 也一样。`e2e/reporters` 导出 `list`、`dot`、`json`、`junit` 和 `markdown`，以及 `ListReporterOptions`、`DotReporterOptions`、`JunitReporterOptions` 和 `MarkdownReporterOptions`。
 
 ## 相关内容
 

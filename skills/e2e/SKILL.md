@@ -19,8 +19,9 @@ metadata:
 e2e runs UI tests that mix agent goals with exact steps. `agent.act` drives
 one goal; `agent.assert`, `agent.waitFor`, and `agent.extract` judge the
 screen; `screen`, `app`, `browser`, and `expect` act and check exactly. UI
-targets use `@e2e-dev/web` for browsers or `@e2e-dev/mobile` for iOS
-simulators, Android emulators, and connected phones.
+targets use `@e2e-dev/web` for browsers, `@e2e-dev/mobile` for iOS
+simulators, Android emulators, and connected phones, or `@e2e-dev/desktop`
+(a prototype) for native apps on macOS.
 
 ## Start here: pick the reference for the job
 

@@ -17,7 +17,7 @@ export E2E_TELEMETRY_DISABLED=1
 
 ### 模型
 
-在 `e2e.config.ts` 中配置模型。模型的提供方读取 API 密钥：`gateway()` 使用 `AI_GATEWAY_API_KEY`，`openrouter()` 使用 `OPENROUTER_API_KEY`，`openai()` 使用 `OPENAI_API_KEY`。没有 `AI_GATEWAY_API_KEY` 时，`gateway()` 使用 [Vercel OIDC 令牌](/models#vercel-oidc-instead-of-a-key)。缺少凭据会导致首次模型调用失败。订阅模型则使用已保存的登录信息。参阅[模型](/models)和[订阅](/subscriptions)。
+在 `e2e.config.ts` 中配置模型。模型的提供方读取 API 密钥：`gateway()` 使用 `AI_GATEWAY_API_KEY`，`openrouter()` 使用 `OPENROUTER_API_KEY`，`openai()` 使用 `OPENAI_API_KEY`。没有 `AI_GATEWAY_API_KEY` 时，`gateway()` 使用 [Vercel OIDC 令牌](/models#vercel-oidc-instead-of-a-key)。缺少凭据会导致首次模型调用失败。订阅模型则使用已保存的登录信息。`@e2e-dev/acp` 的编码智能体预设 `codex()` 在 Codex 本身没有登录且 `DEFAULT_AUTH_REQUEST` 为空（包括只含空白）或未设置时，也会用 `CODEX_API_KEY` 和 `OPENAI_API_KEY` 中第一个非空的值让它登录；使用默认凭据存储时，Codex 随后会把该密钥保存为登录信息。设置了 `APP_SERVER_LOGS` 时，`codex()` 不会传递任何登录请求。参阅[使用你的编码智能体](/subscriptions#use-your-coding-agent)。参阅[模型](/models)和[订阅](/subscriptions)。
 
 | 变量 | 示例 | 读取条件 | 作用 |
 | --- | --- | --- | --- |

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { derivedReason } from '@e2e-dev/core/lib/agent/derived';
+import { derivedJoinReason, derivedReason } from '@e2e-dev/core/lib/agent/derived';
 
 describe('derivedReason', () => {
   it('treats values spelled out by the instruction or the params as literal', () => {
@@ -127,5 +127,29 @@ describe('derivedReason', () => {
   it('never treats an empty value as derived', () => {
     expect(derivedReason('', 'anything', undefined)).toBeUndefined();
     expect(derivedReason('   ', 'anything', undefined)).toBeUndefined();
+  });
+});
+
+describe('derivedJoinReason', () => {
+  const shown = ['Your code is 482913'];
+
+  it('names the token rule for values typed in a row that join into a code the screen showed as a word', () => {
+    expect(derivedJoinReason('482913', 'enter the code', undefined, shown)).toBe('minted-token');
+    expect(derivedJoinReason('482913', 'enter the code', undefined, ['Code', '482913'])).toBe('whole-node');
+  });
+
+  it('replays a joined value the instruction or the params spell out', () => {
+    expect(derivedJoinReason('482913', 'enter the code', { code: '482913' }, shown)).toBeUndefined();
+    expect(derivedJoinReason('482913', 'enter the code 482913', undefined, shown)).toBeUndefined();
+  });
+
+  it('keeps values that join into no shown text, or into part of a longer word', () => {
+    expect(derivedJoinReason('JaneDoe', 'fill in the name', undefined, ['Welcome'])).toBeUndefined();
+    expect(derivedJoinReason('82913', 'enter the code', undefined, shown)).toBeUndefined();
+    expect(derivedJoinReason('', 'enter the code', undefined, shown)).toBeUndefined();
+  });
+
+  it('applies none of the date rule to a join: each piece was already judged on its own', () => {
+    expect(derivedJoinReason('09:30', 'book the morning slot', undefined, [])).toBeUndefined();
   });
 });

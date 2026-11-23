@@ -33,6 +33,7 @@ test('checkout summary', async ({ screen }) => {
 | [`expect(fixture)`](#browser-matchers) | The engine's matcher set |
 | [`expect(value, message?)`](#value-matchers) | `ValueExpectation<T>` |
 | [`expect.poll(read, options?)`](#polling-a-value) | `PollExpectation<T>` |
+| [`expect(fn).toPass(options?)`](#retrying-a-block) | `Promise<void>` |
 | [`expect.soft(actual, message?)`](#soft-assertions) | The same matchers, failures kept |
 | [`expect.any(Class)` and others](#asymmetric-matchers) | `AsymmetricMatcher` |
 
@@ -76,6 +77,7 @@ await expect(screen.getByTestId('cart-empty'), 'the cart is empty').toBeVisible(
 | [`toBeAttached`](#tobeattached) | Waits for one match to exist |
 | [`toBeEnabled`](#tobeenabled-and-tobedisabled) | Waits for enabled state |
 | [`toBeDisabled`](#tobeenabled-and-tobedisabled) | Waits for disabled state |
+| [`toBeEditable`](#tobeeditable) | Waits for an enabled control that is not read-only |
 | [`toBeChecked`](#tobechecked-tobeselected-and-tobeexpanded) | Waits for checked state |
 | [`toBeSelected`](#tobechecked-tobeselected-and-tobeexpanded) | Waits for selected state |
 | [`toBeExpanded`](#tobechecked-tobeselected-and-tobeexpanded) | Waits for expanded state |
@@ -134,6 +136,40 @@ Playwright's `toBeDisabled` gives:
   that fieldset's first `<legend>`.
 - `aria-disabled="true"` on an ancestor disables the widgets below it until
   an `aria-disabled="false"` cuts the chain.
+
+#### `toBeEditable`
+
+Waits for an enabled control that is not read-only.
+
+```ts
+await expect(screen.getByLabel('Email')).toBeEditable();
+await expect(screen.getByLabel('Order id')).toBeEditable({ editable: false }); // read-only or disabled
+```
+
+- Read-only is the state the engine reports. The web engine follows
+  Playwright's rules for native controls and `aria-readonly`, using e2e's
+  roles and the disabled state that `toBeEnabled()` reports. An `input`, `textarea`, or
+  `select` reads its `readonly` attribute alone, with any value. An element
+  of a role that takes `aria-readonly` (`textbox`, `searchbox`, `combobox`,
+  `listbox`, `checkbox`, `switch`, `slider`, `spinbutton`, `gridcell`, and
+  the rest) reads `aria-readonly="true"`, in any case. An editing host reads
+  it only by its ARIA role, explicit or from its tag (a `td` in a grid is a
+  `gridcell`); a plain `<div contenteditable>` has none. Any other editing
+  host, and any element inside one, is never read-only.
+- A disabled node is not editable either, as
+  [`toBeEnabled`](#tobeenabled-and-tobedisabled) reads it.
+- Any other node, such as a button, has no read-only state. It fails the
+  matcher, negated too, and the failure message says so.
+- On a device, a text field has a read-only state only where the platform
+  reports whether it takes text, as Android does. iOS does not, so an iOS
+  field fails the matcher rather than pass as a guess.
+- On a Mac, a text field is read-only when macOS reports its value cannot be
+  set. A combo box is editable when it takes text; a pop-up menu, which takes
+  none, has no read-only state.
+- The engines report this state from the `@e2e-dev/web`,
+  `@e2e-dev/mobile`, and `@e2e-dev/desktop` releases that need `e2e`
+  0.25.0. With an older engine, every node fails with
+  `no read-only state`: update the engine with `e2e`.
 
 #### `toBeChecked`, `toBeSelected`, and `toBeExpanded`
 
@@ -652,27 +688,39 @@ await expect.poll(() => readStatus(), { message: 'the batch never finished' }).n
 
 | Option | Type | Default |
 | --- | --- | --- |
-| `timeout` | `number` | `config.assertionTimeout` during an attempt, 5000 ms outside one |
-| `interval` | `number` | `100` |
+| `timeout` | `number` | `config.assertionTimeout` during an attempt or hook, 5000 ms outside both |
+| `interval` (deprecated) | `number` | - |
+| `intervals` | `readonly number[]` | `[100, 250, 500, 1000]` |
 | `message` | `string` | - |
 
 - `timeout` is the deadline in milliseconds, a finite number 0 or more. It is
   capped by the test deadline in the body, or the hook's `cleanupTimeout`
-  during `afterEach`. `0` polls until that cap, so outside a test it is
-  `INVALID_CONFIG`.
+  during `afterEach`. In `beforeAll`, `afterAll`, and worker fixture teardown,
+  it is capped by the hook deadline. `0` polls until that cap, so outside a
+  test, hook, or hosted session it is `INVALID_CONFIG`. The maximum timeout
+  is 2147483647 ms.
 - `interval` is the pause between reads in milliseconds, a finite number
-  above 0.
+  above 0. It is deprecated: pass `intervals: [<ms>]`. It will be removed no
+  earlier than April 1, 2027.
+- `intervals` is a non-empty list of pauses in milliseconds. Each entry
+  must be a positive safe integer. Pauses are used in order. The last pause is
+  repeated.
 - `message` is an extra line in the timeout error, after the matcher line.
 
 Every value matcher is available, returning a promise.
 
 - Each sample calls `read` and runs the matcher. A matcher failure or a
-  `read` that throws is one failing sample; a `read` that hangs is cut at the
-  deadline.
+  `read` that throws is one failing sample unless `read` calls `test.skip()`
+  or `test.fixme()`; a `read` that hangs is cut at the deadline. Either call
+  ends the poll and marks the test skipped.
 - `toMatchSchema` resolves to the schema's output for the passing read.
 - When the attempt is cancelled, the loop stops with `CANCELLED`. At the
-  attempt's deadline it stops with `ASSERTION_FAILED`, naming the deadline.
-  A `read` in flight is abandoned, not stopped: work it started can go on.
+  attempt's deadline the test or hosted session fails with `TEST_TIMEOUT`.
+  If a sample failed, the last failure is recorded under `secondaryErrors`
+  for a test body or hosted session. For a suite hook or worker fixture
+  teardown, the last failure is included in the timeout message.
+  A `read` in flight is abandoned, not stopped: work it started can go on,
+  except that running steps are cancelled and later step calls are refused.
 - `expect.poll` is not recorded as a report step; a timeout surfaces only as
   the test's failure.
 
@@ -689,7 +737,7 @@ last: expected "running" not to be "running"
 | Throws | When |
 | --- | --- |
 | `ASSERTION_FAILED` | The deadline passed without a passing sample |
-| `INVALID_CONFIG` | `timeout` or `interval` out of range, before the first read |
+| `INVALID_CONFIG` | Options not a plain object, an unknown option, `timeout`, `interval`, or `intervals` out of range, or both `interval` and `intervals` set, before the first read |
 | `CANCELLED` | The attempt was cancelled or timed out |
 | `STEP_NOT_AWAITED` | The phase that started the poll returned while it still ran |
 | `HOOK_FAILED` | A `beforeAll` or `afterAll` hook returned while its poll still ran |
@@ -707,6 +755,83 @@ under `secondaryErrors`, and a suite hook reports it as `HOOK_FAILED`.
 A poll never fails a later test: a poll started by work its phase left
 running, such as a body past its timeout, is cancelled before its first
 read.
+
+### Retrying a block
+
+`expect(fn).toPass()` retries a block until it stops throwing. Use it when
+several assertions must pass in the same try. For a single changing value,
+use [`expect.poll`](#polling-a-value).
+
+```ts
+await expect(async () => {
+  const response = await fetch(`${app.baseUrl}/api/orders/42`);
+  expect(response.status).toBe(200);
+  await expect(screen.getByRole('status')).toHaveText('Ready', { timeout: 200 });
+}, 'the order is ready').toPass({ timeout: 5_000 });
+```
+
+| Option | Type | Default |
+| --- | --- | --- |
+| `timeout` | `number` | [`config.toPass.timeout`](/reference/config#topass), else `0` |
+| `intervals` | `readonly number[]` | [`config.toPass.intervals`](/reference/config#topass), else `[100, 250, 500, 1000]` |
+
+- `timeout` is the deadline in milliseconds, from 0 through 2147483647. At
+  `0` there is no timeout, and the block is retried until the test or hook
+  deadline. Outside a test or hook, a positive `timeout` is required.
+- `intervals` is the list of pauses between tries, in milliseconds. Each
+  entry must be a positive safe integer. The last entry repeats.
+
+Each try calls the block and awaits it.
+
+- A try fails when the block throws or its promise rejects, except when it
+  calls `test.skip()` or `test.fixme()`. Either call ends the retry and marks
+  the test skipped. The block is called again after the next pause if the
+  try fails.
+- `.not.toPass()` passes on the first try that fails. It fails at the
+  deadline when every try passed.
+- `expect.soft(fn).toPass()` keeps a timeout as a soft failure, and the test
+  body continues.
+- `expect(fn, message)` adds `message` to the timeout error.
+- Await every `toPass` call. The rules are the same as for
+  [a poll](#polling-a-value).
+
+Inside the block:
+
+- A locator matcher waits its full assertion timeout on each try. Give it a
+  short `timeout` so more tries fit before the deadline.
+- `expect.soft` never fails a try, because its failures are kept for the end
+  of the test body. Use `expect`.
+- Steps from every try appear in the report, so a test that passed can show
+  failed steps from its early tries.
+- When a try fails or is cut at the deadline, steps still running in it are
+  cancelled. Later step calls from that try are refused.
+
+At the deadline it throws `ASSERTION_FAILED` naming the call, then `message`
+when given, then the last error.
+
+```text
+expect(...).toPass() timed out after 5000 ms
+the order is ready
+last: expected 202 to be 200
+```
+
+The last line is `last: no try completed` when no try finished, and
+`last: the block passed` for `.not.toPass()`.
+
+With no `timeout`, a block that never passes runs until the test times out.
+The error is then `TEST_TIMEOUT`, or the hook's timeout error in a hook.
+If a try failed, the block's last error is recorded under `secondaryErrors`
+for a test body or hosted session. For a suite hook or worker fixture
+teardown, the last error is included in the timeout message.
+
+| Throws | When |
+| --- | --- |
+| `ASSERTION_FAILED` | The deadline passed without a passing try |
+| `INVALID_ARGUMENT` | The value given to `expect` is not a function |
+| `INVALID_CONFIG` | Options not a plain object, an unknown option, `timeout` or `intervals` out of range, or no positive `timeout` outside a test or hook, before the first try |
+| `CANCELLED` | The attempt was cancelled or timed out |
+| `STEP_NOT_AWAITED` | The phase that started the call returned while it still ran |
+| `HOOK_FAILED` | A `beforeAll` or `afterAll` hook returned while its call still ran |
 
 ## Behavior
 
@@ -804,6 +929,7 @@ export interface ExpectCall {
   <L extends Locator>(actual: NotAny<L>, message?: string): AsyncExpectation;
   <S extends Screen>(actual: NotAny<S>, message?: string): ScreenExpectation;
   <E extends object>(actual: Expectable<E>): E;
+  <F extends () => unknown>(actual: NotAny<F>, message?: string): PassExpectation<F>;
   <T>(actual: T, message?: string): ValueExpectation<T>;
 }
 
@@ -812,6 +938,7 @@ export interface SoftExpectCall {
   <L extends Locator>(actual: NotAny<L>, message?: string): AsyncExpectation;
   <S extends Screen>(actual: NotAny<S>, message?: string): ScreenExpectation;
   <E extends object>(actual: Expectable<E>): E;
+  <F extends () => unknown>(actual: NotAny<F>, message?: string): PassExpectation<F, SoftValueExpectation<F>>;
   <T>(actual: T, message?: string): SoftValueExpectation<T>;
 }
 
@@ -850,6 +977,8 @@ export interface AsyncExpectation {
   toBeEnabled(options?: { enabled?: boolean; timeout?: number }): Promise<void>;
   /** Waits for disabled state. */
   toBeDisabled(options?: { timeout?: number }): Promise<void>;
+  /** Waits for an enabled control that is not read-only; `editable: false` waits for a disabled or read-only one. A node with no read-only state, a button included, fails either way. */
+  toBeEditable(options?: { editable?: boolean; timeout?: number }): Promise<void>;
   /** Waits for checked state; `checked: false` waits for unchecked state. */
   toBeChecked(options?: { checked?: boolean; timeout?: number }): Promise<void>;
   /** Waits for selected state. */
@@ -1023,8 +1152,13 @@ export interface AsymmetricMatcher {
 export interface PollOptions {
   /** Deadline in milliseconds. Default 5000. */
   timeout?: number;
-  /** Pause between reads in milliseconds. Default 100. */
+  /**
+   * Pause between reads in milliseconds.
+   * @deprecated Pass `intervals: [<ms>]`.
+   */
   interval?: number;
+  /** Pauses between reads in milliseconds. Default [100, 250, 500, 1000]. The last pause is repeated. */
+  intervals?: readonly number[];
   /** Extra line in the timeout error, after the matcher line. */
   message?: string;
 }
@@ -1050,5 +1184,26 @@ export type NegatedPollExpectation<T> = {
   readonly not: PollExpectation<T>;
 } & {
   readonly [K in Exclude<keyof ValueExpectation<T>, 'not'>]: (...args: Parameters<ValueExpectation<T>[K]>) => Promise<void>;
+};
+```
+
+### `PassOptions` and `PassExpectation`
+
+```ts
+export type PassOptions = {
+  /** Timeout in milliseconds. By default, only the phase deadline applies. */
+  timeout?: number;
+  /** Pauses between tries in milliseconds. Default [100, 250, 500, 1000]. The last pause is repeated. */
+  intervals?: readonly number[];
+};
+
+type PassMatcher = {
+  /** Retries the block until the assertion passes or the deadline is reached. */
+  toPass(options?: PassOptions): Promise<void>;
+};
+
+/** Value matchers for a function, with retries for positive and negated assertions. */
+export type PassExpectation<T, Value = ValueExpectation<T>> = Omit<Value, 'not'> & PassMatcher & {
+  readonly not: NegatedValueExpectation<T, PassExpectation<T, Value>> & PassMatcher;
 };
 ```

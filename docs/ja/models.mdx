@@ -175,7 +175,7 @@ const agent = {
 };
 ```
 
-フォールバックには `gateway()` を使ってください。[Vercel OIDC](#vercel-oidc-instead-of-a-key) は、確認できる環境変数がなくても認証できるためです。`.env` のキーは、このコードより前に [`process.loadEnvFile()`](/reference/config#loading) が実行された場合にだけ認識されます。
+フォールバックには `gateway()` を使ってください。`gateway()` は、条件で確かめられる環境変数がなくても [Vercel OIDC](#vercel-oidc-instead-of-a-key) で認証できるためです。`.env` のキーは、このコードより前に [`process.loadEnvFile()`](/reference/config#loading) が実行された場合にだけ認識されます。
 
 別のモデルで記録したステップも引き続き再生され、記録したモデル名が表示されます。[一致が必要な情報](/cache#what-must-match)を参照してください。
 

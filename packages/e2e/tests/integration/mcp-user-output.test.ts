@@ -8,6 +8,7 @@
  * An error nobody caught is logged redacted, and the server shuts down.
  */
 
+import { randomBytes } from 'node:crypto';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Client } from '@modelcontextprotocol/client';
@@ -78,6 +79,21 @@ console.log(\`broken config: \${token}\`);
 throw new Error('config refuses to load');
 `;
 
+/** A provider key only `.env` holds, which a config loads and then quotes in its failure. */
+const DOTENV_KEY = `gsk-mcp-dotenv-${randomBytes(12).toString('hex')}`;
+
+const DOTENV_CONFIG = `process.loadEnvFile('.env');
+throw new Error('config failed with ' + process.env.GROQ_API_KEY);
+`;
+
+/** Another key, in a file of its own, so neither case can register the other's key first. */
+const INVALID_KEY = `gsk-mcp-invalid-${randomBytes(12).toString('hex')}`;
+
+/** A config that loads that key and exports it where a target belongs, which the config check quotes. */
+const DOTENV_INVALID_CONFIG = `process.loadEnvFile('invalid.env');
+export default { targets: [process.env.MISTRAL_API_KEY] };
+`;
+
 interface ToolText {
   readonly text: string;
   readonly isError: boolean;
@@ -101,12 +117,20 @@ describe('e2e mcp redacts what user code prints', { timeout: 120_000 }, () => {
   };
 
   beforeAll(async () => {
-    project = createProject({ 'e2e.config.ts': CONFIG, 'kiosk.ts': KIOSK, 'broken.config.ts': BROKEN_CONFIG });
+    project = createProject({
+      'e2e.config.ts': CONFIG,
+      'kiosk.ts': KIOSK,
+      'broken.config.ts': BROKEN_CONFIG,
+      'dotenv.config.ts': DOTENV_CONFIG,
+      'dotenv-invalid.config.ts': DOTENV_INVALID_CONFIG,
+      'invalid.env': `MISTRAL_API_KEY=${INVALID_KEY}\n`,
+      '.env': `GROQ_API_KEY=${DOTENV_KEY}\n`,
+    });
     const transport = new StdioClientTransport({
       command: process.execPath,
       args: [CLI, 'mcp', '--headless'],
       cwd: project.dir,
-      env: { ...(process.env as Record<string, string>), CI: '' },
+      env: Object.fromEntries(Object.entries({ ...(process.env as Record<string, string>), CI: '' }).filter(([name]) => name !== 'GROQ_API_KEY' && name !== 'MISTRAL_API_KEY')),
       stderr: 'pipe',
     });
     transport.stderr!.on('data', (chunk: Buffer) => {
@@ -128,6 +152,22 @@ describe('e2e mcp redacts what user code prints', { timeout: 120_000 }, () => {
     expect(opened.text).toContain('config refuses to load');
     await vi.waitFor(() => expect(stderr).toContain('withheld'));
     expect(stderr).not.toContain(TOKEN);
+  });
+
+  it('names a key the config loaded by its marker when the config then fails', async () => {
+    const opened = await invoke('open_session', { config: 'dotenv.config.ts' });
+    expect(opened.isError).toBe(true);
+    expect(opened.text).toContain('config failed with <secret:GROQ_API_KEY>');
+    expect(opened.text).not.toContain(DOTENV_KEY.slice(-16));
+    expect(stderr).not.toContain(DOTENV_KEY.slice(-16));
+  });
+
+  it('names a key the config loaded by its marker when the config check quotes it', async () => {
+    const opened = await invoke('open_session', { config: 'dotenv-invalid.config.ts' });
+    expect(opened.isError).toBe(true);
+    expect(opened.text).toContain('<secret:MISTRAL_API_KEY>');
+    expect(opened.text).not.toContain(INVALID_KEY.slice(-16));
+    expect(stderr).not.toContain(INVALID_KEY.slice(-16));
   });
 
   it('keeps the protocol working and redacts the config and a project tool on stdout and stderr', async () => {

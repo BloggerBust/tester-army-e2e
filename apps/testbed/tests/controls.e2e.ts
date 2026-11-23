@@ -60,6 +60,15 @@ test.describe('controls', { requires: ['browser'], tags: ['controls'] }, () => {
     await expect(screen.getByRole('button', { name: 'Publish', disabled: false })).toHaveCount(1);
   });
 
+  test('retries a block until Publish is enabled and matches the enabled query', async ({ screen }) => {
+    await screen.getByRole('button', 'Prepare').tap();
+
+    await expect(async () => {
+      await expect(screen.getByRole('button', 'Publish')).toBeEnabled({ timeout: 25 });
+      await expect(screen.getByRole('button', { name: 'Publish', disabled: false })).toHaveCount(1, { timeout: 25 });
+    }).toPass({ timeout: 3000, intervals: [25, 50, 100] });
+  });
+
   test('check and uncheck move checked state, and one radio checks at a time', async ({ screen }) => {
     const agree = screen.getByLabel('Agree to terms');
     expect(await agree.isChecked()).toBe(false);

@@ -1,6 +1,7 @@
 /** Point and box arithmetic shared by the pixel tier, the point tap, and target relocation. */
 
 import type { SemanticNode, ViewportPoint, ViewportSize } from '../engine/contract.ts';
+import type { ScreenCoordinate, ScreenPoint } from '../types.ts';
 import { TestError } from './errors.ts';
 
 /** A node's box, in the viewport's CSS pixels. */
@@ -55,6 +56,34 @@ export function clampToViewport(
     x: clamp(Math.round(point.x), 0, Math.max(0, viewport.width - 1)),
     y: clamp(Math.round(point.y), 0, Math.max(0, viewport.height - 1)),
   };
+}
+
+/** Digits with an optional fraction, then `%`: no sign, exponent, or space. */
+const PERCENTAGE = /^\d+(?:\.\d+)?%$/;
+
+/** Whether a coordinate is a percentage of the viewport from `'0%'` through `'100%'`. */
+export function isPercentage(value: unknown): value is `${number}%` {
+  return typeof value === 'string' && PERCENTAGE.test(value) && Number.parseFloat(value) <= 100;
+}
+
+/** Whether both coordinates of a point are CSS pixels, so it resolves without reading the viewport. */
+export function isPixelPoint(point: ScreenPoint): point is ViewportPoint {
+  return typeof point.x === 'number' && typeof point.y === 'number';
+}
+
+/**
+ * Resolves a point a test names to CSS pixels: a percentage is that share of
+ * the viewport's width (x) or height (y), rounded to a whole pixel and kept on
+ * the last one, so `'100%'` stays inside the viewport. Pixels pass through.
+ */
+export function resolveScreenPoint(point: ScreenPoint, viewport: ViewportSize): ViewportPoint {
+  return { x: resolveCoordinate(point.x, viewport.width), y: resolveCoordinate(point.y, viewport.height) };
+}
+
+/** One coordinate of `resolveScreenPoint` along a viewport side of `size` CSS pixels. */
+function resolveCoordinate(value: ScreenCoordinate, size: number): number {
+  if (typeof value === 'number') return value;
+  return clamp(Math.round((Number.parseFloat(value) / 100) * size), 0, Math.max(0, size - 1));
 }
 
 /** True when the point lies inside the box: on its top and left edges, short of its bottom and right ones. */

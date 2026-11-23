@@ -5,11 +5,17 @@
  * ask permission for a tool of the agent's own, run one
  * without asking, say something, fail the turn with a message in the error's
  * data, or hang until cancelled or for good. Every prompt and tool result is appended to `ACP_LOG` as JSON
- * lines, with the tool list the session saw, and the `E2E_` variables and
- * `CODEX_CONFIG` it started with. `ACP_USAGE` is the usage each turn reports. With `ACP_HANG_INIT` set, the agent never
- * answers `initialize`.
+ * lines, with the tool list the session saw, the names of the `E2E_`
+ * variables it started with, the fields of `CODEX_CONFIG` the tests read,
+ * a hash of `DEFAULT_AUTH_REQUEST`, and whether each Codex sign-in variable
+ * is unset, empty, or set, and whether `NODE_DEBUG` is: never a credential. `ACP_USAGE` is the usage
+ * each turn reports. With `ACP_HANG_INIT` set, the agent never answers
+ * `initialize`; with `ACP_AUTH_REQUIRED=1` it refuses `session/new` as
+ * not signed in, and with `ACP_PROMPT_AUTH_REQUIRED=1` every prompt.
  */
 
+import { spawn } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { appendFileSync } from 'node:fs';
 import { Readable, Writable } from 'node:stream';
 import {
@@ -59,8 +65,92 @@ const log = (entry: unknown) => {
   }
 };
 
+/** The Codex adapter's auth methods: any other `methodId` is logged as `other`, since it could be anything. */
+const KNOWN_METHODS = new Set(['api-key', 'chat-gpt', 'chat-gpt-device-code', 'gateway']);
+
+/**
+ * The `DEFAULT_AUTH_REQUEST` the agent got, as the method it names and a
+ * SHA-256 of the whole request, never the request: it may carry a key.
+ * Unset or empty is none, as the Codex adapter reads it; anything it could
+ * not parse, spaces included, is `unreadable`.
+ */
+function authRequest(request: string | undefined): { methodId: unknown; sha256: string } | 'unreadable' | null {
+  if (request === undefined || request === '') return null;
+  try {
+    const { methodId } = JSON.parse(request) as { methodId?: unknown };
+    return { methodId: typeof methodId === 'string' && KNOWN_METHODS.has(methodId) ? methodId : 'other', sha256: createHash('sha256').update(request).digest('hex') };
+  } catch {
+    return 'unreadable';
+  }
+}
+
+/** Whether each variable Codex signs in from is unset, empty, or set: never a value. */
+function authEnv(): Record<string, 'unset' | 'empty' | 'set'> {
+  const names = ['CODEX_API_KEY', 'OPENAI_API_KEY', 'DEFAULT_AUTH_REQUEST', 'APP_SERVER_LOGS'];
+  return Object.fromEntries(names.map((name) => [name, process.env[name] === undefined ? 'unset' : process.env[name] === '' ? 'empty' : 'set']));
+}
+
+/** Whether the agent started with `NODE_DEBUG`, which makes Node print each child's environment: never its value. */
+function nodeDebug(): 'unset' | 'set' {
+  return process.env['NODE_DEBUG'] === undefined ? 'unset' : 'set';
+}
+
+/** The MCP server names the stand-in `codex` lists, and the Codex features the preset switches: other names are hashed, never logged. */
+const KNOWN_SERVERS = new Set(['playwright', 'executor', 'other', 'debug']);
+const KNOWN_FEATURES = new Set([
+  'apps', 'browser_use', 'browser_use_external', 'computer_use', 'goals', 'image_generation', 'multi_agent', 'multi_agent_v2',
+  'plugins', 'shell_snapshot', 'shell_snapshot_v2', 'shell_tool', 'skill_search', 'tool_suggest', 'unified_exec', 'view_image',
+]);
+
+/** `name` when it is one of `known`, else a short hash of it, so a config cannot put arbitrary text in the log. */
+function loggedName(name: string, known: ReadonlySet<string>): string {
+  return known.has(name) ? name : `other-${createHash('sha256').update(name).digest('hex').slice(0, 8)}`;
+}
+
+/** The parts of `CODEX_CONFIG` the tests read, so nothing else in it, such as a header, reaches the log. */
+function codexConfig(config: string | undefined): string | null {
+  if (config === undefined) return null;
+  try {
+    const parsed: unknown = JSON.parse(config);
+    if (typeof parsed !== 'object' || parsed === null) return 'unreadable';
+    const { web_search, features, mcp_servers } = parsed as Record<string, unknown>;
+    // Server names and their switch only: a server's own fields, such as headers, can carry a credential.
+    const servers =
+      typeof mcp_servers === 'object' && mcp_servers !== null
+        ? Object.fromEntries(
+            Object.entries(mcp_servers).map(([name, server]) => {
+              const enabled = (server as { enabled?: unknown } | null)?.enabled;
+              return [loggedName(name, KNOWN_SERVERS), { enabled: typeof enabled === 'boolean' ? enabled : 'other' }];
+            }),
+          )
+        : 'other';
+    const flags =
+      typeof features === 'object' && features !== null
+        ? Object.fromEntries(Object.entries(features).map(([name, on]) => [loggedName(name, KNOWN_FEATURES), typeof on === 'boolean' ? on : 'other']))
+        : null;
+    return JSON.stringify({ web_search: web_search === 'disabled' || web_search === 'cached' || web_search === 'live' ? web_search : 'other', features: flags, mcp_servers: servers });
+  } catch {
+    return 'unreadable';
+  }
+}
+
 log({ pid: process.pid });
-log({ env: Object.keys(process.env).filter((name) => name.toUpperCase().startsWith('E2E_')).toSorted(), codexConfig: process.env['CODEX_CONFIG'] ?? null });
+
+// With `ACP_STARTUP_STDERR` set, the agent writes it to stderr and exits 3 before it answers anything: a start that fails quoting a value.
+// A short-lived child holds stdout open, so the client sees the exit, with its stderr, before the connection closes.
+if (process.env['ACP_STARTUP_STDERR'] !== undefined) {
+  spawn(process.execPath, ['-e', 'setTimeout(() => {}, 5000)'], { stdio: ['ignore', 'inherit', 'ignore'], detached: true }).unref();
+  // Latin-1 lets a fixture supply individual bytes, including half of a UTF-8 character.
+  const encoding = process.env['ACP_STDERR_BYTES'] === '1' ? 'latin1' : 'utf8';
+  await new Promise((resolve) => process.stderr.write(process.env['ACP_STARTUP_STDERR']!, encoding, resolve));
+  const rest = process.env['ACP_STARTUP_STDERR_REST'];
+  if (rest !== undefined) {
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    await new Promise((resolve) => process.stderr.write(rest, encoding, resolve));
+  }
+  process.exit(3);
+}
+log({ env: Object.keys(process.env).filter((name) => name.toUpperCase().startsWith('E2E_')).toSorted(), codexConfig: codexConfig(process.env['CODEX_CONFIG']), defaultAuthRequest: authRequest(process.env['DEFAULT_AUTH_REQUEST']), authEnv: authEnv(), nodeDebug: nodeDebug() });
 
 /**
  * `ACP_EXIT_DELAY_MS` holds the agent in place after SIGTERM, so a test can
@@ -118,6 +208,7 @@ agent()
       : new Promise<never>(() => undefined),
   )
   .onRequest(methods.agent.session.new, async ({ params }) => {
+    if (process.env['ACP_AUTH_REQUIRED'] === '1') throw new RequestError(-32000, 'Authentication required');
     const server = params.mcpServers[0] as Extract<McpServer, { type: 'http' }>;
     mcp = new Client({ name: 'scripted-agent', version: '1' });
     await mcp.connect(new StreamableHTTPClientTransport(new URL(server.url)));
@@ -166,6 +257,7 @@ agent()
     cancelled?.();
   })
   .onRequest(methods.agent.session.prompt, async ({ params, client }) => {
+    if (process.env['ACP_PROMPT_AUTH_REQUIRED'] === '1') throw new RequestError(-32000, 'Authentication required');
     const text = params.prompt.map((block) => (block.type === 'text' ? block.text : '')).join('\n');
     log({ prompt: text });
     screen = text;

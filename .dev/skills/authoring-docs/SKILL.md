@@ -444,14 +444,15 @@ Each group opens with one table, one row per entry. Keep it to the minimum:
 
 `docs/<language>/<path>.mdx` translates `docs/<path>.mdx`: `docs/ja/` is
 Japanese, `docs/zh/` Simplified Chinese, `docs/cs/` Czech, `docs/es/` Spanish,
-`docs/pt/` Brazilian Portuguese, `docs/hi/` Hindi, `docs/fr/` French. Each language's
+`docs/pt/` Brazilian Portuguese, `docs/hi/` Hindi, `docs/fr/` French, `docs/pl/` Polish. Each language's
 README ([`docs/ja/README.md`](../../../docs/ja/README.md),
 [`docs/zh/README.md`](../../../docs/zh/README.md),
 [`docs/cs/README.md`](../../../docs/cs/README.md),
 [`docs/es/README.md`](../../../docs/es/README.md),
 [`docs/pt/README.md`](../../../docs/pt/README.md),
 [`docs/hi/README.md`](../../../docs/hi/README.md),
-[`docs/fr/README.md`](../../../docs/fr/README.md)) has its rules, style,
+[`docs/fr/README.md`](../../../docs/fr/README.md),
+[`docs/pl/README.md`](../../../docs/pl/README.md)) has its rules, style,
 and glossary.
 
 Translations are best effort. English is the source of truth and every
@@ -474,6 +475,10 @@ expected to update a language they don't speak.
   language switcher miss until it is back in line) and the same code blocks.
   `pnpm docs:check` (`scripts/check-docs-translations.ts`) warns, without
   failing, on every page and label that is behind.
+- After you apply a review suggestion on wrapped prose, reread the whole
+  paragraph against the English page.
+  `pnpm docs:check` catches only a leftover repeated tail, not a deleted
+  sentence.
 
 ## Before you commit
 

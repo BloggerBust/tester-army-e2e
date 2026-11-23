@@ -92,6 +92,7 @@ export interface EngineHandle<Fixtures extends object = {}> extends Engine {
 | `perform`, `actions` | 片方しかない。`actions` が空、種類が重複、または `KNOWN_LOCATOR_ACTION_KINDS` にない種類を含む。 |
 | `performAt`, `pointerActions` | 片方しかない。`pointerActions` が空、種類が重複、または `POINTER_ACTION_KINDS` にない種類を含む。 |
 | `tapModifiers` | 真偽値でない、または `perform` がないのに `true`。 |
+| `selectsDevice` | 真偽値でない、または `prepare` がないのに `true`。 |
 | `isolation` | `'attempt'` と `'worker'` 以外の値。 |
 | `keyboard`, `state`, `artifacts`, `session` | 未知のキーや関数でないメンバーがある。`keyboard` に `type` と `press` がない、`state` に `capture` と `restore` の両方がない、`artifacts` に `screenshot` がない、`startVideo` と `stopVideo` の片方しかない。 |
 | `secrets` | `secrets.get()` ハンドルの配列でない。 |
@@ -118,6 +119,7 @@ export interface EngineHandle<Fixtures extends object = {}> extends Engine {
 | [`locate`](#capabilities) | メソッド |
 | [`performAt`, `pointerActions`](#pointer-actions) | メソッド、種類 |
 | [`tapModifiers`](#capabilities) | `boolean` |
+| [`selectsDevice`](#capabilities) | `boolean` |
 | [`keyboard`](#keyboard) | `EngineKeyboard` |
 | [`fixtures`](#contributed-fixtures) | ファクトリー |
 | [`isolation`](#fixture-isolation) | `'attempt' \| 'worker'` |
@@ -219,6 +221,12 @@ export interface Engine {
    * reaches the engine.
    */
   readonly tapModifiers?: boolean;
+  /**
+   * `prepare` binds the target to the device `EnginePrepareInfo.device`
+   * names, for `e2e run --device`. Without it the runner refuses the flag
+   * for the target before anything is prepared.
+   */
+  readonly selectsDevice?: boolean;
   /** capability: keyboard - requires observation. Input to whatever holds focus; see `EngineKeyboard`. */
   readonly keyboard?: EngineKeyboard;
   /**
@@ -362,6 +370,7 @@ export interface OperationContext {
 | `perform` + `actions` | `actions` | `observe` | 宣言した種類のノード操作と、プラットフォームの操作可否の検査。 |
 | `locate` | `location` | `observe` | `screen`、`Locator`、`expect(locator)`。 |
 | `tapModifiers: true` | - | `perform` | `tap`、`doubleTap`、`secondaryTap` の `modifiers`。 |
+| `selectsDevice: true` | - | `prepare` | `e2e run --device`。`prepare` が指定のデバイスを割り当てます。 |
 | `performAt` + `pointerActions` | `pointer` | `observe` | 対応するノードのないビューポート座標でのポインター操作。 |
 | `keyboard.{type,press,dismiss?}` | `keyboard` | `observe` | フォーカス中の対象への入力。 |
 | `fixtures.<name>` | `<name>` | - | エンジンが提供するフィクスチャ。 |
@@ -570,11 +579,21 @@ export interface EnginePrepareResult {
   readonly env?: Readonly<Record<string, string>>;
 }
 
+/** Who holds a target, for the lifecycle hooks: `prepare`, `init`, `finish`. */
+export interface EngineHostIdentity {
+  /**
+   * Set when a `launch()` host holds the target: a token no other host has.
+   * Hosts name their targets alike, so an engine that names what it holds
+   * after the target (a device session) adds this to keep hosts apart.
+   */
+  readonly hostId?: string | undefined;
+}
+
 /**
  * Facts handed to `prepare`, once per run and target in the runner process,
  * before any worker exists.
  */
-export interface EnginePrepareInfo {
+export interface EnginePrepareInfo extends EngineHostIdentity {
   /** The run id. */
   readonly runId: string;
   /** The target being prepared. */
@@ -609,6 +628,12 @@ export interface EnginePrepareInfo {
   /** Whether the run asked for a visible surface (`--headed`), as `EngineInitInfo` declares it. */
   readonly headed: boolean;
   /**
+   * The device `e2e run --device` names for this target, by name or id: the
+   * one to bind instead of the configured one. Only an engine that declares
+   * `selectsDevice` receives it.
+   */
+  readonly device?: string;
+  /**
    * Reports one line of progress. The runner streams it as a `notice` run
    * event, so it reaches the reporter and every host sink instead of being
    * written to a worker's stderr underneath the live status block.
@@ -619,7 +644,7 @@ export interface EnginePrepareInfo {
 
 #### `finish`
 
-ターゲットの全ワーカーが終了した後、ランナープロセスで実行・ターゲットごとに 1 回実行します。`prepare` が実行用に取得したものを解放してください。
+ターゲットの全ワーカーが終了した後、1 回の実行につきターゲットごとに 1 回、ランナープロセスで呼ばれます。`prepare` が実行用に取得したものを解放してください。
 
 ```ts
 async finish(info) {
@@ -631,7 +656,7 @@ async finish(info) {
 
 ```ts
 /** Handed to `finish`, once per run and target after the last worker is gone, with the cleanup budget of one hook. */
-export interface EngineFinishInfo extends EngineCleanupContext {
+export interface EngineFinishInfo extends EngineCleanupContext, EngineHostIdentity {
   /** The run id. */
   readonly runId: string;
   /** The target being finished. */
@@ -706,7 +731,7 @@ async init(info) {
 
 ```ts
 /** Run identity and harness-resolved facts handed to `init`, once per worker before the first step. */
-export interface EngineInitInfo {
+export interface EngineInitInfo extends EngineHostIdentity {
   /** The run id. */
   readonly runId: string;
   /** The target this worker serves. */
@@ -883,7 +908,7 @@ async endAttempt(context) {
 
 `init` を実行しなかった場合も含め、ワーカーごとに 1 回実行します。
 
-`context.reuseSignal` がない、または中断済みなら、最終的なクリーンアップが必要です。有効なシグナルは、代替ワーカー用に実行所有のリソースを保持することを許可します。保持するエンジンは、フックが完了するまで許可の取り消しを監視する必要があります。最終終了、強制中断、親との切断で許可は取り消されます。クリーンアップの制限時間には、引き続き `context.signal` と `context.timeoutMs` を使います。
+`context.reuseSignal` がない、または中断済みなら、最終的なクリーンアップが必要です。シグナルが有効な場合は、実行が所有するリソースを、後を引き継ぐワーカーのために保持してかまいません。保持するエンジンは、フックが完了するまで、この許可が取り消されないかを監視する必要があります。最終終了、強制中断、親との切断で許可は取り消されます。クリーンアップの制限時間には、引き続き `context.signal` と `context.timeoutMs` を使います。
 
 クリーンアップは、その制限時間内で可能な限り行います。ワーカーの終了後や、再利用が許可された状態で dispose が完了した後のクリーンアップは、ランナーは保証しません。
 
@@ -989,7 +1014,14 @@ export interface EngineSnapshot {
   readonly treeUnavailable?: true;
   /** Masked pixels, when requested and producible; omitted otherwise. */
   readonly pixels?: ObservationPixels;
-  /** Regions masked in `pixels`; the harness checks it covers every secure node. */
+  /**
+   * Regions masked in the screenshot; the harness checks it covers every secure
+   * node. An engine asked for pixels (`pixels: true`) that cannot mask every
+   * secure node on screen omits `pixels` and still reports the regions it
+   * could mask, fewer than the secure nodes, so `toHaveScreenshot` fails with
+   * `POLICY_DENIED` and the agent reads `MASKING_UNPROVEN`, not a missing
+   * screenshot.
+   */
   readonly maskedRegionCount?: number;
 }
 
@@ -1106,6 +1138,11 @@ export type LocatorAction =
   | { readonly kind: 'press'; readonly key: Key }
   | { readonly kind: 'selectOption'; readonly value: SelectOption }
   | { readonly kind: 'setInputFiles'; readonly paths: readonly string[] }
+  | {
+      readonly kind: 'setInputFilePayloads';
+      /** In-memory files; an empty array clears the input. The protocol encodes bytes only on the wire. */
+      readonly files: readonly { readonly name: string; readonly mimeType: string; readonly buffer: Uint8Array }[];
+    }
   | { readonly kind: 'dragTo'; readonly target: NodeRef }
   | {
       readonly kind: 'swipe';
@@ -1137,7 +1174,7 @@ export const LOCATOR_ACTION_KINDS = [
 ] as const satisfies readonly LocatorActionKind[];
 
 /** Every action kind understood by this version of core. */
-export const KNOWN_LOCATOR_ACTION_KINDS = [...LOCATOR_ACTION_KINDS, 'blur'] as const satisfies readonly LocatorActionKind[];
+export const KNOWN_LOCATOR_ACTION_KINDS = [...LOCATOR_ACTION_KINDS, 'blur', 'setInputFilePayloads'] as const satisfies readonly LocatorActionKind[];
 ```
 
 #### ポインター操作
@@ -1479,7 +1516,10 @@ export const RETRYABLE_ENGINE_ERROR_CODES: ReadonlySet<EngineErrorCode> = new Se
 
 #### 期限間際のタイムアウト
 
-待機中に一度検索または読み取りが完了した後、残り時間が 100 ms 未満、または完了済みの検索・読み取りの最長時間未満で次の処理を始め、その処理が `OPERATION_TIMEOUT` になった場合は、代わりに待機を終了します。
+検索または読み取りが `OPERATION_TIMEOUT` になっても、次の 2 つをどちらも満たす場合は、`ACTION_FAILED` にはならず、その時点で待機を終えます。
+
+- 同じ待機の中で、それより前に検索または読み取りが 1 回以上完了している。
+- その検索または読み取りを始めた時点で、待機中の呼び出しの期限までの残り時間が、100 ms 未満か、完了済みの検索・読み取りで最も長かった所要時間未満だった。
 
 | 待機中の呼び出し | 失敗コード |
 | --- | --- |
@@ -1900,7 +1940,7 @@ export interface VideoLink {
 - `startVideo` は `startAttempt` とセッション復元の後、起動の制限時間内で実行します。
 - `stopVideo` は `endAttempt` の前、クリーンアップの制限時間内で実行します。
 - 動画モードを明示した場合、`startVideo` の失敗は起動失敗、`stopVideo` の失敗はクリーンアップ失敗になります。デフォルトのモードでは、どちらが失敗しても通知せず動画を破棄します。
-- ランナーが保持する録画を決め、試行が保持しないファイルを削除します。
+- どの録画を残すかはランナーが決め、試行で残さないファイルは削除します。
 
 #### プロバイダーによる録画
 
@@ -1913,7 +1953,7 @@ async stopVideo(context) {
 },
 ```
 
-- `isProviderRecording(value)` は、プロバイダーの `record` が返した値が録画かを判定します。解析可能な `startedAt` と `stop` が必要です。保持する前に確認し、不正な録画が停止時ではなく開始時に、名前付きで失敗するようにしてください。
+- `isProviderRecording(value)` は、プロバイダーの `record` が返した値が録画かを判定します。解析可能な `startedAt` と `stop` が必要です。録画を保持する前にこれで確認し、不正な録画は停止時ではなく開始時に、プロバイダー名を示すエラーで失敗させてください。
 - `stopProviderRecording` は、試行の `video` ディレクトリを作成し、それを渡して `stop` を呼びます。ファイルはそのディレクトリに実在する単純なファイル名、リンクはメディアタイプ付きの `http(s)` URL である必要があります。
 - `stopVideo` が返せるよう、`{ path: 'video/<file>', startedAt }` または `{ url, mediaType, startedAt }` を返します。
 - target 引数の型は `ProviderRecordingTarget` としてエクスポートします。
@@ -2106,7 +2146,7 @@ defineEngine({ name: 'device', /* ... */ isolation: 'worker' });
 
 `@e2e-dev/mobile` は `'worker'` を宣言しています。そのようなエンジンでは、次のように動作します。
 
-- スイートのフックは、ひとまとまりの実行ごとに、専用の短い試行（`startAttempt`、続いて `endAttempt`）の中で実行します。ワーカー終了時のワーカーフィクスチャの後処理も同様です。`startAttempt` では何も起動しないように実装してください。
+- スイートのフックは、一通り実行するたびに、その回専用の短い試行（`startAttempt`、続いて `endAttempt`）の中で実行します。ワーカー終了時のワーカーフィクスチャの後処理も同様です。`startAttempt` では何も起動しないように実装してください。
 - 直列実行グループ、または `e2e mcp` セッションが実行するテストでは、フックはすでに開いている試行の上で実行します。エンジンが同時に実行する試行は 1 つだけです。
 - 試行を開けない場合や、実行が中断された場合、フックはそれらの組み込みフィクスチャなしで実行します。[`beforeAll`](/reference/test#beforeall) を参照してください。
 
@@ -2211,11 +2251,17 @@ export interface SemanticNode {
   /**
    * Boolean states the platform reports. `pressed` is a toggle button's
    * pressed state; `secure` marks a field whose value is never observed.
+   * `readonly` is present only on a node that has a read-only state, as
+   * Playwright's `getReadonly` decides on the web (an input, textarea, or
+   * select by its `readonly` attribute, an element whose ARIA role takes
+   * `aria-readonly` by that attribute, any other editing host `false`), and
+   * only where the platform knows, as Android does: absent means the node has
+   * no read-only state to read, not `false`.
    */
   readonly states?: Readonly<
     Partial<
       Record<
-        'checked' | 'disabled' | 'selected' | 'expanded' | 'pressed' | 'focused' | 'hidden' | 'secure',
+        'checked' | 'disabled' | 'selected' | 'expanded' | 'pressed' | 'focused' | 'hidden' | 'secure' | 'readonly',
         boolean
       >
     >

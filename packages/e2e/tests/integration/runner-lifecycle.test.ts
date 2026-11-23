@@ -1053,7 +1053,7 @@ test('selected', async () => {});
         const outcome = await runExisting(project, { runOptions: { shard, passWithNoTests: true, onEvent: (event) => { events.push(event.type); } } });
         expect(outcome.exitCode).toBe(2);
         expect(outcome.report.run.errors.map((error) => [error.code, error.message])).toEqual([['INVALID_CONFIG', message]]);
-        expect(events).not.toContain('plan');
+        expect(events).not.toContain('collected');
         await expect(listExisting(project, { shard })).rejects.toMatchObject({ code: 'INVALID_CONFIG', message });
       }
       const zeroIndex = await runExisting(project, { runOptions: { shard: { index: 0, total: 1 } } });
@@ -1086,7 +1086,7 @@ test('after the group too', async () => {});
       };
       let planned = 0;
       const { outcome, project } = await runProject(files, {
-        runOptions: { maxFailures: 1, onEvent: (event) => { if (event.type === 'plan') planned = event.total; } },
+        runOptions: { maxFailures: 1, onEvent: (event) => { if (event.type === 'collected') planned = event.total; } },
       });
       expect(outcome.exitCode).toBe(1);
       expect(planned).toBe(5);
@@ -1201,7 +1201,7 @@ test('never started either', async () => {});
         runOptions: {
           interruptSignal: controller.signal,
           onEvent: (event) => {
-            if (event.type === 'plan') planned = event.total;
+            if (event.type === 'collected') planned = event.total;
             if (event.type === 'test-started') controller.abort();
           },
         },

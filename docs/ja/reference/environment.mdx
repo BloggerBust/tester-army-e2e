@@ -17,7 +17,7 @@ export E2E_TELEMETRY_DISABLED=1
 
 ### モデル
 
-モデルは `e2e.config.ts` で設定します。API キーは各プロバイダーが読み取ります。`gateway()` は `AI_GATEWAY_API_KEY`、`openrouter()` は `OPENROUTER_API_KEY`、`openai()` は `OPENAI_API_KEY` を使います。`AI_GATEWAY_API_KEY` がなければ、`gateway()` は [Vercel OIDC トークン](/models#vercel-oidc-instead-of-a-key)を使います。認証情報がない場合、最初のモデル呼び出しで失敗します。サブスクリプションモデルは、代わりに保存済みのログイン情報を使います。[モデル](/models)と[サブスクリプション](/subscriptions)を参照してください。
+モデルは `e2e.config.ts` で設定します。API キーは各プロバイダーが読み取ります。`gateway()` は `AI_GATEWAY_API_KEY`、`openrouter()` は `OPENROUTER_API_KEY`、`openai()` は `OPENAI_API_KEY` を使います。`AI_GATEWAY_API_KEY` がなければ、`gateway()` は [Vercel OIDC トークン](/models#vercel-oidc-instead-of-a-key)を使います。認証情報がない場合、最初のモデル呼び出しで失敗します。サブスクリプションモデルは、代わりに保存済みのログイン情報を使います。`@e2e-dev/acp` のコーディングエージェント用プリセット `codex()` も、Codex 自体にログインがなく `DEFAULT_AUTH_REQUEST` が空（空白のみを含む）か未設定の場合、`CODEX_API_KEY` と `OPENAI_API_KEY` のうち最初の空でない値で Codex にログインさせます。Codex は既定の認証情報ストアでそのキーをログインとして保存します。`APP_SERVER_LOGS` が設定されている間、`codex()` はログインリクエストを一切渡しません。[コーディングエージェントを使う](/subscriptions#use-your-coding-agent)を参照してください。[モデル](/models)と[サブスクリプション](/subscriptions)を参照してください。
 
 | 変数 | 例 | 判定 | 効果 |
 | --- | --- | --- | --- |

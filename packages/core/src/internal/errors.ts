@@ -29,6 +29,11 @@ export function setErrorRedactor(redact: ((text: string) => string) | undefined)
   else redactorSlot.set(globalThis, redact);
 }
 
+/** Installs `redact` as that redactor unless one is installed already. */
+export function ensureErrorRedactor(redact: (text: string) => string): void {
+  if (redactorSlot.get(globalThis) === undefined) redactorSlot.set(globalThis, redact);
+}
+
 /** Response body bytes `providerFailureMessage` quotes. */
 const MAX_PROVIDER_BODY_BYTES = 1024;
 
@@ -541,6 +546,8 @@ export function sanitizeRecordedText(text: string): string {
 
 /** Truncates a string so its UTF-8 encoding fits maxBytes without splitting a code point. */
 export function truncateUtf8(text: string, maxBytes: number): string {
+  // A UTF-16 code unit is 3 UTF-8 bytes at most, so most strings fit without being encoded.
+  if (text.length * 3 <= maxBytes) return text;
   const bytes = UTF8.encode(text);
   if (bytes.byteLength <= maxBytes) return text;
   // Back up off any UTF-8 continuation bytes (10xxxxxx) so the cut lands on a

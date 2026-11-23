@@ -173,6 +173,7 @@ export class Connection {
     // so a large message is copied once, not once per chunk.
     while (this.#closed === undefined) {
       if (this.#bodyLength === undefined) {
+        if (this.#size === 0) return;
         const buffer = this.#join();
         const headerEnd = buffer.indexOf(HEADER_DELIMITER);
         if (headerEnd === -1) return;
@@ -186,14 +187,12 @@ export class Connection {
           return;
         }
         this.#bodyLength = length;
-        this.#chunks = [buffer.subarray(headerEnd + HEADER_DELIMITER.length)];
-        this.#size = this.#chunks[0]!.length;
+        this.#keep(buffer.subarray(headerEnd + HEADER_DELIMITER.length));
       }
       if (this.#size < this.#bodyLength) return;
       const buffer = this.#join();
       const body = buffer.subarray(0, this.#bodyLength).toString('utf8');
-      this.#chunks = [buffer.subarray(this.#bodyLength)];
-      this.#size = this.#chunks[0]!.length;
+      this.#keep(buffer.subarray(this.#bodyLength));
       this.#bodyLength = undefined;
       let message: unknown;
       try {
@@ -204,6 +203,16 @@ export class Connection {
       }
       this.#dispatch(message);
     }
+  }
+
+  /**
+   * Keeps the bytes after what was just read. Nothing is kept of an empty
+   * rest: a 0-byte view would still hold the whole message it was cut from
+   * until the next chunk, and make that chunk a copy.
+   */
+  #keep(rest: Buffer): void {
+    this.#chunks = rest.length === 0 ? [] : [rest];
+    this.#size = rest.length;
   }
 
   /** The buffered bytes as one buffer, kept as the only chunk. */

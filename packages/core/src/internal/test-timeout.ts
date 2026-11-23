@@ -1,6 +1,8 @@
 /** Changing the running test's timeout from inside it: `test.setTimeout(timeout)`. */
 
 import { currentAttempt } from '../expect/attempt.ts';
+import type { AttemptBudget } from '../run/budget.ts';
+import type { PassOptions } from '../types.ts';
 import { suiteHookBrand } from './brands.ts';
 import { CollectionError, TestError } from './errors.ts';
 import { realmSlot } from './realm-slot.ts';
@@ -13,12 +15,21 @@ import { MAX_TIMER_MS } from './time.ts';
 export interface RunningSuiteHook {
   /** What runs, as a refusal names it: `an afterAll hook`. */
   readonly name: string;
+  readonly budget: AttemptBudget;
+  readonly assertionTimeout: number;
+  readonly toPass: Readonly<Required<PassOptions>>;
+  readonly recordSecondaryError?: (error: TestError) => void;
   /** Moves the hook's timeout; false once the hook's timeout race settled. */
   readonly setTimeout?: (timeoutMs: number) => boolean;
 }
 
 /** On `globalThis`, as the published attempt is: test modules share nothing else with the runner. */
 const suiteHookSlot = realmSlot<RunningSuiteHook>(suiteHookBrand);
+
+/** Returns the suite hook running outside a test attempt. */
+export function runningSuiteHook(): RunningSuiteHook | undefined {
+  return suiteHookSlot.get(globalThis);
+}
 
 /** Names `hook` as the running suite hook while `run` runs; one runs at a time per process. */
 export async function inSuiteHook<T>(hook: RunningSuiteHook, run: () => Promise<T>): Promise<T> {
@@ -39,7 +50,7 @@ export async function inSuiteHook<T>(hook: RunningSuiteHook, run: () => Promise<
  * hosted session that runs no e2e test), it is a test error.
  */
 export function setRunningTestTimeout(timeout: unknown): void {
-  const hook = suiteHookSlot.get(globalThis);
+  const hook = runningSuiteHook();
   const attempt = hook === undefined ? currentAttempt() : undefined;
   if (hook === undefined && attempt === undefined) {
     throw new CollectionError(

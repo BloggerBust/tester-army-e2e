@@ -90,7 +90,7 @@ docker run -d --name lightpanda -p 127.0.0.1:9222:9222 lightpanda/browser:nightl
 
 この場合、全ワーカーが同じサーバーを共有します。
 1 つの `lightpanda serve` が受け付ける接続数はデフォルトで 16 です。
-それ以上で実行する場合は、`--cdp-max-connections` を `workers` より大きくしてください。
+ワーカー数が 16 を超える場合は、`--cdp-max-connections` を `workers` より大きくしてください。
 
 ## オプション
 
@@ -101,9 +101,10 @@ docker run -d --name lightpanda -p 127.0.0.1:9222:9222 lightpanda/browser:nightl
 | `args` | `[]` | プロバイダーが設定するフラグの後に渡す、追加の `lightpanda serve` フラグ。 |
 
 プロバイダーは実行中、ワーカースロットごとに 1 サーバーを保持します。
-Lightpanda は試行単位のリースが再接続に使うデフォルトコンテキストの識別情報を公開しないため、`scope: 'attempt'` はありません。
-サーバーが 10 秒以内にポートで応答しない場合や、それより先にバイナリが終了した場合は取得に失敗します。
-後者では stderr がメッセージに含まれます。
+試行単位のリースは、デフォルトコンテキストの識別情報を使って再接続します。
+Lightpanda はこの識別情報を公開しないため、`scope: 'attempt'` はありません。
+サーバーが 10 秒以内にポートで応答しない場合や、それより先にバイナリが終了した場合は、リースの取得に失敗します。
+バイナリが先に終了した場合は、その stderr がメッセージに含まれます。
 
 ## ページの追加リソースを取得する
 
@@ -121,7 +122,7 @@ web({ browser: lightpanda({ loadResources: ['stylesheet', 'iframe'] }) })
 
 ## 使える機能
 
-2026 年 10 月中旬の Lightpanda nightly で e2e testbed のローカルスイートを実行したところ、
+Lightpanda 1.0.4 で e2e testbed のローカルスイートを実行したところ、
 以下は変更なしで成功しました。
 
 - `app.open`、`app.back`、`expect(browser).toHaveURL`、`toHaveTitle`。
@@ -129,7 +130,9 @@ web({ browser: lightpanda({ loadResources: ['stylesheet', 'iframe'] }) })
   その操作である `tap`、`fill`、`check`、`select`、`press`、キーボード入力。
 - テキスト、値、個数、状態をポーリングするアサーション。
 - `browser.route` によるモックと、リクエストの待機。
-- ページを開いた後、テストから呼び出す `browser.setCookies`。
+- `browser.waitForDownload` による[ダウンロード](/browser#download-a-file)。
+- テストから呼び出す `browser.setCookies`。
+- [セッション](/authentication)：`test.setup` と `session.save`、テストの `session:`。
 - `app.screenshot` と、失敗時のスクリーンショット。
   Lightpanda が描くのは DOM の簡易表示であり、Chrome と同じ見た目ではありません。
 - エージェントステップの `agent.act`、`agent.assert`、`agent.extract`、`agent.waitFor`。
@@ -147,11 +150,10 @@ web({ browser: lightpanda({ loadResources: ['stylesheet', 'iframe'] }) })
 
 | 機能 | 動作 | 理由 |
 | ------- | ------------ | --- |
-| [セッション](/authentication)（`test.setup` と `session.save`、テストの `session:`） | セットアップと保存は成功しますが、復元したテストはログアウト状態で開きます。 | 最初のページ作成前にコンテキストへ設定した Cookie が失われます。代わりに、テストで `app.open` の後に `browser.setCookies` を使ってください。 |
 | [ダイアログ](/browser#handle-a-dialog) | `browser.onDialog` が実行された後、`Page.handleJavaScriptDialog` がダイアログなしと報告し、`ENGINE_FAILURE` で失敗します。 | クライアントより先に Lightpanda 自身が `alert`、`confirm`（`false`）、`prompt`（`null`）に応答します。 |
-| [ダウンロード](/browser#download-a-file) | `browser.waitForDownload` がタイムアウトします。 | CDP でダウンロードイベントが送られません。 |
-| [iframe](/browser#reach-into-an-iframe) | `frameLocator` が一致を見つけません。 | デフォルトでは iframe を読み込みません。`loadResources: ['iframe']` で読み込めばクエリと入力は動きますが、フレームが作成した要素にホストページが設定したリスナーは発火しません。 |
-| ドラッグ：`screen.swipe`、`locator.swipeTo`、ボタンを押したままの `browser.mouse` 移動 | `Input.setInterceptDrags` を示す `ENGINE_FAILURE`。 | Playwright がドラッグに必要とするこのコマンドを、Lightpanda が実装していません。 |
+| 非表示のファイル入力を開くボタンからの[ファイルアップロード](/reference/screen#setinputfiles) | ボタンに `setInputFiles` を使うと、操作のタイムアウト後に失敗します。クリックしてもファイル選択ダイアログが開かないためです。入力要素自体への `setInputFiles` は動きます。 | Lightpanda は `Page.setInterceptFileChooserDialog` を受け付けますが、`Page.fileChooserOpened` を送りません。 |
+| [iframe](/browser#reach-into-an-iframe) | `frameLocator` が一致を見つけません。 | デフォルトでは iframe を読み込みません。`loadResources: ['stylesheet', 'iframe']` で読み込めばクエリと入力は動きますが、フレームが作成した要素にホストページが設定したリスナーは発火しません。 |
+| ドラッグ＆ドロップ：`locator.swipeTo`、またはドロップ先に向かう `screen.swipe` の経路 | ポインターは動きますが、何もドロップされず、ドラッグしたノードは元の位置に残ります。 | Lightpanda では、マウス入力で HTML のドラッグがまだ始まりません。 |
 | `browser.setViewport` | ページは新しいサイズを認識しますが、`resize` リスナーは実行されません。 | `resize` イベントが送られません。 |
 | [メディアのエミュレーション](/reference/web#media-emulation)：`colorScheme`、`reducedMotion`、`browser.emulateMedia` | ページは `light` と、動きの低減なしを報告し続けます。 | `Emulation.setEmulatedMedia` が `matchMedia` の応答を変えません。 |
 | スクロール：`scrollIntoView`、`scrollUntilVisible`、ビューポート外のノードへの操作 | スクロールしても変化せず、操作可能になるまでの待機がタイムアウトすることがあります。 | レイアウトがなく、移動できるスクロール位置がありません。簡易表示は各ブロックを 1 列に積むため、Chrome より多くの内容が画面下方に隠れ、その領域には到達できません。 |

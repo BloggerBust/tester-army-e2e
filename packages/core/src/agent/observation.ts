@@ -2,13 +2,12 @@
 
 import { appLocation, appNavigation } from '../cache/route.ts';
 import { OBSERVED_NAME_LIMIT, OBSERVED_TEXT_LIMIT } from '../engine/contract.ts';
-import type { Observation, SemanticNode, ViewportSize } from '../engine/surface.ts';
+import type { Observation, PixelsWithheld, SemanticNode, ViewportSize } from '../engine/surface.ts';
 import { CLOCK_TIME } from '../internal/dates.ts';
 import { sha256Hex } from '../internal/ids.ts';
 import type { SecretLedger } from '../internal/redact.ts';
 import { collapseText } from '../internal/text.ts';
 import { sleep } from '../internal/time.ts';
-import { pixelsProvenMasked } from '../run/secrecy.ts';
 import type { VisionDegradation } from '../run/steps.ts';
 import type { ExecutorNode, ExecutorObservation, ExecutorPixels } from './executor.ts';
 import { sizeForModel } from './pixels.ts';
@@ -20,9 +19,6 @@ const TRUNCATION_MARKER = '[observation truncated at the resolved observation by
 const ENGINE_TRUNCATION_MARKER = '[observation truncated: the engine stopped listing nodes at its limit]';
 /** Missing semantics are unknown, including on a surface that appears empty. */
 const UNAVAILABLE_TREE_MARKER = '[semantic capture unavailable: no nodes were read; previous node ids are no longer valid. Use the screenshot, never infer absence from this listing]';
-
-/** Why pixels the caller asked for are not part of this observation. */
-type PixelsWithheld = 'MASKING_UNPROVEN';
 
 export type AgentObservation = AgentObservationMetadata & (
   | {
@@ -95,19 +91,19 @@ export function prepareObservation(
     ...(observation.tabs === undefined ? {} : { tabs: { count: observation.tabs.count, active: observation.tabs.active + 1 } }),
     viewport: observation.viewport,
   };
-  const pixels = clearPixels(observation);
   if (observation.kind === 'pixels') {
-    if (options.pixelsAllowed !== true || pixels.cleared === undefined) {
-      throw new TestError('UNSUPPORTED_CAPABILITY', 'semantic capture is unavailable and no permitted, proven-masked screenshot can replace it');
+    if (options.pixelsAllowed !== true) {
+      throw new TestError('UNSUPPORTED_CAPABILITY', 'semantic capture is unavailable and no permitted screenshot can replace it');
     }
     return {
       ...metadata,
       kind: 'pixels',
       text: UNAVAILABLE_TREE_MARKER,
       bytes: new TextEncoder().encode(UNAVAILABLE_TREE_MARKER).byteLength,
-      pixels: pixels.cleared,
+      pixels: { ...observation.pixels, maskedRegionCount: observation.redaction.maskedRegionCount },
     };
   }
+  const pixels = clearPixels(observation);
   const tree = redactNode(observation.tree, options);
   const nodes = new Map<string, RedactedNode>();
   const parents = new Map<string, string>();
@@ -358,21 +354,18 @@ export function observationDetail(observation: AgentObservation): { count?: numb
 }
 
 /**
- * Clears captured pixels for model input, or withholds them.
- *
- * Every secure node the engine observed must be covered by a masked region.
- * When it is not, the engine masked less than it saw and the image cannot be
- * proven redacted, so it is dropped exactly like an incompletely redacted
- * artifact — the semantic tree still goes out.
+ * Clears captured pixels for model input, or passes on why they are withheld.
+ * The session keeps pixels on an observation only once their masked regions
+ * cover every secure node, and marks the rest `MASKING_UNPROVEN`, so the
+ * semantic tree still goes out without them.
  */
-function clearPixels(observation: Observation): {
+function clearPixels(observation: Extract<Observation, { kind: 'semantic' }>): {
   cleared?: ExecutorPixels;
   withheld?: PixelsWithheld;
 } {
+  if (observation.pixelsWithheld !== undefined) return { withheld: observation.pixelsWithheld };
   const pixels = observation.pixels;
-  if (pixels === undefined) return {};
-  if (!pixelsProvenMasked(observation.redaction)) return { withheld: 'MASKING_UNPROVEN' };
-  return { cleared: { ...pixels, maskedRegionCount: observation.redaction.maskedRegionCount } };
+  return pixels === undefined ? {} : { cleared: { ...pixels, maskedRegionCount: observation.redaction.maskedRegionCount } };
 }
 
 /**

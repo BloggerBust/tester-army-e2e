@@ -39,6 +39,7 @@ import type {
   EnginePrepareResult,
   EngineSession,
   LocatorExpression,
+  LocatorAction,
   OperationContext,
 } from '../index.ts';
 import type { JsonValue, Secret } from '../../types.ts';
@@ -51,6 +52,7 @@ import {
   decodeSnapshot,
   encodeAbortReason,
   encodeError,
+  encodeLocatorAction,
   type ConnectionRole,
   type EngineManifest,
   type EngineMethod,
@@ -238,6 +240,7 @@ class EngineClient {
         actions: manifest.actions,
         pointerActions: manifest.pointerActions,
         tapModifiers: manifest.tapModifiers,
+        selectsDevice: manifest.selectsDevice,
         isolation: manifest.isolation,
         secrets: this.#options.secrets,
         fixtures: this.#options.fixtures,
@@ -263,7 +266,9 @@ class EngineClient {
     const link = await this.#workerLink();
     const params: Record<string, unknown> = {};
     spec.args.forEach((name, index) => {
-      params[name] = name === 'operation' ? encodeOperation(link, args[index] as OperationContext) : args[index];
+      if (name === 'operation') params[name] = encodeOperation(link, args[index] as OperationContext);
+      else if (name === 'action' && spec.member === 'perform') params[name] = encodeLocatorAction(args[index] as LocatorAction);
+      else params[name] = args[index];
     });
     const result = await this.#call(link, method, params);
     if (spec.result === 'snapshot') return decodeSnapshot(result as WireSnapshot);

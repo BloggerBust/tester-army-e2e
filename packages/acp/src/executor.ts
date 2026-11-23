@@ -1,8 +1,8 @@
 import { randomUUID } from 'node:crypto';
 import { AgentError, type JsonValue, type StepExecutor, type StepExecutorContext, type StepVerdict } from 'e2e';
-import { BASE_RULES, VERDICT_RULES } from 'e2e/agent';
+import { BASE_RULES, redactSecrets, redactStepText, registerProviderKeys, VERDICT_RULES } from 'e2e/agent';
 import { ConfigurationError } from 'e2e/engine';
-import { claudeCodeLaunch, codexLaunch } from './presets.ts';
+import { claudeCodeLaunch, codexLaunch, registerSavedCodexLogin } from './presets.ts';
 import type { Usage } from '@agentclientprotocol/sdk/unstable';
 import { startSession, type AcpSession, type AgentLaunch, type TurnReport } from './session.ts';
 import { activeStep, missingTools, openingScreen, stepTools, verdictOf, type ActiveStep, type StepSlot } from './tools.ts';
@@ -58,12 +58,23 @@ export function claudeCode(options: AcpAgentOptions = {}): StepExecutor {
   return executor(options.name ?? 'claude-code', options, claudeCodeLaunch(options));
 }
 
-/** Codex through its adapter (`@agentclientprotocol/codex-acp`), signed in with your `codex` login. */
+/** Codex through its adapter (`@agentclientprotocol/codex-acp`), signed in with your `codex` login, or with `OPENAI_API_KEY` when Codex has none. */
 export function codex(options: AcpAgentOptions = {}): StepExecutor {
-  return executor(options.name ?? 'codex', options, codexLaunch(options));
+  return executor(options.name ?? 'codex', options, codexLaunch(options), () => registerSavedCodexLogin(options.env));
 }
 
-function executor(name: string, options: AcpAgentOptions, launch: () => Promise<AgentLaunch>): StepExecutor {
+/**
+ * `registerLogin` has the run redact the login the agent keeps on disk. It
+ * runs once when the executor is built, for a login saved before the run,
+ * then for each step once the agent is up, since the agent renews a login
+ * between turns, and again once the turn is over, before anything the
+ * agent said in it is returned.
+ */
+function executor(name: string, options: AcpAgentOptions, launch: () => Promise<AgentLaunch>, registerLogin: () => void = () => undefined): StepExecutor {
+  // A key only the agent's own `env` holds, known before the first step's text is built.
+  registerProviderKeys(options.env ?? {});
+  // A login the agent saved before this run, known before its first start: that start's stderr or the first step's text may quote it.
+  registerLogin();
   // Where an attempt's session lives in `attempt.memory`: one key per executor, so two ACP agents never share a session.
   const memoryKey = `@e2e-dev/acp.session.${randomUUID()}`;
   return {
@@ -71,10 +82,12 @@ function executor(name: string, options: AcpAgentOptions, launch: () => Promise<
     version: '1',
     cache: 'inherit',
     async runStep(ctx) {
-      const { held, session } = await ready(ctx, launch, memoryKey);
+      // Once the agent has started, or failed to: signing in is when it writes a login. Before any of the step's text is built.
+      const { held, session } = await ready(ctx, launch, memoryKey).finally(registerLogin);
       ctx.signal.throwIfAborted();
       const active = activeStep(ctx);
-      const text = await untilAborted(stepMessage(active, held.tools, held.introduced ? undefined : [RULES, options.system, ctx.agentContext]), ctx.signal);
+      // With the step's own redactor, and only now: `system` is the config's text, which core never saw, and a key the agent's start or its saved login made known may be in step text core built before it knew the key.
+      const text = redactStepText(ctx, await untilAborted(stepMessage(active, held.tools, held.introduced ? undefined : [RULES, options.system, ctx.agentContext]), ctx.signal));
       // A step that ended while its screen was read sends no prompt, which no cancel would reach.
       ctx.signal.throwIfAborted();
       held.introduced = true;
@@ -94,6 +107,7 @@ function executor(name: string, options: AcpAgentOptions, launch: () => Promise<
       } finally {
         if (held.slot.active === active) held.slot.active = undefined;
         ctx.signal.removeEventListener('abort', cancel);
+        registerLogin();
       }
       ctx.attachTranscript(transcript(text, active, report));
       if (!ctx.signal.aborted) recordTurn(ctx, session, report);
@@ -289,11 +303,13 @@ function ownToolUsed(title: string): StepVerdict {
 }
 
 function noConclusion(report: TurnReport): StepVerdict {
-  const said = report.text.trim().split('\n').at(-1)?.slice(0, 300);
+  // Redacted whole, before the last line is taken and cut: a value can span lines, and half a key is no longer a match.
+  const text = redactSecrets(report.text.trim());
+  const said = text.slice(text.lastIndexOf('\n') + 1).slice(0, 300);
   return {
     status: 'failed',
     errorCode: 'STEP_NO_CONCLUSION',
-    summary: `The agent ended its turn (${report.stopReason}) without complete_step${said === undefined || said === '' ? '' : `: ${said}`}`,
+    summary: `The agent ended its turn (${report.stopReason}) without complete_step${said === '' ? '' : `: ${said}`}`,
   };
 }
 

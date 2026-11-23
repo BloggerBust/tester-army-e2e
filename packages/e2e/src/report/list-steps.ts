@@ -4,7 +4,8 @@
  * each at its own indent, so nothing here knows where the line lands.
  */
 
-import type { HeldStep, StepPrompt } from '../run/step-hold.ts';
+import type { StepPrompt } from '../run/step-hold.ts';
+import type { PausedStep, RunEventOf } from '../run/events.ts';
 import type { StepRecord } from '@e2e-dev/core/lib/run/steps';
 import { modelLabel } from '@e2e-dev/core/lib/config/agent';
 import { sanitizeText, truncateUtf8 } from '@e2e-dev/core/lib/internal/errors';
@@ -73,74 +74,79 @@ export function stepLine(pc: Colors, step: FinishedStep, options: StepLineOption
   return `${head}${quotedLabel(step.label, room)} ${tail}`;
 }
 
-/** What Enter does at an `e2e run --step` prompt: it runs every step on it, or resumes the test at a pause. */
-function enterDoes(prompt: StepPrompt): string {
-  if (prompt.steps[0].step.kind === 'pause') {
-    return 'resume';
-  }
-
-  return prompt.steps.length === 1 ? 'run this step' : `run these ${prompt.steps.length} steps`;
-}
-
-/** The prompt's other keys, in `--watch`'s words. */
-const STEP_KEYS = [
-  ['n', 'run this test without holding steps'],
-  ['a', 'run all without holding steps'],
-  ['q', 'quit'],
-] as const;
-
-/** Returns the keys offered besides Enter. `n` and `a` require held steps. */
-function promptKeys(prompt: StepPrompt): readonly (readonly [key: string, does: string])[] {
-  return prompt.holdSteps ? STEP_KEYS : STEP_KEYS.filter(([key]) => key === 'q');
-}
+/** A waiting test as its `paused` event tells it. */
+type Paused = RunEventOf<'paused'>;
 
 /** Where a held step was called from, as `file:line`, or nothing. */
-function promptSource(step: HeldStep): string {
+function promptSource(step: Pick<PausedStep, 'source'>): string {
   const { source } = step;
   return source === undefined ? '' : `${bounded(source.file)}:${source.line}`;
 }
 
 /** Formats a held step or pause with its call site for a plain text prompt. */
-function heldCall(step: HeldStep): string {
+function heldCall(step: Pick<PausedStep, 'api' | 'label' | 'source'>, pause: boolean): string {
   const source = promptSource(step);
-  const call = step.kind === 'pause' ? `${step.api}()` : `${step.api} ${quotedLabel(step.label)}`;
+  const call = pause ? `${step.api}()` : `${step.api} ${quotedLabel(step.label)}`;
   return source === '' ? call : `${call} (${source})`;
 }
 
 /**
- * A held step's prompt for the live window, under its test: the steps
- * waiting, one row each, then what to press, as `--watch` says it. Labels
- * are clipped so each call site stays on its row. The keys are one short
- * line, or every key once `h` asked for them.
+ * Formats one row per held step under its test. Labels are clipped so the
+ * call site stays on the same row.
  */
-export function stepPromptRows(pc: Colors, prompt: StepPrompt, options: { readonly maxWidth: number }): string[] {
-  const rows = prompt.steps.map(({ step, number }) => {
-    const head = `${pc.bold(pc.cyan(`▶ step ${number}`))}  ${pc.dim(step.api)} `;
+export function heldStepRows(pc: Colors, paused: Paused, maxWidth: number): string[] {
+  return paused.steps.map((step) => {
     const source = promptSource(step);
     const tail = source === '' ? '' : `  ${pc.dim(source)}`;
-    if (step.kind === 'pause') {
-      return `${pc.bold(pc.cyan('▶ paused'))}  ${pc.dim(`${step.api}()`)}${tail}`;
+
+    if (paused.reason === 'pause') {
+      return `${pc.bold(pc.cyan('⏸ paused'))}  ${pc.dim(`${step.api}()`)}${tail}`;
     }
-    const room = options.maxWidth - visibleWidth(head) - visibleWidth(tail) - LABEL_CHROME;
+
+    const head = `${pc.bold(pc.cyan(`⏸ step ${step.number}`))}  ${pc.dim(step.api)} `;
+    const room = maxWidth - visibleWidth(head) - visibleWidth(tail) - LABEL_CHROME;
     return `${head}${quotedLabel(step.label, room)}${tail}`;
   });
-  const press = (key: string, does: string): string => `${pc.dim('press')} ${pc.bold(key)} ${pc.dim(`to ${does}`)}`;
-  const enter = press('enter', enterDoes(prompt));
-  const keys = prompt.help
-    ? [enter, ...promptKeys(prompt).map(([key, does]) => press(key, does)), press('h', 'hide help')]
-    : [`${enter}${pc.dim(',')} ${press('h', 'show help')}${pc.dim(',')} ${press('q', 'quit')}`];
-  return [...rows, ...keys.map((line) => `  ${line}`)];
 }
 
-/** A held step's prompt as one plain line, for a terminal with no live window to show it in. */
-export function stepPromptLine(prompt: StepPrompt): string {
-  const [first] = prompt.steps;
-  const numbers = prompt.steps.map(({ number }) => number).join(', ');
-  const steps = prompt.steps.map(({ step }) => heldCall(step));
-  const keys = [`enter to ${enterDoes(prompt)}`, ...promptKeys(prompt).map(([key, does]) => `${key} to ${does}`)].join(', ');
-  const at = first.step.kind === 'pause' ? 'in' : `at ${prompt.steps.length === 1 ? 'step' : 'steps'} ${numbers} of`;
-  return `paused (${first.step.attachId}) ${at} ${bounded(first.step.title)} [${bounded(first.step.target)}]: ` +
+/** Up to this many keys share a row under the heading; more get a row each. */
+const KEYS_ON_ONE_ROW = 3;
+
+/** Formats the heading and keys below the live summary in the style of the watch prompt. */
+export function stepPromptRows(pc: Colors, paused: Paused): string[] {
+  const [first, ...rest] = paused.steps;
+  const at = paused.reason === 'pause'
+    ? 'screen.pause()'
+    : rest.length === 0 ? `step ${first.number}` : `steps ${paused.steps.map(({ number }) => number).join(', ')}`;
+  const keys = paused.keys.map(({ key, does }) => `${pc.dim('press')} ${pc.bold(key)} ${pc.dim(`to ${does}`)}`);
+  const rows = keys.length > KEYS_ON_ONE_ROW ? keys : [keys.join(`${pc.dim(',')} `)];
+  return [pc.dim(`Paused (${paused.attachId}) at ${at}`), ...rows.map((line) => `  ${line}`)];
+}
+
+/** A waiting test as one plain line. */
+function pausedLine(paused: Paused): string {
+  const pause = paused.reason === 'pause';
+  const numbers = paused.steps.map(({ number }) => number).join(', ');
+  const steps = paused.steps.map((step) => heldCall(step, pause));
+  const keys = paused.keys.map(({ key, does }) => `${key} to ${does}`).join(', ');
+  const at = pause ? 'in' : `at ${paused.steps.length === 1 ? 'step' : 'steps'} ${numbers} of`;
+  return `paused (${paused.attachId}) ${at} ${bounded(paused.titlePath.join(' › '))} [${bounded(paused.target)}]: ` +
     `${steps.join('; ')} · press ${keys}`;
+}
+
+/**
+ * Prints a waiting test as one line through `write`, for a terminal with no
+ * live window: once per wait, and again when its steps or keys change, as
+ * after `h`. A wait no keyboard answers prints nothing: the commands that
+ * answer it print it themselves.
+ */
+export function pauseLinePrinter(write: (line: string) => void): (paused: Paused | undefined) => void {
+  let printed: string | undefined;
+  return (paused) => {
+    const line = paused === undefined || paused.keys.length === 0 ? undefined : pausedLine(paused);
+    if (line !== undefined && line !== printed) write(line);
+    printed = line;
+  };
 }
 
 /**
@@ -157,7 +163,7 @@ export function stepPromptText(prompt: StepPrompt, screen: string | undefined): 
   const at = pause ? 'in' : `before ${prompt.steps.length === 1 ? 'step' : 'steps'} ${numbers} of`;
   const lines = [`Paused (${first.step.attachId}) ${at} ${bounded(first.step.title)} [${bounded(first.step.target)}]:`];
   for (const { step } of prompt.steps) {
-    lines.push(`  ${heldCall(step)}`);
+    lines.push(`  ${heldCall(step, pause)}`);
   }
   if (screen === undefined) lines.push('Screen: could not be read.');
   else lines.push('Screen:', ...screen.split('\n').map((line) => `  ${bounded(line)}`));

@@ -12,7 +12,7 @@ description: エージェントのループをカスタマイズするか、独�
 | `e2e/agent` の `createToolLoopExecutor` | ツールとプロンプト。ループが追加するのは `complete_step` だけ | 予算、繰り返し呼び出しの検出、判定、使用量の集計、デバッグ用トランスクリプト |
 | `StepExecutor` | `runStep(ctx)`。モデルは任意で、`e2e` と `e2e/engine` の型は `ai` パッケージなしでコンパイルできる | ステップの期限、機密情報を秘匿した観測、検証済みの操作、判定の記録 |
 
-どちらも `agents` エントリーの `executor` に設定します。そのエントリーの `model`、`judge`、`context`、予算は引き続き使われますが、`system` と `tools` は拒否されます。これらは `createToolLoopExecutor` に渡してください。選択肢を限定した回答を返すプロバイダーには、[デシジョンエグゼキューター](/decision-models)を参照してください。
+どちらも `agents` エントリーの `executor` に設定します。そのエントリーの `model`、`judge`、`context`、予算は引き続き使われますが、`system` と `tools` は拒否されます。これらは `createToolLoopExecutor` に渡してください。選択肢を限定した回答を返すプロバイダーを使う場合は、[デシジョンエグゼキューター](/decision-models)を参照してください。
 
 ## ループを保ち、ツールと指示を変える
 
@@ -59,7 +59,7 @@ export default {
 
 ループは、エントリーの `model`、または `createToolLoopExecutor({ model })` に指定したモデルで、ステップごとに最大 `maxModelCalls` ターン実行します。エグゼキューター自身に `judge` を持たせることもできます。エントリーにも同じオプションを設定する場合、両方が同じプロバイダーとモデルを指す必要があります。異なると設定読み込みが `INVALID_CONFIG` で失敗します。
 
-`buildPrompt` は文字列またはメッセージ履歴を返します。`prepareMessages` はターン間に実行され、履歴を短くするか、進展がない場合に `{ messages, stop }` を返します。メッセージを直接書き換える場合も置き換える場合も、リクエストの前半部分が変わります。Anthropic モデルでは推論がそれに結び付いているため、ループはそのメッセージ以降の推論を送らなくなります。プロバイダーがリクエストを大きすぎるとして拒否した場合、ループは履歴を短くし、リクエストが小さくなれば 1 回だけ再試行します。小さくならなければ `CONTEXT_OVERFLOW` で失敗します。以前の画面が根拠になるアサーションループでは、`inconclusiveOnOverflow: true` を設定すると代わりに `ASSERTION_INCONCLUSIVE` で失敗します。`guard()` は、ステップが終了処理に入ると新たなツール呼び出しを止め、モデルに失敗をテキストで返します。`ctx.actions` が各操作を許可、集計、記録するため、これらのステップは[キャッシュ](/cache)から再生でき、`tap` に対応するどのエンジンでも動きます。
+`buildPrompt` は文字列またはメッセージ履歴を返します。`prepareMessages` はターン間に実行され、履歴を短くするか、進展がない場合に `{ messages, stop }` を返します。`prepareMessages` がメッセージを書き換えると、その場で変更しても置き換えても、リクエストの先頭部分が変わります。Anthropic モデルでは推論がこの先頭部分に結び付いているため、ループはそのメッセージ以降の推論を送らなくなります。プロバイダーがリクエストを大きすぎるとして拒否した場合、ループは履歴を短くし、リクエストが小さくなれば 1 回だけ再試行します。小さくならなければ `CONTEXT_OVERFLOW` で失敗します。以前の画面が根拠になるアサーションループでは、`inconclusiveOnOverflow: true` を設定すると代わりに `ASSERTION_INCONCLUSIVE` で失敗します。`guard()` は、ステップが終了処理に入ると新たなツール呼び出しを止め、モデルに失敗をテキストで返します。`ctx.actions` が各操作を許可、集計、記録するため、これらのステップは[キャッシュ](/cache)から再生でき、`tap` に対応するどのエンジンでも動きます。
 
 カスタムツールと一緒に組み込みの操作も使うには、`createGrammarTools(ctx, { guard })` をツールセットに展開します。ターゲットのエンジンが対応する動詞に応じて、組み込みエージェントの操作ツールを返します。各結果には画面の変化が含まれます。`BASE_RULES` は、これらのツールに対する組み込みエージェントの指示です。`system` の先頭に置いてください。
 
@@ -133,7 +133,7 @@ export default {
 | `ctx.attachTurns(turns)` | モデルのターン（`{ index, calls, outcome }`）を短縮した記録としてステップに保持。失敗したステップの下に直近のものを表示します |
 | `ctx.attachScreenshot(pixels, label)` | 観測した画像をステップの `screenshot` アーティファクトとして保持し、レポート内の ID を返します |
 
-`tapAt(point)` と `hoverAt(point)` は、エンジンの座標操作を呼び出します。座標操作がない場合は、その地点にある列挙済みコントロールを操作します。`dragAt(from, to)` は、エンジンの `dragTo` ポインター操作で 2 点間をドラッグします。それがなくても `dragTo` 操作に対応するエンジンなら、両点が異なる列挙済みコントロール上にある場合に ID でドラッグします。それ以外の `dragAt` は `UNSUPPORTED_CAPABILITY` で失敗します。`hitTest(point)` は操作せずに、その座標のコントロールを探します。キーボードに対応するエンジンには、フォーカス中のコントロール向けの `typeText`、`pressKey`、`dismissKeyboard` が加わります。`upload(target, paths)` はプロジェクト相対パスと、[アップロードポリシー](/reference/agent#action-tools)にある `sample:` ファイルを受け取ります。プロジェクトルート外や隠しパスは `POLICY_DENIED`、存在しないファイルは `INVALID_ARGUMENT` で拒否します。
+`tapAt(point)` と `hoverAt(point)` は、エンジンの座標操作を呼び出します。座標操作がない場合は、その地点にある、観測で列挙されたコントロールを操作します。`dragAt(from, to)` は、エンジンの `dragTo` ポインター操作で 2 点間をドラッグします。それがなくても `dragTo` 操作に対応するエンジンなら、2 点がそれぞれ別の列挙済みコントロール上にあるときに ID でドラッグします。それ以外の `dragAt` は `UNSUPPORTED_CAPABILITY` で失敗します。`hitTest(point)` は操作せずに、その座標のコントロールを探します。キーボードに対応するエンジンには、フォーカス中のコントロール向けの `typeText`、`pressKey`、`dismissKeyboard` が加わります。`upload(target, paths)` はプロジェクト相対パスと、[アップロードポリシー](/reference/agent#action-tools)にある `sample:` ファイルを受け取ります。プロジェクトルート外や隠しパスは `POLICY_DENIED`、存在しないファイルは `INVALID_ARGUMENT` で拒否します。
 
 観測の `keyboardVisible` は画面キーボードの表示状態を示します。エンジンが判断できない場合は省略されます。
 
@@ -141,7 +141,7 @@ export default {
 
 ## エグゼキューターが処理する呼び出し
 
-`act` と `assert` は、エージェントの `maxSteps`、`maxModelCalls`、`timeout` とともに `runStep` に届きます。`assert` の `vision` は、エグゼキューターが `vision: true` を宣言している場合だけ `ctx.step.vision` に届きます。宣言していなければ、呼び出しは `UNSUPPORTED_CAPABILITY` で失敗します。`screenshot` は、独自の判定の後にも証拠を添付します。
+`act` と `assert` は、エージェントの `maxSteps`、`maxModelCalls`、`timeout` とともに `runStep` に届きます。`assert` の `vision` は、エグゼキューターが `vision: true` を宣言している場合だけ `ctx.step.vision` に届きます。宣言していなければ、呼び出しは `UNSUPPORTED_CAPABILITY` で失敗します。`screenshot` は、エグゼキューターが返した判定の後にも証拠を添付します。
 
 `waitFor` と `extract` は、引き続き組み込みの判定を使います。モデルが設定されていない場合は `MODEL_UNAVAILABLE` で失敗します。
 
@@ -149,7 +149,7 @@ export default {
 
 要約とともに `passed`、`failed`、`blocked` を返します。`blocked` にはエラーコードが必要で、`passed` には付けません。コードの一覧は[エージェントステップの仕組み](/agent-steps#how-a-step-ends)にあります。`STEP_BUDGET_EXHAUSTED`、`STEP_TIMEOUT`、`CANCELLED` は、それぞれ予算を使い切った、期限を過ぎた、テストがキャンセルされた場合にだけ返してください。その他の使い方や、コード付きの成功判定は、ランナーが `MODEL_OUTPUT_INVALID` で拒否します。
 
-エグゼキューター自身がモデルを動かす場合、`e2e/agent` の `createVerdictTool(ctx.step.kind)` が組み込みエージェントの `complete_step` に相当します。モデルにその `tool` と `VERDICT_RULES` を渡し、`verdict()` を返してください。`act` ステップでは、失敗判定から `ASSERTION_INCONCLUSIVE` を取り除きます。
+エグゼキューター自身がモデルを動かす場合、`e2e/agent` の `createVerdictTool(ctx.step.kind)` が組み込みエージェントの `complete_step` に相当します。モデルにその `tool` と `VERDICT_RULES` を渡し、`verdict()` を返してください。`act` ステップでは、このツールは失敗判定から `ASSERTION_INCONCLUSIVE` を取り除きます。
 
 ## リプレイキャッシュ
 

@@ -544,11 +544,18 @@ const title = await browser.evaluate<string>('document.title');
 await browser.route('**/api/quote', async (route) => {
   await route.fulfill({ json: { cents: 4200 } });
 });
+
+await browser.route({ method: 'POST', url: '**/api/orders' }, async (route) => {
+  await route.fulfill({ json: { id: 7 } });
+});
 ```
 
 `route.fetch()` 在操作超时范围内返回上游的 `{ url, status, headers, body(), text(), json() }`，如果其源应接收配置的请求头，也会携带这些请求头，但不会决定路由的处理方式。它不会跟随重定向，因为重定向可能绕过导航规则。
 
 - 模式为字符串或 `RegExp`，均针对完整 URL 匹配。在字符串中，`*` 匹配路径段内的内容，`**` 可跨越 `/`，`?` 匹配任意单个字符，`\` 转义下一个字符。`unroute` 和 `waitForResponse` 接受相同模式。
+- `{ method, url }` 也可以将模式限定为一个 HTTP 方法。`method` 不区分大小写，`url` 保持上述字符串或 `RegExp` 语法，`unroute` 和 `waitForResponse` 接受相同形式。
+- 方法不匹配的路由会让位给更早注册的路由，然后交给网络，就像 URL 未匹配一样。
+- 方法模式只匹配该方法：`GET` 路由不会响应 `HEAD`。
 - 路由在 `app.restart()`、`app.clearState()` 和会话恢复后仍然保留。
 - 路由按最新注册的优先运行。
 - 处理函数必须且只能作出一次决定，调用 `fulfill`、`continue`、`fallback` 或 `abort`，各方法见下方 `WebRoute`。
@@ -559,7 +566,7 @@ await browser.route('**/api/quote', async (route) => {
 
 | 抛出错误 | 触发条件 |
 | --- | --- |
-| `INVALID_ARGUMENT` | 使用谓词函数作为模式。也包括决定操作不接受的选项（Playwright 的 `abort(errorCode)`、拼错的键）：请求会被中止，下一个步骤失败。 |
+| `INVALID_ARGUMENT` | 模式不是字符串、`RegExp` 或 `{ method, url }`；`{ method, url }` 模式缺少某个键或包含多余的键，`method` 不是 HTTP 方法，或 `url` 不是字符串或 `RegExp`。另外，决定操作不接受的选项（Playwright 的 `abort(errorCode)`、像 `bodyy` 这样拼错的键）会中止请求，并让下一个步骤失败。 |
 | `ACTION_FAILED` | 处理函数作出两次决定或未作决定。 |
 | `POLICY_DENIED` | `continue` URL 使用被禁止的协议。 |
 | `CLEANUP_TIMEOUT` | 处理函数运行时间超过清理预算，导致尝试失败。 |
@@ -595,6 +602,18 @@ export interface RouteContinueOverrides {
   postData?: string;
 }
 
+/** A URL pattern narrowed to one HTTP method. */
+export interface RouteMatcher {
+  /** The HTTP method to match, case-insensitive: `'POST'` and `'post'` are the same. */
+  readonly method: string;
+  /**
+   * The URL pattern: a string using the same grammar as a plain `route`
+   * pattern, or a `RegExp`. `route` and `waitForResponse` match requests
+   * against it; `unroute` compares it structurally.
+   */
+  readonly url: string | RegExp;
+}
+
 export interface WebRoute {
   /** The intercepted request. */
   readonly request: {
@@ -618,15 +637,16 @@ export interface WebRoute {
 
 #### `unroute`
 
-移除匹配指定模式的、本次尝试作用域内的路由，使用 [`route`](#route) 模式语法。
+移除以相同模式注册的路由：相同的字符串、相同的 `RegExp` source 和 flags，或相同的方法和 URL。它比较的是模式而不是匹配 URL，因此 `unroute('**/api/*')` 不会移除为 `'**/api/orders'` 注册的路由。
 
 ```ts
 await browser.unroute('**/api/quote');
+await browser.unroute({ method: 'POST', url: '**/api/orders' });
 ```
 
 | 抛出错误 | 触发条件 |
 | --- | --- |
-| `INVALID_ARGUMENT` | 使用谓词函数作为模式。 |
+| `INVALID_ARGUMENT` | 模式不是字符串、`RegExp` 或 `{ method, url }`；`{ method, url }` 模式缺少某个键或包含多余的键，`method` 不是 HTTP 方法，或 `url` 不是字符串或 `RegExp`。 |
 
 #### `unrouteAll`
 
@@ -645,6 +665,13 @@ const response = await browser.waitForResponse('**/api/orders');
 expect(response.status).toBe(201);
 ```
 
+```ts
+const created = browser.waitForResponse({ method: 'POST', url: '**/api/orders' });
+await screen.getByRole('button', 'Place order').tap();
+expect((await created).status).toBe(201);
+```
+
+- `{ method, url }` 模式只匹配该方法的响应；其他方法的响应会被忽略。
 - 截止时间限制匹配过程：响应头到达后立即返回响应。
 - `body()`、`text()` 和 `json()` 使用各自的预算等待响应体，即受测试截止时间限制的 `config.actionTimeout`。
 - `url`、`status` 和 `headers` 始终可读。
@@ -652,7 +679,7 @@ expect(response.status).toBe(201);
 
 | 抛出错误 | 触发条件 |
 | --- | --- |
-| `INVALID_ARGUMENT` | 使用谓词函数作为模式。 |
+| `INVALID_ARGUMENT` | 模式不是字符串、`RegExp` 或 `{ method, url }`；`{ method, url }` 模式缺少某个键或包含多余的键，`method` 不是 HTTP 方法，或 `url` 不是字符串或 `RegExp`。 |
 | `ACTION_FAILED` | 截止时间内没有匹配项。对于 `body()`、`text()` 和 `json()`：预算耗尽时响应体仍在传输，或浏览器无法读取响应体（未达到声明的 `Content-Length` 就连接重置、请求被页面中止，或浏览器从不保留响应体的重定向），此时抛出错误，而不是返回空字符串。 |
 
 ```ts
@@ -935,7 +962,7 @@ live!.context();                  // its BrowserContext
 
 ## 类型
 
-该包导出以下类型，用于为配置辅助函数和测试夹具提供类型：`WebEngine`、`WebOptions`、`WebMedia`、`WebScreencastOptions`、`WebConnectOptions`、`WebBasicAuth`、`WebInitScript`、`BrowserName`、`BrowserProvider`、`BrowserProviderScope`、`BrowserRequest`、`BrowserLease`、`BrowserReleaseContext`、`BrowserProviderDownloads`、`BrowserDownloadContext`、`PlaywrightLiveSurface`、`Browser`、`FrameScreen`、`BrowserExpectation`、`WebRoute`、`RouteFulfillResponse`、`RouteContinueOverrides`、`WebResponse`、`Cookie`、`CookieFields`、`CookieFilter`、`Dialog` 和 `DialogHandler`。
+该包导出以下类型，用于为配置辅助函数和测试夹具提供类型：`WebEngine`、`WebOptions`、`WebMedia`、`WebScreencastOptions`、`WebConnectOptions`、`WebBasicAuth`、`WebInitScript`、`BrowserName`、`BrowserProvider`、`BrowserProviderScope`、`BrowserRequest`、`BrowserLease`、`BrowserReleaseContext`、`BrowserProviderDownloads`、`BrowserDownloadContext`、`PlaywrightLiveSurface`、`Browser`、`FrameScreen`、`BrowserExpectation`、`WebRoute`、`RouteFulfillResponse`、`RouteContinueOverrides`、`RouteMatcher`、`WebResponse`、`Cookie`、`CookieFields`、`CookieFilter`、`Dialog` 和 `DialogHandler`。
 
 运行时导出为 `web`、[`surfaceOf`](#surfaceof)，以及带有 `browser` 测试夹具类型的 `test`、`describe`、`beforeEach`、`afterEach`、`beforeAll` 和 `afterAll`。
 
@@ -1081,18 +1108,22 @@ export interface Browser extends Expectable<BrowserExpectation> {
   addInitScript(script: string | { path: string } | (() => unknown)): Promise<void>;
   /** Adds an init script function called with one JSON argument. */
   addInitScript<Arg extends JsonValue>(script: (arg: Arg) => unknown, arg: Arg): Promise<void>;
-  /** Adds an attempt-scoped network route. */
+  /** Adds an attempt-scoped network route, optionally narrowed to one HTTP method. */
   route(
-    pattern: string | RegExp,
+    pattern: string | RegExp | RouteMatcher,
     handler: (route: WebRoute) => void | Promise<void>,
   ): Promise<void>;
-  /** Removes matching attempt-scoped routes. */
-  unroute(pattern: string | RegExp): Promise<void>;
+  /**
+   * Removes the routes registered with the same pattern: the same string or
+   * `RegExp` source and flags, and the same method for a `{ method, url }`
+   * pattern. It does not URL-match registered routes.
+   */
+  unroute(pattern: string | RegExp | RouteMatcher): Promise<void>;
   /** Removes all routes registered by this browser fixture, preserving the configured headers. */
   unrouteAll(): Promise<void>;
-  /** Waits for a matching response. */
+  /** Waits for a matching response, optionally narrowed to one HTTP method. */
   waitForResponse(
-    pattern: string | RegExp,
+    pattern: string | RegExp | RouteMatcher,
     options?: { timeout?: number },
   ): Promise<WebResponse>;
   /** Returns cookies visible to the current context. */

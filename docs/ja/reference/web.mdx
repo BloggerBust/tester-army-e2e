@@ -473,7 +473,7 @@ const conditions = browser.locator(
 );
 ```
 
-- セレクターはデフォルトで CSS です。`xpath=` または先頭の `//` で XPath になり、`>>` で連結できます。そのため、例では CSS の検索範囲を 1 行に限定しています。
+- セレクターはデフォルトで CSS です。`xpath=` または先頭の `//` で XPath になり、`>>` で連結できます。例では、この連結を使って CSS の検索範囲を 1 行に絞っています。
 - 別の要素を内包する要素には、`filter({ has })` を使います。
 
 | エラー | 発生条件 |
@@ -493,7 +493,7 @@ const payment = browser.frameLocator('#payment-frame');
 await payment.getByLabel('Card number').fill('4242424242424242');
 ```
 
-フレーム内からクエリ結果を返す `Screen` である `FrameScreen` を返します。フレームの `locator` は、コントロールにアクセシブルな名前、ラベル、プレースホルダー、テスト ID がない場合にだけ使ってください。該当する状況は[ブラウザガイド](/browser#reach-into-an-iframe)で説明しています。
+`FrameScreen` を返します。これは、クエリがフレーム内の要素を返す `Screen` です。フレームの `locator` は、コントロールにアクセシブルな名前、ラベル、プレースホルダー、テスト ID がない場合にだけ使ってください。該当する状況は[ブラウザガイド](/browser#reach-into-an-iframe)で説明しています。
 
 ```ts
 export interface FrameScreen extends Screen {
@@ -544,11 +544,18 @@ const title = await browser.evaluate<string>('document.title');
 await browser.route('**/api/quote', async (route) => {
   await route.fulfill({ json: { cents: 4200 } });
 });
+
+await browser.route({ method: 'POST', url: '**/api/orders' }, async (route) => {
+  await route.fulfill({ json: { id: 7 } });
+});
 ```
 
 `route.fetch()` は、ルートの処理方法を決定せずに、本来の送信先からの `{ url, status, headers, body(), text(), json() }` を返します。対象オリジンが設定済みヘッダーの送信対象なら、そのヘッダーを使います。アクションのタイムアウトが適用されます。ページ遷移のルールを超える可能性があるため、リダイレクトには従いません。
 
 - パターンは文字列または `RegExp` で、どちらも URL 全体と照合します。文字列の `*` はパスの 1 セグメント内、`**` は `/` をまたいで一致し、`?` は任意の 1 文字、`\` は次の文字をエスケープします。`unroute` と `waitForResponse` も同じパターンを使います。
+- `{ method, url }` を渡すと、HTTP メソッドも 1 つに絞り込めます。`method` は大文字と小文字を区別せず、`url` は上記の文字列または `RegExp` の構文を使い、`unroute` と `waitForResponse` も同じ形式を受け付けます。
+- メソッドが一致しないルートは、それより前に登録したルート、次にネットワークへ処理を渡します。URL が一致しなかった場合と同じ扱いです。
+- メソッドパターンはそのメソッドだけに一致します。`GET` のルートは `HEAD` に応答しません。
 - ルートは `app.restart()`、`app.clearState()`、セッションの復元をまたいでも残ります。
 - 新しく登録したルートから順に実行します。
 - ハンドラーは `fulfill`、`continue`、`fallback`、`abort` のいずれかで、必ず 1 回だけ処理を決定します。それぞれの説明は下の `WebRoute` にあります。
@@ -559,7 +566,7 @@ await browser.route('**/api/quote', async (route) => {
 
 | エラー | 発生条件 |
 | --- | --- |
-| `INVALID_ARGUMENT` | パターンに述語関数を渡した場合。また、処理の決定で受け付けないオプション（Playwright の `abort(errorCode)`、誤記したキーなど）がある場合は、リクエストを中断して次のステップを失敗させます。 |
+| `INVALID_ARGUMENT` | パターンが文字列、`RegExp`、`{ method, url }` のいずれでもない場合。`{ method, url }` パターンにキーの不足または余分なキーがある場合、`method` が HTTP メソッドでない場合、`url` が文字列でも `RegExp` でもない場合。また、処理の決定で受け付けないオプション（Playwright の `abort(errorCode)`、`bodyy` のような誤記したキー）がある場合は、リクエストを中断して次のステップを失敗させます。 |
 | `ACTION_FAILED` | ハンドラーが処理を 2 回決定したか、決定しなかった場合。 |
 | `POLICY_DENIED` | `continue` の URL が禁止スキームを使う場合。 |
 | `CLEANUP_TIMEOUT` | ハンドラーがクリーンアップの時間を超えた場合。試行を失敗させます。 |
@@ -595,6 +602,18 @@ export interface RouteContinueOverrides {
   postData?: string;
 }
 
+/** A URL pattern narrowed to one HTTP method. */
+export interface RouteMatcher {
+  /** The HTTP method to match, case-insensitive: `'POST'` and `'post'` are the same. */
+  readonly method: string;
+  /**
+   * The URL pattern: a string using the same grammar as a plain `route`
+   * pattern, or a `RegExp`. `route` and `waitForResponse` match requests
+   * against it; `unroute` compares it structurally.
+   */
+  readonly url: string | RegExp;
+}
+
 export interface WebRoute {
   /** The intercepted request. */
   readonly request: {
@@ -618,15 +637,16 @@ export interface WebRoute {
 
 #### `unroute`
 
-[`route`](#route) と同じパターン構文で、一致する試行内のルートを削除します。
+登録時と同じパターンのルートを削除します。文字列は同じ文字列、`RegExp` は同じ source と flags、`{ method, url }` は同じメソッドと URL である必要があります。URL のマッチングは行わないため、`unroute('**/api/*')` は `'**/api/orders'` で登録したルートを削除しません。
 
 ```ts
 await browser.unroute('**/api/quote');
+await browser.unroute({ method: 'POST', url: '**/api/orders' });
 ```
 
 | エラー | 発生条件 |
 | --- | --- |
-| `INVALID_ARGUMENT` | パターンに述語関数を渡した場合。 |
+| `INVALID_ARGUMENT` | パターンが文字列、`RegExp`、`{ method, url }` のいずれでもない場合。`{ method, url }` パターンにキーの不足または余分なキーがある場合、`method` が HTTP メソッドでない場合、`url` が文字列でも `RegExp` でもない場合。 |
 
 #### `unrouteAll`
 
@@ -645,6 +665,13 @@ const response = await browser.waitForResponse('**/api/orders');
 expect(response.status).toBe(201);
 ```
 
+```ts
+const created = browser.waitForResponse({ method: 'POST', url: '**/api/orders' });
+await screen.getByRole('button', 'Place order').tap();
+expect((await created).status).toBe(201);
+```
+
+- `{ method, url }` パターンは、そのメソッドへのレスポンスだけに一致します。別のメソッドへのレスポンスは対象外です。
 - 期限が制限するのは、一致するレスポンスを待つ時間です。ヘッダーが届いた時点で解決します。
 - `body()`、`text()`、`json()` は、それぞれ独自の時間上限で本文を待ちます。`config.actionTimeout` を使い、テストの期限を上限とします。
 - `url`、`status`、`headers` は常に読めます。
@@ -652,7 +679,7 @@ expect(response.status).toBe(201);
 
 | エラー | 発生条件 |
 | --- | --- |
-| `INVALID_ARGUMENT` | パターンに述語関数を渡した場合。 |
+| `INVALID_ARGUMENT` | パターンが文字列、`RegExp`、`{ method, url }` のいずれでもない場合。`{ method, url }` パターンにキーの不足または余分なキーがある場合、`method` が HTTP メソッドでない場合、`url` が文字列でも `RegExp` でもない場合。 |
 | `ACTION_FAILED` | 期限内に一致するレスポンスがなかった場合。`body()`、`text()`、`json()` では、期限時点でも本文の受信が続いている場合や、ブラウザが本文を読めなかった場合も、空文字列の代わりにこのエラーになります。後者には、宣言された `Content-Length` に達する前の接続リセット、ページが中断したリクエスト、ブラウザが本文を保持しないリダイレクトが含まれます。 |
 
 ```ts
@@ -851,7 +878,7 @@ const file = await browser.waitForDownload(() =>
 
 #### `keyboard`
 
-フォーカスのある場所へ、ビューポート単位でキーボード入力を送ります。
+要素を指定せず、ページ全体に対してキーボード入力を送ります。入力はフォーカスのある要素に届きます。
 
 ```ts
 await browser.keyboard.press('Escape');
@@ -864,7 +891,7 @@ await browser.keyboard.type('hello');
 
 #### `mouse`
 
-エージェントの観測とは独立して、テストコードからビューポート単位のポインター入力を行います。
+エージェントの観測とは独立して、テストコードからビューポートの座標でポインター入力を行います。
 
 ```ts
 await browser.mouse.move(120, 240);
@@ -942,7 +969,7 @@ live!.context();                  // its BrowserContext
 `BrowserReleaseContext`、`BrowserProviderDownloads`、
 `BrowserDownloadContext`、`PlaywrightLiveSurface`、`Browser`、`FrameScreen`、
 `BrowserExpectation`、`WebRoute`、`RouteFulfillResponse`、
-`RouteContinueOverrides`、`WebResponse`、`Cookie`、`CookieFields`、
+`RouteContinueOverrides`、`RouteMatcher`、`WebResponse`、`Cookie`、`CookieFields`、
 `CookieFilter`、`Dialog`、`DialogHandler`。
 
 実行時のエクスポートは `web`、[`surfaceOf`](#surfaceof)、および `browser` フィクスチャの型を持つ `test`、`describe`、`beforeEach`、`afterEach`、`beforeAll`、`afterAll` です。
@@ -1089,18 +1116,22 @@ export interface Browser extends Expectable<BrowserExpectation> {
   addInitScript(script: string | { path: string } | (() => unknown)): Promise<void>;
   /** Adds an init script function called with one JSON argument. */
   addInitScript<Arg extends JsonValue>(script: (arg: Arg) => unknown, arg: Arg): Promise<void>;
-  /** Adds an attempt-scoped network route. */
+  /** Adds an attempt-scoped network route, optionally narrowed to one HTTP method. */
   route(
-    pattern: string | RegExp,
+    pattern: string | RegExp | RouteMatcher,
     handler: (route: WebRoute) => void | Promise<void>,
   ): Promise<void>;
-  /** Removes matching attempt-scoped routes. */
-  unroute(pattern: string | RegExp): Promise<void>;
+  /**
+   * Removes the routes registered with the same pattern: the same string or
+   * `RegExp` source and flags, and the same method for a `{ method, url }`
+   * pattern. It does not URL-match registered routes.
+   */
+  unroute(pattern: string | RegExp | RouteMatcher): Promise<void>;
   /** Removes all routes registered by this browser fixture, preserving the configured headers. */
   unrouteAll(): Promise<void>;
-  /** Waits for a matching response. */
+  /** Waits for a matching response, optionally narrowed to one HTTP method. */
   waitForResponse(
-    pattern: string | RegExp,
+    pattern: string | RegExp | RouteMatcher,
     options?: { timeout?: number },
   ): Promise<WebResponse>;
   /** Returns cookies visible to the current context. */

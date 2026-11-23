@@ -108,7 +108,7 @@ test('signs in', async ({ app, screen, browser }) => {
 | `@BeforeSuite`、`@AfterSuite`、pytest のセッションスコープのフィクスチャ、WebdriverIO の `onPrepare` | 実行ごとに 1 回なら、`app.command` が起動するスクリプト、または `e2e run` を囲むラッパー。ファイルごとなら `beforeAll` と `afterAll`。サインインはセッションを保存するトップレベルの `test.setup` |
 | Web 用の BrowserStack または Sauce Labs | ベンダーに CDP エンドポイントがあれば、独自の[ブラウザプロバイダー](/browser#write-a-provider) |
 | `manage().logs()`、リクエストリスナー、位置情報 | `browser.addInitScript` でページを変更し、`browser.route` でリクエストを記録 |
-| `setNetworkConditions` | オフラインには `browser.route` でリクエストを中断。帯域制限や遅延はなく、それらのテストは Selenium に残す |
+| `setNetworkConditions` | オフラインには `browser.route` でリクエストを中断。帯域制限や遅延を再現する機能はないため、それらのテストは Selenium に残す |
 
 ### 未対応
 
@@ -124,7 +124,7 @@ test('signs in', async ({ app, screen, browser }) => {
 | Selenium | 代わりに使う方法 |
 | --- | --- |
 | Cucumber の feature ファイル | 各シナリオをテストに書き換え。1 ステップを 1 つの `agent.act` のゴールにできることが多い |
-| `Thread.sleep`, `Actions.pause`, `wait.until(elementToBeClickable(...))` | 待ちたい状態へのロケーターアサーション。各アクションは自身のノードを待つ |
+| `Thread.sleep`, `Actions.pause`, `wait.until(elementToBeClickable(...))` | 待ちたい状態へのロケーターアサーション。各アクションは対象のノードを待つ |
 | ダイアログが開いた後の `switchTo().alert()`、`alertIsPresent()` | ダイアログを開く操作の前に `browser.onDialog(handler)` |
 | 実際の Safari、IE モード | Safari に最も近いビルドは `webkit`。IE モードのテストは Selenium に残す |
 | `executeCdpCommand`、`DevTools.send`、ドライバーを受け取る SDK | Selenium に残す。生のドライバー呼び出しは記録も秘匿もされない |

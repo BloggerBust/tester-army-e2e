@@ -1,0 +1,74 @@
+---
+title: Wprowadzenie
+description: Testy z AI open source dla aplikacji webowych i mobilnych. Poświęcaj mniej czasu na testy, a więcej na budowanie.
+---
+
+import { VideoCard } from '../snippets/video-card.jsx';
+
+e2e to framework open source do testowania aplikacji webowych i mobilnych.
+Test może korzystać z precyzyjnych [locatorów](/core-concepts#locators)
+i [asercji](/reference/expect#locator-matchers), z [celów](/core-concepts#goals)
+opisanych językiem naturalnym, które realizuje agent, albo z obu podejść
+naraz.
+
+<VideoCard
+  id="NEawZb6Hssw"
+  title="Poznaj e2e w 2 minuty"
+  subtitle="Cele agenta połączone z asercjami na locatorach, jeden test na webie, iOS i Androidzie oraz konfiguracja projektu w minutę."
+/>
+
+```ts title="tests/checkout.e2e.ts"
+import { test, expect } from 'e2e';
+
+test('a member upgrades to Pro', async ({ app, agent, screen }) => {
+  await app.open('/settings/billing');
+
+  await agent.act('upgrade the workspace to the Pro plan');
+  await agent.assert('the invoice preview shows a prorated amount');
+
+  await expect(screen.getByRole('status')).toContainText('Pro');
+});
+```
+
+## Dlaczego e2e
+
+- **Mniej czasu na testy.** Zamiast pisać skrypt z selektorami i oczekiwaniem
+  na elementy, opisujesz cel. Gdy zmienia się UI, agent się dostosowuje, więc poprawiasz
+  mniej testów.
+- **Tanie uruchomienia.** e2e nagrywa krok `agent.act`, gdy przejdzie
+  późniejsze sprawdzenie. Kolejne uruchomienie [odtwarza go](/cache) bez
+  wywoływania modelu, a jeśli aplikacja się zmieniła, oddaje sterowanie
+  agentowi. Przy wbudowanym agencie `assert`, `waitFor` i `extract` zawsze
+  wywołują model.
+
+## Jak to działa
+
+- **Targety.** Każdy test uruchamia się raz na każdym targecie, na przykład
+  w Chromium albo na symulatorze iPhone'a. [Silnik webowy](/web) steruje
+  przeglądarkami przez Playwright. [Silnik mobilny](/mobile) steruje
+  symulatorami iOS i emulatorami Androida przez agent-device. Możesz też
+  [napisać własny](/writing-an-engine).
+- **Kroki agenta.** `agent.act` realizuje cel. `agent.assert`,
+  `agent.waitFor` i `agent.extract` oceniają ekran. Użyj własnej
+  [subskrypcji](/subscriptions), [klucza API albo lokalnego modelu](/models).
+  Testy bez kroków agenta nie potrzebują modelu.
+- **Raporty.** Runner [maskuje zarejestrowane sekrety](/security) w danych
+  wejściowych modelu. Zapisuje kroki, błędy i artefakty w
+  [raporcie](/debugging), który przeczytasz ty albo twój agent kodujący.
+
+## Pierwsze kroki
+
+<CardGroup cols={2}>
+  <Card title="Szybki start" icon="rocket" href="/quickstart">
+    Jeden prompt dla agenta kodującego albo ręczna konfiguracja.
+  </Card>
+  <Card title="Przykładowe projekty" icon="folder-open" href="/example-projects">
+    Uruchom samodzielną aplikację webową lub mobilną, która ma już testy e2e.
+  </Card>
+  <Card title="Podstawowe pojęcia" icon="pen-to-square" href="/core-concepts">
+    Cele, asercje i locatory.
+  </Card>
+  <Card title="Agenci kodujący" icon="robot" href="/coding-agents">
+    Pozwól agentowi kodującemu pisać, uruchamiać i debugować testy.
+  </Card>
+</CardGroup>

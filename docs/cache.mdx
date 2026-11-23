@@ -285,10 +285,17 @@ A `gap` is an action the cache can't repeat: a mutating
 after it saw a screenshot, or worked out from the date. `step.cache.derived`
 names the rule: `whole-node` (a control's whole name or text),
 `minted-token` (a code or id the app showed as its own word, or any value
-typed into a field marked `autocomplete="one-time-code"`), `date`, or
-`pixels`. Values from the instruction or `params`, and values the agent
-composed itself, replay. In a one-time-code field, only a whole code the
+typed into a field marked `autocomplete="one-time-code"`, or into the
+focused field in a step that showed one), `date`, or `pixels`. Values from
+the instruction or `params`, and values the agent composed itself, replay,
+except in a one-time-code field or the focused field in a step that showed
+one: there only a whole value of two or more characters that the
 instruction or `params` spell out replays.
+
+Values typed in a row into several fields, with only taps or `Tab` between
+them, are also judged joined. A code the page showed, typed one digit per box
+or three and three, makes the recording a gap from its first piece, even when
+no field declares a purpose, as no field does on iOS and Android.
 
 ## What a recording holds
 

@@ -2,6 +2,12 @@
 
 import { ConfigurationError } from '../internal/errors.ts';
 import { MAX_TIMER_MS } from '../internal/time.ts';
+import type { PassOptions } from '../types.ts';
+
+export const DEFAULT_PASS_OPTIONS: Readonly<Required<PassOptions>> = Object.freeze({
+  timeout: 0,
+  intervals: Object.freeze([100, 250, 500, 1000]),
+});
 
 /**
  * A positive safe integer, or undefined when the value is absent. Durations
@@ -13,8 +19,12 @@ export function positiveInt(
   label: string,
   unit?: 'milliseconds',
 ): number | undefined {
-  if (value === undefined) return undefined;
-  if (!Number.isSafeInteger(value) || value <= 0) {
+  return value === undefined ? undefined : requiredPositiveInt(value, label, unit);
+}
+
+/** Validates a required positive safe integer. */
+function requiredPositiveInt(value: unknown, label: string, unit?: 'milliseconds'): number {
+  if (typeof value !== 'number' || !Number.isSafeInteger(value) || value <= 0) {
     const expected = unit === undefined ? 'a positive safe integer' : `a positive safe integer of ${unit}`;
     throw new ConfigurationError(
       'INVALID_CONFIG',
@@ -34,6 +44,17 @@ export function timerMs(value: number | undefined, label: string): number | unde
     throw new ConfigurationError('INVALID_CONFIG', `${label} must be at most ${MAX_TIMER_MS} milliseconds, got ${ms}`);
   }
   return ms;
+}
+
+/** Validates the pauses between reads or tries before the first read or try. */
+export function checkIntervals(label: string, intervals: unknown): void {
+  if (intervals === undefined) return;
+  if (!Array.isArray(intervals) || intervals.length === 0) {
+    throw new ConfigurationError('INVALID_CONFIG', `${label} must be a non-empty array of milliseconds`);
+  }
+  for (const [index, entry] of intervals.entries()) {
+    requiredPositiveInt(entry, `${label}[${index}]`, 'milliseconds');
+  }
 }
 
 /** A value as the author wrote it, for messages that quote the offending input. */

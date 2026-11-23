@@ -74,6 +74,9 @@ export type GrammarVerb =
   | 'pressKey'
   | 'dismissKeyboard';
 
+/** Why pixels a caller asked for are not part of an observation. */
+export type PixelsWithheld = 'MASKING_UNPROVEN';
+
 export type Observation = ObservationMetadata & (
   | {
       readonly kind: 'semantic';
@@ -81,7 +84,14 @@ export type Observation = ObservationMetadata & (
       readonly truncated: boolean;
       /** The engine's measured keyboard state (`EngineSnapshot.keyboardVisible`); `false` when it measured none, absent only when it did not measure. */
       readonly keyboardVisible?: boolean;
+      /** The screenshot, only when its masked regions cover every secure node. */
       readonly pixels?: ObservationPixels;
+      /**
+       * Why pixels the engine answered with are not here: its masked regions
+       * (`maskedRegionCount`) are fewer than the secure nodes, or it withheld
+       * the pixels itself and sent the count alone.
+       */
+      readonly pixelsWithheld?: PixelsWithheld;
     }
   | {
       readonly kind: 'pixels';
@@ -101,8 +111,8 @@ interface ObservationMetadata {
   readonly capturedAt: string;
   readonly viewport: ViewportSize;
   /**
-   * What the engine masked against what it saw. Pixel completeness is judged
-   * downstream from these counts: fewer masked regions than secure nodes
+   * What the engine masked against what it saw. The session judges pixel
+   * completeness from these counts: fewer masked regions than secure nodes
    * withholds the pixels and keeps the tree.
    */
   readonly redaction: {

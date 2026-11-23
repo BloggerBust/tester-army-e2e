@@ -14,6 +14,9 @@
     "apps/mobile-benchmark/e2e.*.config.ts",
     "apps/mobile-benchmark/tests*/**/*.ts",
     "apps/mobile-benchmark/index.ts",
+    "apps/desktop-testbed/e2e.config.ts",
+    "apps/desktop-testbed/e2e.*.config.ts",
+    "apps/desktop-testbed/tests*/**/*.ts",
     "packages/e2e/tests/types/sdk-types.ts",
     "packages/web/tests/types/connection.ts",
     "packages/web/tests/types/init-scripts.ts",
@@ -30,6 +33,7 @@
     "packages/moli/tests/types/options.ts",
     "packages/decision/tests/types/options.ts",
     "packages/acp/tests/fixtures/scripted-agent.ts",
+    "packages/desktop/tests/helpers/fake-agent-desktop.mjs",
     "packages/acp/tests/live/*.ts",
     "packages/e2e/tests/live/*.ts",
     "packages/e2e/src/config/register.ts"

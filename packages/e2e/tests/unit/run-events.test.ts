@@ -3,8 +3,8 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createRunEventEmitter, type RunEvent } from '../../src/run/events.ts';
 
-function fact(total: number): { type: 'plan'; total: number; files: [] } {
-  return { type: 'plan', total, files: [] };
+function fact(total: number): { type: 'collected'; total: number; files: []; repeatEach: 1; tests: [] } {
+  return { type: 'collected', total, files: [], repeatEach: 1, tests: [] };
 }
 
 /** A healthy subscriber that collects what it is handed. */
@@ -17,9 +17,28 @@ function collecting(events: RunEvent[]): { name: string; onEvent: (event: RunEve
   };
 }
 
+/** Prints a quarantine line where the runner's own does. */
+const warn = (line: string): void => void process.stderr.write(line);
+
 describe('createRunEventEmitter', () => {
   afterEach(() => {
     vi.restoreAllMocks();
+  });
+
+  it('delivers an event a sink emits while it is handed one after that one, in seq order, to every sink', () => {
+    const seen: Record<'first' | 'second', string[]> = { first: [], second: [] };
+    const emit = createRunEventEmitter([
+      {
+        name: 'first',
+        onEvent: (event) => {
+          seen.first.push(`${event.seq}`);
+          if (event.seq === 1) emit(fact(2));
+        },
+      },
+      { name: 'second', onEvent: (event) => void seen.second.push(`${event.seq}`) },
+    ], warn);
+    emit(fact(1));
+    expect(seen).toEqual({ first: ['1', '2'], second: ['1', '2'] });
   });
 
   it('quarantines a throwing sink without silencing the healthy one, and says so once on stderr', () => {
@@ -35,14 +54,14 @@ describe('createRunEventEmitter', () => {
         },
       },
       collecting(events),
-    ]);
+    ], warn);
     expect(() => emit(fact(1))).not.toThrow();
     emit(fact(2));
     emit(fact(3));
     expect(broken).toBe(1);
     expect(events.map((event) => event.seq)).toEqual([1, 2, 3]);
     expect(stderr.mock.calls.map((call) => String(call[0]))).toEqual([
-      'e2e: reporter "broken" threw on plan: broken host sink; ignoring it for the rest of the run\n',
+      'e2e: reporter "broken" threw on collected: broken host sink; ignoring it for the rest of the run\n',
     ]);
   });
 
@@ -59,7 +78,7 @@ describe('createRunEventEmitter', () => {
         },
       },
       collecting(events),
-    ]);
+    ], warn);
     emit(fact(1));
     // The rejection settles on a later tick; quarantine must land before the
     // next emit that follows it.
@@ -69,7 +88,7 @@ describe('createRunEventEmitter', () => {
     expect(calls).toBe(1);
     expect(events).toHaveLength(3);
     expect(stderr.mock.calls.map((call) => String(call[0]))).toEqual([
-      'e2e: reporter "async" threw on plan: async broken sink; ignoring it for the rest of the run\n',
+      'e2e: reporter "async" threw on collected: async broken sink; ignoring it for the rest of the run\n',
     ]);
   });
 
@@ -82,7 +101,7 @@ describe('createRunEventEmitter', () => {
         onEvent: () => new Promise((_resolve, reject) => setImmediate(() => reject(new Error('late'))))
       },
       collecting(events),
-    ]);
+    ], warn);
     // Both promises are pending when the second event is emitted; both reject on the next tick.
     emit(fact(1));
     emit(fact(2));
@@ -92,7 +111,7 @@ describe('createRunEventEmitter', () => {
     emit(fact(3));
     expect(events).toHaveLength(3);
     expect(stderr.mock.calls.map((call) => String(call[0]))).toEqual([
-      'e2e: reporter "slow" threw on plan: late; ignoring it for the rest of the run\n',
+      'e2e: reporter "slow" threw on collected: late; ignoring it for the rest of the run\n',
     ]);
   });
 });

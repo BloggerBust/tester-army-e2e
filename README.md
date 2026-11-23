@@ -79,6 +79,7 @@ every tool.
 | [`@e2e-dev/core`](https://e2e.com/docs/core) | Drives a browser or a device from your own program, with an optional agent and no test runner. `e2e` is built on it. |
 | [`@e2e-dev/web`](https://www.npmjs.com/package/@e2e-dev/web) | Browser engine: Chromium, Firefox, and WebKit through Playwright. |
 | [`@e2e-dev/mobile`](https://www.npmjs.com/package/@e2e-dev/mobile) | iOS and Android engine: simulators and emulators through agent-device. |
+| [`@e2e-dev/desktop`](https://www.npmjs.com/package/@e2e-dev/desktop) | Desktop engine, a prototype: native apps on macOS through agent-desktop. |
 | [`@e2e-dev/decision`](https://e2e.com/docs/decision-models) | Decision-model executors for bounded semantic actions and assertions, and `decisionFilter()`, which leaves out the tests a pull request is unlikely to affect. |
 | [`@e2e-dev/acp`](https://e2e.com/docs/subscriptions#use-your-coding-agent) | Runs agent steps on your own coding agent (Claude Code or Codex) over the Agent Client Protocol. |
 

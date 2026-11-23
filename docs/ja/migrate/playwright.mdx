@@ -46,7 +46,7 @@ e2e は同じプロジェクト内で Playwright と並行して動かせるた�
 | `retries`, `workers`, `timeout` | 同名。[デフォルト値は一部異なります](#defaults-that-differ)。`workers` は整数 |
 | `expect.timeout`, `use.actionTimeout`, `globalTimeout` | `assertionTimeout`、`actionTimeout`、`maxDuration`。`maxDuration` の計測はアプリの起動時ではなくテスト開始時から |
 | `maxFailures`, `use.headless: false` | CLI の `--max-failures <n>` と `--headed` |
-| `reporter`, `outputDir` | `reporters: ['list', 'junit', htmlReporter()]`。`htmlReporter` は `@e2e-dev/html-reporter` から。`dot`、`line`、`json`、`markdown` も利用可能。出力先は `output`、デフォルトは `.e2e` |
+| `reporter`, `outputDir` | `reporters: ['list', 'junit', htmlReporter()]`。`htmlReporter` は `@e2e-dev/html-reporter` から。`dot`、`json`、`markdown` も利用可能。出力先は `output`、デフォルトは `.e2e` |
 | `use.viewport`, `locale`, `timezoneId`, `colorScheme`, `reducedMotion`, `userAgent`, `testIdAttribute` | `web({ ... })` 内の同名キー |
 | `use.browserName`, `httpCredentials`, `extraHTTPHeaders` | `web({ browser, basicAuth, headers })`。`basicAuth` と `headers` はアプリのオリジンだけに適用。[`credentialOrigins`](/reference/web#credentialorigins) で追加可能 |
 | `chromium.connectOverCDP(url)` | `web({ connect: { cdpEndpoint: () => url } })`。chromium のみ |
@@ -106,10 +106,11 @@ test('checkout', async ({ app, agent, screen }) => {
 
 | Playwright | e2e |
 | --- | --- |
-| `click()`, `dblclick()` | `tap()`、`doubleTap()`。`click()` と `dblclick()` は別名 |
+| `click()`, `dblclick()` | `tap()`、`doubleTap()`。`click()` と `dblclick()` はそれぞれ `tap()` と `doubleTap()` の別名 |
 | `click({ button: 'right' })`, `click({ delay })` | `secondaryTap()`、`longPress({ duration })` |
 | `click({ position })`, `click({ modifiers })` | `tap({ position })`、`tap({ modifiers })` |
 | `fill()`, `pressSequentially()`, `clear()`, `focus()`, `blur()`, `hover()`, `check()`, `uncheck()`, `dragTo()`, `setInputFiles(path)`, `selectOption({ label })` または `{ value }` | 同じ。ただし `force`、`trial`、`position` はなし |
+| `setInputFiles({ name, mimeType, buffer })` | Web のみ。`name`、`mimeType`、`buffer` だけを持つプレーンオブジェクトを渡します。 |
 | `press(key)` | 1 文字または[名前付きキー](/reference/engine#keys)なら同じ。キーコードは `focus()` 後に `browser.keyboard.press` |
 | `innerText()`, `allInnerTexts()`, `scrollIntoViewIfNeeded()` | `textContent()`、`allTextContents()`、`scrollIntoView()` |
 | `textContent()`, `allTextContents()`, `inputValue()`, `getAttribute()`, `boundingBox()`, `isVisible()`, `isHidden()`, `isEnabled()`, `isDisabled()`, `isChecked()`, `waitFor({ state })` | 同じ |
@@ -121,7 +122,7 @@ test('checkout', async ({ app, agent, screen }) => {
 
 | Playwright | e2e |
 | --- | --- |
-| `toBeVisible()`, `toBeHidden()`, `toBeEnabled()`, `toBeDisabled()`, `toBeChecked()`, `toBeFocused()`, `toBeAttached()`, `toHaveText()`, `toContainText()`, `toHaveValue()`, `toHaveAttribute()`, `toHaveCount()`, `toHaveAccessibleName()`, `toHaveRole()` | 同じ。`{ visible }`、`{ enabled }`、`{ checked }`、`{ attached }`、`{ ignoreCase }` も対応 |
+| `toBeVisible()`, `toBeHidden()`, `toBeEnabled()`, `toBeDisabled()`, `toBeChecked()`, `toBeFocused()`, `toBeAttached()`, `toHaveText()`, `toContainText()`, `toHaveValue()`, `toHaveAttribute()`, `toHaveCount()`, `toHaveAccessibleName()`, `toHaveRole()`, `toBeEditable()` | 同じ。`{ visible }`、`{ enabled }`、`{ editable }`、`{ checked }`、`{ attached }`、`{ ignoreCase }` も対応 |
 | `toHaveId(id)`, `toContainClass(name)` | `toHaveAttribute('id', id)`、`toHaveAttribute('class', RegExp)` |
 | `expect(page).toHaveURL()`, `toHaveTitle()` | `expect(browser).toHaveURL()`、`toHaveTitle()` |
 | `expect(page).toHaveScreenshot()`, `expect(locator).toHaveScreenshot()` | `expect(screen).toHaveScreenshot()` とロケーター形式。[視覚的な比較](/visual-testing)を参照 |
@@ -145,7 +146,7 @@ test('checkout', async ({ app, agent, screen }) => {
 
 | Playwright | e2e |
 | --- | --- |
-| `page.route(pattern, handler)`, `unroute()`, `unrouteAll()` | `browser` の同名メソッド。パターンは URL 全体に対する `RegExp` または glob |
+| `page.route(pattern, handler)`, `unroute()`, `unrouteAll()` | `browser` の同名メソッド。パターンは URL 全体に対する `RegExp`、glob、または 1 つの HTTP メソッドを指定する `{ method, url }` |
 | `route.fulfill()`, `continue()`, `fallback()`, `abort()`, `fetch()` | 同じ。各オプションは [`route`](/reference/web#route) を参照 |
 | `page.waitForResponse(pattern)` | `browser.waitForResponse(pattern)`。`'/api/orders'` ではなく `'**/api/orders'` |
 | `page.on('dialog')`, `page.waitForEvent('download')` | `browser.onDialog('accept')` またはハンドラー。`browser.waitForDownload(() => trigger)` |
@@ -166,6 +167,7 @@ test('checkout', async ({ app, agent, screen }) => {
 | `test.setTimeout()` | テスト本体、`beforeEach`、`beforeAll`（そのフック自身のタイムアウト）では同じ。`afterEach` と `afterAll` からは呼び出せません。`describe` のコールバック内では、代わりに `test.describe` に `{ timeout }` を渡します。タイムアウトなしを意味する `0` はないため、大きな値を渡します |
 | `beforeEach`, `afterEach`, `beforeAll`, `afterAll` | 同じ。ただしタイトルなし。`beforeAll` と `afterAll` が受け取るのはワーカーフィクスチャで、`browser`、`app`、`screen` は受け取らない |
 | `test.describe.skip`, `test.describe.serial`, `describe.configure({ mode: 'serial', retries, timeout })` | `test.describe(title, { skip, serial, retries, timeout }, fn)` |
+| describe に対する `test.fail()` | `test.describe.fail(title, fn)`、またはグループの `{ fail: 'reason' }`。条件付きなら `beforeEach` 内で `test.fail(condition, 'reason')` |
 | `{ tag: '@smoke' }` | テストまたはグループの `{ tags: ['smoke'] }` |
 | `test.extend({ fixture })` | 同じ形式で、必要に応じてセットアップ。テスト、フック、フィクスチャは、最初の引数で指定したフィクスチャを受け取る |
 | `[fn, { scope: 'worker' }]` のフィクスチャ | 同じ。`extend` の 2 番目の型引数で型を指定 |
@@ -188,7 +190,7 @@ test('checkout', async ({ app, agent, screen }) => {
 
 ## ページオブジェクトを移す
 
-ページオブジェクトには、クエリとアクション用に `screen`、キーボード、マウス、CSS セレクター、`evaluate` 用に `browser` を渡します。フィクスチャとして提供してください。
+ページオブジェクトには `screen` と `browser` を渡します。`screen` はクエリとアクション用、`browser` はキーボード、マウス、CSS セレクター、`evaluate` 用です。ページオブジェクトはフィクスチャとして提供してください。
 
 ```ts title="tests/page-models/account-page.ts"
 import type { Locator, Screen } from 'e2e';
@@ -238,7 +240,7 @@ export const test = base.extend<{ accountPage: AccountPage }>({
 | --- | --- |
 | `locator.locator(selector)`, `locator.and()`, `filter({ visible })` | `'.card >> .close'` のような単一の `browser.locator` セレクター、またはスコープ内の `screen` クエリ |
 | `locator.evaluate()`, `expect(locator).toHaveClass()`, `toHaveCSS()`, `dispatchEvent()` | `browser.evaluate(fn, selector)`。`expect(browser).toHaveClass(locator, cls)` |
-| `setInputFiles({ buffer })`, `selectOption([...])`, `click({ clickCount })`, `hover({ position })` | 一時ファイルのパス。複数選択には `browser.evaluate`。`boundingBox()` と `browser.mouse` |
+| `selectOption([...])`, `click({ clickCount })`, `hover({ position })` | 複数選択には `browser.evaluate`。`boundingBox()` と `browser.mouse` |
 
 </Accordion>
 <Accordion title="アサーション">
@@ -246,7 +248,7 @@ export const test = base.extend<{ accountPage: AccountPage }>({
 | Playwright | 現在使える方法 |
 | --- | --- |
 | `expect(fn).toPass()`, `expect.poll(fn, { intervals })` | `expect.poll(async () => { ...; return true }).toBe(true)` |
-| `toBeEmpty()`, `toBeEditable()`, `toBeInViewport()` | フォームには `toHaveValue('')`、ほかの要素には `toHaveText('')`。`toBeEnabled()` と `.not.toHaveAttribute('readonly')`。`boundingBox()` を `expect.poll` で確認 |
+| `toBeEmpty()`, `toBeInViewport()` | フォームには `toHaveValue('')`、ほかの要素には `toHaveText('')`。`boundingBox()` を `expect.poll` で確認 |
 | `locator.screenshot()`, `{ fullPage, clip }`, `snapshotPathTemplate`, `ignoreSnapshots` | `toHaveScreenshot` でビューポートまたは 1 つのロケーターを比較。ビジュアルテストのスキップにはタグと `--exclude-tag` |
 | `expect.configure()` | 各呼び出しに `{ timeout }` |
 | `@axe-core/playwright` | `browser.addInitScript({ path: 'node_modules/axe-core/axe.min.js' })` で axe-core を読み、`browser.evaluate` 内で `axe.run()` |
@@ -261,7 +263,7 @@ export const test = base.extend<{ accountPage: AccountPage }>({
 | --- | --- |
 | `devices['iPhone 15']`, `isMobile`, `hasTouch`, `deviceScaleFactor` | `web({ viewport, userAgent })`。実際のタッチにはモバイルターゲット |
 | `waitForURL(glob)`, `waitForFunction()` | `RegExp`。`browser.evaluate` を `expect.poll` で確認 |
-| `waitForResponse(predicate)`, `waitForRequest()`, `page.on('request')`, `response.ok()` | `browser.waitForResponse(pattern)` の後、テスト内でレスポンスを検証。`ok()` の代わりに `status`。リクエストは `browser.route` ハンドラーで `route.request` を記録し、`route.fallback()` を呼ぶ |
+| `waitForResponse(predicate)`, `waitForRequest()`, `page.on('request')`, `response.ok()` | `browser.waitForResponse(pattern)`、またはリクエストのメソッドで絞り込む `{ method, url }` を使い、テスト内でレスポンスを検証。`ok()` の代わりに `status`。リクエストは `browser.route` ハンドラーで `route.request` を記録し、`route.fallback()` を呼ぶ |
 | `route.fulfill({ response })`, `route.abort(code)`, `route.fetch(options)`, `request.postDataJSON()` | `route.fetch()` の `status`、`headers`、`body`。`JSON.parse(route.request.postData)` |
 | `page.addLocatorHandler()` | `beforeEach` でオーバーレイを閉じる、または `browser.setCookies` で同意の Cookie を設定 |
 | `page.on('console')`, `page.on('pageerror')`, `page.clock` | `window` の配列に記録する、または `Date` を置き換える `browser.addInitScript` |
@@ -281,14 +283,14 @@ export const test = base.extend<{ accountPage: AccountPage }>({
 | `globalSetup`、`globalTeardown`、`webServer` の配列 | 実行の前後を囲むスクリプト、または全プロセスを起動する 1 つの `app.command` |
 | `projects[].testMatch`, `testDir`, `testIgnore`, `grep` | テストの `platforms` やタグ、またはターゲットごとに別の実行 |
 | `--ui`, `npx playwright show-report`, `--reporter html` | `--watch --headed`。`npx e2e report`（`htmlReporter()` が書き出す `<output>/report.html` を開く） |
-| `test.slow()`、`test.describe.only()`、`test.describe.fixme()`、`test.fixme(title, details, body)`、describe に対する `test.fail()` | テストやグループに `{ timeout }` または `{ skip: 'fixme' }`、details の `tags` があればその横に指定（スキップ原因は `fixme` ではなく `explicit` と報告）。各テストに `test.only` と `test.fail()` |
+| `test.slow()`、`test.describe.only()`、`test.describe.fixme()`、`test.fixme(title, details, body)` | テストやグループに `{ timeout }` または `{ skip: 'fixme' }`、details の `tags` があればその横に指定（スキップ原因は `fixme` ではなく `explicit` と報告）。各テストに `test.only` |
 | `test.skip(callback, description)`、`test.fixme(callback, description)` | テスト本体内で `test.skip(condition, reason)` または `test.fixme(condition, reason)`、またはテストに `platforms` |
 | `failOnFlakyTests`, `use.navigationTimeout`, `--timeout`, `--quiet` | `report.json` の `run.summary.flaky`。`browser.goto(url, { timeout })`。設定の `timeout` |
 | `blob` レポーターと `merge-reports` | シャードごとに 1 つのレポート |
 | Playwright の Docker イメージ | `@e2e-dev/web` が固定する `playwright-core` バージョンのイメージ、または `npx @e2e-dev/web install chromium --with-deps` |
 | ファイルや describe 内の `test.use({ ... })` | ランナーのオプションはグループ、エンジンのオプションはターゲット、実行時の変更は `browser.setViewport` |
 | `projects[].dependencies`, `teardown` | サインインはトップレベルの `test.setup`。実行の前後を囲むスクリプト |
-| `github` レポーター | `github()` はプルリクエストにコメントを投稿 |
+| `line`、`github` レポーター | `list`。`github()` はプルリクエストにコメントを投稿 |
 
 </Accordion>
 </AccordionGroup>
@@ -323,7 +325,7 @@ export const test = base.extend<{ accountPage: AccountPage }>({
 | `getByRole(role, { includeHidden })` | `browser.locator('role=button[include-hidden=true]')`。ロールクエリはアクセシビリティツリーに従う |
 | タグの `--grep @smoke`、位置引数の正規表現、`file:line:column` | `--tag smoke`。glob または単独の名前。`file:line` |
 | `getByTitle()` | `browser.locator('[title="Close"]')`。title は DOM 属性なので `screen` のクエリはなし |
-| `page.waitForLoadState()` | 次のページの表示内容へのアサーション。ページ遷移は `load` を待ち、各アクションとアサーションは自身のノードを待つ |
+| `page.waitForLoadState()` | 次のページの表示内容へのアサーション。ページ遷移は `load` を待ち、各アクションとアサーションは対象のノードを待つ |
 | `npx playwright codegen`、Inspector | [`npx e2e mcp`](/mcp-server) でコーディングエージェントがアプリを操作しながらテストを作成。`screen.debug()` でツリーを表示 |
 | `{ force: true }`, `{ trial: true }` | `tap({ position })` は操作可能性の検証を省略。試行的な確認には `toBeVisible()` と `toBeEnabled()` |
 | `ariaSnapshot()`, `toMatchAriaSnapshot()`, `toMatchSnapshot()` | `expect(await screen.tree()).toContain(...)`。フィクスチャのファイルと `toEqual` |

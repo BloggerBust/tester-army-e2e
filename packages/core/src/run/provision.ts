@@ -162,6 +162,8 @@ function retryOnlyNotice(
 
 export interface PrepareScope {
   readonly runId: string;
+  /** The `launch()` host preparing its target; see `EnginePrepareInfo.hostId`. */
+  readonly hostId?: string | undefined;
   /** The config's directory, where an engine resolves a relative option (a build path). */
   readonly projectRoot: string;
   /** The same `env` the workers are started with: what prepare provisions must be where a launch will look for it. */
@@ -169,12 +171,15 @@ export interface PrepareScope {
   readonly signal: AbortSignal;
   /** Whether the run asked for a visible surface, so a hook provisions for the browser it will launch. */
   readonly headed: boolean;
+  /** The device `e2e run --device` names, and the one target it binds. */
+  readonly device?: { readonly target: string; readonly name: string } | undefined;
   /** Where a hook's progress lines go, under the target they concern. */
   readonly notice: (targetName: string, line: string) => void;
 }
 
 export interface FinishScope {
   readonly runId: string;
+  readonly hostId?: string | undefined;
   readonly env: NodeJS.ProcessEnv;
   /** The cleanup budget every prepared target shares. */
   readonly timeoutMs: number;
@@ -209,8 +214,10 @@ export class PreparedEngines {
       return await engine.prepare({
         runId: scope.runId,
         targetName: target.name,
+        ...(scope.hostId === undefined ? {} : { hostId: scope.hostId }),
         projectRoot: scope.projectRoot,
         headed: scope.headed,
+        ...(scope.device?.target === target.name ? { device: scope.device.name } : {}),
         app: engineAppInfo(target.app),
         slots,
         env: scope.env,
@@ -239,7 +246,7 @@ export class PreparedEngines {
         const { finish } = engine;
         const timeoutMs = deadline.remaining();
         const label = `finishing engine ${engine.name} for target "${target.name}"`;
-        const info = { runId: scope.runId, targetName: target.name, env: scope.env, timeoutMs, log: (line: string) => scope.notice(target.name, line) };
+        const info = { runId: scope.runId, targetName: target.name, ...(scope.hostId === undefined ? {} : { hostId: scope.hostId }), env: scope.env, timeoutMs, log: (line: string) => scope.notice(target.name, line) };
         try {
           await withScopedBudget(
             timeoutMs,

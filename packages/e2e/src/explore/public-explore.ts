@@ -52,7 +52,8 @@ export interface ExplorationResult extends RunResult {
  * cleanup before starting another run. A goal or budget out of range, a
  * config that does not load or resolve, an unknown target or agent, or an
  * agent with no model rejects before anything starts, as the CLI's flags
- * do; once the run starts, failures and interruption resolve with their
+ * do (the public `explore` on `e2e/runner` redacts that error and drops its
+ * cause); once the run starts, failures and interruption resolve with their
  * status in the report.
  */
 export async function runExploration(options: ExplorationOptions = {}): Promise<ExplorationResult> {

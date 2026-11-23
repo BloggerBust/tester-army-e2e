@@ -133,7 +133,7 @@ describe('telemetry events', () => {
       command: 'run',
       status: 'failed',
       exit_code: 1,
-      duration_ms: 5000,
+      duration_ms: 4500,
       flags: ['--headed', '--workers'],
       tests_discovered: 3,
       tests_selected: 2,
@@ -413,9 +413,9 @@ describe('telemetry events', () => {
     expect(runCompletedEvent(unpriced, RUN).properties['cost_source']).toBe('none');
   });
 
-  it('reports a missing duration as null rather than a negative or NaN number', () => {
+  it('reports a missing duration as null even when both timestamps are present', () => {
     const report = sampleReport();
-    (report.run as { finishedAt: string }).finishedAt = 'not a date';
+    delete report.run.durationMs;
     expect(runCompletedEvent(report, RUN).properties['duration_ms']).toBeNull();
   });
 

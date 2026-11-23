@@ -430,11 +430,11 @@ describe('renderMarkdownReport', () => {
     expect(renderMarkdownReport(page({ status: 'failed', results: [prose] }))).toContain(`> ${'m'.repeat(598)}💥…`);
   });
 
-  it('rounds a duration to whole seconds before splitting off the minutes, and formats tokens and cost as the terminal does', () => {
-    const at = (finishedAt: string) => renderMarkdownReport(page({ results: [passing], finishedAt }));
-    expect(at('2026-01-01T00:01:59.500Z')).toContain('· 2m 0s ·');
-    expect(at('2026-01-01T00:01:29.400Z')).toContain('· 1m 29s ·');
-    expect(at('2026-01-01T00:00:59.940Z')).toContain('· 59.9s ·');
+  it('rounds the recorded duration to whole seconds before showing minutes. Tokens and cost match the terminal formats', () => {
+    const at = (durationMs: number) => renderMarkdownReport(page({ results: [passing], durationMs }));
+    expect(at(119_500)).toContain('· 2m 0s ·');
+    expect(at(89_400)).toContain('· 1m 29s ·');
+    expect(at(59_940)).toContain('· 59.9s ·');
     const usage = (modelTokens: number, estimatedCostUsd: number) => {
       const document = page({ results: [judged] });
       document.run.usage = { ...document.run.usage, modelTokens, estimatedCostUsd };

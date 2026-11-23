@@ -286,7 +286,19 @@ export default {
 ```
   </Tab>
   <Tab title="Codex">
-Install the package and the Codex adapter. Sign in with `codex login`.
+Install the package and the Codex adapter. Sign in with `codex login`, or
+set `OPENAI_API_KEY`: when Codex has no login, `codex()` signs it in with the
+first nonblank of `CODEX_API_KEY` and `OPENAI_API_KEY`, unless you set a
+nonblank `DEFAULT_AUTH_REQUEST`. Codex saves the key as its login, like
+`codex login --with-api-key` (in `CODEX_HOME/auth.json` with the default
+credential store, nowhere with `ephemeral`), and keeps it until
+`codex logout`. While `APP_SERVER_LOGS` is set, `codex()` passes no sign-in
+request, yours included, since the adapter's log would write credentials in
+plain text; a saved login still works. A variable in `codex({ env })`
+replaces the environment's, so `env: { OPENAI_API_KEY: '' }` keeps a key you
+set for the app under test away from Codex. Start the first sessions on a new
+`CODEX_HOME` one at a time: several at once often fail with
+`failed to initialize sqlite state runtime`.
 
 <CodeGroup>
 ```bash npm
@@ -347,7 +359,8 @@ Each preset also turns off the agent's own tools that run without asking:
   no MCP servers but the step tools, no saved session, and no bypass of
   permission prompts.
 - **Codex**: read-only mode, no shell, web search, apps, plugins, browser,
-  or computer use. Every MCP server from your Codex config is off for these
+  or computer use, and no shell snapshots, which would copy your environment,
+  keys included, to disk. Every MCP server from your Codex config is off for these
   sessions only. Codex can still start a subagent, which fails the step like
   any tool of its own.
 

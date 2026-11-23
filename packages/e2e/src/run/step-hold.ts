@@ -8,36 +8,30 @@
  */
 
 import { abortError, cancelledError } from '@e2e-dev/core/lib/internal/time';
-import type { SourceLocation } from '@e2e-dev/core/lib/internal/source';
 import type { AttemptTimeout } from '@e2e-dev/core/lib/run/budget';
 import type { StepHoldRequest } from '@e2e-dev/core/lib/run/steps';
 import type { OperationContext, TargetSession } from '@e2e-dev/core/lib/engine/surface';
 import type { HeldTestAttachment } from './step-attachment-wire.ts';
 import { traceScreen, type TraceScreenOptions } from '@e2e-dev/core/lib/run/step-screens';
+import type { PausedKey, PausedStep, RunEventOf } from './events.ts';
 
 /** A step held before it runs, or a paused test, as the runner's `hold` hook sees it. */
-export interface HeldStep extends StepHold {
+export interface HeldStep extends Omit<StepHold, 'number'> {
   /** The ID shown at every hold of this attempt. */
   readonly attachId: string;
 }
 
 /** A held step or pause without the runner-assigned attachment ID. */
-export interface StepHold {
-  /** Whether this wait is for a held step or a paused test. */
-  readonly kind: StepHoldRequest['kind'];
+export interface StepHold extends StepHoldRequest {
   readonly target: string;
   readonly testId: string;
   readonly agent: string;
   readonly repeat: number;
   /** The test's title path, joined with ` › `. */
   readonly title: string;
-  readonly api: string;
-  /** Already redacted. */
-  readonly label: string;
-  readonly source?: SourceLocation;
 }
 
-/** A held step with its place among its test's held steps, from 1. Pauses use 0 because they aren't steps. */
+/** A held step with its expected position in the trace. Pauses use 0. */
 export interface NumberedStep {
   readonly step: HeldStep;
   readonly number: number;
@@ -47,24 +41,107 @@ export interface NumberedStep {
 export interface StepPrompt {
   /** One step, or every step held together, as in one `Promise.all`. */
   readonly steps: readonly [NumberedStep, ...NumberedStep[]];
-  /** List every key, not only the short line; `h` turns it on and off. */
-  readonly help: boolean;
   /**
    * Whether the run holds steps (`e2e run --step`). `n`, `a`, and `rest`
    * release them.
    */
   readonly holdSteps: boolean;
+  /** What the keyboard does now, in the order to list it. Empty when no keyboard answers the prompt: `e2e run --step` commands do. */
+  readonly keys: readonly PausedKey[];
+}
+
+/** The `paused` event of `prompt`: its test, the calls that wait, and the keys a keyboard takes. */
+function pausedFact(prompt: StepPrompt, titlePath: readonly string[] | undefined): RunEventOf<'paused'> {
+  const waits = ({ step, number }: NumberedStep): PausedStep => ({
+    number,
+    api: step.api,
+    label: step.label,
+    ...(step.source === undefined ? {} : { source: step.source }),
+  });
+  const [first, ...rest] = prompt.steps;
+  const { step } = first;
+  return {
+    type: 'paused',
+    testId: step.testId,
+    agent: step.agent,
+    repeat: step.repeat,
+    target: step.target,
+    // A test the run did not collect, as one a host runs by itself, is known by the title its hold names.
+    titlePath: titlePath ?? [step.title],
+    reason: step.kind === 'pause' ? 'pause' : 'step',
+    attachId: step.attachId,
+    steps: [waits(first), ...rest.map(waits)],
+    keys: [...prompt.keys],
+  };
+}
+
+/** One run of one test on one target, as the events name it. */
+type TestRun = Pick<RunEventOf<'paused'>, 'testId' | 'agent' | 'repeat' | 'target'>;
+
+/** The `paused` and `resumed` events of one run. */
+interface PauseEvents {
+  /** The `hold` hook shows `prompt`, or takes its prompt down. */
+  show(prompt: StepPrompt | undefined): void;
+  /** A test's result is in: a wait of its own is over. */
+  testEnded(test: TestRun): void;
+  /** The run is over: an open wait ends, and nothing shown later is told. */
+  end(): void;
+}
+
+/**
+ * Tells a run's reporters which test waits for a person. The `hold` hook
+ * says when a wait begins and ends; one still open when its test or the
+ * run ends is ended here, so every `paused` gets its `resumed`, before the
+ * next test's `paused` and before `run-finished`. `titlePathOf` answers a
+ * collected test's title path by its id.
+ */
+export function pauseEvents(
+  emit: (fact: RunEventOf<'paused'> | RunEventOf<'resumed'>) => void,
+  titlePathOf: (testId: string) => readonly string[] | undefined,
+): PauseEvents {
+  let paused: RunEventOf<'paused'> | undefined;
+  let ended = false;
+  const same = (test: TestRun): boolean =>
+    paused !== undefined && paused.testId === test.testId && paused.agent === test.agent && paused.repeat === test.repeat && paused.target === test.target;
+  const resume = (): void => {
+    if (paused === undefined) return;
+    const { testId, agent, repeat, target } = paused;
+    paused = undefined;
+    emit({ type: 'resumed', testId, agent, repeat, target });
+  };
+  return {
+    show(prompt) {
+      if (ended) return;
+      const next = prompt === undefined ? undefined : pausedFact(prompt, titlePathOf(prompt.steps[0].step.testId));
+      if (next === undefined || !same(next)) resume();
+      if (next === undefined) return;
+      paused = next;
+      emit(next);
+    },
+    testEnded(test) {
+      if (same(test)) resume();
+    },
+    end() {
+      resume();
+      ended = true;
+    },
+  };
 }
 
 /** What the runner hands its `hold` hook beside the step. */
 export interface StepHoldContext {
+  /** Expected position of the held step in the trace. A pause uses 0. */
+  readonly number: number;
+  /** The test title and target name after redaction. */
+  readonly labels: Pick<HeldStep, 'title' | 'target'>;
   /** Aborts once the answer no longer matters: the step was abandoned, its attempt ended, or the run was interrupted. */
   readonly signal: AbortSignal;
   /** Attaches to a held test by its pause ID. */
   attach(id: string, signal?: AbortSignal, sessionId?: string): Promise<HeldTestAttachment>;
   /**
-   * Shows the step waiting for a key, or no prompt: under its test in the
-   * list reporter's live window, else on stderr.
+   * Tells the reporters the test waits, as a `paused` event, and `resumed`
+   * once passed `undefined`. Unless an interactive reporter shows it, a
+   * prompt a keyboard answers is printed on stderr.
    */
   show(prompt: StepPrompt | undefined): void;
   /**
@@ -74,12 +151,14 @@ export interface StepHoldContext {
    * share one read.
    *
    * It returns `undefined` if the screen can't be read, or if it's called
-   * after the wait has ended. A read that is still running when the wait
-   * ends can return the screen, so check that the step or pause is still
-   * held before using the result.
+   * after the wait has ended.
    */
   readScreen(): Promise<string | undefined>;
+  /** Reads the attempt's redacted app log lines, numbered as in the trace. The result is `undefined` after the wait has ended. */
+  readLogs(): Promise<readonly string[] | undefined>;
 }
+
+export type HoldReads = Pick<StepHoldContext, 'readScreen' | 'readLogs'>;
 
 /**
  * Decides when a held step runs or a paused test resumes: it resolves to run
@@ -138,8 +217,8 @@ export class AttemptHolds {
 export interface AttemptStepHolds extends Pick<AttemptHoldsOptions, 'timeout' | 'signal'> {
   /** The attempt as every step held in it names it. */
   readonly attempt: Pick<StepHold, 'target' | 'testId' | 'agent' | 'repeat' | 'title'>;
-  /** Asks the runner whether the step may run. The runner can call `readScreen` to read the screen during the wait. */
-  readonly ask: (step: StepHold, signal: AbortSignal, readScreen: StepHoldContext['readScreen']) => Promise<void>;
+  /** Callback to decide whether the step may run. The screen is available while waiting. */
+  readonly ask: (step: StepHold, signal: AbortSignal, readScreen: HoldReads['readScreen']) => Promise<void>;
   /** Reads the screen a hold starts on. */
   readonly readScreen: (signal: AbortSignal) => Promise<string | undefined>;
 }
@@ -147,16 +226,29 @@ export interface AttemptStepHolds extends Pick<AttemptHoldsOptions, 'timeout' | 
 /** The holds of one test attempt: each hold asks the runner, which can read the screen the hold starts on. */
 export function holdAttemptSteps(options: AttemptStepHolds): AttemptHolds {
   const { attempt, ask, readScreen } = options;
-  // Steps held together (one `Promise.all`) wait on one screen, read once.
+  // Steps held together (one `Promise.all`) share a screen read.
   let heldScreen: Promise<string | undefined> | undefined;
   return new AttemptHolds({
     timeout: options.timeout,
     signal: options.signal,
     ask: async (step, signal) => {
       await ask(
-        { kind: step.kind, ...attempt, api: step.api, label: step.label, ...(step.source === undefined ? {} : { source: step.source }) },
+        { ...step, ...attempt },
         signal,
-        () => (heldScreen ??= readScreen(signal)),
+        () => {
+          if (heldScreen === undefined) {
+            const request = readScreen(signal).then((screen) => {
+              if (screen === undefined && heldScreen === request) {
+                heldScreen = undefined;
+              }
+
+              return screen;
+            });
+            heldScreen = request;
+          }
+
+          return heldScreen;
+        },
       );
     },
     // The clock runs again and tells the watchdog itself; the next hold reads a fresh screen.

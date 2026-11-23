@@ -233,7 +233,7 @@ bunx e2e run tests/checkout.e2e.ts --step --headed
 - 同时启动的步骤，例如 `Promise.all` 中的步骤，共用一个提示，按一次 Enter 即可运行，因此与触发它的点击一起执行的 `waitForResponse` 不会等待按键。当另一个步骤暂停时，已经运行的步骤仍会继续运行，并使用自己的超时。
 - 步骤暂停时，如果会话空闲过久，托管浏览器或设备可能终止该会话。
 
-`--step` 一次运行一个测试。在 CI 中、与 `--watch` 一起使用、`--workers` 大于 1 或使用 json 报告器时，它会被拒绝。
+`--step` 一次运行一个测试。在 CI 中、与 `--watch` 一起使用或 `--workers` 大于 1 时，它会被拒绝。与 json 报告器一起使用时，stdin 和 stdout 必须是终端：提示打印到 stderr，报告在最后打印到 stdout。
 
 ## 无终端时单步执行测试
 
@@ -354,7 +354,7 @@ stdout | |web| tests/todos.e2e.ts > adds a todo
 hello from the test
 ```
 
-测试外部的输出，例如文件顶层或报告器的输出，显示在 `stdout | runner` 或 `stderr | runner` 下。这两个流都输出到 `list` 输出的位置：stdout，与 `json` 同时使用时为 stderr。未使用 `list` 报告器，也没有其他通过 [`onOutput`](/reference/reporters#onoutput) 输出到终端的报告器时，输出会按写入方式进入各自的流；但 `json` 报告器（`--reporter json` 或 `reporters` 中的设置）例外，它将 stdout 留给报告，并将输出写到 stderr。加载配置产生的输出会显示在运行标题之前；如果加载失败，则由一条警告替代。
+测试外部的输出，例如文件顶层或报告器的输出，显示在 `stdout | runner` 或 `stderr | runner` 下。这两个流都输出到 `list` 输出的位置：stdout，与 `json` 同时使用时为 stderr。未使用 `list`、`dot` 或其他[交互式](/reference/reporters#interactive)报告器时，输出会原样打印到 stderr，因此 stdout 只包含报告器在那里打印的内容。加载配置产生的输出会在运行标题之前打印到 stderr；如果加载失败，则由一条警告替代。
 
 运行器会对机密值进行[脱敏](/reference/security#redaction)。报告不包含控制台输出，因此对于后续读者需要的信息，请使用 `expect` 或产物保存。
 

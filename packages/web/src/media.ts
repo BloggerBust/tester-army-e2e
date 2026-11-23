@@ -4,6 +4,8 @@
  * on `browser.emulateMedia()` for the rest of one.
  */
 
+import { describe } from './support.ts';
+
 /** User preferences a page reads through `@media` rules and `matchMedia`, as Playwright's `emulateMedia` sets them. */
 export interface WebMedia {
   /** `prefers-color-scheme`: `'light'`, `'dark'`, or `'no-preference'`. */
@@ -41,12 +43,4 @@ export function mediaLabel(media: unknown): string {
     const value: unknown = Reflect.get(media, key);
     return typeof value === 'string' && mediaProblem(String, key, value) === undefined ? [`${key}: ${value}`] : [];
   }).join(', ');
-}
-
-/** A refused value as a message shows it: a string quoted, another primitive as written, anything else by its kind, never serialized. */
-function describe(value: unknown): string {
-  if (typeof value === 'string') return JSON.stringify(value);
-  if (value === null || typeof value === 'number' || typeof value === 'boolean') return String(value);
-  if (Array.isArray(value)) return 'an array';
-  return typeof value === 'object' ? 'an object' : typeof value;
 }

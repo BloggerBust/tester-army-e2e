@@ -111,7 +111,7 @@ test('shows the home screen', async ({ agent, app, screen }) => {
 | `.tap()`, `.tap({ x, y })`, `.longPress()`, `.multiTap(2)` | `.tap()`、`.tap({ position: { x, y } })`、`.longPress()`、`.doubleTap()` |
 | `.typeText(t)` | `.pressSequentially(t)` |
 | `.replaceText(t)`, `.clearText()`, `.tapReturnKey()` | `.fill(t)`、`.clear()`、`.press('Enter')` |
-| `.swipe('up', 'fast')` | `.swipe({ direction: 'down', momentum: 'fast' })`。Detox は指の方向、e2e はコンテンツを進める方向を指定 |
+| `.swipe('up', 'fast')` | `.swipe({ direction: 'down', momentum: 'fast' })`。Detox は指が動く方向、e2e はコンテンツをスクロールする方向を指定 |
 | `list.scroll(200, 'down')` | `list.swipe({ direction: 'down' })`。移動量は指定しません |
 | `waitFor(el).toBeVisible().whileElement(list).scroll(...)` | `list.scrollUntilVisible(el)`。Detox で上にスクロールする場合は `{ direction: 'up' }` |
 

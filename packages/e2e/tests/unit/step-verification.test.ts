@@ -3,10 +3,62 @@
  * minted as verification steps, whatever their kind or api name.
  */
 
-import { describe, expect, it } from 'vitest';
-import { StepRecorder } from '@e2e-dev/core/lib/run/steps';
+import { randomUUID } from 'node:crypto';
+import { describe, expect, it, vi } from 'vitest';
+import { StepRecorder, type StepCacheInfo } from '@e2e-dev/core/lib/run/steps';
+import { AgentError } from '@e2e-dev/core/lib/agent/error';
+import { processSecrets } from '@e2e-dev/core/lib/run/secrecy';
 
 const pass = async (): Promise<void> => undefined;
+
+it('refreshes provider key registration before recording a failure', async () => {
+  const key = randomUUID();
+  let registeredDuringSerialization = false;
+  const steps = new StepRecorder('attempt', {
+    redact(text) {
+      if (text === 'fixture failure') registeredDuringSerialization = processSecrets.redact(key) === '<secret:OPENAI_API_KEY>';
+      return text;
+    },
+  });
+  try {
+    await expect(steps.run('agent', 'agent.act', 'fixture step', async () => {
+      vi.stubEnv('OPENAI_API_KEY', key);
+      throw new Error('fixture failure');
+    })).rejects.toThrow('fixture failure');
+    expect(registeredDuringSerialization).toBe(true);
+  } finally {
+    vi.unstubAllEnvs();
+  }
+});
+
+it('redacts recorded model metadata only in the step record', async () => {
+  const redact = (text: string): string => text.replaceAll('fixture-value', '<secret:fixture>');
+  const steps = new StepRecorder('attempt', { redact });
+  const cache: StepCacheInfo = {
+    mode: 'self-finalized', replayedActions: 2, totalActions: 2, entry: 'entry-key',
+    recordedBy: { provider: 'fixture-value', model: 'model-fixture-value' },
+  };
+  await steps.run('agent', 'agent.act', 'replayed step', async () => steps.attachAgentDetails({ cache }));
+  expect(steps.all()[0]?.cache).toEqual({ ...cache, recordedBy: { provider: '<secret:fixture>', model: 'model-<secret:fixture>' } });
+  expect(cache.recordedBy).toEqual({ provider: 'fixture-value', model: 'model-fixture-value' });
+});
+
+it('redacts a guest step cache with the host ledger and drops attribution that no longer fits the report', async () => {
+  const redact = (text: string): string => text.replaceAll('!', '<secret:fixture>');
+  const steps = new StepRecorder('attempt', { redact });
+  const cache: StepCacheInfo = {
+    mode: 'self-finalized', replayedActions: 2, totalActions: 2, entry: 'entry-key',
+    recordedBy: { provider: 'provider!', model: 'model!' },
+  };
+  const guest = steps.guest({ kind: 'agent', api: 'agent.act', label: 'guest step', actor: 'fixture-guest', source: undefined });
+  guest.end({ status: 'passed', durationMs: 1, cache });
+  expect(steps.all()[0]?.cache?.recordedBy).toEqual({ provider: 'provider<secret:fixture>', model: 'model<secret:fixture>' });
+  expect(cache.recordedBy).toEqual({ provider: 'provider!', model: 'model!' });
+
+  const longCache = { ...cache, recordedBy: { provider: 'provider', model: `${'m'.repeat(299)}!` } };
+  await steps.run('agent', 'agent.act', 'own step', async () => steps.attachAgentDetails({ cache: longCache }));
+  expect(steps.all()[1]?.cache).toEqual({ mode: 'self-finalized', replayedActions: 2, totalActions: 2, entry: 'entry-key' });
+});
 
 describe('StepRecorder.lastVerifiedStepIndex', () => {
   it('is -1 until a verification step passes', async () => {
@@ -48,6 +100,60 @@ describe('StepRecorder.lastVerifiedStepIndex', () => {
     const kept = new Error('the page printed hunter2');
     await new StepRecorder('attempt', { redact }).run('app', 'app.open', '/', () => Promise.reject(kept)).catch(() => undefined);
     expect(kept.message).toContain('hunter2');
+  });
+
+  it('keeps the cause of an agent error that is not a failed model call, such as a hook\'s own error', async () => {
+    const mine = new Error('the test stopped the run');
+    const steps = new StepRecorder('attempt', { redact: (text) => text, redactThrown: true });
+    const caught = await steps.run('agent', 'agent.act', 'x', () => Promise.reject(new AgentError('ACTION_FAILED', 'hook failed', { cause: mine }))).then(() => undefined, (cause: Error) => cause);
+    expect(caught?.cause).toBe(mine);
+  });
+
+  it('rebuilds a failed model call, from this copy or another, as its own agent error with its text redacted and no cause', async () => {
+    const redact = (text: string): string => text.replaceAll('sk-fake-step-7d2e', '<secret:k>');
+    // As another installed copy of core throws it: the brand, not this copy's class.
+    const foreign = Object.assign(new Error('provider said sk-fake-step-7d2e'), {
+      code: 'MODEL_PROVIDER_FAILED', explanation: 'provider said sk-fake-step-7d2e', blocked: false,
+      cause: { responseBody: 'sk-fake-step-7d2e' },
+    });
+    Object.defineProperty(foreign, Symbol.for('e2e.agent-error.v1'), { value: true });
+    for (const thrown of [foreign, new AgentError('MODEL_PROVIDER_FAILED', 'provider said sk-fake-step-7d2e', { cause: { responseBody: 'sk-fake-step-7d2e' } })]) {
+      for (const redactThrown of [false, true]) {
+        const caught = await new StepRecorder('attempt', { redact, redactThrown }).run('agent', 'agent.act', 'x', () => Promise.reject(thrown)).then(() => undefined, (cause: unknown) => cause);
+        expect(caught).toBeInstanceOf(AgentError);
+        expect(caught).toMatchObject({ code: 'MODEL_PROVIDER_FAILED', message: 'provider said <secret:k>', explanation: 'provider said <secret:k>' });
+        expect((caught as Error).cause).toBeUndefined();
+      }
+    }
+  });
+
+  it.each(['CONTEXT_OVERFLOW', 'MODEL_OUTPUT_INVALID'] as const)('drops the raw cause from %s', async (code) => {
+    const key = 'sk-fake-model-error-29c8';
+    const redact = (text: string): string => text.replaceAll(key, '<secret:k>');
+    for (const redactThrown of [false, true]) {
+      const steps = new StepRecorder('attempt', { redact, redactThrown });
+      const thrown = new AgentError(code, `provider said ${key}`, { cause: { responseBody: key } });
+      const caught = await steps.run('agent', 'agent.act', 'x', () => Promise.reject(thrown)).catch((error: unknown) => error);
+      expect(caught).toMatchObject({ code, message: 'provider said <secret:k>' });
+      expect(caught).not.toHaveProperty('cause');
+    }
+  });
+
+  it('sanitizes a provider error after the caller leaves the step running', async () => {
+    const key = 'sk-fake-late-model-4775';
+    const redact = (text: string): string => text.replaceAll(key, '<secret:k>');
+    const steps = new StepRecorder('attempt', { redact });
+    const gate = deferred();
+    const work = steps.run('agent', 'agent.act', 'x', async () => {
+      await gate.promise;
+      throw new AgentError('MODEL_PROVIDER_FAILED', `provider said ${key}`, { cause: { responseBody: key } });
+    });
+    expect(steps.abandonRunning()?.code).toBe('STEP_NOT_AWAITED');
+    gate.resolve();
+    const caught = await work.catch((error: unknown) => error);
+    expect(caught).toMatchObject({ code: 'MODEL_PROVIDER_FAILED', message: 'provider said <secret:k>' });
+    expect(caught).not.toHaveProperty('cause');
+    expect(steps.all()[0]?.error?.code).toBe('STEP_NOT_AWAITED');
   });
 
   it('does not advance on a verification step that failed', async () => {

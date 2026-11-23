@@ -1,6 +1,7 @@
 /** The cancellation signal and deadline an attempt's fixtures run under, per phase. */
 
 import { Deadline } from '../internal/time.ts';
+import { pollReadSignal } from '../expect/poll-scope.ts';
 
 /**
  * One attempt's fixture budget. Through `beforeEach` and the body it is the
@@ -13,6 +14,7 @@ import { Deadline } from '../internal/time.ts';
  */
 export class AttemptBudget {
   private current: { readonly signal: AbortSignal; readonly deadline: Deadline };
+  private combined: { readonly reading: AbortSignal; readonly phase: AbortSignal; readonly signal: AbortSignal } | undefined;
 
   constructor(signal: AbortSignal, deadline: Deadline) {
     this.current = { signal, deadline };
@@ -20,7 +22,13 @@ export class AttemptBudget {
 
   /** The signal the running phase's operations abort with. */
   get signal(): AbortSignal {
-    return this.current.signal;
+    const reading = pollReadSignal();
+    const phase = this.current.signal;
+    if (reading === undefined) return phase;
+    if (this.combined?.reading !== reading || this.combined.phase !== phase) {
+      this.combined = { reading, phase, signal: AbortSignal.any([reading, phase]) };
+    }
+    return this.combined.signal;
   }
 
   /** The deadline the running phase's operations are capped by. */
@@ -104,14 +112,6 @@ export class AttemptTimeout {
     private readonly onMoved?: (remainingMs: number) => void,
   ) {
     this.current = timeoutMs;
-  }
-
-  /**
-   * A timeout on a budget of its own, for a `beforeAll` hook: no attempt's
-   * budget covers it, and nothing cancels through its signal.
-   */
-  static alone(timeoutMs: number): AttemptTimeout {
-    return new AttemptTimeout(new AttemptBudget(new AbortController().signal, new Deadline(timeoutMs)), timeoutMs);
   }
 
   /** The timeout in force: the one given, or what `set` changed it to. */

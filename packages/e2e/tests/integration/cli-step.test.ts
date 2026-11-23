@@ -11,8 +11,10 @@ import path from 'node:path';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { fileURLToPath } from 'node:url';
 import { afterEach, describe, expect, it } from 'vitest';
+import type { Report } from '../../src/run-types.ts';
 import { stepAddress } from '../../src/run/step-socket.ts';
 import { printedPauseId } from '../helpers/pause-id.ts';
+import { assertValidReport } from '../helpers/report-schema.ts';
 import { createProject, workerFakeConfigSource, type FixtureProject } from '../helpers/run-project.ts';
 
 const CLI = fileURLToPath(new URL('../../dist/cli/bin.js', import.meta.url));
@@ -110,6 +112,22 @@ describe('e2e run --step without a terminal', () => {
     expect(started.stdout).toContain('NO_TESTS');
     expect(started.stdout).not.toContain('was not applied');
     expect(started.stdout).toMatch(/The stepped run has ended\.\n$/);
+  });
+
+  it('excludes time spent waiting for a command from the report duration', async () => {
+    const { dir } = project();
+    expect(e2e(dir, ['run', '--step']).exitCode).toBe(0);
+
+    const waitingAt = Date.now();
+    await sleep(200);
+    const waitedMs = Date.now() - waitingAt;
+    expect(e2e(dir, ['run', '--step', 'rest']).exitCode).toBe(0);
+
+    const report: Report = JSON.parse(fs.readFileSync(path.join(dir, '.e2e', 'report.json'), 'utf8'));
+    assertValidReport(report);
+    const { startedAt, finishedAt, durationMs } = report.run;
+    expect(durationMs).toEqual(expect.any(Number));
+    expect(durationMs).toBeLessThanOrEqual(Date.parse(finishedAt) - Date.parse(startedAt) - waitedMs);
   });
 
   it('refuses to start over a claim lock a killed run left, and names it', () => {

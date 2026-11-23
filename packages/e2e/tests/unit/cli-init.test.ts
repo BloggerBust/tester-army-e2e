@@ -1229,6 +1229,137 @@ describe('e2e init', () => {
     });
   });
 
+  describe('in a Next.js app', () => {
+    /** Writes the package.json `create-next-app` writes, with `scripts` in place of its own. */
+    function nextApp(scripts: Record<string, string> = { dev: 'next dev', build: 'next build', start: 'next start' }, extra: object = {}): void {
+      writeFileSync(path.join(dir, 'package.json'), JSON.stringify({
+        name: 'my-app',
+        private: true,
+        scripts,
+        dependencies: { next: '16.4.6', react: '19.3.0', 'react-dom': '19.3.0' },
+        ...extra,
+      }, null, 2));
+    }
+
+    it('starts next dev locally and the production build in CI, and asks for no APP_URL', async () => {
+      nextApp();
+      expect((await init(dir, { yes: true })).exitCode).toBe(0);
+      expect(read('e2e.config.ts')).toContain(`// e2e reads CI the same way: unset, '', '0', and 'false' mean a local run.
+const ci = !['', '0', 'false'].includes(process.env.CI?.trim().toLowerCase() ?? '');
+
+export default {`);
+      expect(read('e2e.config.ts')).toContain(`  targets: [{
+    engine: web(),
+    app: {
+      url: 'http://localhost:3000',
+      // Next.js: the dev server here, or one you already started on that port.
+      // CI serves the production build: run \`npm run build\` before \`e2e run\`.
+      command: ci
+        ? { executable: 'npm', args: ['run', 'start'] }
+        : { executable: 'npm', args: ['run', 'dev'], reuseExisting: true },
+    },
+  }],`);
+      expect(read('e2e.config.ts')).not.toContain('APP_URL');
+      expect(output()).toContain('Found Next.js: the web target starts npm run dev on http://localhost:3000, and npm run start in CI after npm run build');
+      expect(output()).toContain('Next: npm install, then npm run test:e2e');
+      expect(output()).not.toContain('APP_URL=');
+    });
+
+    it('runs the scripts with pnpm on the port the dev script sets', async () => {
+      nextApp({ dev: 'next dev --turbopack -p 3100', build: 'next build', start: 'next start --port 3100' }, { packageManager: 'pnpm@10.0.0' });
+      expect((await init(dir, { yes: true })).exitCode).toBe(0);
+      expect(read('e2e.config.ts')).toContain("url: 'http://localhost:3100',");
+      expect(read('e2e.config.ts')).toContain("? { executable: 'pnpm', args: ['run', 'start'] }");
+      expect(read('e2e.config.ts')).toContain(": { executable: 'pnpm', args: ['run', 'dev'], reuseExisting: true },");
+      expect(output()).toContain('Found Next.js: the web target starts pnpm dev on http://localhost:3100, and pnpm start in CI after pnpm build');
+      expect(output()).toContain('Next: pnpm install, then pnpm test:e2e');
+    });
+
+    it('starts next dev in CI too when start serves on another port', async () => {
+      nextApp({ dev: 'next dev -p 3100', build: 'next build', start: 'next start' });
+      expect((await init(dir, { yes: true })).exitCode).toBe(0);
+      expect(read('e2e.config.ts')).toContain(`      url: 'http://localhost:3100',
+      // The runner starts the Next.js dev server, or uses one you already started on that port.
+      command: { executable: 'npm', args: ['run', 'dev'], reuseExisting: true },`);
+      expect(read('e2e.config.ts')).not.toContain('const ci');
+      expect(output()).toContain('Found Next.js: the web target starts npm run dev on http://localhost:3100\n');
+    });
+
+    it('keeps the placeholder target and says why when it cannot start the app', async () => {
+      nextApp({ build: 'next build', start: 'next start' });
+      expect((await init(dir, { yes: true })).exitCode).toBe(0);
+      expect(read('e2e.config.ts')).toContain("url: process.env.APP_URL ?? 'http://localhost:3000',");
+      expect(output()).toContain('Found Next.js, but package.json has no dev script; set app.url and app.command in e2e.config.ts, see https://e2e.com/docs/frameworks/nextjs');
+      expect(output()).toContain('APP_URL=http://localhost:3000 npm run test:e2e');
+    });
+
+    it('leaves a config with no web engine alone', async () => {
+      vi.spyOn(os, 'platform').mockReturnValue('linux');
+      nextApp();
+      expect((await init(dir, { yes: true, engines: ['mobile'] })).exitCode).toBe(0);
+      expect(read('e2e.config.ts')).not.toContain('localhost');
+      expect(output()).not.toContain('Found Next.js');
+    });
+
+    it('builds the app in the CI pipeline before the tests, and says nothing is missing to start it', async () => {
+      nextApp();
+      expect((await init(dir, { yes: true, ci: 'github-actions' })).exitCode).toBe(0);
+      const steps = (parseYaml(read('.github/workflows/e2e.yml')) as { jobs: { web: { steps: { name?: string; run?: string }[] } } }).jobs.web.steps;
+      const names = steps.map((step) => step.name);
+      expect(steps.find((step) => step.name === 'Build the app')?.run).toBe('npm run build');
+      expect(names.indexOf('Build the app')).toBe(names.indexOf('Run e2e') - 1);
+      expect(output()).not.toContain('Nothing starts the app in CI');
+    });
+
+    it('builds the app in a pipeline added later, when the existing config serves the start script', async () => {
+      nextApp(undefined, { devDependencies: { '@e2e-dev/web': '*' } });
+      writeFileSync(path.join(dir, 'e2e.config.ts'), `const ci = process.env.CI === 'true';
+export default {
+  targets: [{
+    platform: 'web',
+    app: {
+      url: 'http://localhost:3000',
+      command: ci
+        ? { executable: 'npm', args: ['run', 'start'] }
+        : { executable: 'npm', args: ['run', 'dev'], reuseExisting: true },
+    },
+  }],
+};
+`);
+      expect((await init(dir, { yes: true, ci: 'gitlab' })).exitCode).toBe(0);
+      expect((parseYaml(read('.gitlab-ci.yml')) as Record<string, { script: string[] }>)['e2e-web']!.script).toContain('npm run build');
+      expect(output()).not.toContain('Found Next.js');
+    });
+
+    it('builds the app for an existing config that serves start on another port than dev', async () => {
+      nextApp({ dev: 'next dev -p 3100', build: 'next build', start: 'next start' }, { devDependencies: { '@e2e-dev/web': '*' } });
+      writeFileSync(path.join(dir, 'e2e.config.ts'), `const ci = process.env.CI === 'true';
+export default {
+  targets: [{
+    platform: 'web',
+    app: {
+      url: ci ? 'http://localhost:3000' : 'http://localhost:3100',
+      command: ci ? { executable: 'npm', args: ['run', 'start'] } : { executable: 'npm', args: ['run', 'dev'] },
+    },
+  }],
+};
+`);
+      expect((await init(dir, { yes: true, ci: 'github-actions' })).exitCode).toBe(0);
+      const steps = (parseYaml(read('.github/workflows/e2e.yml')) as { jobs: { web: { steps: { name?: string; run?: string }[] } } }).jobs.web.steps;
+      expect(steps.find((step) => step.name === 'Build the app')?.run).toBe('npm run build');
+    });
+
+    it('builds nothing for an existing config that runs only next dev', async () => {
+      nextApp(undefined, { devDependencies: { '@e2e-dev/web': '*' } });
+      writeFileSync(path.join(dir, 'e2e.config.ts'), `export default {
+  targets: [{ platform: 'web', app: { url: 'http://localhost:3000', command: { executable: 'npm', args: ['run', 'dev'] } } }],
+};
+`);
+      expect((await init(dir, { yes: true, ci: 'github-actions' })).exitCode).toBe(0);
+      expect(read('.github/workflows/e2e.yml')).not.toContain('Build the app');
+    });
+  });
+
   describe('with a CI workflow', () => {
     const workflow = '.github/workflows/e2e.yml';
 
@@ -1434,6 +1565,21 @@ describe('e2e init', () => {
       expect(output()).toContain('Could not read the targets of e2e.config.ts');
       expect(output()).toContain('The pipeline runs every target in one web job');
       expect(output()).not.toContain('No web, iOS, or Android target');
+    });
+
+    it('names a key the existing config loaded by its marker when it does not load', async () => {
+      const key = `gsk-init-${'7c2e9a4f'.repeat(4)}`;
+      writeFileSync(path.join(dir, 'package.json'), JSON.stringify({ devDependencies: { e2e: '*', '@e2e-dev/web': '*' } }));
+      writeFileSync(path.join(dir, '.env.init'), `GROQ_API_KEY=${key}\n`);
+      writeFileSync(path.join(dir, 'e2e.config.ts'), `process.loadEnvFile(${JSON.stringify(path.join(dir, '.env.init'))});\nthrow new Error('config failed with ' + process.env.GROQ_API_KEY);\n`);
+      vi.stubEnv('GROQ_API_KEY', undefined);
+      try {
+        await init(dir, { yes: true, ci: 'github-actions' });
+        expect(output()).toContain('config failed with <secret:GROQ_API_KEY>');
+        expect(output()).not.toContain(key.slice(-16));
+      } finally {
+        delete process.env['GROQ_API_KEY'];
+      }
     });
 
     it('writes no pipeline when an existing mobile config does not load', async () => {

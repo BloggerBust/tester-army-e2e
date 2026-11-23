@@ -16,7 +16,8 @@ export interface Header {
 
 function duration(ms: number): string {
   if (!Number.isFinite(ms)) return '-';
-  return ms < 1000 ? `${Math.round(ms)} ms` : `${(ms / 1000).toFixed(2)} s`;
+  const rounded = Math.round(ms);
+  return rounded < 1000 ? `${rounded} ms` : `${(ms / 1000).toFixed(2)} s`;
 }
 
 function percent(value: number): string {

@@ -223,8 +223,8 @@ function projectParams(value: unknown, pointer: string, found: FoundParams, seen
   );
 }
 
-/** Closes the verdict grammar: the executor cannot invent statuses or codes. */
-export function validateVerdict(verdict: unknown, executorName: string): StepVerdict {
+/** Closes the verdict grammar: the executor cannot invent statuses or codes. The summary is redacted here, before it is cut to its limit. */
+export function validateVerdict(verdict: unknown, executorName: string, redact: (text: string) => string): StepVerdict {
   const invalid = (issue: string): never => {
     throw new AgentError(
       'MODEL_OUTPUT_INVALID',
@@ -258,7 +258,8 @@ export function validateVerdict(verdict: unknown, executorName: string): StepVer
   }
   return {
     status,
-    summary: summary.trim().slice(0, MAX_SUMMARY_CHARS),
+    // Redacted before the cut: half a value is no longer a match.
+    summary: redact(summary.trim()).slice(0, MAX_SUMMARY_CHARS),
     ...(code === undefined ? {} : { errorCode: code }),
   };
 }

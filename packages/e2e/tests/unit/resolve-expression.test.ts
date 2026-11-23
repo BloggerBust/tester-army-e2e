@@ -196,6 +196,65 @@ describe('resolveExpression', () => {
     );
   });
 
+  it('keeps every innermost text match, however deep or far apart the echoes are', () => {
+    const echoes = [
+      node('screen', {
+        role: 'application',
+        name: 'Save',
+        children: [
+          node('form', {
+            name: 'Save',
+            children: [node('row', { name: 'Save', children: [node('label', { text: 'Save' })] }), node('note', { text: 'Draft' })],
+          }),
+          node('footer', { children: [node('button', { name: 'Save', children: [node('icon', { text: 'Draft' })] })] }),
+        ],
+      }),
+      node('toast', { text: 'Save' }),
+    ];
+    expect(ids(query('text', 'Save'), echoes)).toEqual(['label', 'button', 'toast']);
+    // Inside a scope the scope's own echo is not a candidate, and its innermost match still wins.
+    const saveIn = (scope: LocatorExpression): LocatorExpression => ({ kind: 'query', query: { kind: 'text', value: exact('Save') }, scope });
+    expect(ids(saveIn(query('text', 'Draft')), echoes)).toEqual([]);
+    expect(ids(saveIn(query('role', 'application')), echoes)).toEqual([
+      'label',
+      'button',
+    ]);
+  });
+
+  it('resolves a nested has inside the subtree of each enclosing match', () => {
+    const table = [
+      node('t1', {
+        role: 'table',
+        children: [
+          node('r1', { role: 'row', children: [node('c1', { role: 'cell', text: 'Paid' })] }),
+          node('r2', { role: 'row', children: [node('c2', { role: 'cell', text: 'Due' }), node('b2', { role: 'button', name: 'Pay' })] }),
+        ],
+      }),
+      node('t2', { role: 'table', children: [node('r3', { role: 'row', children: [node('c3', { role: 'cell', text: 'Due' })] })] }),
+    ];
+    const dueRows: LocatorExpression = { kind: 'filter', source: query('role', 'row'), has: query('text', 'Due') };
+    const payable: LocatorExpression = { kind: 'filter', source: dueRows, has: query('role', 'button') };
+    expect(ids({ kind: 'filter', source: query('role', 'table'), has: payable }, table)).toEqual(['t1']);
+    expect(ids({ kind: 'filter', source: query('role', 'table'), has: dueRows, hasNot: payable }, table)).toEqual(['t2']);
+    expect(ids({ kind: 'filter', source: query('role', 'table'), has: { kind: 'union', left: query('text', 'Paid'), right: query('role', 'button') } }, table)).toEqual([
+      't1',
+    ]);
+    // A union inside a scope answers in document order, each node once.
+    expect(ids({ kind: 'union', left: query('role', 'button'), right: query('role', 'cell') }, table)).toEqual(['c1', 'c2', 'b2', 'c3']);
+  });
+
+  it('hands a selector inside has only the descendants of each candidate', () => {
+    const seen: string[][] = [];
+    const all = (_selector: string, candidates: readonly SemanticNode[]): readonly SemanticNode[] => {
+      seen.push(candidates.map((candidate) => candidate.ref.id));
+      return candidates;
+    };
+    const items = [node('a', { role: 'listitem', children: [node('a1', {})] }), node('b', { role: 'listitem' })];
+    const expression: LocatorExpression = { kind: 'filter', source: query('role', 'listitem'), has: { kind: 'selector', selector: '*' } };
+    expect(resolveExpression(expression, items, { selector: all }).map((match) => match.ref.id)).toEqual(['a']);
+    expect(seen).toEqual([['a1'], []]);
+  });
+
   it('rejects frames, since a semantic tree has no nested documents', () => {
     expect(() => ids({ kind: 'frame', selector: 'iframe', source: query('role', 'button') })).toThrowError(
       expect.objectContaining({ code: 'FRAME_NOT_FOUND', retryable: false }),

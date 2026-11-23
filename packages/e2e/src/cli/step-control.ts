@@ -26,7 +26,7 @@ import { stepLine, stepPromptText } from '../report/list-steps.ts';
 import type { RunEventSink } from '../run/events.ts';
 import { writeTerminal } from '../run/process-output.ts';
 import { run, type RunOptions, type RunOutcome } from '../run/runner.ts';
-import type { RunnerOutput } from '../run/process-output.ts';
+import type { OutputStream, RunnerOutput } from '../run/process-output.ts';
 import type { BeforeStep, HeldStep, StepHoldContext, StepPrompt } from '../run/step-hold.ts';
 import {
   ATTACH_PROTOCOL,
@@ -37,9 +37,10 @@ import {
   NO_HELD_TEST,
 } from '../run/step-attachment-wire.ts';
 import { parseLine, readSocketLines, stepAddress, type StepAddress } from '../run/step-socket.ts';
-import { Keyboard } from './keyboard.ts';
+import type { Keyboard } from './keyboard.ts';
 import type { SignalLadder } from './signals.ts';
-import { STEP_ACTIONS, StepGate, stepKeyOf, type StepAction, type StepKey } from './step.ts';
+import { STEP_ACTIONS, StepGate, type StepAction } from './step.ts';
+import { StepKeyboard } from './step-viewer.ts';
 
 /**
  * What a command sends, and what the background run answers: the text the
@@ -54,6 +55,11 @@ type StepReply = z.infer<typeof StepReply>;
 type UnseenPrompt = {
   readonly prompt: StepPrompt;
   readonly readScreen: StepHoldContext['readScreen'];
+};
+
+type PauseKeyboardOptions = {
+  readonly holdSteps?: boolean;
+  readonly interrupt?: () => void;
 };
 
 /** How long a stepped run holds a step with no command acting on it before it stops, and keeps its end for a command after it ended with none waiting. */
@@ -572,7 +578,7 @@ export async function serveSteps(options: RunOptions, version: string, signals: 
     stopping = true;
     signals.escalate();
   };
-  const gate = new StepGate(stop);
+  const gate = new StepGate(stop, { keyboard: false });
   /** Sends `reply` and any new run output to every waiting command. */
   const send = (reply: StepReply): void => {
     answered = true;
@@ -661,6 +667,8 @@ export async function serveSteps(options: RunOptions, version: string, signals: 
     return gate.beforeStep(step, {
       ...context,
       show: (shown) => {
+        // The reporters learn of the wait; the commands answer it.
+        context.show(shown);
         unseen = shown === undefined ? undefined : { prompt: shown, readScreen: context.readScreen };
         held = shown !== undefined;
         restartIdle();
@@ -739,7 +747,7 @@ export async function servePauses(
   stop: () => void,
   stdin: NodeJS.ReadStream | undefined,
   keys?: Pick<Keyboard<unknown>, 'pause' | 'resume'>,
-  steps = false,
+  { holdSteps: steps = false, interrupt = stop }: PauseKeyboardOptions = {},
 ): Promise<RunOutcome> {
   /** The first pause on the prompt currently shown. */
   let shown: HeldStep | undefined;
@@ -752,9 +760,14 @@ export async function servePauses(
   /** The run's final answer, returned right away to later commands. */
   let ended: StepReply | undefined;
   /** Reads keys while a pause prompt is shown in a terminal. */
-  let keyboard: Keyboard<StepKey> | undefined;
+  let keyboard: StepKeyboard | undefined;
 
-  const gate = new StepGate(stop, { holdSteps: steps });
+  /** The terminal the viewer opens on. Never a stdout the run reserved, where the screen would land in front of the json report. */
+  const stream = (): OutputStream | undefined => {
+    if (process.stderr.isTTY === true) return 'stderr';
+    return process.stdout.isTTY === true && !options.processOutput.stdoutReserved ? 'stdout' : undefined;
+  };
+  const gate = new StepGate(stop, { holdSteps: steps, viewer: () => stdin !== undefined && stream() !== undefined, keyboard: stdin !== undefined });
   // Print beside the list reporter's lines. Keep stdout free for reporters that use it.
   const print = (line: string): void => options.processOutput.printLine(line);
   /**
@@ -796,7 +809,10 @@ export async function servePauses(
         // Register the command first so it receives the next pause, even if
         // release shows it right away.
         waiting.set(client, '');
-        gate.press(action === 'next' ? 'continue' : 'rest', { guard: false });
+        const key = action === 'next' ? 'continue' : 'rest';
+
+        keyboard?.closeViewer();
+        gate.press(key, { guard: false });
       }
     },
   });
@@ -818,16 +834,9 @@ export async function servePauses(
       return;
     }
 
-    keys?.pause();
-    const opened = new Keyboard(stdin, stepKeyOf);
-    opened.listen((key) => {
-      if (key === 'suspend') {
-        opened.suspend();
-      } else if (steps || (key !== 'test' && key !== 'rest')) {
-        gate.press(key);
-      }
-    });
-    keyboard = opened;
+    keys?.pause({ interrupt: false });
+    keyboard = new StepKeyboard(stdin, gate, options.processOutput, { stream, holdSteps: steps, interrupt });
+    keyboard.listen();
   };
 
   if (steps) {
@@ -835,8 +844,10 @@ export async function servePauses(
   }
 
   /**
-   * Shows a pause under its test in a terminal, reading keys while it's
-   * shown. Without a terminal, it prints the pause in the run's output.
+   * Shows a hold to the reporters: in a terminal, under its test with the
+   * keys below the summary. Without a terminal, the pause is also printed
+   * in the run's output, with the commands that answer it.
+   *
    * Each new pause answers waiting commands. After the run starts stopping,
    * new pauses aren't printed and commands receive the run's final answer.
    */
@@ -847,9 +858,9 @@ export async function servePauses(
       } else if (prompt !== undefined) {
         openKeyboard();
       }
-
-      context.show(prompt);
     }
+
+    context.show(prompt);
 
     const first = prompt?.steps[0].step;
 
@@ -921,7 +932,7 @@ export async function servePauses(
 
   let outcome: RunOutcome;
   try {
-    outcome = await run({ ...options, hold: { ask: onPause, steps } });
+    outcome = await run({ ...options, hold: { ask: onPause, steps, ...(stdin === undefined ? {} : { keyboard: true }) } });
   } catch (cause) {
     await end({ text: `error: ${codedMessage(cause)}\n${RUN_ENDED}`, exitCode: exitCodeForCategory(classifyError(cause).category) });
     throw cause;

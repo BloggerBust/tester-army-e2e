@@ -448,28 +448,35 @@ describe('redactFragments', () => {
     // Typed arrays live outside the heap, so both count; a collection mid-scan only lowers the figure.
     const used = (): number => process.memoryUsage().heapUsed + process.memoryUsage().arrayBuffers;
     const before = used();
-    const started = performance.now();
+    // CPU time, not wall time: time other processes hold this CPU does not count.
+    const cpu = process.cpuUsage();
     const redacted = ledger.redactFragments(text);
-    expect(performance.now() - started).toBeLessThan(5_000);
+    const { user, system } = process.cpuUsage(cpu);
+    expect((user + system) / 1_000).toBeLessThan(5_000);
     expect(used() - before).toBeLessThan(text.length * 16);
     expect(redacted.endsWith('<secret:apiKey>')).toBe(true);
   });
 
-  it('scans a long text in one linear pass', () => {
+  it.each([
+    ['single spaces', ' '],
+    ['line breaks and indentation', '\n    '],
+  ])('scans a long text with %s in one linear pass', (_kind, separator) => {
     const ledger = new SecretLedger([['apiKey', SECRET]]);
     const scan = (repeats: number): number => {
-      const text = `${SECRET.slice(0, 7).toUpperCase()} `.repeat(repeats);
+      const text = `${SECRET.slice(0, 7).toUpperCase()}${separator}`.repeat(repeats);
       let fastest = Infinity;
       for (let run = 0; run < 3; run += 1) {
-        const started = performance.now();
+        const cpu = process.cpuUsage();
         expect(ledger.redactFragments(text)).toBe(text);
-        fastest = Math.min(fastest, performance.now() - started);
+        const { user, system } = process.cpuUsage(cpu);
+        fastest = Math.min(fastest, (user + system) / 1_000);
       }
       return fastest;
     };
-    const once = scan(20_000);
-    // Eight times the text costs about eight times the time; a quadratic scan costs 64.
-    expect(scan(160_000) / Math.max(once, 1)).toBeLessThan(24);
+    const once = scan(10_000);
+    // A ratio holds on fast and slow machines: 32 times the text costs about 32 times the time.
+    // A break table grown 64 entries at a time reads about twice the bound or more.
+    expect(scan(320_000) / Math.max(once, 1)).toBeLessThan(96);
   });
 
   it('changes nothing with no value registered', () => {
@@ -496,6 +503,12 @@ describe('StreamRedactor', () => {
     expect(stream.push(' 50%\n')).toBe('progress 50%\n');
   });
 
+  it('redacts a value on the last of several finished lines, right before the CRLF that ends the write', () => {
+    const stream = new StreamRedactor(ledger());
+    expect(stream.push(`one\ntwo\nkey=${secret}\r\n`)).toBe('one\ntwo\nkey=<secret:token>\r\n');
+    expect(stream.flush()).toBe('');
+  });
+
   it('holds no more of a long unfinished line than the longest spelling less one character', () => {
     const registered = ledger();
     const stream = new StreamRedactor(registered);
@@ -504,10 +517,19 @@ describe('StreamRedactor', () => {
     expect(stream.flush()).toBe('x'.repeat(held));
   });
 
-  it('moves the cut back over an occurrence it would split', () => {
+  it('moves the cut back over an occurrence it would split, on a line after a finished one', () => {
     const stream = new StreamRedactor(ledger());
-    expect(stream.push(`prefix ${secret}${'y'.repeat(30)}`)).toBe('prefix ');
+    expect(stream.push(`${secret}\nprefix ${secret}${'y'.repeat(30)}`)).toBe('<secret:token>\nprefix ');
     expect(stream.flush()).toBe(`<secret:token>${'y'.repeat(30)}`);
+  });
+
+  it('moves the cut back over an occurrence of a multi-line value whose line break falls at the cut', () => {
+    const note = 'line-one-4417\nline-two-9920';
+    const registered = new SecretLedger([['note', note]]);
+    const stream = new StreamRedactor(registered);
+    const filler = 'z'.repeat(registered.maxFormLength - 1 - 'line-two-9920'.length);
+    expect(stream.push(`pad\n${'x'.repeat(10)}${note}${filler}`)).toBe(`pad\n${'x'.repeat(10)}`);
+    expect(stream.flush()).toBe(`<secret:note>${filler}`);
   });
 
   it('holds nothing when no value is registered', () => {

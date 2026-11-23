@@ -298,14 +298,14 @@ describe('engine targets', () => {
         { target: 'toy-sim', message: 'toy-sim worker 0: booted sim-a' },
         { target: 'toy-sim', message: 'releasing toy device for /run/cache' },
       ]);
-      expect(sequence.indexOf('notice:toy-sim worker 0: booted sim-a')).toBeGreaterThan(sequence.indexOf('plan'));
+      expect(sequence.indexOf('notice:toy-sim worker 0: booted sim-a')).toBeGreaterThan(sequence.indexOf('collected'));
       // The result's env reached init as the worker's environment; the run's own value won.
       expect(toy.initEnv()).toEqual({ TOY_POOL: 'sim-a,sim-b', TOY_CACHE: '/run/cache' });
       expect(env['TOY_POOL']).toBeUndefined();
       // Collection and provisioning are setup steps between the header and
       // the plan; the notice narrates under the prepare step, which names the
       // engine and lasts at least the hook's own wait.
-      expect(order.slice(0, 5)).toEqual(['run-started', 'setup', 'notice', 'plan', 'test-started']);
+      expect(order.slice(0, 6)).toEqual(['run-started', 'setup', 'notice', 'plan', 'collected', 'test-started']);
       expect(setup.map((step) => `${step.kind}:${step.state}`)).toEqual([
         'collect:started',
         'collect:finished',

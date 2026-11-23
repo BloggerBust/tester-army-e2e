@@ -94,6 +94,7 @@ export function report(
   input: {
     readonly status?: ReportRun['status'];
     readonly finishedAt?: string;
+    readonly durationMs?: number;
     readonly results?: readonly ReportResult[];
     readonly errors?: readonly ReportError[];
     readonly serialGroups?: readonly ReportSerialGroup[];
@@ -110,6 +111,8 @@ export function report(
 ): Report {
   const status = input.status ?? 'passed';
   const results = input.results ?? [];
+  const startedAt = '2026-07-24T12:00:00.000Z';
+  const finishedAt = input.finishedAt ?? '2026-07-24T12:00:08.400Z';
   return {
     schemaVersion: 'report-1',
     run: {
@@ -117,8 +120,9 @@ export function report(
       runner: { name: 'e2e', version: '0.9.0' },
       status,
       exitCode: status === 'passed' ? 0 : 1,
-      startedAt: '2026-07-24T12:00:00.000Z',
-      finishedAt: input.finishedAt ?? '2026-07-24T12:00:08.400Z',
+      startedAt,
+      finishedAt,
+      durationMs: input.durationMs ?? Date.parse(finishedAt) - Date.parse(startedAt),
       project: { ...VALID.run.project, id: input.projectId ?? 'dev.example.shop' },
       targets: (input.targets ?? ['web']).map((id, index) => ({ ...BASE_TARGET, id, index })),
       serialGroups: input.serialGroups ?? [],

@@ -123,7 +123,7 @@ export class AgentError extends Error {
 | `INVALID_APP_URL` | 基础 URL 无法解析，或包含用户信息、查询、片段、非 HTTP 协议方案，或在非回环主机上使用明文 HTTP；在非字面回环地址（`127.0.0.1`、`[::1]`）的主机上使用端口 0；或运行无法在回环地址上绑定空闲端口 | configuration | 2 |
 | `INVALID_GLOB` | 空模式；除 `tests` 排除项开头的一个 `!` 外，首个路径段仍以 `!` 开头（`!!tests/**`、`./!tests/**`）；单独的 `!`；花括号、字符类或扩展 glob；反斜杠分隔符；绝对路径或 `..` 段；结尾的 `/` 或 `.`；不含通配符却指向目录的 `tests` 条目（消息会指出应填写的 glob）；仅指向项目根目录的模式；或不独占整个路径段的 `**` | configuration | 2 |
 | `UNKNOWN_TARGET` | `--target`、`open_session.target` 或 `openHost`（`e2e/runner`）指定了未配置的测试目标 | configuration | 2 |
-| `TARGET_REQUIRED` | `e2e mcp` 或 `openHost`（`e2e/runner`）：配置声明了多个测试目标，但没有指定使用哪一个 | configuration | 2 |
+| `TARGET_REQUIRED` | `e2e mcp` 或 `openHost`（`e2e/runner`）：配置声明了多个测试目标，但没有指定使用哪一个。或者 `e2e run --device` 时选中了多个由引擎选择设备的测试目标；请用 `--target` 选出一个 | configuration | 2 |
 | `NO_SESSION` | `e2e mcp`：在 `open_session` 之前或会话结束后调用 `call` 或 `tools`（消息会指出原因），或 `call`、`tools`、`close_session` 指定的 `session` ID 未打开或正在关闭 | configuration | 2 |
 | `SESSION_REQUIRED` | `e2e mcp`：多个会话打开时，调用 `call`、`tools` 或 `close_session` 未提供 `session`。消息会列出这些会话 | configuration | 2 |
 | `ENGINE_IN_USE` | `e2e mcp`：对某个测试目标调用 `open_session`，但其引擎实例正由另一个打开的会话操作，因为配置从所有会话共享的包中获取该实例。请在配置中，或在配置通过路径导入的文件中创建引擎 | configuration | 2 |
@@ -135,10 +135,10 @@ export class AgentError extends Error {
 | `TEST_AMBIGUOUS` | `e2e mcp`：`open_session` 的 `test` 在会话的测试目标上选中了多个测试。消息会以 `file:line` 列出它们 | configuration | 2 |
 | `SESSION_TEST_UNSUPPORTED` | `e2e mcp`：`open_session` 的 `test` 选中了会话无法单独运行的测试：串行组成员、从准备测试的 `session` 开始的测试，或使用多个智能体运行的测试。请使用 `e2e run` 运行它 | configuration | 2 |
 | `UNSUPPORTED_ARTIFACT` | 测试目标或将在该目标上运行的测试设置的 [`video` 模式](/reference/config#recording)要求在某次尝试中录制，但该目标的引擎无法录制视频。消息会指出测试目标；如果模式来自测试，也会指出测试。配置根级别或 `--video` 的模式绝不会触发此错误：它们只适用于能录制的测试目标，并以提示列出其余目标 | configuration | 2 |
-| `UNSUPPORTED_CAPABILITY` | 测试目标的引擎未声明某个测试夹具、操作或层级：没有测试或钩子在运行时工作进程测试夹具使用了内置测试夹具（测试目标没有的测试夹具为 `COLLECTION_ERROR`）、没有 `locate` 时使用 `screen`、没有 `state` 时恢复状态、没有 `artifacts` 时截图、在持久浏览器上下文上调用 `app.clearState()`（消息会指出模式）、执行器未声明 `vision: true` 时使用 `agent.assert` 的 `vision`，或测试视频正在录制时调用 `app.startRecording()` | configuration | 2 |
+| `UNSUPPORTED_CAPABILITY` | 测试目标的引擎未声明某个测试夹具、操作或层级：没有测试或钩子在运行时工作进程测试夹具使用了内置测试夹具（测试目标没有的测试夹具为 `COLLECTION_ERROR`）、没有 `locate` 时使用 `screen`、没有 `state` 时恢复状态、没有 `artifacts` 时截图、在持久浏览器上下文上调用 `app.clearState()`（消息会指出模式）、执行器未声明 `vision: true` 时使用 `agent.assert` 的 `vision`，或测试视频正在录制时调用 `app.startRecording()`。也包括所选测试目标的引擎都不选择设备（`web()`），或测试目标的设备来自设备提供方时的 `e2e run --device` | configuration | 2 |
 | `NO_TESTS` | 可运行的普通测试与测试目标组合数为零。消息会指出原因：没有文件匹配 `tests` glob（会列出相似文件）、位置参数没有匹配项（会指出排除位置参数所指文件的 `!` 条目）、文件未注册测试，或过滤条件排除了全部测试。使用 `--pass-with-no-tests` 可抑制此错误。如果[测试过滤器](/filters)排除了所有可运行测试，运行会通过（退出码 0）。也适用于 `e2e mcp` 的 `open_session` 中 `test` 未选中任何可运行测试的情况。 | configuration | 2 |
 | `RUNNER_BUSY` | 测试套件与另一个测试套件、正在打开或已打开的宿主，或活动尝试重叠；或测试套件运行期间打开宿主；或在没有终端时启动 `e2e run --step`，而该目录中已有另一个运行受 `e2e run --step` 控制；或在没有终端的运行中，测试到达 `screen.pause()` 时，该目录中的另一个运行已以这种方式受控制；或某次运行在取得目录控制权时被终止并遗留了锁（消息会指出要删除的文件）。重试前等待测试套件结束并关闭现有宿主；使用 `e2e run --step stop` 结束单步运行，或删除消息指定的锁文件。 | configuration | 2 |
-| `RUNNER_NOT_INSTALLED` | 在未安装 `e2e` 的位置调用了 `@e2e-dev/web` 或 `@e2e-dev/mobile` 中的 `test`、`describe` 或钩子，例如仅基于 `@e2e-dev/core` 的程序。同一入口导出的引擎工厂仍然可用。要编写测试，请安装 `e2e` | configuration | 2 |
+| `RUNNER_NOT_INSTALLED` | 在未安装 `e2e` 的位置调用了 `@e2e-dev/web`、`@e2e-dev/mobile` 或 `@e2e-dev/desktop` 中的 `test`、`describe` 或钩子，例如仅基于 `@e2e-dev/core` 的程序。同一入口导出的引擎工厂仍然可用。要编写测试，请安装 `e2e` | configuration | 2 |
 | `NO_LAST_RUN` | `--last-failed` 在运行写入报告的位置未找到 `report.json`，或该处文件不是 `report-1` 文档。请先不带该标志运行一次。 | configuration | 2 |
 | `INVALID_CHANGED_SINCE` | `--changed-since`（`changedSince`）不是字符串、为空或以 `-` 开头。或者，当运行调用测试过滤器或 `e2e explore` 探索变更时，该值在检出的仓库中未指向任何提交，或与 HEAD 没有共同历史记录（浅克隆时消息会提示获取更多历史，否则会说明历史不相关）；或项目不在 git 仓库中、未安装 git，或 git 未在 30 秒内响应 | configuration | 2 |
 | `ONLY_IN_CI` | CI 运行中出现了聚焦测试 | configuration | 2 |
@@ -158,6 +158,7 @@ export class AgentError extends Error {
 | `LAUNCH_TIMEOUT` | 引擎初始化或尝试启动超过 `config.launchTimeout` | infrastructure | 3 |
 | `CLEANUP_TIMEOUT` | 引擎结束尝试超过 `config.cleanupTimeout`，尝试结束时引擎为测试运行的路由或对话框处理函数仍在运行，或测试用 `launch()` 打开的宿主或会话未在该时间内关闭 | infrastructure | 3 |
 | `BROWSER_INSTALL_FAILED` | 浏览器准备失败 | infrastructure | 3 |
+| `AGENT_DESKTOP_INSTALL_FAILED` | `@e2e-dev/desktop` 无法下载固定版本的 agent-desktop、归档未通过 SHA-256 校验，或 worker 在没有 agent-desktop 的情况下启动（例如跳过了引擎 prepare 步骤的宿主） | infrastructure | 3 |
 | `WORKER_INIT_FAILED` | 工作进程始终未就绪 | infrastructure | 3 |
 | `WORKER_EXIT` | 工作进程运行文件时意外退出。正在执行的测试因 `WORKER_CRASH` 失败，该文件中的其他测试被跳过。退出前已完成的尝试保留在报告中，包括重试之前的尝试和串行组中已完成的成员。崩溃记录为它们之后的一次尝试；如果发生在最后一次尝试之后（`afterAll` 中），则记录在最后一次尝试上。如果未处理的拒绝导致工作进程结束（参阅 `UNHANDLED_REJECTION`），运行错误是该拒绝，而非此错误 | infrastructure | 3 |
 | `WORKER_CRASH` | 工作进程在某个特定测试期间退出 | infrastructure | 3 |

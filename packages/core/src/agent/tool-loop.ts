@@ -11,9 +11,10 @@
  * - model-call accounting and a step transcript for `--debug`.
  */
 
-import { redactToolResult } from './redaction.ts';
+import { executorRedactors, redactToolResult } from './redaction.ts';
+import { processSecrets, redactProviderKeys } from '../run/secrecy.ts';
 import type { StepTurn } from '../run/steps.ts';
-import type { AssistantModelMessage, ModelMessage, StepResult, ToolCallPart, ToolSet } from 'ai';
+import type { AssistantModelMessage, ModelMessage, StepResult, Tool, ToolCallPart, ToolExecutionOptions, ToolSet } from 'ai';
 import { asSdkLanguageModel, loadAiSdk, type AiSdk, type SdkLanguageModel } from './ai-sdk.ts';
 import { MODEL_REQUEST_HEADERS } from '../internal/client-identity.ts';
 import { ConfigurationError, providerFailureMessage, withHint } from '../internal/errors.ts';
@@ -28,7 +29,7 @@ import {
 } from './model/tool-choice.ts';
 import { withStallGuard } from './model/stall.ts';
 import { providerHints, type ProviderHints, type ProviderModelRef } from './model/provider-hints.ts';
-import { isScreenOutput, toolResultTexts } from './screen-update.ts';
+import { isScreenOutput, reportsNoEffect, toolResultTexts } from './screen-update.ts';
 import { shapeOf } from './message-shape.ts';
 import { compactScreenHistory } from './transcript-compaction.ts';
 import { AgentError, isAgentError } from './error.ts';
@@ -46,6 +47,7 @@ import {
   extractGuardCalls,
   extractToolResults,
   waitingToolNames,
+  isFailedResult,
 } from './loop-guards.ts';
 
 /** Turns remaining when the loop warns the model to wrap up, by default. */
@@ -117,6 +119,28 @@ const UNREPORTED_USAGE = {
   outputTokenDetails: { textTokens: undefined, reasoningTokens: undefined },
   totalTokens: undefined,
 };
+
+/**
+ * Part of every step's instructions: how to end a step that only asks for
+ * actions without spending a turn reading the last result. That turn can
+ * take longer than short-lived feedback lasts, such as a toast the test
+ * checks right after the step.
+ */
+const SAME_TURN_VERDICT_RULE =
+  'A step that only lists actions to perform (type this, select that, press the button) ends in the turn of its final action: send that action and then complete_step with status "passed" in one reply. ' +
+  'complete_step is not an action, so it may follow the submit or tap that ends a turn. This is the one case where you conclude before seeing the last result: write the summary from what you did, since the test checks the outcome itself, and short-lived feedback such as a toast is gone by the next turn. ' +
+  'The runner takes that verdict only after the calls before it in the turn have run, and refuses it, with their results to read, when one of them failed or the last of them changed nothing. Calls after complete_step in a turn do not run. ' +
+  'A step that names an outcome to reach or to see (sign in, find, confirm, check that) is not such a step: read the result and conclude on the next turn.';
+
+/** Added to the verdict tool's description, so the model meets the same-turn verdict where it picks the tool too. */
+const SAME_TURN_VERDICT_HINT =
+  ' On a step that only lists actions, send it in the same turn as the final action, after it; the runner checks those actions before it takes the verdict.';
+
+/** One tool call of a turn as the model sent it, in the order it sent them. */
+interface SentCall {
+  readonly toolCallId: string;
+  readonly toolName: string;
+}
 
 /** Sent when a turn came back as text without a tool call. */
 const TEXT_REPLY_NOTICE =
@@ -268,6 +292,16 @@ class LoopRun {
   private lastStep: StepResult<ToolSet> | undefined;
   /** `model` as the loop sends requests to it: each one bounded, so a stalled response is sent again. */
   private readonly requestModel: SdkLanguageModel;
+  /** The tool calls of the current turn's reply, in the order the model sent them; empty before the reply. */
+  private sentCalls: readonly SentCall[] = [];
+  /**
+   * The calls of the current turn that ran, by call id, each settling to why
+   * a verdict sent after it in the turn is refused (undefined when nothing
+   * is wrong). A call the SDK refused before dispatch never gets here.
+   */
+  private readonly ranCalls = new Map<string, Promise<string | undefined>>();
+  /** The executor's own tools, before the loop wraps them: the loop guard reads their handlers' marks. */
+  private executorTools: ToolSet = {};
 
   constructor(
     private readonly ai: AiSdk,
@@ -282,9 +316,17 @@ class LoopRun {
         this.note(`turn ${String(this.turnsUsed + 1)} got no response in ${String(stallMs / 1000)}s: sending it again`);
       }),
       middleware: {
+        // The turn's tool calls in the model's order, read before the SDK
+        // dispatches any of them, so the verdict knows what came before it.
+        wrapGenerate: async ({ doGenerate }) => {
+          const result = await doGenerate();
+          this.sentCalls = result.content.flatMap((part) =>
+            part.type === 'tool-call' && part.providerExecuted !== true ? [{ toolCallId: part.toolCallId, toolName: part.toolName }] : []);
+          return result;
+        },
         transformParams: async ({ params }) => ({
           ...params,
-          prompt: params.prompt.map(message => message.role !== 'tool' ? message : {
+          prompt: params.prompt.map(message => message.role === 'assistant' ? redactAssistantText(message, executorRedactors.get(context)) : message.role !== 'tool' ? message : {
             ...message,
             content: message.content.map(part => {
               if (part.type !== 'tool-result') return part;
@@ -311,9 +353,10 @@ class LoopRun {
 
   async run(): Promise<StepVerdict> {
     const helpers = this.helpers();
+    this.executorTools = this.options.tools(this.context, helpers);
     const tools: ToolSet = {
-      ...this.options.tools(this.context, helpers),
-      complete_step: this.conclusion.tool,
+      ...this.inTurnOrder(this.executorTools),
+      complete_step: this.sameTurnConclusion(),
     };
     const tracker = trackModelCalls(
       this.context,
@@ -409,6 +452,89 @@ class LoopRun {
     };
   }
 
+  /**
+   * The executor's tools, each recording its call as part of the current
+   * turn, so a `complete_step` later in the turn can wait for it. A call the
+   * model sent after a `complete_step` in the same turn does not run at all:
+   * its place in the reply decides that, not how the concurrent calls
+   * happen to interleave.
+   */
+  private inTurnOrder(tools: ToolSet): ToolSet {
+    const recorded: Record<string, ToolSet[string]> = {};
+    for (const [name, tool] of Object.entries(tools)) {
+      if (tool.execute === undefined) {
+        recorded[name] = tool;
+        continue;
+      }
+      recorded[name] = {
+        ...tool,
+        execute: (input: never, options: ToolExecutionOptions<unknown>) => {
+          if (this.callsBefore(options.toolCallId).some((call) => call.toolName === 'complete_step')) {
+            return Promise.resolve(`${name} did not run: complete_step came before it in this turn, and nothing after a verdict runs.`);
+          }
+          let result: unknown;
+          try {
+            // Read per call: a handler replaced after the tools were built is the one that runs.
+            result = tool.execute!(input, options);
+          } catch (error) {
+            this.ranCalls.set(options.toolCallId, Promise.resolve('failed'));
+            throw error;
+          }
+          const tracked = trackOutcome(name, result);
+          this.ranCalls.set(options.toolCallId, tracked.problem);
+          return tracked.result;
+        },
+      } as ToolSet[string];
+    }
+    return recorded;
+  }
+
+  /** The calls the model sent before `toolCallId` in the current turn's reply; none when the id is not in it. */
+  private callsBefore(toolCallId: string): readonly SentCall[] {
+    const index = this.sentCalls.findIndex((call) => call.toolCallId === toolCallId);
+    return index === -1 ? [] : this.sentCalls.slice(0, index);
+  }
+
+  /**
+   * The conclusion tool, made to come last in its turn: it waits for every
+   * call the model sent before it in the same turn, so an action batched with
+   * the verdict runs instead of being skipped as concluding, and the step
+   * ends without a turn spent reading that action's result. The verdict is
+   * refused when one of those calls did not run (the SDK refused its input)
+   * or failed, or when the last of them had no visible effect; the model
+   * reads their results and concludes again. A hard stop during them ends the step as a hard stop,
+   * never under the verdict.
+   */
+  private sameTurnConclusion(): Tool {
+    const tool = this.conclusion.tool;
+    const execute = tool.execute!.bind(tool);
+    return {
+      ...tool,
+      description: `${tool.description ?? ''}${SAME_TURN_VERDICT_HINT}`,
+      execute: async (input: never, options: ToolExecutionOptions<unknown>) => {
+        const earlier = this.callsBefore(options.toolCallId).filter((call) => call.toolName !== 'complete_step');
+        if (earlier.length === 0 || this.conclusion.concluded()) return execute(input, options);
+        const problems = await Promise.all(earlier.map(async (call) => {
+          const ran = this.ranCalls.get(call.toolCallId);
+          return { name: call.toolName, problem: ran === undefined ? 'did not run' : await ran };
+        }));
+        if (this.hardStop !== undefined || this.context.signal.aborted) {
+          return 'The step is already concluding; no further actions run.';
+        }
+        for (const [index, { name, problem }] of problems.entries()) {
+          if (problem === undefined) continue;
+          // An earlier action can change nothing the tree lists and still
+          // land, such as typing into a password field, whose value the
+          // tree masks; only the final action's lack of effect refuses.
+          if (problem === NO_EFFECT && index < problems.length - 1) continue;
+          return `Rejected: ${name} ${problem} in this turn, so the verdict sent with it was not taken. ` +
+            'Read its result above, then act again or call complete_step.';
+        }
+        return execute(input, options);
+      },
+    } as Tool;
+  }
+
   private buildLoop(tools: ToolSet) {
     const system = this.instructions();
     const providerOptions = this.hints.providerOptions(
@@ -430,7 +556,7 @@ class LoopRun {
         ({ steps }) => this.turnOffset + steps.length >= this.maxTurns,
       ],
       prepareStep: ({ messages, stepNumber, steps }) =>
-        this.prepareTurn(messages, this.turnOffset + stepNumber, steps.at(-1), tools),
+        this.prepareTurn(messages, this.turnOffset + stepNumber, steps.at(-1)),
     });
   }
 
@@ -608,12 +734,15 @@ class LoopRun {
     messages: ModelMessage[],
     stepNumber: number,
     previous: StepResult<ToolSet> | undefined,
-    tools: ToolSet,
   ): Promise<{
     messages?: ModelMessage[];
     activeTools?: string[];
     toolChoice?: ToolChoiceMode | { type: 'tool'; toolName: string };
   }> {
+    // Every call of the previous turn has finished by now: the SDK runs a
+    // turn's calls before it prepares the next.
+    this.sentCalls = [];
+    this.ranCalls.clear();
     let prepared = messages;
     if (this.options.prepareMessages !== undefined) {
       const result = await this.options.prepareMessages(messages, {
@@ -658,7 +787,7 @@ class LoopRun {
     if (this.guardStop === undefined) {
       // Read per turn: a handler replaced after the tools were built (in
       // buildPrompt, say) may write, and loses the waiting room.
-      const waiting = waitingToolNames(tools);
+      const waiting = waitingToolNames(this.executorTools);
       // The calls are the ones the model reads, after an executor's own
       // prepareMessages; each look's result is read while it is the newest,
       // before compaction can elide its lead line, and kept for the turns after.
@@ -767,13 +896,14 @@ class LoopRun {
     const system =
       typeof this.options.system === 'function' ? this.options.system(this.context) : this.options.system;
     if (system !== undefined && system.trim() !== '') {
-      parts.push(system);
+      // Written by the config or an executor, so core never redacted it: the step's own redactor, which knows this test's secrets and the keys of the moment, not values earlier tests learned.
+      parts.push((executorRedactors.get(this.context) ?? redactProviderKeys)(system));
     }
     const project = this.context.agentContext;
     if (project !== undefined && project.trim() !== '') {
       parts.push(`Project context:\n${project}`);
     }
-    parts.push(`${VERDICT_RULES}\n- ${TOOL_CALLS_ONLY_RULE}`);
+    parts.push(`${VERDICT_RULES}\n- ${SAME_TURN_VERDICT_RULE}\n- ${TOOL_CALLS_ONLY_RULE}`);
     return parts.join('\n\n');
   }
 
@@ -844,6 +974,73 @@ function reportedOutcome(turn: LoopTurn): string {
   return `${outcome}\n${truncate(turn.notes.join('\n'), MAX_REPORTED_NOTES_CHARS)}`;
 }
 
+/** Why a verdict is refused after an action whose screen did not change though it should have. */
+const NO_EFFECT = 'had no visible effect';
+
+function isPromiseLike(value: unknown): value is PromiseLike<unknown> {
+  return typeof value === 'object' && value !== null && typeof (value as { then?: unknown }).then === 'function';
+}
+
+function isAsyncIterable(value: unknown): value is AsyncIterable<unknown> {
+  return typeof value === 'object' && value !== null && Symbol.asyncIterator in value;
+}
+
+/**
+ * A tool call's result as the SDK gets it, and why a verdict after it in the
+ * turn is refused once it settles. The SDK takes a promise, a plain value,
+ * or an async iterable whose last value is the output and whose earlier ones
+ * are preliminary; the iterable is relayed value by value, so the problem
+ * settles only when the SDK has read it to the end.
+ */
+function trackOutcome(name: string, result: unknown): { readonly result: unknown; readonly problem: Promise<string | undefined> } {
+  if (isPromiseLike(result)) {
+    return { result, problem: Promise.resolve(result).then((output) => callProblem(name, output), () => 'failed') };
+  }
+  if (!isAsyncIterable(result)) return { result, problem: Promise.resolve(callProblem(name, result)) };
+  let settle: (problem: string | undefined) => void = () => {};
+  const problem = new Promise<string | undefined>((resolve) => {
+    settle = resolve;
+  });
+  return { result: relayOutputs(name, result, settle), problem };
+}
+
+/** Yields every value of a tool's async iterable, settling the call's problem from the last one, or as failed when it throws. */
+async function* relayOutputs(
+  name: string,
+  source: AsyncIterable<unknown>,
+  settle: (problem: string | undefined) => void,
+): AsyncGenerator<unknown> {
+  let last: unknown;
+  try {
+    for await (const value of source) {
+      last = value;
+      yield value;
+    }
+    settle(callProblem(name, last));
+  } catch (error) {
+    settle('failed');
+    throw error;
+  } finally {
+    // Read only part of the way: the output the model gets is unknown.
+    settle('did not finish');
+  }
+}
+
+/**
+ * Why a verdict sent after this call in the same turn is refused, read off
+ * the result the model would read: `failed` for a failure the loop guards
+ * count as one, `had no visible effect` for an action whose screen did not
+ * change though it should have. A structured result is a project tool's own
+ * shape and says nothing either way.
+ */
+function callProblem(name: string, output: unknown): string | undefined {
+  const text = typeof output === 'string' ? output : isScreenOutput(output) ? output.text : undefined;
+  if (text === undefined) return undefined;
+  if (isFailedResult(name, text)) return 'failed';
+  if (reportsNoEffect(text)) return NO_EFFECT;
+  return undefined;
+}
+
 function appendNotice(messages: ModelMessage[], content: string): ModelMessage[] {
   return [...messages, { role: 'user', content }];
 }
@@ -906,8 +1103,30 @@ function textChars(messages: readonly ModelMessage[]): number {
   return total;
 }
 
+/**
+ * An assistant message with what the model wrote redacted, before it is sent
+ * back as history: a model that repeats a secret or a provider key it was
+ * shown, in an error or on a screen, must not be handed it again as text.
+ * Its tool calls stay as it made them, and so does its reasoning, which a
+ * provider signs and refuses once a character of it has changed.
+ */
+function redactAssistantText<Message extends { content: unknown }>(message: Message, redact: ((text: string) => string) | undefined): Message {
+  if (redact === undefined) return message;
+  if (typeof message.content === 'string') return { ...message, content: redact(message.content) };
+  if (!Array.isArray(message.content)) return message;
+  return {
+    ...message,
+    content: message.content.map((part: unknown) => {
+      const record = part as { type?: unknown; text?: unknown };
+      return record.type === 'text' && typeof record.text === 'string' ? { ...record, text: redact(record.text) } : part;
+    }),
+  };
+}
+
 function truncate(text: string, max: number): string {
-  return text.length <= max ? text : `${text.slice(0, max)}…[truncated]`;
+  // Redacted before the cut: half a value is no longer a match. What the step reports is redacted again, whole.
+  const safe = processSecrets.redact(text);
+  return safe.length <= max ? safe : `${safe.slice(0, max)}…[truncated]`;
 }
 
 /** A tool result for the transcript: a screenshot-carrying result reads as its text plus the image size, never the bytes. */

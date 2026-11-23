@@ -82,7 +82,7 @@ The app under test is the target's `app`, not an engine option; see
 | --- | --- | --- |
 | [`platform`](#platform) | `'ios' \| 'android'` | required |
 | [`device`](#device-option) | `string \| readonly string[] \| DeviceProvider` | every booted device |
-| [`session`](#session) | `string` | `e2e-<target name>` |
+| [`session`](#session) | `string` | `e2e-<target name>`, with `-<hostId>` for a `launch()` host |
 | [`snapshot`](#snapshot) | `'full' \| 'interactive'` | `'full'` |
 | [`settle`](#settle) | `number \| false` | `150` |
 | [`transition`](#transition) | `number` | `500` |
@@ -181,7 +181,8 @@ export default {
  * agent-device session name, before the worker slot: slot `n` drives its
  * device under `<session>-<n>`, `e2e-<target name>-<n>` by default. One run
  * per session at a time: concurrent runs on the same session interleave
- * taps.
+ * taps. Without this option a `launch()` host
+ * drives `e2e-<target name>-<host token>-<n>`, a session of its own.
  */
 readonly session?: string | undefined;
 ```
@@ -453,10 +454,12 @@ test('offline banner', { platforms: ['android'] }, async ({ app, device, screen 
 | [`closeApp`](#closeapp) | `Promise<void>` |
 | [`clearKeychain`](#clearkeychain) | `Promise<void>` |
 | [`foregroundApp`](#foregroundapp) | `Promise<ForegroundApp>` |
+| [`viewport`](#viewport) | `Promise<ViewportSize>` |
 | [`home`](#home) | `Promise<void>` |
 | [`back`](#back) | `Promise<void>` |
 | [`alert`](#alert) | `Promise<void>` |
 | [`dismissKeyboard`](#dismisskeyboard) | `Promise<void>` |
+| [`isKeyboardShown`](#iskeyboardshown) | `Promise<boolean>` |
 | [`clipboard`](#clipboard) | `Promise<string>` |
 | [`setClipboard`](#setclipboard) | `Promise<void>` |
 
@@ -920,6 +923,25 @@ const { name, bundleId } = await device.foregroundApp();
 | --- | --- |
 | `APP_NOT_OPEN` | `closeApp` ended the session. |
 
+#### `viewport`
+
+```ts
+/** Reads the screen size in the coordinate space of screen taps. */
+viewport(): Promise<ViewportSize>;
+```
+
+Returns `{ width, height }` in the coordinate space of `screen.tapAt()`,
+read fresh on each call. `ViewportSize` is exported from `@e2e-dev/mobile`.
+
+```ts
+const { width, height } = await device.viewport();
+await screen.tapAt({ x: width / 2, y: height / 2 });
+```
+
+| Throws | When |
+| --- | --- |
+| `ENGINE_FAILURE` | The device's screen size cannot be determined. |
+
 #### `home`
 
 ```ts
@@ -966,10 +988,11 @@ await device.alert('accept');
  * screen has one, to avoid pressing a button or toggling a checkbox. A
  * control the tree leaves out, such as pressable text, can still be hit. The
  * simulator's "Speed up your typing" tip goes through its Continue button
- * first. A screen with no clear point above the keyboard, or a keyboard that
- * outlives both drags, fails with `UNSUPPORTED_CAPABILITY`; the message
- * names the alternatives (the app's own Done or close control, or pressing
- * Enter on the field).
+ * first. A screen with no clear point above the keyboard, a keyboard reported
+ * up with no frame and no keyboard element on screen (so no point is known
+ * to be above it), or a keyboard that outlives both drags, fails with
+ * `UNSUPPORTED_CAPABILITY`; the message names the alternatives (the app's
+ * own Done or close control, or pressing Enter on the field).
  */
 dismissKeyboard(): Promise<void>;
 ```
@@ -980,7 +1003,42 @@ await device.dismissKeyboard();
 
 | Throws | When |
 | --- | --- |
-| `UNSUPPORTED_CAPABILITY` | Every point above the keyboard (in a scroll view, when the screen has one) is on a control, or the keyboard outlives both drags. |
+| `UNSUPPORTED_CAPABILITY` | Every point above the keyboard (in a scroll view, when the screen has one) is on a control, agent-device reports the keyboard up with no frame and no keyboard element on screen, or the keyboard outlives both drags. |
+
+#### `isKeyboardShown`
+
+```ts
+/**
+ * Whether the soft keyboard is on screen, from a capture (taken again,
+ * within the action timeout, while the keyboard is still moving): what
+ * agent-device reported for it (a visibility probe, a measured or derived
+ * keyboard frame, or proof that there is none), else the keyboard or a key
+ * drawn on screen in the accessibility tree (the suggestion strip alone,
+ * as with a hardware keyboard, is not one). Only agent-device's proof
+ * answers `false`. Fails when the capture cannot answer: `ENGINE_FAILURE`
+ * while the keyboard is moving or the tree is still incomplete,
+ * `UNSUPPORTED_CAPABILITY` when agent-device did not prove the keyboard
+ * absent and the tree lists none. It reads the screen as it is now, so
+ * right after an action that opens or closes the keyboard, poll it with
+ * `expect.poll`. A poll reads again after any error: an `ENGINE_FAILURE`
+ * clears once the keyboard settles, while an `UNSUPPORTED_CAPABILITY`
+ * that lasts (a provider that cannot read the keyboard at all) makes the
+ * poll wait out its whole timeout before it fails.
+ * Changes nothing on the device.
+ */
+isKeyboardShown(): Promise<boolean>;
+```
+
+```ts
+await screen.getByTestId('email-input').fill('jane@example.com');
+await device.dismissKeyboard();
+await expect.poll(() => device.isKeyboardShown()).toBe(false);
+```
+
+| Throws | When |
+| --- | --- |
+| `ENGINE_FAILURE` | agent-device measured nothing and the tree it returned was sparse or cut, or it found keyboard elements but rejected where they sit and none is drawn on screen, as while the keyboard slides in or out. Read it again; `expect.poll` does. |
+| `UNSUPPORTED_CAPABILITY` | The tree shows no keyboard or key drawn on screen (the suggestion strip alone is not one), and agent-device did not prove the keyboard absent: for example an Android capture without the input method's window, a WebDriver provider with no keyboard probe, or no keyboard reading at all. The message names the reason. When it lasts, `expect.poll` waits out its timeout before it fails. |
 
 #### `clipboard`
 
@@ -1319,7 +1377,7 @@ export type BiometricSensor = 'faceid' | 'touchid' | 'fingerprint';
 /** The raw driver session behind `device`; see `Device.unstable_raw`. */
 export interface DeviceSession {
   readonly platform: MobilePlatform;
-  /** The raw driver session name: `e2e-<target>-<worker slot>`, or `<session>-<worker slot>` with the `session` option. */
+  /** The raw driver session name: `e2e-<target>-<worker slot>` (`e2e-<target>-<hostId>-<worker slot>` for a `launch()` host), or `<session>-<worker slot>` with the `session` option. */
   readonly session: string;
   /** The device id: a simulator UDID or an Android serial. */
   readonly deviceId: string;

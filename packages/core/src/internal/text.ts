@@ -80,28 +80,50 @@ export interface TextComparison {
   readonly ignoreCase?: boolean | undefined;
 }
 
+/** How `matchesText` reads both sides: whitespace-normalized, a string pattern compared whole. */
+const DEFAULT_MATCH_COMPARISON: TextComparison = { mode: 'equals', normalize: true };
+
 /**
  * Matches normalized text against a pattern. String matching is exact by
  * default; `exact: false` is case-insensitive substring matching. Regular
  * expressions use ECMAScript semantics with lastIndex reset before every match.
  */
 export function matchesText(actual: string, pattern: TextPattern): boolean {
-  return compareText(actual, pattern, { mode: 'equals', normalize: true });
+  return compareText(actual, pattern, DEFAULT_MATCH_COMPARISON);
 }
 
 /**
- * The one text-matching rule. `mode` applies only to exact string patterns:
- * regexps and case-insensitive substrings read the same way in both.
- * `normalize: false` leaves whitespace alone on both sides, for a field the
- * platform reports verbatim.
+ * The one text-matching rule, compiled once for a pattern that is tested
+ * against many strings (every node of a tree): the pattern side is
+ * normalized and case-folded here, not on every call. `mode` applies only to
+ * exact string patterns: regexps and case-insensitive substrings read the
+ * same way in both. `normalize: false` leaves whitespace alone on both
+ * sides, for a field the platform reports verbatim. The default reads as
+ * `matchesText` does.
  */
+export function compileTextMatcher(
+  pattern: TextPattern,
+  comparison: TextComparison = DEFAULT_MATCH_COMPARISON,
+): (actual: string) => boolean {
+  const read = comparison.normalize ? normalizeText : (text: string): string => text;
+  if (pattern.kind === 'regexp') {
+    const { source, flags } = pattern;
+    return (actual) => testPattern(source, flags, read(actual));
+  }
+  if (!pattern.exact) {
+    const needle = read(pattern.value).toLowerCase();
+    return (actual) => read(actual).toLowerCase().includes(needle);
+  }
+  const fold = comparison.ignoreCase === true ? (text: string): string => text.toLowerCase() : (text: string): string => text;
+  const expected = fold(read(pattern.value));
+  return comparison.mode === 'equals'
+    ? (actual) => fold(read(actual)) === expected
+    : (actual) => fold(read(actual)).includes(expected);
+}
+
+/** `compileTextMatcher` for one comparison. */
 export function compareText(actual: string, pattern: TextPattern, comparison: TextComparison): boolean {
-  const subject = comparison.normalize ? normalizeText(actual) : actual;
-  if (pattern.kind === 'regexp') return testPattern(pattern.source, pattern.flags, subject);
-  const expected = comparison.normalize ? normalizeText(pattern.value) : pattern.value;
-  if (!pattern.exact) return subject.toLowerCase().includes(expected.toLowerCase());
-  const fold = (text: string): string => (comparison.ignoreCase === true ? text.toLowerCase() : text);
-  return comparison.mode === 'equals' ? fold(subject) === fold(expected) : fold(subject).includes(fold(expected));
+  return compileTextMatcher(pattern, comparison)(actual);
 }
 
 /**

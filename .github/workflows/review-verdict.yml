@@ -1,0 +1,18 @@
+name: review-verdict
+
+# Marks a review that requests changes, so review-label.yml can sweep the
+# `Ready for Human Review` label through workflow_run. A `pull_request_review`
+# run on a fork PR gets a read-only token and cannot edit labels itself.
+on:
+  pull_request_review:
+    types: [submitted]
+
+permissions: {}
+
+jobs:
+  changes-requested:
+    if: ${{ github.event.review.state == 'changes_requested' }}
+    runs-on: blacksmith-4vcpu-ubuntu-2404
+    timeout-minutes: 5
+    steps:
+      - run: 'true'

@@ -3,11 +3,13 @@ description: >-
   Installs Playwright's Chromium and its system packages, with the .deb files
   apt downloads for them restored from and saved to the Actions cache.
 
-# `--with-deps` installs about 38 MB of packages from the Ubuntu mirror, and
-# the mirror often serves them at about 200 kB/s: the step takes 2 to 5
-# minutes instead of 15 seconds in nearly half of the jobs. apt reads the
-# archives from a directory this action restores first, so it downloads only
-# the packages whose version changed since the cache was saved.
+# `--with-deps` runs `apt-get update` and then installs about 38 MB of
+# packages, both from the Ubuntu mirror, which often serves them at 50 to
+# 200 kB/s: the step then takes 2 to 14 minutes instead of 15 seconds. When the
+# cache restores the packages, apt installs them from their files and the job
+# never reaches the mirror. When that fails, `--with-deps` runs as before, with
+# apt reading the restored files, so it downloads only the packages whose
+# version changed.
 inputs:
   only-shell:
     description: Install only the headless shell, not the full browser.
@@ -48,13 +50,61 @@ runs:
         path: ${{ steps.apt.outputs.archives }}/*.deb
         key: ${{ steps.apt.outputs.prefix }}
         restore-keys: ${{ steps.apt.outputs.prefix }}-
+    # Entries saved before the set was pruned to the installed versions can
+    # hold two versions of one package; apt takes one file per package.
+    - name: Keep the newest version of each package
+      shell: bash
+      env:
+        ARCHIVES: ${{ steps.apt.outputs.archives }}
+      run: |
+        set -euo pipefail
+        shopt -s nullglob
+        declare -A newest
+        for deb in "$ARCHIVES"/*.deb; do
+          read -r pkg version < <(dpkg-deb --show --showformat '${Package}:${Architecture} ${Version}\n' "$deb")
+          kept="${newest[$pkg]:-}"
+          if [[ -z "$kept" ]]; then
+            newest[$pkg]="$version $deb"
+          elif dpkg --compare-versions "$version" gt "${kept%% *}"; then
+            rm -f "${kept#* }"
+            newest[$pkg]="$version $deb"
+          else
+            rm -f "$deb"
+          fi
+        done
+    # A restored entry holds every package `--with-deps` installed or upgraded
+    # on the image that saved it, so apt resolves them
+    # against the installed ones with no package lists and nothing to
+    # download. On a different image apt may need a downgrade or a removal,
+    # which it refuses, and the dry run fails when the image lacks a package
+    # Playwright needs; in each case `--with-deps` runs instead. Once the cache
+    # installs, nothing is downloaded, so the versions stay those of the saved
+    # entry until a fallback saves a new one.
     - name: Install Chromium
       shell: bash
       env:
+        ARCHIVES: ${{ steps.apt.outputs.archives }}
+        RESTORED: ${{ steps.restore.outputs.cache-matched-key }}
         ONLY_SHELL: ${{ inputs.only-shell == 'true' && '--only-shell' || '' }}
-      run: pnpm --filter @e2e-dev/web exec playwright-core install chromium --with-deps $ONLY_SHELL
-    # autoclean deletes the archives the mirror no longer serves, so the set
-    # changes only when a package version does.
+      run: |
+        set -euo pipefail
+        playwright() { pnpm --filter @e2e-dev/web exec playwright-core "$@"; }
+        from_cache() {
+          shopt -s nullglob
+          local debs=("$ARCHIVES"/*.deb)
+          [[ -n "$RESTORED" && ${#debs[@]} -gt 0 ]] || return 1
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -q --no-download --no-remove --no-install-recommends "${debs[@]}" || return 1
+          playwright install-deps --dry-run chromium
+        }
+        if from_cache; then
+          playwright install chromium $ONLY_SHELL
+        else
+          [[ -z "$RESTORED" ]] || echo "::notice::The cached packages did not cover Playwright's dependencies; installing from the Ubuntu mirror."
+          playwright install chromium --with-deps $ONLY_SHELL
+        fi
+    # Keeps only the files of the installed versions, so a fallback that
+    # upgraded a package drops the old file and the set changes only when a
+    # package version does.
     - name: Name the archive set
       id: set
       shell: bash
@@ -63,7 +113,12 @@ runs:
         PREFIX: ${{ steps.apt.outputs.prefix }}
       run: |
         set -euo pipefail
-        sudo apt-get autoclean -qq
+        shopt -s nullglob
+        INSTALLED="$(dpkg-query -W -f '${db:Status-Abbrev} ${Package}_${Version}_${Architecture}\n' | awk '$1 == "ii" { print $2 }')"
+        for deb in "$ARCHIVES"/*.deb; do
+          id="$(dpkg-deb --show --showformat '${Package}_${Version}_${Architecture}' "$deb")"
+          grep -qxF "$id" <<< "$INSTALLED" || rm -f "$deb"
+        done
         DIGEST="$(find "$ARCHIVES" -maxdepth 1 -name '*.deb' -printf '%f\n' | sort | sha256sum | cut -c1-16)"
         echo "key=$PREFIX-$DIGEST" >> "$GITHUB_OUTPUT"
         echo "count=$(find "$ARCHIVES" -maxdepth 1 -name '*.deb' | wc -l)" >> "$GITHUB_OUTPUT"

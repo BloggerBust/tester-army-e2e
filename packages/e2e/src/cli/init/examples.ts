@@ -16,6 +16,10 @@ import { dependencyRange, recordedSiblingRange } from './versions.ts';
 export interface ExamplePreset {
   /** The folder name under `examples/`, which is also the flag value. */
   readonly id: string;
+  /** The technology the app is built with, as the `--example` picker names it. */
+  readonly label: string;
+  /** Where its tests run, shown beside the label in the picker. */
+  readonly runsOn: string;
   /** Where the e2e project sits inside the example: the root for JS apps, `e2e` beside a native project. */
   readonly project: '.' | 'e2e';
   /** The package script that runs the tests, named in the closing `Next:` line. */
@@ -26,17 +30,17 @@ export interface ExamplePreset {
 
 /** Every standalone app under `examples/`. */
 export const EXAMPLES: readonly ExamplePreset[] = [
-  { id: 'with-vite', project: '.', script: 'test:e2e', build: false },
-  { id: 'with-next', project: '.', script: 'test:e2e', build: false },
-  { id: 'with-astro', project: '.', script: 'test:e2e', build: false },
-  { id: 'with-angular', project: '.', script: 'test:e2e', build: false },
+  { id: 'with-vite', label: 'Vite + React', runsOn: 'Chromium', project: '.', script: 'test:e2e', build: false },
+  { id: 'with-next', label: 'Next.js', runsOn: 'Chromium', project: '.', script: 'test:e2e', build: false },
+  { id: 'with-astro', label: 'Astro', runsOn: 'Chromium', project: '.', script: 'test:e2e', build: false },
+  { id: 'with-angular', label: 'Angular', runsOn: 'Chromium', project: '.', script: 'test:e2e', build: false },
   // The web target starts the dev server itself; the device targets need a build first.
-  { id: 'with-expo', project: '.', script: 'test:e2e:web', build: false },
-  { id: 'with-swiftui', project: 'e2e', script: 'test:e2e', build: true },
-  { id: 'with-compose', project: 'e2e', script: 'test:e2e', build: true },
-  { id: 'with-kotlin-multiplatform', project: 'e2e', script: 'test:e2e:android', build: true },
-  { id: 'with-flutter', project: 'e2e', script: 'test:e2e:android', build: true },
-  { id: 'with-maui', project: 'e2e', script: 'test:e2e:android', build: true },
+  { id: 'with-expo', label: 'Expo + React Native', runsOn: 'Chromium, iOS simulator, Android emulator', project: '.', script: 'test:e2e:web', build: false },
+  { id: 'with-swiftui', label: 'SwiftUI', runsOn: 'iOS simulator', project: 'e2e', script: 'test:e2e', build: true },
+  { id: 'with-compose', label: 'Jetpack Compose', runsOn: 'Android emulator', project: 'e2e', script: 'test:e2e', build: true },
+  { id: 'with-kotlin-multiplatform', label: 'Kotlin Multiplatform', runsOn: 'Android emulator, iOS simulator', project: 'e2e', script: 'test:e2e:android', build: true },
+  { id: 'with-flutter', label: 'Flutter', runsOn: 'Android emulator, iOS simulator', project: 'e2e', script: 'test:e2e:android', build: true },
+  { id: 'with-maui', label: '.NET MAUI', runsOn: 'Android emulator, iOS simulator', project: 'e2e', script: 'test:e2e:android', build: true },
 ];
 
 /** The preset a flag value names: the folder name, or the same without `with-`. */
