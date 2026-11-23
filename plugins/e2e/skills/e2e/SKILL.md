@@ -272,8 +272,8 @@ you worked around it or gave up. Never report:
 
 - failures of the app under test, or its own behavior;
 - a problem you saw once and could not see again;
-- anything on an outdated e2e: the command refuses it, so upgrade
-  (`npx e2e@latest upgrade`) and check the problem still happens first.
+- anything on an outdated e2e: the command refuses it, so ask the user to
+  upgrade e2e and check the problem still happens first.
 
 Search [existing issues](https://github.com/e2e-inc/e2e/issues) first
 (`gh issue list -R e2e-inc/e2e --search "<words>"`); comment on a match
