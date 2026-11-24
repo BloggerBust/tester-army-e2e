@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { keyboardBand, projectSnapshot, screenTitle, viewportOf, type RawNode } from '../../src/nodes.ts';
+import { keyboardBand, projectSnapshot, screenTitle, viewportOf, withEmptyState, type RawNode } from '../../src/nodes.ts';
 import { SETTINGS_NODES } from '../helpers/fake-client.ts';
 
 function project(nodes: readonly RawNode[]) {
@@ -586,6 +586,34 @@ describe('snapshot projection', () => {
     // An Android field with no flag is unknown too, not read-only.
     expect(zip!.role).toBe('textbox');
     expect(zip!.states?.readonly).toBeUndefined();
+  });
+
+  it('reads a field empty by its value and any other node by the text or value below it, on a located node only', () => {
+    const projected = project([
+      { ref: 'e1', index: 0, depth: 0, type: 'other', rect: { x: 0, y: 0, width: 390, height: 844 } },
+      { ref: 'e2', index: 1, parentIndex: 0, depth: 1, type: 'text-field', label: 'Email' },
+      { ref: 'e3', index: 2, parentIndex: 0, depth: 1, type: 'text-field', label: 'Name', value: 'Ada' },
+      { ref: 'e4', index: 3, parentIndex: 0, depth: 1, type: 'secure-text-field', label: 'Password' },
+      { ref: 'e5', index: 4, parentIndex: 0, depth: 1, type: 'other', identifier: 'cart' },
+      { ref: 'e6', index: 5, parentIndex: 4, depth: 2, type: 'static-text', label: '1 item' },
+      { ref: 'e7', index: 6, parentIndex: 0, depth: 1, type: 'other', identifier: 'toolbar' },
+      { ref: 'e8', index: 7, parentIndex: 6, depth: 2, type: 'image' },
+      { ref: 'e9', index: 8, parentIndex: 0, depth: 1, type: 'other', identifier: 'sign-in' },
+      { ref: 'e10', index: 9, parentIndex: 8, depth: 2, type: 'text-field', label: 'Username' },
+      { ref: 'e11', index: 10, parentIndex: 8, depth: 2, type: 'secure-text-field', label: 'Password', value: 'hunter2' },
+    ]);
+    const [, email, name, password, cart, , toolbar, , signIn] = projected.index.map((entry) => entry.node);
+    // A field's label is not what it holds.
+    expect(withEmptyState(email!).states?.empty).toBe(true);
+    expect(withEmptyState(name!).states?.empty).toBe(false);
+    expect(withEmptyState(password!).states?.empty).toBeUndefined();
+    // A container shows what its children show.
+    expect(withEmptyState(cart!).states?.empty).toBe(false);
+    expect(withEmptyState(toolbar!).states?.empty).toBe(true);
+    // A field below counts by its value alone, and a secure one not at all.
+    expect(withEmptyState(signIn!).states?.empty).toBe(true);
+    // The observation tree carries no empty state.
+    expect(projected.index.some((entry) => entry.node.states?.empty !== undefined)).toBe(false);
   });
 
   it('keeps a role that already takes text when the platform reports it editable, and trusts the flag on a control role', () => {

@@ -328,6 +328,42 @@ line2  </textarea>
   <div data-testid="plain">Plain</div>
 </body>
 </html>`),
+  // What toBeEmpty reads, as Playwright decides it: an input or textarea is
+  // empty when its value is, any other element when its trimmed text content
+  // is, hidden text included.
+  '/empty-matcher': constant(`<!doctype html>
+<html>
+<head><title>Empty matcher</title></head>
+<body>
+  <input data-testid="blank-input" aria-label="Blank" />
+  <textarea data-testid="blank-textarea" aria-label="Notes"></textarea>
+  <div data-testid="blank-div">   </div>
+  <div data-testid="blank-editor" contenteditable="true">   </div>
+  <input data-testid="filled-input" aria-label="Filled" value="x" />
+  <input data-testid="space-input" aria-label="Spaces" value="  " />
+  <p data-testid="text">Some text</p>
+  <div data-testid="hidden-text"><span hidden>Later</span></div>
+  <input aria-label="Secret" type="password" value="marker-9d2a" />
+  <script>
+    // A filled input made in another frame keeps that frame's prototype here.
+    const donor = document.createElement('iframe');
+    donor.hidden = true;
+    document.body.append(donor);
+    const adopted = donor.contentDocument.createElement('input');
+    adopted.setAttribute('data-testid', 'adopted-input');
+    adopted.setAttribute('aria-label', 'Adopted');
+    adopted.value = 'filled';
+    document.body.append(adopted);
+  </script>
+  <button data-testid="combobox" role="combobox" aria-expanded="false">Select a fruit</button>
+  <ul data-testid="listbox" role="listbox"><li role="option">Apple</li></ul>
+  <div data-testid="textbox" role="textbox" contenteditable="true">hello</div>
+  <div data-testid="aria-textbox" role="textbox">hello</div>
+  <select data-testid="select" aria-label="Colour"><option value="">Choose a colour</option><option value="red">Red</option></select>
+  <input data-testid="submit" type="submit" value="Go" />
+  <input data-testid="checkbox" type="checkbox" aria-label="Agree" />
+</body>
+</html>`),
   // What toBeEditable reads: native readonly, aria-readonly, the disabled
   // state a fieldset gives, an editing host and what is inside it, and a role
   // that cannot be read-only. A native tag reads readonly alone, an ARIA role

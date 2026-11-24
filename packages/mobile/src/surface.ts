@@ -62,6 +62,7 @@ import {
   ROOT_ID,
   screenRoot,
   screenTitle,
+  withEmptyState,
   type ProjectedNode,
   type ProjectedSnapshot,
 } from './nodes.ts';
@@ -1295,7 +1296,7 @@ export class AgentDeviceSurface {
       if (this.located.size <= MAX_LOCATED_REFS) break;
       this.located.delete(oldest);
     }
-    return matches.map((entry) => entry.node);
+    return matches.map((entry) => withEmptyState(entry.node));
   }
 
   /**

@@ -121,6 +121,27 @@ test('toHaveRole fails on a secure field without its value', async ({ app, scree
   await expect(screen.getByLabel('Secret')).toHaveRole('searchbox', { timeout: 300 });
 });
 
+test('toBeEmpty reads an input or textarea by value and anything else by text content', async ({ app, screen }) => {
+  await app.open('/empty-matcher');
+  await expect(screen.getByTestId('blank-input')).toBeEmpty();
+  await expect(screen.getByTestId('blank-textarea')).toBeEmpty();
+  await expect(screen.getByTestId('blank-div')).toBeEmpty();
+  await expect(screen.getByTestId('blank-editor')).toBeEmpty();
+  for (const testId of [
+    'filled-input', 'space-input', 'adopted-input', 'text', 'hidden-text', 'combobox', 'listbox', 'textbox',
+    'aria-textbox', 'select', 'submit', 'checkbox',
+  ]) {
+    await expect(screen.getByTestId(testId), testId).not.toBeEmpty();
+  }
+  await screen.getByTestId('blank-input').fill('typed');
+  await expect(screen.getByTestId('blank-input')).not.toBeEmpty();
+});
+
+test('toBeEmpty is denied on a secure field', async ({ app, screen }) => {
+  await app.open('/empty-matcher');
+  await expect(screen.getByLabel('Secret')).not.toBeEmpty();
+});
+
 test('toBeEditable reads readonly, aria-readonly, and the disabled state', async ({ app, screen }) => {
   await app.open('/editable-matcher');
   await expect(screen.getByLabel('Name')).toBeEditable();
@@ -555,6 +576,7 @@ describe('web platform integration', () => {
     'waitForURL reads URL globs, and toHaveURL compares exactly, as in Playwright',
     'string and RegExp URL patterns match what they name',
     'toHaveRole compares the role the tree reads',
+    'toBeEmpty reads an input or textarea by value and anything else by text content',
     'toBeEditable reads readonly, aria-readonly, and the disabled state',
   ])('passes %s', (title) => {
     const result = resultByTitle(outcome, title);
@@ -640,6 +662,13 @@ describe('web platform integration', () => {
     expect(result.attempts[0]!.error?.code).toBe('ASSERTION_FAILED');
     expect(result.attempts[0]!.error?.message).toContain('expected: role "searchbox"\nobserved: role "textbox"');
     expect(JSON.stringify(result)).not.toContain('marker-7c1f');
+  });
+
+  it('denies toBeEmpty on a password field and keeps its value out of the result', () => {
+    const result = resultByTitle(outcome, 'toBeEmpty is denied on a secure field');
+    expect(result.status).toBe('failed');
+    expect(result.attempts[0]!.error?.code).toBe('POLICY_DENIED');
+    expect(JSON.stringify(result)).not.toContain('marker-9d2a');
   });
 
   it('fails toBeEditable on a read-only textarea, naming why', () => {

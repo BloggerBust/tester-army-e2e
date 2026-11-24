@@ -121,7 +121,7 @@ Planned gaps are on the roadmap, and Not yet gaps have no date. Not planned gaps
 | --- | --- |
 | `.find('css')`, `.filter('css')`, `.not('css')` | Chain a `getBy*` query, or write one selector: `browser.locator('li.active >> .title')` |
 | `.invoke()`, `.its()`, `.then($el => ...)` | `getAttribute()`, `textContent()`, `inputValue()`, else `browser.evaluate`; wrap in `expect.poll` to retry |
-| `have.class`, `have.css`, `have.prop`, `be.empty` | `expect(browser).toHaveClass(locator, /regexp/)`, `expect(locator).toHaveText('')`; else `expect.poll(() => browser.evaluate(...))` |
+| `have.class`, `have.css`, `have.prop`, `be.empty` | `expect(browser).toHaveClass(locator, /regexp/)`, `expect(locator).toBeEmpty()` for an empty field or a node with no text (Cypress's `be.empty` means no child nodes); else `expect.poll(() => browser.evaluate(...))` |
 | `.trigger()`, `cy.scrollTo()` | `hover()`, `dragTo()`, `scrollIntoView()`; for other synthetic events use `browser.evaluate` |
 | `cy.intercept({ headers })` and other header matchers | Check `route.request.headers` in the handler, else call `route.fallback()` |
 | `cy.wait('@alias')`, `.its('request.body')`, `@alias.all` | Start `browser.waitForResponse(pattern)` before the action; read the request in a `browser.route` handler |

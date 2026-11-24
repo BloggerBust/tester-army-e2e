@@ -31,6 +31,7 @@ test('every matcher passes on the scripted screen', async ({ app, screen }) => {
   await expect(screen.getByTestId('card')).toContainText('body');
   await expect(screen.getByLabel('Search')).toHaveValue('hello-value');
   await expect(screen.getByLabel('Email')).toHaveValue('');
+  await expect(screen.getByLabel('Email')).toBeEmpty();
   await expect(screen.getByLabel('Notes')).toHaveValue('line1\\n\\nline2  ');
   await expect(screen.getByLabel('Notes')).toHaveValue(/^line1\\n\\nline2 {2}$/);
   await expect(screen.getByTestId('card')).toHaveAttribute('data-state');
@@ -136,6 +137,11 @@ test('the list form of toHaveText over a secure field is denied', async ({ app, 
   await expect(screen.getByRole('textbox')).toHaveText(['', '', '', '']);
 });
 
+test('toBeEmpty fails on a node with text', async ({ app, screen }) => {
+  await app.open('/');
+  await expect(screen.getByRole('heading', { level: 1 })).toBeEmpty(fast);
+});
+
 test('toHaveAttribute fails on an absent attribute', async ({ app, screen }) => {
   await app.open('/');
   await expect(screen.getByTestId('card')).toHaveAttribute('hidden', fast);
@@ -214,6 +220,7 @@ const FAILURES: [string, ...string[]][] = [
   ['toContainText fails on absent text', 'expected: text containing "footer"', 'observed: text "Card body"'],
   ['toHaveValue fails on a node without a value', 'expected: value "Dashboard"', 'observed: no value (not a form control)'],
   ['toHaveValue never normalizes the value', 'observed: value "line1\\n\\nline2  "'],
+  ['toBeEmpty fails on a node with text', 'expect.toBeEmpty failed', 'expected: empty', 'observed: not empty'],
   ['toHaveAttribute fails on an absent attribute', 'expected: attribute "hidden"', 'observed: attribute "hidden" absent'],
   ['toHaveAttribute fails on another value', 'expected: attribute "data-state" "closed"', 'observed: attribute "data-state" "open"'],
   ['toHaveAccessibleName fails on another name', 'expected: accessible name "Done"', 'observed: name "Todos"'],
@@ -255,7 +262,7 @@ describe('scripted engine: expect(locator) matchers', () => {
     const apis = new Set(attempt.steps.map((entry) => entry.api));
     for (const matcher of [
       'toBeVisible', 'toBeHidden', 'toBeAttached', 'toBeEnabled', 'toBeDisabled', 'toBeEditable', 'toBeChecked', 'toBeSelected',
-      'toBeExpanded', 'toBeFocused', 'toHaveText', 'toContainText', 'toHaveValue', 'toHaveAttribute',
+      'toBeExpanded', 'toBeFocused', 'toBeEmpty', 'toHaveText', 'toContainText', 'toHaveValue', 'toHaveAttribute',
       'toHaveAccessibleName', 'toHaveCount', 'toHaveRole',
     ]) {
       expect(apis, matcher).toContain(`expect.${matcher}`);

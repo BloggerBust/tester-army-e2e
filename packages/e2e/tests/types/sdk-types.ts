@@ -542,6 +542,9 @@ void (screen.getByTestId('todo').allTextContents() satisfies Promise<string[]>);
 void (screen.getByTestId('todo').isHidden() satisfies Promise<boolean>);
 void (screen.getByTestId('todo').isDisabled() satisfies Promise<boolean>);
 void asyncExpectation.toBeAttached({ timeout: 1000 });
+void asyncExpectation.not.toBeEmpty({ timeout: 1000 });
+// @ts-expect-error toBeEmpty compares nothing, so it has no case to ignore
+void asyncExpectation.toBeEmpty({ ignoreCase: true });
 void asyncExpectation.toHaveText(['a', /b/], { timeout: 1000 });
 void asyncExpectation.toContainText(['a', /b/]);
 // @ts-expect-error a text list holds strings and RegExps only

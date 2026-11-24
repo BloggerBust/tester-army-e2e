@@ -61,6 +61,7 @@ await expect(screen.getByTestId('cart-empty'), 'the cart is empty').toBeVisible(
 | [`toBeSelected`](#tobechecked-tobeselected-and-tobeexpanded) | 選択されるまで待機 |
 | [`toBeExpanded`](#tobechecked-tobeselected-and-tobeexpanded) | 展開されるまで待機 |
 | [`toBeFocused`](#tobefocused) | フォーカスされるまで待機 |
+| [`toBeEmpty`](#tobeempty) | フィールドが空、またはノードのテキストがなくなるまで待機 |
 | [`toHaveText`](#tohavetext-and-tocontaintext) | 正規化後のテキストが完全一致するまで待機 |
 | [`toContainText`](#tohavetext-and-tocontaintext) | 正規化後のテキストが含まれるまで待機 |
 | [`toHaveValue`](#tohavevalue) | フォームコントロールが指定の値になるまで待機 |
@@ -138,6 +139,19 @@ await expect(screen.getByRole('tab', 'Billing')).toBeSelected();
 ```ts
 await expect(screen.getByLabel('Email')).toBeFocused();
 ```
+
+#### `toBeEmpty`
+
+一致した 1 つの要素が空になるまで待ちます。
+
+```ts
+await expect(screen.getByLabel('Search')).toBeEmpty();
+await expect(screen.getByTestId('cart')).not.toBeEmpty();
+```
+
+- 空かどうかはエンジンが報告する状態です。Web エンジンは Playwright と同じ規則で判定します。`input` と `textarea` は値が `''` のとき空です。値はそのまま読むため、スペースが入っていれば空ではありません。それ以外の要素は、テキストコンテンツの前後の空白を除いて `''` のとき空です。[`toHaveText`](#tohavetext-and-tocontaintext) と違い非表示のテキストも数えるため、オプションを持つ `select` や、非表示のテキストだけを持つ `<div>` は空になりません。
+- モバイルエンジンはテキストフィールドを値で判定するため、ラベルやヒントは中身に数えません。それ以外のノードは、サブツリー内のテキストと値で判定します。iOS は Flutter や Compose Multiplatform が描画するフィールドを通常のビューとして報告するため、プレースホルダーが中身に数えられ、空のフィールドも空になりません。
+- デスクトップエンジンはまだ空の状態を報告しません。その場合や、このマッチャーより前のエンジンでは、否定してもしなくても失敗し、失敗メッセージにその旨が出ます。
 
 #### `toHaveText` と `toContainText`
 
@@ -639,7 +653,7 @@ last: expected "running" not to be "running"
 
 | マッチャー | 機密フィールドでの動作 |
 | --- | --- |
-| `toHaveValue`, `toHaveText`, `toContainText` | `inputValue()` や `textContent()` と同じく `POLICY_DENIED`。否定やリスト形式も同様 |
+| `toHaveValue`, `toHaveText`, `toContainText`, `toBeEmpty` | `inputValue()` や `textContent()` と同じく `POLICY_DENIED`。否定やリスト形式も同様 |
 | `toHaveAttribute` | `getAttribute()` と同じく `POLICY_DENIED`。すべての属性名と否定も対象 |
 | `toHaveAccessibleName`、`toHaveRole`、状態のマッチャー | 通常どおりに判定 |
 
@@ -721,6 +735,13 @@ export interface AsyncExpectation {
   toBeExpanded(options?: { timeout?: number }): Promise<void>;
   /** Waits for focused state. */
   toBeFocused(options?: { timeout?: number }): Promise<void>;
+  /**
+   * Waits for a node the engine reports empty: on the web an input or
+   * textarea with no value, or any other element whose text content trims to
+   * nothing; on a device a text field with no value, or a node with no text
+   * or value in its subtree. Denied on a secure field.
+   */
+  toBeEmpty(options?: { timeout?: number }): Promise<void>;
   /** Waits for exact normalized text; a list waits for exactly that many matches, each with its entry's text, in order. */
   toHaveText(expected: TextMatch, options?: TextMatcherOptions): Promise<void>;
   toHaveText(expected: readonly TextMatch[], options?: TextMatcherOptions): Promise<void>;

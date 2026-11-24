@@ -2314,12 +2314,27 @@ export interface SemanticNode {
    * select by its `readonly` attribute, an element whose ARIA role takes
    * `aria-readonly` by that attribute, any other editing host `false`), and
    * only where the platform knows, as Android does: absent means the node has
-   * no read-only state to read, not `false`.
+   * no read-only state to read, not `false`. `empty` is whether the node
+   * holds nothing, as Playwright's `toBeEmpty` reads it on the web (an input or
+   * textarea by its raw value, any other element by its trimmed text content),
+   * and on a device a text field by its value, any other node by the text
+   * and values in its subtree. An engine reports it on the nodes `locate`
+   * returns, never in an observation, and never on a secure field: absent
+   * means the engine does not say.
    */
   readonly states?: Readonly<
     Partial<
       Record<
-        'checked' | 'disabled' | 'selected' | 'expanded' | 'pressed' | 'focused' | 'hidden' | 'secure' | 'readonly',
+        | 'checked'
+        | 'disabled'
+        | 'selected'
+        | 'expanded'
+        | 'pressed'
+        | 'focused'
+        | 'hidden'
+        | 'secure'
+        | 'readonly'
+        | 'empty',
         boolean
       >
     >

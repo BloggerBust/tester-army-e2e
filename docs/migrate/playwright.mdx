@@ -135,6 +135,7 @@ run only in a browser, so a test that uses it declares
 | Playwright | e2e |
 | --- | --- |
 | `toBeVisible()`, `toBeHidden()`, `toBeEnabled()`, `toBeDisabled()`, `toBeChecked()`, `toBeFocused()`, `toBeAttached()`, `toBeInViewport()`, `toHaveText()`, `toContainText()`, `toHaveValue()`, `toHaveAttribute()`, `toHaveCount()`, `toHaveAccessibleName()`, `toHaveRole()`, `toBeEditable()` | the same, with `{ visible }`, `{ enabled }`, `{ editable }`, `{ checked }`, `{ attached }`, `{ ratio }`, and `{ ignoreCase }`; `toBeInViewport` reads a zero-size element as outside and [differs on a device](/reference/expect#tobeinviewport) |
+| `toBeEmpty()` | the same, with `{ timeout }` |
 | `toHaveId(id)`, `toContainClass(name)` | `toHaveAttribute('id', id)`, `toHaveAttribute('class', RegExp)` |
 | `expect(page).toHaveURL()`, `toHaveTitle()` | `expect(browser).toHaveURL()`, `toHaveTitle()` |
 | `expect(page).toHaveScreenshot()`, `expect(locator).toHaveScreenshot()` | `expect(screen).toHaveScreenshot()` and the locator form, see [Visual comparison](/visual-testing) |
@@ -270,7 +271,6 @@ purpose. Use the workaround, or keep the test in Playwright.
 
 | Playwright | Use today |
 | --- | --- |
-| `toBeEmpty()` | `toHaveValue('')` on a form control, `toHaveText('')` on other elements |
 | `{ fullPage, clip }`, `snapshotPathTemplate`, `ignoreSnapshots` | The viewport or one locator in `toHaveScreenshot`; a tag and `--exclude-tag` to skip visual tests |
 | `expect.configure()` | `{ timeout }` on each call |
 | `@axe-core/playwright` | axe-core through `browser.addInitScript({ path: 'node_modules/axe-core/axe.min.js' })`, then `axe.run()` in `browser.evaluate` |
@@ -370,6 +370,8 @@ purpose. Use the workaround, or keep the test in Playwright.
 - Text reads are rendered text. `textContent()`, `toHaveText`, and
   `toContainText` read what `innerText` returns, so hidden text is left out
   and `text-transform` applies. See [locator reads](/reference/screen#locator-reads).
+  `toBeEmpty` keeps Playwright's rule instead, so hidden text makes a node
+  not empty.
 - `toHaveRole` takes the `getByRole` vocabulary, so `paragraph`, `generic`,
   and the other roles it leaves out are type errors, and `img` reads as
   `image`. It compares the role the tree reads, where a `contenteditable`

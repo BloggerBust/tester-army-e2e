@@ -61,6 +61,7 @@ await expect(screen.getByTestId('cart-empty'), 'the cart is empty').toBeVisible(
 | [`toBeSelected`](#tobechecked-tobeselected-and-tobeexpanded) | 等待选中状态 |
 | [`toBeExpanded`](#tobechecked-tobeselected-and-tobeexpanded) | 等待展开状态 |
 | [`toBeFocused`](#tobefocused) | 等待获得焦点 |
+| [`toBeEmpty`](#tobeempty) | 等待字段为空，或节点没有文本 |
 | [`toHaveText`](#tohavetext-and-tocontaintext) | 等待规范化后的文本完全匹配 |
 | [`toContainText`](#tohavetext-and-tocontaintext) | 等待规范化后的文本包含指定内容 |
 | [`toHaveValue`](#tohavevalue) | 等待表单控件的值 |
@@ -138,6 +139,19 @@ await expect(screen.getByRole('tab', 'Billing')).toBeSelected();
 ```ts
 await expect(screen.getByLabel('Email')).toBeFocused();
 ```
+
+#### `toBeEmpty`
+
+等待唯一匹配的元素为空。
+
+```ts
+await expect(screen.getByLabel('Search')).toBeEmpty();
+await expect(screen.getByTestId('cart')).not.toBeEmpty();
+```
+
+- 是否为空由引擎报告的状态决定。Web 引擎遵循 Playwright 的规则：`input` 或 `textarea` 的值为 `''` 时为空，值按原样读取，因此含空格的字段不为空。其他元素的文本内容去掉首尾空白后为 `''` 时为空。与 [`toHaveText`](#tohavetext-and-tocontaintext) 不同，隐藏文本也算在内，因此带选项的 `select` 从不为空，只含隐藏文本的 `<div>` 也不为空。
+- 移动端引擎按值判断文本字段，因此标签或提示不算内容；其他节点按其子树中的文本和值判断。iOS 会把 Flutter 或 Compose Multiplatform 绘制的字段报告为普通视图，因此其占位文本算作内容，空字段也不为空。
+- 桌面引擎目前不报告空状态。在桌面引擎上，以及在早于此匹配器的引擎版本上，无论是否取反都会失败，失败消息会说明原因。
 
 #### `toHaveText` 和 `toContainText`
 
@@ -639,7 +653,7 @@ last: expected "running" not to be "running"
 
 | 匹配器 | 在安全字段上的行为 |
 | --- | --- |
-| `toHaveValue`、`toHaveText`、`toContainText` | 与 `inputValue()` 和 `textContent()` 一样触发 `POLICY_DENIED`，取反或列表形式也如此 |
+| `toHaveValue`、`toHaveText`、`toContainText`、`toBeEmpty` | 与 `inputValue()` 和 `textContent()` 一样触发 `POLICY_DENIED`，取反或列表形式也如此 |
 | `toHaveAttribute` | 与 `getAttribute()` 一样触发 `POLICY_DENIED`，所有属性名以及取反形式都如此 |
 | `toHaveAccessibleName`、`toHaveRole` 和状态匹配器 | 正常返回结果 |
 
@@ -721,6 +735,13 @@ export interface AsyncExpectation {
   toBeExpanded(options?: { timeout?: number }): Promise<void>;
   /** Waits for focused state. */
   toBeFocused(options?: { timeout?: number }): Promise<void>;
+  /**
+   * Waits for a node the engine reports empty: on the web an input or
+   * textarea with no value, or any other element whose text content trims to
+   * nothing; on a device a text field with no value, or a node with no text
+   * or value in its subtree. Denied on a secure field.
+   */
+  toBeEmpty(options?: { timeout?: number }): Promise<void>;
   /** Waits for exact normalized text; a list waits for exactly that many matches, each with its entry's text, in order. */
   toHaveText(expected: TextMatch, options?: TextMatcherOptions): Promise<void>;
   toHaveText(expected: readonly TextMatch[], options?: TextMatcherOptions): Promise<void>;

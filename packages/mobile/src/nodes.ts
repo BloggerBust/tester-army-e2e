@@ -117,6 +117,33 @@ export function mayTakeText(node: SemanticNode): boolean {
   return children.length > 0 && children.every((child) => child.role === 'text' && child.children === undefined);
 }
 
+/** Roles `toBeEmpty` reads by value, as Playwright reads an input or textarea. */
+const FIELD_ROLES: ReadonlySet<string> = new Set(['textbox', 'searchbox']);
+
+/**
+ * The node a locate hands the harness, with the `empty` state `toBeEmpty`
+ * reads: empty when it holds no content (`holdsContent`). A secure field gets
+ * no state, as it withholds its value. Observations leave the state out: it
+ * is no use to the model.
+ */
+export function withEmptyState(node: SemanticNode): SemanticNode {
+  if (node.states?.secure === true) return node;
+  return { ...node, states: { ...node.states, empty: !holdsContent(node) } };
+}
+
+/**
+ * Whether the node holds content: a text field its value, as it is, so its
+ * label or hint never counts; a secure field nothing, so a container does not
+ * tell whether one is filled; any other node its own text or value, or any
+ * node below it that holds content. Fields go by role, not `mayTakeText`: an
+ * iOS `other` holding only text is as often a container as a drawn field.
+ */
+function holdsContent(node: SemanticNode): boolean {
+  if (node.states?.secure === true) return false;
+  if (node.role !== undefined && FIELD_ROLES.has(node.role)) return (node.value ?? '') !== '';
+  return (node.text ?? '').trim() !== '' || (node.value ?? '').trim() !== '' || (node.children ?? []).some(holdsContent);
+}
+
 const CHECKABLE_ROLES = new Set(['switch', 'checkbox']);
 const CHECKED_VALUES = new Set(['1', 'on', 'true', 'checked', 'selected']);
 const UNCHECKED_VALUES = new Set(['0', 'off', 'false', 'unchecked']);

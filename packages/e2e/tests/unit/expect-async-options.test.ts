@@ -151,6 +151,7 @@ describe('options a matcher does not take', () => {
     ['toBeHidden visible', () => at('tucked').toBeHidden(computed({ visible: true }))],
     ['toBeFocused focused', () => at('agree').toBeFocused(computed({ focused: false }))],
     ['toHaveValue ignoreCase', () => at('agree').toHaveValue('x', computed({ ignoreCase: true }))],
+    ['toBeEmpty ignoreCase', () => at('banner').toBeEmpty(computed({ ignoreCase: true }))],
     ['toHaveText useInnerText', () => at('banner').toHaveText('Save Error', computed({ useInnerText: true }))],
     ['toHaveCount ignoreCase', () => at('banner').toHaveCount(1, computed({ ignoreCase: true }))],
     ['toHaveAttribute presence ignoreCase', () => at('banner').toHaveAttribute('data-kind', computed({ ignoreCase: true }))],

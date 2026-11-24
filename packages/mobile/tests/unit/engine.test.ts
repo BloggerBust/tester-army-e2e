@@ -1845,6 +1845,16 @@ describe('location', () => {
     });
   });
 
+  it('reports a located field empty while its hint shows, and a container by the text below it', async () => {
+    const h = harness({ platform: 'android' });
+    await openAttempt(h);
+    h.fake.respond('capture.snapshot', () => ANDROID_ID_SNAPSHOT);
+    const [name] = await h.engine.locate!(testIdQuery('name'), operation());
+    const [form] = await h.engine.locate!(testIdQuery('form'), operation());
+    expect(name?.states?.empty).toBe(true);
+    expect(form?.states?.empty).toBe(false);
+  });
+
   it('finds an Android view by its id without its package', async () => {
     const h = harness({ platform: 'android' });
     await openAttempt(h);
@@ -2573,9 +2583,9 @@ describe('device fixture', () => {
       h.fake.respond('capture.snapshot', () => ({ ...KEYBOARD_UP, nodes: below }));
       // A role query never matches a hidden node; a text query still finds it, hidden.
       expect(await h.engine.locate!(brand, operation())).toEqual([]);
-      expect((await h.engine.locate!(brandByText, operation()))[0]?.states).toEqual({ hidden: true });
+      expect((await h.engine.locate!(brandByText, operation()))[0]?.states?.hidden).toBe(true);
       h.fake.respond('capture.snapshot', () => ({ ...KEYBOARD_GONE, nodes: below }));
-      expect((await h.engine.locate!(brand, operation()))[0]?.states).toBeUndefined();
+      expect((await h.engine.locate!(brand, operation()))[0]?.states?.hidden).toBeUndefined();
     });
 
     it('reads the keyboard band off the keyboard element when the capture measured no frame, and not once the producer saw it gone', async () => {
@@ -2586,9 +2596,9 @@ describe('device fixture', () => {
       const brand = { kind: 'query', query: { kind: 'text', value: { kind: 'string', value: 'Brand', exact: true } } } as const;
       // Brand's centre is under the dock below the keys, which the band reaches down to the bottom of the screen.
       h.fake.respond('capture.snapshot', () => ({ ...SETTINGS_SNAPSHOT, viewport: { width: 390, height: 844 }, nodes: below }));
-      expect((await h.engine.locate!(brand, operation()))[0]?.states).toEqual({ hidden: true });
+      expect((await h.engine.locate!(brand, operation()))[0]?.states?.hidden).toBe(true);
       h.fake.respond('capture.snapshot', () => ({ ...KEYBOARD_GONE, viewport: { width: 390, height: 844 }, nodes: below }));
-      expect((await h.engine.locate!(brand, operation()))[0]?.states).toBeUndefined();
+      expect((await h.engine.locate!(brand, operation()))[0]?.states?.hidden).toBeUndefined();
     });
 
     it('counts the suggestion strip XCTest lists beside the keyboard as the keyboard, and keeps its own buttons', async () => {
@@ -2603,8 +2613,8 @@ describe('device fixture', () => {
       ];
       const byText = (value: string) => ({ kind: 'query', query: { kind: 'text', value: { kind: 'string', value, exact: true } } }) as const;
       h.fake.respond('capture.snapshot', () => ({ ...SETTINGS_SNAPSHOT, viewport: { width: 390, height: 844 }, nodes }));
-      expect((await h.engine.locate!(byText('Phone'), operation()))[0]?.states).toEqual({ hidden: true });
-      expect((await h.engine.locate!(byText('Suggestion'), operation()))[0]?.states).toBeUndefined();
+      expect((await h.engine.locate!(byText('Phone'), operation()))[0]?.states?.hidden).toBe(true);
+      expect((await h.engine.locate!(byText('Suggestion'), operation()))[0]?.states?.hidden).toBeUndefined();
     });
 
     it('drags from the point nearest the centre that no control covers, and stops once the keyboard is gone', async () => {

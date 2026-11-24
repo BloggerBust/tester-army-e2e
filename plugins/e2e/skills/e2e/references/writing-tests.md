@@ -428,11 +428,14 @@ typed; prefer it when the app already has a schema for the response.
 
 | Locator matchers | Browser matchers | Value matchers |
 | --- | --- | --- |
-| `toBeVisible`, `toBeHidden`, `toBeInViewport`, `toBeAttached`, `toBeEnabled`, `toBeDisabled`, `toBeEditable`, `toBeChecked`, `toBeSelected`, `toBeExpanded`, `toBeFocused`, `toHaveText`, `toContainText`, `toHaveValue`, `toHaveAttribute`, `toHaveCount`, `toHaveAccessibleName`, `toHaveRole`, `toHaveScreenshot` (also on `screen`) | `toHaveURL`, `toHaveTitle`, `toHaveClass(locator, expected)` | `toBe`, `toEqual`, `toMatchObject`, `toBeTruthy`, `toBeFalsy`, `toBeNull`, `toBeUndefined`, `toBeDefined`, `toHaveLength`, `toHaveProperty`, `toContain`, `toMatch`, `toBeGreaterThan`, `toBeGreaterThanOrEqual`, `toBeLessThan`, `toBeLessThanOrEqual`, `toBeCloseTo`, `toMatchSchema` |
+| `toBeVisible`, `toBeHidden`, `toBeInViewport`, `toBeAttached`, `toBeEnabled`, `toBeDisabled`, `toBeEditable`, `toBeChecked`, `toBeSelected`, `toBeExpanded`, `toBeFocused`, `toBeEmpty`, `toHaveText`, `toContainText`, `toHaveValue`, `toHaveAttribute`, `toHaveCount`, `toHaveAccessibleName`, `toHaveRole`, `toHaveScreenshot` (also on `screen`) | `toHaveURL`, `toHaveTitle`, `toHaveClass(locator, expected)` | `toBe`, `toEqual`, `toMatchObject`, `toBeTruthy`, `toBeFalsy`, `toBeNull`, `toBeUndefined`, `toBeDefined`, `toHaveLength`, `toHaveProperty`, `toContain`, `toMatch`, `toBeGreaterThan`, `toBeGreaterThanOrEqual`, `toBeLessThan`, `toBeLessThanOrEqual`, `toBeCloseTo`, `toMatchSchema` |
 
 `toHaveText` compares the whole normalized text, `toContainText` a substring
 or RegExp, `toHaveValue` a form control's value as is, whitespace included
-(it fails on a node with none); on a secure field all three are
+(it fails on a node with none). `toBeEmpty` passes on a field whose value
+is `''` (read as is, so a space is not empty) and on any other node with no
+text, where hidden text counts on the web, as in Playwright; it takes only
+`timeout` and works with `.not`. On a secure field all four are
 `POLICY_DENIED`, never a comparison against `''`. List forms:
 `toHaveText(['Alpha', /^Beta/])` needs exactly two matches with those texts
 in order; `toContainText(['Alpha', 'Beta'])` needs each entry in a distinct

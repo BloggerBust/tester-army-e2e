@@ -101,6 +101,16 @@ export function createScene(build: (stage: Stage) => ScriptedNode[], initialLoca
     return out;
   };
 
+  /**
+   * A located node's states with the `empty` a real engine reports on a
+   * locate alone: a node with a value by that value, any other by its trimmed
+   * text; none on a secure field.
+   */
+  const withEmpty = (node: SemanticNode): SemanticNode['states'] =>
+    node.states?.secure === true
+      ? node.states
+      : { ...node.states, empty: node.value === undefined ? (node.text ?? '').trim() === '' : node.value === '' };
+
   const findById = (id: string): ScriptedNode | undefined => allNodes().find((node) => node.id === id);
 
   /** The node as the contract reports it: a fresh copy, the value withheld on a secure field, children only for an observation. */
@@ -221,7 +231,7 @@ export function createScene(build: (stage: Stage) => ScriptedNode[], initialLoca
     root,
     locate(expression) {
       if (!opened) throw engineFailure('INVALID_STATE', 'no app is open; call app.open() first');
-      return resolveExpression(expression, root().children ?? []).map((match) => obj({ ...match, children: undefined }));
+      return resolveExpression(expression, root().children ?? []).map((match) => obj({ ...match, children: undefined, states: withEmpty(match) }));
     },
     perform(id, action) {
       if (id === SCENE_ROOT_ID) {

@@ -479,6 +479,26 @@ class AsyncExpectationImpl implements AsyncExpectation {
     return this.stateMatcher('toBeFocused', options);
   }
 
+  toBeEmpty(options?: { timeout?: number }): Promise<void> {
+    this.readOptions('toBeEmpty', options);
+    return this.poll(
+      {
+        name: 'toBeEmpty',
+        readsWithheld: true,
+        evaluableNode: (node) => node.states?.empty !== undefined,
+        predicate: (sample) => sample.node?.states?.empty === true,
+        describeExpected: 'empty',
+        observed: (sample) => {
+          if (sample.node === null) return 'no node';
+          const empty = sample.node.states?.empty;
+          if (empty === undefined) return 'no empty state, which this engine does not report';
+          return empty ? 'empty' : 'not empty';
+        },
+      },
+      options?.timeout,
+    );
+  }
+
   toHaveText(expected: TextMatch | readonly TextMatch[], options?: TextMatcherOptions): Promise<void> {
     return this.textMatcher('toHaveText', expected, options);
   }
@@ -661,11 +681,12 @@ function editState(node: SemanticNode): 'disabled' | 'read-only' | 'editable' | 
   return readonly ? 'read-only' : 'editable';
 }
 
+/** The node's true states for a state matcher's failure; `empty` is `toBeEmpty`'s alone and says nothing about the others. */
 function observedState(sample: Sample): string {
   if (sample.node === null) return 'no node';
   const states = sample.node.states ?? {};
   const active = Object.entries(states)
-    .filter(([, value]) => value === true)
+    .filter(([key, value]) => value === true && key !== 'empty')
     .map(([key]) => key);
   return active.length === 0 ? 'default states' : `states: ${active.join(', ')}`;
 }
