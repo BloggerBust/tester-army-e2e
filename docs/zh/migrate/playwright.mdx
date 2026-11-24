@@ -108,7 +108,7 @@ test('checkout', async ({ app, agent, screen }) => {
 | --- | --- |
 | `click()`, `dblclick()` | `tap()`、`doubleTap()`；`click()` 和 `dblclick()` 是别名 |
 | `click({ button: 'right' })`, `click({ delay })` | `secondaryTap()`、`longPress({ duration })` |
-| `click({ position })`, `click({ modifiers })` | `tap({ position })`、`tap({ modifiers })` |
+| `click({ position })`, `click({ modifiers })`, `click({ clickCount: 3 })` | `tap({ position })`、`tap({ modifiers })`、`tap({ count: 3 })` |
 | `fill()`, `pressSequentially()`, `clear()`, `focus()`, `blur()`, `hover()`, `check()`, `uncheck()`, `dragTo()`, `setInputFiles(path)`, `selectOption({ label })` 或 `{ value }` | 相同，但不支持 `force`、`trial` 或 `position` |
 | `setInputFiles({ name, mimeType, buffer })` | 仅限 Web。传入只含 `name`、`mimeType` 和 `buffer` 的普通对象。 |
 | `press(key)` | 单个字符或[命名按键](/reference/engine#keys)的用法相同；按键代码则在 `focus()` 后使用 `browser.keyboard.press` |
@@ -242,7 +242,7 @@ export const test = base.extend<{ accountPage: AccountPage }>({
 | --- | --- |
 | `locator.locator(selector)`, `locator.and()`, `filter({ visible })` | 一个 `browser.locator` 选择器，例如 `'.card >> .close'`，或作用域内的 `screen` 查询 |
 | `locator.evaluate()`, `expect(locator).toHaveClass()`, `toHaveCSS()`, `dispatchEvent()` | `browser.evaluate(fn, selector)`；`expect(browser).toHaveClass(locator, cls)` |
-| `selectOption([...])`, `click({ clickCount })`, `hover({ position })` | 多选使用 `browser.evaluate`；`browser.mouse` 配合 `boundingBox()` |
+| `selectOption([...])`, `hover({ position })` | 多选使用 `browser.evaluate`；`browser.mouse` 配合 `boundingBox()` |
 
 </Accordion>
 <Accordion title="断言">

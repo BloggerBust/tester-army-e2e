@@ -50,7 +50,7 @@ import {
   TestError,
 } from '@e2e-dev/core/engine';
 import { isAppNotRunning, isSnapshotPresentationFailure, isUnreadableCapture, ORIGIN_UNKNOWN_BOUNDS, ORIGIN_WARNING, runCommand, staleOr } from './errors.ts';
-import { pointerInteraction, DEFAULT_LONG_PRESS_MS } from './actions.ts';
+import { pointerInteraction, DEFAULT_LONG_PRESS_MS, MAX_TAP_COUNT } from './actions.ts';
 import { resolveExpression } from './locate.ts';
 import { launchArgumentList, launchArgumentsForOpen } from './launch-arguments.ts';
 import {
@@ -1583,6 +1583,9 @@ export class AgentDeviceSurface {
     const refuseFill = (binding: NodeBinding): EngineError =>
       unsupported(`agent-device can only ${action.kind} editable fields; node ${binding.id} is ${binding.node.role ?? 'unknown'}`);
     if (filling && !entry.takesText) throw refuseFill(entry);
+    if (action.kind === 'multiTap' && action.count > MAX_TAP_COUNT) {
+      throw unsupported(`agent-device presses at most ${MAX_TAP_COUNT} times in a row; got a count of ${action.count}`);
+    }
     const label = `perform ${action.kind}`;
     const client = this.requireClient();
     // A toggle already in the wanted state sends nothing, so it neither waits
@@ -1616,6 +1619,8 @@ export class AgentDeviceSurface {
           return input.press(client, { ...this.actionTarget(target), ...settle });
         case 'doubleTap':
           return input.press(client, { ...this.actionTarget(target), count: 2, ...settle });
+        case 'multiTap':
+          return input.press(client, { ...this.actionTarget(target), count: action.count, ...settle });
         case 'longPress':
           return input.send(
             () => client.interactions.longPress({ ...this.actionTarget(target), ...settle, durationMs: action.durationMs ?? DEFAULT_LONG_PRESS_MS }),

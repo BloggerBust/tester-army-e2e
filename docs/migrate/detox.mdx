@@ -116,7 +116,7 @@ test('shows the home screen', async ({ agent, app, screen }) => {
 | `by.id('x')`, `by.text('t')`, `by.label('l')` | `screen.getByTestId('x')`, `screen.getByText('t')`, `screen.getByLabel('l')` |
 | `by.id('x').withAncestor(by.id('row'))` | `screen.getByTestId('row').getByTestId('x')` |
 | `.atIndex(n)` | `.nth(n)` |
-| `.tap()`, `.tap({ x, y })`, `.longPress()`, `.multiTap(2)` | `.tap()`, `.tap({ position: { x, y } })`, `.longPress()`, `.doubleTap()` |
+| `.tap()`, `.tap({ x, y })`, `.longPress()`, `.multiTap(2)`, `.multiTap(3)` | `.tap()`, `.tap({ position: { x, y } })`, `.longPress()`, `.doubleTap()`, `.tap({ count: 3 })` |
 | `.typeText(t)` | `.pressSequentially(t)` |
 | `.replaceText(t)`, `.clearText()`, `.tapReturnKey()` | `.fill(t)`, `.clear()`, `.press('Enter')` |
 | `.swipe('up', 'fast')` | `.swipe({ direction: 'down', momentum: 'fast' })`. Detox names the finger's direction, e2e the content's |
@@ -168,7 +168,7 @@ on purpose.
 | `artifacts.plugins.log`, `--record-logs` | `adb logcat` or `xcrun simctl spawn booted log stream` in a CI step |
 | `by.id('x').and(by.text('y'))` | `.filter({ hasText })`, or `device.locator('id=x label="y"')` |
 | `system.element(by.system.label('Allow'))` | `device.alert('accept' \| 'dismiss')`, or `app.permissions` so no prompt shows |
-| `.longPressAndDrag()`, `.swipe()` offset, `.multiTap(3)` | `.dragTo(target)`, `screen.swipe({ from, to })`, repeated `.tap()` |
+| `.longPressAndDrag()`, `.swipe()` offset | `.dragTo(target)`, `screen.swipe({ from, to })` |
 | `.scrollTo('bottom')` | `list.scrollUntilVisible(lastRow)`, or the first row with `{ direction: 'up' }` |
 | `.tapBackspaceKey()` | `.fill(t)` with the shorter text |
 | `.setDatePickerDate()`, `.setColumnToValue()`, `.adjustSliderToPosition()` | An `agent.act` goal, or `screen.swipe({ from, to })` on a slider |

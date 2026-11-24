@@ -108,7 +108,7 @@ test('checkout', async ({ app, agent, screen }) => {
 | --- | --- |
 | `click()`, `dblclick()` | `tap()`、`doubleTap()`。`click()` と `dblclick()` はそれぞれ `tap()` と `doubleTap()` の別名 |
 | `click({ button: 'right' })`, `click({ delay })` | `secondaryTap()`、`longPress({ duration })` |
-| `click({ position })`, `click({ modifiers })` | `tap({ position })`、`tap({ modifiers })` |
+| `click({ position })`, `click({ modifiers })`, `click({ clickCount: 3 })` | `tap({ position })`、`tap({ modifiers })`、`tap({ count: 3 })` |
 | `fill()`, `pressSequentially()`, `clear()`, `focus()`, `blur()`, `hover()`, `check()`, `uncheck()`, `dragTo()`, `setInputFiles(path)`, `selectOption({ label })` または `{ value }` | 同じ。ただし `force`、`trial`、`position` はなし |
 | `setInputFiles({ name, mimeType, buffer })` | Web のみ。`name`、`mimeType`、`buffer` だけを持つプレーンオブジェクトを渡します。 |
 | `press(key)` | 1 文字または[名前付きキー](/reference/engine#keys)なら同じ。キーコードは `focus()` 後に `browser.keyboard.press` |
@@ -242,7 +242,7 @@ export const test = base.extend<{ accountPage: AccountPage }>({
 | --- | --- |
 | `locator.locator(selector)`, `locator.and()`, `filter({ visible })` | `'.card >> .close'` のような単一の `browser.locator` セレクター、またはスコープ内の `screen` クエリ |
 | `locator.evaluate()`, `expect(locator).toHaveClass()`, `toHaveCSS()`, `dispatchEvent()` | `browser.evaluate(fn, selector)`。`expect(browser).toHaveClass(locator, cls)` |
-| `selectOption([...])`, `click({ clickCount })`, `hover({ position })` | 複数選択には `browser.evaluate`。`boundingBox()` と `browser.mouse` |
+| `selectOption([...])`, `hover({ position })` | 複数選択には `browser.evaluate`。`boundingBox()` と `browser.mouse` |
 
 </Accordion>
 <Accordion title="アサーション">

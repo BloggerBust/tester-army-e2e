@@ -26,7 +26,7 @@ import type { ConnectionBudget } from './operation-budget.ts';
 const DEFAULT_LONG_PRESS_MS = 500;
 
 /** The keys a click holds, as Playwright's `modifiers` takes them; the contract spells them the same. */
-function heldKeys(action: Extract<LocatorAction, { kind: 'tap' | 'doubleTap' | 'secondaryTap' }>): { modifiers?: KeyModifier[] } {
+function heldKeys(action: Extract<LocatorAction, { kind: 'tap' | 'doubleTap' | 'secondaryTap' | 'multiTap' }>): { modifiers?: KeyModifier[] } {
   return action.modifiers === undefined ? {} : { modifiers: [...action.modifiers] };
 }
 
@@ -294,6 +294,10 @@ export async function dispatchLocatorAction(
       return;
     case 'doubleTap':
       await locator.dblclick({ timeout, ...heldKeys(action) });
+      return;
+    case 'multiTap':
+      // One click sequence with a rising `detail`, as a person's triple click is.
+      await locator.click({ clickCount: action.count, timeout, ...heldKeys(action) });
       return;
     case 'secondaryTap':
       await locator.click({ button: 'right', timeout, ...heldKeys(action) });

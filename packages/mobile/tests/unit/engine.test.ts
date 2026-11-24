@@ -107,7 +107,7 @@ describe('manifest', () => {
     expect(Object.keys(pinned.session!).toSorted()).toEqual(['back', 'openLink', 'reset', 'restart']);
     // No `open`: a device app has no URL. No select verb either: the touch surface has no option lists to pick from.
     expect(pinned.session!.open).toBeUndefined();
-    expect(pinned.actions).toEqual(['tap', 'doubleTap', 'longPress', 'fill', 'clear', 'press', 'check', 'uncheck', 'focus', 'hover', 'dragTo', 'swipe']);
+    expect(pinned.actions).toEqual(['tap', 'doubleTap', 'multiTap', 'longPress', 'fill', 'clear', 'press', 'check', 'uncheck', 'focus', 'hover', 'dragTo', 'swipe']);
     expect(pinned.state).toBeUndefined();
   });
 
@@ -1978,6 +1978,7 @@ describe('perform', () => {
     const before = h.fake.calls.length;
     await h.engine.perform!(about!.ref, { kind: 'tap' }, op);
     await h.engine.perform!(about!.ref, { kind: 'doubleTap' }, op);
+    await h.engine.perform!(about!.ref, { kind: 'multiTap', count: 3 }, op);
     await h.engine.perform!(about!.ref, { kind: 'longPress', durationMs: 900 }, op);
     await h.engine.perform!(about!.ref, { kind: 'longPress' }, op);
     await h.engine.perform!(search!.ref, { kind: 'focus' }, op);
@@ -1995,6 +1996,7 @@ describe('perform', () => {
     expect(h.fake.calls.slice(before).map((call) => [call.method, call.args])).toEqual([
       ['interactions.press', { ref: '@e4', settle: true, settleQuietMs: 150 }],
       ['interactions.press', { ref: '@e4', count: 2, settle: true, settleQuietMs: 150 }],
+      ['interactions.press', { ref: '@e4', count: 3, settle: true, settleQuietMs: 150 }],
       ['interactions.longPress', { ref: '@e4', settle: true, settleQuietMs: 150, durationMs: 900 }],
       // No duration named: the engine's one-second hold, past a Pressable's delayLongPress.
       ['interactions.longPress', { ref: '@e4', settle: true, settleQuietMs: 150, durationMs: 1000 }],
@@ -2021,6 +2023,24 @@ describe('perform', () => {
     const presses = h.fake.calls.filter((call) => call.method === 'interactions.press');
     expect(presses).not.toHaveLength(0);
     expect(presses.every((call) => call.signal instanceof AbortSignal)).toBe(true);
+  });
+
+  it('refuses a multiTap above agent-device\'s 200 presses before any wait or device call, and sends 200', async () => {
+    const h = harness();
+    await openAttempt(h);
+    const about = await observed(h, 'About');
+    const before = h.fake.calls.length;
+    // A test step waits for the node to settle and steady before it presses;
+    // the refusal comes before those waits, so no snapshot and no press.
+    await expect(h.engine.perform!(about.ref, { kind: 'multiTap', count: 201 }, { ...operation(), origin: 'test' })).rejects.toMatchObject({
+      code: 'UNSUPPORTED_CAPABILITY',
+      message: expect.stringContaining('at most 200'),
+    });
+    expect(h.fake.calls.slice(before)).toEqual([]);
+    await h.engine.perform!(about.ref, { kind: 'multiTap', count: 200 }, operation());
+    expect(h.fake.calls.slice(before).filter((call) => call.method === 'interactions.press').map((call) => call.args)).toEqual([
+      { ref: '@e4', count: 200, settle: true, settleQuietMs: 150 },
+    ]);
   });
 
   it.each(['Enter', 'a'])('sends %s to a focused field without tapping it first', async (key) => {

@@ -245,8 +245,8 @@ export interface Engine {
    */
   readonly pointerActions?: readonly PointerActionKind[];
   /**
-   * The surface honors `modifiers` on the `tap`, `doubleTap`, and
-   * `secondaryTap` actions `perform` receives. Without it the harness fails
+   * The surface honors `modifiers` on the `tap`, `doubleTap`, `multiTap`,
+   * and `secondaryTap` actions `perform` receives. Without it the harness fails
    * an action that carries modifiers with `UNSUPPORTED_CAPABILITY` before it
    * reaches the engine.
    */
@@ -412,7 +412,7 @@ member. Three gaps end differently:
 | `perform` + `actions` | `actions` | `observe` | Node actions of the declared kinds, with platform actionability checks. |
 | `locate` | `location` | `observe` | `screen`, `Locator`, `expect(locator)`. |
 | `viewportIntersection` | `viewport-intersection` | `locate` | `expect(locator).toBeInViewport()`. |
-| `tapModifiers: true` | - | `perform` | `modifiers` on `tap`, `doubleTap`, and `secondaryTap`. |
+| `tapModifiers: true` | - | `perform` | `modifiers` on `tap`, `doubleTap`, `multiTap`, and `secondaryTap`. |
 | `selectsDevice: true` | - | `prepare` | `e2e run --device`, the device `prepare` binds. |
 | `launchArgumentValues: true` | - | - | The object form of `app.launchArguments`, in `EngineAppInfo.launchArgumentValues`. |
 | `performAt` + `pointerActions` | `pointer` | `observe` | One pointer action at a viewport point, with no node behind it. |
@@ -1218,6 +1218,7 @@ honors in `actions` and `pointerActions`.
 | --- | --- | --- | --- |
 | `tap` | `modifiers?` on a node | yes | yes |
 | `doubleTap` | `modifiers?` on a node | yes | yes |
+| `multiTap` | `count` (3 or more), `modifiers?`; `tap({ count })` | yes | - |
 | `secondaryTap` | `modifiers?` on a node | yes | yes |
 | `longPress` | `durationMs?` | yes | yes |
 | `fill` | `value`, `sensitive` | yes | - |
@@ -1266,6 +1267,12 @@ export type LocatorAction =
   | {
       readonly kind: 'tap' | 'doubleTap' | 'secondaryTap';
       /** Keys held for the click; only an engine that declares `tapModifiers` receives it. */
+      readonly modifiers?: readonly KeyModifier[];
+    }
+  | {
+      /** `count` taps in a row (3 or more; 2 is `doubleTap`): one multi-click in a browser, presses at the device's cadence on a device. */
+      readonly kind: 'multiTap';
+      readonly count: number;
       readonly modifiers?: readonly KeyModifier[];
     }
   | {
@@ -1319,7 +1326,7 @@ export const LOCATOR_ACTION_KINDS = [
 ] as const satisfies readonly LocatorActionKind[];
 
 /** Every action kind understood by this version of core. */
-export const KNOWN_LOCATOR_ACTION_KINDS = [...LOCATOR_ACTION_KINDS, 'blur', 'setInputFilePayloads'] as const satisfies readonly LocatorActionKind[];
+export const KNOWN_LOCATOR_ACTION_KINDS = [...LOCATOR_ACTION_KINDS, 'blur', 'setInputFilePayloads', 'multiTap'] as const satisfies readonly LocatorActionKind[];
 ```
 
 #### Pointer actions

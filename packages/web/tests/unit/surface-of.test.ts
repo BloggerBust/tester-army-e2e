@@ -8,8 +8,9 @@ import { describe, expect, it } from 'vitest';
 import { EngineError, defineEngine } from '@e2e-dev/core/engine';
 import { web, surfaceOf } from '../../src/index.ts';
 
-it('declares support for blur on web', () => {
+it('declares support for blur and multiTap on web', () => {
   expect(web().actions).toContain('blur');
+  expect(web().actions).toContain('multiTap');
 });
 
 describe('surfaceOf', () => {

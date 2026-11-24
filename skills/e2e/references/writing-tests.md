@@ -312,8 +312,13 @@ substring; a `RegExp` matches as written.
 
 Each action resolves one node, waits up to `config.actionTimeout` (30 s, or
 `{ timeout }`) for it to be actionable, and does one thing: `tap()` (alias
-`click()`), `doubleTap()` (alias `dblclick()`), `secondaryTap()` (each takes
-`{ modifiers: ['Shift'] }`), `longPress({ duration? })`
+`click()`; `{ count: 3 }` taps three times in a row, a triple click in a
+browser; `count` is a positive safe integer, `2` is `doubleTap()`, 3 or more
+need the engine's `multiTap` (browser and mobile have it; mobile refuses more
+than 200), and a count above 1 doesn't combine with `position`),
+`doubleTap()` (alias `dblclick()`),
+`secondaryTap()` (each takes `{ modifiers: ['Shift'] }`),
+`longPress({ duration? })`
 (100 to 10000 ms; default 500 on the web, 1000 on a device),
 `fill(value | Secret)`, `pressSequentially(text, { delay? })`, `clear()`,
 `press(key)`, `check()`, `uncheck()`,

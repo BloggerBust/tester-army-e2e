@@ -548,7 +548,7 @@ await screen.pause();
 #### `tap`
 
 ```ts
-/** Taps exactly one matching actionable node; with `position`, taps that point of its box once it is in view, with no other actionability check. */
+/** Taps exactly one matching actionable node, `count` times in a row; with `position`, taps that point of its box once it is in view, with no other actionability check. */
 tap(options?: TapOptions): Promise<void>;
 /** Alias of tap. */
 click(options?: TapOptions): Promise<void>;
@@ -558,17 +558,20 @@ click(options?: TapOptions): Promise<void>;
 await screen.getByRole('button', 'Save').tap({ timeout: 10_000 });
 await screen.getByRole('image', 'Seat map').tap({ position: { x: 120, y: 48 } });
 await row.click({ modifiers: ['Shift'] });
+await screen.getByText('Shipping address').tap({ count: 3 });
 ```
 
 オプションは [`TapOptions`](#types) です。
 
+- `count`: 連続して行うタップの回数です。正の安全な整数（safe integer）で、既定値は 1 です。ブラウザではクリックが 1 回の複数クリックとして届くため、トリプルクリックで段落が選択されます。デバイスでは `doubleTap` と同じ間隔で `count` 回押します。`count: 2` は [`doubleTap()`](#doubletap) と同じアクションです。3 以上には `multiTap` アクションを列挙するエンジンが必要で、ブラウザエンジンとモバイルエンジンはどちらも対応しています。
 - `modifiers`: ブラウザエンジンが指定のキーを押したままにします。
 - `position`: ノードの左上からのオフセットです。境界の内側を CSS ピクセルで指定します。エンジンが `scrollIntoView` に対応していれば、ノードを表示範囲にスクロールします。その後、ノードのボックスを読み、指定の点にポインター操作を送ります。ジェスチャー自体にはノードが紐付かないため、有効か、覆われていないかといった、プラットフォームのほかの操作可能性の検証は行いません。
 
 | エラー | 発生条件 |
 | --- | --- |
-| `INVALID_ARGUMENT` | 未知または重複した修飾キー、あるいは `modifiers` と `position` の併用。 |
+| `INVALID_ARGUMENT` | 未知または重複した修飾キー、`modifiers` と `position` の併用、正の安全な整数でない `count`、あるいは `position` と併用した 1 より大きい `count`。 |
 | `UNSUPPORTED_CAPABILITY` | モバイルエンジンなど、`tapModifiers` を宣言していないエンジンで `modifiers` を指定した場合。操作前にスローします。 |
+| `UNSUPPORTED_CAPABILITY` | `multiTap` アクションのないエンジンで 3 以上の `count` を指定した場合、またはエンジンの上限（モバイルエンジンでは 200）を超える `count` を指定した場合。操作前にスローします。 |
 | `UNSUPPORTED_CAPABILITY` | `tap` ポインターアクションのないエンジンで `position` を指定した場合。 |
 | `ACTION_FAILED` | ブラウザエンジンが表示範囲に入れられないノードで `position` を指定した場合。スクロール処理は可視になるまで待ちます。ほかのエンジンでは、それぞれが報告するエラーになります。 |
 | `LOCATOR_NOT_FOUND` | `position` の対象ノードは解決できても、タイムアウト内に可視のボックスが得られなかった場合。 |
@@ -1267,6 +1270,14 @@ export interface TapOptions extends ClickOptions {
    * a box, which needs the engine's `tap` pointer action.
    */
   position?: Point;
+  /**
+   * How many taps in a row, a positive safe integer, default 1. `2` is the
+   * same as `doubleTap()`; 3 or more needs an engine that declares the
+   * `multiTap` action, `UNSUPPORTED_CAPABILITY` otherwise. A count above the
+   * engine's own limit (200 on the mobile engine) is also
+   * `UNSUPPORTED_CAPABILITY`. A count above 1 is not combined with `position`.
+   */
+  count?: number;
 }
 
 /** One option of a select: its label (a bare string too), its `value` attribute, or its zero-based index. */

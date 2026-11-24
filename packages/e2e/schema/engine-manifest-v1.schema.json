@@ -95,7 +95,8 @@
           "dragTo",
           "swipe",
           "blur",
-          "setInputFilePayloads"
+          "setInputFilePayloads",
+          "multiTap"
         ]
       }
     },

@@ -548,7 +548,7 @@ await screen.pause();
 #### `tap`
 
 ```ts
-/** Taps exactly one matching actionable node; with `position`, taps that point of its box once it is in view, with no other actionability check. */
+/** Taps exactly one matching actionable node, `count` times in a row; with `position`, taps that point of its box once it is in view, with no other actionability check. */
 tap(options?: TapOptions): Promise<void>;
 /** Alias of tap. */
 click(options?: TapOptions): Promise<void>;
@@ -558,17 +558,20 @@ click(options?: TapOptions): Promise<void>;
 await screen.getByRole('button', 'Save').tap({ timeout: 10_000 });
 await screen.getByRole('image', 'Seat map').tap({ position: { x: 120, y: 48 } });
 await row.click({ modifiers: ['Shift'] });
+await screen.getByText('Shipping address').tap({ count: 3 });
 ```
 
 选项为 [`TapOptions`](#types)：
 
+- `count`：连续点击的次数，取值为正的安全整数（safe integer），默认为 1。在浏览器中，这些点击作为一次多击送达，因此三击会选中一个段落。在设备上，它们是以 `doubleTap` 的节奏按下的 `count` 次。`count: 2` 与 [`doubleTap()`](#doubletap) 是同一个操作。3 次及以上需要引擎列出 `multiTap` 操作；浏览器引擎和移动端引擎都支持。
 - `modifiers`：浏览器引擎会按住这些修饰键。
 - `position`：相对于节点左上角、位于边框内部的偏移量，以 CSS 像素为单位。如果引擎列出了 `scrollIntoView`，它会将节点滚动到视图中。然后读取节点的边界框，在指定点分派指针事件。该手势不关联节点，因此不会执行平台的其他可操作性检查（已启用、未被遮挡）。
 
 | 抛出的错误 | 触发条件 |
 | --- | --- |
-| `INVALID_ARGUMENT` | 未知或重复的修饰键，或同时使用 `modifiers` 和 `position`。 |
+| `INVALID_ARGUMENT` | 未知或重复的修饰键、同时使用 `modifiers` 和 `position`、`count` 不是正的安全整数，或在使用 `position` 的同时指定大于 1 的 `count`。 |
 | `UNSUPPORTED_CAPABILITY` | 在未声明 `tapModifiers` 的引擎上使用 `modifiers`，包括移动端引擎；在执行操作前抛出。 |
+| `UNSUPPORTED_CAPABILITY` | 在没有 `multiTap` 操作的引擎上使用 3 或更大的 `count`，或 `count` 超过引擎的上限（移动端引擎为 200）；在执行操作前抛出。 |
 | `UNSUPPORTED_CAPABILITY` | 在不支持 `tap` 指针操作的引擎上使用 `position`。 |
 | `ACTION_FAILED` | 对浏览器引擎无法滚动到视图中的节点使用 `position`；其滚动会等待节点可见。其他引擎按各自报告的情况失败。 |
 | `LOCATOR_NOT_FOUND` | 对已解析但在超时内始终没有可见边界框的节点使用 `position`。 |
@@ -1267,6 +1270,14 @@ export interface TapOptions extends ClickOptions {
    * a box, which needs the engine's `tap` pointer action.
    */
   position?: Point;
+  /**
+   * How many taps in a row, a positive safe integer, default 1. `2` is the
+   * same as `doubleTap()`; 3 or more needs an engine that declares the
+   * `multiTap` action, `UNSUPPORTED_CAPABILITY` otherwise. A count above the
+   * engine's own limit (200 on the mobile engine) is also
+   * `UNSUPPORTED_CAPABILITY`. A count above 1 is not combined with `position`.
+   */
+  count?: number;
 }
 
 /** One option of a select: its label (a bare string too), its `value` attribute, or its zero-based index. */

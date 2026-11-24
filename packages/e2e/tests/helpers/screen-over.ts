@@ -1,6 +1,6 @@
 /**
  * A `screen` over an in-memory engine for unit tests of the locator tier: the
- * engine is whatever `locate`, `observe`, `perform`, `viewportIntersection`, and `keyboard` the test
+ * engine is whatever `locate`, `observe`, `perform`, `performAt`, `viewportIntersection`, and `keyboard` the test
  * hands in, wired through the real `LocatorEngine` and `createScreen` with a
  * `StepRecorder` the test reads back. `createScreenFixture` (screen-fixture.ts)
  * is the preset over a fixed node list.
@@ -16,7 +16,9 @@ import {
   type LocatorExpression,
   type NodeRef,
   type OperationContext,
+  type PointerAction,
   type SemanticNode,
+  type ViewportPoint,
   type ViewportIntersection,
 } from '@e2e-dev/core/lib/engine/index';
 import { prepareObservation } from '@e2e-dev/core/lib/agent/observation';
@@ -37,6 +39,8 @@ export interface ScreenOverOptions {
   readonly perform?: (ref: NodeRef, action: LocatorAction, operation: OperationContext) => void | Promise<void>;
   /** Action kinds the engine declares with `perform`; default every kind. */
   readonly actions?: readonly LocatorActionKind[];
+  /** Receives every pointer action at a viewport point; with it the engine declares the `tap` pointer action. */
+  readonly performAt?: (point: ViewportPoint, action: PointerAction) => void | Promise<void>;
   /** Answers every `viewportIntersection`; without it the engine declares none. */
   readonly viewportIntersection?: (ref: NodeRef) => ViewportIntersection | Promise<ViewportIntersection>;
   /** The keyboard the engine declares, if any. */
@@ -55,7 +59,7 @@ export interface ScreenOverOptions {
 
 /** A screen and the recorder of its steps over the engine `options` describe. */
 export function screenOver(options: ScreenOverOptions): { screen: Screen; steps: StepRecorder } {
-  const { perform, screenshot, viewportIntersection } = options;
+  const { perform, performAt, screenshot, viewportIntersection } = options;
   const engine = defineEngine({
     name: 'fake',
     version: '1',
@@ -68,6 +72,14 @@ export function screenOver(options: ScreenOverOptions): { screen: Screen; steps:
           actions: options.actions ?? KNOWN_LOCATOR_ACTION_KINDS,
           perform: async (ref: NodeRef, action: LocatorAction, operation: OperationContext) => {
             await perform(ref, action, operation);
+          },
+        }),
+    ...(performAt === undefined
+      ? {}
+      : {
+          pointerActions: ['tap'] as const,
+          performAt: async (point: ViewportPoint, action: PointerAction) => {
+            await performAt(point, action);
           },
         }),
     ...(viewportIntersection === undefined

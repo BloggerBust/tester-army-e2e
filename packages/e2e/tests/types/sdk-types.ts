@@ -847,6 +847,15 @@ void screen.getByRole('row').dblclick({ modifiers: ['Shift'], timeout: 1_000 });
 // @ts-expect-error modifiers are the key grammar's modifier names
 void screen.getByRole('row').doubleTap({ modifiers: ['Hyper'] });
 void screen.getByRole('image').click({ position: point });
+void screen.getByRole('button').tap({ count: 3, timeout: 1_000 });
+void screen.getByRole('button').click({ count: 3, modifiers: ['Shift'] });
+// @ts-expect-error a tap count is a number
+void screen.getByRole('button').tap({ count: '3' });
+// @ts-expect-error a double tap is two taps already; count rides tap and click only
+void screen.getByRole('button').doubleTap({ count: 3 });
+declare const multiTapAction: Extract<import('../../src/engine/index.ts').LocatorAction, { kind: 'multiTap' }>;
+void (multiTapAction.count satisfies number);
+void (multiTapAction.modifiers satisfies readonly KeyModifier[] | undefined);
 // @ts-expect-error a point has both coordinates.
 void screen.tapAt({ x: 1 });
 // @ts-expect-error a path swipe names both ends.

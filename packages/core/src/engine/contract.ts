@@ -302,6 +302,19 @@ export type LocatorAction =
       readonly modifiers?: readonly KeyModifier[];
     }
   | {
+      /**
+       * `count` taps in a row on one point: 3 or more, since 2 is
+       * `doubleTap`. A browser reads them as one multi-click (a triple click
+       * selects a paragraph); a device presses them at its own cadence,
+       * which a gesture detector may not read as one. Not a kind of SPI v1,
+       * so an engine lists it explicitly.
+       */
+      readonly kind: 'multiTap';
+      readonly count: number;
+      /** As on `tap`: only an engine that declares `tapModifiers` receives it. */
+      readonly modifiers?: readonly KeyModifier[];
+    }
+  | {
       readonly kind:
         | 'check'
         | 'uncheck'
@@ -352,7 +365,7 @@ export const LOCATOR_ACTION_KINDS = [
 ] as const satisfies readonly LocatorActionKind[];
 
 /** Every action kind understood by this version of core. */
-export const KNOWN_LOCATOR_ACTION_KINDS = [...LOCATOR_ACTION_KINDS, 'blur', 'setInputFilePayloads'] as const satisfies readonly LocatorActionKind[];
+export const KNOWN_LOCATOR_ACTION_KINDS = [...LOCATOR_ACTION_KINDS, 'blur', 'setInputFilePayloads', 'multiTap'] as const satisfies readonly LocatorActionKind[];
 
 /**
  * One action `performAt` carries out at a viewport point, with no node

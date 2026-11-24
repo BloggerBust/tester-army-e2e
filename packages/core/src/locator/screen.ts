@@ -145,6 +145,8 @@ const WAIT_FOR_STATES: readonly string[] = ['attached', 'detached', 'visible', '
 const ABSENCE_STATES: ReadonlySet<string> = new Set(['detached', 'hidden']);
 
 type WaitForState = NonNullable<NonNullable<Parameters<Locator['waitFor']>[0]>['state']>;
+/** The actions a tap, click, double tap, or secondary tap sends. */
+type TapAction = Extract<LocatorAction, { kind: 'tap' | 'doubleTap' | 'secondaryTap' | 'multiTap' }>;
 
 /**
  * Whether the one match, or its absence, is in `state`: `attached` is any
@@ -415,13 +417,23 @@ class LocatorImpl extends ScreenImpl implements Locator {
   }
 
   /**
-   * One tap of the node: the platform's own, or, with a position, the pointer
-   * dispatched at that offset of the node's box.
+   * `count` taps of the node: the platform's own, or, with a position, the
+   * pointer dispatched at that offset of the node's box. Two taps are the
+   * `doubleTap` kind, so `tap({ count: 2 })` is `doubleTap()` on every
+   * engine; three or more are `multiTap`.
    */
   private tapWith(api: 'tap' | 'click', options: TapOptions | undefined): Promise<void> {
-    rejectUnknownOptions(api, options, ['timeout', 'position', 'modifiers']);
+    rejectUnknownOptions(api, options, ['timeout', 'position', 'modifiers', 'count']);
     const modifiers = requireModifiers(options?.modifiers, api);
-    if (options?.position === undefined) return this.dispatchTap(api, 'tap', modifiers, options?.timeout);
+    const count = requireTapCount(options?.count, api);
+    if (options?.position === undefined) {
+      if (count === 1) return this.dispatchTap(api, { kind: 'tap', ...modifiers }, options?.timeout);
+      if (count === 2) return this.dispatchTap(api, { kind: 'doubleTap', ...modifiers }, options?.timeout, count);
+      return this.dispatchTap(api, { kind: 'multiTap', count, ...modifiers }, options?.timeout, count);
+    }
+    if (count !== 1) {
+      throw new TestError('INVALID_ARGUMENT', `${api}() does not take count with a position yet; drop one of them`);
+    }
     if (modifiers.modifiers !== undefined) {
       throw new TestError('INVALID_ARGUMENT', `${api}() does not take modifiers with a position yet; drop one of them`);
     }
@@ -453,19 +465,18 @@ class LocatorImpl extends ScreenImpl implements Locator {
     options: ClickOptions | undefined,
   ): Promise<void> {
     rejectUnknownOptions(api, options, ['timeout', 'modifiers']);
-    return this.dispatchTap(api, kind, requireModifiers(options?.modifiers, api), options?.timeout);
+    return this.dispatchTap(api, { kind, ...requireModifiers(options?.modifiers, api) }, options?.timeout);
   }
 
-  /** One tap kind with the keys it holds, named after the node in the step label. */
-  private dispatchTap(
-    api: string,
-    kind: 'tap' | 'doubleTap' | 'secondaryTap',
-    held: { modifiers?: readonly KeyModifier[] },
-    timeout: number | undefined,
-  ): Promise<void> {
-    const label = held.modifiers === undefined ? this.label : `${this.label} with ${held.modifiers.join('+')}`;
-    return this.context.steps.run('locator', `locator.${api}`, label, () =>
-      this.context.engine.perform(this.expression, { kind, ...held }, timeout),
+  /**
+   * One tap-family action as a step labelled after the node, then the
+   * `count` the caller asked for when it names one, then the keys held.
+   */
+  private dispatchTap(api: string, action: TapAction, timeout: number | undefined, count?: number): Promise<void> {
+    const times = count === undefined ? '' : ` ${count} times`;
+    const held = action.modifiers === undefined ? '' : ` with ${action.modifiers.join('+')}`;
+    return this.context.steps.run('locator', `locator.${api}`, `${this.label}${times}${held}`, () =>
+      this.context.engine.perform(this.expression, action, timeout),
     );
   }
 
@@ -854,6 +865,15 @@ function validateSwipeDuration(duration: number | undefined): number | undefined
     );
   }
   return duration;
+}
+
+/** A tap `count`: a positive safe integer, 1 when unset. Each engine keeps its own upper limit. */
+function requireTapCount(value: unknown, api: string): number {
+  if (value === undefined) return 1;
+  if (typeof value !== 'number' || !Number.isSafeInteger(value) || value < 1) {
+    throw new TestError('INVALID_ARGUMENT', `${api}() count must be a positive safe integer, got ${describeValue(value)}`);
+  }
+  return value;
 }
 
 /**

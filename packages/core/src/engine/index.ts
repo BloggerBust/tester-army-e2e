@@ -808,8 +808,8 @@ export interface Engine {
    */
   readonly pointerActions?: readonly PointerActionKind[];
   /**
-   * The surface honors `modifiers` on the `tap`, `doubleTap`, and
-   * `secondaryTap` actions `perform` receives, holding each key for the
+   * The surface honors `modifiers` on the `tap`, `doubleTap`, `multiTap`,
+   * and `secondaryTap` actions `perform` receives, holding each key for the
    * click. Without it the harness fails an action that carries modifiers
    * with `UNSUPPORTED_CAPABILITY` before it reaches the engine, so an engine
    * that predates the field never drops one silently.

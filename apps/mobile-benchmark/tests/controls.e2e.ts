@@ -333,6 +333,15 @@ test.describe('control inventory', () => {
     await expect(screen.getByTestId('gesture-status')).toHaveText('gesture: double tap');
   });
 
+  // tap({ count: 3 }) is agent-device's press with count 3: three presses at
+  // the double-tap cadence. The scenario counts what arrives; the 300 ms
+  // window is left alone, since iOS lands presses about 285 ms apart.
+  test('tap({ count: 3 }) lands three presses', async ({ screen }) => {
+    await showSection(screen, 'Gestures');
+    await screen.getByRole('button', 'Double-tap me').tap({ count: 3 });
+    await expect(screen.getByTestId('tap-count')).toContainText('3 taps');
+  });
+
   // Android bounds and points are the screen's physical pixels: agent-device
   // 0.21.15 reports the emulator's display density in its snapshot metadata,
   // but rects and points stay physical pixels and the engine does not scale

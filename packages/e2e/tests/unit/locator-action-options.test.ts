@@ -7,8 +7,15 @@
  */
 
 import { describe, expect, it, vi } from 'vitest';
-import { resolveExpression, type KeyModifier, type LocatorAction, type LocatorExpression, LOCATOR_ACTION_KINDS } from '@e2e-dev/core/lib/engine/index';
-import type { ActionOptions, Locator, Screen } from '@e2e-dev/core/lib/types';
+import {
+  resolveExpression,
+  type KeyModifier,
+  type LocatorAction,
+  type LocatorActionKind,
+  type LocatorExpression,
+  LOCATOR_ACTION_KINDS,
+} from '@e2e-dev/core/lib/engine/index';
+import type { ActionOptions, Locator, Screen, TapOptions } from '@e2e-dev/core/lib/types';
 import { invalid } from '../helpers/invalid.ts';
 import { screenOver } from '../helpers/screen-over.ts';
 import { snapshot } from '../helpers/snapshot.ts';
@@ -158,6 +165,134 @@ describe('locator action options', () => {
       await expect(
         Promise.resolve().then(() => screen.getByLabel('Agree').tap({ modifiers: ['Shift'], position: { x: 1, y: 1 } })),
       ).rejects.toMatchObject({ code: 'INVALID_ARGUMENT', message: expect.stringContaining('modifiers with a position') });
+    });
+  });
+
+  describe('tap count', () => {
+    /** A screen over the box whose engine declares `actions`, keeping every action it receives. */
+    function countScreen(actions?: readonly LocatorActionKind[], tapModifiers?: boolean) {
+      const received: LocatorAction[] = [];
+      const locate = vi.fn(async (expression: LocatorExpression) => resolveExpression(expression, NODES));
+      const { screen, steps } = screenOver({
+        locate,
+        observe: () => snapshot(NODES),
+        perform: (_ref, action) => {
+          received.push(action);
+        },
+        ...(actions === undefined ? {} : { actions }),
+        ...(tapModifiers === undefined ? {} : { tapModifiers }),
+        timeoutMs: 1_000,
+      });
+      return { screen, steps, received, locate };
+    }
+
+    it('taps once for count 1, as with no count', async () => {
+      const { screen, steps, received } = countScreen();
+      await screen.getByLabel('Agree').tap({ count: 1 });
+      await screen.getByLabel('Agree').click({ count: 1 });
+      expect(received).toEqual([{ kind: 'tap' }, { kind: 'tap' }]);
+      expect(steps.all().map((step) => step.label)).toEqual(['getByLabel("Agree")', 'getByLabel("Agree")']);
+    });
+
+    it('sends count 2 as the action doubleTap() sends, labelled with the count', async () => {
+      const { screen, steps, received } = countScreen(LOCATOR_ACTION_KINDS);
+      await screen.getByLabel('Agree').tap({ count: 2 });
+      await screen.getByLabel('Agree').doubleTap();
+      expect(received).toEqual([{ kind: 'doubleTap' }, { kind: 'doubleTap' }]);
+      expect(steps.all()).toEqual([
+        expect.objectContaining({ api: 'locator.tap', label: 'getByLabel("Agree") 2 times', status: 'passed' }),
+        expect.objectContaining({ api: 'locator.doubleTap', label: 'getByLabel("Agree")', status: 'passed' }),
+      ]);
+    });
+
+    it.each([
+      ['tap', (locator: Locator) => locator.tap({ count: 3 })],
+      ['click', (locator: Locator) => locator.click({ count: 3 })],
+    ] as const)('%s sends count 3 as one multiTap and names the count in the step', async (verb, call) => {
+      const { screen, steps, received } = countScreen();
+      await call(screen.getByLabel('Agree'));
+      expect(received).toEqual([{ kind: 'multiTap', count: 3 }]);
+      expect(steps.all()).toEqual([
+        expect.objectContaining({ api: `locator.${verb}`, label: 'getByLabel("Agree") 3 times', status: 'passed' }),
+      ]);
+    });
+
+    it('holds modifiers for a multiTap on an engine that declares tapModifiers', async () => {
+      const { screen, steps, received } = countScreen(undefined, true);
+      await screen.getByLabel('Agree').tap({ count: 3, modifiers: ['Shift'] });
+      await screen.getByLabel('Agree').tap({ count: 2, modifiers: ['Shift'] });
+      expect(received).toEqual([
+        { kind: 'multiTap', count: 3, modifiers: ['Shift'] },
+        { kind: 'doubleTap', modifiers: ['Shift'] },
+      ]);
+      expect(steps.all().map((step) => step.label)).toEqual([
+        'getByLabel("Agree") 3 times with Shift',
+        'getByLabel("Agree") 2 times with Shift',
+      ]);
+    });
+
+    it('refuses count 3 on an engine without multiTap before resolving, while count 2 still works there', async () => {
+      const { screen, received, locate } = countScreen(LOCATOR_ACTION_KINDS);
+      await expect(screen.getByLabel('Missing').tap({ count: 3 })).rejects.toMatchObject({
+        code: 'UNSUPPORTED_CAPABILITY',
+        message: expect.stringContaining('the "multiTap" action is not available on this target'),
+      });
+      expect(locate).not.toHaveBeenCalled();
+      await screen.getByLabel('Agree').tap({ count: 2 });
+      expect(received).toEqual([{ kind: 'doubleTap' }]);
+    });
+
+    it('leaves the upper limit to the engine, sending the largest safe count as one multiTap', async () => {
+      const { screen, received } = countScreen();
+      await screen.getByLabel('Agree').tap({ count: Number.MAX_SAFE_INTEGER });
+      expect(received).toEqual([{ kind: 'multiTap', count: Number.MAX_SAFE_INTEGER }]);
+    });
+
+    it.each([0, -1, 1.5, Number.NaN, Number.POSITIVE_INFINITY, 2 ** 53, '3', null])(
+      'rejects count %j before any lookup, action, or step',
+      async (count) => {
+        const { screen, steps, received, locate } = countScreen();
+        await expect(
+          Promise.resolve().then(() => screen.getByLabel('Agree').tap(invalid<TapOptions>({ count }))),
+        ).rejects.toMatchObject({
+          code: 'INVALID_ARGUMENT',
+          message: expect.stringMatching(/^tap\(\) count must be a positive safe integer, got /),
+        });
+        expect(locate).not.toHaveBeenCalled();
+        expect(received).toEqual([]);
+        expect(steps.all()).toEqual([]);
+      },
+    );
+
+    it('refuses a count above 1 with a position, which the pointer path cannot repeat yet', async () => {
+      const { screen, received } = countScreen();
+      await expect(
+        Promise.resolve().then(() => screen.getByLabel('Agree').tap({ count: 2, position: { x: 1, y: 1 } })),
+      ).rejects.toMatchObject({ code: 'INVALID_ARGUMENT', message: expect.stringContaining('count with a position') });
+      expect(received).toEqual([]);
+    });
+
+    it('still taps at the point for count 1 with a position, the default count', async () => {
+      const box = { ...BOX, rect: { x: 10, y: 20, width: 100, height: 40 } };
+      const received: LocatorAction[] = [];
+      const at: string[] = [];
+      const { screen, steps } = screenOver({
+        locate: async (expression) => resolveExpression(expression, [box]),
+        observe: () => snapshot([box]),
+        perform: (_ref, action) => {
+          received.push(action);
+        },
+        performAt: (point, action) => {
+          at.push(`${action.kind} @ ${point.x},${point.y}`);
+        },
+        timeoutMs: 1_000,
+      });
+      await screen.getByLabel('Agree').tap({ count: 1, position: { x: 1, y: 1 } });
+      expect(at).toEqual(['tap @ 11,21']);
+      expect(received.filter((action) => action.kind !== 'scrollIntoView')).toEqual([]);
+      expect(steps.all()).toEqual([
+        expect.objectContaining({ api: 'locator.tap', label: 'getByLabel("Agree") at (1, 1)', status: 'passed' }),
+      ]);
     });
   });
 

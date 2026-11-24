@@ -21,9 +21,13 @@ import { unsupported, type InputBudget } from './support.ts';
  */
 export const DEFAULT_LONG_PRESS_MS = 1_000;
 
+/** The most presses agent-device's `press` sends in one `count`; it refuses more. */
+export const MAX_TAP_COUNT = 200;
+
 export const DEVICE_ACTIONS: readonly LocatorActionKind[] = [
   'tap',
   'doubleTap',
+  'multiTap',
   'longPress',
   'fill',
   'clear',

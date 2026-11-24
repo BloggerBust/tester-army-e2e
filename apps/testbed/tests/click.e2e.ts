@@ -6,7 +6,6 @@
  * Not ported:
  * - should click button inside frameset: needs element handles and Frame objects.
  * - should issue clicks in parallel in page and popup: needs `waitForEvent('popup')`.
- * - should select the text by triple clicking: no `clickCount`.
  * - should not wait with force: e2e tap has no force option.
  * - should click the button with fixed position inside an iframe: Playwright skips it on Chromium (`it.fixme(browserName === 'chromium')`).
  * - should click a very large button with offset: a `position` tap scrolls the node into view, not the offset point.
@@ -220,6 +219,18 @@ test.describe('page click', { requires: ['browser'], tags: ['playwright'] }, () 
     await browser.locator('button').doubleTap();
     expect(await browser.evaluate('double')).toBe(true);
     expect(await browser.evaluate('result')).toBe('Clicked');
+  });
+
+  test('should select the text by triple clicking', async ({ browser }) => {
+    await browser.goto('/input/textarea.html');
+    const text = "This is the text that we are going to try to select. Let's see how it goes.";
+    await browser.locator('textarea').fill(text);
+    await browser.locator('textarea').tap({ count: 3 });
+    expect(
+      await browser.evaluate(
+        "() => { const textarea = document.querySelector('textarea'); return textarea.value.substring(textarea.selectionStart, textarea.selectionEnd); }",
+      ),
+    ).toBe(text);
   });
 
   test('should click a partially obscured button', async ({ browser }) => {

@@ -120,7 +120,7 @@ run only in a browser, so a test that uses it declares
 | --- | --- |
 | `click()`, `dblclick()` | `tap()`, `doubleTap()`; `click()` and `dblclick()` are aliases |
 | `click({ button: 'right' })`, `click({ delay })` | `secondaryTap()`, `longPress({ duration })` |
-| `click({ position })`, `click({ modifiers })` | `tap({ position })`, `tap({ modifiers })` |
+| `click({ position })`, `click({ modifiers })`, `click({ clickCount: 3 })` | `tap({ position })`, `tap({ modifiers })`, `tap({ count: 3 })` |
 | `fill()`, `pressSequentially()`, `clear()`, `focus()`, `blur()`, `hover()`, `check()`, `uncheck()`, `dragTo()`, `setInputFiles(path)`, `selectOption({ label })` or `{ value }` | the same, without `force`, `trial`, or `position` |
 | `setInputFiles({ name, mimeType, buffer })` | Web only. Pass a plain object with only `name`, `mimeType`, and `buffer`. |
 | `press(key)` | the same for one character or a [named key](/reference/engine#keys); `browser.keyboard.press` after `focus()` for a key code |
@@ -263,7 +263,7 @@ purpose. Use the workaround, or keep the test in Playwright.
 | --- | --- |
 | `locator.locator(selector)`, `locator.and()`, `filter({ visible })` | One `browser.locator` selector, such as `'.card >> .close'`, or a `screen` query inside the scope |
 | `locator.evaluate()`, `expect(locator).toHaveClass()`, `toHaveCSS()`, `dispatchEvent()` | `browser.evaluate(fn, selector)`; `expect(browser).toHaveClass(locator, cls)` |
-| `selectOption([...])`, `click({ clickCount })`, `hover({ position })` | `browser.evaluate` for a multi-select; `browser.mouse` with `boundingBox()` |
+| `selectOption([...])`, `hover({ position })` | `browser.evaluate` for a multi-select; `browser.mouse` with `boundingBox()` |
 
 </Accordion>
 <Accordion title="Assertions">

@@ -134,6 +134,17 @@ describe('engine protocol', () => {
     expect(legacy.remote.actions).not.toContain('setInputFilePayloads');
   });
 
+  it('advertises multiTap and carries its count and modifiers over JSON-RPC unchanged', async () => {
+    const perform = vi.fn<NonNullable<Engine['perform']>>(async () => undefined);
+    const { remote } = overLoopback(toy({ actions: ['tap', 'multiTap'], perform }));
+    expect(remote.actions).toContain('multiTap');
+    await remote.init!(initInfo());
+    const action = { kind: 'multiTap', count: 3, modifiers: ['Shift'] } as const;
+    await remote.perform!({ id: 'root', revision: '1' }, action, operation());
+    expect(perform).toHaveBeenCalledWith(expect.anything(), action, expect.anything());
+    await remote.dispose!(cleanup);
+  });
+
   it('carries a snapshot with its pixels byte for byte', async () => {
     const data = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0, 255, 7]);
     const { remote } = overLoopback(
