@@ -30,10 +30,25 @@ test('a member upgrades to Pro', async ({ app, agent, screen }) => {
 });
 ```
 
-An agent step that a later assertion verifies records its actions, and the
-next run replays them with no model calls until the app changes. Tests
-without agent steps need no model. Bring your own subscription, API key, or
-local model.
+Bring your own subscription, API key, or local model.
+
+## A release gate in CI
+
+A suite that gates a release must give the same result every time it runs
+on a commit. e2e can run that suite with no model call:
+
+- Your coding agent writes tests with exact locators and assertions. They
+  need no model and no key. On the web, they run in Chromium, Firefox, and
+  WebKit through Playwright.
+- An `agent.act` step that a later assertion verifies records its actions.
+  Commit the recordings in `.e2e/cache/` and CI replays them with no model
+  call. With `npx e2e run --strict-cache`, a recording that no longer
+  matches the app fails the step, and no model takes over. A step that was
+  never recorded, or whose recording has a gap, still runs live.
+- `expect(locator)` calls no model. With the built-in agent, `agent.assert`,
+  `agent.waitFor`, and `agent.extract` call the model on every run.
+
+See [Caching](https://e2e.com/docs/cache) for what replays and when.
 
 ## Quick start
 
