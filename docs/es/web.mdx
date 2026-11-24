@@ -94,31 +94,11 @@ app: {
 - Los tests leen la URL con el puerto real desde `app.baseUrl`.
 - Las entradas de la caché siguen siendo válidas cuando cambia el puerto.
 - `reuseExisting` no funciona con el puerto `0`.
+- Un servidor de desarrollo de Next.js necesita una entrada en
+  `allowedDevOrigins` para el host. Consulta
+  [Next.js](/frameworks/nextjs#fix-next-js-problems).
 
 Consulta [puertos libres](/reference/config#free-ports).
-
-<Accordion title="El servidor de desarrollo de Next.js renderiza pero nunca hidrata">
-Next.js 16 bloquea las solicitudes de origen cruzado a sus recursos de
-desarrollo. Cuando el destino abre `127.0.0.1` o `[::1]`, `next dev` sigue
-identificándose como `localhost`. La página se renderiza, los localizadores se
-resuelven y los clics llegan, pero no se ejecuta ningún manejador de React.
-
-Añade a `allowedDevOrigins` el host que abre el destino. Usa `'[::1]'` cuando
-`app.url` abra `http://[::1]:0`:
-
-```ts title="next.config.ts"
-import type { NextConfig } from 'next';
-
-const nextConfig: NextConfig = {
-  allowedDevOrigins: ['127.0.0.1'],
-};
-
-export default nextConfig;
-```
-
-Un destino `localhost` y un destino de producción con `next start` no
-necesitan ninguna entrada.
-</Accordion>
 
 ## Previews protegidas
 

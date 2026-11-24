@@ -78,8 +78,9 @@ Inicia una nueva sesión. En Cursor, ejecuta **Developer: Reload Window**. En
 Cursor Teams y Enterprise, los plugins locales requieren el ajuste de
 administrador **Allow Local Plugin Imports**, o que un administrador importe
 `e2e-inc/e2e` como marketplace del equipo. El plugin añade los skills
-`e2e`, `create-verification-skill` y `migrate-to-e2e` y el
-[servidor MCP](/mcp-server), no el paquete de npm. Invoca los otros dos con el
+`e2e`, `create-verification-skill` y `migrate-to-e2e`, no el paquete de npm.
+En Codex y Cursor también añade el [servidor MCP](/mcp-server); en Claude Code y
+Grok Build, regístralo en el proyecto. Invoca los otros dos con el
 nombre del plugin, `/e2e:<skill>` en Claude Code y `$e2e:<skill>` en Codex, y
 como `/<skill>` en Cursor.
 

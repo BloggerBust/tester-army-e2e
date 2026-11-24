@@ -24,8 +24,8 @@ para un paso del agente sin grabación.
 
 ## Configúralo
 
-El [plugin de e2e](/coding-agents) incluye el servidor como `npx -y e2e@<version> mcp`, fijado a la versión de e2e del plugin. Ejecuta esa versión aunque el proyecto tenga instalada otra versión de e2e.
-Sin el plugin, regístralo en el proyecto. `e2e init` ofrece registrar el servidor en `.mcp.json` (Claude Code),
+El [plugin de e2e](/coding-agents) para Codex y Cursor incluye el servidor como `npx -y e2e@<version> mcp`. Ejecuta la versión de e2e del plugin aunque el proyecto tenga instalada otra.
+En Claude Code, o sin el plugin, regístralo en el proyecto. `e2e init` ofrece registrar el servidor en `.mcp.json` (Claude Code),
 `.cursor/mcp.json` (Cursor) y `.codex/config.toml` (Codex). Instala las
 dependencias del proyecto e inicia el cliente MCP en el directorio del proyecto
 para que `npx` (`bunx` en un proyecto con Bun) use la versión de e2e instalada.

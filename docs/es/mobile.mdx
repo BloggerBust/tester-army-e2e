@@ -255,6 +255,9 @@ const { app } = await device.installApp('./build/MyApp.app', { reinstall: true }
 await device.openApp(app);
 ```
 
+`device.uninstallApp(id)` elimina una app y `device.isAppInstalled(id)`
+comprueba si está instalada; sin un id, ambos usan la app fijada.
+
 `device.openApp` acepta un identificador de paquete, un nombre de paquete o un
 nombre visible, nunca un enlace. `device.openLink` abre un enlace profundo o
 web en la app fijada, o en la `app` de sus opciones, para el inicio de sesión
@@ -493,6 +496,13 @@ como arrancado. Si no hay ninguno arrancado, arranca uno apagado: en iOS un
 iPhone antes que un iPad antes que un Apple TV, en Android un teléfono o
 tableta antes que un televisor, luego el sistema operativo más reciente y
 después el orden de nombre. Dos workers nunca controlan el mismo dispositivo.
+
+Para ejecutar un destino en otro dispositivo durante una sola ejecución, pasa
+con `--device` el nombre del dispositivo, el UDID de un simulador o el serial
+de un emulador, y el destino con `--target` cuando varios destinos
+seleccionados pueden recibir un dispositivo:
+`e2e run --target iphone --device 'iPad Pro 13-inch (M5)'`.
+La ejecución controla ese único dispositivo, en lugar del `device` del destino.
 
 ## Herramientas del agente
 

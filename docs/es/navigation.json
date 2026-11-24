@@ -7,6 +7,7 @@
   "groups": {
     "Get started": "Primeros pasos",
     "Platforms": "Plataformas",
+    "Frameworks": "Frameworks",
     "Features": "Funcionalidades",
     "Models and agents": "Modelos y agentes",
     "Run in CI": "Ejecutar en CI",
