@@ -82,6 +82,7 @@ describe('revyl()', () => {
       summary: 'Pixel 7, android; Revyl device started',
       prepareHome: mocks.install,
       selectors: { device: 'Pixel 7', providerApp: 'https://builds.example.com/app.apk' },
+      installAppPath: true,
     });
     await provider.release(lease, context);
     expect(mocks.release).toHaveBeenCalledWith(lease, context);
@@ -103,9 +104,15 @@ describe('revyl()', () => {
     expect(mocks.acquire).not.toHaveBeenCalled();
   });
 
-  it("refuses the target's app.appPath, since Revyl installs `app`", async () => {
-    await expect(revyl(options).acquire(request({ appPath: join(ROOT, 'build', 'app.apk') }))).rejects.toThrow("Revyl installs the app from `app`; leave the target's `app.appPath` out");
+  it("refuses the target's app.appPath beside `app`, since Revyl installs `app`", async () => {
+    await expect(revyl(options).acquire(request({ appPath: join(ROOT, 'build', 'app.apk') }))).rejects.toThrow("Revyl installs the app from `app`; leave the target's `app.appPath` out, or leave `app` out to install that build instead");
     expect(mocks.acquire).not.toHaveBeenCalled();
+  });
+
+  it("without `app`, starts the device with no app and has the lease install the target's app.appPath", async () => {
+    await revyl({ device: 'Pixel 7' }).acquire(request({ appPath: join(ROOT, 'build', 'app.apk') }));
+    expect(leased().selectors).toEqual({ device: 'Pixel 7' });
+    expect(leased().installAppPath).toBe(true);
   });
 
   it('rejects an option it does not take with INVALID_CONFIG, naming the nearest one', () => {
@@ -113,9 +120,9 @@ describe('revyl()', () => {
     expect(() => revyl({ ...options, deviceType: 'real' } as unknown as RevylOptions)).toThrow(expect.objectContaining({ code: 'INVALID_CONFIG' }));
   });
 
-  it.each(['app', 'device'] as const)('requires `%s` with INVALID_CONFIG', (key) => {
-    expect(() => revyl({ ...options, [key]: ' ' })).toThrow(expect.objectContaining({ code: 'INVALID_CONFIG', message: `revyl: \`${key}\` is required, as a non-empty string` }));
-    const { [key]: _, ...rest } = options;
+  it('requires `device` with INVALID_CONFIG', () => {
+    expect(() => revyl({ ...options, device: ' ' })).toThrow(expect.objectContaining({ code: 'INVALID_CONFIG', message: 'revyl: `device` is required, as a non-empty string' }));
+    const { device: _, ...rest } = options;
     expect(() => revyl(rest as RevylOptions)).toThrow(expect.objectContaining({ code: 'INVALID_CONFIG' }));
   });
 
@@ -123,10 +130,10 @@ describe('revyl()', () => {
     expect(() => revyl({ ...options, osVersion } as unknown as RevylOptions)).toThrow(expect.objectContaining({ code: 'INVALID_CONFIG', message: 'revyl: `osVersion` must be a non-empty string' }));
   });
 
-  it.each(['build/app.apk', '/builds/app.apk', 'http://builds.example.com/app.apk', 'https://user:pass@builds.example.com/app.apk', 'lt://APP123'])(
+  it.each(['build/app.apk', '/builds/app.apk', 'http://builds.example.com/app.apk', 'https://user:pass@builds.example.com/app.apk', 'lt://APP123', ' ', 14])(
     'refuses an app Revyl cannot download over https (%s)',
     (app) => {
-      expect(() => revyl({ ...options, app })).toThrow(
+      expect(() => revyl({ ...options, app } as unknown as RevylOptions)).toThrow(
         expect.objectContaining({ code: 'INVALID_CONFIG', message: 'revyl: `app` must be an https URL, without credentials, that Revyl can download the build from' }),
       );
     },

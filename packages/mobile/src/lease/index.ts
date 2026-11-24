@@ -7,10 +7,12 @@
  */
 
 import { mkdtemp, rm } from 'node:fs/promises';
+import { createAgentDeviceClient } from 'agent-device';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { DeviceClientConfig } from '../bindings.ts';
 import type { DeviceLease, DeviceReleaseContext, DeviceRequest } from '../provider.ts';
+import { installedIdentity } from '../support.ts';
 import { startDriver, stopDriver } from './daemon.ts';
 import { LEASE_TTL_MS, startHeartbeat } from './heartbeat.ts';
 
@@ -43,6 +45,13 @@ export interface AgentDeviceLeaseRequest {
   readonly summary: string;
   /** Runs on the daemon's empty agent-device home before it starts, to install a plugin there. */
   readonly prepareHome?: ((home: string) => Promise<void>) | undefined;
+  /**
+   * Installs the request's `appPath`, when it has one, through the lease's own
+   * daemon once the lease is granted, and reports the app as `installedApp`:
+   * for a service whose devices start without the build and take it from the
+   * daemon afterwards. Each lease uploads the build itself.
+   */
+  readonly installAppPath?: boolean | undefined;
 }
 
 /** `acquire` and `release` of a `DeviceProvider` backed by agent-device leases. */
@@ -87,7 +96,7 @@ export function agentDeviceLeases({ provider, label }: AgentDeviceLeaseOptions):
   }
 
   return {
-    async acquire(request, { env, selectors, summary, prepareHome }) {
+    async acquire(request, { env, selectors, summary, prepareHome, installAppPath }) {
       request.signal.throwIfAborted();
       const dir = await mkdtemp(join(tmpdir(), `e2e-${provider}-`));
       const home = join(dir, 'home');
@@ -120,7 +129,9 @@ export function agentDeviceLeases({ provider, label }: AgentDeviceLeaseOptions):
         request.log(`lease ${id}: ${summary}`);
         // The worker's client is created with these fields: the scope picks the lease, and the selectors match the session it holds.
         const { device: _device, ...clientSelectors } = allocated;
-        return { id, client: { stateDir: resource.stateDir, ...scope, ...clientSelectors } };
+        const client = { stateDir: resource.stateDir, ...scope, ...clientSelectors };
+        if (installAppPath !== true || request.appPath === undefined) return { id, client };
+        return { id, client, installedApp: await installApp(client, request, request.appPath) };
       } catch (cause) {
         // The engine releases only leases `acquire` returned.
         try {
@@ -136,6 +147,22 @@ export function agentDeviceLeases({ provider, label }: AgentDeviceLeaseOptions):
       if (resource) await release(lease.id, resource, context.signal);
     },
   };
+}
+
+/**
+ * Installs `appPath` through the lease's daemon, in a session of its own that
+ * is closed before the worker opens its session on the device, and resolves to
+ * the bundle id or package agent-device reports for it.
+ */
+async function installApp(client: DeviceClientConfig, request: DeviceRequest, appPath: string): Promise<string> {
+  // An explicit empty URL selects the lease's stateDir instead of an ambient remote daemon.
+  const installer = createAgentDeviceClient({ ...client, session: `e2e-install-${client.leaseId}`, daemonBaseUrl: '', daemonAuthToken: '', daemonTransport: 'auto' });
+  try {
+    const installed = await installer.apps.install({ appPath, platform: request.platform, signal: request.signal, ...(request.app === undefined ? {} : { app: request.app }) });
+    return installedIdentity(installed, request.app, appPath).app;
+  } finally {
+    await installer.sessions.close({ signal: AbortSignal.timeout(10_000) }).catch(() => {});
+  }
 }
 
 /** `env` for a daemon in `home`: no daemon setting in it may select a different daemon, home, or connection profile. */

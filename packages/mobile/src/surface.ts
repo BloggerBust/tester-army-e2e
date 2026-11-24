@@ -15,7 +15,7 @@
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import type { AppDeployResult, CaptureSnapshotResult } from 'agent-device';
+import type { CaptureSnapshotResult } from 'agent-device';
 import {
   EngineError,
   KEY_NAMES,
@@ -75,6 +75,7 @@ import { assertAppId } from './links.ts';
 import { bootRequest, DevicePool, deviceSelection, type DeviceSelection } from './pool.ts';
 import { recordLease, travelledLease, type DeviceLease, type RecordingDeviceProvider } from './provider.ts';
 import {
+  installedIdentity,
   invalidState,
   notActionable,
   logicalScreenSize,
@@ -86,6 +87,7 @@ import {
   unsupported,
   type Rect,
   InputBudget,
+  type InstallIdentity,
 } from './support.ts';
 
 /** Hinge poses `device.fold` accepts: `closed` lights the outer display, `half-open` and `open` the inner one. */
@@ -111,13 +113,6 @@ export interface InstalledApp {
 
 /** Why nothing is pinned with `appPath` alone: the install is the suite's. */
 const UNINSTALLED_BUILD = "the build the target's `app.appPath` names installed first with `device.installApp()`";
-
-/**
- * The install fields this engine reads off agent-device's response. Its
- * `app` is left out: it echoes the `app` passed in, else the identity, else
- * the build's path, so it cannot tell an id from a file.
- */
-type InstallIdentity = Pick<AppDeployResult, 'appId' | 'bundleId' | 'package'>;
 
 /** How `device.openApp` launches an app. */
 export interface OpenAppOptions {
@@ -1056,16 +1051,7 @@ export class AgentDeviceSurface {
           : client.apps.install({ ...selection, ...(app === undefined ? {} : { app }), appPath: resolved }),
       signal,
     );
-    const identity = result.bundleId ?? result.package ?? result.appId;
-    const opensBy = identity ?? app;
-    if (opensBy === undefined) {
-      throw new EngineError(
-        'ENGINE_FAILURE',
-        `installed ${resolved}, but agent-device reported no bundle id or package for it, so nothing can open it: name the app with the target's \`app.bundleId\` or installApp's \`app\` option`,
-        { retryable: false },
-      );
-    }
-    const installed: InstalledApp = { app: opensBy, ...(identity === undefined ? {} : { bundleId: identity }) };
+    const installed: InstalledApp = installedIdentity(result, app, resolved);
     // The engine's own build, installed: without `app`, this is what `app.open()` launches from here on.
     if (engineBuild) this.installedApp = installed.app;
     return installed;

@@ -1,6 +1,6 @@
 /** Shared helpers for the agent-device engine: error constructors, filenames, PNG headers, gestures, the screen location and size. */
 
-import type { CaptureScreenshotResult, PressOptions } from 'agent-device';
+import type { AppDeployResult, CaptureScreenshotResult, PressOptions } from 'agent-device';
 import { EngineError, withTimeout, type Momentum, type ScrollDirection, type ViewportSize } from '@e2e-dev/core/engine';
 import type { AgentDeviceClient } from './options.ts';
 
@@ -218,4 +218,28 @@ export function logicalScreenSize(
         : undefined;
   if (logical === undefined || logical.width <= 0 || logical.height <= 0) return undefined;
   return logical;
+}
+
+/**
+ * The install fields this engine reads off agent-device's response. Its
+ * `app` is left out: it echoes the `app` passed in, else the identity, else
+ * the build's path, so it cannot tell an id from a file.
+ */
+export type InstallIdentity = Pick<AppDeployResult, 'appId' | 'bundleId' | 'package'>;
+
+/**
+ * The app an install of `build` opens by: the identity agent-device reported,
+ * else the `app` it was installed as. Fails when neither names one.
+ */
+export function installedIdentity(result: InstallIdentity, app: string | undefined, build: string): { app: string; bundleId?: string } {
+  const identity = result.bundleId ?? result.package ?? result.appId;
+  const opensBy = identity ?? app;
+  if (opensBy === undefined) {
+    throw new EngineError(
+      'ENGINE_FAILURE',
+      `installed ${build}, but agent-device reported no bundle id or package for it, so nothing can open it: name the app with the target's \`app.bundleId\` or installApp's \`app\` option`,
+      { retryable: false },
+    );
+  }
+  return { app: opensBy, ...(identity === undefined ? {} : { bundleId: identity }) };
 }
