@@ -838,7 +838,7 @@ describe('select with what the test filters left out', () => {
     });
     /** The pair of the test titled `title` in `selection`. */
     const pair = (selection: ReturnType<typeof select>, title: string) => selection.pairs.find((entry) => entry.test.title === title)!;
-    const outside = { cause: 'filtered', reason: 'outside the shard' };
+    const outside = { cause: 'filtered', reason: 'outside the shard', otherShard: true };
     const unaffected = { cause: 'filtered', reason: 'unaffected', filter: 'areas' };
     // Leaving b out does not move the cut: shard 1 is still a and b, shard 2 still c and d.
     const excluded = leftOut(col, [['b', 'areas', 'unaffected']]);

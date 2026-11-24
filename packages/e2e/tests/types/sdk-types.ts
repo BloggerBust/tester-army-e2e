@@ -60,6 +60,7 @@ import {
   beforeAll,
   beforeEach,
   describe,
+  foldLastRun,
 } from '../../src/index.ts';
 import type { Engine, EngineAppInfo, EngineAttemptContext, EngineCleanupContext, EngineDisposeContext, EngineFixtureContext, EngineHandle, EngineObserveOptions, EngineSnapshot } from '../../src/engine/index.ts';
 import {
@@ -491,6 +492,11 @@ declare const finishedRun: FinishedRun;
 finishedRun.status satisfies RunStatus;
 finishedRun.exitCode satisfies RunExitCode;
 finishedRun.lastRun satisfies FinishedRun['report'] | undefined;
+// A reporter folds a --last-failed rerun into the runs before it the way the runner does.
+foldLastRun(finishedRun.report, finishedRun.lastRun ?? finishedRun.report) satisfies Report;
+finishedRun.report.run.shard?.index satisfies number | undefined;
+// @ts-expect-error the shard marker is set or absent, never false
+({ cause: 'filtered', reason: 'outside the shard', otherShard: false }) satisfies NonNullable<Report['run']['results'][number]['skip']>;
 // @ts-expect-error the run status is a closed union
 'skipped' satisfies RunStatus;
 // @ts-expect-error the exit codes are the closed set a run ends with

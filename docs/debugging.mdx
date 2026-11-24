@@ -144,7 +144,7 @@ one `attempt-<n>` per attempt. A serial group's tests share one directory:
 ```
 
 Each run that reaches its tests empties `results/` first. A `--last-failed`
-rerun keeps the files that the report it reruns names, and writes its own
+rerun keeps the files that the runs before it name, and writes its own
 attempts under each test's `rerun-<n>/`.
 
 | Artifact | When |

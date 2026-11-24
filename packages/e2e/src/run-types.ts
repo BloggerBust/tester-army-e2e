@@ -42,9 +42,12 @@ export interface FinishedRun {
    */
   readonly traces: ReadonlyMap<string, string>;
   /**
-   * The report `--last-failed` selected from, when the run was given that
+   * The runs `--last-failed` selected from, when the run was given that
    * flag: the run before this one, whose tests that did not fail were left
-   * out here. A reporter that keeps one place current folds this run into it.
+   * out here, with every rerun before it already folded in, so it holds the
+   * passes of the first run however many reruns came between. A reporter
+   * that keeps one place current folds this run into it with `foldLastRun`;
+   * the runner writes that fold to `report-with-reruns.json` beside the report.
    */
   readonly lastRun?: Report;
   /**

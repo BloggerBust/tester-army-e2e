@@ -570,7 +570,7 @@ ${edit}
     expect(shard.exitCode).toBe(0);
     const report = reportOf(project);
     expect(executedTests(report)).toEqual(['alpha', 'beta']);
-    expect(row(report, 'gamma').skip).toEqual({ cause: 'filtered', reason: 'outside the shard' });
+    expect(row(report, 'gamma').skip).toEqual({ cause: 'filtered', reason: 'outside the shard', otherShard: true });
     expect(report.run.filters).toEqual([{ name: 'areas', candidates: 2, excluded: 0 }]);
   });
 

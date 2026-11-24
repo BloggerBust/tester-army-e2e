@@ -22,6 +22,7 @@ describe('the built declarations', () => {
   it('export nothing outside the runner consumed from e2e', () => {
     const index = declaration('index.d.ts');
     expect(mentions(index, 'renderMarkdownReport')).toBe(true);
+    expect(mentions(index, 'foldLastRun')).toBe(true);
     for (const name of ['BLOCKABLE_CODES', 'RUNTIME_CODES', 'buildTraceEntry', 'readTraceEntry']) {
       expect(mentions(index, name), name).toBe(false);
     }

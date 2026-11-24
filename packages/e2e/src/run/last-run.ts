@@ -4,14 +4,19 @@ import { readFile } from 'node:fs/promises';
 import { ConfigurationError, errorMessage } from '@e2e-dev/core/lib/internal/errors';
 import { resultId } from '@e2e-dev/core/lib/internal/ids';
 import type { Report1Document } from '../report/build.ts';
+import { summarizeResults } from '../report/summary.ts';
 
 type ReportResult = Report1Document['run']['results'][number];
 type ReportError = Report1Document['run']['errors'][number];
 type ReportSerialGroup = Report1Document['run']['serialGroups'][number];
 type ReportCarried = NonNullable<Report1Document['run']['carried']>;
 
-/** Skips that stand for a test the run could not carry out, as opposed to one it chose not to. */
-const UNDELIVERED_SKIPS = new Set<NonNullable<ReportResult['skip']>['cause']>([
+/**
+ * Skips that stand for a test the run could not carry out, as opposed to one
+ * it chose not to: what `--last-failed` runs again, and what a fold of a
+ * rerun reads as no verdict of its own.
+ */
+export const UNDELIVERED_SKIPS: ReadonlySet<NonNullable<ReportResult['skip']>['cause']> = new Set<NonNullable<ReportResult['skip']>['cause']>([
   'setup-failed',
   'serial-predecessor-failed',
   'hook-failed',
@@ -95,6 +100,78 @@ export async function readLastRun(reportPath: string): Promise<Report1Document> 
 }
 
 /**
+ * The runs before a `--last-failed` rerun, folded into one: the
+ * `report-with-reruns.json` the last run wrote when it was a rerun itself,
+ * and undefined when there is none, or it is not a report of the same run as
+ * `lastRun` (`report.json`): a run that stopped part way, or a file left by
+ * another tool. Like the timings history the file only adds to the report,
+ * so one that cannot be read is no history.
+ */
+export async function readWithReruns(filePath: string, lastRun: Report1Document): Promise<Report1Document | undefined> {
+  try {
+    const document: unknown = JSON.parse(await readFile(filePath, 'utf8'));
+    return isReport(document) && isFoldable(document) && document.run.id === lastRun.run.id ? document : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/** The usage totals `foldLastRun` adds up, each a number in a report-1 document. */
+const USAGE_FIELDS = [
+  'maxAgentContextBytes',
+  'maxLedgerBytes',
+  'maxObservationBytes',
+  'artifactBytes',
+  'downloads',
+  'events',
+  'modelTokens',
+  'maxModelCallsInStep',
+  'maxActionStepsInStep',
+] as const;
+
+/**
+ * Whether a report holds what `foldLastRun` reads beyond what `isReport`
+ * checks: the run's project, start, and usage, each result's test, target,
+ * agent, and repeat, and each serial group's id, repeat, and members. A history file without them is no history,
+ * rather than a fold that throws part way.
+ */
+function isFoldable(document: Report1Document): boolean {
+  const run = document.run as Partial<Record<keyof Report1Document['run'], unknown>> & { project?: { id?: unknown }; usage?: Record<string, unknown> };
+  const results = [...document.run.results, ...(document.run.carried?.results ?? [])] as Partial<Record<keyof ReportResult, unknown>>[];
+  return (
+    typeof run.id === 'string' &&
+    typeof run.project?.id === 'string' &&
+    typeof run.startedAt === 'string' &&
+    (typeof run.durationMs === 'number' || typeof run.finishedAt === 'string') &&
+    typeof run.usage === 'object' &&
+    run.usage !== null &&
+    USAGE_FIELDS.every((field) => typeof run.usage?.[field] === 'number') &&
+    results.every(
+      (result) =>
+        typeof result.testId === 'string' && typeof result.targetId === 'string' && typeof result.agent === 'string' && typeof result.repeat === 'number',
+    ) &&
+    [...document.run.serialGroups, ...(document.run.carried?.serialGroups ?? [])].every(isFoldableGroup)
+  );
+}
+
+/** Whether a serial group has the id, repeat, and attempt members the fold and the tally read. */
+function isFoldableGroup(group: unknown): boolean {
+  const { id, repeat, attempts } = group as { id?: unknown; repeat?: unknown; attempts?: unknown };
+  return (
+    typeof id === 'string' &&
+    typeof repeat === 'number' &&
+    Array.isArray(attempts) &&
+    attempts.every((attempt) => {
+      const { members } = attempt as { members?: unknown };
+      return (
+        Array.isArray(members) &&
+        members.every((member) => typeof member === 'object' && member !== null && typeof (member as { testId?: unknown }).testId === 'string' && typeof (member as { status?: unknown }).status === 'string')
+      );
+    })
+  );
+}
+
+/**
  * The result ids of a report's tests that did not pass: failed, timed out,
  * interrupted, or skipped because a setup, a serial predecessor, a hook, the
  * worker, or the failure limit stopped it, every selected test in the scope
@@ -133,6 +210,40 @@ export interface RerunCollection {
   readonly uncollectedFiles: ReadonlySet<string>;
 }
 
+function stillCollected(result: ReportResult, collection: RerunCollection): boolean {
+  return collection.testIds.has(result.testId) || collection.uncollectedFiles.has(result.file);
+}
+
+/** Retire deleted tests from history before the next fold can carry their old verdicts. */
+export function retainCollectedHistory(report: Report1Document, collection: RerunCollection): Report1Document {
+  const { results, serialGroups, carried, ...run } = report.run;
+  const retained = results.filter((result) => stillCollected(result, collection));
+  const retainedCarried = carried?.results.filter((result) => stillCollected(result, collection));
+  if (retained.length === results.length && retainedCarried?.length === carried?.results.length) return report;
+
+  const groups = new Set([...retained, ...(retainedCarried ?? [])].map((result) => result.serialGroupId));
+  const retainedGroups = serialGroups.filter((group) => groups.has(group.id));
+  return {
+    ...report,
+    run: {
+      ...run,
+      results: retained,
+      serialGroups: retainedGroups,
+      summary: summarizeResults(retained, retainedGroups),
+      usage: { ...run.usage, discoveredResults: retained.length },
+      ...(carried === undefined || retainedCarried === undefined || retainedCarried.length === 0
+        ? {}
+        : {
+            carried: {
+              results: retainedCarried,
+              serialGroups: carried.serialGroups.filter((group) => groups.has(group.id)),
+              errors: carried.errors.filter((error) => retainedCarried.some((result) => inHookScope(result, error))),
+            },
+          }),
+    },
+  };
+}
+
 /**
  * What a `--last-failed` rerun carries forward from the report it selected
  * from: every result that report owed a rerun and this run did not run, as
@@ -155,9 +266,7 @@ export interface RerunCollection {
 export function carryForward(lastRun: Report1Document, current: Report1Document, collected: RerunCollection): ReportCarried | undefined {
   const selected = new Set(current.run.results.filter((result) => result.selected !== false).map(rerunId));
   const targets = new Set(current.run.targets.map((target) => target.id));
-  const stillThere = (result: ReportResult): boolean =>
-    collected.testIds.has(result.testId) || collected.uncollectedFiles.has(result.file);
-  const notRun = (result: ReportResult): boolean => !selected.has(rerunId(result)) && stillThere(result) && targets.has(result.targetId);
+  const notRun = (result: ReportResult): boolean => !selected.has(rerunId(result)) && stillCollected(result, collected) && targets.has(result.targetId);
 
   const failedAgain = current.run.errors.filter(isSuiteHookFailure);
   const hooks = [...lastRun.run.errors.filter(isSuiteHookFailure), ...(lastRun.run.carried?.errors ?? [])];

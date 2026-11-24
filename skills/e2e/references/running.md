@@ -42,8 +42,8 @@ npx e2e telemetry [disable|enable] # anonymous usage telemetry: status or switch
 | `--exclude-tag <tags>` | Drop tests carrying any of these tags, however selected. |
 | `--grep <pattern>`, `--grep-invert <pattern>` | Keep, or drop, tests whose title (describe titles and test title joined by spaces, `checkout pays`; not file or tags) matches a regular expression. Bare pattern or `'/pattern/i'`; repeat for alternatives. |
 | `--changed-since <ref>` | Run the configured `filters` on the change since the ref: every file that differs from the merge base of the ref and HEAD, uncommitted and untracked included (`--changed-since origin/main`). Each target starts the files of the tests the filters score likeliest first (`relevance`, see topic `setup`). Without it no filter runs. A ref git can't measure from is `INVALID_CHANGED_SINCE`, exit 2. |
-| `--last-failed` | The tests the previous run (`<output>/report.json`) did not pass or never ran (`--max-failures` and `--max-duration` included), plus every test in a failed `beforeAll` or `afterAll` scope. A test another filter leaves out stays owed (`run.carried` in the report) until a rerun runs it. No report is `NO_LAST_RUN`, exit 2. |
-| `--shard <index/total>` | One contiguous slice of the selected tests (`--shard 2/3`), cut after every other flag; serial groups stay whole, each shard brings its own setup tests. |
+| `--last-failed` | The tests the previous run (`<output>/report.json`) did not pass or never ran (`--max-failures` and `--max-duration` included), plus every test in a failed `beforeAll` or `afterAll` scope. A test another filter leaves out stays owed (`run.carried` in the report) until a rerun runs it. The rerun also writes `report-with-reruns.json`, every run as one report. No report is `NO_LAST_RUN`, exit 2. |
+| `--shard <index/total>` | One contiguous slice of the selected tests (`--shard 2/3`), cut after every other flag; serial groups stay whole, each shard brings its own setup tests. The report records `run.shard`, and `skip.otherShard` on tests this invocation's cut gave to another shard. Shards rerunning their own failures can cut different sets. |
 | `--headed` | Visible browser or simulator when the engine supports it; a desktop target launches its app in the foreground (physical input still needs `desktop({ headed: true })`). |
 | `--device <name>` | The simulator, emulator, or phone the selected mobile target runs on, over its `device` option: a device name, a simulator UDID, or an emulator serial (`emulator-5554`). It applies to the one selected target that can take a device; the others (`web()`, a provider's devices) still run as configured. With several that can, pick one with `--target` (else `TARGET_REQUIRED`); with none, it is `UNSUPPORTED_CAPABILITY`. |
 | `--agent <names>` | Run unpinned tests as these `agents.<name>` entries (default `agents.default`), comma-separated or repeated; several names run each such test once per agent. |
@@ -141,7 +141,7 @@ per test with its `trace.md` and an `attempt-<n>/` per attempt
 (screenshots, videos, `--debug` transcripts, downloads).
 `results/` is cleared once a run's tests start; a run stopping before
 leaves the last run's files, and a `--last-failed` rerun keeps the files
-the report it reruns names and writes its own under each test's `rerun-<n>/`. The report records every artifact path, a
+the runs before it name and writes its own under each test's `rerun-<n>/`. The report records every artifact path, a
 hosted service's video by URL.
 
 - `list` (default): setup steps, one line per file and target (when stdout

@@ -23,6 +23,10 @@
       "arch": "arm64",
       "runtime": "node-26.4.0"
     },
+    "shard": {
+      "index": 2,
+      "total": 3
+    },
     "targets": [
       {
         "id": "web",
@@ -528,6 +532,34 @@
           "reason": "the diff reaches none of its tags",
           "filter": "areas"
         }
+      },
+      {
+        "id": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+        "testId": "tests/example.e2e.ts::exports%20a%20report",
+        "kind": "test",
+        "tags": [],
+        "declarationIndex": 4,
+        "titlePath": [
+          "exports a report"
+        ],
+        "file": "tests/example.e2e.ts",
+        "source": {
+          "file": "tests/example.e2e.ts",
+          "line": 20,
+          "column": 1
+        },
+        "targetId": "web",
+        "platform": "web",
+        "agent": "default",
+        "repeat": 0,
+        "selected": false,
+        "status": "skipped",
+        "attempts": [],
+        "skip": {
+          "cause": "filtered",
+          "reason": "outside the shard",
+          "otherShard": true
+        }
       }
     ],
     "errors": [
@@ -546,7 +578,7 @@
       }
     ],
     "summary": {
-      "discovered": 4,
+      "discovered": 5,
       "selected": 3,
       "executed": 3,
       "passed": 1,

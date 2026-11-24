@@ -41,6 +41,7 @@ import { writeTracePages, type TracePages } from '../report/traces.ts';
 import { builtinReporter } from '../report/builtin.ts';
 import { builtinId } from '../report/builtin-id.ts';
 import { failureLine } from '../report/format.ts';
+import { foldLastRun } from '../report/fold.ts';
 import { writeJsonReport } from '../report/write.ts';
 import { toEventResult, type CollectedTestInfo, type RunEventSink, type RunExitCode, type RunStatus, type RunEventFact, type SetupOutcome, type SetupStep } from './events.ts';
 import { allocateAppPorts } from './app-ports.ts';
@@ -57,7 +58,7 @@ import { refuseBun } from './public-ownership.ts';
 import { processSecrets, registerProviderKeys, registerStaticSecrets, staticOutputLedger } from '@e2e-dev/core/lib/run/secrecy';
 import { warnOfNodeDebug } from './node-debug.ts';
 import { nextRerunDir, pruneArtifacts } from '@e2e-dev/core/lib/run/artifacts';
-import { carryForward, fileDurationKey, lastFailedIds, readLastRun, reportArtifactPaths, type RerunCollection } from './last-run.ts';
+import { carryForward, fileDurationKey, lastFailedIds, readLastRun, readWithReruns, reportArtifactPaths, retainCollectedHistory, type RerunCollection } from './last-run.ts';
 import { loadTimings, writeTimings } from './timings.ts';
 import { childProcessSpawner } from './worker/handle.ts';
 import { setSecretRegistry } from '@e2e-dev/core/lib/secrets';
@@ -653,6 +654,10 @@ export async function run(options: RunOptions = {}): Promise<RunOutcome> {
   // reporters get it beside this run's report to fold the rerun into it, and
   // this run's report carries what it owed that this run left out.
   let lastRun: Report1Document | undefined;
+  // The runs before this rerun folded into one: `report-with-reruns.json` when
+  // the last run was a rerun that wrote it, else the last run's report. The
+  // reporters fold this run into it, and it names the evidence to keep.
+  let lastRuns: Report1Document | undefined;
   // The ids of every test collection found, a setup no selected test needed
   // among them, and the files it could not collect: what a rerun can still
   // carry when the report lists no row.
@@ -682,6 +687,8 @@ export async function run(options: RunOptions = {}): Promise<RunOutcome> {
       changes: changesReport,
       filters: filterReport,
       explore: options.tests?.explore?.snapshot(),
+      // Only a shard the config load validated is recorded.
+      shard: loaded.config === undefined ? undefined : options.shard,
     });
     const carried = lastRun === undefined ? undefined : carryForward(lastRun, document, rerunCollection);
     return carried === undefined ? document : { ...document, run: { ...document.run, carried } };
@@ -770,6 +777,25 @@ export async function run(options: RunOptions = {}): Promise<RunOutcome> {
   };
 
   /**
+   * Writes the whole run beside a `--last-failed` rerun's report: this run
+   * folded into the runs before it, so a reader of the output directory
+   * alone (a merge of shard outputs, a later reporter) sees the first
+   * run's passes the rerun left out. A run that is not a rerun removes the
+   * file, which would otherwise describe a run its report no longer is.
+   * Like the trace pages it adds nothing the reports lack, so a failure is
+   * a line on stderr.
+   */
+  const writeWithReruns = async (config: ResolvedRunConfig, document: Report1Document): Promise<void> => {
+    const target = outputLayout(config.output).withReruns;
+    try {
+      if (lastRuns === undefined) await rm(target, { force: true });
+      else await writeJsonReport(target, foldLastRun(document, lastRuns));
+    } catch (cause) {
+      process.stderr.write(`e2e: ${path.basename(target)} could not be written: ${errorMessage(cause)}\n`);
+    }
+  };
+
+  /**
    * Writes the trace pages beside the report. Like `junit.xml` and
    * `summary.md`, they read the report and add to it nothing it lacks, so a
    * page that could not be written is a line on stderr, never a run error
@@ -805,6 +831,7 @@ export async function run(options: RunOptions = {}): Promise<RunOutcome> {
     const recorded = runErrors.length;
     if (written !== undefined) await writeTimingsHistory(written, document);
     const reportPath = written === undefined ? undefined : await writeCanonicalReport(written, document);
+    if (written !== undefined && reportPath !== undefined) await writeWithReruns(written, document);
     const traces = written === undefined ? new Map<string, string>() : await writeTraces(written, document);
     const exitCode = currentExitCode();
     const report = runErrors.length === recorded ? document : buildRunReport(exitCode);
@@ -853,7 +880,7 @@ export async function run(options: RunOptions = {}): Promise<RunOutcome> {
       artifactsRoot: outputLayout(outputDir).results,
       aiTracePath,
       traces,
-      ...(lastRun === undefined ? {} : { lastRun }),
+      ...(lastRuns === undefined ? {} : { lastRun: lastRuns }),
       redact: redactStaticSecrets(loaded.config?.allSecrets),
     });
     return { exitCode, status, report, reportPath, aiTracePath, results, config: loaded.config };
@@ -947,6 +974,10 @@ export async function run(options: RunOptions = {}): Promise<RunOutcome> {
             testIds: new Set(collection.tests.map((test) => test.id)),
             uncollectedFiles: new Set(collection.uncollected.map((skipped) => skipped.file)),
           };
+          if (lastRun !== undefined) {
+            const history = (await readWithReruns(outputLayout(config.output).withReruns, lastRun)) ?? lastRun;
+            lastRuns = retainCollectedHistory(history, rerunCollection);
+          }
           const flags = options.passWithNoTests !== undefined ? { passWithNoTests: options.passWithNoTests } : {};
           // Pass 1, what any test filter judges. The run's own flag still
           // decides an empty one, so a mistyped --tag fails before any
@@ -1130,7 +1161,7 @@ export async function run(options: RunOptions = {}): Promise<RunOutcome> {
       if (lastRun === undefined) {
         await rm(layout.results, { recursive: true, force: true });
       } else {
-        await pruneArtifacts(layout.results, reportArtifactPaths(lastRun));
+        await pruneArtifacts(layout.results, new Set([...reportArtifactPaths(lastRun), ...reportArtifactPaths(lastRuns ?? lastRun)]));
         rerunDir = await nextRerunDir(layout.results);
       }
     } catch (cause) {

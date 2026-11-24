@@ -1,8 +1,7 @@
 /** A rerun folded into the run before it: what the page shows for each kind of test. */
 
-import { renderMarkdownReport, type Report } from 'e2e';
+import { foldLastRun, renderMarkdownReport, type Report } from 'e2e';
 import { describe, expect, it } from 'vitest';
-import { foldLastRun } from '../../src/merge.ts';
 import { attempt, report, result } from './fixtures.ts';
 
 type ReportSerialGroup = Report['run']['serialGroups'][number];
@@ -390,5 +389,163 @@ describe('foldLastRun', () => {
   it('leaves the rerun alone when the run before is another project\'s', () => {
     const other = report({ projectId: 'dev.example.other', status: 'failed', results: firstPass.run.results });
     expect(foldLastRun(rerun, other)).toBe(rerun);
+  });
+
+  it('keeps a test flaky when it passes again after a run that was already flaky', () => {
+    const before = report({ results: [result({ title: 'wobbly', status: 'flaky', attempts: [failedAttempt, attempt()] })] });
+    const again = report({ results: [result({ title: 'wobbly', status: 'passed', attempts: [attempt()] })] });
+    const folded = byTitle(foldLastRun(again, before)).get('wobbly#0')!;
+    expect(folded.status).toBe('flaky');
+    expect(folded.attempts.map((entry) => [entry.status, entry.index])).toEqual([['failed', 0], ['passed', 1], ['passed', 2]]);
+  });
+
+  it('keeps every attempt of a test the run before holds a result for, over the last result the rerun carries for it', () => {
+    // A fold of two runs that both failed `owed`, then a rerun another filter kept it out of.
+    const history = report({ status: 'failed', results: [result({ title: 'owed', status: 'failed', attempts: [failedAttempt, failedAttempt] })] });
+    const carriedRow = result({ title: 'owed', status: 'failed', attempts: [failedAttempt] });
+    const leftOutRerun = report({
+      status: 'failed',
+      results: [result({ title: 'owed', status: 'skipped', selected: false, skip: { cause: 'filtered', reason: 'title does not match --grep' } })],
+      carried: { results: [carriedRow], serialGroups: [], errors: [] },
+    });
+    const folded = foldLastRun(leftOutRerun, history);
+    expect(byTitle(folded).get('owed#0')!.attempts).toHaveLength(2);
+    // And the next fold reads that row over the carried one too.
+    const passes = report({ results: [result({ title: 'owed', status: 'passed', attempts: [attempt()] })] });
+    expect(byTitle(foldLastRun(passes, folded)).get('owed#0')).toMatchObject({ status: 'flaky', attempts: [{}, {}, {}] });
+  });
+
+  it("folds the group of a serial member's further repeat into the group of the result a plain rerun ran", () => {
+    const member = (repeat: number, status: 'passed' | 'failed', group: string) =>
+      result({ title: ['wizard', 'step one'], status, serialGroupId: group, repeat });
+    const firstMember = member(0, 'passed', 'g0');
+    const before = report({
+      status: 'failed',
+      results: [firstMember, member(1, 'failed', 'g1')],
+      serialGroups: [serialGroup('g0', firstMember.testId, 'passed'), { ...serialGroup('g1', firstMember.testId, 'failed'), repeat: 1 }],
+    });
+    const again = report({ results: [member(0, 'passed', 'g0')], serialGroups: [serialGroup('g0', firstMember.testId, 'passed')] });
+    const folded = foldLastRun(again, before);
+    expect(folded.run.serialGroups.map((group) => [group.id, group.attempts.map((entry) => entry.status)])).toEqual([['g0', ['passed', 'failed', 'passed']]]);
+    expect(folded.run.results.map((entry) => [entry.repeat, entry.status, entry.serialGroupId])).toEqual([[0, 'flaky', 'g0']]);
+  });
+
+  it('takes the shard from the run that chose the tests, and none when it was not sharded', () => {
+    // The fixture report is a shard; these runs say for themselves whether they were.
+    const unsharded = (document: Report): Report => {
+      const { shard: _shard, ...run } = document.run;
+      return { ...document, run };
+    };
+    const whole = unsharded(report({ status: 'failed', results: [result({ title: 'owed', status: 'failed', attempts: [failedAttempt] })] }));
+    const sharded = { ...rerun, run: { ...rerun.run, shard: { index: 1, total: 2 } } };
+    expect(foldLastRun(sharded, whole).run.shard).toBeUndefined();
+    const firstShard = { ...whole, run: { ...whole.run, shard: { index: 3, total: 4 } } };
+    expect(foldLastRun(unsharded(rerun), firstShard).run.shard).toEqual({ index: 3, total: 4 });
+    expect(foldLastRun(sharded, firstShard).run.shard).toEqual({ index: 3, total: 4 });
+  });
+
+  it('keeps the earlier verdict and serial group of a test the rerun never reached, so a later pass is flaky', () => {
+    const member = (status: 'failed' | 'skipped' | 'passed', group?: string, skip?: Report['run']['results'][number]['skip']) =>
+      result({ title: ['wizard', 'step two'], status, ...(group === undefined ? {} : { serialGroupId: group }), ...(skip === undefined ? {} : { skip }) });
+    const first = member('failed', 'g1');
+    const failedRun = report({ status: 'failed', results: [first], serialGroups: [serialGroup('g1', first.testId, 'failed')] });
+    // A failure limit stopped the rerun before the group started: the member was never reached and names no group.
+    const stopped = report({ status: 'failed', results: [member('skipped', undefined, { cause: 'failure-limit', reason: 'the run stopped at --max-failures 1' })] });
+    const unreached = foldLastRun(stopped, failedRun);
+    expect(unreached.run.results.map((entry) => [entry.status, entry.serialGroupId])).toEqual([['failed', 'g1']]);
+    expect(unreached.run.summary).toMatchObject({ executed: 1, failed: 1 });
+    const passes = report({ results: [member('passed', 'g1')], serialGroups: [serialGroup('g1', first.testId, 'passed')] });
+    expect(foldLastRun(passes, unreached).run.results.map((entry) => entry.status)).toEqual(['flaky']);
+  });
+
+  it('keeps the flaky verdict when a standalone test becomes serial and its earlier attempt cannot be folded', () => {
+    const standalone = report({ status: 'failed', results: [result({ title: ['wizard', 'step one'], status: 'failed', attempts: [failedAttempt] })] });
+    const nowSerial = result({ title: ['wizard', 'step one'], status: 'passed', serialGroupId: 'g1' });
+    const again = report({ results: [nowSerial], serialGroups: [serialGroup('g1', nowSerial.testId, 'passed')] });
+    const folded = foldLastRun(again, standalone);
+    expect(folded.run.results.map((entry) => [entry.status, entry.attempts.length, entry.serialGroupId])).toEqual([['flaky', 0, 'g1']]);
+    expect(folded.run.serialGroups[0]?.attempts).toHaveLength(1);
+  });
+
+  it('counts a row an older report wrote without selected as selected, the way the page reads it', () => {
+    const older = report({ status: 'failed', results: [result({ title: 'steady', status: 'passed', attempts: [attempt()] }), result({ title: 'broken', status: 'failed', attempts: [failedAttempt] })] });
+    for (const row of older.run.results as readonly { selected?: boolean }[]) delete row.selected;
+    const again = report({
+      results: [
+        result({ title: 'steady', status: 'skipped', selected: false, skip: leftOut }),
+        result({ title: 'broken', status: 'passed', attempts: [attempt()] }),
+      ],
+    });
+    expect(foldLastRun(again, older).run.summary).toMatchObject({ selected: 2, passed: 1, flaky: 1 });
+  });
+
+  it('adds up the runs\' usage, and keeps the larger of each per-step maximum (guard)', () => {
+    const usage = (n: number, extra: object = {}) => ({
+      discoveredResults: 9, maxAgentContextBytes: n, maxLedgerBytes: n, maxObservationBytes: n, artifactBytes: n, downloads: n, events: n, modelTokens: n, maxModelCallsInStep: n, maxActionStepsInStep: n, ...extra,
+    });
+    const before = { ...firstPass, run: { ...firstPass.run, usage: usage(5, { modelCachedTokens: 2, estimatedCostUsd: 0.25 }) } };
+    const after = { ...rerun, run: { ...rerun.run, usage: usage(3) } };
+    expect(foldLastRun(after, before).run.usage).toEqual({
+      discoveredResults: 5, maxAgentContextBytes: 5, maxLedgerBytes: 5, maxObservationBytes: 5, artifactBytes: 8, downloads: 8, events: 8, modelTokens: 8,
+      maxModelCallsInStep: 5, maxActionStepsInStep: 5, modelCachedTokens: 2, estimatedCostUsd: 0.25,
+    });
+  });
+
+  it('keeps no skip on a row whose kept verdict is not skipped, and keeps an earlier pass of a test the rerun never reached', () => {
+    const limit = { cause: 'failure-limit' as const, reason: 'the run stopped at --max-failures 1' };
+    const before = report({
+      status: 'failed',
+      results: [result({ title: 'broken', status: 'failed', attempts: [failedAttempt] }), result({ title: 'steady', status: 'passed', attempts: [attempt()] })],
+    });
+    const stopped = report({
+      status: 'failed',
+      results: [result({ title: 'broken', status: 'skipped', skip: limit }), result({ title: 'steady', status: 'skipped', skip: limit })],
+    });
+    const folded = foldLastRun(stopped, before);
+    expect(folded.run.results.map((entry) => [entry.titlePath[0], entry.status, entry.skip])).toEqual([
+      ['broken', 'failed', undefined],
+      ['steady', 'passed', undefined],
+    ]);
+    // A row the rerun did reach and skip keeps its skip.
+    const parked = report({ results: [result({ title: 'steady', status: 'skipped', skip: { cause: 'explicit', reason: 'later' } })] });
+    expect(foldLastRun(parked, before).run.results.find((entry) => entry.titlePath[0] === 'steady')?.skip).toEqual({ cause: 'explicit', reason: 'later' });
+  });
+
+  it('keeps a row the first run gave another shard as it was, whatever the rerun ran', () => {
+    const otherShards = { cause: 'filtered' as const, reason: 'outside the shard', otherShard: true as const };
+    const shard = report({
+      status: 'failed',
+      results: [result({ title: 'theirs', status: 'skipped', selected: false, skip: otherShards }), result({ title: 'ours', status: 'failed', attempts: [failedAttempt] })],
+    });
+    const sharded = { ...shard, run: { ...shard.run, shard: { index: 2, total: 2 } } };
+    // A failed setup widened the rerun to every consumer, the other shard's too.
+    const widened = report({ results: [result({ title: 'theirs', status: 'passed', attempts: [attempt()] }), result({ title: 'ours', status: 'passed', attempts: [attempt()] })] });
+    const folded = foldLastRun(widened, sharded);
+    expect(folded.run.results.map((entry) => [entry.titlePath[0], entry.selected, entry.status, entry.skip?.otherShard])).toEqual([
+      ['theirs', false, 'skipped', true],
+      ['ours', true, 'flaky', undefined],
+    ]);
+    expect(folded.run.summary).toMatchObject({ selected: 1, flaky: 1, passed: 0 });
+  });
+
+  it('explains a foreign serial failure after a later rerun filters it out', () => {
+    const foreign = result({ title: 'foreign', status: 'failed', serialGroupId: 'outside' });
+    const group = serialGroup('outside', foreign.testId, 'failed');
+    const initial = report({
+      results: [result({ title: 'foreign', status: 'skipped', selected: false, skip: { ...leftOut, otherShard: true } })],
+    });
+    const widened = report({ status: 'failed', results: [foreign], serialGroups: [group] });
+    const firstFold = foldLastRun(widened, initial);
+    expect(firstFold.run.errors.map((error) => error.message)).toEqual([expect.stringContaining('step one broke')]);
+    expect(firstFold.run.serialGroups).toEqual([]);
+
+    const filtered = report({ results: [result({ title: 'foreign', status: 'skipped', selected: false, skip: leftOut })] });
+    const folded = foldLastRun({ ...filtered, run: { ...filtered.run, carried: { results: [foreign], serialGroups: [group], errors: [] } } }, firstFold);
+    expect(folded.run).toMatchObject({ status: 'failed', results: [{ selected: false, skip: { otherShard: true } }], serialGroups: [] });
+    expect(folded.run.errors.map((error) => error.message)).toEqual([expect.stringContaining('step one broke')]);
+
+    const again = foldLastRun(widened, folded);
+    expect(again.run.results).toEqual(folded.run.results);
+    expect(again.run.serialGroups).toEqual([]);
   });
 });

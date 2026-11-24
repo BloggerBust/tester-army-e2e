@@ -2,9 +2,8 @@ import { createHash } from 'node:crypto';
 import { existsSync } from 'node:fs';
 import { appendFile, readFile } from 'node:fs/promises';
 import path from 'node:path';
-import { renderMarkdownReport, type FinishedRun, type MarkdownReportOptions, type Reporter, type ReporterSummary } from 'e2e';
+import { foldLastRun, renderMarkdownReport, type FinishedRun, type MarkdownReportOptions, type Reporter, type ReporterSummary } from 'e2e';
 import { detectActions, type ActionsContext, type ActionsDeps } from './actions.ts';
-import { foldLastRun } from './merge.ts';
 import { upsertComment } from './post.ts';
 
 const SUMMARY_LABEL = 'GitHub';
@@ -177,7 +176,7 @@ export async function reportRun(
   if (context === undefined) return [{ label: SUMMARY_LABEL, text: 'not posted: not running on GitHub Actions' }];
 
   // One page for both places; the comment carries the marker a rerun finds it by.
-  // A rerun over the failed tests is folded into the run it selected from, so
+  // A rerun over the failed tests is folded into the runs it selected from, so
   // the page keeps the whole suite. Evidence links land on the run page's
   // Artifacts section, where the job's upload-artifact step put the files;
   // the page names each file's path inside it.

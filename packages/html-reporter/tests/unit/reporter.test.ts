@@ -92,9 +92,9 @@ describe('renderReport', () => {
     const { content } = await renderReport({ ...finishedRun(project), report: outside, redact }, {}, TEMPLATE);
     const { sources } = parsePayload(content);
 
-    // The fixture points at lines 1, 3, 9, and 16; each frame keeps two lines either side.
+    // The fixture points at lines 1, 3, 9, 16, and 20; each frame keeps two lines either side.
     expect(Object.keys(sources)).toEqual(['tests/example.e2e.ts']);
-    expect(Object.keys(sources['tests/example.e2e.ts']!).map(Number).toSorted((a, b) => a - b)).toEqual([1, 2, 3, 4, 5, 7, 8, 9, 10, 11, 14, 15, 16, 17, 18]);
+    expect(Object.keys(sources['tests/example.e2e.ts']!).map(Number).toSorted((a, b) => a - b)).toEqual([1, 2, 3, 4, 5, 7, 8, 9, 10, 11, 14, 15, 16, 17, 18, 19, 20]);
     expect(sources['tests/example.e2e.ts']?.['9']).toBe('line 9');
     expect(sources['tests/example.e2e.ts']?.['10']).toBe("line 10 fill('[secret]')");
   });

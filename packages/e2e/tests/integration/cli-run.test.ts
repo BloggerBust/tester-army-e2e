@@ -7,10 +7,11 @@
  */
 
 import { spawnSync } from 'node:child_process';
-import { readFileSync } from 'node:fs';
+import { readFileSync, unlinkSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterEach, describe, expect, it } from 'vitest';
+import { renderMarkdownReport } from '../../dist/index.js';
 import type { Report1Document } from '../../src/report/build.ts';
 import { assertValidReport } from '../helpers/report-schema.ts';
 import { createProject, type FixtureProject } from '../helpers/run-project.ts';
@@ -34,6 +35,12 @@ export default {
   cache: 'off',${extra}
 } satisfies E2EConfig;
 `;
+}
+
+function historyOf(project: FixtureProject): Report1Document {
+  const report = JSON.parse(readFileSync(path.join(project.dir, '.e2e', 'report-with-reruns.json'), 'utf8')) as Report1Document;
+  assertValidReport(report);
+  return report;
 }
 
 /** A fixture project removed after the test. */
@@ -74,6 +81,60 @@ const openTimer = 'setInterval(() => {}, 60_000);\n';
 const test = (title: string, body = '') => `import { test } from 'e2e';\ntest('${title}', async ({ app }) => {\n  await app.open();\n  ${body}\n});\n`;
 
 describe('the run command through the CLI', () => {
+  it.each([1, 2])('explains a widened rerun failure without counting another shard’s repeats (%i repeat(s))', (repeatEach) => {
+    const token = 'synthetic-report-token-2151';
+    const shared = (name: string, body: string) =>
+      `import { test } from 'e2e';\ntest('${name}', { session: 'member' }, async () => { ${body} });\n`;
+    const fixtureProject = fixture({
+      'e2e.config.ts': fakeConfig('{ state: true }', `secrets: { token: '${token}' },`),
+      'tests/a.e2e.ts': shared('a', ''),
+      'tests/b.e2e.ts': shared('b', `throw new Error('other shard consumer failed: ${token}')`),
+      'tests/auth.setup.e2e.ts': `import { existsSync } from 'node:fs';
+import { test } from 'e2e';
+test.setup('sign in', { sessions: ['member'] }, async ({ session }) => {
+  if (!existsSync('setup-ready')) throw new Error('setup unavailable');
+  await session.save('member');
+});
+`,
+    });
+    expect(rerun(fixtureProject, ['run', '--shard', '1/2']).exitCode).toBe(1);
+    writeFileSync(path.join(fixtureProject.dir, 'setup-ready'), '');
+    const run = rerun(fixtureProject, ['run', '--last-failed', '--repeat-each', String(repeatEach)]);
+    expect(run.exitCode).toBe(1);
+    expect(reportOf(fixtureProject).run.summary.failed).toBe(repeatEach);
+    const folded = historyOf(fixtureProject);
+    expect(folded.run).toMatchObject({ shard: { index: 1, total: 2 }, status: 'failed', exitCode: 1 });
+    expect.soft(folded.run.summary).toMatchObject({ selected: repeatEach + 1, failed: 0 });
+    expect.soft(folded.run.results.filter((row) => row.titlePath.at(-1) === 'b')).toMatchObject([
+      { repeat: 0, selected: false, skip: { otherShard: true } },
+    ]);
+    const markdown = renderMarkdownReport(folded);
+    expect(markdown).toContain('other shard consumer failed');
+    for (const output of [run.output, JSON.stringify(folded), markdown]) {
+      expect(output).not.toContain(token);
+      expect(output).not.toContain(Buffer.from(token).toString('base64'));
+    }
+  });
+
+  it('drops a deleted test from rerun history and keeps the surviving test’s attempts', () => {
+    const fixtureProject = fixture({
+      'e2e.config.ts': fakeConfig(),
+      'tests/x.e2e.ts': `import { existsSync } from 'node:fs';
+import { test } from 'e2e';
+test('x', async () => { if (!existsSync('x-ready')) throw new Error('x failed'); });
+`,
+      'tests/y.e2e.ts': test('y', "throw new Error('y failed');"),
+    });
+    expect(rerun(fixtureProject, ['run']).exitCode).toBe(1);
+    unlinkSync(path.join(fixtureProject.dir, 'tests/y.e2e.ts'));
+    expect(rerun(fixtureProject, ['run', '--last-failed']).exitCode).toBe(1);
+    writeFileSync(path.join(fixtureProject.dir, 'x-ready'), '');
+    expect(rerun(fixtureProject, ['run', '--last-failed']).exitCode).toBe(0);
+    const folded = historyOf(fixtureProject);
+    expect(folded.run).toMatchObject({ status: 'passed', exitCode: 0, summary: { failed: 0 } });
+    expect(folded.run.results.map((row) => [row.titlePath.at(-1), row.status, row.attempts.length])).toEqual([['x', 'flaky', 3]]);
+  });
+
   it('exits 3 when a worker dies under a test', () => {
     const { project, exitCode } = cli(
       { 'e2e.config.ts': fakeConfig(), 'tests/crash.e2e.ts': test('crashes the worker', 'process.exit(7);') },
@@ -114,6 +175,55 @@ describe('the run command through the CLI', () => {
     expect(ran.exitCode).toBe(0);
     const executed = reportOf(sharded).run.results.filter((result) => result.attempts.length > 0);
     expect(executed.map((result) => result.titlePath.at(-1)).toSorted()).toEqual(['sign in', ...tests(second)].toSorted());
+  });
+
+  it('records which shard a report is, and marks every row another shard runs or reports, a skipped test included', () => {
+    const sharded = fixture({
+      'e2e.config.ts': fakeConfig(),
+      'tests/shop.e2e.ts': `import { test } from 'e2e';
+for (const title of ['a', 'b']) test(title, async ({ app }) => { await app.open(); });
+test.skip('parked', async () => {});
+for (const title of ['c', 'd', 'excluded']) test(title, async ({ app }) => { await app.open(); });
+`,
+    });
+    /** Each row as [title, selected, skip cause, marked as another shard's]. */
+    const rows = (shard: string) => {
+      const ran = rerun(sharded, ['run', '--shard', shard, '--grep-invert', 'excluded']);
+      expect(ran.exitCode).toBe(0);
+      const report = reportOf(sharded);
+      return {
+        shard: report.run.shard,
+        rows: report.run.results.map((result) => [result.titlePath.at(-1), result.selected, result.skip?.cause, result.skip?.otherShard === true]),
+      };
+    };
+    // a, b, c, d are the items; 'parked' goes with the shard holding b, and --grep-invert leaves 'excluded' out of both.
+    expect(rows('1/2')).toEqual({
+      shard: { index: 1, total: 2 },
+      rows: [
+        ['a', true, undefined, false],
+        ['b', true, undefined, false],
+        ['parked', true, 'explicit', false],
+        ['c', false, 'filtered', true],
+        ['d', false, 'filtered', true],
+        ['excluded', false, 'filtered', false],
+      ],
+    });
+    expect(rows('2/2')).toEqual({
+      shard: { index: 2, total: 2 },
+      rows: [
+        ['a', false, 'filtered', true],
+        ['b', false, 'filtered', true],
+        ['parked', false, 'explicit', true],
+        ['c', true, undefined, false],
+        ['d', true, undefined, false],
+        ['excluded', false, 'filtered', false],
+      ],
+    });
+    // A run that is not sharded says nothing about shards.
+    expect(rerun(sharded, ['run']).exitCode).toBe(0);
+    const whole = reportOf(sharded);
+    expect(whole.run.shard).toBeUndefined();
+    expect(whole.run.results.some((result) => result.skip?.otherShard !== undefined)).toBe(false);
   });
 
   it('fails a wrong locator and a wrong expectation at the timeout flags, not the config\'s, and a call\'s own timeout still wins', () => {

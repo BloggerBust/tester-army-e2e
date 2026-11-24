@@ -5,9 +5,11 @@
     "status": "passed",
     "exitCode": 4,
     "durationMs": -1,
+    "shard": { "index": 0, "total": 3 },
     "targets": [],
     "results": [
       {
+        "skip": { "cause": "filtered", "reason": "outside the shard", "otherShard": false },
         "tags": [""],
         "attempts": [
           {

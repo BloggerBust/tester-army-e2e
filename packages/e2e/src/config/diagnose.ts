@@ -28,6 +28,7 @@ export const RUNTIME_EXPORTS: readonly string[] = [
   'AgentError',
   'isAgentError',
   'renderMarkdownReport',
+  'foldLastRun',
 ];
 
 /**

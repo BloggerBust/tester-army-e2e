@@ -14,8 +14,8 @@ import { describe, expect, it } from 'vitest';
 import { createFakeEngine, FAKE_APP, FAKE_APP_URL } from '../helpers/fake-engine.ts';
 import { engineConfig } from '../helpers/fixture-config.ts';
 import { assertValidReport } from '../helpers/report-schema.ts';
-import { createProject, resultByTitle, runExisting, runProject, type RunOutcome } from '../helpers/run-project.ts';
-import type { StoredArtifact, StoredArtifactLink } from '../../src/index.ts';
+import { createProject, resultByTitle, runExisting, runProject, type RunOptions, type RunOutcome } from '../helpers/run-project.ts';
+import type { FinishedRun, StoredArtifact, StoredArtifactLink } from '../../src/index.ts';
 
 const PASSING_TEST = `import { test } from 'e2e';
 
@@ -136,11 +136,11 @@ describe('output', () => {
         expect(existsSync(planted)).toBe(false);
         assertValidReport(rerun.report);
 
-        // The next rerun keeps what the report it reruns names, the first run's evidence no more.
+        // The next rerun keeps what the whole run names, which still holds the first run's attempt.
         const again = await runExisting(project, { appUrl: FAKE_APP_URL, config, runOptions: { lastFailed: true } });
         expect(screenshotOf(again).path).toBe(inRerun(2));
         expect(onDisk(rerunShot)).toBe(true);
-        expect(existsSync(path.join(artifacts, firstShot.path!))).toBe(false);
+        expect(onDisk(firstShot)).toBe(true);
 
         // A full run starts from an empty tree, with no rerun directory left.
         const full = await runExisting(project, { appUrl: FAKE_APP_URL, config });
@@ -151,6 +151,155 @@ describe('output', () => {
       }
     },
     60_000,
+  );
+
+  it(
+    'keeps the whole run through a chain of --last-failed reruns: the first pass, every attempt, and their evidence',
+    async () => {
+      const project = createProject({
+        'tests/cart.e2e.ts': PASSING_TEST.replace('taps a node', 'cart'),
+        // Fails on the first run and the first rerun, then passes.
+        'tests/checkout.e2e.ts': `import { readFileSync, writeFileSync } from 'node:fs';
+import { test } from 'e2e';
+
+const counter = new URL('../counter.txt', import.meta.url);
+test('checkout', async ({ app }) => {
+  await app.open('/');
+  let runs = 0;
+  try { runs = Number(readFileSync(counter, 'utf8')); } catch {}
+  writeFileSync(counter, String(runs + 1));
+  if (runs < 2) throw new Error('declined ' + runs);
+});
+`,
+      });
+      try {
+        const handed: FinishedRun[] = [];
+        const config = engineConfig(createFakeEngine({ artifacts: true }).engine, {
+          reporters: [{ name: 'capture', onRunFinished: async (run) => void handed.push(run) }],
+        });
+        const output = path.join(project.dir, '.e2e');
+        const folded = path.join(output, 'report-with-reruns.json');
+        const readFolded = () => JSON.parse(readFileSync(folded, 'utf8')) as RunOutcome['report'];
+        const rows = (report: RunOutcome['report']) =>
+          report.run.results.map((result) => [result.titlePath.at(-1), result.selected, result.status, result.attempts.length]);
+
+        const first = await runExisting(project, { appUrl: FAKE_APP_URL, config });
+        expect(first.status).toBe('failed');
+        expect(existsSync(folded)).toBe(false);
+        const firstShots = first.report.run.results.flatMap((result) =>
+          result.attempts.flatMap((attempt) => attempt.artifacts.flatMap((artifact) => (artifact.path === undefined ? [] : [artifact.path]))),
+        );
+        expect(firstShots.length).toBeGreaterThan(1);
+
+        await runExisting(project, { appUrl: FAKE_APP_URL, config, runOptions: { lastFailed: true } });
+        const last = await runExisting(project, { appUrl: FAKE_APP_URL, config, runOptions: { lastFailed: true } });
+        expect(last.status).toBe('passed');
+        // The rerun's own report is unchanged: cart was not run in it.
+        expect(rows(last.report)).toEqual([
+          ['cart', false, 'skipped', 0],
+          ['checkout', true, 'passed', 1],
+        ]);
+        // What the reporters fold the rerun into is every run before it, not only the last one.
+        expect(rows(handed[2]!.lastRun!)).toEqual([
+          ['cart', true, 'passed', 1],
+          ['checkout', true, 'failed', 2],
+        ]);
+        // Beside the report, the whole run: cart's first pass, and checkout flaky with all three attempts.
+        const whole = readFolded();
+        assertValidReport(whole);
+        expect(whole.run.id).toBe(last.report.run.id);
+        expect(whole.run.startedAt).toBe(first.report.run.startedAt);
+        expect(rows(whole)).toEqual([
+          ['cart', true, 'passed', 1],
+          ['checkout', true, 'flaky', 3],
+        ]);
+        expect(whole.run.summary).toMatchObject({ discovered: 2, selected: 2, executed: 2, passed: 1, flaky: 1, failed: 0 });
+        // Every attempt it names still has its evidence, the first run's included.
+        for (const artifactPath of firstShots) expect(existsSync(path.join(output, 'results', artifactPath)), artifactPath).toBe(true);
+
+        // A run that is not a rerun has no reruns to fold, and leaves no stale file behind.
+        await runExisting(project, { appUrl: FAKE_APP_URL, config });
+        expect(existsSync(folded)).toBe(false);
+      } finally {
+        project.cleanup();
+      }
+    },
+    90_000,
+  );
+
+  it(
+    'keeps every attempt of a test one rerun left out, the shard, and the usage of every run',
+    async () => {
+      /** A test that fails until it has run `passesOn` times before. */
+      const flaky = (title: string, passesOn: number) => `import { readFileSync, writeFileSync } from 'node:fs';
+import { test } from 'e2e';
+
+const counter = new URL('../${title}.count', import.meta.url);
+test('${title}', async ({ app }) => {
+  await app.open('/');
+  let runs = 0;
+  try { runs = Number(readFileSync(counter, 'utf8')); } catch {}
+  writeFileSync(counter, String(runs + 1));
+  if (runs < ${passesOn}) throw new Error('not yet ' + runs);
+});
+`;
+      const project = createProject({ 'tests/coupon.e2e.ts': flaky('coupon', 2), 'tests/delivery.e2e.ts': flaky('delivery', 3) });
+      try {
+        const config = engineConfig(createFakeEngine({ artifacts: true }).engine);
+        const output = path.join(project.dir, '.e2e');
+        const run = (runOptions: Partial<RunOptions>) => runExisting(project, { appUrl: FAKE_APP_URL, config, runOptions });
+        const first = await run({ shard: { index: 1, total: 1 } });
+        const couponShots = resultByTitle(first, 'coupon').attempts.flatMap((attempt) => attempt.artifacts.flatMap((artifact) => (artifact.path === undefined ? [] : [artifact.path])));
+        expect(couponShots.length).toBeGreaterThan(0);
+        const second = await run({ lastFailed: true });
+        // This rerun leaves coupon out, so it carries coupon's last result alone.
+        const third = await run({ lastFailed: true, grep: [/delivery/] });
+        expect(third.report.run.carried?.results.map((result) => result.titlePath.at(-1))).toEqual(['coupon']);
+        const last = await run({ lastFailed: true });
+        expect(last.status).toBe('passed');
+
+        const whole = JSON.parse(readFileSync(path.join(output, 'report-with-reruns.json'), 'utf8')) as RunOutcome['report'];
+        assertValidReport(whole);
+        expect(whole.run.results.map((result) => [result.titlePath.at(-1), result.status, result.attempts.map((attempt) => attempt.index)])).toEqual([
+          ['coupon', 'flaky', [0, 1, 2]],
+          ['delivery', 'flaky', [0, 1, 2, 3]],
+        ]);
+        expect(whole.run.shard).toEqual({ index: 1, total: 1 });
+        const runs = [first, second, third, last].map((outcome) => outcome.report.run.usage);
+        expect(whole.run.usage.artifactBytes).toBe(runs.reduce((sum, usage) => sum + usage.artifactBytes, 0));
+        expect(whole.run.usage.events).toBe(runs.reduce((sum, usage) => sum + usage.events, 0));
+        for (const artifactPath of couponShots) expect(existsSync(path.join(output, 'results', artifactPath)), artifactPath).toBe(true);
+      } finally {
+        project.cleanup();
+      }
+    },
+    120_000,
+  );
+
+  it(
+    'writes a valid whole run when a rerun stops before a test that failed earlier',
+    async () => {
+      const project = createProject({
+        'tests/a-first.e2e.ts': FAILING_TEST.replace('fails on purpose', 'always fails'),
+        'tests/b-second.e2e.ts': FAILING_TEST.replace('fails on purpose', 'failed before'),
+      });
+      try {
+        const config = engineConfig(createFakeEngine().engine, { workers: 1 });
+        await runExisting(project, { appUrl: FAKE_APP_URL, config });
+        // The first failure stops the rerun, so it never reaches the second test.
+        const stopped = await runExisting(project, { appUrl: FAKE_APP_URL, config, runOptions: { lastFailed: true, maxFailures: 1 } });
+        expect(resultByTitle(stopped, 'failed before').skip?.cause).toBe('failure-limit');
+        const whole = JSON.parse(readFileSync(path.join(project.dir, '.e2e', 'report-with-reruns.json'), 'utf8')) as RunOutcome['report'];
+        assertValidReport(whole);
+        expect(whole.run.results.map((result) => [result.titlePath.at(-1), result.status, result.skip])).toEqual([
+          ['always fails', 'failed', undefined],
+          ['failed before', 'failed', undefined],
+        ]);
+      } finally {
+        project.cleanup();
+      }
+    },
+    90_000,
   );
 
   it(
