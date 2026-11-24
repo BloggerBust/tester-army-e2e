@@ -524,6 +524,26 @@ bunx e2e guide setup      # one topic
 | --- | --- |
 | `[topic]` | One of `setup`, `writing-tests`, `agent`, `running`, `explore`, `debugging`, `mcp`, or `bug-bash`. Default: the overview. An unknown topic exits 2 and names the valid ones. |
 
+The guide goes to stdout and one line naming its version to stderr. That
+version follows the project, since `npx e2e guide` downloads the latest
+release when nothing is installed and a global install is its own version:
+
+| The project | `guide` prints |
+| --- | --- |
+| has another e2e version installed than the CLI that runs | the installed version's guide and topics |
+| has a version installed from before the guide shipped | the CLI's guide, and says the installed version ships none |
+| declares a version or range that leaves the CLI out, with nothing installed | the CLI's guide, and the commands that print the project's |
+| has a version installed that its `package.json` range leaves out | the CLI's guide when the range includes the CLI, else the installed one, and tells you to reinstall |
+
+A range is read as npm reads it. A dist-tag, a workspace link, or an alias
+names no version, so the line adds nothing. With a range, install first: the
+lockfile picks the release, and `npx "e2e@^0.23.0" guide` prints the newest
+one in the range.
+
+```text
+Guide for e2e 0.24.0, but package.json declares e2e 0.23.0 and no installed copy was found. For the matching guide, run `npm install` and then `npm exec -- e2e guide`, or run `npx e2e@0.23.0 guide`.
+```
+
 #### `e2e mcp`
 
 An MCP server on stdio that gives a coding agent a live session on the app.

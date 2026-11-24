@@ -1,5 +1,5 @@
 import { execFile } from 'node:child_process';
-import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -10,6 +10,7 @@ const execFileAsync = promisify(execFile);
 const PACKAGE_ROOT = fileURLToPath(new URL('../../', import.meta.url));
 const CLI = path.join(PACKAGE_ROOT, 'dist', 'cli', 'bin.js');
 const REPO_SKILL = path.join(PACKAGE_ROOT, '..', '..', 'skills', 'e2e');
+const { version: VERSION } = JSON.parse(readFileSync(path.join(PACKAGE_ROOT, 'package.json'), 'utf8')) as { version: string };
 let dir: string;
 
 beforeEach(() => {
@@ -32,6 +33,37 @@ describe('the built CLI and the bundled skill', () => {
     });
     const help = await execFileAsync(process.execPath, [CLI, '--help'], { cwd: dir });
     expect(help.stdout).toContain('guide [topic]');
+    const guideHelp = await execFileAsync(process.execPath, [CLI, 'guide', '--help'], { cwd: dir });
+    expect(guideHelp.stdout).toContain('Topics: agent, bug-bash, debugging, explore, mcp, running, setup, writing-tests\n');
+  });
+
+  it('names its own version on stderr and keeps stdout the guide alone', async () => {
+    const { stdout, stderr } = await execFileAsync(process.execPath, [CLI, 'guide', 'setup'], { cwd: dir });
+    expect(stderr).toBe(`Guide for e2e ${VERSION}\n`);
+    expect(stdout).toBe(readFileSync(path.join(REPO_SKILL, 'references', 'setup.md'), 'utf8'));
+  });
+
+  it('says so when package.json declares a partial range that leaves it out', async () => {
+    writeFileSync(path.join(dir, 'package.json'), JSON.stringify({ devDependencies: { e2e: '^0.1' } }));
+    const { stdout, stderr } = await execFileAsync(process.execPath, [CLI, 'guide', 'setup'], { cwd: dir, env: { ...process.env, npm_config_user_agent: '' } });
+    expect(stderr).toBe(
+      `Guide for e2e ${VERSION}, but package.json declares e2e ^0.1 and no installed copy was found. For the guide of the version the project installs, run \`npm install\` and then \`npm exec -- e2e guide\`; \`npx "e2e@^0.1" guide\` prints the newest release in that range, which may not be the one the lockfile pins.\n`,
+    );
+    expect(stdout).toBe(readFileSync(path.join(REPO_SKILL, 'references', 'setup.md'), 'utf8'));
+  });
+
+  it("prints an installed copy's guide and lists its topics in help", async () => {
+    writeFileSync(path.join(dir, 'package.json'), JSON.stringify({ dependencies: { e2e: '^9.0.0' }, optionalDependencies: { e2e: '^0.1.0' } }));
+    const skill = path.join(dir, 'node_modules', 'e2e', 'skills', 'e2e');
+    mkdirSync(path.join(skill, 'references'), { recursive: true });
+    writeFileSync(path.join(dir, 'node_modules', 'e2e', 'package.json'), JSON.stringify({ name: 'e2e', version: '0.1.5' }));
+    writeFileSync(path.join(skill, 'SKILL.md'), '---\nname: e2e\n---\n\n# overview of 0.1.5\n');
+    writeFileSync(path.join(skill, 'references', 'only-here.md'), '# topic of 0.1.5\n');
+    const { stdout, stderr } = await execFileAsync(process.execPath, [CLI, 'guide'], { cwd: dir });
+    expect(stderr).toBe(`Guide for e2e 0.1.5, the version installed in this project (this CLI is e2e ${VERSION})\n`);
+    expect(stdout).toBe('# overview of 0.1.5\n');
+    const help = await execFileAsync(process.execPath, [CLI, 'guide', '--help'], { cwd: dir });
+    expect(help.stdout).toContain('Topics: only-here\n');
   });
 
   it('installs the skill into both agent directories with init --yes', async () => {

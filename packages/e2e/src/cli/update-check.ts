@@ -16,6 +16,7 @@ import { writeFileAtomicSync } from '@e2e-dev/core/lib/internal/atomic-write';
 import { envFlag } from '@e2e-dev/core/lib/internal/env';
 import { detectWorkspacePackageManager, execCommand, readPackageManifest } from '../internal/package-manager.ts';
 import { isPlainObject } from '@e2e-dev/core/lib/internal/options';
+import { declaringPackage, RUNNER } from '../internal/project-package.ts';
 import { isRelease, latestRelease, olderThan } from '../internal/release.ts';
 import { telemetryConfigDir } from '../telemetry/store.ts';
 import { REPOSITORY_URL } from './docs-url.ts';
@@ -77,18 +78,13 @@ function readRecord(filePath: string): CheckRecord | undefined {
  */
 function upgradeCommand(cwd: string, env: NodeJS.ProcessEnv): string {
   let nearest: string | undefined;
-  let project: string | undefined;
-  for (let dir = cwd; project === undefined; dir = path.dirname(dir)) {
-    const manifest = readPackageManifest(dir);
-    if (manifest !== undefined) nearest ??= dir;
-    if (manifest !== undefined && DEPENDENCY_SECTIONS.some((section) => isPlainObject(manifest[section]) && manifest[section]['e2e'] !== undefined)) project = dir;
+  for (let dir = cwd; nearest === undefined; dir = path.dirname(dir)) {
+    if (readPackageManifest(dir) !== undefined) nearest = dir;
     if (path.dirname(dir) === dir) break;
   }
-  return execCommand(detectWorkspacePackageManager(project ?? nearest ?? cwd, env).manager, 'e2e upgrade');
+  const manager = declaringPackage(cwd, RUNNER, env)?.manager ?? detectWorkspacePackageManager(nearest ?? cwd, env).manager;
+  return execCommand(manager, 'e2e upgrade');
 }
-
-const DEPENDENCY_SECTIONS = ['dependencies', 'devDependencies', 'optionalDependencies'] as const;
-
 
 export class UpdateCheck {
   private readonly options: UpdateCheckOptions;

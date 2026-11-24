@@ -6,7 +6,7 @@ import { aliasedFile } from '../../config/esm-hooks.ts';
 import { oxc } from '../../config/typescript.ts';
 import { installedPackage } from '../../internal/installed-package.ts';
 import { execCommand, type PackageManager } from '../../internal/package-manager.ts';
-import { parseVersion, satisfiesRequest } from '../../internal/semver.ts';
+import { parseVersion, specAccepts } from '../../internal/semver.ts';
 import { getEnginePresets } from './engines.ts';
 import { AI_DEPENDENCIES, GATEWAYS } from './gateways.ts';
 import { declaredSpec, type PackageManifest } from './package.ts';
@@ -78,7 +78,7 @@ function importedDependencies(configPath: string, source: string): Readonly<Reco
  */
 function isProjectRunner(cwd: string, declared: string): boolean {
   const running = parseVersion(RUNNER_VERSION);
-  const satisfied = running === undefined ? undefined : satisfiesRequest(running, declared);
+  const satisfied = running === undefined ? undefined : specAccepts(declared, running);
   return satisfied ?? installedPackage(cwd, 'e2e')?.version === RUNNER_VERSION;
 }
 

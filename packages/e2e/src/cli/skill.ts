@@ -26,6 +26,12 @@ function skillDirectory(): string | undefined {
   return undefined;
 }
 
+/** The skill an installed copy of the package at `packageDir` ships, or undefined when it ships none. */
+export function packagedSkillDirectory(packageDir: string): string | undefined {
+  const dir = path.join(packageDir, 'skills', SKILL_NAME);
+  return existsSync(path.join(dir, 'SKILL.md')) ? dir : undefined;
+}
+
 export interface SkillFile {
   /** Path relative to the skill root with `/` separators. */
   readonly relative: string;
@@ -53,16 +59,19 @@ export function readSkillFiles(from?: string): readonly SkillFile[] {
   return [...files.filter((file) => file.relative === 'SKILL.md'), ...files.filter((file) => file.relative !== 'SKILL.md')];
 }
 
-/** Topics `e2e guide <topic>` accepts: one per `references/<topic>.md`. */
-export function skillTopics(): readonly string[] {
-  return readSkillFiles()
+/** Topics `e2e guide <topic>` accepts: one per `references/<topic>.md`. `from` as in `readSkillFiles`. */
+export function skillTopics(from?: string): readonly string[] {
+  return readSkillFiles(from)
     .filter((file) => file.relative.startsWith(TOPIC_PREFIX) && file.relative.endsWith('.md'))
     .map((file) => file.relative.slice(TOPIC_PREFIX.length, -'.md'.length));
 }
 
-/** The overview (`SKILL.md` without its frontmatter) or one topic's text; undefined for an unknown topic. */
-export function readGuide(topic: string | undefined): string | undefined {
-  const files = readSkillFiles();
+/**
+ * The overview (`SKILL.md` without its frontmatter) or one topic's text;
+ * undefined for an unknown topic. `from` as in `readSkillFiles`.
+ */
+export function readGuide(topic: string | undefined, from?: string): string | undefined {
+  const files = readSkillFiles(from);
   if (topic === undefined) {
     return files.find((file) => file.relative === 'SKILL.md')?.content.replace(/^---\n[\s\S]*?\n---\n+/, '');
   }

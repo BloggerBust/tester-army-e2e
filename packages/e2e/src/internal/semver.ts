@@ -1,14 +1,15 @@
 /**
  * The slice of semantic versioning the CLI needs to reason about releases:
- * parsing, ordering, and the peer ranges the published packages carry
- * (`>=0.15.0 <1`, or one exact build for a prerelease), and the specs the
- * CLI itself writes to a package.json (an exact version, or a caret or a
- * tilde on one). Anything else is a range this module does not read.
+ * parsing, ordering, and the ranges npm reads, in the peer ranges the
+ * published packages carry and the specs a package.json declares.
  */
 
 const VERSION = /^v?(\d+)\.(\d+)\.(\d+)(?:-([0-9A-Za-z.-]+))?(?:\+[0-9A-Za-z.-]+)?$/u;
-const PARTIAL = /^v?(\d+)(?:\.(\d+)(?:\.(\d+)(?:-([0-9A-Za-z.-]+))?)?)?$/u;
-const COMPARATOR = /^(>=|<=|>|<|=)?(.+)$/u;
+const PART = String.raw`(\d+|[xX*])`;
+const COMPARATOR = new RegExp(String.raw`^(\^|~>?|>=|<=|>|<|=)?v?${PART}(?:\.${PART}(?:\.${PART}(?:-([0-9A-Za-z.-]+))?(?:\+[0-9A-Za-z.-]+)?)?)?$`, 'u');
+const HYPHEN = /^(\S+)\s+-\s+(\S+)$/u;
+/** The operators npm lets a space follow: `>= 1.2.3` is one comparator. */
+const SPACED_OPERATOR = /(\^|~>?|>=|<=|>|<|=)\s+/gu;
 
 export interface Version {
   readonly major: number;
@@ -61,40 +62,117 @@ interface Comparator {
   readonly version: Version;
 }
 
+/** A version with the parts an x-range leaves open (`1.x`, `1`, `*`) undefined, each open part opening the ones after it. */
+interface Partial {
+  readonly major: number | undefined;
+  readonly minor: number | undefined;
+  readonly patch: number | undefined;
+  readonly prerelease: readonly string[];
+}
+
 /**
- * Whether `version` satisfies `range`: comparator sets joined by `||`, each a
- * space-separated list of `>=`, `>`, `<=`, `<`, `=`, or bare versions, where
- * a partial version fills the missing parts with zero (`<1` is `<1.0.0`). As
- * in node-semver, a prerelease satisfies a set only when one of its
- * comparators names a prerelease of the same `major.minor.patch`. A range
- * outside this grammar is satisfied by nothing.
+ * Whether `version` satisfies `range`, read as `specAccepts` reads a spec. A
+ * range outside that grammar is satisfied by nothing.
  */
 export function satisfies(version: Version, range: string): boolean {
-  const sets = range.split('||').map(parseComparatorSet);
+  return specAccepts(range, version) === true;
+}
+
+/**
+ * Whether a package.json spec admits `version`, by npm's range grammar:
+ * comparator sets joined by `||`, each a hyphen range (`1.2 - 2`) or a
+ * space-separated list of versions, `>=`, `>`, `<=`, `<`, `=`, `^`, and `~`
+ * comparators, any of them partial or with `x` or `*` parts (`^0.23`,
+ * `1.x`, `<=1.2`, `*`). As in node-semver, a prerelease satisfies a set only
+ * when one of its comparators names a prerelease of the same
+ * `major.minor.patch`. Undefined for a spec that is no range: a dist-tag, a
+ * workspace or file link, an alias, a URL.
+ */
+export function specAccepts(spec: string, version: Version): boolean | undefined {
+  const sets = spec.split('||').map(parseComparatorSet);
+  if (sets.includes(undefined)) return undefined;
   return sets.some((set) => set !== undefined && setSatisfies(version, set));
 }
 
 function parseComparatorSet(text: string): Comparator[] | undefined {
-  const parts = text.trim().split(/\s+/u).filter((part) => part !== '');
-  if (parts.length === 0) return undefined;
+  const trimmed = text.trim();
+  const hyphen = HYPHEN.exec(trimmed);
+  if (hyphen !== null) {
+    const from = parsePartial(hyphen[1]!);
+    const to = parsePartial(hyphen[2]!);
+    if (from === undefined || to === undefined || from.operator !== undefined || to.operator !== undefined) return undefined;
+    return [...atLeast(from.partial), ...upTo(to.partial)];
+  }
   const comparators: Comparator[] = [];
-  for (const part of parts) {
-    const match = COMPARATOR.exec(part);
-    const partial = match === null ? null : PARTIAL.exec(match[2]!);
-    if (match === null || partial === null) return undefined;
-    // A bare `1.2` would mean `1.2.x`; only full versions stand for themselves.
-    if ((match[1] === undefined || match[1] === '=') && partial[3] === undefined) return undefined;
-    comparators.push({
-      operator: (match[1] ?? '=') as Comparator['operator'],
-      version: {
-        major: Number(partial[1]),
-        minor: Number(partial[2] ?? 0),
-        patch: Number(partial[3] ?? 0),
-        prerelease: partial[4]?.split('.') ?? [],
-      },
-    });
+  for (const part of trimmed.replace(SPACED_OPERATOR, '$1').split(/\s+/u)) {
+    if (part === '') continue;
+    const parsed = parsePartial(part);
+    if (parsed === undefined) return undefined;
+    comparators.push(...expand(parsed.operator, parsed.partial));
   }
   return comparators;
+}
+
+function parsePartial(text: string): { operator: string | undefined; partial: Partial } | undefined {
+  const match = COMPARATOR.exec(text);
+  if (match === null) return undefined;
+  const number = (part: string | undefined): number | undefined => (part === undefined || /^[xX*]$/u.test(part) ? undefined : Number(part));
+  const major = number(match[2]);
+  const minor = major === undefined ? undefined : number(match[3]);
+  const patch = minor === undefined ? undefined : number(match[4]);
+  return { operator: match[1], partial: { major, minor, patch, prerelease: patch === undefined ? [] : (match[5]?.split('.') ?? []) } };
+}
+
+function release(major: number, minor: number, patch: number, prerelease: readonly string[] = []): Version {
+  return { major, minor, patch, prerelease };
+}
+
+/** `<major.minor.patch-0`: below every release and prerelease of that version, so a ceiling admits no prerelease of the next one. */
+function below(major: number, minor: number, patch: number): Comparator {
+  return { operator: '<', version: release(major, minor, patch, ['0']) };
+}
+
+const NOTHING: readonly Comparator[] = [below(0, 0, 0)];
+
+/** The floor of a partial version: its open parts as zero. No comparator when every version is at least it. */
+function atLeast({ major, minor, patch, prerelease }: Partial): readonly Comparator[] {
+  return major === undefined ? [] : [{ operator: '>=', version: release(major, minor ?? 0, patch ?? 0, prerelease) }];
+}
+
+/** The ceiling that holds every version a partial one stands for: `1.2` ends below `1.3.0`. */
+function upTo({ major, minor, patch, prerelease }: Partial): readonly Comparator[] {
+  if (major === undefined) return [];
+  if (minor === undefined) return [below(major + 1, 0, 0)];
+  if (patch === undefined) return [below(major, minor + 1, 0)];
+  return [{ operator: '<=', version: release(major, minor, patch, prerelease) }];
+}
+
+/** The plain comparators one comparator of a range stands for, as node-semver desugars it. */
+function expand(operator: string | undefined, partial: Partial): readonly Comparator[] {
+  const { major, minor, patch, prerelease } = partial;
+  if (major === undefined) return operator === '>' || operator === '<' ? NOTHING : [];
+  switch (operator) {
+    case '^':
+      // A caret holds the leftmost nonzero part, or the last part the spec writes when all of them are zero.
+      if (major > 0 || minor === undefined) return [...atLeast(partial), below(major + 1, 0, 0)];
+      if (minor > 0 || patch === undefined) return [...atLeast(partial), below(major, minor + 1, 0)];
+      return [...atLeast(partial), below(major, minor, patch + 1)];
+    case '~':
+    case '~>':
+      return [...atLeast(partial), minor === undefined ? below(major + 1, 0, 0) : below(major, minor + 1, 0)];
+    case '>=':
+      return atLeast(partial);
+    case '>':
+      if (minor === undefined) return atLeast({ ...partial, major: major + 1 });
+      if (patch === undefined) return atLeast({ ...partial, minor: minor + 1 });
+      return [{ operator, version: release(major, minor, patch, prerelease) }];
+    case '<':
+      return patch === undefined ? [below(major, minor ?? 0, 0)] : [{ operator, version: release(major, minor ?? 0, patch, prerelease) }];
+    case '<=':
+      return upTo(partial);
+    default:
+      return patch === undefined ? [...atLeast(partial), ...upTo(partial)] : [{ operator: '=', version: release(major, minor ?? 0, patch, prerelease) }];
+  }
 }
 
 function setSatisfies(version: Version, set: readonly Comparator[]): boolean {
@@ -118,24 +196,4 @@ function setSatisfies(version: Version, set: readonly Comparator[]): boolean {
     ({ version: bound }) =>
       bound.prerelease.length > 0 && bound.major === version.major && bound.minor === version.minor && bound.patch === version.patch,
   );
-}
-
-/**
- * Whether `version` satisfies `spec`, a dependency as `e2e init` and
- * `e2e upgrade` write it to a package.json: an exact version, or a caret or
- * a tilde on one, and `*`, which every release satisfies. Undefined for any
- * other spec, such as a dist-tag, a workspace link, or a comparator set.
- */
-export function satisfiesRequest(version: Version, spec: string): boolean | undefined {
-  const text = spec.trim();
-  if (text === '*') return version.prerelease.length === 0;
-  const operator = text.startsWith('^') ? '^' : text.startsWith('~') ? '~' : undefined;
-  const base = parseVersion(operator === undefined ? text : text.slice(1));
-  if (base === undefined) return undefined;
-  if (operator === undefined) return compareVersions(version, base) === 0;
-  // A caret keeps the leftmost part that is not zero, a tilde the minor.
-  const upper = operator === '^' && base.major > 0
-    ? `${base.major + 1}.0.0`
-    : operator === '~' || base.minor > 0 ? `${base.major}.${base.minor + 1}.0` : `0.0.${base.patch + 1}`;
-  return satisfies(version, `>=${formatVersion(base)} <${upper}`);
 }

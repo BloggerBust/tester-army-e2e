@@ -33,7 +33,7 @@ import { docsLine, examples, helpSection, pc } from './help.ts';
 import { EXIT_CODES } from './exit-codes.ts';
 import type { DoctorReport } from './doctor.ts';
 import { ERROR_CODE_LIMIT, feedback, FEEDBACK_LIMITS, FEEDBACK_TYPES, type FeedbackReport } from './feedback.ts';
-import { guide } from './guide.ts';
+import { guide, guideTopics } from './guide.ts';
 import { addInitOptions, checkInitFlags, type InitFlagValues } from './init/flags.ts';
 import { parseList, parseNames } from './parse-names.ts';
 import { SESSION_BOUNDS } from '../session-tools/bounds.ts';
@@ -42,7 +42,6 @@ import type { LoginFlags } from '../oauth/cli.ts';
 import { SignalLadder } from './signals.ts';
 import { isStepAction } from './step.ts';
 import { stepAddress } from '../run/step-socket.ts';
-import { skillTopics } from './skill.ts';
 import { UpdateCheck } from './update-check.ts';
 import { telemetry as telemetryCommand, TELEMETRY_ACTIONS, type TelemetryAction } from './telemetry.ts';
 import { parseUpgradeTarget, type UpgradeTarget } from './upgrade-target.ts';
@@ -613,10 +612,13 @@ function createProgram(version: string, telemetry: Telemetry, updateCheck: Updat
     .description(
       'Print the skill that init installs: how to set up e2e, write tests, use agent steps, run the CLI, and read a failing run. Without a topic, prints the overview and the topic list.',
     )
-    .argument('[topic]', `one of ${skillTopics().join(', ')}`)
-    .addHelpText('after', ['', examples(['e2e guide', 'e2e guide writing-tests']), '', docsLine('/reference/cli#e2e-guide')].join('\n'))
+    .argument('[topic]', 'one topic of the guide; the overview when omitted')
+    // Read when help prints: the topics are those of the guide this project gets, which may be an installed copy's.
+    .addHelpText('after', () =>
+      ['', `Topics: ${guideTopics({ version }).join(', ')}`, '', examples(['e2e guide', 'e2e guide writing-tests']), '', docsLine('/reference/cli#e2e-guide')].join('\n'),
+    )
     .action((topic: string | undefined) => {
-      process.exitCode = guide(topic);
+      process.exitCode = guide(topic, { version });
     });
 
   program

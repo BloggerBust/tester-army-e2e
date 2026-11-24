@@ -18,11 +18,12 @@ import { installedPackage } from '../internal/installed-package.ts';
 import { detectWorkspacePackageManager, execCommand, LOCKFILE_NAMES, type PackageManager } from '../internal/package-manager.ts';
 import { isCiMode } from '@e2e-dev/core/lib/config/resolve';
 import { insideProjectRoot, realpathOfExisting } from '@e2e-dev/core/lib/internal/paths';
+import { DEPENDENCY_SECTIONS, RUNNER } from '../internal/project-package.ts';
 import { compareVersions, parseVersion, satisfies } from '../internal/semver.ts';
 import type { UpgradeOutcome, UpgradeResult } from '../telemetry/events.ts';
 import { describeLinks, describeObstacles, findInstalledSkillDirs, planSkillInstall } from './init/agent-skill.ts';
 import { describeManifestError, readPackage, serializePackage } from './init/package.ts';
-import { readSkillFiles, SKILL_NAME } from './skill.ts';
+import { packagedSkillDirectory, readSkillFiles, SKILL_NAME } from './skill.ts';
 import type { UpgradeTarget } from './upgrade-target.ts';
 import { upgradeCelebration } from './star.ts';
 
@@ -43,14 +44,12 @@ interface SpawnOutcome {
   readonly error?: Error | undefined;
 }
 
-const RUNNER = 'e2e';
 const SCOPE = '@e2e-dev/';
 const DEFAULT_REGISTRY = 'https://registry.npmjs.org/';
 const RELEASES_URL = 'https://github.com/e2e-inc/e2e/releases/tag/';
 /** Each metadata request gets this long; a person waits on it. */
 const REGISTRY_TIMEOUT_MS = 15_000;
-/** The sections a package manager installs from, in the order a package is looked up. */
-const SECTIONS = ['dependencies', 'devDependencies', 'optionalDependencies'] as const;
+const SECTIONS = DEPENDENCY_SECTIONS;
 type Section = (typeof SECTIONS)[number];
 /** Specs that do not name a registry version: a workspace, a path, a git or tarball URL, an alias, a pnpm catalog. */
 const NON_REGISTRY_SPEC = /^(?:workspace|link|file|portal|patch|catalog|npm|git|git\+[a-z]+|github|gitlab|bitbucket|https?):|[/\\]/u;
@@ -567,8 +566,8 @@ function refreshSkills(projectDir: string, manager: PackageManager, out: (text: 
   const dirs = skillCopies(projectDir);
   if (dirs.length === 0) return;
   const installed = installedPackage(projectDir, RUNNER);
-  const skillDir = installed === undefined ? undefined : path.join(installed.dir, 'skills', SKILL_NAME);
-  const bundled = skillDir === undefined || !existsSync(path.join(skillDir, 'SKILL.md')) ? [] : readSkillFiles(skillDir);
+  const skillDir = installed === undefined ? undefined : packagedSkillDirectory(installed.dir);
+  const bundled = skillDir === undefined ? [] : readSkillFiles(skillDir);
   if (bundled.length === 0) {
     out(`The agent skill in ${listSkillDirs(dirs)} may be the old version's; refresh it with ${execCommand(manager, 'e2e init')}`);
     return;
