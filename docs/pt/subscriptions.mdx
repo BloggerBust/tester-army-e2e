@@ -1,0 +1,435 @@
+---
+title: Assinaturas
+description: Use sua assinatura do ChatGPT, GitHub Copilot, OpenCode Console ou SuperGrok, os créditos de API do seu plano Claude Max ou Team, ou seu login do Claude Code ou do Codex nos passos do agente.
+"og:image": "https://e2e.com/docs/images/og/subscriptions.png?v=174d49a0e9"
+"twitter:image": "https://e2e.com/docs/images/og/subscriptions.png?v=174d49a0e9"
+---
+
+Rode os passos do agente em um plano que você já paga. Faça login uma vez e
+depois use o modelo do plano em `e2e.config.ts`.
+
+| Plano | Como conectar |
+| --- | --- |
+| ChatGPT Plus ou Pro | `npx e2e login openai` |
+| GitHub Copilot | `npx e2e login github-copilot` |
+| OpenCode Console (OpenCode Zen e OpenCode Go) | `npx e2e login opencode-console` |
+| SuperGrok ou X Premium+ | `npx e2e login spacexsi` |
+| Claude Max ou Team (Claude Code) | Chave de API, paga com os créditos mensais de API do plano, não com os limites de uso dele |
+| Login do Claude Code ou do Codex | [Rode os passos no seu agente de código](#use-your-coding-agent) |
+
+## Configure
+
+Em um projeto novo, rode `e2e init` e selecione seu plano
+([Início rápido](/quickstart)). Em um projeto existente, instale os pacotes,
+faça login e defina `agents: { default: agent }` em `e2e.config.ts`.
+
+<Tabs>
+  <Tab title="ChatGPT">
+<CodeGroup>
+```bash npm
+npm install -D ai @ai-sdk/openai
+npx e2e login openai
+```
+
+```bash pnpm
+pnpm add -D ai @ai-sdk/openai
+pnpm exec e2e login openai
+```
+
+```bash bun
+bun add -d ai @ai-sdk/openai
+bunx e2e login openai
+```
+</CodeGroup>
+
+```ts title="Model setup"
+import { chatgpt } from 'e2e/oauth/chatgpt';
+
+const agent = { model: chatgpt('gpt-6-luna') };
+```
+  </Tab>
+  <Tab title="GitHub Copilot">
+<CodeGroup>
+```bash npm
+npm install -D ai @ai-sdk/openai-compatible @ai-sdk/openai
+npx e2e login github-copilot
+```
+
+```bash pnpm
+pnpm add -D ai @ai-sdk/openai-compatible @ai-sdk/openai
+pnpm exec e2e login github-copilot
+```
+
+```bash bun
+bun add -d ai @ai-sdk/openai-compatible @ai-sdk/openai
+bunx e2e login github-copilot
+```
+</CodeGroup>
+
+```ts title="Model setup"
+import { copilot } from 'e2e/oauth/copilot';
+
+const agent = { model: copilot('claude-sonnet-5') };
+```
+
+Quais modelos seu plano disponibiliza depende do GitHub. Veja
+[Escolha um modelo](#pick-a-model).
+  </Tab>
+  <Tab title="OpenCode Console">
+<CodeGroup>
+```bash npm
+npm install -D ai @ai-sdk/openai-compatible @ai-sdk/openai @ai-sdk/anthropic @ai-sdk/google
+npx e2e login opencode-console
+```
+
+```bash pnpm
+pnpm add -D ai @ai-sdk/openai-compatible @ai-sdk/openai @ai-sdk/anthropic @ai-sdk/google
+pnpm exec e2e login opencode-console
+```
+
+```bash bun
+bun add -d ai @ai-sdk/openai-compatible @ai-sdk/openai @ai-sdk/anthropic @ai-sdk/google
+bunx e2e login opencode-console
+```
+</CodeGroup>
+
+```ts title="Model setup"
+import { opencodeConsole } from 'e2e/oauth/opencode-console';
+
+// OpenCode Zen, billed to the workspace's credits
+const agent = { model: opencodeConsole('deepseek-v4.1-flash') };
+// OpenCode Go, billed to your Go subscription
+const goAgent = { model: opencodeConsole('go/deepseek-v4.1-flash') };
+```
+
+Na rota da Anthropic, uma chamada que não define `maxOutputTokens` pede 8192:
+o SDK da Anthropic não conhece os ids que o OpenCode disponibiliza ali e, por
+conta própria, limita a requisição a 4096 tokens e apenas emite um aviso.
+  </Tab>
+  <Tab title="SuperGrok">
+<CodeGroup>
+```bash npm
+npm install -D ai @ai-sdk/xai
+npx e2e login spacexsi
+```
+
+```bash pnpm
+pnpm add -D ai @ai-sdk/xai
+pnpm exec e2e login spacexsi
+```
+
+```bash bun
+bun add -d ai @ai-sdk/xai
+bunx e2e login spacexsi
+```
+</CodeGroup>
+
+```ts title="Model setup"
+import { grok } from 'e2e/oauth/grok';
+
+const agent = { model: grok('grok-4') };
+```
+  </Tab>
+  <Tab title="Claude Max ou Team">
+Os planos do Claude não têm login para outros apps. Para rodar os passos do
+agente no próprio Claude Code, com o login dele, veja
+[seu agente de código](#use-your-coding-agent). Para usar os créditos de API
+do plano em um projeto novo, selecione `None` como gateway de modelo no
+`e2e init`. Depois:
+
+1. No claude.ai, vincule uma organização do Claude Console. No Max, vá em
+   Settings > Billing. No Team, um Owner ou Primary Owner vai em
+   Organization settings > Billing. Veja o [guia da Anthropic](https://support.claude.com/en/articles/17154008-monthly-api-credits-for-max-and-team-plans).
+2. Nessa organização, crie uma chave de API. Defina-a como `ANTHROPIC_API_KEY`.
+3. Instale os pacotes e defina o modelo:
+
+<CodeGroup>
+```bash npm
+npm install -D ai @ai-sdk/anthropic
+```
+
+```bash pnpm
+pnpm add -D ai @ai-sdk/anthropic
+```
+
+```bash bun
+bun add -d ai @ai-sdk/anthropic
+```
+</CodeGroup>
+
+```ts title="Model setup"
+import { anthropic } from '@ai-sdk/anthropic';
+
+const agent = { model: anthropic('claude-sonnet-5-5') };
+```
+
+Defina `agents: { default: agent }` em `e2e.config.ts`.
+
+Os créditos não usados expiram no fim de cada ciclo de cobrança. Os outros
+planos do Claude não têm créditos de API. Neles, use um
+[provedor de API](/models) ou um modelo Claude pelo seu plano do Copilot.
+  </Tab>
+</Tabs>
+
+## Escolha um modelo
+
+`e2e models` lista os ids de modelo que seu login pode usar:
+
+<CodeGroup>
+```bash npm
+npx e2e models            # every stored login
+npx e2e models openai     # one provider
+```
+
+```bash pnpm
+pnpm exec e2e models            # every stored login
+pnpm exec e2e models openai     # one provider
+```
+
+```bash bun
+bunx e2e models            # every stored login
+bunx e2e models openai     # one provider
+```
+</CodeGroup>
+
+O id nem sempre é o nome que o app do fornecedor mostra.
+
+Com `OPENCODE_API_KEY` definida, `e2e models opencode-console` lista os ids
+que essa chave disponibiliza, a mesma chave que `opencodeConsole()` usa no
+lugar do login.
+
+- **Copilot** marca `not enabled` (ative o modelo nas configurações do Copilot
+  no GitHub ou peça ao administrador que gerencia sua licença) e `no chat
+  or responses` (use outro modelo). Ele não consegue ver o que seu plano
+  disponibiliza: no Copilot Free, o GitHub disponibiliza modelos
+  [somente por seleção automática de modelo](https://docs.github.com/en/copilot/get-started/plans),
+  então um modelo chamado pelo id costuma ser recusado. A execução então é
+  interrompida com `MODEL_UNAVAILABLE`, que indica o modelo. Escolha outro id ou um
+  [provedor de API](/models).
+- **OpenCode Console** lista modelos `go/` somente se você tiver o Go. Ele
+  deixa de fora os modelos que seu workspace desativou e os modelos gratuitos
+  do Zen. Em `providerOptions`, use a chave `opencode` para modelos de chat
+  completions e, nos outros, `openai`, `anthropic` ou `google`.
+
+## Ajuda com o login
+
+- O ChatGPT abre um navegador. Para usar um código de dispositivo, adicione
+  `--device`.
+- O Copilot usa seu login do GitHub CLI. Sem o `gh`, passe `--client-id` com
+  seu próprio app OAuth do GitHub que tenha o device flow ativado. Para o
+  GitHub Enterprise, adicione `--enterprise-url`.
+- O OpenCode Console mostra um código de dispositivo. Aprove-o e selecione o
+  workspace. A página mostra o e2e como um cliente desconhecido. Para trocar
+  de workspace, rode `npx e2e logout opencode-console` e faça login de novo.
+- O SuperGrok mostra um código de dispositivo e a URL onde você o digita.
+
+`npx e2e login` sem provedor abre um menu que mostra quais contas estão
+autenticadas. `npx e2e logout` remove um login. Quando um login salvo deixa de
+funcionar, o passo falha com `MODEL_PROVIDER_FAILED`, e a mensagem traz o
+comando `npx e2e login <provider>` a rodar. Veja a
+[referência da CLI](/reference/cli#e2e-login) para todas as flags.
+
+O cancelamento de chamadas ao modelo também vale durante a espera pela
+renovação de um token.
+
+Quando um login salvo com `npx e2e login` expira, os workers em paralelo o
+renovam uma única vez entre eles. Um worker espera até 30 segundos pela
+renovação de outro worker. Depois disso, o passo dele falha com
+`MODEL_PROVIDER_FAILED`, a menos que o tempo limite do próprio passo o
+encerre antes, como `STEP_TIMEOUT`.
+
+## CI
+
+Use chaves de API na CI. O Claude Max ou Team já usa uma. Para o OpenCode
+Console, defina `OPENCODE_API_KEY` com uma chave de API da assinatura do
+OpenCode Go ou com uma chave de API de conta de serviço criada no Console
+(Service Accounts e depois API Keys). Para ChatGPT, Copilot e SuperGrok, use
+um [provedor de API](/models).
+
+[`E2E_OAUTH_CREDENTIALS`](/reference/environment) pode passar um login salvo
+para a CI, mas o e2e não salva os tokens renovados de volta nela. Um login com
+refresh token rotativo funciona ali só por tempo limitado.
+
+## Use seu agente de código
+
+`@e2e-dev/acp` roda `agent.act` e `agent.assert` no Claude Code ou no Codex
+pelo [Agent Client Protocol](https://agentclientprotocol.com). O agente entra
+com o próprio login ou a própria chave de API, então o e2e não precisa de um
+provedor de modelo.
+
+O agente recebe `complete_step` e as ferramentas de ação do agente embutido
+para os verbos que a engine do alvo suporta. O runner grava cada ação, então
+os passos são reproduzidos do [cache](/cache) sem o agente. Seus testes não
+mudam.
+
+<Tabs>
+  <Tab title="Claude Code">
+Instale o pacote e o adaptador do Claude Code feito pela Zed. Faça login com
+`claude` ou defina `ANTHROPIC_API_KEY`.
+
+<CodeGroup>
+```bash npm
+npm install -D @e2e-dev/acp @agentclientprotocol/claude-agent-acp
+```
+
+```bash pnpm
+pnpm add -D @e2e-dev/acp @agentclientprotocol/claude-agent-acp
+```
+
+```bash bun
+bun add -d @e2e-dev/acp @agentclientprotocol/claude-agent-acp
+```
+</CodeGroup>
+
+```ts title="e2e.config.ts"
+import type { E2EConfig } from 'e2e';
+import { web } from '@e2e-dev/web';
+import { claudeCode } from '@e2e-dev/acp';
+
+export default {
+  targets: [{ engine: web(), app: { url: 'http://localhost:3000' } }],
+  agents: { default: { executor: claudeCode({ model: 'sonnet' }) } },
+} satisfies E2EConfig;
+```
+  </Tab>
+  <Tab title="Codex">
+Instale o pacote e o adaptador do Codex. Faça login com `codex login` ou
+defina `OPENAI_API_KEY`: quando o Codex não tem login, `codex()` faz o login
+dele com a primeira variável não em branco entre `CODEX_API_KEY` e
+`OPENAI_API_KEY`, a menos que você defina um `DEFAULT_AUTH_REQUEST` não
+em branco. O Codex salva a chave como o login dele, como
+`codex login --with-api-key` (em `CODEX_HOME/auth.json` com o armazenamento
+de credenciais padrão, em lugar nenhum com `ephemeral`), e a mantém até
+`codex logout`. Enquanto `APP_SERVER_LOGS` estiver definida, `codex()` não
+passa nenhuma requisição de login, nem a sua, já que o log do adaptador
+escreveria as credenciais em texto puro. Um login salvo continua funcionando.
+Uma variável em `codex({ env })` substitui a do ambiente, então
+`env: { OPENAI_API_KEY: '' }` mantém longe do Codex uma chave que você definiu
+para o app em teste. Inicie as primeiras sessões em um `CODEX_HOME` novo uma
+de cada vez: várias ao mesmo tempo costumam falhar com
+`failed to initialize sqlite state runtime`.
+
+<CodeGroup>
+```bash npm
+npm install -D @e2e-dev/acp @agentclientprotocol/codex-acp
+```
+
+```bash pnpm
+pnpm add -D @e2e-dev/acp @agentclientprotocol/codex-acp
+```
+
+```bash bun
+bun add -d @e2e-dev/acp @agentclientprotocol/codex-acp
+```
+</CodeGroup>
+
+```ts title="e2e.config.ts"
+import type { E2EConfig } from 'e2e';
+import { web } from '@e2e-dev/web';
+import { codex } from '@e2e-dev/acp';
+
+export default {
+  targets: [{ engine: web(), app: { url: 'http://localhost:3000' } }],
+  agents: { default: { executor: codex() } },
+} satisfies E2EConfig;
+```
+  </Tab>
+</Tabs>
+
+`claudeCode()` e `codex()` aceitam estas opções:
+
+| Opção | O que faz |
+| --- | --- |
+| `model` | Um modelo que o agente oferece, como `sonnet`. Quando o agente não o oferece, a sessão não inicia e o erro lista os modelos que ele oferece. Se for omitido, roda o modelo padrão do agente. |
+| `env` | Variáveis adicionadas ao ambiente do agente. |
+| `system` | Texto acrescentado às regras que o agente recebe com o primeiro passo. |
+| `name` | O nome do executor nos relatórios. |
+
+Falhas inesperadas de encaminhamento param a sessão ACP e aparecem na saída
+de falha do runner, com os segredos ocultados. O cliente HTTP recebe um erro
+genérico ou um stream fechado, sem o texto da exceção.
+
+### O que o agente pode usar
+
+Uma ação que o agente executa com as próprias ferramentas não é gravada, não
+pode ser reproduzida e pode alcançar arquivos ou a web. Por isso, o e2e
+restringe o agente às ferramentas de passo:
+
+- O processo do agente inicia no seu projeto. A sessão dele abre em um
+  diretório temporário vazio, e o e2e não oferece a ele acesso ao sistema de
+  arquivos nem ao terminal.
+- O e2e permite pedidos de permissão para ferramentas de passo e rejeita
+  todos os outros.
+- Quando uma ferramenta própria do agente roda sem pedir permissão, o e2e
+  interrompe o turno e faz o passo falhar com `POLICY_DENIED`. Chamadas
+  posteriores a ferramentas de passo não executam nenhuma ação. A sessão
+  fecha, então o próximo passo inicia um agente novo, que nunca viu o que a
+  ferramenta leu.
+
+Cada preset também desativa as ferramentas próprias do agente que rodam sem
+pedir permissão:
+
+- **Claude Code**: nenhuma ferramenta embutida, nenhuma configuração de
+  usuário, de projeto ou local, nenhum servidor MCP além das ferramentas de
+  passo, nenhuma sessão salva e nenhum desvio dos pedidos de permissão.
+- **Codex**: modo somente leitura, sem shell, busca na web, apps, plugins,
+  navegador ou computer use, e sem snapshots do shell, que copiariam seu
+  ambiente, chaves incluídas, para o disco. Todo servidor MCP da sua
+  configuração do Codex fica desativado somente nessas sessões. O Codex ainda
+  pode iniciar um subagente, o que faz o passo falhar como qualquer
+  ferramenta própria dele.
+
+### Segredos
+
+Um parâmetro secreto chega ao agente só pelo nome. Quando a engine do alvo
+consegue preencher segredos, o agente chama `type_secret` e o runner digita o
+valor, como no agente embutido.
+
+O processo do agente recebe seu ambiente sem as variáveis `E2E_SECRET_*` e
+`E2E_USER_*`.
+
+<Warning>
+Um segredo em qualquer outra variável chega ao agente. Exemplos são `API_KEY`
+por trás de `secrets: { apiKey: process.env.API_KEY }` ou a variável de onde
+um valor de `E2E_SECRET_*` foi copiado. Mantenha segredos somente em
+`E2E_SECRET_*` e `E2E_USER_*`.
+</Warning>
+
+<AccordionGroup>
+  <Accordion title="Como um teste roda">
+Uma sessão do agente atende uma tentativa de teste. O primeiro passo do
+agente que o cache não consegue reproduzir a inicia. Cada passo seguinte é
+mais uma mensagem na mesma conversa, e a sessão fecha quando a tentativa
+termina, ou antes, em um passo com `POLICY_DENIED`.
+
+Cada mensagem leva o passo, os parâmetros não secretos dele, os passos feitos
+até agora e a tela atual. Os resultados das ações dizem o que mudou na tela,
+e um `screenshot` chega ao agente como imagem.
+
+Uma asserção não pode mudar a tela. `observe`, `screenshot`, rolar e fazer
+hover continuam funcionando. O agente termina todo passo com `complete_step`:
+`passed`, `failed` ou `blocked` com um código de erro, como faz o agente
+embutido.
+  </Accordion>
+  <Accordion title="Limites">
+  - O Agent Client Protocol não informa as requisições ao modelo. Cada turno
+    de prompt conta como uma chamada ao modelo em `maxModelCalls`, com os
+    tokens e o custo dele quando o agente os informa. `maxSteps` e o tempo
+    limite do passo limitam o turno.
+  - `waitFor` e `extract` usam os julgamentos embutidos, então precisam do
+    `model` da entrada do agente.
+  - Uma entrada de agente com `executor` não aceita `tools`, então o agente
+    não recebe ferramentas do projeto de `defineTool`.
+  </Accordion>
+</AccordionGroup>
+
+## Próximos passos
+
+<CardGroup cols={2}>
+  <Card title="Modelos" icon="brain" href="/models">
+    Em vez disso, use uma chave de API, um gateway ou um modelo local.
+  </Card>
+  <Card title="Agentes e personas" icon="users" href="/agents">
+    Dê aos testes modelos e instruções diferentes.
+  </Card>
+</CardGroup>

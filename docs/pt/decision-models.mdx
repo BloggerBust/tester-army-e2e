@@ -1,0 +1,286 @@
+---
+title: Modelos de decisão
+description: Rode ações delimitadas com um modelo de decisão e um modelo de texto pequeno em vez de um agente LLM completo.
+"og:image": "https://e2e.com/docs/images/og/decision-models.png?v=bc0d69c206"
+"twitter:image": "https://e2e.com/docs/images/og/decision-models.png?v=bc0d69c206"
+---
+
+`@e2e-dev/decision` roda `agent.act` e `agent.assert` por meio de um modelo
+de decisão em vez de um agente LLM. Para cada ação, o modelo de decisão
+escolhe uma operação e depois um elemento, a partir do objetivo, das ações
+recentes e da árvore semântica mais recente. Ele nunca escreve texto livre:
+um modelo de texto pequeno escreve os valores dos campos. O runner continua
+autorizando cada ação.
+
+Qualquer modelo de decisão do AI SDK que responda a perguntas `choice` com
+probabilidades funciona, como TypeSafe Jev ou OpenAI `gpt-6-luna`. Instâncias
+de `evaluationModel()` também funcionam. Uma string de id de modelo ou um
+modelo de linguagem em `model` faz o carregamento da configuração falhar com
+`INVALID_CONFIG`.
+
+O `decisionFilter()` do mesmo pacote roda somente os testes que um pull
+request pode afetar. Veja [Filtros de testes](/filters).
+
+## Instale e configure
+
+Instale o pacote, um provedor de modelo de decisão e um provedor de modelo de
+texto. Modelos de decisão precisam do `ai` 7.0.134 ou posterior.
+
+<CodeGroup>
+```bash npm
+npm install -D @e2e-dev/decision @ai-sdk/typesafe-ai @openrouter/ai-sdk-provider
+```
+
+```bash pnpm
+pnpm add -D @e2e-dev/decision @ai-sdk/typesafe-ai @openrouter/ai-sdk-provider
+```
+
+```bash bun
+bun add -d @e2e-dev/decision @ai-sdk/typesafe-ai @openrouter/ai-sdk-provider
+```
+</CodeGroup>
+
+Defina o executor na entrada do agente:
+
+```ts title="e2e.config.ts"
+import type { E2EConfig } from 'e2e';
+import { web } from '@e2e-dev/web';
+import { decisionExecutor } from '@e2e-dev/decision';
+import { typeSafeAi } from '@ai-sdk/typesafe-ai';
+import { openrouter } from '@openrouter/ai-sdk-provider';
+
+export default {
+  targets: [{ engine: web(), app: { url: 'http://localhost:3000' } }],
+  agents: {
+    default: {
+      executor: decisionExecutor({
+        model: typeSafeAi.decisionModel('jev-latest'),
+        textModel: openrouter('inception/mercury-2.5'),
+      }),
+    },
+  },
+} satisfies E2EConfig;
+```
+
+Os testes são chamadas comuns de `agent.act` e `agent.assert`:
+
+```ts title="tests/todos.e2e.ts"
+import { test, expect } from 'e2e';
+
+test('adds a todo', async ({ app, screen, agent }) => {
+  await app.open('/todos');
+  await agent.act('Add a todo named Buy coffee.');
+  await expect(screen.getByTestId('todo')).toContainText('Buy coffee');
+  await agent.assert('The todo list contains Buy coffee.');
+});
+```
+
+<Accordion title="Use o gpt-6-luna da OpenAI">
+
+Use o `@ai-sdk/openai` 4.0.90 ou posterior, que aceita a captura de tela de
+[visão](#vision). Defina `OPENAI_API_KEY`.
+
+<CodeGroup>
+```bash npm
+npm install -D @ai-sdk/openai
+```
+
+```bash pnpm
+pnpm add -D @ai-sdk/openai
+```
+
+```bash bun
+bun add -d @ai-sdk/openai
+```
+</CodeGroup>
+
+```ts title="e2e.config.ts"
+import { openai } from '@ai-sdk/openai';
+
+const executor = decisionExecutor({
+  model: openai.decisionModel('gpt-6-luna'),
+  textModel: openai('gpt-6-luna-fast'),
+  vision: true,
+});
+```
+
+</Accordion>
+
+## O que o modelo pode fazer
+
+Cada turno oferece as operações que a engine suporta sobre os elementos da
+tela mais recente: `tap`, `type`, `typeSecret`, `submit`, `select`, `check`,
+`upload`, `hover`, `secondary_tap` (um clique com o botão direito),
+`double_tap`, `long_press`, `drag`, `scroll_to`, `scroll_up`, `scroll_down` e
+`back`. Hover, clique com o botão direito, arraste e rolagem até o elemento
+também alcançam nós rotulados que não são controles, como um card que abre um
+menu no hover, e um arraste pode ter qualquer um deles como destino. `tap`
+também alcança campos de texto, para abrir um seletor de data ou uma lista de
+sugestões. Enquanto um teclado virtual aparece em uma engine que consegue
+fechá-lo, como a engine mobile, o executor também oferece `dismiss_keyboard`,
+mesmo quando o teclado não está na árvore.
+
+Toda operação que age sobre um elemento pergunta pelo alvo dela, mesmo quando
+só um elemento se encaixa.
+Toda pergunta de alvo tem uma opção `none`, então um provedor sem um alvo
+adequado responde `none` em vez de recusar. `none` bloqueia o passo.
+
+## Como o texto é digitado
+
+Quando o modelo de decisão escolhe `type`, o modelo de texto escreve o valor a
+partir do objetivo, dos parâmetros, do rótulo do campo e do texto da página. O
+executor digita exatamente essa string. Sem um valor no objetivo, ele não
+digita nada, e o modelo de decisão escolhe de novo. Para `upload`, o modelo de
+texto lista os caminhos relativos ao projeto que o objetivo ou os parâmetros
+citam, e o runner autoriza cada um. A saída do modelo nunca vira um seletor,
+uma URL ou uma tecla.
+
+Campos de senha nunca chegam ao modelo de texto, a menos que um script da
+página esconda um deles do e2e. Nesse caso, o modelo de texto vê o valor do
+campo, e `type` pode preenchê-lo
+([onde a ocultação termina](/reference/security#where-redaction-stops)).
+Somente `typeSecret` preenche um segredo configurado, a partir da referência
+declarada dele.
+
+O modelo de texto também responde a `waitFor` e `extract`. Em vez de
+`textModel`, você pode definir `model` na entrada do agente. Sem nenhum dos
+dois, o executor nunca oferece `type`, `upload`, `tap_at` ou `type_at`.
+
+## Conclusão de um passo
+
+Quando o modelo de decisão responde `done` ou `failed`, o executor verifica a
+alegação em uma tela atualizada com uma única pergunta: a tarefa do passo está
+concluída? A verificação nunca vê o raciocínio do modelo nem um segredo.
+
+Um `done` confirmado faz o passo passar, e um `failed` confirmado o faz falhar
+com `ACTION_FAILED`. Uma alegação não confirmada volta ao modelo de decisão
+como histórico. Uma segunda alegação não confirmada encerra o passo:
+`ACTION_FAILED` quando a tela contradiz o objetivo, senão `blocked` com
+`AUTOMATION_UNSUPPORTED`.
+
+## Limiares
+
+Os dois limiares ficam desligados por padrão, então o executor segue a escolha
+mais provável. Defina `minProbability` ou `minConfidence` para bloquear ações
+mais fracas, rejeitar verificações de conclusão mais fracas e fazer asserções
+mais fracas falharem como inconclusivas:
+
+```ts title="Executor setup"
+const executor = decisionExecutor({ model, minProbability: 0.9, minConfidence: 0.8 });
+```
+
+A probabilidade é a parcela da opção escolhida na distribuição das respostas.
+A confiança é a estatística do próprio provedor, 0 quando ele não informa
+nenhuma. A OpenAI arredonda as duas para duas casas decimais. Meça a acurácia
+nos seus próprios testes antes de definir um limiar.
+
+## Visão
+
+`vision: true` adiciona uma captura de tela mascarada a cada observação. As
+asserções e as verificações de conclusão a veem, então o modelo pode avaliar
+conteúdo desenhado que a árvore não mostra. As perguntas de operação e de alvo
+leem somente a árvore. `agent.assert(..., { vision: true })` e
+`vision: 'only'` também funcionam.
+
+O modelo precisa aceitar imagens e responder a perguntas `score`. O TypeSafe
+Jev faz isso com o `@ai-sdk/typesafe-ai` 3.0.19 ou posterior e uma chave de
+API da TypeSafe em `TYPESAFE_AI_API_KEY`:
+
+```ts title="e2e.config.ts"
+import { typeSafeAi } from '@ai-sdk/typesafe-ai';
+import { openrouter } from '@openrouter/ai-sdk-provider';
+
+const executor = decisionExecutor({
+  model: typeSafeAi.decisionModel('jev-latest'),
+  textModel: openrouter('inception/mercury-2.5'),
+  vision: true,
+});
+```
+
+`openai.decisionModel('gpt-6-luna')` também aceita imagens. O Vercel AI
+Gateway rejeita a captura de tela para todo modelo de decisão, então mantenha
+`vision` desligado nele.
+
+Com um modelo de texto, a visão também oferece `tap_at` para um controle que a
+árvore não lista. O modelo de texto nomeia o controle, como “a tecla 3 do
+teclado numérico”, e o modelo de decisão o encontra na captura de tela e
+depois em dois recortes ampliados. Um toque em um ponto custa quatro chamadas
+de decisão e uma chamada de texto, ou uma de cada para repetir um toque na
+mesma página.
+
+Quando a engine consegue digitar no elemento que estiver em foco, a visão
+também oferece `type_at` para um campo desenhado. O modelo de texto nomeia o
+campo e o valor a partir do objetivo, o modelo de decisão encontra o campo na
+captura de tela, e o executor toca nele e digita o valor na posição do cursor
+de texto, depois de qualquer texto que já esteja ali. Isso custa duas
+chamadas de decisão e uma chamada de texto.
+
+## Opções do provedor
+
+Os `providerOptions` do executor vão em toda chamada de decisão, incluindo as
+verificações de conclusão, e chegam somente ao modelo de decisão. Use-os para
+opções como retenção zero de dados no Vercel AI Gateway:
+
+```ts title="Executor setup"
+import { gateway } from 'ai';
+
+const executor = decisionExecutor({
+  model: gateway.decisionModel('typesafe-ai/jev'),
+  textModel: gateway('openai/gpt-6-luna-fast'),
+  providerOptions: { gateway: { zeroDataRetention: true } },
+});
+```
+
+O modelo de texto usa os `providerOptions` da entrada do agente, então uma
+configuração para um modelo, como uma lista de fallback do gateway, nunca
+chega ao outro.
+
+O AI Gateway pode rodar de novo uma decisão incerta em outro modelo. Adicione
+a entrada condicional a `gateway.models`; ela chega a toda chamada de decisão,
+e um fallback acionado gera cobrança pelos dois modelos:
+
+```ts title="Executor setup"
+const executor = decisionExecutor({
+  model: gateway.decisionModel('typesafe-ai/jev'),
+  textModel: gateway('openai/gpt-6-luna-fast'),
+  providerOptions: {
+    gateway: { models: [{ model: 'openai/gpt-6-luna-decisions', when: { confidenceBelow: 0.6 } }] },
+  },
+});
+```
+
+Quando o fallback é um modelo de decisão, os limiares continuam valendo: o
+executor lê as probabilidades e a confiança do modelo de fallback. Quando o
+fallback é um modelo de linguagem, como `openai/gpt-6-luna-fast`, ele responde
+com uma escolha e nenhuma distribuição. O executor aceita essa escolha com
+probabilidade 1 e confiança 0, então um limiar de `minConfidence` bloqueia
+toda resposta vinda do fallback.
+
+## Limites
+
+- Sem `navigate`. A navegação dentro do app é um `tap` em um link. URLs ficam
+  no código do teste (`browser.goto`, `app.open`).
+- Sem `listbox` de seleção múltipla e sem `scrollUntil`. `type_at` nunca limpa
+  um campo desenhado antes, então serve para campos vazios.
+- O modelo de texto que nomeia um controle desenhado não vê pixels. Ele não
+  consegue seguir uma instrução que existe só como texto desenhado, como um
+  assistente que desenha “toque no círculo”.
+- Toda chamada de decisão e toda chamada de texto contam para `maxModelCalls`.
+- Três ações seguidas que falham ou não mudam nada bloqueiam o passo com
+  `AUTOMATION_UNSUPPORTED`.
+- Uma pergunta que o provedor recusa faz o passo falhar com
+  `MODEL_OUTPUT_INVALID`.
+- Uma pergunta tem no máximo 255 opções, o limite da TypeSafe. Em uma tela
+  maior, os nós no viewport vêm primeiro e o resto conta como omitido, para
+  que o modelo possa rolar.
+
+## Próximos passos
+
+<CardGroup cols={2}>
+  <Card title="Executores personalizados" icon="gears" href="/executors">
+    Como um executor se conecta ao runner.
+  </Card>
+  <Card title="Modelos" icon="brain" href="/models">
+    Em vez disso, use um agente LLM com chamadas de ferramenta.
+  </Card>
+</CardGroup>

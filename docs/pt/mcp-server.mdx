@@ -16,7 +16,7 @@ age sobre ela e verifica o próprio trabalho.
 | Escrever um teste | Adivinha localizadores, roda, falha, adivinha de novo | Escreve o teste enquanto percorre o fluxo, a partir de linhas de teste verificadas e de linhas que rodou com `run_code` |
 | Mudar a UI | Pronto quando compila | Abre a página e verifica o resultado |
 | Reproduzir um bug | Adivinha a partir do código | Segue os passos no app |
-| Corrigir um teste que falha | Percorre o fluxo clicando de novo | Roda o teste e para na falha |
+| Corrigir um teste que falha | Percorre o fluxo clicando de novo | Roda o teste e fica parado na falha |
 | Mostrar uma mudança em um PR | Descreve a mudança | Grava um vídeo |
 
 O servidor não precisa de modelo. Um teste que ele roda só precisa de um para
@@ -143,26 +143,38 @@ A test using this locator would fail with LOCATOR_NOT_FOUND. ...
 Use: screen.getByRole("button", "Sign in")
 ```
 
-## Como ele roda uma linha de teste
+## Como ele roda código
 
-O agente roda as linhas que nenhuma ação imprimiu, como asserções, com
-`run_code` na sessão aberta. As que passam entram no rascunho de
-`test_lines`. Uma linha errada falha em segundos, sem uma execução de teste:
+O agente roda JavaScript na sessão aberta com `run_code`: um loop sobre uma
+lista, um valor lido e usado em um cálculo, uma asserção que nenhuma ação
+imprimiu. Uma chamada substitui muitas ações isoladas:
+
+```js
+const rows = screen.getByRole('listitem');
+const names = await rows.allTextContents();
+await rows.nth(names.findIndex((name) => name.includes('Mug'))).getByRole('button', 'Add').tap();
+await expect(screen.getByRole('status')).toHaveText('1 item in cart');
+return names.length;
+```
+
+As linhas que passam entram no rascunho de `test_lines`. Uma linha errada falha
+em segundos, sem uma execução de teste:
 
 ```text wrap
-Statement 2 of 2 failed; the one before it passed. Each statement waited at most 5000 ms. ...
-1. passed: await screen.getByLabel('Full name').fill('Grace Hopper');
+Failed: LOCATOR_NOT_FOUND: locator matched no nodes within getByRole("button", name: "Save")
+Test lines: 2, 1 failed.
+1. await screen.getByLabel('Full name').fill('Grace Hopper');
 2. failed: await screen.getByRole('button', 'Save').tap();
    LOCATOR_NOT_FOUND: locator matched no nodes within getByRole("button", name: "Save")
 ```
 
-O servidor analisa sintaticamente as linhas e nunca as avalia como
-JavaScript. Veja [`run_code`](/reference/mcp#run_code).
+O código é JavaScript comum, com os mesmos objetos que o corpo de um teste
+recebe. Veja [`run_code`](/reference/mcp#run_code).
 
 ## Corrija um teste que falha
 
 `open_session {test: "tests/checkout.e2e.ts:12"}` roda um teste na sessão e
-para na tela onde ele falhou. O agente lê a falha, verifica a tela e edita o
+fica parado na tela onde ele falhou. O agente lê a falha, verifica a tela e edita o
 teste:
 
 ```text wrap
@@ -196,7 +208,7 @@ Na web, uma execução ao lado de uma sessão depende do `app` do alvo:
 | --- | --- |
 | Sem `command` | As duas usam o app que você iniciou. |
 | `url` na porta [`0`](/web#let-the-runner-pick-the-port) | Cada uma inicia sua própria cópia do app. Um servidor de desenvolvimento que roda uma cópia por diretório, como o `next dev`, faz a execução falhar. |
-| `command` com [`reuseExisting: true`](/web#starting-your-app) | A execução usa o app que a sessão iniciou. Quando a sessão fecha, inclusive durante uma execução, esse app para. |
+| `command` com [`reuseExisting: true`](/web#starting-your-app) | A execução usa o app que a sessão iniciou. Quando a sessão fecha, inclusive durante uma execução, esse app é encerrado. |
 | `command` em uma porta fixa, sem `reuseExisting` | Falha com `APP_ALREADY_RUNNING`. |
 
 Quando `CI` está definido, o e2e ignora `reuseExisting`, e a execução falha

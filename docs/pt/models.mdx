@@ -1,0 +1,321 @@
+---
+title: Modelos
+description: Configure um modelo com sua própria assinatura, uma chave de API ou um servidor local.
+"og:image": "https://e2e.com/docs/images/og/models.png?v=5d360f2457"
+"twitter:image": "https://e2e.com/docs/images/og/models.png?v=5d360f2457"
+---
+
+import { ModelProvider } from '../snippets/model-provider.jsx';
+
+Os passos do agente usam o modelo que você define em `e2e.config.ts`. Não há
+modelo padrão. O modelo vem de um provedor do
+[AI SDK](https://ai-sdk.dev/providers/ai-sdk-providers): um gateway, uma chave
+de API direta, um servidor local ou sua [assinatura](/subscriptions). Na
+primeira vez, o `e2e init` escreve a configuração. Veja o
+[Início rápido](/quickstart#use-a-subscription-or-api-key).
+
+Testes sem passos do agente não precisam de modelo. O agente embutido precisa
+de um modelo com suporte a chamadas de ferramenta e a imagens.
+[Modelos de decisão](/decision-models) como Clef ou Jev rodam, em vez disso,
+em um executor personalizado.
+
+## Escolha um gateway ou um provedor
+
+O agente embutido precisa do pacote `ai`, qualquer que seja o provedor:
+
+<CodeGroup>
+```bash npm
+npm install -D ai
+```
+
+```bash pnpm
+pnpm add -D ai
+```
+
+```bash bun
+bun add -d ai
+```
+</CodeGroup>
+
+O provedor lê a própria chave do ambiente. Um gateway alcança muitos
+provedores com uma única chave. Para trocar, substitua a importação do modelo
+e o valor de `model`. Onde um trecho de código define `agent`, use-o como
+`agents.default`:
+
+<Tabs>
+  <Tab title="Vercel AI Gateway">
+
+`gateway` vem com o pacote `ai`. Defina `AI_GATEWAY_API_KEY` ou use um
+[token OIDC da Vercel](#vercel-oidc-instead-of-a-key), sem chave.
+
+```ts title="e2e.config.ts"
+import type { E2EConfig } from 'e2e';
+import { web } from '@e2e-dev/web';
+import { gateway } from 'ai';
+
+export default {
+  targets: [{ engine: web(), app: { url: 'http://localhost:3000' } }],
+  agents: { default: { model: gateway('openai/gpt-6-luna-fast') } },
+} satisfies E2EConfig;
+```
+  </Tab>
+  <Tab title="OpenRouter">
+
+Instale `@openrouter/ai-sdk-provider` e defina `OPENROUTER_API_KEY`:
+
+```ts title="Model setup"
+import { openrouter } from '@openrouter/ai-sdk-provider';
+
+const agent = { model: openrouter('openai/gpt-6-luna-fast') };
+```
+  </Tab>
+  <Tab title="Chave de API do provedor">
+
+Instale o pacote do AI SDK do provedor e defina a chave de API dele. Para a
+OpenAI, instale `@ai-sdk/openai` e defina `OPENAI_API_KEY`:
+
+```ts title="Model setup"
+import { openai } from '@ai-sdk/openai';
+
+const agent = { model: openai('gpt-6-luna') };
+```
+
+Outros provedores funcionam do mesmo jeito, com o próprio pacote, os próprios
+IDs de modelo e as próprias credenciais. Veja
+[Provedores do AI SDK](#ai-sdk-providers).
+  </Tab>
+  <Tab title="Local ou auto-hospedado">
+
+Instale `@ai-sdk/openai-compatible`. Defina a URL do endpoint e um ID de
+modelo que o endpoint disponibilize. Adicione `apiKey` se o servidor exigir uma
+chave. Defina `supportsStructuredOutputs: true` quando o servidor aceitar um
+formato de resposta com JSON schema, como o Ollama aceita. Sem isso, o AI SDK
+descarta o schema com um aviso `responseFormat`, e os passos do agente podem
+precisar de mais chamadas ao modelo:
+
+```ts title="Model setup"
+import { createOpenAICompatible } from '@ai-sdk/openai-compatible';
+
+const local = createOpenAICompatible({
+  name: 'local',
+  baseURL: 'http://127.0.0.1:11434/v1',
+  supportsStructuredOutputs: true,
+  // apiKey: process.env.LLM_API_KEY,
+});
+
+const agent = { model: local.chatModel('your-model-id') };
+```
+  </Tab>
+</Tabs>
+
+Gateways costumam usar IDs no formato `provider/model`. Provedores diretos
+usam os próprios.
+
+### Vercel OIDC em vez de uma chave
+
+Sem `AI_GATEWAY_API_KEY`, `gateway()` faz login com um token OIDC da Vercel de
+curta duração, que ele renova. Faça login na Vercel CLI e vincule o projeto
+uma vez:
+
+<CodeGroup>
+```bash npm
+npx vercel login
+npx vercel link
+npx e2e run
+```
+
+```bash pnpm
+pnpm dlx vercel login
+pnpm dlx vercel link
+pnpm exec e2e run
+```
+
+```bash bun
+bunx vercel login
+bunx vercel link
+bunx e2e run
+```
+</CodeGroup>
+
+O gateway usa um `VERCEL_OIDC_TOKEN` válido. Se não houver um, ele obtém um
+token para o projeto em `.vercel/project.json`, que ele procura do diretório
+de trabalho para cima. O e2e não carrega nenhum arquivo `.env`, então
+um token de `npx vercel env pull` só funciona quando o seu shell o exporta, ou
+quando a configuração carrega o arquivo com
+[`process.loadEnvFile()`](/reference/config#loading).
+
+## Provedores do AI SDK
+
+Todo provedor do AI SDK com suporte a chamadas de ferramenta funciona. O
+pacote e as variáveis de cada provedor estão na
+[página dele no AI SDK](https://ai-sdk.dev/providers/ai-sdk-providers).
+Selecione o seu:
+
+<ModelProvider show="select" />
+
+Um provedor que não está na lista também funciona se implementar a
+especificação de modelo de linguagem do AI SDK, v2 ou posterior.
+
+<Steps>
+  <Step title="Instale o pacote do provedor">
+  Instale `ai` e o pacote do provedor:
+
+  <ModelProvider show="install" />
+  </Step>
+  <Step title="Defina as credenciais">
+  Exporte as variáveis no seu shell ou na CI, ou carregue um arquivo `.env` na
+  configuração com [`process.loadEnvFile()`](/reference/config#loading).
+
+  <ModelProvider show="env" />
+  </Step>
+  <Step title="Adicione o modelo à configuração">
+  Defina o modelo em `agents.default`. O ID do modelo é um exemplo.
+
+  <ModelProvider show="config" />
+  </Step>
+</Steps>
+
+<Accordion title="Modelos que recusam uma escolha de ferramenta forçada">
+Os passos do agente pedem a todo modelo uma chamada de ferramenta em todo
+turno. Claude Opus 5.5, Sonnet 5.5 e Fable 5.1 rejeitam esse formato de
+requisição, os modelos V4 da DeepSeek (`@ai-sdk/deepseek`) o recusam porque
+raciocinam por padrão, e os modelos Muse Spark aceitam apenas `auto`. O e2e
+continua com `auto`, e os passos seguintes nesse modelo já começam assim. O
+raciocínio pode continuar ativado.
+</Accordion>
+
+<Accordion title="Claude Opus 5.5, Sonnet 5.5 e Fable 5.1">
+Esses modelos vinculam cada bloco de raciocínio ao prompt de sistema e às
+mensagens anteriores a ele, e rejeitam uma requisição que reenvia o bloco
+depois que um dos dois mudou. Um passo do agente mantém o prompt fixo e, assim
+que omite uma tela ou captura de tela já superada de uma mensagem anterior,
+deixa de enviar o raciocínio a partir daquela mensagem. A transcrição `--debug`
+do passo registra isso.
+</Accordion>
+
+## Vários modelos em uma configuração
+
+Dê a cada modelo um nome de agente próprio e escolha um com `--agent` ou em um
+teste. Veja [Agentes e personas](/agents). Para trocar de modelo sem editar a
+configuração, leia uma variável de ambiente:
+
+```ts title="Agent setup"
+const agent = {
+  model: gateway(process.env.MODEL ?? 'openai/gpt-6-luna-fast'),
+};
+```
+
+### Escolha um modelo pela chave definida
+
+Quando as pessoas do time têm chaves diferentes, escolha o modelo pela
+variável que estiver definida. Mantenha um único nome de agente, para que
+todos reproduzam as mesmas gravações:
+
+```ts title="Agent setup"
+import { anthropic } from '@ai-sdk/anthropic';
+import { gateway } from 'ai';
+
+const agent = {
+  model: process.env.ANTHROPIC_API_KEY
+    ? anthropic('claude-sonnet-5-5')
+    : gateway('openai/gpt-6-luna-fast'),
+};
+```
+
+Use `gateway()` como fallback: o [Vercel OIDC](#vercel-oidc-instead-of-a-key)
+faz o login dele sem uma variável que o código possa verificar. Uma chave em
+`.env` só conta quando [`process.loadEnvFile()`](/reference/config#loading)
+roda antes deste código.
+
+Um passo gravado com o outro modelo ainda é reproduzido e mostra o nome desse
+modelo. Veja [O que precisa corresponder](/cache#what-must-match).
+
+### Um juiz próprio
+
+Por padrão, um mesmo modelo conduz `agent.act` e responde a `agent.assert`,
+`agent.waitFor` e `agent.extract`. Defina `judge` para usar outro modelo
+nessas verificações:
+
+```ts title="Agent setup"
+const agent = {
+  model: gateway('openai/gpt-6-luna-fast'),
+  judge: gateway('anthropic/claude-sonnet-5'),
+};
+```
+
+O `agent.assert` embutido com `explore: true` roda o loop de ferramentas em
+`agents.<name>.model`, mesmo quando `judge` está definido.
+
+Os relatórios indicam o modelo de cada julgamento. `judge` recebe um modelo de
+linguagem do AI SDK. Para Clef ou Jev, use o
+[executor de decisão](/decision-models). Veja
+[o que um julgamento vê](/agent-steps#what-the-model-sees).
+
+## Retenção de dados e conformidade
+
+A entrada do modelo é a tela com dados sensíveis ocultados, a instrução do
+passo e as capturas de tela que o agente pede. O e2e não lê nada de volta do
+provedor depois de uma resposta, então uma execução não precisa de nenhum
+estado armazenado pelo provedor.
+
+Toda requisição ao modelo identifica o e2e: um `User-Agent` que começa com
+`e2e/<version> (<platform>; <arch>)`, além de `HTTP-Referer:
+https://tester.army/e2e` e `X-Title: e2e` para o Vercel AI Gateway e o
+OpenRouter. Eles substituem os mesmos cabeçalhos definidos na instância do
+provedor.
+
+<AccordionGroup>
+<Accordion title="OpenAI e Azure OpenAI: retenção zero de dados">
+Toda requisição a um modelo da API Responses (`openai(...)`, `azure(...)` ou
+`openai/*` no gateway) leva `store: false` e uma chave de cache de prompt.
+Modelos da API Chat Completions e provedores compatíveis com a OpenAI não
+recebem nenhum dos dois. O provedor não guarda cópia da conversa, e o cache de
+prompt continua funcionando. Organizações com retenção zero de dados não
+precisam de nenhuma configuração.
+
+Para manter as respostas armazenadas, defina `store` em `providerOptions`.
+Para o Azure OpenAI, a chave é `azure`:
+
+```ts title="Agent setup"
+const agent = {
+  model: openai('gpt-6-luna'),
+  providerOptions: { openai: { store: true } },
+};
+```
+</Accordion>
+<Accordion title="Anthropic sob um BAA">
+Os passos do agente usam a Messages API com uso de ferramentas, cache de
+prompt, imagens e saídas estruturadas. Todos esses recursos são elegíveis nos
+serviços da Anthropic preparados para a HIPAA.
+
+O acordo cobre somente `api.anthropic.com`. Chame essa API com
+`@ai-sdk/anthropic`, não por um gateway nem pelo OpenRouter. Deixe `judge`
+sem definir, para que um único acordo cubra todas as requisições. Os Covered
+Models da Anthropic exigem retenção de 30 dias, então organizações com
+retenção zero de dados não podem usá-los.
+</Accordion>
+</AccordionGroup>
+
+## O que falha e onde
+
+| Problema | Código | Correção |
+| --- | --- | --- |
+| Um modelo é uma string em vez de uma instância do AI SDK | `INVALID_CONFIG` | Crie a instância, por exemplo `gateway('openai/gpt-6-luna-fast')`. |
+| O agente embutido não tem modelo | `MODEL_UNAVAILABLE` | Defina `agents.<name>.model`. |
+| O GitHub Copilot não disponibiliza o modelo para a sua conta | `MODEL_UNAVAILABLE` | Escolha um id que o seu plano disponibilize. Veja [Escolha um modelo](/subscriptions#pick-a-model). |
+| Um provedor que lê a chave ao carregar a configuração não encontra nenhuma | `CONFIG_LOAD_FAILED` | Defina a chave. |
+| A autenticação falha na primeira chamada ao modelo | `MODEL_PROVIDER_FAILED` | Verifique a chave de API do provedor ou rode `npx e2e login` para uma assinatura. Com o Vercel OIDC, a mensagem cita apenas `AI_GATEWAY_API_KEY`. Verifique `vercel login` e `.vercel/project.json`. |
+| O pacote `ai` está faltando | `MODEL_UNAVAILABLE` | Instale `ai`. Veja [Escolha um gateway ou um provedor](#pick-a-gateway-or-a-provider). |
+| O segundo turno de um passo falha com `Item with id 'rs_…' not found` | `MODEL_PROVIDER_FAILED` | Deixe `store` desativado em `providerOptions`, que é o padrão, ou chame a OpenAI diretamente em vez de por um gateway. |
+| O `model` ou o `judge` próprio de um executor personalizado difere do valor na entrada do agente | `INVALID_CONFIG` | Veja [Executores personalizados](/executors#keep-the-loop-change-the-vocabulary). |
+
+## Próximos passos
+
+<CardGroup cols={2}>
+  <Card title="Assinaturas" icon="key" href="/subscriptions">
+    Faça login com ChatGPT, Copilot, OpenCode Console ou SuperGrok.
+  </Card>
+  <Card title="Agentes e personas" icon="users" href="/agents">
+    Escolha agentes para testes e usuários autenticados.
+  </Card>
+</CardGroup>
