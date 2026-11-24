@@ -222,6 +222,7 @@ describe('web engine lifecycle', () => {
       'observation',
       'pointer',
       'state',
+      'viewport-intersection',
     ]);
     expect(engine.name).toBe('web');
   });

@@ -257,6 +257,19 @@ test.describe('controls', { requires: ['browser'], tags: ['controls'] }, () => {
     expect(error).toHaveProperty('message', expect.stringContaining('opened no file chooser'));
   });
 
+  test('toBeInViewport follows the scroll position, and no match is outside the viewport', async ({ screen }) => {
+    const footnote = screen.getByText('Footnote', { exact: true });
+    await expect(footnote).not.toBeInViewport();
+    const error = await failure(() => expect(footnote).toBeInViewport({ timeout: 500 }));
+    expect(error).toHaveProperty('code', 'ASSERTION_FAILED');
+    expect(error).toHaveProperty('message', expect.stringContaining('observed: outside the viewport'));
+
+    await footnote.scrollIntoView();
+    await expect(screen.getByLabel('Footnote state')).toHaveText('in view');
+    await expect(footnote).toBeInViewport({ ratio: 1 });
+    await expect(screen.getByText('No such footnote')).not.toBeInViewport();
+  });
+
   test('a missing locator fails as LOCATOR_NOT_FOUND after its timeout', async ({ screen }) => {
     expect(await failure(() => screen.getByRole('button', 'Nope').tap({ timeout: 500 }))).toHaveProperty(
       'code',

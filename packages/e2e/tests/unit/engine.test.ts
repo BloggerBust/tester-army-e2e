@@ -54,6 +54,13 @@ describe('defineEngine', () => {
     expect(() => defineEngine({ ...bare, pointerActions: ['tap'], performAt: async () => undefined })).toThrow(/performAt without observe/);
   });
 
+  it('rejects viewportIntersection without locate: it measures located nodes', () => {
+    const viewportIntersection = async () => ({ intersects: true });
+    expect(() => defineEngine(observingEngine({ viewportIntersection }))).toThrow(/viewportIntersection without locate/);
+    const handle = defineEngine(observingEngine({ locate: async () => [], viewportIntersection }));
+    expect(handle.capabilities.has('viewport-intersection')).toBe(true);
+  });
+
   it('requires the action list with perform, and perform with the action list', () => {
     expect(() => defineEngine(observingEngine({ perform: async () => undefined }))).toThrow(
       /perform without actions: list the action kinds/,

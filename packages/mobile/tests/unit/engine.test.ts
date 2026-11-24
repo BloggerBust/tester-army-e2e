@@ -100,7 +100,7 @@ async function screenRootOf(h: Harness): Promise<SemanticNode> {
 describe('manifest', () => {
   it('declares observation, actions, location, artifacts, the device fixture, and session hooks', () => {
     const pinned = harness().engine;
-    expect([...pinned.capabilities].toSorted()).toEqual(['actions', 'artifacts', 'device', 'keyboard', 'location', 'observation', 'pointer']);
+    expect([...pinned.capabilities].toSorted()).toEqual(['actions', 'artifacts', 'device', 'keyboard', 'location', 'observation', 'pointer', 'viewport-intersection']);
     expect(pinned.name).toBe('mobile');
     expect(describeEngine(pinned).launchArgumentValues).toBe(true);
     expect(pinned.version).not.toBe('unknown');
@@ -1789,6 +1789,60 @@ describe('location', () => {
       { ref: '@e3', settle: true, settleQuietMs: 150 },
       { ref: '@e4', settle: true, settleQuietMs: 150 },
     ]);
+  });
+
+  it('answers whether a located node is on the screen, never the share agent-device clipped away', async () => {
+    const h = harness();
+    h.fake.respond('capture.snapshot', () => ({
+      ...SETTINGS_SNAPSHOT,
+      nodes: [
+        ...SETTINGS_NODES,
+        { ref: '@e11', index: 11, parentIndex: 0, depth: 1, type: 'button', label: 'Unplaced' },
+        { ref: '@e12', index: 12, parentIndex: 0, depth: 1, type: 'button', label: 'Lower', rect: { x: 10, y: 600, width: 100, height: 40 } },
+      ],
+    }));
+    await openAttempt(h);
+    const measure = async (label: string) => {
+      const [node] = await h.engine.locate!({ kind: 'query', query: { kind: 'text', value: { kind: 'string', value: label, exact: true } } }, operation());
+      const issued = h.fake.calls.length;
+      // Read off the capture the locate took: no second snapshot, no device command.
+      return h.engine.viewportIntersection!(node!.ref, operation()).finally(() => expect(h.fake.calls).toHaveLength(issued));
+    };
+    expect(await measure('About')).toEqual({ intersects: true });
+    // Below y 390 on the 390x844 screen: the height is measured against the height, not the width.
+    expect(await measure('Lower')).toEqual({ intersects: true });
+    expect(await measure('Password')).toEqual({ intersects: true });
+    // Below the 844-point screen.
+    expect(await measure('Hidden')).toEqual({ intersects: false });
+    await expect(measure('Unplaced')).rejects.toMatchObject({ code: 'UNSUPPORTED_CAPABILITY' });
+  });
+
+  it('measures against a resized screen once the device confirms it, without waiting for an observe', async () => {
+    const h = harness();
+    await openAttempt(h);
+    const below = { ref: '@e11', index: 11, parentIndex: 0, depth: 1, type: 'button', label: 'Below', rect: { x: 10, y: 850, width: 100, height: 20 } };
+    const locateBelow = async () => {
+      const [node] = await h.engine.locate!({ kind: 'query', query: { kind: 'text', value: { kind: 'string', value: 'Below', exact: true } } }, operation());
+      return h.engine.viewportIntersection!(node!.ref, operation());
+    };
+    h.fake.respond('capture.snapshot', () => ({ ...SETTINGS_SNAPSHOT, nodes: [...SETTINGS_NODES, below] }));
+    expect(await locateBelow()).toEqual({ intersects: false });
+
+    // A foldable unfolds: the tree grows to 402x874, and the device's screen agrees.
+    h.fake.respond('capture.snapshot', () => ({ ...SETTINGS_SNAPSHOT, nodes: [...SETTINGS_NODES, below], viewport: { width: 402, height: 874 } }));
+    h.fake.respond('capture.screenshot', () => ({ logicalWidth: 402, logicalHeight: 874 }));
+    expect(await locateBelow()).toEqual({ intersects: true });
+  });
+
+  it('refuses to say whether a node is in the viewport when its window has no known place on the screen', async () => {
+    const h = harness();
+    h.fake.respond('capture.snapshot', () => ({ ...SETTINGS_SNAPSHOT, warnings: [ORIGIN_WARNING] }));
+    await openAttempt(h);
+    const [hidden] = await h.engine.locate!({ kind: 'query', query: { kind: 'text', value: { kind: 'string', value: 'Hidden', exact: true } } }, operation());
+    await expect(h.engine.viewportIntersection!(hidden!.ref, operation())).rejects.toMatchObject({
+      code: 'UNSUPPORTED_CAPABILITY',
+      message: expect.stringContaining(ORIGIN_UNKNOWN_BOUNDS),
+    });
   });
 
   it('finds an Android view by its id without its package', async () => {
@@ -3632,6 +3686,20 @@ describe('device fixture', () => {
       code: 'UNSUPPORTED_CAPABILITY',
       message: expect.stringContaining(hint),
     });
+  });
+
+  it('measures toBeInViewport against the unfolded screen after fold', async () => {
+    const h = harness({ platform: 'android', bundleId: 'com.example.app' });
+    // A real device's screenshot reports no logical size, so the tree's size stands once it changes.
+    h.fake.respond('capture.screenshot', () => ({ width: 1236, height: 2745 }));
+    h.fake.respond('capture.snapshot', () => ({ ...SETTINGS_SNAPSHOT, viewport: { width: 412, height: 915 } }));
+    await openAttempt(h);
+    await h.engine.observe!(operation());
+    await fixture(h).fold('open');
+    const inner = { ref: '@e11', index: 11, parentIndex: 0, depth: 1, type: 'button', label: 'Inner pane', rect: { x: 600, y: 100, width: 120, height: 40 } };
+    h.fake.respond('capture.snapshot', () => ({ ...SETTINGS_SNAPSHOT, nodes: [...SETTINGS_NODES, inner], viewport: { width: 841, height: 701 } }));
+    const [node] = await h.engine.locate!({ kind: 'query', query: { kind: 'text', value: { kind: 'string', value: 'Inner pane', exact: true } } }, operation());
+    expect(await h.engine.viewportIntersection!(node!.ref, operation())).toEqual({ intersects: true });
   });
 
   it('folds an iOS simulator or an Android emulator through the one device command, and maps a hingeless device to UNSUPPORTED_CAPABILITY', async () => {

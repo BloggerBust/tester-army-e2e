@@ -74,6 +74,7 @@ await expect(screen.getByTestId('cart-empty'), 'the cart is empty').toBeVisible(
 | --- | --- |
 | [`toBeVisible`](#tobevisible-and-tobehidden) | Waits for visibility |
 | [`toBeHidden`](#tobevisible-and-tobehidden) | Waits for hidden or absent state |
+| [`toBeInViewport`](#tobeinviewport) | Waits for the match to be in view |
 | [`toBeAttached`](#tobeattached) | Waits for one match to exist |
 | [`toBeEnabled`](#tobeenabled-and-tobedisabled) | Waits for enabled state |
 | [`toBeDisabled`](#tobeenabled-and-tobedisabled) | Waits for disabled state |
@@ -104,6 +105,34 @@ await expect(screen.getByRole('dialog')).toBeVisible();
 await expect(screen.getByRole('dialog')).not.toBeVisible({ timeout: 10_000 });
 await expect(screen.getByRole('dialog')).toBeVisible({ visible: false }); // as toBeHidden()
 ```
+
+#### `toBeInViewport`
+
+Waits for part of the one match to be inside the viewport. It never scrolls,
+and it says nothing about another element covering the match. No match counts
+as outside the viewport, so `.not` accepts zero matches. A zero-size box, or a
+web element with no box such as `display: none`, also counts as outside.
+
+```ts
+await expect(screen.getByRole('toolbar', 'Selection')).toBeInViewport();
+await expect(screen.getByRole('toolbar', 'Selection')).toBeInViewport({ ratio: 0.5 });
+await expect(screen.getByRole('alert')).not.toBeInViewport();
+```
+
+`ratio` is a number from `0` to `1` setting the share of the box that must be
+inside. `0` means any positive area, the same as omitting `ratio`. Any value
+outside `0` to `1` fails with `INVALID_ARGUMENT`. What counts as inside depends
+on the engine:
+
+| Engine | Measures | `ratio` |
+| --- | --- | --- |
+| `@e2e-dev/web` | Uses the page's `IntersectionObserver`, matching Playwright. The viewport, scrolling or `overflow` ancestors, and frames clip the box. Replacing `IntersectionObserver` changes the result | Supported |
+| `@e2e-dev/mobile` | Checks device-reported bounds against the confirmed screen. Scroll containers clip the bounds, and offscreen nodes leave the tree | `ratio > 0` fails with `UNSUPPORTED_CAPABILITY` once the node is on screen, because the device reports only the visible part |
+
+It fails at once with `UNSUPPORTED_CAPABILITY`, `.not` included, if the target's
+engine does not implement
+[`viewportIntersection`](/reference/engine#viewport-intersection), or if the
+engine cannot report a node's bounds or screen position.
 
 #### `toBeAttached`
 
@@ -862,11 +891,12 @@ has held:
 
 - A positive locator matcher requires exactly one match. The exceptions are
   `toHaveCount` and the list form of `toHaveText` and `toContainText`.
-- Zero matches keep polling until the timeout.
+- Zero matches keep polling until the timeout, except for the matchers below
+  that accept them.
 - Multiple matches fail immediately with `LOCATOR_AMBIGUOUS`.
 - `toBeHidden`, `toBeVisible({ visible: false })`,
-  `toBeAttached({ attached: false })`, negated visibility, and negated
-  `toBeAttached` accept zero matches.
+  `toBeAttached({ attached: false })`, negated visibility, negated
+  `toBeAttached`, and negated `toBeInViewport` accept zero matches.
 - For those, for `toHaveCount` and the list forms, and for
   `waitFor({ state: 'detached' })` and `'hidden'`, a locator under a frame
   that is not in the document is zero matches rather than a wait for the
@@ -971,6 +1001,12 @@ export interface AsyncExpectation {
   toBeVisible(options?: { visible?: boolean; timeout?: number }): Promise<void>;
   /** Waits for hidden or absent state. */
   toBeHidden(options?: { timeout?: number }): Promise<void>;
+  /**
+   * Waits for part of the match to be inside the viewport, after clipping by
+   * scrolling and overflow ancestors; `ratio` (0 to 1) sets the share of its
+   * box that must be. No match is outside the viewport. It never scrolls.
+   */
+  toBeInViewport(options?: { ratio?: number; timeout?: number }): Promise<void>;
   /** Waits for one match to exist, visible or not; `attached: false` waits for none. */
   toBeAttached(options?: { attached?: boolean; timeout?: number }): Promise<void>;
   /** Waits for enabled state; `enabled: false` waits for disabled state. */

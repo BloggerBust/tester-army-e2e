@@ -1,7 +1,8 @@
 {
-  "name": "web",
+  "name": "android",
   "version": "0.1.0",
   "spiVersion": 1,
-  "methods": ["engine/observe", "engine/perform"],
-  "actions": ["setInputFiles", "setInputFilePayloads", "setInputFilePayloads"]
+  "methods": [
+    "engine/viewportIntersection"
+  ]
 }

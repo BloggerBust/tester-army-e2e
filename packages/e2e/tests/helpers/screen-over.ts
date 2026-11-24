@@ -1,6 +1,6 @@
 /**
  * A `screen` over an in-memory engine for unit tests of the locator tier: the
- * engine is whatever `locate`, `observe`, `perform`, and `keyboard` the test
+ * engine is whatever `locate`, `observe`, `perform`, `viewportIntersection`, and `keyboard` the test
  * hands in, wired through the real `LocatorEngine` and `createScreen` with a
  * `StepRecorder` the test reads back. `createScreenFixture` (screen-fixture.ts)
  * is the preset over a fixed node list.
@@ -17,6 +17,7 @@ import {
   type NodeRef,
   type OperationContext,
   type SemanticNode,
+  type ViewportIntersection,
 } from '@e2e-dev/core/lib/engine/index';
 import { prepareObservation } from '@e2e-dev/core/lib/agent/observation';
 import { createEngineSession } from '@e2e-dev/core/lib/engine/session';
@@ -36,6 +37,8 @@ export interface ScreenOverOptions {
   readonly perform?: (ref: NodeRef, action: LocatorAction, operation: OperationContext) => void | Promise<void>;
   /** Action kinds the engine declares with `perform`; default every kind. */
   readonly actions?: readonly LocatorActionKind[];
+  /** Answers every `viewportIntersection`; without it the engine declares none. */
+  readonly viewportIntersection?: (ref: NodeRef) => ViewportIntersection | Promise<ViewportIntersection>;
   /** The keyboard the engine declares, if any. */
   readonly keyboard?: EngineKeyboard;
   /** Writes a screenshot under `artifactsDir` and returns its relative path; without it the engine declares no artifacts. */
@@ -52,7 +55,7 @@ export interface ScreenOverOptions {
 
 /** A screen and the recorder of its steps over the engine `options` describe. */
 export function screenOver(options: ScreenOverOptions): { screen: Screen; steps: StepRecorder } {
-  const { perform, screenshot } = options;
+  const { perform, screenshot, viewportIntersection } = options;
   const engine = defineEngine({
     name: 'fake',
     version: '1',
@@ -67,6 +70,9 @@ export function screenOver(options: ScreenOverOptions): { screen: Screen; steps:
             await perform(ref, action, operation);
           },
         }),
+    ...(viewportIntersection === undefined
+      ? {}
+      : { viewportIntersection: async (ref: NodeRef) => viewportIntersection(ref) }),
     ...(options.keyboard === undefined ? {} : { keyboard: options.keyboard }),
     ...(screenshot === undefined ? {} : { artifacts: { screenshot: async (label: string | undefined) => screenshot(label) } }),
     ...(options.tapModifiers === undefined ? {} : { tapModifiers: options.tapModifiers }),

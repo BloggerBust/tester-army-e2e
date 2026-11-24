@@ -67,6 +67,7 @@ import type {
   PointerAction,
   PointerActionKind,
   SemanticNode,
+  ViewportIntersection,
   ViewportPoint,
   ViewportSize,
 } from './contract.ts';
@@ -100,6 +101,7 @@ export { isSecret } from '../secrets.ts';
 export type EngineCapability =
   | 'observation'
   | 'computed-style'
+  | 'viewport-intersection'
   | 'actions'
   | 'location'
   | 'pointer'
@@ -743,6 +745,14 @@ export interface Engine {
    * protocol as JSON and are redacted by the harness before a tool sees them.
    */
   readStyle?(ref: NodeRef, properties: readonly ComputedStyleProperty[], context: OperationContext): Promise<ComputedStyleValues>;
+  /**
+   * capability: viewport-intersection - requires location. Measures how much
+   * of a node `locate` returned is inside the viewport, for `toBeInViewport`,
+   * without scrolling or changing app state. Throw NODE_STALE if the node no
+   * longer binds, and `UNSUPPORTED_CAPABILITY` for a node whose geometry the
+   * platform does not report.
+   */
+  viewportIntersection?(ref: NodeRef, context: OperationContext): Promise<ViewportIntersection>;
   /**
    * capability: actions - requires observation. Performs exactly one action
    * on a ref this engine minted, from the newest observation or from

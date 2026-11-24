@@ -1,7 +1,7 @@
 /** Runner-owned polling locator assertions. */
 
-import type { SemanticNode } from '@e2e-dev/core/lib/engine/surface';
-import { TestError } from '@e2e-dev/core/lib/internal/errors';
+import type { SemanticNode, ViewportIntersection } from '@e2e-dev/core/lib/engine/surface';
+import { ConfigurationError, TestError } from '@e2e-dev/core/lib/internal/errors';
 import { rejectUnknownOptions } from '@e2e-dev/core/lib/internal/options';
 import {
   isTextMatch,
@@ -30,15 +30,27 @@ import type {
 import { labelAmbiguous, withMessage } from './heading.ts';
 import { expectScreenshot } from './screenshot.ts';
 
+/** Slack on a measured share, so `ratio: 0.5` passes on a box measured at 0.4999999999. */
+const RATIO_TOLERANCE = 1e-9;
+
 interface Sample {
   readonly count: number;
   readonly node: SemanticNode | null;
   /** Every current match, read; only a `wholeSet: 'read'` matcher asks for them. */
   readonly nodes: readonly SemanticNode[];
+  /** How much of `node` is inside the viewport, for a `measuresViewport` matcher. */
+  readonly intersection?: ViewportIntersection;
+  /**
+   * The ref went stale before it was read or measured. Such a sample is never
+   * evaluated, negated or not: a node a race superseded is not a gone one.
+   */
+  readonly stale?: boolean;
 }
 
 interface MatcherSpec {
   readonly name: string;
+  /** Also measures how much of the one match is inside the viewport (`Sample.intersection`). */
+  readonly measuresViewport?: boolean;
   /**
    * Evaluates the whole sample instead of requiring one node: `true` counts
    * the matches, `'read'` also reads each of them.
@@ -229,6 +241,7 @@ class AsyncExpectationImpl implements AsyncExpectation {
    * visibility matchers also accept zero matches.
    */
   private conditionEvaluable(spec: MatcherSpec, sample: Sample): boolean {
+    if (sample.stale === true) return false;
     if (spec.wholeSet !== undefined) return true;
     if (sample.node === null) return spec.evaluableWithoutNode === true;
     return spec.evaluableNode?.(sample.node) ?? true;
@@ -236,6 +249,10 @@ class AsyncExpectationImpl implements AsyncExpectation {
 
   private async sample(spec: MatcherSpec, reads: ReadWindow): Promise<Sample> {
     const { engine } = this.internals.context;
+    if (spec.measuresViewport === true) {
+      const { node, count, stale, intersection } = await engine.readViewport(this.internals.expression, reads);
+      return { count, node, nodes: [], stale, ...(intersection === undefined ? {} : { intersection }) };
+    }
     if (spec.wholeSet === 'read') {
       const nodes = await engine.readAllNow(this.internals.expression, reads);
       return { count: nodes.length, node: null, nodes };
@@ -362,6 +379,47 @@ class AsyncExpectationImpl implements AsyncExpectation {
   toBeHidden(options?: { timeout?: number }): Promise<void> {
     this.readOptions('toBeHidden', options);
     return this.visibilityMatcher('toBeHidden', false, options?.timeout);
+  }
+
+  toBeInViewport(options?: { ratio?: number; timeout?: number }): Promise<void> {
+    const api = this.api('toBeInViewport');
+    rejectUnknownOptions(api, options, ['ratio', 'timeout']);
+    const ratio: unknown = options?.ratio;
+    if (ratio !== undefined && !(typeof ratio === 'number' && ratio >= 0 && ratio <= 1)) {
+      throw new TestError('INVALID_ARGUMENT', `${api} option ratio must be a number from 0 to 1`);
+    }
+    // 0 asks for any area inside, as the default does.
+    const minimum = ratio === 0 ? undefined : ratio;
+    return this.poll(
+      {
+        name: 'toBeInViewport',
+        measuresViewport: true,
+        // No match is outside the viewport: a device leaves offscreen nodes out of its tree.
+        evaluableWithoutNode: true,
+        predicate: ({ node, intersection }) => {
+          if (node === null || intersection === undefined || !intersection.intersects) return false;
+          if (minimum === undefined) return true;
+          if (intersection.ratio === undefined) {
+            throw new ConfigurationError(
+              'UNSUPPORTED_CAPABILITY',
+              `${api} option ratio needs the share of the box inside the viewport, and this target's engine reports only the part of a box that is visible; drop ratio to check that any of it is`,
+            );
+          }
+          return intersection.ratio > minimum - RATIO_TOLERANCE;
+        },
+        describeExpected:
+          minimum === undefined ? 'inside the viewport' : `at least ${minimum} of its box inside the viewport`,
+        observed: ({ node, stale, intersection }) => {
+          if (stale === true) return 'a node that went stale before it was measured';
+          if (node === null || intersection === undefined) return 'no node';
+          if (!intersection.intersects) return 'outside the viewport';
+          return intersection.ratio === undefined
+            ? 'inside the viewport'
+            : `${describeRatio(intersection.ratio, minimum)} of its box inside the viewport`;
+        },
+      },
+      options?.timeout,
+    );
   }
 
   toBeAttached(options?: { attached?: boolean; timeout?: number }): Promise<void> {
@@ -518,6 +576,18 @@ class AsyncExpectationImpl implements AsyncExpectation {
       options?.timeout,
     );
   }
+}
+
+/**
+ * A measured share as a failure message prints it: three decimals, unless
+ * rounding would put it on the other side of `minimum` than the comparison
+ * did (0.99975 against 1 would print as 1), then in full.
+ */
+function describeRatio(ratio: number, minimum: number | undefined): string {
+  const rounded = Number(ratio.toFixed(3));
+  if (minimum === undefined) return String(rounded);
+  const met = ratio > minimum - RATIO_TOLERANCE;
+  return rounded >= minimum === met ? String(rounded) : String(ratio);
 }
 
 /** A list of text matches, as opposed to one string or RegExp. */

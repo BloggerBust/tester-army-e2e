@@ -112,6 +112,10 @@ function makeEngine(script: ScreenScript, options: { actionTimeout?: number; bud
       },
       actions: new Set(LOCATOR_ACTION_KINDS),
       pointerActions: new Set(['tap']),
+      measuresViewport: true,
+      async viewportIntersection() {
+        return { intersects: true, ratio: 1 };
+      },
   } as unknown as TargetSession;
   const engine = new LocatorEngine({
     session,
@@ -123,6 +127,20 @@ function makeEngine(script: ScreenScript, options: { actionTimeout?: number; bud
   });
   return { engine, calls, origins, resolveTimeouts, performed };
 }
+
+describe('readViewport', () => {
+  it('reads a ref superseded between the resolve and the read as stale, not as gone', async () => {
+    const { engine } = makeEngine({ read: ['stale'] });
+    const reads = engine.reads(engine.deadline(1_000));
+    expect(await engine.readViewport(EXPRESSION, reads)).toEqual({ node: null, count: 1, stale: true });
+    expect(await engine.readViewport(EXPRESSION, reads)).toEqual({
+      node: NODE,
+      count: 1,
+      stale: false,
+      intersection: { intersects: true, ratio: 1 },
+    });
+  });
+});
 
 describe('locator.blur', () => {
   it.each([true, false])('honors the declared capability (supported: %s)', async (supported) => {

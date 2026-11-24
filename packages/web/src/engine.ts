@@ -131,6 +131,7 @@ export function web(options: WebOptions = {}): WebEngine {
     dispose: (context) => surface.dispose(context),
     observe: (operation, observeOptions) => surface.observe(operation, observeOptions),
     readStyle: (ref, properties, operation) => surface.readStyle(ref, properties, operation),
+    viewportIntersection: (ref, operation) => surface.viewportIntersection(ref, operation),
     locate: (expression, operation) => surface.locate(expression, operation),
     perform: (ref, action, operation) => surface.perform(ref, action, operation),
     // A browser honors the SPI v1 actions plus blur and in-memory uploads; `actions.ts` dispatches each.

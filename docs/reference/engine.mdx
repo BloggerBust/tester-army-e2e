@@ -106,9 +106,10 @@ rules:
 | `spiVersion` | Anything but `1`. |
 | `platform` | Empty. |
 | `workers` | Not a positive safe integer. |
-| `observe`, `readStyle`, `locate`, `perform`, `performAt`, `prepare`, `finish`, `doctor`, `init`, `startAttempt`, `settleAttempt`, `endAttempt`, `dispose`, `validateApp` | Not a function. |
+| `observe`, `readStyle`, `viewportIntersection`, `locate`, `perform`, `performAt`, `prepare`, `finish`, `doctor`, `init`, `startAttempt`, `settleAttempt`, `endAttempt`, `dispose`, `validateApp` | Not a function. |
 | any other top-level key | On an object literal, `app` included: declare the app on the target and check it in `validateApp`. A class instance's own fields are not checked. |
 | `readStyle`, `perform`, `locate`, `performAt`, `keyboard` | Declared without `observe`. |
+| `viewportIntersection` | Declared without `locate`. |
 | `perform`, `actions` | One without the other. An `actions` list that is empty, repeats a kind, or names one outside `KNOWN_LOCATOR_ACTION_KINDS`. |
 | `performAt`, `pointerActions` | One without the other. A `pointerActions` list that is empty, repeats a kind, or names one outside `POINTER_ACTION_KINDS`. |
 | `tapModifiers` | Not a boolean, or `true` without `perform`. |
@@ -140,6 +141,7 @@ The body of one target. Every member but `name`, `version`, and
 | `workers` | `number` |
 | [`observe`](#observation) | method |
 | [`readStyle`](#rendered-node-properties) | method |
+| [`viewportIntersection`](#viewport-intersection) | method |
 | [`perform`, `actions`](#actions) | method, kinds |
 | [`locate`](#capabilities) | method |
 | [`performAt`, `pointerActions`](#pointer-actions) | method, kinds |
@@ -189,6 +191,8 @@ export interface Engine {
   observe?(context: OperationContext, options?: EngineObserveOptions): Promise<EngineSnapshot>;
   /** capability: computed-style, requires observation. Read-only rendered properties of an observation ref. */
   readStyle?(ref: NodeRef, properties: readonly ComputedStyleProperty[], context: OperationContext): Promise<ComputedStyleValues>;
+  /** capability: viewport-intersection, requires location. How much of a located node is inside the viewport. */
+  viewportIntersection?(ref: NodeRef, context: OperationContext): Promise<ViewportIntersection>;
   /**
    * Performs one action on a ref from the newest observation or `locate`,
    * with the platform's actionability checks. Both agent tools and locator
@@ -407,6 +411,7 @@ member. Three gaps end differently:
 | `readStyle` | `computed-style` | `observe` | Allow-listed rendered properties for read-only project tools. |
 | `perform` + `actions` | `actions` | `observe` | Node actions of the declared kinds, with platform actionability checks. |
 | `locate` | `location` | `observe` | `screen`, `Locator`, `expect(locator)`. |
+| `viewportIntersection` | `viewport-intersection` | `locate` | `expect(locator).toBeInViewport()`. |
 | `tapModifiers: true` | - | `perform` | `modifiers` on `tap`, `doubleTap`, and `secondaryTap`. |
 | `selectsDevice: true` | - | `prepare` | `e2e run --device`, the device `prepare` binds. |
 | `launchArgumentValues: true` | - | - | The object form of `app.launchArguments`, in `EngineAppInfo.launchArgumentValues`. |
@@ -439,6 +444,30 @@ export type ComputedStyleValues = Readonly<Partial<Record<ComputedStyleProperty,
 throws `INVALID_ARGUMENT` for an empty list or a property outside the
 allow-list. Call it before page access.
 See [Project tools](/tools#read-a-nodes-computed-style) for `ToolContext.read`.
+
+#### Viewport intersection
+
+`viewportIntersection(ref, context)` measures how much of a located node is
+inside the viewport for [`toBeInViewport`](/reference/expect#tobeinviewport),
+without scrolling or changing app state. Clip the box by the viewport and every
+clipping ancestor, such as a scroll container, `overflow: hidden`, or a frame.
+
+```ts
+export interface ViewportIntersection {
+  /** Whether a positive area of the box is inside; false for a node with no box or an empty one. */
+  readonly intersects: boolean;
+  /** The inside area's share of the whole box, from 0 to 1; absent where the platform reports only the visible part of a box. */
+  readonly ratio?: number;
+}
+```
+
+Omit `ratio` when the platform reports only the visible part of a box, as a
+device does. `toBeInViewport` with `ratio > 0` then fails with
+`UNSUPPORTED_CAPABILITY` instead of reading that part as the whole box. Throw
+retryable `NODE_STALE` if the node no longer binds, and
+`UNSUPPORTED_CAPABILITY` if the platform cannot report the node's bounds or
+screen position. A `ratio` is above `0` exactly when `intersects` is true. The
+harness fails the step with `ENGINE_FAILURE` on an answer outside this shape.
 
 #### Agent verbs
 
@@ -537,6 +566,7 @@ engine. A target with `app.url` has `browser`, and one with `app.bundleId` or
 export type EngineCapability =
   | 'observation'
   | 'computed-style'
+  | 'viewport-intersection'
   | 'actions'
   | 'location'
   | 'pointer'

@@ -238,6 +238,13 @@ return (await browser.reload()) === undefined;`);
     expect(either.text).toContain('Test lines: 1.\n');
   });
 
+  it('measures a node against the viewport with toBeInViewport', async () => {
+    const inside = await runCode("await expect(screen.getByRole('button', 'Increment')).toBeInViewport({ ratio: 1 });");
+    expect(inside.isError, inside.text).toBe(false);
+    const absent = await runCode("await expect(screen.getByRole('button', 'Nowhere')).not.toBeInViewport();");
+    expect(absent.isError, absent.text).toBe(false);
+  });
+
   it('computes on what it reads: variables, loops, value assertions, a caught failure, a return value, and the console', async () => {
     const result = await runCode(
       `const counter = screen.getByRole('status', 'Counter');

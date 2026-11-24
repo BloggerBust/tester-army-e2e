@@ -52,7 +52,12 @@ test('sticky chrome: accept below the fold, then continue', async ({ app, device
   await screen.getByTestId('continue-button').tap();
   await expect(screen.getByText('Accept the terms at the bottom first')).toBeVisible();
   const accept = screen.getByTestId('accept-terms');
+  await expect(accept).not.toBeInViewport();
   await screen.scrollUntilVisible(accept, { direction: 'down' });
+  await expect(accept).toBeInViewport();
+  // A device reports only the visible part of a box, so no share of it can be measured.
+  const refused = await expect(accept).toBeInViewport({ ratio: 0.5 }).then(() => undefined, (error: unknown) => error);
+  expect(refused).toHaveProperty('code', 'UNSUPPORTED_CAPABILITY');
   await accept.tap();
   await expect(screen.getByText('Terms accepted ✓')).toBeVisible();
   await screen.getByTestId('continue-button').tap();

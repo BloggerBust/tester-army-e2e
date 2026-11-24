@@ -22,6 +22,7 @@ const KNOWN_KEYS = [
   'workers',
   'observe',
   'readStyle',
+  'viewportIntersection',
   'locate',
   'perform',
   'actions',
@@ -68,6 +69,7 @@ const RETIRED_HOOKS: Readonly<Partial<Record<keyof typeof NESTED_HOOKS, readonly
 const FUNCTION_MEMBERS = [
   'observe',
   'readStyle',
+  'viewportIntersection',
   'locate',
   'perform',
   'performAt',
@@ -261,6 +263,12 @@ export function defineEngine<Fixtures extends object = {}>(declared: EngineSpec<
       throw invalid(name, 'declares locate without observe: located nodes share the observation id space');
     }
     capabilities.add('location');
+  }
+  if (spec.viewportIntersection !== undefined) {
+    if (!capabilities.has('location')) {
+      throw invalid(name, 'declares viewportIntersection without locate: it measures located nodes');
+    }
+    capabilities.add('viewport-intersection');
   }
   if (spec.performAt !== undefined) {
     if (!capabilities.has('observation')) {

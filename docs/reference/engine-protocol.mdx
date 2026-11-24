@@ -229,6 +229,7 @@ params are the member's arguments by name, with every `OperationContext` as
 | --- | --- | --- |
 | `engine/observe` | `{ operation, options? }` | `EngineSnapshot` |
 | `engine/readStyle` | `{ ref, properties, operation }` | `ComputedStyleValues` |
+| `engine/viewportIntersection` | `{ ref, operation }` | `ViewportIntersection`; leave `ratio` out, never `null`, when the platform cannot measure it |
 | `engine/locate` | `{ expression, operation }` | `SemanticNode[]` |
 | `engine/perform` | `{ ref, action, operation }` | `null` |
 | `engine/performAt` | `{ point, action, operation }` | `null` |

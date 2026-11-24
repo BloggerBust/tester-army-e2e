@@ -250,6 +250,23 @@ export interface ViewportSize {
 }
 
 /**
+ * How much of a node's box is inside the viewport, after clipping by the
+ * viewport and by every ancestor that clips its content (a scroll container,
+ * `overflow: hidden`, a frame), as `Engine.viewportIntersection` measures it.
+ * It says nothing about another node covering the box.
+ */
+export interface ViewportIntersection {
+  /** Whether a positive area of the box is inside; false for a node with no box or an empty one. */
+  readonly intersects: boolean;
+  /**
+   * The inside area over the whole box's area, from 0 to 1. Absent where
+   * the platform reports only the visible part of a box, so the whole is
+   * unknown.
+   */
+  readonly ratio?: number;
+}
+
+/**
  * Masked viewport pixels captured for one observation revision.
  *
  * `width` and `height` MUST be the true dimensions of `data`, because they are
