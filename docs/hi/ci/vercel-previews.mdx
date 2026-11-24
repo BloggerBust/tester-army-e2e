@@ -1,0 +1,260 @@
+---
+title: Vercel Previews
+description: GitHub Actions से Vercel के प्रीव्यू और प्रोडक्शन डिप्लॉयमेंट टेस्ट करें, और e2e पास होने तक प्रोडक्शन रिलीज़ रोककर रखें।
+---
+
+import { SetupPrompt } from '../../snippets/setup-prompt-card.jsx';
+import { Video } from '../../snippets/video.jsx';
+
+export const setupPrompt = `इस प्रोजेक्ट के e2e टेस्ट Vercel डिप्लॉयमेंट पर चलाएँ। डॉक्स: \`https://e2e.com/docs/ci/vercel-previews.md\`
+
+1. पेज पढ़ें, और उसका कॉन्फ़िग इस ऐप की लोकल कमांड, URL और मॉडल प्रोवाइडर के हिसाब से ढालें।
+2. vercel.deployment.ready के लिए repository_dispatch वर्कफ़्लो जोड़ें। डिप्लॉय हुए कमिट का चेकआउट और हर एनवायरनमेंट का अलग स्टेटस वैसे ही रखें।
+3. मुझसे कहें कि मैं Vercel के repository dispatch इवेंट चालू करूँ, और ऑटोमेशन बायपास सीक्रेट और मॉडल key GitHub में रखूँ।
+4. समझाएँ कि Vercel वर्कफ़्लो को तभी ट्रिगर कर सकता है, जब वह डिफ़ॉल्ट ब्रांच पर पहुँच जाए।
+5. मेरे डिप्लॉय करने के बाद वर्कफ़्लो का नतीजा देखें, और सूट पास होने तक एरर ठीक करते रहें। फिर e2e - production Deployment Check जोड़ने में मेरी मदद करें।`;
+
+[Vercel](https://vercel.com) ऐप के हर डिप्लॉयमेंट को उसका अपना URL देता है।
+GitHub Actions उस पर e2e चलाता है। एक
+[Deployment Check](https://vercel.com/docs/deployment-checks) टेस्ट पास होने तक
+प्रोडक्शन रिलीज़ रोककर रखता है।
+
+लोकेटर और एजेंट टेस्ट वाले Next.js ऐप के लिए
+[e2e-vercel उदाहरण](https://github.com/e2e-inc/e2e-vercel) देखें।
+
+<Video>
+  <video src="/images/vercel-previews.mp4" aria-label="एक पुल रिक्वेस्ट ग्रीटिंग फ़ॉर्म को क्रैश कर देती है, और Vercel प्रीव्यू पर उसका e2e चेक फ़ेल हो जाता है। पुल रिक्वेस्ट कमेंट में एजेंट के फ़ेल हुए स्टेप और ऐप का अनकॉट एरर दिखता है, और रिकॉर्ड हुए वीडियो में क्रैश दिखता है।" muted loop playsInline controls />
+
+  e2e टूटी हुई पुल रिक्वेस्ट को उसके Vercel प्रीव्यू पर फ़ेल कर देता है। कमेंट [GitHub रिपोर्टर](#post-results-on-the-pull-request) से आता है।
+</Video>
+
+<SetupPrompt>
+
+<Prompt description={setupPrompt} children={setupPrompt} actions={["copy", "cursor"]} />
+
+</SetupPrompt>
+
+## खुद सेट अप करें
+
+एक [वेब सूट](/web) से शुरू करें, और एक Vercel प्रोजेक्ट जो उसकी GitHub
+रिपॉज़िटरी से जुड़ा हो। नीचे वाला वर्कफ़्लो npm और कमिट की हुई `package-lock.json`
+इस्तेमाल करता है।
+
+### डिप्लॉयमेंट का URL कॉन्फ़िगर करें
+
+किसी डिप्लॉयमेंट को टेस्ट करने के लिए `APP_URL` पढ़ें। यह न हो, तो यह कॉन्फ़िग
+आपका लोकल ऐप शुरू करता है। कमांड और पोर्ट अपने हिसाब से बदलें:
+
+```ts title="e2e.config.ts"
+import type { E2EConfig } from 'e2e';
+import { web } from '@e2e-dev/web';
+import { gateway } from 'ai';
+
+const appUrl = process.env.APP_URL;
+const bypassSecret = process.env.VERCEL_AUTOMATION_BYPASS_SECRET;
+
+export default {
+  agents: { default: { model: gateway('openai/gpt-6-luna-fast') } },
+  targets: [
+    {
+      engine: web(bypassSecret ? { headers: { 'x-vercel-protection-bypass': bypassSecret } } : {}),
+      app: {
+        identity: 'my-app',
+        environment: process.env.DEPLOYMENT_ENVIRONMENT === 'production' ? 'production' : 'test',
+        ...(appUrl
+          ? { url: appUrl }
+          : {
+              url: 'http://localhost:3000',
+              command: { executable: 'npm', args: ['run', 'dev'], reuseExisting: true },
+            }),
+      },
+    },
+  ],
+} satisfies E2EConfig;
+```
+
+टेस्ट में `app.open('/')` इस्तेमाल करें, ताकि नेविगेशन कॉन्फ़िग किए गए URL पर
+चले।
+
+### इवेंट और डिप्लॉयमेंट का ऐक्सेस चालू करें
+
+अपने Vercel प्रोजेक्ट की **Settings → Git** में
+[`repository_dispatch` इवेंट](https://vercel.com/docs/git/vercel-for-github#repository-dispatch-events)
+चालू करें। **Settings → Deployment Protection** में एक
+[Protection Bypass for Automation](https://vercel.com/docs/deployment-protection/methods-to-bypass-deployment-protection/protection-bypass-automation)
+सीक्रेट बनाएँ। कॉन्फ़िग इसे `x-vercel-protection-bypass` हेडर में भेजता है।
+
+GitHub की **Settings → Secrets and variables → Actions** में ये जोड़ें:
+
+| सीक्रेट | किस काम का |
+| --- | --- |
+| `VERCEL_AUTOMATION_BYPASS_SECRET` | प्रोटेक्टेड प्रीव्यू और अभी रिलीज़ न हुए प्रोडक्शन डिप्लॉयमेंट खोलना |
+| `AI_GATEWAY_API_KEY` | ऊपर वाले कॉन्फ़िग के साथ मॉडल कॉल। सिर्फ़ लोकेटर वाले सूट को इसकी ज़रूरत नहीं |
+
+<Note>
+कोई मॉडल क्रेडेंशियल सेट न हो, तो यह उदाहरण अपने कोड में ही एजेंट टेस्ट छोड़
+देता है। e2e उन्हें अपने-आप नहीं छोड़ता। पूरा सूट चलाना है, तो CI को key दें।
+</Note>
+
+### वर्कफ़्लो जोड़ें
+
+`vercel.deployment.ready` इस्तेमाल करें। यह बिल्ड के बाद और Deployment Checks
+से पहले चलता है। `APP_URL` को इवेंट के डिप्लॉयमेंट URL पर सेट करें, ताकि टेस्ट उस
+बिल्ड तक पहुँचें जो प्रमोशन का इंतज़ार कर रहा है।
+
+```yaml title=".github/workflows/e2e.yml" expandable
+name: e2e
+
+on:
+  repository_dispatch:
+    types: [vercel.deployment.ready]
+
+run-name: e2e - ${{ github.event.client_payload.environment }} - ${{ github.event.client_payload.git.shortSha }}
+
+permissions:
+  contents: read
+  actions: read
+  statuses: write
+
+jobs:
+  e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: vercel/repository-dispatch/actions/status@30f760c6640485cd92f8c785ef361382555fb712 # v1
+        with:
+          name: e2e - ${{ github.event.client_payload.environment }}
+      - uses: vercel/repository-dispatch/actions/checkout@30f760c6640485cd92f8c785ef361382555fb712 # v1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('package-lock.json') }}
+      - run: npx e2e-web install chromium --with-deps
+
+      - name: Run e2e against the deployment
+        run: npx e2e run --reporter list,junit --video on
+        env:
+          APP_URL: ${{ github.event.client_payload.url }}
+          DEPLOYMENT_ENVIRONMENT: ${{ github.event.client_payload.environment }}
+          AI_GATEWAY_API_KEY: ${{ secrets.AI_GATEWAY_API_KEY }}
+          VERCEL_AUTOMATION_BYPASS_SECRET: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
+
+      - name: Upload the report
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: e2e-report-${{ github.event.client_payload.environment }}
+          path: |
+            .e2e/report.json
+            .e2e/junit.xml
+            .e2e/results
+          if-no-files-found: warn
+          retention-days: 7
+```
+
+Vercel का चेकआउट एक्शन डिप्लॉय हुआ कमिट चुनता है। उसका स्टेटस एक्शन जॉब का
+नतीजा उसी कमिट पर बताता है। `e2e - preview` और `e2e - production` के अलग स्टेटस
+होने से एक एनवायरनमेंट का नतीजा दूसरे के नतीजे को ओवरराइट नहीं करता।
+
+<Note>
+किसी डिप्लॉयमेंट को टेस्ट करने से पहले वर्कफ़्लो डिफ़ॉल्ट ब्रांच पर रखें। पुल
+रिक्वेस्ट में वर्कफ़्लो बदलने से वह वर्कफ़्लो नहीं बदलता जिसे Vercel ट्रिगर करता है।
+</Note>
+
+यह वर्कफ़्लो सिर्फ़ ऐसे डिप्लॉयमेंट कोड पर चलाएँ जिस पर आप भरोसा करते हैं। यह
+उस कमिट को रिपॉज़िटरी सीक्रेट और एक write टोकन के साथ इंस्टॉल करता है और चलाता
+है। [मॉडल क्रेडेंशियल](/ci#model-credentials) देखें।
+
+### नतीजे से प्रोडक्शन पर गेट लगाएँ
+
+पहले प्रोडक्शन रन के बाद Vercel में
+**Settings → Build and Deployment → Deployment Checks** खोलें।
+**Add Checks** चुनें, फिर **GitHub** चुनें, और `e2e - production` सेलेक्ट करें।
+
+इसके बाद के प्रोडक्शन बिल्ड इस चेक का इंतज़ार करते हैं, फिर Vercel उन्हें
+प्रोडक्शन डोमेन देता है। चेक फ़ेल हो, तो पिछला डिप्लॉयमेंट ही लाइव रहता है।
+Vercel में और वर्कफ़्लो में स्टेटस का नाम बिल्कुल एक जैसा रखें।
+[Deployment Checks](https://vercel.com/docs/deployment-checks#adding-github-checks)
+देखें।
+
+## एजेंट की रिकॉर्डिंग दोबारा इस्तेमाल करें
+
+CI में रिकॉर्ड हुए `agent.act` स्टेप रीप्ले करने के लिए
+[`.e2e/cache`](/cache#commit-the-replay-cache) कमिट करें। कॉन्फ़िग का तय
+`app.identity` और `test` एनवायरनमेंट होने से लोकल और प्रीव्यू रन अलग-अलग URL
+पर भी वही रिकॉर्डिंग इस्तेमाल करते हैं। प्रोडक्शन की कैश एंट्री अलग होती हैं,
+क्योंकि उसका एनवायरनमेंट अलग है।
+
+CI डिफ़ॉल्ट रूप से रिकॉर्डिंग पढ़ता है, और कैश मिस पर मॉडल कॉल करता है।
+`agent.assert`, `agent.waitFor` और `agent.extract` हमेशा लाइव चलते हैं। इसलिए
+रिकॉर्डिंग होने पर भी मॉडल key की ज़रूरत बनी रहती है।
+
+## नतीजे पुल रिक्वेस्ट पर पोस्ट करें
+
+डिस्पैच पेलोड में पुल रिक्वेस्ट का नंबर नहीं होता।
+[`@e2e-dev/github` रिपोर्टर](/github) के लिए इसे डिप्लॉय हुए कमिट से ढूँढें।
+
+<Accordion title="वर्कफ़्लो में पुल रिक्वेस्ट कमेंट जोड़ें">
+
+`@e2e-dev/github` इंस्टॉल करने और अपने कॉन्फ़िग के `reporters` में `github()`
+जोड़ने के लिए रिपोर्टर का [सेटअप](/github#setup) देखें। CLI का
+`--reporter list,junit` कस्टम रिपोर्टर को चालू रहने देता है।
+
+वर्कफ़्लो की परमिशन में `pull-requests: write` जोड़ें।
+**Run e2e against the deployment** से पहले यह स्टेप डालें:
+
+```yaml
+      - name: Find the pull request
+        id: pull-request
+        run: |
+          number=$(gh api "repos/$GITHUB_REPOSITORY/commits/$SHA/pulls" \
+            --jq '[.[] | select(.state == "open")][0].number // empty')
+          echo "number=$number" >> "$GITHUB_OUTPUT"
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SHA: ${{ github.event.client_payload.git.sha }}
+```
+
+रन वाला स्टेप बदल दें। टेम्परेरी इवेंट फ़ाइल रिपोर्टर को पुल रिक्वेस्ट का नंबर
+और सोर्स लिंक के लिए डिप्लॉय हुआ कमिट देती है:
+
+```yaml
+      - name: Run e2e against the deployment
+        run: |
+          export GITHUB_SHA="$SHA"
+          if [ -n "$PULL_REQUEST" ]; then
+            jq -n --argjson number "$PULL_REQUEST" --arg sha "$SHA" \
+              '{pull_request: {number: $number, head: {sha: $sha}}}' > "$RUNNER_TEMP/pull-request.json"
+            export GITHUB_EVENT_PATH="$RUNNER_TEMP/pull-request.json"
+          fi
+          npx e2e run --reporter list,junit --video on
+        env:
+          PULL_REQUEST: ${{ steps.pull-request.outputs.number }}
+          SHA: ${{ github.event.client_payload.git.sha }}
+          GITHUB_TOKEN: ${{ github.token }}
+          APP_URL: ${{ github.event.client_payload.url }}
+          DEPLOYMENT_ENVIRONMENT: ${{ github.event.client_payload.environment }}
+          AI_GATEWAY_API_KEY: ${{ secrets.AI_GATEWAY_API_KEY }}
+          VERCEL_AUTOMATION_BYPASS_SECRET: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
+```
+
+दोबारा चलाने पर रिपोर्टर एक ही कमेंट अपडेट करता है, और जॉब समरी लिखता है। कोई
+खुली पुल रिक्वेस्ट न हो, तो वह सिर्फ़ समरी लिखता है।
+
+</Accordion>
+
+## आगे
+
+<CardGroup cols={2}>
+  <Card title="पुल रिक्वेस्ट कमेंट" icon="code-pull-request" href="/github">
+    पुल रिक्वेस्ट पर ही फ़ेलियर, स्क्रीनशॉट और ट्रेस पढ़ें।
+  </Card>
+  <Card title="कंटीन्यूअस इंटीग्रेशन" icon="rotate" href="/ci">
+    CI के डिफ़ॉल्ट, आर्टिफ़ैक्ट और मॉडल क्रेडेंशियल।
+  </Card>
+</CardGroup>

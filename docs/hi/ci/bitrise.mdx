@@ -1,0 +1,166 @@
+---
+title: Bitrise
+description: Bitrise पर iOS और Android टेस्ट चलाएँ, एक पाइपलाइन में हर प्लेटफ़ॉर्म के लिए एक वर्कफ़्लो के साथ।
+"og:image": "https://e2e.com/docs/images/og/ci/bitrise.png?v=24966c34af"
+"twitter:image": "https://e2e.com/docs/images/og/ci/bitrise.png?v=24966c34af"
+---
+
+import { SetupPrompt } from '../../snippets/setup-prompt-card.jsx';
+
+export const setupPrompt = `एक Bitrise पाइपलाइन जोड़ें जो iOS और Android पर इस प्रोजेक्ट के e2e टेस्ट चलाए। डॉक्स: \`https://e2e.com/docs/ci/bitrise.md\` और \`https://e2e.com/docs/ci.md\`
+
+1. दोनों पेज पढ़ें।
+2. वर्कफ़्लो \`bitrise.yml\` में जोड़ें। प्रोजेक्ट पाथ, scheme, stack और Node वर्ज़न इस प्रोजेक्ट के हिसाब से ढालें।
+3. मुझसे मॉडल key को Bitrise के workflow editor में Secrets के अंदर जोड़ने को कहें।
+4. मेरे बिल्ड शुरू करने के बाद बिल्ड का लॉग पढ़ें, और दोनों वर्कफ़्लो पास होने तक एरर ठीक करते रहें।`;
+
+यह सेटअप एक ही पाइपलाइन में हर प्लेटफ़ॉर्म के लिए एक वर्कफ़्लो चलाता है, और
+[मोबाइल जॉब](/ci#mobile-jobs) वाले नियम मानता है।
+
+<SetupPrompt>
+
+<Prompt description={setupPrompt} children={setupPrompt} actions={["copy", "cursor"]} />
+
+</SetupPrompt>
+
+## वर्कफ़्लो
+
+Bitrise के स्टेप डिवाइस बूट करते हैं: macOS पर `xcode-start-simulator`, और Linux
+पर `avd-manager` के साथ `wait-for-android-emulator`। Android वर्कफ़्लो Gradle
+बिल्ड से पहले एम्युलेटर शुरू कर देता है, ताकि APK कंपाइल होने के दौरान वह बूट
+होता रहे। Release APK का साइन होना ज़रूरी है। React Native और Expo के टेम्पलेट उसे
+debug keystore से साइन करते हैं।
+
+```yaml title="bitrise.yml" expandable
+format_version: '25'
+default_step_lib_source: https://github.com/bitrise-io/bitrise-steplib.git
+
+tools:
+  nodejs: 24:latest
+
+pipelines:
+  e2e:
+    triggers:
+      push:
+      - branch: main
+      pull_request:
+      - target_branch: main
+    workflows:
+      e2e-ios: {}
+      e2e-android: {}
+
+workflows:
+  e2e-ios:
+    meta:
+      bitrise.io:
+        stack: osx-xcode-26.6.x
+    steps:
+    - git-clone@8: {}
+    - script@1:
+        title: Install dependencies
+        inputs:
+        - content: |-
+            #!/usr/bin/env bash
+            set -euo pipefail
+            npm ci
+            cd ios && pod install
+    - xcode-build-for-simulator@3:
+        inputs:
+        - project_path: ios/MyApp.xcworkspace
+        - scheme: MyApp
+        - configuration: Release
+    - xcode-start-simulator@0:
+        inputs:
+        - destination: platform=iOS Simulator,name=iPhone 17,OS=26.5
+    - script@1:
+        title: Run e2e
+        inputs:
+        - content: |-
+            #!/usr/bin/env bash
+            set -euo pipefail
+            xcrun simctl install booted "$BITRISE_APP_DIR_PATH"
+            npx e2e run --target ios --reporter list,junit
+    - script@1:
+        title: Package the e2e output
+        is_always_run: true
+        inputs:
+        - content: |-
+            #!/usr/bin/env bash
+            if [ -d .e2e ]; then (cd .e2e && zip -qr "$BITRISE_DEPLOY_DIR/e2e-ios.zip" .); fi
+    - custom-test-results-export@1:
+        inputs:
+        - test_name: e2e-ios
+        - base_path: $BITRISE_SOURCE_DIR/.e2e/junit.xml
+        - search_pattern: '*'
+    - deploy-to-bitrise-io@2: {}
+
+  e2e-android:
+    meta:
+      bitrise.io:
+        stack: ubuntu-noble-24.04-bitrise-2025-android
+    steps:
+    - git-clone@8: {}
+    - script@1:
+        title: Install dependencies
+        inputs:
+        - content: npm ci
+    - avd-manager@2:
+        inputs:
+        - api_level: 35
+        - tag: google_apis
+        - abi: x86_64
+    - android-build@1:
+        inputs:
+        - project_location: $BITRISE_SOURCE_DIR/android
+        - module: app
+        - variant: release
+        - build_type: apk
+    - wait-for-android-emulator@1: {}
+    - script@1:
+        title: Run e2e
+        inputs:
+        - content: |-
+            #!/usr/bin/env bash
+            set -euo pipefail
+            adb install -r "$BITRISE_APK_PATH"
+            npx e2e run --target android --reporter list,junit
+    - script@1:
+        title: Package the e2e output
+        is_always_run: true
+        inputs:
+        - content: |-
+            #!/usr/bin/env bash
+            if [ -d .e2e ]; then (cd .e2e && zip -qr "$BITRISE_DEPLOY_DIR/e2e-android.zip" .); fi
+    - custom-test-results-export@1:
+        inputs:
+        - test_name: e2e-android
+        - base_path: $BITRISE_SOURCE_DIR/.e2e/junit.xml
+        - search_pattern: '*'
+    - deploy-to-bitrise-io@2: {}
+```
+
+## आर्टिफ़ैक्ट और टेस्ट रिपोर्ट
+
+`deploy-to-bitrise-io` सिर्फ़ `$BITRISE_DEPLOY_DIR` का ऊपरी लेवल अपलोड करता है।
+इसलिए हर वर्कफ़्लो `.e2e/` को zip करके उसी डायरेक्टरी में रखता है।
+`custom-test-results-export` `junit.xml` को Test Reports टैब पर भेजता है।
+कोई स्टेप फ़ेल हो, तब भी ये स्टेप चलते हैं।
+
+## मॉडल key
+
+मॉडल key ऐप के workflow editor में Secrets के अंदर जोड़ें। पुल रिक्वेस्ट बिल्ड
+को यह तभी मिलती है जब **Expose for Pull Requests** चालू हो। पब्लिक ऐप के बिल्ड
+को यह कभी नहीं मिलती। Key के बिना डिटर्मिनिस्टिक टेस्ट फिर भी चलते हैं, लेकिन
+एजेंट की परख और बिना रिकॉर्डिंग वाले `agent.act` स्टेप फ़ेल हो जाते हैं।
+[मॉडल क्रेडेंशियल](/ci#model-credentials) देखें।
+
+## आगे
+
+<CardGroup cols={2}>
+  <Card title="कंटीन्यूअस इंटीग्रेशन" icon="rotate" href="/ci">
+    CI के डिफ़ॉल्ट, शार्डिंग, दोबारा रन और एग्ज़िट कोड।
+  </Card>
+  <Card title="होस्टेड डिवाइस" icon="cloud" href="/mobile#hosted-devices">
+    किसी सर्विस से डिवाइस लीज़ पर लें। तब रनर कोई डिवाइस बूट नहीं करता।
+  </Card>
+</CardGroup>

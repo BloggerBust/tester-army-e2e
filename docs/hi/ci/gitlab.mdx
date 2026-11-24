@@ -1,0 +1,258 @@
+---
+title: GitLab CI/CD
+description: GitLab CI/CD पर वेब, iOS और Android टेस्ट चलाएँ, नतीजे मर्ज रिक्वेस्ट में दिखाएँ, और सिर्फ़ वे टेस्ट चलाएँ जिन पर मर्ज रिक्वेस्ट का असर पड़ सकता है।
+---
+
+import { SetupPrompt } from '../../snippets/setup-prompt-card.jsx';
+
+export const setupPrompt = `इस प्रोजेक्ट के e2e टेस्ट चलाने वाली एक GitLab CI/CD पाइपलाइन जोड़ें। डॉक्स: \`https://e2e.com/docs/ci/gitlab.md\` और \`https://e2e.com/docs/ci.md\`
+
+1. दोनों पेज पढ़ें। वेब टारगेट के लिए वेब जॉब इस्तेमाल करें, और मोबाइल टारगेट के लिए iOS और Android जॉब।
+2. जॉब \`.gitlab-ci.yml\` में जोड़ें। प्रोजेक्ट में यह फ़ाइल पहले से हो, तो जॉब एक अलग फ़ाइल में जोड़ें और उसे इनक्लूड करें। जॉब को इस प्रोजेक्ट के हिसाब से ढालें: पैकेज मैनेजर, Node वर्ज़न, ऐप कैसे शुरू या बिल्ड होता है, और ऐप के पाथ।
+3. मोबाइल जॉब के लिए मुझसे पूछें कि किन सेल्फ़-मैनेज्ड रनर के टैग इस्तेमाल करने हैं।
+4. जॉब जो CI/CD वेरिएबल पढ़ते हैं, जैसे मॉडल key, उनकी लिस्ट बनाएँ और मुझसे उन्हें जोड़ने को कहें।
+5. मेरे पुश करने के बाद जॉब का लॉग पढ़ें, और पाइपलाइन पास होने तक एरर ठीक करते रहें।`;
+
+ये जॉब वेब टारगेट GitLab के होस्टेड Linux रनर पर चलाते हैं, और iOS और Android
+टारगेट आपके अपने रनर पर। CI के डिफ़ॉल्ट, मॉडल key और एग्ज़िट कोड के लिए
+[कंटीन्यूअस इंटीग्रेशन](/ci) देखें।
+`e2e init --ci gitlab` आपके टारगेट और पैकेज मैनेजर के हिसाब से ये जॉब लिख देता
+है। Expo या bare React Native ऐप हो, तो उसका बिल्ड भी साथ में लिखता है।
+[CI पाइपलाइन](/reference/cli#ci-pipeline) देखें।
+
+<SetupPrompt>
+
+<Prompt description={setupPrompt} children={setupPrompt} actions={["copy", "cursor"]} />
+
+</SetupPrompt>
+
+## वेब
+
+यह जॉब डिटर्मिनिस्टिक और एजेंट टेस्ट चलाता है, हर मर्ज रिक्वेस्ट में और डिफ़ॉल्ट
+ब्रांच पर हर पुश पर। यह मानकर चलता है कि कॉन्फ़िग में ऐप शुरू करने वाली
+[कमांड](/web#starting-your-app) है। अपने प्रोजेक्ट के Node वर्ज़न वाली `node`
+इमेज इस्तेमाल करें:
+
+```yaml title=".gitlab-ci.yml" expandable
+e2e:
+  image: node:26
+  interruptible: true
+  timeout: 30 minutes
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+  variables:
+    APP_URL: http://127.0.0.1:3000
+    PLAYWRIGHT_BROWSERS_PATH: $CI_PROJECT_DIR/.cache/ms-playwright
+  cache:
+    key:
+      files:
+        - package-lock.json
+    paths:
+      - .npm/
+      - .cache/ms-playwright/
+  script:
+    - npm ci --cache .npm --prefer-offline
+    - npx @e2e-dev/web install chromium --with-deps
+    - npx e2e run --reporter list,junit
+  artifacts:
+    when: always
+    expire_in: 7 days
+    paths:
+      - .e2e/report.json
+      - .e2e/junit.xml
+      - .e2e/results/
+    reports:
+      junit: .e2e/junit.xml
+```
+
+नियम जॉब पर लगे हैं, `workflow:` ब्लॉक में नहीं। इसलिए यही जॉब अपनी अलग
+पाइपलाइन में भी चलता है और [आपके बाकी जॉब के साथ](#add-it-to-an-existing-pipeline) भी।
+
+GitLab सिर्फ़ प्रोजेक्ट के अंदर के पाथ कैश करता है। इसलिए
+`PLAYWRIGHT_BROWSERS_PATH` [ब्राउज़र](/reference/web#installing-browsers) को वहीं
+रखता है। लॉकफ़ाइल बदलने तक कैश उन्हें रखे रहता है।
+
+ऐप की कमांड `127.0.0.1` पर लिसन करे, क्योंकि `APP_URL` में यही होस्ट है।
+कंटेनर में `localhost` पर लिसन करने वाला डेव सर्वर, जैसे Vite का, सिर्फ़ `::1`
+पर बाइंड हो सकता है। तब e2e उस तक नहीं पहुँच पाता, और रन `APP_UNREACHABLE` के
+साथ फ़ेल होता है।
+
+`reports: junit` नतीजे मर्ज रिक्वेस्ट विजेट में और पाइपलाइन के **Tests** टैब पर
+दिखाता है। `when: always` टेस्ट फ़ेल होने पर भी रिपोर्ट रखता है।
+
+GitLab.com पर नए अकाउंट को पहले अपनी पहचान वेरिफ़ाई करनी होती है। उसके बाद ही
+होस्टेड रनर उसके जॉब लेते हैं। तब तक हर पाइपलाइन बिना कोई जॉब शुरू किए फ़ेल हो
+जाती है।
+
+## मौजूदा पाइपलाइन में जोड़ें
+
+प्रोजेक्ट में पहले से `.gitlab-ci.yml` हो, तो जॉब को एक अलग फ़ाइल में रखें, जैसे
+`.gitlab/e2e.gitlab-ci.yml`। फिर उसे `.gitlab-ci.yml` से इनक्लूड करें:
+
+```yaml title=".gitlab-ci.yml"
+include:
+  - local: .gitlab/e2e.gitlab-ci.yml
+```
+
+जिस जॉब में `rules` नहीं हैं, वह सिर्फ़ ब्रांच पाइपलाइन में चलता है। इसलिए मर्ज
+रिक्वेस्ट पाइपलाइन में अकेला `e2e` जॉब चलता है, और आपके बाकी जॉब पहले की तरह हर
+पुश पर एक बार चलते हैं।
+
+## मॉडल key
+
+मॉडल key, जैसे `AI_GATEWAY_API_KEY`, **Settings > CI/CD > Variables** में जोड़ें,
+और विज़िबिलिटी **Masked and hidden** रखें। या
+[GitLab CLI](https://gitlab.com/gitlab-org/cli) इस्तेमाल करें। यह वैल्यू
+स्टैंडर्ड इनपुट से पढ़ता है:
+
+```bash
+printf %s "$AI_GATEWAY_API_KEY" | glab variable set AI_GATEWAY_API_KEY --masked --hidden --raw
+```
+
+यूज़र क्रेडेंशियल, जैसे `E2E_USER_ADMIN_PASSWORD`, भी इसी तरह जोड़ें। हर जॉब को
+ये एनवायरनमेंट वेरिएबल के रूप में मिलते हैं।
+
+- **Expand variable reference** का टिक हटा दें (`--raw` यही करता है)। वरना
+  GitLab `$` और कुछ दूसरे कैरेक्टर वाली मास्क्ड वैल्यू रिजेक्ट कर देता है।
+- GitLab सिर्फ़ वे वैल्यू मास्क करता है जो 8 या ज़्यादा कैरेक्टर की हों, एक लाइन
+  में हों और जिनमें स्पेस न हो। जिस वैल्यू को वह मास्क नहीं कर सकता, जैसे छोटा
+  यूज़रनेम, उसके लिए **Visible** चुनें।
+- **Protect variable** का टिक हटा दें, जब तक टेस्ट सिर्फ़ प्रोटेक्टेड ब्रांच पर
+  न चलते हों। GitLab प्रोटेक्टेड वेरिएबल सिर्फ़ प्रोटेक्टेड ब्रांच और टैग की
+  पाइपलाइन को देता है।
+- फ़ोर्क से आई मर्ज रिक्वेस्ट फ़ोर्क के प्रोजेक्ट में चलती है, और उसे आपका कोई
+  वेरिएबल नहीं मिलता। कोई मेंबर उसे आपके प्रोजेक्ट में चलाए, तो उसका कोड key पढ़
+  सकता है। ऐसा सिर्फ़ उस कोड के लिए करें जिस पर आप भरोसा करते हैं।
+
+कम मॉडल कॉल के लिए [रीप्ले कैश कमिट करें](/cache#commit-the-replay-cache)।
+रीप्ले हुआ `agent.act` कोई मॉडल कॉल नहीं करता। हर `agent.assert` फिर भी करता है।
+
+## सिर्फ़ असर वाले टेस्ट चलाएँ
+
+[टेस्ट फ़िल्टर](/filters) से वे टेस्ट छुड़वाने हैं जिन पर मर्ज रिक्वेस्ट का असर
+नहीं पड़ सकता, तो मर्ज रिक्वेस्ट का बेस `--changed-since` को दें। पूरी हिस्ट्री
+फ़ेच करने के लिए जॉब के `variables` में `GIT_DEPTH: 0` जोड़ें। फिर
+`npx e2e run` वाली लाइन की जगह यह लाइन लगाएँ। यह मर्ज ट्रेन में फ़्लैग छोड़
+देती है:
+
+```yaml
+  script:
+    # ...
+    - |
+      if [ -n "$CI_MERGE_REQUEST_IID" ] && [ "$CI_MERGE_REQUEST_EVENT_TYPE" != merge_train ]; then
+        set -- --changed-since "${CI_MERGE_REQUEST_TARGET_BRANCH_SHA:-$CI_MERGE_REQUEST_DIFF_BASE_SHA}"
+      fi
+      npx e2e run --reporter list,junit "$@"
+```
+
+`CI_MERGE_REQUEST_TARGET_BRANCH_SHA` merged results पाइपलाइन में सेट होता है, और
+`CI_MERGE_REQUEST_DIFF_BASE_SHA` बाकी पाइपलाइन में। डिफ़ॉल्ट ब्रांच पर पूरा सूट
+चलता है। [डिसीज़न फ़िल्टर जोड़ें](/filters#add-the-decision-filter) देखें।
+
+## शार्डिंग
+
+`parallel` हर [शार्ड](/ci#sharding) के लिए एक जॉब चलाता है। GitLab सभी शार्ड की
+JUnit रिपोर्ट मर्ज रिक्वेस्ट विजेट में एक साथ मिलाकर दिखाता है:
+
+```yaml
+e2e:
+  parallel: 3
+  script:
+    # ...
+    - npx e2e run --shard $CI_NODE_INDEX/$CI_NODE_TOTAL --reporter list,junit
+```
+
+जिस शार्ड में कोई टेस्ट न हो, वह `NO_TESTS` के साथ फ़ेल होता है। अगर रन शार्ड से
+कम टेस्ट चुन सकता है, तो `--pass-with-no-tests` जोड़ें।
+
+## iOS और Android
+
+मोबाइल जॉब shell एक्ज़ीक्यूटर वाले सेल्फ़-मैनेज्ड रनर पर चलाएँ। iOS के लिए Xcode
+वाला Mac चाहिए। Android के लिए KVM वाला Linux चाहिए, साथ में वह JDK जो आपके
+Gradle बिल्ड को चाहिए, और Android SDK।
+GitLab के होस्टेड macOS रनर हेडलेस हैं और `testmanagerd` सपोर्ट नहीं करते, जो
+XCUITest को चाहिए। GitLab अपने होस्टेड Linux रनर के लिए KVM लिस्ट नहीं करता।
+
+ये जॉब [मोबाइल जॉब](/ci#mobile-jobs) वाले नियम मानते हैं। `tags` में अपने रनर
+के टैग लिखें। Android जॉब `e2e` नाम का AVD बूट करता है, जिसे आप रनर पर खुद बनाते
+हैं।
+
+```yaml title=".gitlab-ci.yml" expandable
+.e2e-mobile:
+  timeout: 60m
+  interruptible: true
+  artifacts:
+    when: always
+    expire_in: 7 days
+    paths:
+      - .e2e/
+    reports:
+      junit: .e2e/junit.xml
+
+e2e-ios:
+  extends: .e2e-mobile
+  tags: [macos]
+  script:
+    - npm ci
+    - (cd ios && pod install)
+    - |
+      xcodebuild -workspace ios/MyApp.xcworkspace -scheme MyApp \
+        -configuration Release -sdk iphonesimulator \
+        -destination 'generic/platform=iOS Simulator' \
+        -derivedDataPath build
+    - export E2E_DEVICE=$(xcrun simctl create e2e "iPhone 17" com.apple.CoreSimulator.SimRuntime.iOS-26-5)
+    - echo "$E2E_DEVICE" > .simulator-udid
+    - xcrun simctl bootstatus "$E2E_DEVICE" -b
+    - xcrun simctl install "$E2E_DEVICE" build/Build/Products/Release-iphonesimulator/MyApp.app
+    - npx e2e run --target ios --reporter list,junit
+  after_script:
+    - xcrun simctl delete "$(cat .simulator-udid)"
+
+e2e-android:
+  extends: .e2e-mobile
+  tags: [linux-kvm]
+  script:
+    - npm ci
+    - (cd android && ./gradlew :app:assembleRelease)
+    - mkdir -p .e2e
+    - PORT=$((5554 + 2 * CI_CONCURRENT_ID))
+    - export E2E_DEVICE=emulator-$PORT
+    - adb -s $E2E_DEVICE emu kill || true
+    - $ANDROID_HOME/emulator/emulator -avd e2e -read-only -port $PORT -no-window -no-audio -no-boot-anim -no-snapshot -gpu swiftshader_indirect > .e2e/emulator.log 2>&1 &
+    - timeout 300 adb -s $E2E_DEVICE wait-for-device
+    - timeout 300 sh -c 'until [ "$(adb -s $E2E_DEVICE shell getprop sys.boot_completed | tr -d "\r")" = 1 ]; do sleep 2; done'
+    - adb -s $E2E_DEVICE install -r android/app/build/outputs/apk/release/app-release.apk
+    - npx e2e run --target android --reporter list,junit
+  after_script:
+    - adb -s emulator-$((5554 + 2 * CI_CONCURRENT_ID)) emu kill
+```
+
+हर टारगेट `mobile()` में `device: process.env.E2E_DEVICE` से अपना डिवाइस बताता
+है। तब रन वही डिवाइस चलाता है जो इस जॉब ने बूट किया। उसी मशीन पर किसी दूसरे जॉब
+का छूटा हुआ डिवाइस वह कभी नहीं चलाता।
+
+GitLab सारी `script` लाइनें एक ही शेल में चलाता है। इसलिए एम्युलेटर और
+`E2E_DEVICE` अगली लाइनों को मिलते रहते हैं। `script` फ़ेल हो, तब भी
+`after_script` एक नए शेल में चलता है, लेकिन टाइमआउट के बाद नहीं। इसलिए
+टाइमआउट हुआ जॉब अपना डिवाइस चलता छोड़ सकता है। Android जॉब अपना पोर्ट
+`CI_CONCURRENT_ID` से लेता है। इससे एक रनर पर एक साथ चल रहे जॉब को अपना-अपना
+एम्युलेटर मिलता है। उस पोर्ट पर टाइमआउट हुए किसी जॉब का एम्युलेटर छूटा हो, तो
+यह जॉब उसे बंद कर देता है। `-read-only` से एक ही AVD से कई एम्युलेटर शुरू हो
+सकते हैं। जॉब एम्युलेटर का लॉग `.e2e/emulator.log` में लिखता है, ताकि बूट फ़ेल
+हो तो वह आर्टिफ़ैक्ट में दिखे। सेल्फ़-मैनेज्ड रनर जॉब के बीच `~/.agent-device`
+रखे रहता है। इसलिए XCUITest रनर सिर्फ़ पहले रन पर बिल्ड होता है।
+
+रनर पर सिम्युलेटर या एम्युलेटर के बिना चलाना है, तो
+[होस्टेड डिवाइस सर्विस](/mobile#hosted-devices) से डिवाइस लीज़ पर लें।
+
+## आगे
+
+<CardGroup cols={2}>
+  <Card title="कंटीन्यूअस इंटीग्रेशन" icon="rotate" href="/ci">
+    CI के डिफ़ॉल्ट, शार्डिंग, दोबारा रन और एग्ज़िट कोड।
+  </Card>
+  <Card title="टेस्ट फ़िल्टर" icon="filter" href="/filters">
+    सिर्फ़ वे टेस्ट चलाएँ जिन पर मर्ज रिक्वेस्ट का असर पड़ सकता है।
+  </Card>
+</CardGroup>

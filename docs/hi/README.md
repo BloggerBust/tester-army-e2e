@@ -193,6 +193,14 @@ translation moves or goes with it in the same change.
 | accessibility | ऐक्सेसिबिलिटी | f |
 | account | अकाउंट | m |
 | job (CI) | जॉब | m |
+| workflow (CI) | वर्कफ़्लो | m |
+| pipeline | पाइपलाइन | f |
+| job summary | जॉब समरी | f |
+| merge request (GitLab) | मर्ज रिक्वेस्ट | f |
+| repository | रिपॉज़िटरी | f |
+| token | टोकन | m |
+| lockfile | लॉकफ़ाइल | f |
+| build profile | बिल्ड प्रोफ़ाइल | f |
 | observation | ऑब्ज़र्वेशन | m |
 | viewport | व्यूपोर्ट | m |
 | origin | ऑरिजिन | m |

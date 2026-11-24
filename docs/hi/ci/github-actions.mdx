@@ -1,0 +1,267 @@
+---
+title: GitHub Actions
+description: GitHub Actions पर वेब, iOS और Android टेस्ट चलाएँ, रिपोर्ट अपलोड करें, और नतीजे पुल रिक्वेस्ट पर पोस्ट करें।
+"og:image": "https://e2e.com/docs/images/og/ci/github-actions.png?v=1a59aebfc8"
+"twitter:image": "https://e2e.com/docs/images/og/ci/github-actions.png?v=1a59aebfc8"
+---
+
+import { SetupPrompt } from '../../snippets/setup-prompt-card.jsx';
+
+export const setupPrompt = `इस प्रोजेक्ट के e2e टेस्ट चलाने वाला एक GitHub Actions वर्कफ़्लो जोड़ें। डॉक्स: \`https://e2e.com/docs/ci/github-actions.md\` और \`https://e2e.com/docs/ci.md\`
+
+1. दोनों पेज पढ़ें। वेब टारगेट के लिए वेब वर्कफ़्लो इस्तेमाल करें, और मोबाइल टारगेट के लिए iOS और Android वर्कफ़्लो।
+2. वर्कफ़्लो को इस प्रोजेक्ट के हिसाब से ढालें: पैकेज मैनेजर, Node वर्ज़न, ऐप कैसे शुरू या बिल्ड होता है, और ऐप के पाथ।
+3. मोबाइल जॉब में iOS रनटाइम की जगह वह रनटाइम लिखें जो रनर इमेज में है, और उसे पिन ही रखें।
+4. वर्कफ़्लो जो रिपॉज़िटरी सीक्रेट पढ़ता है, जैसे मॉडल key, उनकी लिस्ट बनाएँ और मुझसे उन्हें जोड़ने को कहें।
+5. मेरे पुश करने के बाद जॉब का लॉग पढ़ें, और जॉब पास होने तक एरर ठीक करते रहें।`;
+
+ये दो वर्कफ़्लो वेब टारगेट चलाते हैं, और iOS और Android टारगेट। CI के डिफ़ॉल्ट,
+मॉडल key और एग्ज़िट कोड के लिए [कंटीन्यूअस इंटीग्रेशन](/ci) देखें।
+`e2e init --ci github-actions` आपके टारगेट और पैकेज मैनेजर के हिसाब से ये जॉब
+लिख देता है। Expo या bare React Native ऐप हो, तो उसका बिल्ड भी साथ में लिखता है।
+[CI पाइपलाइन](/reference/cli#ci-pipeline) देखें।
+
+<SetupPrompt>
+
+<Prompt description={setupPrompt} children={setupPrompt} actions={["copy", "cursor"]} />
+
+</SetupPrompt>
+
+## वेब
+
+यह वर्कफ़्लो डिटर्मिनिस्टिक और एजेंट टेस्ट एक ही जॉब में चलाता है। यह मानकर
+चलता है कि कॉन्फ़िग में ऐप शुरू करने वाली [कमांड](/web#starting-your-app) है, और
+मॉडल कॉल के लिए AI Gateway है। मॉडल key और यूज़र क्रेडेंशियल रिपॉज़िटरी सीक्रेट
+से आते हैं:
+
+```yaml title=".github/workflows/e2e.yml" expandable
+name: e2e
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  e2e:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: pnpm/action-setup@9fd676a19091d4595eefd76e4bd31c97133911f1 # v4.2.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 26
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('pnpm-lock.yaml') }}
+
+      - name: Install browsers
+        run: pnpm exec e2e-web install chromium --with-deps
+
+      - name: Run e2e
+        run: npx e2e run --reporter list,junit
+        env:
+          APP_URL: http://127.0.0.1:3000
+          AI_GATEWAY_API_KEY: ${{ secrets.AI_GATEWAY_API_KEY }}
+          E2E_USER_ADMIN_USERNAME: ${{ secrets.E2E_USER_ADMIN_USERNAME }}
+          E2E_USER_ADMIN_PASSWORD: ${{ secrets.E2E_USER_ADMIN_PASSWORD }}
+
+      - name: Upload report
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: e2e-report
+          path: |
+            .e2e/report.json
+            .e2e/junit.xml
+          if-no-files-found: warn
+
+      - name: Upload artifacts
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: e2e-artifacts
+          path: .e2e/results
+          if-no-files-found: warn
+          retention-days: 7
+```
+
+`npx e2e` वही वर्ज़न चलाता है जो लॉकफ़ाइल इंस्टॉल करती है।
+[इंस्टॉल कमांड](/reference/web#installing-browsers) इंजन के पिन किए हुए
+Playwright वर्ज़न के ब्राउज़र उनकी सिस्टम लाइब्रेरी के साथ डाउनलोड करती है।
+लॉकफ़ाइल बदलने तक कैश वाला स्टेप यह डाउनलोड छोड़ देता है। जो टेस्ट रीट्राई पर
+पास हुआ, उसके फ़ेल हुए अटेम्प्ट के सबूत भी अपलोड में रहते हैं।
+
+## टाइमिंग हिस्ट्री कैश करें
+
+[`.e2e/timings.json`](/ci#cache-the-timings-history) को `actions/cache` से
+रिस्टोर और सेव करें, ताकि नया रनर सबसे लंबी फ़ाइलें पहले शुरू करे। यह स्टेप रन
+से पहले जोड़ें:
+
+```yaml
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: .e2e/timings.json
+          key: e2e-timings-${{ github.ref_name }}-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: |
+            e2e-timings-${{ github.ref_name }}-
+            e2e-timings-main-
+```
+
+हर रन, और हर दोबारा रन, एक नई एंट्री सेव करता है और अपनी ब्रांच की सबसे नई
+एंट्री रिस्टोर करता है। पुल रिक्वेस्ट बेस ब्रांच का कैश पढ़ सकती है, लेकिन उसमें
+लिख नहीं सकती। इसलिए नई ब्रांच का पहला रन `main` की हिस्ट्री से शुरू होता है।
+
+यह स्टेप जॉब पास होने के बाद सेव करता है। फ़ेल हुए रन के बाद भी सेव करना हो, तो
+रन से पहले `actions/cache/restore` और रन के बाद `if: ${{ !cancelled() }}` के साथ
+`actions/cache/save` इस्तेमाल करें। हिस्ट्री तभी काम आती है जब
+[`workers`](/reference/config#workers) 2 या ज़्यादा हों, और ऊपर वाला वर्कफ़्लो
+एक ही चलाता है।
+
+## iOS और Android
+
+यह वर्कफ़्लो हर प्लेटफ़ॉर्म के लिए एक जॉब चलाता है, और
+[मोबाइल जॉब](/ci#mobile-jobs) वाले नियम मानता है। जो भी बिल्ड कमांड ऐप शुरू किए
+बिना सिम्युलेटर का `.app` लिखती है, वह `xcodebuild` की जगह ले सकती है। Expo के लिए
+`npx expo run:ios --configuration Release --device generic --no-bundler --output build/ios`
+बिना सिम्युलेटर के बिल्ड करता है और `.app` को `build/ios` में लिखता है।
+
+```yaml title=".github/workflows/e2e-mobile.yml" expandable
+name: e2e mobile
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  ios:
+    runs-on: macos-26
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 26
+          cache: npm
+      - run: npm ci
+      - run: pod install
+        working-directory: ios
+
+      - name: Build for the simulator
+        run: |
+          xcodebuild -workspace ios/MyApp.xcworkspace -scheme MyApp \
+            -configuration Release -sdk iphonesimulator \
+            -destination 'generic/platform=iOS Simulator' \
+            -derivedDataPath build
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.agent-device/apple-runner/derived
+          key: agent-device-runner-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+
+      - name: Boot a simulator and install the app
+        run: |
+          UDID=$(xcrun simctl create e2e "iPhone 17" com.apple.CoreSimulator.SimRuntime.iOS-26-5)
+          xcrun simctl bootstatus "$UDID" -b
+          xcrun simctl install "$UDID" build/Build/Products/Release-iphonesimulator/MyApp.app
+
+      - run: npx e2e run --target ios --reporter list,junit
+        env:
+          AI_GATEWAY_API_KEY: ${{ secrets.AI_GATEWAY_API_KEY }}
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: ${{ !cancelled() }}
+        with:
+          name: e2e-ios
+          path: .e2e
+          if-no-files-found: warn
+
+  android:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 26
+          cache: npm
+      - uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
+        with:
+          distribution: temurin
+          java-version: 17
+      - run: npm ci
+
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      # React Native and Expo templates sign release builds with the debug keystore.
+      - name: Build the APK
+        run: cd android && ./gradlew :app:assembleRelease
+
+      - name: Run on an emulator
+        uses: reactivecircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d # v2.38.0
+        with:
+          api-level: 36
+          arch: x86_64
+          target: google_apis
+          profile: pixel_7
+          emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim
+          disable-animations: true
+          script: |
+            adb install -r android/app/build/outputs/apk/release/app-release.apk
+            npx e2e run --target android --reporter list,junit
+        env:
+          AI_GATEWAY_API_KEY: ${{ secrets.AI_GATEWAY_API_KEY }}
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: ${{ !cancelled() }}
+        with:
+          name: e2e-android
+          path: .e2e
+          if-no-files-found: warn
+```
+
+एम्युलेटर रनर एक्शन `script` की हर लाइन एक नए शेल में चलाता है, और स्टेप ख़त्म
+होने पर एम्युलेटर बंद कर देता है। इंस्टॉल और रन एक ही स्टेप में करें।
+
+इस रिपॉज़िटरी का अपना
+[`mobile.yml`](https://github.com/e2e-inc/e2e/blob/main/.github/workflows/mobile.yml)
+इसमें ये चीज़ें और जोड़ता है: हर नेटिव फ़िंगरप्रिंट के लिए कैश किया हुआ Expo
+बिल्ड, दो वर्कर के लिए दो सिम्युलेटर, और एक `--last-failed` वाला दोबारा रन।
+
+## पुल रिक्वेस्ट कमेंट
+
+हर जॉब के नतीजे एक पुल रिक्वेस्ट कमेंट में पोस्ट करने के लिए
+[`@e2e-dev/github` रिपोर्टर](/github) जोड़ें। दोबारा चलाने पर यह कमेंट अपडेट होता
+है, और जॉब समरी में भी कॉपी होता है।
+
+जॉब को `pull-requests: write` चाहिए, और टेस्ट वाले स्टेप के env में
+`GITHUB_TOKEN`। ऊपर वाले वर्कफ़्लो रीड-ओनली हैं। [सेटअप](/github#setup) देखें।
+फ़ोर्क के `pull_request` रन को रीड-ओनली टोकन मिलता है, इसलिए कुछ पोस्ट नहीं
+होता ([क्यों](/github#when-nothing-is-posted))।
+
+## आगे
+
+<CardGroup cols={2}>
+  <Card title="पुल रिक्वेस्ट कमेंट" icon="code-pull-request" href="/github">
+    हर रन का एक कमेंट, जो दोबारा चलाने पर उसी जगह एडिट होता है।
+  </Card>
+  <Card title="कंटीन्यूअस इंटीग्रेशन" icon="rotate" href="/ci">
+    CI के डिफ़ॉल्ट, शार्डिंग, दोबारा रन और एग्ज़िट कोड।
+  </Card>
+</CardGroup>

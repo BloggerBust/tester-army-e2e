@@ -1,0 +1,172 @@
+---
+title: Expo Workflows
+description: Expo Build से Expo ऐप बिल्ड करें, फिर Expo वर्कफ़्लो में उस पर iOS और Android टेस्ट चलाएँ।
+"og:image": "https://e2e.com/docs/images/og/ci/eas-workflows.png?v=cd6a51d2ed"
+"twitter:image": "https://e2e.com/docs/images/og/ci/eas-workflows.png?v=cd6a51d2ed"
+---
+
+import { SetupPrompt } from '../../snippets/setup-prompt-card.jsx';
+
+export const setupPrompt = `एक Expo वर्कफ़्लो जोड़ें जो इस Expo ऐप को बिल्ड करे और iOS और Android पर इसके e2e टेस्ट चलाए। डॉक्स: \`https://e2e.com/docs/ci/eas-workflows.md\` और \`https://e2e.com/docs/ci.md\`
+
+1. दोनों पेज पढ़ें।
+2. \`eas.json\` में \`e2e\` बिल्ड प्रोफ़ाइल जोड़ें।
+3. \`.eas/workflows/e2e.yml\` जोड़ें, और उसे इस प्रोजेक्ट के टारगेट और Node वर्ज़न के हिसाब से ढालें।
+4. मुझसे मॉडल key को सीक्रेट Expo एनवायरनमेंट वेरिएबल के रूप में जोड़ने को कहें। फिर हर टेस्ट जॉब पर उसी के हिसाब से \`environment:\` सेट करें।
+5. मेरे वर्कफ़्लो शुरू करने के बाद जॉब के लॉग पढ़ें, और दोनों जॉब पास होने तक एरर ठीक करते रहें।`;
+
+Expo वर्कफ़्लो में `build` जॉब सिम्युलेटर वाला `.app` या `.apk` बनाता है। फिर
+एक कस्टम जॉब बिल्ड डाउनलोड करता है, डिवाइस बूट करता है और सूट चलाता है। ये जॉब
+[मोबाइल जॉब](/ci#mobile-jobs) वाले नियम मानते हैं।
+
+<Note>
+यह पेज Expo Workflows के बारे में है, जो एक CI सर्विस है। Expo के होस्टेड
+सिम्युलेटर और एम्युलेटर पर टेस्ट चलाने हैं, तो
+[Expo Simulators](/integrations/eas) देखें।
+</Note>
+
+<SetupPrompt>
+
+<Prompt description={setupPrompt} children={setupPrompt} actions={["copy", "cursor"]} />
+
+</SetupPrompt>
+
+## बिल्ड प्रोफ़ाइल
+
+ऐसी बिल्ड प्रोफ़ाइल जोड़ें जिसमें किसी क्रेडेंशियल की ज़रूरत न हो:
+
+```json title="eas.json"
+{
+  "build": {
+    "e2e": {
+      "withoutCredentials": true,
+      "ios": { "simulator": true },
+      "android": { "buildType": "apk" }
+    }
+  }
+}
+```
+
+## वर्कफ़्लो
+
+Android जॉब को `nested-virtualization` वाला Linux रनर चाहिए। Expo की यही अकेली
+मशीन है जो एम्युलेटर चला सकती है। नीचे की तरह कस्टम जॉब इस्तेमाल करें। बिल्ट-इन
+`maestro` जॉब टाइप Maestro फ़्लो चलाता है, e2e नहीं।
+
+```yaml title=".eas/workflows/e2e.yml" expandable
+name: e2e
+
+on:
+  pull_request:
+    branches: ['*']
+  push:
+    branches: [main]
+
+defaults:
+  tools:
+    node: '24'
+
+jobs:
+  build_ios:
+    type: build
+    params:
+      platform: ios
+      profile: e2e
+
+  build_android:
+    type: build
+    params:
+      platform: android
+      profile: e2e
+
+  e2e_ios:
+    needs: [build_ios]
+    runs_on: macos-medium
+    environment: preview
+    env:
+      CI: '1'
+    steps:
+      - uses: eas/checkout
+      - uses: eas/install_node_modules
+      - uses: eas/download_build
+        id: download_build
+        with:
+          build_id: ${{ needs.build_ios.outputs.build_id }}
+          extensions: [app]
+      - name: Boot a simulator and install the app
+        run: |
+          UDID=$(xcrun simctl create e2e "iPhone 17" com.apple.CoreSimulator.SimRuntime.iOS-26-5)
+          xcrun simctl bootstatus "$UDID" -b
+          xcrun simctl install "$UDID" "${{ steps.download_build.outputs.artifact_path }}"
+      - name: Run e2e
+        run: npx e2e run --target ios --reporter list,junit
+      - uses: eas/upload_artifact
+        if: ${{ always() }}
+        with:
+          type: other
+          name: e2e-ios
+          path: .e2e
+
+  e2e_android:
+    needs: [build_android]
+    runs_on: linux-medium-nested-virtualization
+    environment: preview
+    env:
+      CI: '1'
+    steps:
+      - uses: eas/checkout
+      - uses: eas/install_node_modules
+      - uses: eas/download_build
+        id: download_build
+        with:
+          build_id: ${{ needs.build_android.outputs.build_id }}
+          extensions: [apk]
+      - uses: eas/start_android_emulator
+        with:
+          system_image_package: system-images;android-35;google_apis;x86_64
+      - name: Install the app
+        run: adb install -r "${{ steps.download_build.outputs.artifact_path }}"
+      - name: Run e2e
+        run: npx e2e run --target android --reporter list,junit
+      - uses: eas/upload_artifact
+        if: ${{ always() }}
+        with:
+          type: other
+          name: e2e-android
+          path: .e2e
+```
+
+जो रनर `CI` सेट नहीं करता, उस पर `CI: '1'` [CI के डिफ़ॉल्ट](/ci#what-ci-changes)
+चालू कर देता है। `eas/start_android_emulator` Expo Build का एक फ़ंक्शन है। इसका
+डॉक्यूमेंटेशन [कस्टम बिल्ड](https://docs.expo.dev/custom-builds/schema/) में है,
+Workflows सिंटैक्स वाले पेज पर नहीं। आप जो सिस्टम इमेज बताते हैं, उसे यह
+`sdkmanager` से डाउनलोड करता है।
+
+## मॉडल key
+
+मॉडल key, जैसे `AI_GATEWAY_API_KEY`, सीक्रेट विज़िबिलिटी वाले
+[Expo एनवायरनमेंट वेरिएबल](https://docs.expo.dev/eas/environment-variables/) में
+रखें। हर जॉब पर `environment:` सेट करें, क्योंकि कस्टम जॉब डिफ़ॉल्ट रूप से
+`production` पढ़ता है।
+
+जो भी जॉब वह एनवायरनमेंट पढ़ता है, वह key भी पढ़ सकता है। इसमें वह जॉब भी शामिल
+है जो ऐसी पुल रिक्वेस्ट चलाता है जिस पर आप भरोसा नहीं करते।
+[मॉडल क्रेडेंशियल](/ci#model-credentials) देखें।
+
+## कम बार बिल्ड करें
+
+`get-build` और `repack` वाला `fingerprint` जॉब पिछला नेटिव बिल्ड दोबारा इस्तेमाल
+करता है, और सिर्फ़ JavaScript बंडल करता है।
+[agent-device Expo Workflows टेम्पलेट](https://github.com/callstackincubator/eas-agent-device/blob/main/.eas/workflows/agent-qa-mobile.yml)
+दोनों प्लेटफ़ॉर्म के लिए यही करता है।
+
+## आगे
+
+<CardGroup cols={2}>
+  <Card title="कंटीन्यूअस इंटीग्रेशन" icon="rotate" href="/ci">
+    CI के डिफ़ॉल्ट, शार्डिंग, दोबारा रन और एग्ज़िट कोड।
+  </Card>
+  <Card title="Expo Simulators" icon="/images/integrations/expo.svg" href="/integrations/eas">
+    Expo के होस्टेड डिवाइस पर सूट चलाएँ, बिना Mac या Android SDK के।
+  </Card>
+</CardGroup>
