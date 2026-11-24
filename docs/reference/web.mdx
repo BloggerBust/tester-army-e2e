@@ -886,6 +886,7 @@ await browser.setCookies([{ url: 'http://localhost:3000', name: 'tz', value: 'UT
 
 | Throws | When |
 | --- | --- |
+| `INVALID_ARGUMENT` | Not an array, or a cookie the `Cookie` type does not allow (a wrong field type, neither or both of `url` and `domain`/`path`, a `domain` that is not a bare host, an `expires` that is not in seconds, an unknown key). Nothing is set. |
 | `POLICY_DENIED` | An unparseable target or a forbidden scheme. Nothing is set. |
 
 ```ts

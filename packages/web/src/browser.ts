@@ -37,6 +37,7 @@ import {
   type OperationContext,
 } from '@e2e-dev/core/engine';
 import { classifyInputError } from './actions.ts';
+import { validateCookies } from './cookies.ts';
 import type { AttemptTab } from './attempt-session.ts';
 import type { DialogHandler } from './dialogs.ts';
 import { saveDownloadsTo, saveFromBrowser, saveLocally } from './downloads.ts';
@@ -857,6 +858,7 @@ export function createBrowserFixture(surface: PlaywrightSurface, context: Engine
         );
       }),
     setCookies(cookies) {
+      validateCookies(cookies);
       const scheme = new URL(baseHref()).protocol === 'https:' ? 'https' : 'http';
       // The harness's URL rule decides which cookie targets are admitted; a
       // domain cookie is checked as the origin it would be sent to. The rule
