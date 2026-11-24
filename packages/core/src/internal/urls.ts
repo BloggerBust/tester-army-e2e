@@ -1,5 +1,8 @@
 /** URL normalization and origin policy helpers. */
 
+import { realpathSync, statSync } from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { ConfigurationError } from './errors.ts';
 import { testPattern } from './regexp.ts';
 import { toTextPattern, withIgnoreCase } from './text.ts';
@@ -16,6 +19,7 @@ export interface NormalizedBaseUrl {
  * fragment. WHATWG parsing handles IDNA ASCII hosts, dot segments, and
  * default-port removal. A URL without a scheme gets `https://`, or `http://`
  * for a loopback host, so `tester.army` and `localhost:3000` both work as-is.
+ * A `file:` URL names one file on this machine (see `fileBase`).
  */
 export function normalizeBaseUrl(raw: string): NormalizedBaseUrl {
   let url: URL;
@@ -33,8 +37,9 @@ export function normalizeBaseUrl(raw: string): NormalizedBaseUrl {
   if (url.hash !== '') {
     throw new ConfigurationError('INVALID_APP_URL', 'app URL must not contain a fragment');
   }
+  if (url.protocol === 'file:') return fileBase(url, raw);
   if (url.protocol !== 'http:' && url.protocol !== 'https:') {
-    throw new ConfigurationError('INVALID_APP_URL', `app URL must be http(s): ${raw}`);
+    throw new ConfigurationError('INVALID_APP_URL', `app URL must be http(s), or a file: URL of a file on this machine: ${raw}`);
   }
   if (url.protocol === 'http:' && !isLoopbackHost(url.hostname)) {
     throw new ConfigurationError(
@@ -49,6 +54,138 @@ export function normalizeBaseUrl(raw: string): NormalizedBaseUrl {
     );
   }
   return { href: url.href, origin: url.origin, basePath: url.pathname };
+}
+
+/**
+ * A `file:` app URL: one file on this machine, which the browser opens
+ * itself. A host is refused, since a share is another machine's file, and so
+ * is a directory: a browser lists it with a link to its parent, and from
+ * there to every file the user can read. The file may not exist when the
+ * config loads; opening it checks again.
+ */
+function fileBase(url: URL, raw: string): NormalizedBaseUrl {
+  if (url.hostname !== '') {
+    throw new ConfigurationError('INVALID_APP_URL', `a file app URL names a file on this machine, with no host, such as file:///path/to/index.html: ${raw}`);
+  }
+  const base: NormalizedBaseUrl = { href: url.href, origin: FILE_ORIGIN, basePath: url.pathname };
+  if (fileScope(url, base) !== 'inside') {
+    throw new ConfigurationError('INVALID_APP_URL', `a file app URL names one file this machine can reach, not a directory, such as file:///path/to/index.html: ${raw}`);
+  }
+  return base;
+}
+
+/**
+ * The origin a file app is given. `URL.origin` of a file is the opaque
+ * `null`, which every `data:` and `blob:` URL shares; the bare scheme equals
+ * no URL's origin, so nothing is ever mistaken for being on the app's.
+ */
+const FILE_ORIGIN = 'file://';
+
+/**
+ * Whether an app URL, as declared, names a file: the one reading of the
+ * scheme, shared with `normalizeBaseUrl`, so `file:8443/report` stays the
+ * host `file` on port 8443. An unparseable URL names none; `normalizeBaseUrl`
+ * says why.
+ */
+export function namesFile(raw: string): boolean {
+  const spelled = withScheme(raw);
+  return URL.canParse(spelled) && new URL(spelled).protocol === 'file:';
+}
+
+/** True when the app is a file the browser opens from disk: it has no origin, port, or host. */
+export function isFileBase(base: NormalizedBaseUrl): boolean {
+  return base.origin === FILE_ORIGIN;
+}
+
+/**
+ * The path a `file:` URL names on this machine, or undefined when it names
+ * none: a host, or a form `fileURLToPath` refuses, such as an encoded path
+ * separator, which a browser decodes into a path the URL's own segments do
+ * not show.
+ */
+function localFile(url: URL): string | undefined {
+  try {
+    return url.hostname === '' ? fileURLToPath(url) : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * `file` with every symbolic link on the way resolved. A path that does not
+ * exist yet resolves as far as it does exist, so a new file under a linked
+ * directory is still placed where it would be created.
+ */
+function realPath(file: string): string {
+  let existing = file;
+  let rest = '';
+  for (;;) {
+    try {
+      return path.join(realpathSync(existing), rest);
+    } catch (cause) {
+      const parent = path.dirname(existing);
+      const missing = cause instanceof Error && 'code' in cause && (cause.code === 'ENOENT' || cause.code === 'ENOTDIR');
+      if (!missing || parent === existing) throw cause;
+      rest = path.join(path.basename(existing), rest);
+      existing = parent;
+    }
+  }
+}
+
+/**
+ * Where a `file:` URL lies for a file app: `inside` for a file in the
+ * directory of the app's file or below it, `directory` for a directory
+ * there, `outside` for everything else. Paths are compared decoded and with
+ * symbolic links resolved, so neither an encoded separator nor a link in the
+ * directory leads out of it. A path this machine cannot resolve (a NUL, a
+ * name too long, a directory it may not search) is `outside`: the rule
+ * fails closed.
+ */
+function fileScope(url: URL, base: NormalizedBaseUrl): 'inside' | 'directory' | 'outside' {
+  const file = localFile(url);
+  const appFile = localFile(new URL(base.href));
+  if (file === undefined || appFile === undefined) return 'outside';
+  try {
+    const target = realPath(file);
+    const relative = path.relative(realPath(path.dirname(appFile)), target);
+    if (relative === '..' || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) return 'outside';
+    const directory = relative === '' || url.pathname.endsWith('/') || statSync(target, { throwIfNoEntry: false })?.isDirectory() === true;
+    return directory ? 'directory' : 'inside';
+  } catch {
+    return 'outside';
+  }
+}
+
+/**
+ * Why a file app must not show a `file:` location, or undefined when it may:
+ * a file outside the directory of the app's file, or a directory. `what`
+ * names what asked.
+ */
+function fileScopeProblem(url: URL, base: NormalizedBaseUrl, what: string): string | undefined {
+  const scope = fileScope(url, base);
+  if (scope === 'outside') return `${what} stays in the directory of the app's file: file://${url.pathname} is outside it`;
+  if (scope === 'directory') return `${what} opens a file, not a directory: file://${url.pathname}`;
+  return undefined;
+}
+
+/**
+ * Why the screen at `location` is not one a file app may show, or undefined
+ * when it is: a link or a script in a local page can take the browser to any
+ * file the user can read, where a typed URL cannot. Every sink that keeps or
+ * sends a screen on its own asks this: a model's observation
+ * (`checkObservedLocation`), the trace's step screens, and the evidence of a
+ * failure. Any other location, and any other app, passes.
+ */
+export function leftFileApp(location: string | undefined, base: NormalizedBaseUrl | undefined): string | undefined {
+  if (location === undefined || base === undefined || !isFileBase(base) || !URL.canParse(location)) return undefined;
+  const url = new URL(location);
+  return url.protocol === 'file:' ? fileScopeProblem(url, base, 'a file app') : undefined;
+}
+
+/** Refuses the location an observation taken for a model was at when a file app has left the directory of its file; see `leftFileApp`. */
+export function checkObservedLocation(location: string | undefined, base: NormalizedBaseUrl | undefined): void {
+  const problem = leftFileApp(location, base);
+  if (problem !== undefined) throw new ConfigurationError('POLICY_DENIED', problem);
 }
 
 /**
@@ -70,8 +207,9 @@ export function baseUrlOf(base: NormalizedBaseUrl): string {
   return base.href.endsWith('/') ? base.href.slice(0, -1) : base.href;
 }
 
-/** The port the base URL is served on: the explicit one, else the scheme's default. */
-export function portOf(base: NormalizedBaseUrl): number {
+/** The port the base URL is served on: the explicit one, else the scheme's default; none for a file. */
+export function portOf(base: NormalizedBaseUrl): number | undefined {
+  if (isFileBase(base)) return undefined;
   const url = new URL(base.href);
   if (url.port !== '') return Number(url.port);
   return url.protocol === 'https:' ? 443 : 80;
@@ -138,6 +276,13 @@ const BLANK_PAGE = 'about:blank';
  * gate on typed navigation alone would guard nothing. The rule is an
  * allowlist because a browser wraps and nests schemes (`view-source:file:`,
  * `blob:`, `filesystem:`), and a list of forbidden ones misses the wrapper.
+ *
+ * `file:` passes only on a target whose app is itself a file, and only for
+ * a file in that file's directory or below it, never a directory. The agent
+ * names navigation URLs too, and a page can tell it to: without the bound, a
+ * local page could have it open any file the user can read and then carry
+ * what it read to an http(s) address. `checkObservedLocation` holds the same
+ * bound over where the page itself goes.
  */
 export function resolveNavigationUrl(input: string, base: NormalizedBaseUrl | undefined): { url: string } {
   let url: URL;
@@ -153,6 +298,11 @@ export function resolveNavigationUrl(input: string, base: NormalizedBaseUrl | un
       );
     }
     throw new ConfigurationError('POLICY_DENIED', `malformed URL: ${input}`);
+  }
+  if (url.protocol === 'file:' && base !== undefined && isFileBase(base)) {
+    const problem = fileScopeProblem(url, base, 'file navigation');
+    if (problem !== undefined) throw new ConfigurationError('POLICY_DENIED', problem);
+    return { url: url.href };
   }
   if (!NAVIGABLE_PROTOCOLS.has(url.protocol) && url.href !== BLANK_PAGE) {
     throw new ConfigurationError('POLICY_DENIED', `forbidden URL scheme: ${url.protocol}`);

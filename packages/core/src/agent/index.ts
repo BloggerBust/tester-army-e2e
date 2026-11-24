@@ -10,6 +10,7 @@
  */
 
 import { resolveVision } from '../config/agent.ts';
+import { isFileApp } from '../config/app.ts';
 import { TestError, withHint } from '../internal/errors.ts';
 import { rejectUnknownOptions } from '../internal/options.ts';
 import { describeIssue, requireStandardSchema } from '../internal/standard-schema.ts';
@@ -312,6 +313,8 @@ export function createAgentFixture(runtime: AgentContext): Agent {
 
   /** Captures redacted judgment evidence; best-effort, never fails the step. */
   async function captureEvidence(invocation: Invocation): Promise<string | undefined> {
+    // Nothing checks where a second capture is taken, and a file app's page can leave its directory in between.
+    if (isFileApp(runtime.app)) return undefined;
     try {
       const relative = await invocation.session.artifacts.screenshot(
         'assert',

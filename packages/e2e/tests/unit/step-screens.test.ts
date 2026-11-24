@@ -11,6 +11,7 @@ import type { EngineSnapshot } from '@e2e-dev/core/lib/engine/index';
 import type { Observation } from '@e2e-dev/core/lib/engine/surface';
 import type { SecretLedger } from '@e2e-dev/core/lib/internal/redact';
 import { compareScreens, traceScreen } from '@e2e-dev/core/lib/run/step-screens';
+import { normalizeBaseUrl } from '@e2e-dev/core/lib/internal/urls';
 import { StepRecorder } from '@e2e-dev/core/lib/run/steps';
 
 /** A screen from listing-like lines, `#id description` each; the description is what the trace compares. */
@@ -60,6 +61,15 @@ describe('traceScreen', () => {
     truncated: false,
   });
 
+  it('keeps no screen of a file app whose page left the directory of its file', () => {
+    const base = normalizeBaseUrl('file:///tmp/e2e-step-screens/site/index.html');
+    const tree = { ref: { id: 'root', revision: 'r1' }, role: 'document', name: 'notes' };
+    const at = (location: string) => traceScreen({ ...observed(tree), location }, { ledger, maxBytes: 10_000, appOrigin: base.origin, appBase: base });
+    expect(at('file:///tmp/e2e-step-screens/site/pages/about.html')).toBeDefined();
+    expect(at('file:///tmp/e2e-step-screens/secret.html')).toBeUndefined();
+    expect(at('file:///etc/')).toBeUndefined();
+  });
+
   it('describes each node as its line reads, without the id or focus, redacted, in screen order', () => {
     const kept = traceScreen(
       observed({
@@ -67,7 +77,7 @@ describe('traceScreen', () => {
         role: 'document',
         children: [{ ref: { id: 'n2', revision: 'r1' }, role: 'textbox', name: 'Password hint', value: 'hunter2', states: { focused: true, disabled: true } }],
       }),
-      { ledger, maxBytes: 10_000, appOrigin: undefined },
+      { ledger, maxBytes: 10_000, appOrigin: undefined, appBase: undefined },
     );
     expect(kept).toEqual({
       location: 'http://app.test/<secret:pw>',
@@ -80,7 +90,7 @@ describe('traceScreen', () => {
 
   it('counts its budget in UTF-8 bytes, so a screen in another script is bounded the same', () => {
     const children = Array.from({ length: 50 }, (_, index) => ({ ref: { id: `n${index}`, revision: 'r1' }, role: 'button', name: `購入する商品${index}` }));
-    const kept = traceScreen(observed({ ref: { id: 'root', revision: 'r1' }, role: 'document', children }), { ledger, maxBytes: 200, appOrigin: undefined });
+    const kept = traceScreen(observed({ ref: { id: 'root', revision: 'r1' }, role: 'document', children }), { ledger, maxBytes: 200, appOrigin: undefined, appBase: undefined });
     const bytes = kept!.lines.reduce((total, line) => total + Buffer.byteLength(line.text, 'utf8') + 1, 0);
     expect(bytes).toBeLessThanOrEqual(200);
     expect(kept!.lines.length).toBeGreaterThan(1);
@@ -88,7 +98,7 @@ describe('traceScreen', () => {
 
   it('stops at its byte budget, keeping at least the root', () => {
     const children = Array.from({ length: 50 }, (_, index) => ({ ref: { id: `n${index}`, revision: 'r1' }, role: 'button', name: `Item ${index}` }));
-    const kept = traceScreen(observed({ ref: { id: 'root', revision: 'r1' }, role: 'document', children }), { ledger, maxBytes: 60, appOrigin: undefined });
+    const kept = traceScreen(observed({ ref: { id: 'root', revision: 'r1' }, role: 'document', children }), { ledger, maxBytes: 60, appOrigin: undefined, appBase: undefined });
     expect(kept!.lines.length).toBeGreaterThan(1);
     expect(kept!.lines.length).toBeLessThan(10);
   });

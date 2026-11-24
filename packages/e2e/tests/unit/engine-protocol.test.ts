@@ -641,6 +641,25 @@ describe('engine protocol', () => {
       expect(spread).toHaveLength(2);
     });
 
+    it('carries fileApps in the manifest, so a served engine opens a file app and one that does not declare it is refused', () => {
+      const { local, remote } = overLoopback(toy({ fileApps: true }));
+      expect(describeEngine(local).fileApps).toBe(true);
+      expect(remote.fileApps).toBe(true);
+      const plain = overLoopback(toy({}));
+      expect(describeEngine(plain.local).fileApps).toBeUndefined();
+      expect(plain.remote.fileApps).not.toBe(true);
+    });
+
+    it('refuses a server that does not declare the fileApps its manifest promised', async () => {
+      const local = defineEngine(toy({}));
+      const remote = connectEngine({ manifest: { ...describeEngine(local), fileApps: true }, transport: loopbackTransport(local) });
+      await expect(remote.init!(initInfo())).rejects.toThrow(/fileApps is false, declared true/);
+    });
+
+    it('refuses a fileApps flag that is not a boolean', () => {
+      expect(() => defineEngine(toy({ fileApps: 'yes' as never }))).toThrow(/fileApps must be a boolean/);
+    });
+
     it('carries the object form to an engine that declares launchArgumentValues', async () => {
       const seen: unknown[] = [];
       const { local, remote } = overLoopback(

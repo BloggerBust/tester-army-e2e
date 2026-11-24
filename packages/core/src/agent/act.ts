@@ -17,6 +17,7 @@
  * over those collaborators, borrowed through a small host each.
  */
 
+import { isFileApp } from '../config/app.ts';
 import { executorRedactors } from './redaction.ts';
 import type { StepTurn } from '../run/steps.ts';
 import { writeFileSync } from 'node:fs';
@@ -242,7 +243,8 @@ class ActDispatch {
         contextBytes: new TextEncoder().encode(agent.agentContext ?? '').byteLength,
       },
       observation: {
-        pixelsAllowed: spec.vision !== false,
+        // A file app's pixels can show a frame of another local file, which no tree lists and no rule can place.
+        pixelsAllowed: spec.vision !== false && !isFileApp(runtime.app),
         maxObservationBytes: agent.config.maxObservationBytes,
         maxInputTokens: agent.config.maxInputTokens,
       },
@@ -399,7 +401,7 @@ class ActDispatch {
    * the artifact's report-relative path.
    */
   async captureEvidence(): Promise<string | undefined> {
-    if (this.spec.kind !== 'assert' || this.spec.screenshot === false) return undefined;
+    if (this.spec.kind !== 'assert' || this.spec.screenshot === false || isFileApp(this.runtime.app)) return undefined;
     const { signal } = this.accounting;
     if (signal.aborted) return undefined;
     try {

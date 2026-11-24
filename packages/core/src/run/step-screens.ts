@@ -10,6 +10,7 @@
 
 import { describeNode, redactNode, type RedactedNode } from '../agent/observation.ts';
 import { bound } from '../internal/text.ts';
+import { leftFileApp, type NormalizedBaseUrl } from '../internal/urls.ts';
 import type { Observation } from '../engine/surface.ts';
 import type { SecretLedger } from '../internal/redact.ts';
 
@@ -106,6 +107,8 @@ export interface TraceScreenOptions {
   readonly maxBytes: number;
   /** The app base URL's origin, whose link targets the screen lists as paths. */
   readonly appOrigin: string | undefined;
+  /** The app's base URL: a file app that left the directory of its file keeps no screen. */
+  readonly appBase: NormalizedBaseUrl | undefined;
 }
 
 /** States a reader comparing two screens does not count as a change: focus moves with every action. */
@@ -118,6 +121,7 @@ const UNCOMPARED_STATES: ReadonlySet<string> = new Set(['focused']);
  */
 export function traceScreen(observation: Observation, options: TraceScreenOptions): ScreenText | undefined {
   if (observation.kind !== 'semantic') return undefined;
+  if (leftFileApp(observation.location, options.appBase) !== undefined) return undefined;
   const { redact, redactCut } = options.ledger;
   const lines: ScreenLine[] = [];
   let bytes = 0;

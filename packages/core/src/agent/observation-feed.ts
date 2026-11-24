@@ -13,6 +13,7 @@ import { validateComputedStyleProperties, type ComputedStyleProperty } from '../
 import { relocateDescriptor } from '../cache/relocate.ts';
 import { asEngineError, TestError } from '../internal/errors.ts';
 import { rejectUnknownOptions } from '../internal/options.ts';
+import { checkObservedLocation } from '../internal/urls.ts';
 import { takesText } from '../internal/roles.ts';
 import type { StepAgentDetails, VisionDegradation } from '../run/steps.ts';
 import { describeTarget } from './actions.ts';
@@ -460,6 +461,7 @@ export class ObservationFeed {
       guard: (cause) => this.accounting.checkpoint(cause),
       signal: this.runtime.engine.signal,
     });
+    checkObservedLocation(raw.location, this.runtime.app.base);
     if (raw.kind === 'pixels') {
       this.semanticHistory = false;
       this.newest = undefined;

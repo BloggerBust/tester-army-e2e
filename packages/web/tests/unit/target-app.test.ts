@@ -18,6 +18,32 @@ describe('web() and the target app', () => {
     }
   });
 
+  it('declares that it opens a file app, in a browser it launches itself and with no credentials to scope', () => {
+    // The harness reads the URL and says so; the engine never parses the scheme itself.
+    const info = { targetName: 'web', fileApp: true };
+    const url = 'file:///tmp/site/index.html';
+    const refused = (message: string) => expect.objectContaining({ code: 'INVALID_CONFIG', message: expect.stringContaining(message) });
+    for (const browser of ['chromium', 'firefox', 'webkit'] as const) {
+      expect(web({ browser }).fileApps).toBe(true);
+      expect(() => web({ browser }).validateApp!({ url }, info)).not.toThrow();
+    }
+    const hosted = { name: 'hosted', acquire: async () => ({ id: 's', cdpEndpoint: 'ws://localhost:9222' }), release: async () => undefined };
+    expect(() => web({ browser: hosted }).validateApp!({ url }, info)).toThrowError(
+      refused('target "web" opens a file app.url, which browser provider "hosted" cannot read'),
+    );
+    expect(() => web({ connect: { cdpEndpoint: () => 'ws://localhost:9222' } }).validateApp!({ url }, info)).toThrowError(
+      refused('web({ connect }) attaches to a browser that may run on another machine'),
+    );
+    expect(() => web({ headers: { 'x-preview': 'synthetic' } }).validateApp!({ url }, info)).toThrowError(
+      refused("web({ headers }) always goes to the app's origin, which a file does not have"),
+    );
+    expect(() => web({ basicAuth: { username: 'user', password: 'synthetic' } }).validateApp!({ url }, info)).toThrowError(
+      refused("web({ basicAuth }) always goes to the app's origin, which a file does not have"),
+    );
+    // A host named `file` is not a file app: the harness says nothing, and the options stand.
+    expect(() => web({ browser: hosted, headers: { 'x-preview': 'synthetic' } }).validateApp!({ url: 'file:8443/report' }, { targetName: 'web' })).not.toThrow();
+  });
+
   it('takes the permissions its browser grants, and grants only', () => {
     const info = { targetName: 'web' };
     const url = 'http://localhost:3000';

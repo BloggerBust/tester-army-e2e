@@ -128,6 +128,10 @@
       "description": "The engine reads the object form of app.launchArguments from EngineAppInfo.launchArgumentValues; without it the harness refuses an object at config load.",
       "type": "boolean"
     },
+    "fileApps": {
+      "description": "The engine opens an app whose url is a file: URL, read from the disk of the machine the harness runs on; without it the harness refuses a file app.url at config load.",
+      "type": "boolean"
+    },
     "isolation": {
       "description": "What one attempt leaves for the next: present only as worker, when the engine's fixtures, app, and screen outlive an attempt.",
       "const": "worker"

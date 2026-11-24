@@ -80,7 +80,11 @@ with a memory-only key, and deleted at cleanup.
 
 On the web a test or the agent may open any http(s) URL, and `about:blank`;
 every other scheme (`file:`, `data:`, `javascript:`, `view-source:`, `blob:`)
-is denied. A device link may use an app's custom scheme, so
+is denied. One exception: a target whose `app.url` is itself a file may open
+files in that file's directory, and no directory. Once its page goes
+anywhere else on disk, no model, trace, or failure report is given the
+screen, and no screenshot of a file app is sent to a model or kept on its
+own. A video the user turns on records wherever the browser goes. A device link may use an app's custom scheme, so
 `device.openLink` refuses a list instead: `file:`, `data:`, `javascript:`,
 `view-source:`, `blob:`, and `filesystem:`. There is no origin allowlist, on navigation or on
 secret fills. A click, a redirect, or a popup reaches another origin just as

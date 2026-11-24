@@ -4,5 +4,6 @@
   "spiVersion": 1,
   "methods": [
     "engine/viewportIntersection"
-  ]
+  ],
+  "fileApps": "yes"
 }

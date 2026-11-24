@@ -1,5 +1,11 @@
-import { describe, expect, it } from 'vitest';
+import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
+import { pathToFileURL } from 'node:url';
+import { afterAll, describe, expect, it } from 'vitest';
 import {
+  checkObservedLocation,
+  isFileBase,
   isImplicitTestHost,
   isLoopbackHost,
   normalizeBaseUrl,
@@ -60,11 +66,9 @@ describe('normalizeBaseUrl', () => {
     expect(isLoopbackHost('localhost..')).toBe(false);
   });
 
-  it('rejects non-http(s) schemes', () => {
-    expect(() => normalizeBaseUrl('file:///tmp/app')).toThrow();
+  it('rejects every scheme but http(s) and file', () => {
     expect(() => normalizeBaseUrl('javascript:alert(1)')).toThrow(/must be http\(s\)/);
     // A single-slash scheme is still a scheme, never a host named after it.
-    expect(() => normalizeBaseUrl('file:/tmp/app')).toThrow(/must be http\(s\)/);
     expect(() => normalizeBaseUrl('ftp:/server/path')).toThrow(/must be http\(s\)/);
     expect(() => normalizeBaseUrl('data:text/html,hi')).toThrow(/must be http\(s\)/);
   });
@@ -96,6 +100,99 @@ describe('isLoopbackHost', () => {
     expect(isLoopbackHost('127.0.0.1')).toBe(true);
     expect(isLoopbackHost('127.1.2.3')).toBe(true);
     expect(isLoopbackHost('example.test')).toBe(false);
+  });
+});
+
+describe('a file app URL', () => {
+  const directory = mkdtempSync(path.join(tmpdir(), 'e2e-file-app-'));
+  mkdirSync(path.join(directory, 'site', 'pages'), { recursive: true });
+  for (const file of ['site/index.html', 'site/pages/about.html', 'site/..notes.html', 'secret.html']) writeFileSync(path.join(directory, file), '<p>hi</p>');
+  // Links inside the directory: one to the directory above it, one to a file there.
+  symlinkSync(directory, path.join(directory, 'site', 'up'));
+  symlinkSync(path.join(directory, 'secret.html'), path.join(directory, 'site', 'linked.html'));
+  afterAll(() => rmSync(directory, { recursive: true, force: true }));
+  const at = (file: string): string => pathToFileURL(path.join(directory, file)).href;
+  const base = normalizeBaseUrl(at('site/index.html'));
+  const denied = (message: RegExp) => expect.objectContaining({ code: 'POLICY_DENIED', message: expect.stringMatching(message) });
+
+  it('names one file on this machine, with an origin no other URL has and no port', () => {
+    expect(base.href).toBe(at('site/index.html'));
+    expect(isFileBase(base)).toBe(true);
+    expect(base.origin).toBe('file://');
+    expect(portOf(base)).toBeUndefined();
+    // A single slash is the same file, `localhost` is this machine, and the file may not exist yet.
+    expect(normalizeBaseUrl(at('site/index.html').replace('file:///', 'file:/')).href).toBe(base.href);
+    expect(normalizeBaseUrl(at('site/index.html').replace('file://', 'file://localhost')).href).toBe(base.href);
+    expect(normalizeBaseUrl(at('site/not-built-yet.html')).href).toBe(at('site/not-built-yet.html'));
+    expect(isFileBase(normalizeBaseUrl('http://localhost:3000'))).toBe(false);
+  });
+
+  it('refuses a host, a directory, a query, and a fragment', () => {
+    const refused = (message: RegExp) => expect.objectContaining({ code: 'INVALID_APP_URL', message: expect.stringMatching(message) });
+    expect(() => normalizeBaseUrl('file://fileserver/share/index.html')).toThrow(refused(/with no host/));
+    expect(() => normalizeBaseUrl(`${at('site')}/`)).toThrow(refused(/not a directory/));
+    // A directory named without its slash is still one: the browser would list it.
+    expect(() => normalizeBaseUrl(at('site'))).toThrow(refused(/not a directory/));
+    expect(() => normalizeBaseUrl(`${at('site/index.html')}?tab=1`)).toThrow(refused(/query/));
+    expect(() => normalizeBaseUrl(`${at('site/index.html')}#top`)).toThrow(refused(/fragment/));
+  });
+
+  it('navigates to a file in the app file\'s directory or below it', () => {
+    expect(resolveNavigationUrl('pages/about.html', base).url).toBe(at('site/pages/about.html'));
+    expect(resolveNavigationUrl('index.html?tab=2#top', base).url).toBe(`${at('site/index.html')}?tab=2#top`);
+    expect(resolveNavigationUrl(at('site/pages/about.html'), base).url).toBe(at('site/pages/about.html'));
+    expect(resolveNavigationUrl('https://other.test/x', base).url).toBe('https://other.test/x');
+    // Two leading dots are a name, not a way up; a file that does not exist yet is still in the directory.
+    expect(resolveNavigationUrl('..notes.html', base).url).toBe(at('site/..notes.html'));
+    expect(resolveNavigationUrl('pages/new.html', base).url).toBe(at('site/pages/new.html'));
+  });
+
+  it.each([
+    ['up/secret.html'],
+    ['linked.html'],
+    ['up/site/../secret.html'],
+    ['pages/a%00b.html'],
+    [`pages/${'a'.repeat(300)}.html`],
+    ['../secret.html'],
+    ['pages/../../secret.html'],
+    ['/etc/passwd'],
+    ['file:///etc/passwd'],
+    ['..%2fsecret.html'],
+    ['pages/..%2F..%2Fsecret.html'],
+    ['%2e%2e/secret.html'],
+    ['file://fileserver/share/index.html'],
+  ])('denies %j: outside the directory', (input) => {
+    expect(() => resolveNavigationUrl(input, base)).toThrow(denied(/stays in the directory of the app's file/));
+  });
+
+  it.each([['pages'], ['pages/'], ['.'], ['./'], ['up/site/pages']])('denies the directory %j: its listing links to its parent', (input) => {
+    expect(() => resolveNavigationUrl(input, base)).toThrow(denied(/not a directory|stays in the directory/));
+  });
+
+  it('keeps every wrapper scheme denied', () => {
+    expect(() => resolveNavigationUrl(`view-source:${at('site/index.html')}`, base)).toThrow(denied(/forbidden URL scheme: view-source:/));
+    expect(() => resolveNavigationUrl('data:text/html,x', base)).toThrow(denied(/forbidden URL scheme: data:/));
+  });
+
+  it('refuses what a model would observe once the page has left the directory', () => {
+    expect(() => checkObservedLocation(at('site/pages/about.html'), base)).not.toThrow();
+    expect(() => checkObservedLocation(`${at('site/index.html')}#top`, base)).not.toThrow();
+    expect(() => checkObservedLocation('https://other.test/x', base)).not.toThrow();
+    expect(() => checkObservedLocation('about:blank', base)).not.toThrow();
+    expect(() => checkObservedLocation(undefined, base)).not.toThrow();
+    expect(() => checkObservedLocation(at('secret.html'), base)).toThrow(denied(/a file app stays in the directory of the app's file/));
+    expect(() => checkObservedLocation(at('site/linked.html'), base)).toThrow(denied(/stays in the directory/));
+    expect(() => checkObservedLocation(`${at('site/pages')}/`, base)).toThrow(denied(/opens a file, not a directory/));
+    expect(() => checkObservedLocation('file:///', base)).toThrow(denied(/stays in the directory/));
+    // Another app's observations are not this rule's: an http app cannot be led to a file at all.
+    expect(() => checkObservedLocation(at('secret.html'), normalizeBaseUrl('http://localhost:3000'))).not.toThrow();
+    expect(() => checkObservedLocation(at('secret.html'), undefined)).not.toThrow();
+  });
+
+  it('stays denied on a target whose app is not a file', () => {
+    const web = normalizeBaseUrl('http://localhost:3000/app/');
+    expect(() => resolveNavigationUrl(at('site/index.html'), web)).toThrow(denied(/forbidden URL scheme: file:/));
+    expect(() => resolveNavigationUrl(at('site/index.html'), undefined)).toThrow(denied(/forbidden URL scheme: file:/));
   });
 });
 

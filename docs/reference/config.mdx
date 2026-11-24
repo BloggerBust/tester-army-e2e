@@ -425,6 +425,8 @@ url: 'http://localhost:3000',
 - WHATWG-normalized; no userinfo, query, or fragment.
 - A missing scheme becomes `https://`, or `http://` for a loopback host.
 - Plain HTTP is accepted for loopback hosts only.
+- A `file:` URL opens one file on this machine in a locally launched
+  browser: see [a file as the app](#a-file-as-the-app).
 - Port `0` on `127.0.0.1` or `[::1]` asks for a [free port](#free-ports).
 - Its origin scopes engine request credentials, and its site scopes observed
   frames: see [the app's site](#the-apps-site).
@@ -432,7 +434,9 @@ url: 'http://localhost:3000',
 | Throws | When |
 | --- | --- |
 | `INVALID_APP_URL` | Port `0` on any host other than `127.0.0.1` or `[::1]`, `localhost` included. |
+| `INVALID_APP_URL` | A `file:` URL with a host, or one that names a directory. |
 | `INVALID_CONFIG` | A port-0 `url` with nothing to start on it (no `app.command`). |
+| `INVALID_CONFIG` | A `file:` URL on a `web()` target with a browser provider, `connect`, `headers`, or `basicAuth`, or on an engine that does not declare `fileApps`. |
 
 #### `bundleId`
 
@@ -668,6 +672,35 @@ scheme (`file:`, `data:`, `javascript:`, `view-source:`, `blob:`) is
 `POLICY_DENIED`. The site of `url` is its registrable domain:
 `app.example.com` and `auth.example.com` are one site. Child frames off the
 site stay out of observations.
+
+#### A file as the app
+
+```ts
+import { pathToFileURL } from 'node:url';
+
+app: { url: pathToFileURL('dist/index.html').href },
+```
+
+- The URL names one file, with no host. A directory is refused.
+- Navigation takes a `file:` URL only for a file in that file's directory or
+  below it: `app.open('pages/about.html')`. A file outside it and any
+  directory are `POLICY_DENIED`, with symbolic links resolved. A path that
+  starts with `/` is the disk's root, so write it relative.
+- That directory is what the agent may read. Keep the file in a folder
+  that holds only the app, not in a project root beside `.env`. See
+  [Navigation](/reference/security#navigation).
+- A file has no site and no origin. Frames that load another document stay
+  out of observations, and the `environment` defaults to `'test'`.
+- The agent works from the tree alone: it is sent no screenshot, since one
+  could show a frame of another local file. `agent.assert` with
+  `vision: true` judges from the tree, `vision: 'only'` is `POLICY_DENIED`,
+  and neither `agent.assert` nor a failure keeps a screenshot.
+- A `command` beside it needs a `readyUrl`, since a file answers no poll.
+- The browser reads the file from its own machine's disk, so a `web()`
+  target with a browser provider or `connect` refuses it. An engine opens a
+  file app only when it [declares it](/reference/engine#capabilities).
+- An `agent.act` recording is keyed by the file's absolute path, so it
+  replays only where the file sits at that path.
 
 The browser engine's [`headers`](/reference/web#headers) and
 [`basicAuth`](/reference/web#basicauth) are scoped tighter, to the origin of

@@ -84,6 +84,8 @@ These calls fail with `POLICY_DENIED`.
 | --- | --- |
 | Navigation to any scheme but `http:` and `https:`, other than `about:blank` | `file:`, `data:`, `javascript:`, and wrappers such as `view-source:file:` would load local or inline content. |
 | A `request` call to any scheme but `http:` and `https:`, `about:blank` included | It sends an HTTP request; nothing else has an answer to read. |
+| On a target whose `app.url` is a file: navigation to a file outside that file's directory, or to a directory | The agent names navigation URLs, and a page can tell it to. It could open any file you can read, and then carry it to an http(s) address. A directory listing links to its parent. |
+| On such a target: an agent step's observation once the page itself has gone to a file outside the directory, or to a directory | A link or a script in a local page can take the browser there, where a typed URL cannot. The screen is withheld from the model, the trace, and the failure evidence. |
 | A malformed URL | Nothing is repaired. |
 | A `Secret` reaching a JSON sink | Handles carry no value, and no value may be serialized. |
 | Reading a value, text, or attribute from a secure field, with a getter or a `toHaveValue`, `toHaveText`, `toContainText`, or `toHaveAttribute` matcher | Assert the outcome, not the secret. A withheld value is redacted, not empty or absent. |
@@ -110,6 +112,19 @@ These calls fail with `POLICY_DENIED`.
 
 - The runner doesn't re-check redirects or attach to popup pages. Register
   `browser.onDialog` to handle browser dialogs.
+- On a file target, a link or a script in the page can still take the
+  browser to any file it can read. No model observation, trace screen, or
+  failure screen text is taken there. Your test's own reads
+  (`textContent()`, `screen.tree()`, `app.screenshot()`) still work, as test
+  code is trusted.
+- No screenshot of a file app is sent to a model or kept on its own.
+  `agent.assert` and a failure keep none, and `vision: 'only'` is
+  `POLICY_DENIED`. A local page can embed another file in a frame, which
+  the tree leaves out and pixels would show.
+- A [`video`](/reference/config#video) you turn on records the browser
+  wherever it goes, a file outside the directory included.
+- The directory of the app's file is the whole readable scope. In a project
+  root that includes `.env` and `.git`.
 
 <Warning>
 There is no origin allowlist. The agent can follow the app to other sites

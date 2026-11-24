@@ -1551,7 +1551,9 @@ export interface TargetApp {
    * Base URL of an addressable app: `app.open()` opens it and relative
    * navigation resolves against it. WHATWG-normalized; no userinfo, query, or
    * fragment; a missing scheme becomes `https://`, or `http://` for a
-   * loopback host. Plain HTTP is accepted for loopback hosts only. A URL on
+   * loopback host. Plain HTTP is accepted for loopback hosts only. A `file:`
+   * URL names one file on this machine, with no host, that a locally
+   * launched browser opens; navigation then stays in its directory. A URL on
    * `127.0.0.1` or `[::1]` with port 0 asks the run for a free port for
    * `command`, handed to it as `{port}`; without a command nothing would
    * serve it, so that is `INVALID_CONFIG`.

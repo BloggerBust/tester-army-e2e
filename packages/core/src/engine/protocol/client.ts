@@ -242,6 +242,7 @@ class EngineClient {
         tapModifiers: manifest.tapModifiers,
         selectsDevice: manifest.selectsDevice,
         launchArgumentValues: manifest.launchArgumentValues,
+        fileApps: manifest.fileApps,
         isolation: manifest.isolation,
         secrets: this.#options.secrets,
         fixtures: this.#options.fixtures,

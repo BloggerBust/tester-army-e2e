@@ -121,6 +121,8 @@ export interface EngineManifest {
   readonly selectsDevice?: boolean;
   /** See `Engine.launchArgumentValues`. */
   readonly launchArgumentValues?: boolean;
+  /** See `Engine.fileApps`. */
+  readonly fileApps?: boolean;
   /** See `Engine.isolation`; left out for `attempt`. */
   readonly isolation?: 'worker';
 }

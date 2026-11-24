@@ -27,7 +27,7 @@ import { validateInitScripts } from './init-scripts.ts';
 import { MEDIA_KEYS, mediaProblem } from './media.ts';
 import { FIELD_VALUE_CONTROL, headerProblem, originProblem } from './protected-app.ts';
 import { validatePermissions } from './permissions.ts';
-import { BROWSER_NAMES, isBrowserName, type BrowserName } from './browser-connection.ts';
+import { BROWSER_NAMES, isBrowserName } from './browser-connection.ts';
 
 /** App fields only a device target reads. */
 const NATIVE_APP_KEYS = ['bundleId', 'appPath', 'launchArguments'] as const;
@@ -121,6 +121,7 @@ export function web(options: WebOptions = {}): WebEngine {
     version: ownVersion(),
     spiVersion: 1,
     platform: 'web',
+    fileApps: true,
     prepare: (info) => surface.prepare(info),
     finish: (info) => surface.finish(info),
     doctor: (info) => surface.doctor(info),
@@ -146,7 +147,7 @@ export function web(options: WebOptions = {}): WebEngine {
       press: (key, operation) => surface.pressKey(key, operation),
     },
     // A provider or a CDP attach speaks CDP, so it takes Chromium's names.
-    validateApp: (app, info) => validateApp(app, info, typeof options.browser === 'string' ? options.browser : 'chromium'),
+    validateApp: (app, info) => validateApp(app, info, options),
     ...(isSecret(options.basicAuth?.password) ? { secrets: [options.basicAuth.password] } : {}),
     session: {
       open: (url, operation) => surface.open(url, operation),
@@ -505,7 +506,7 @@ function validateChromiumSandbox(chromiumSandbox: unknown): void {
  * `app.open()` to open, and the fields that describe an installed device app
  * have nothing to act on here. `permissions` must be ones `browser` grants.
  */
-function validateApp(app: EngineAppDeclaration, { targetName }: EngineAppCheckInfo, browser: BrowserName): void {
+function validateApp(app: EngineAppDeclaration, { targetName, fileApp }: EngineAppCheckInfo, options: WebOptions): void {
   for (const key of NATIVE_APP_KEYS) {
     if (app[key] !== undefined) {
       throw new ConfigurationError(
@@ -520,7 +521,38 @@ function validateApp(app: EngineAppDeclaration, { targetName }: EngineAppCheckIn
       `target "${targetName}" needs app.url: web() opens the app at a URL, such as app: { url: 'http://localhost:3000' }`,
     );
   }
-  if (app.permissions !== undefined) validatePermissions(targetName, browser, app.permissions);
+  if (fileApp === true) validateFileApp(targetName, options);
+  if (app.permissions !== undefined) validatePermissions(targetName, typeof options.browser === 'string' ? options.browser : 'chromium', app.permissions);
+}
+
+/**
+ * A file app is read by the browser, off the disk of the machine it runs on,
+ * and the harness checks every file navigation against its own disk. So the
+ * browser has to be one this engine launches here: a provider's runs
+ * elsewhere, and `connect` attaches to one that may. A file has no origin
+ * either, and `headers` and `basicAuth` always go to the app's.
+ */
+function validateFileApp(targetName: string, options: WebOptions): void {
+  const where = `target "${targetName}" opens a file app.url`;
+  if (typeof options.browser === 'object') {
+    throw new ConfigurationError(
+      'INVALID_CONFIG',
+      `${where}, which browser provider "${options.browser.name}" cannot read: its browsers run on another machine; serve the app over http(s), or launch the browser locally`,
+    );
+  }
+  if (options.connect !== undefined) {
+    throw new ConfigurationError(
+      'INVALID_CONFIG',
+      `${where}, and web({ connect }) attaches to a browser that may run on another machine, with another disk; serve the app over http(s), or let the engine launch the browser`,
+    );
+  }
+  const credential = options.headers !== undefined ? 'headers' : options.basicAuth !== undefined ? 'basicAuth' : undefined;
+  if (credential !== undefined) {
+    throw new ConfigurationError(
+      'INVALID_CONFIG',
+      `${where}, and web({ ${credential} }) always goes to the app's origin, which a file does not have; remove the option, or serve the app over http(s)`,
+    );
+  }
 }
 
 /** This package's published version, read through require resolution. */

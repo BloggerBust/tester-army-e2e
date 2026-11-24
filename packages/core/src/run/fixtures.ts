@@ -627,7 +627,8 @@ export function createApp(
   const navigate = (api: string, label: string, url: string | undefined): Promise<void> =>
     steps.run('app', api, label, async () => {
       requireAppUrl(target);
-      const resolved = url === undefined ? target.app.base.href : resolveNavigationUrl(url, target.app.base).url;
+      // The base goes through the rule too: a file app's file may have become a directory since the config loaded.
+      const resolved = resolveNavigationUrl(url ?? target.app.base.href, target.app.base).url;
       await openAt(resolved, lifecycleMs());
     });
 
@@ -644,7 +645,7 @@ export function createApp(
       const deadline = new Deadline(lifecycleMs());
       await hook(engine.operation(deadline.remaining()));
       if (target.app.base === undefined || !engine.session.verbs.has('navigate')) return;
-      await openAt(target.app.base.href, deadline.remaining());
+      await openAt(resolveNavigationUrl(target.app.base.href, target.app.base).url, deadline.remaining());
     });
 
   /**

@@ -214,6 +214,8 @@ export interface EngineManifest {
   readonly selectsDevice?: boolean;
   /** The engine reads the object form of `app.launchArguments` from `EngineAppInfo.launchArgumentValues`. */
   readonly launchArgumentValues?: boolean;
+  /** The engine opens an app whose `url` is a `file:` URL, read from the disk of the machine the harness runs on. */
+  readonly fileApps?: boolean;
   /** See `Engine.isolation`; left out for `attempt`. */
   readonly isolation?: 'worker';
 }

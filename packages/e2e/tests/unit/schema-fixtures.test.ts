@@ -61,9 +61,14 @@ describe.each(schemas)('%s schema', (name) => {
       expect(validate.errors).toEqual([expect.objectContaining({ instancePath: '/actions', keyword: 'uniqueItems' })]);
     });
 
-    it('rejects the invalid fixture for viewportIntersection without engine/observe', () => {
+    it('rejects the invalid fixture for viewportIntersection without engine/observe and for a non-boolean fileApps', () => {
       expect(validate(readJson('fixtures', 'engine-manifest-v1.invalid.json'))).toBe(false);
-      expect(validate.errors).toEqual(expect.arrayContaining([expect.objectContaining({ instancePath: '/methods', keyword: 'contains' })]));
+      expect(validate.errors).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ instancePath: '/methods', keyword: 'contains' }),
+          expect.objectContaining({ instancePath: '/fileApps', keyword: 'type' }),
+        ]),
+      );
     });
 
     it('rejects a method listed twice', () => {

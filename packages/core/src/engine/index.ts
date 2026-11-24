@@ -147,6 +147,12 @@ export interface EngineKeyboard {
 export interface EngineAppCheckInfo {
   /** The target declaring the app, for the message of a refusal. */
   readonly targetName: string;
+  /**
+   * The app's `url` names a file on the runner's disk, as the harness reads
+   * the URL. Only an engine that declares `fileApps` is handed one. Refuse
+   * here what cannot read that disk, such as a browser on another machine.
+   */
+  readonly fileApp?: boolean;
 }
 
 /**
@@ -161,13 +167,15 @@ export interface EngineAppInfo {
    * The origin of the app's `url` on the run's port (`scheme://host:port`, as
    * `URL.origin` serializes it): where credentials an engine injects into
    * requests (headers, basic auth) go by default. Absent for an app without
-   * a URL, and for a free port the run has not assigned (`e2e doctor`).
+   * a URL, for one whose URL is a file, and for a free port the run has not
+   * assigned (`e2e doctor`).
    */
   readonly origin?: string;
   /**
    * The site of the app's `url`, its registrable domain as `siteOf` reads it:
    * whose child frames an observation reads; `sameSite` applies it. Absent
-   * for an app without a URL, which is no policy at all.
+   * for an app without a URL or with a file for one, which is no policy at
+   * all.
    */
   readonly site?: string;
   /** The installed app to launch, as the target declared it. */
@@ -829,6 +837,15 @@ export interface Engine {
    * ever receives a list in `EngineAppInfo.launchArguments`.
    */
   readonly launchArgumentValues?: boolean;
+  /**
+   * The engine opens an app whose `url` is a `file:` URL, reading the file
+   * from the disk of the machine the harness runs on. The harness checks
+   * every file navigation against that disk, so an engine whose surface
+   * may read another one must not declare this, or must refuse such a
+   * target in `validateApp` (`EngineAppCheckInfo.fileApp`). Without it the
+   * harness refuses a file `app.url` at config load.
+   */
+  readonly fileApps?: boolean;
   /** capability: keyboard - requires observation. Input to whatever holds focus; see `EngineKeyboard`. */
   readonly keyboard?: EngineKeyboard;
   /**

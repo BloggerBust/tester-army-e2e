@@ -5,6 +5,7 @@
  * explicit deadline, a model-call budget, and no shared model transcript.
  */
 
+import { isFileApp } from '../config/app.ts';
 import type { StepExecutorContext } from './executor.ts';
 import type { JSONSchema7 } from 'ai';
 import type { AgentCacheContext } from '../cache/context.ts';
@@ -15,6 +16,7 @@ import type { TargetSession } from '../engine/surface.ts';
 import type { DebugTrace } from '../internal/debug.ts';
 import { timestamp } from '../internal/ids.ts';
 import { Deadline } from '../internal/time.ts';
+import { checkObservedLocation } from '../internal/urls.ts';
 import type { LocatorEngine } from '../locator/engine.ts';
 import type { SecretResolver } from '../locator/screen.ts';
 import type { ArtifactSink } from '../run/fixtures.ts';
@@ -230,12 +232,21 @@ export class Invocation {
     const observation = await this.instrument(
       { kind: 'observation', phase: 'agent.observe' },
       async () => {
-        const pixelsAllowed = this.options.vision !== false;
+        // A file app's pixels can show a frame of another local file, which no tree lists and no rule can place.
+        const fileApp = isFileApp(this.runtime.app);
+        if (fileApp && this.options.vision === 'only') {
+          throw new AgentError(
+            'POLICY_DENIED',
+            `${this.options.api} was called with vision: 'only', but no screenshot of an app opened from a file is sent to a model`,
+          );
+        }
+        const pixelsAllowed = this.options.vision !== false && !fileApp;
         const raw = await retryingObserve({
-          capture: () => this.session.observe(this.operation(), { pixels: this.pixelTier, pixelFallback: pixelsAllowed }),
+          capture: () => this.session.observe(this.operation(), { pixels: this.pixelTier && !fileApp, pixelFallback: pixelsAllowed }),
           guard: (cause) => this.checkDeadline(cause),
           signal: this.runtime.engine.signal,
         });
+        checkObservedLocation(raw.location, this.runtime.app.base);
         const prepared = prepareObservation(raw, {
           redact: this.runtime.redact,
           redactCut: this.runtime.redactCut,

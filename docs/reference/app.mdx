@@ -73,7 +73,7 @@ schemes included.
 | Throws | When |
 | --- | --- |
 | `APP_URL_REQUIRED` | A path, on a target that declares no `app.url` (or, on a device, no `app.linkBase`). |
-| `POLICY_DENIED` | A URL whose scheme is not `http:` or `https:`. `about:blank` is allowed. On a device with `app.linkBase`, a link whose scheme is `file:`, `data:`, `javascript:`, `view-source:`, `blob:`, or `filesystem:`. |
+| `POLICY_DENIED` | A URL whose scheme is not `http:` or `https:`. `about:blank` is allowed. On a target whose [`app.url` is a file](/reference/config#a-file-as-the-app), a `file:` URL outside that file's directory, or of a directory. On a device with `app.linkBase`, a link whose scheme is `file:`, `data:`, `javascript:`, `view-source:`, `blob:`, or `filesystem:`. |
 | `APP_UNREACHABLE` | The app URL could not be reached. |
 | `ACTION_FAILED` | The operation failed or timed out. |
 | `UNSUPPORTED_CAPABILITY` | No `session.open` on a target with a URL, or no `session.restart` on one without. On a device with no `app.bundleId`, also the target's build not installed yet ([mobile](/reference/mobile#the-app-under-test)). |

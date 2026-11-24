@@ -2,6 +2,7 @@
 
 import os from 'node:os';
 import path from 'node:path';
+import { isFileApp } from '@e2e-dev/core/lib/config/app';
 import { BLOCKABLE_CODES } from '@e2e-dev/core/lib/agent/executor';
 import { DEFAULT_LIMITS } from '@e2e-dev/core/lib/config/agent';
 import type { ResolvedConfig, ResolvedLimits, ResolvedTarget } from '@e2e-dev/core/lib/config/resolve';
@@ -656,7 +657,8 @@ function serializeTarget(
       id: target.name,
       index: target.index,
       platform: target.platform,
-      baseOrigin: target.app.base?.origin,
+      // A file has no origin: the field is left out, as for a target with no URL.
+      baseOrigin: isFileApp(target.app) ? undefined : target.app.base?.origin,
       environment: target.app.environment,
     }),
     ...(provenance ?? describeTarget(target)),

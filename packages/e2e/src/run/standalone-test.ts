@@ -410,6 +410,7 @@ export function createStandaloneTestRun(env: StandaloneTestEnvironment, test: St
         ledger: sessionLedger(env.session, config.allSecrets),
         config,
         appOrigin: env.target.app.base?.origin,
+        appBase: env.target.app.base,
         artifacts: env.artifacts,
         operation,
         interrupt: env.signal,

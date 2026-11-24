@@ -828,7 +828,32 @@ trees, on both platforms, without a device.
     `resolveNavigationUrl`: only `http:`, `https:`, and the exact
     `about:blank` pass; every other scheme (`view-source:file:` included) and
     a malformed URL is `POLICY_DENIED` (a relative URL on a target with no
-    `app.url` is `APP_URL_REQUIRED`). `device.openLink` takes custom app
+    `app.url` is `APP_URL_REQUIRED`). One exception: on a target whose
+    `app.url` is itself a `file:` URL (one file, no host, never a directory),
+    a `file:` URL passes for a file in that file's directory or below it,
+    compared as decoded paths with symbolic links resolved, so neither an
+    encoded separator nor a link climbs out, and never for a directory,
+    whose listing links to its parent; a path that cannot be resolved is
+    outside. The agent names navigation URLs and a page can tell it to, so
+    anything wider would let a local page read any file the user can and
+    carry it to an http(s) address. A link or a script in the local page
+    can still take the browser anywhere a file page may go, which an
+    http(s) page cannot, so `leftFileApp` holds the same bound over every
+    sink that keeps or sends a screen on its own: an observation taken for
+    a model (`checkObservedLocation` in `agent/observation-feed.ts` and
+    `agent/invocation.ts`), the trace's step screens (`traceScreen`), and
+    failure evidence (`run/failure-evidence.ts`). Out of the directory, the
+    screen is withheld and only the location kept. A model is sent no
+    pixels of a file app at all (`isFileApp` where `pixelsAllowed` is
+    set and where `Invocation.observe` asks for pixels), since pixels can
+    show a frame of another local file that no tree lists. For the same
+    reason no automatic screenshot of a file app is kept: the two
+    `captureEvidence` of `agent.assert` and the failure screenshot are
+    second captures nothing places. A video the user turns on is not gated. A test's own reads are trusted and not gated. An engine opens a
+    file app only when it declares `fileApps`, and the harness tells its
+    `validateApp` with `fileApp: true`; the scheme is read once, in core
+    (`namesFile`). The web engine refuses a provider and `connect` there,
+    since the bound is checked against the runner's disk. `device.openLink` takes custom app
     schemes, so it refuses a list instead (`packages/mobile/src/links.ts`):
     `file:`, `data:`, `javascript:`, `view-source:`, `blob:`, `filesystem:`.
     There is no origin or host allowlist; PR #290 removed them on purpose, since a
