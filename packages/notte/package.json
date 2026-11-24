@@ -59,7 +59,7 @@
     "@e2e-dev/web": "workspace:*",
     "@types/node": "26.6.6",
     "e2e": "workspace:*",
-    "notte-sdk": "1.10.15",
+    "notte-sdk": "1.10.16",
     "typescript": "7.0.2",
     "vitest": "5.1.1"
   },

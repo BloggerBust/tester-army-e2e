@@ -17,7 +17,7 @@
   "devDependencies": {
     "@napi-rs/image": "1.16.0",
     "@types/node": "26.6.6",
-    "ai": "7.0.179",
+    "ai": "7.0.181",
     "typescript": "7.0.2"
   }
 }

@@ -87,7 +87,7 @@
   "devDependencies": {
     "@e2e-dev/core": "workspace:*",
     "@types/node": "26.6.6",
-    "ai": "7.0.179",
+    "ai": "7.0.181",
     "e2e": "workspace:*",
     "typescript": "7.0.2",
     "vitest": "5.1.1"

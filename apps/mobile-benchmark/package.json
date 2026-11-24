@@ -37,11 +37,11 @@
   "devDependencies": {
     "@e2e-dev/github": "workspace:*",
     "@e2e-dev/mobile": "workspace:*",
-    "@expo/fingerprint": "0.20.16",
+    "@expo/fingerprint": "0.20.17",
     "@expo/repack-app": "0.10.4",
     "@types/node": "26.6.6",
     "@types/react": "19.3.0",
-    "ai": "7.0.179",
+    "ai": "7.0.181",
     "e2e": "workspace:*",
     "typescript": "7.0.2"
   }
