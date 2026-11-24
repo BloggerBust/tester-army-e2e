@@ -153,6 +153,7 @@ run only in a browser, so a test that uses it declares
 | `page.goBack()`, `goForward()`, `reload()`, `url()`, `title()`, `setViewportSize()` | `browser.back()`, `forward()`, `reload()`, `url()`, `title()`, `setViewport()` |
 | `page.waitForURL(url)` | `browser.waitForURL(url)` with a `RegExp` or an exact URL, not a glob |
 | `page.screenshot()` | `app.screenshot(label)`, the viewport, attached to the report |
+| `locator.screenshot()` | `locator.screenshot(label)`, the part of the match inside the viewport, attached to the report |
 | A fresh `context` for each test | the same for each attempt; `app.restart()` recreates it, `app.clearState()` also clears storage |
 
 </Accordion>
@@ -268,7 +269,7 @@ purpose. Use the workaround, or keep the test in Playwright.
 | Playwright | Use today |
 | --- | --- |
 | `toBeEmpty()`, `toBeInViewport()` | `toHaveValue('')` on a form control, `toHaveText('')` on other elements; `expect.poll` over `boundingBox()` |
-| `locator.screenshot()`, `{ fullPage, clip }`, `snapshotPathTemplate`, `ignoreSnapshots` | The viewport or one locator in `toHaveScreenshot`; a tag and `--exclude-tag` to skip visual tests |
+| `{ fullPage, clip }`, `snapshotPathTemplate`, `ignoreSnapshots` | The viewport or one locator in `toHaveScreenshot`; a tag and `--exclude-tag` to skip visual tests |
 | `expect.configure()` | `{ timeout }` on each call |
 | `@axe-core/playwright` | axe-core through `browser.addInitScript({ path: 'node_modules/axe-core/axe.min.js' })`, then `axe.run()` in `browser.evaluate` |
 | `.resolves`, `.rejects`, `toThrow()`, `toStrictEqual()`, `toContainEqual()`, `toBeInstanceOf()`, `expect.closeTo()` | `await` first, or catch the error and assert on it; `toEqual`; `toContain`, which compares by deep equality; `toBeCloseTo` |

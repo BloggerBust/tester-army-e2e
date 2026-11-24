@@ -210,11 +210,11 @@ function videoPaths(attempts: readonly { readonly artifacts: readonly ArtifactRe
   return paths;
 }
 
-/** Report-relative paths of the screenshots the `app.screenshot` steps among `steps` attached, in step order. */
+/** Report-relative paths of the screenshots the `app.screenshot` and `locator.screenshot` steps among `steps` attached, in step order. */
 function requestedScreenshots(steps: readonly StepRecord[], artifacts: readonly ArtifactRecord[]): string[] {
   const paths: string[] = [];
   for (const step of steps) {
-    if (step.api !== 'app.screenshot') continue;
+    if (step.api !== 'app.screenshot' && step.api !== 'locator.screenshot') continue;
     for (const id of step.artifacts) {
       const where = artifacts.find((artifact) => artifact.id === id && artifact.kind === 'screenshot')?.path;
       if (where !== undefined) paths.push(where);

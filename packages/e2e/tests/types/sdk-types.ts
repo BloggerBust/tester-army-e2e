@@ -807,6 +807,11 @@ void screen.getByLabel('Plan').selectOption({ value: 'pro', index: 1 });
 // @ts-expect-error role queries never match hidden nodes; visible is the one visibility knob
 screen.getByRole('button', { hidden: true });
 
+// A locator's screenshot is a file path under a label, as app.screenshot's is.
+void (screen.getByTestId('summary').screenshot('summary') satisfies Promise<string>);
+// @ts-expect-error the file goes with the attempt's artifacts; there is no path option.
+void screen.getByTestId('summary').screenshot({ path: 'summary.png' });
+
 // Coordinate input: a viewport point on screen, a node-relative one on a locator.
 declare const point: import('../../src/index.ts').Point;
 void (executorContext.actions.tapAt(point) satisfies Promise<PointTapResult>);

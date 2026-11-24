@@ -106,6 +106,7 @@ interface ScreenWiring {
   readonly config: ResolvedConfig;
   readonly steps: StepRecorder;
   readonly secrets: SecretResolver;
+  readonly artifacts: ArtifactSink;
   /** The session's secret ledger, which `screen.tree()` passes its text through. */
   readonly redaction: NodeRedaction;
   /** The app URL's origin, so the tree shows a link on it by its path. */
@@ -136,6 +137,7 @@ export function createScreenContext(wiring: ScreenWiring): ScreenContext {
     engine,
     steps,
     secrets: wiring.secrets,
+    artifacts: wiring.artifacts,
     projectRoot: config.projectRoot,
     renderTree: (observation) =>
       prepareObservation(observation, {
@@ -162,6 +164,7 @@ export function createFixtures(environment: AttemptEnvironment): AttemptFixtures
     config: environment.config,
     steps: environment.steps,
     secrets,
+    artifacts: environment.artifacts,
     redaction: ledger,
     appOrigin: environment.target.app.base?.origin,
     ...(environment.test === undefined

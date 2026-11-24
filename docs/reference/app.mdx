@@ -138,7 +138,8 @@ const shot = await app.screenshot('after-checkout');
 - The file is an attempt artifact under `screenshots/`. The returned path is
   absolute. The report records the path relative to the artifact root.
 - The `list` reporter's summary names up to 10 files in a `Screenshots` row,
-  then counts the rest.
+  then counts the rest. The row holds
+  [`locator.screenshot`](/reference/screen#screenshot) files too.
 - `label` names the step and joins the file name.
 - A screenshot taken while the page navigates captures the document showing.
 

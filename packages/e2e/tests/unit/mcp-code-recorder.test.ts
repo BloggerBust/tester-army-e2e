@@ -24,6 +24,7 @@ interface FakeLocator {
   tap(options?: object): Promise<void>;
   fill(value: unknown): Promise<void>;
   textContent(): Promise<string>;
+  screenshot(label?: string): Promise<string>;
   missing(): Promise<never>;
 }
 
@@ -41,6 +42,7 @@ function fakeScreen(seen: unknown[] = []) {
       return Promise.resolve();
     },
     textContent: () => Promise.resolve(`text of ${path}`),
+    screenshot: () => Promise.resolve(`/artifacts/${path}.png`),
     missing: () => Promise.reject(Object.assign(new Error('locator matched no nodes'), { code: 'LOCATOR_NOT_FOUND' })),
   });
   return { getByRole: (role: string, name?: string) => locator(name === undefined ? role : `${role}:${name}`) };
@@ -60,6 +62,13 @@ describe('run_code recorder', () => {
       "await screen.getByRole('textbox', 'it\\'s \\\\ a\\nname').fill(/^a.b$/i);",
     ]);
     expect(await recorder.end(new AbortController().signal)).toEqual({ unawaited: 0, lost: undefined });
+  });
+
+  it('keeps a locator screenshot as an action, though it answers with a path', async () => {
+    const recorder = recording();
+    const screen = recorder.wrap(fakeScreen(), 'screen', true);
+    expect(await screen.getByRole('row').screenshot('row')).toBe('/artifacts/row.png');
+    expect(sources(recorder.outcomes)).toEqual(["await screen.getByRole('row').screenshot('row');"]);
   });
 
   it('hands the real object what the code holds wrapped, and leaves the rest as it is', async () => {

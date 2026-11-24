@@ -38,6 +38,12 @@ export interface ScreenOverOptions {
   readonly actions?: readonly LocatorActionKind[];
   /** The keyboard the engine declares, if any. */
   readonly keyboard?: EngineKeyboard;
+  /** Writes a screenshot under `artifactsDir` and returns its relative path; without it the engine declares no artifacts. */
+  readonly screenshot?: (label: string | undefined) => string;
+  /** The attempt's artifact directory; `screenshot` needs one. */
+  readonly artifactsDir?: string;
+  /** Told the relative path of every artifact the screen registers. */
+  readonly registered?: (relativePath: string) => void;
   /** Whether the engine declares `tapModifiers`; default not. */
   readonly tapModifiers?: boolean;
   /** Action and assertion timeout in milliseconds. */
@@ -46,7 +52,7 @@ export interface ScreenOverOptions {
 
 /** A screen and the recorder of its steps over the engine `options` describe. */
 export function screenOver(options: ScreenOverOptions): { screen: Screen; steps: StepRecorder } {
-  const { perform } = options;
+  const { perform, screenshot } = options;
   const engine = defineEngine({
     name: 'fake',
     version: '1',
@@ -62,6 +68,7 @@ export function screenOver(options: ScreenOverOptions): { screen: Screen; steps:
           },
         }),
     ...(options.keyboard === undefined ? {} : { keyboard: options.keyboard }),
+    ...(screenshot === undefined ? {} : { artifacts: { screenshot: async (label: string | undefined) => screenshot(label) } }),
     ...(options.tapModifiers === undefined ? {} : { tapModifiers: options.tapModifiers }),
   });
   const steps = new StepRecorder('attempt');
@@ -77,6 +84,10 @@ export function screenOver(options: ScreenOverOptions): { screen: Screen; steps:
     }),
     steps,
     secrets: { resolve: async () => 'plaintext' },
+    artifacts: { dir: options.artifactsDir ?? '', register: (_kind, relativePath) => {
+        options.registered?.(relativePath);
+        return relativePath;
+      }, link: (url) => url },
     renderTree: (observation) =>
       prepareObservation(observation, { redact: (text) => text, redactCut: (text) => text, maxBytes: 64_000 }).text,
   });

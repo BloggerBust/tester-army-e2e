@@ -2449,7 +2449,7 @@ describe('screenshots row', () => {
   const shot = (id: string, file: string): AttemptRecord['artifacts'][number] =>
     ({ id, kind: 'screenshot', mediaType: 'image/png', path: file, redaction: 'complete', producer: { kind: 'step', stepId: 'app.screenshot' } });
 
-  it('names each app.screenshot file, ordinary and serial, and leaves out assertion and failure screenshots', () => {
+  it('names each app.screenshot and locator.screenshot file, ordinary and serial, and leaves out assertion and failure screenshots', () => {
     const { lines, output } = capture();
     const reporter = plainReporter(output);
     reporter.handle(runStarted());
@@ -2459,14 +2459,15 @@ describe('screenshots row', () => {
     reporter.handle(group);
     reporter.handle(finished(result({ status: 'passed', id: 'm1', title: ['wizard', 'step 1'], serialGroupId: 'g1' })));
     const taken = attempt({
-      steps: [step('app.screenshot', ['a:0']), step('agent.assert', ['a:1'])],
-      artifacts: [shot('a:0', 'case/attempt-1/screenshots/001-plan.png'), shot('a:1', 'case/attempt-1/screenshots/002-assert.png'), shot('a:2', 'case/attempt-1/failure.png')],
+      steps: [step('app.screenshot', ['a:0']), step('agent.assert', ['a:1']), step('locator.screenshot', ['a:3'])],
+      artifacts: [shot('a:0', 'case/attempt-1/screenshots/001-plan.png'), shot('a:1', 'case/attempt-1/screenshots/002-assert.png'), shot('a:2', 'case/attempt-1/failure.png'), shot('a:3', 'case/attempt-1/screenshots/003-total.png')],
     });
     reporter.handle(finished(result({ status: 'passed', declarationIndex: 1, attempts: [taken] })));
     reporter.handle(runFinished());
     expect(lines.filter((line) => line.includes('.png'))).toEqual([
       'Screenshots  .e2e/artifacts/wizard/attempt-1/screenshots/001-wizard.png',
       '             .e2e/artifacts/case/attempt-1/screenshots/001-plan.png',
+      '             .e2e/artifacts/case/attempt-1/screenshots/003-total.png',
     ]);
   });
 

@@ -1006,6 +1006,7 @@ defines them, plus `timeout`, which `screen.swipe` refuses. It has no
 | [`isDisabled`](#isdisabled) | `Promise<boolean>` |
 | [`isChecked`](#ischecked) | `Promise<boolean>` |
 | [`boundingBox`](#boundingbox) | `Promise<{ x, y, width, height } \| null>` |
+| [`screenshot`](#screenshot) | `Promise<string>` |
 | [`count`](#count) | `Promise<number>` |
 | [`all`](#all) | `Promise<Locator[]>` |
 | [`allTextContents`](#alltextcontents) | `Promise<string[]>` |
@@ -1017,7 +1018,8 @@ Reads follow the [Match rules](#match-rules). `count`, `all`, and
 On a secure field, `textContent`, `inputValue`, `getAttribute`, and
 `allTextContents` throw `POLICY_DENIED`, as the matching
 [`expect` matchers](/reference/expect#secure-fields) do. `isEnabled`,
-`isDisabled`, `isChecked`, and `boundingBox` are allowed there.
+`isDisabled`, `isChecked`, and `boundingBox` are allowed there, and
+`screenshot` masks the field.
 
 #### `textContent`
 
@@ -1167,6 +1169,41 @@ The box is in CSS pixels, and on a device in points (physical pixels on
 Android). It is `null` for a node that lays out no box
 (`display: none` on it or an ancestor). A `visibility: hidden` node keeps
 its box.
+
+#### `screenshot`
+
+```ts
+/**
+ * Captures a redacted screenshot of the one match and returns its absolute
+ * path. The match is scrolled into view first; one larger than the viewport
+ * keeps the part inside it.
+ */
+screenshot(label?: string): Promise<string>;
+```
+
+```ts
+const card = await screen.getByTestId('order-summary').screenshot('summary');
+```
+
+- The file is what [`app.screenshot`](/reference/app#screenshot) saves, cut
+  to the match's box: an attempt artifact under `screenshots/`, with the
+  same masking and the same pixel density.
+- `label` joins the step's name and the file name.
+- It waits until the match is visible, and its box and the viewport hold
+  still across the capture. A match the page moves out of the viewport is
+  scrolled back.
+- The engine's screenshot has to be a PNG of the viewport, as the web,
+  mobile, and desktop engines' are.
+- The `list` reporter names the file in its `Screenshots` row.
+
+| Throws | When |
+| --- | --- |
+| `INVALID_ARGUMENT` | A `label` that is not a string. |
+| `LOCATOR_NOT_FOUND` | No visible match within the action timeout, one that kept moving, or one outside the viewport on an engine that cannot scroll to it. |
+| `LOCATOR_AMBIGUOUS` | More than one match. |
+| `ACTION_FAILED`, `ENGINE_FAILURE` | The scroll or the capture failed or timed out, as on a web match that never stops animating. |
+| `UNSUPPORTED_CAPABILITY` | The engine takes no screenshots, or writes one that is not a PNG. |
+| `POLICY_DENIED` | On iOS and Android, a secure field on screen has no bounds to mask. |
 
 #### `count`
 

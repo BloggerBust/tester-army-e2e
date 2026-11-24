@@ -245,7 +245,7 @@ export class Recorder {
     if (this.functions.some((code) => !this.sentAsText.has(code) && source.includes(Function.prototype.toString.call(code)))) note = `${CALLBACK}${note}`;
     if (isData(value, 0)) {
       // A call that gives a value back only read, unless it ran a function of the code's, which may have changed the app.
-      const read = value !== undefined && this.reading.has(rootOf(text)) && !args.some((arg) => holdsFunction(arg, 0));
+      const read = value !== undefined && this.reading.has(rootOf(text)) && !ANSWERING_ACTIONS.has(text.slice(text.lastIndexOf('.') + 1)) && !args.some((arg) => holdsFunction(arg, 0));
       this.slots[slot] = { source: read ? source : `${source}${note}`, read, value };
       return value;
     }
@@ -334,6 +334,9 @@ function own(real: object, key: symbol): unknown {
   const value: unknown = Reflect.get(real, key, real);
   return typeof value === 'function' ? (value.bind(real) as unknown) : value;
 }
+
+/** Test API calls that give a value back and still act: a locator's screenshot scrolls the app and leaves a file. */
+const ANSWERING_ACTIONS: ReadonlySet<string> = new Set(['screenshot']);
 
 /** The first name of a line's text: the object in scope it starts from. */
 function rootOf(text: string): string {

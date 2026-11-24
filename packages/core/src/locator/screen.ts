@@ -49,7 +49,9 @@ import {
 } from './expression.ts';
 import { type Deadline, isOperationTimeout, POLL_INTERVAL_MS, pollReads } from '../internal/time.ts';
 import { SampleHistory } from '../expect/samples.ts';
+import type { ArtifactSink } from '../run/fixtures.ts';
 import type { ScreenshotContext } from '../run/screenshots.ts';
+import { captureMatch } from './element-screenshot.ts';
 
 export interface SecretResolver {
   /**
@@ -63,6 +65,8 @@ export interface ScreenContext {
   readonly engine: LocatorEngine;
   readonly steps: StepRecorder;
   readonly secrets: SecretResolver;
+  /** Where `locator.screenshot()` keeps its file, and how it joins the report. */
+  readonly artifacts: ArtifactSink;
   /** Base directory for resolving relative file paths, e.g. uploads. */
   readonly projectRoot?: string;
   /** Where `toHaveScreenshot` keeps screenshots; absent outside a test. */
@@ -649,6 +653,18 @@ class LocatorImpl extends ScreenImpl implements Locator {
   async boundingBox(): Promise<{ x: number; y: number; width: number; height: number } | null> {
     const node = await this.readGuarded(false);
     return node.rect ?? null;
+  }
+
+  screenshot(label?: string): Promise<string> {
+    if (label !== undefined && typeof label !== 'string') {
+      throw new TestError('INVALID_ARGUMENT', `locator.screenshot() takes a label for the file's name, got ${describeValue(label)}; the file is saved with the attempt's artifacts and its path is returned`);
+    }
+    const { artifacts, engine, steps } = this.context;
+    return steps.run('locator', 'locator.screenshot', label === undefined ? this.label : `${this.label} → ${label}`, async () => {
+      const relative = await captureMatch(engine, artifacts.dir, this.expression, label);
+      steps.attachArtifact(artifacts.register('screenshot', relative));
+      return nodePath.join(artifacts.dir, relative);
+    });
   }
 
   async count(): Promise<number> {

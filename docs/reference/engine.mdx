@@ -503,6 +503,7 @@ engine.
 | `locator.pressSequentially` | the `focus` action and `keyboard`; the harness composes `focus` then `keyboard.type` |
 | `test.setup` sessions, the `session:` option | `state` |
 | `app.screenshot()`, assertion evidence, the failure screenshot | `artifacts` |
+| `locator.screenshot()` | `artifacts`, with `observe` and `locate`; the `scrollIntoView` action when declared |
 | every [`video` mode](/reference/config#recording) but `off`, from the config, a target, a test, or `--video` | `artifacts` |
 | `app.open()` | `session.open`; on a target with no app URL, `session.restart`, or `session.openLink` for a path on a target with `app.linkBase` |
 | `app.back()` | `session.back` |

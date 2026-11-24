@@ -647,6 +647,12 @@ export interface Locator extends Omit<Screen, 'tree' | 'debug' | 'pause'> {
   isChecked(): Promise<boolean>;
   /** Reads the current viewport-relative rectangle. */
   boundingBox(): Promise<{ x: number; y: number; width: number; height: number } | null>;
+  /**
+   * Captures a redacted screenshot of the one match and returns its absolute
+   * path. The match is scrolled into view first; one larger than the viewport
+   * keeps the part inside it.
+   */
+  screenshot(label?: string): Promise<string>;
   /** Counts current matches without auto-waiting. */
   count(): Promise<number>;
   /** One `nth(i)` locator per current match, without auto-waiting; empty when nothing matches. */
