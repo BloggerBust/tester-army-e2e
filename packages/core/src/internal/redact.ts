@@ -824,44 +824,44 @@ function missingUtf8Bytes(bytes: Uint8Array): number {
   return Math.max(0, width - (bytes.length - index));
 }
 
+type RedactedPiece<Writer> = { write: Writer; text: string };
+
 /**
- * Redaction for text that arrives in pieces, as a stream writes it, so a
- * value split across two writes is still caught. Each `push` returns what is
- * safe to pass on and holds back the rest: the tail a later piece could
- * complete into a value or a `<secret:name>` marker, as the ledger measures
- * it. Bytes are decoded as UTF-8 with a character split across byte pieces
- * kept whole; a string piece ends an unfinished character first, as a
- * terminal shows the bytes Node wrote before it. `flush` releases what is
- * held, redacted, when the stream ends. The pieces together redact to
- * exactly what the whole text would.
+ * Redacts a stream as if its text had arrived in one piece, even when a
+ * secret, a `<secret:name>` marker, or a UTF-8 character spans writes.
+ * Buffered text can be assigned a writer so it reaches the same destination
+ * when a later write or `flush()` releases it.
  */
-export class StreamRedactor {
+export class StreamRedactor<Writer extends (text: string) => void = (text: string) => void> {
   private readonly decoder = new StringDecoder('utf8');
   private held = '';
-  private readonly destinations: { start: number; end: number; write: (text: string) => void }[] = [];
-  private partial: { remaining: number; write: ((text: string) => void) | undefined } | undefined;
+  private readonly destinations: { start: number; end: number; write: Writer }[] = [];
+  private partial: { remaining: number; write: Writer | undefined } | undefined;
   private offset = 0;
-  private activeDelivery: { write: (text: string) => void; text: string }[] | undefined;
+  private activeDelivery: (() => void)[] | undefined;
 
   constructor(
     private readonly ledger: SecretLedger,
-    private readonly defaultWriter?: (text: string) => void,
+    private readonly defaultWriter?: Writer,
   ) {}
 
-  push(chunk: string | Uint8Array, write?: (text: string) => void): string {
+  push(chunk: string | Uint8Array, write?: Writer): string {
     return this.drainBuffer(this.bufferChunk(chunk, write));
   }
 
   /** Returns false when the writer needs to pause, or true when output is buffered or can continue. */
-  writeTo(chunk: string | Uint8Array, sink: (text: string) => boolean): boolean {
+  writeTo(chunk: string | Uint8Array, sink: Writer, deliver: (writes: readonly RedactedPiece<Writer>[]) => boolean): boolean {
     let accepted = true;
-    const write = this.activeDelivery === undefined ? sink : AsyncResource.bind(sink);
-    this.drainBuffer(this.bufferChunk(chunk), (text) => { accepted = write(text); });
+    const finish = (writes: RedactedPiece<Writer>[], tail: string) => {
+      if (tail !== '' || writes.length === 0) writes.push({ write: sink, text: tail });
+      accepted = deliver(writes);
+    };
+    this.drainBuffer(this.bufferChunk(chunk), this.activeDelivery === undefined ? finish : AsyncResource.bind(finish));
     return accepted;
   }
 
   /** Buffers the chunk and returns the length of the prefix safe to drain. */
-  private bufferChunk(chunk: string | Uint8Array, write?: (text: string) => void): number {
+  private bufferChunk(chunk: string | Uint8Array, write?: Writer): number {
     if (chunk.length === 0) return 0;
     const partial = this.partial;
     if (partial !== undefined) {
@@ -887,14 +887,14 @@ export class StreamRedactor {
     return this.ledger.holdFrom(this.held);
   }
 
-  /** Redacts and returns whatever is held, an unfinished character included; nothing more will follow. */
+  /** Releases the remaining redacted text, decoding an incomplete UTF-8 sequence as a replacement character. */
   flush(): string {
     this.append(this.decoder.end(), this.partial?.write);
     this.partial = undefined;
     return this.drainBuffer(this.held.length);
   }
 
-  private append(text: string, write: ((text: string) => void) | undefined): void {
+  private append(text: string, write: Writer | undefined): void {
     if (write !== undefined && text.length > 0) {
       const start = this.offset + this.held.length;
       const last = this.destinations.at(-1);
@@ -904,15 +904,15 @@ export class StreamRedactor {
     this.held += text;
   }
 
-  private drainBuffer(cut: number, finish?: (text: string) => void): string {
+  private drainBuffer(cut: number, finish?: (writes: RedactedPiece<Writer>[], tail: string) => void): string {
     const text = this.held.slice(0, cut);
     this.held = this.held.slice(cut);
     if (this.activeDelivery === undefined && (text === '' || this.destinations.length === 0)) {
       const safe = this.ledger.redact(text);
-      finish?.(safe);
+      finish?.([], safe);
       return safe;
     }
-    const pendingWrites = this.activeDelivery ?? [];
+    const pendingWrites: RedactedPiece<Writer>[] = [];
     const base = this.offset;
     this.offset += cut;
     let start = 0;
@@ -934,13 +934,20 @@ export class StreamRedactor {
     }
     if (this.destinations.length === 0) this.offset = 0;
     const rest = this.ledger.redact(text.slice(start));
-    if (finish !== undefined) pendingWrites.push({ write: finish, text: unassigned + rest });
-    else if (this.defaultWriter !== undefined && rest !== '') pendingWrites.push({ write: this.defaultWriter, text: rest });
-    if (this.activeDelivery === undefined) {
+    if (finish === undefined && this.defaultWriter !== undefined && rest !== '') {
+      pendingWrites.push({ write: this.defaultWriter, text: rest });
+    }
+    const deliver = () => {
+      if (finish !== undefined) return finish(pendingWrites, unassigned + rest);
+      for (const { write, text: piece } of pendingWrites) write(piece);
+    };
+    if (this.activeDelivery !== undefined) this.activeDelivery.push(deliver);
+    else {
       // A reporter can write again while receiving output. Deliver that write after this batch.
-      this.activeDelivery = pendingWrites;
+      const queue = [deliver];
+      this.activeDelivery = queue;
       try {
-        for (const { write, text: piece } of pendingWrites) write(piece);
+        for (const send of queue) send();
       } finally {
         this.activeDelivery = undefined;
       }

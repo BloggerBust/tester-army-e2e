@@ -1,4 +1,5 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
+import { Writable } from 'node:stream';
 import { describe, expect, it } from 'vitest';
 import { SecretLedger } from '@e2e-dev/core/lib/internal/redact';
 import { realmSlot } from '@e2e-dev/core/lib/internal/realm-slot';
@@ -120,6 +121,20 @@ function output() {
   return { out, ledger, stdout: () => terminal.stdout.join(''), stderr: () => terminal.stderr.join('') };
 }
 
+/** Records terminal writes and lets tests control when they complete. */
+function delayedTerminal(highWaterMark: number) {
+  const chunks: string[] = [];
+  let acknowledge: ((error?: Error | null) => void) | undefined;
+  const stream = new Writable({
+    highWaterMark,
+    write(chunk: Buffer, _encoding, done) {
+      chunks.push(chunk.toString());
+      acknowledge = done;
+    },
+  });
+  return { stream, write: stream.write.bind(stream), chunks, acknowledge: (error?: Error) => acknowledge!(error) };
+}
+
 describe('RunnerOutput', () => {
   it('holds what is printed during the config load and releases it redacted with the secrets the load registered', async () => {
     const { out, ledger, stdout, stderr } = output();
@@ -163,20 +178,45 @@ describe('RunnerOutput', () => {
     expect(stdout()).toBe('before config after');
   });
 
-  it('preserves backpressure and the write callback when runtime output releases a config diagnostic', async () => {
-    let completed: (() => void) | undefined;
-    const terminal = (_text: string | Uint8Array, callback?: () => void): boolean => {
-      completed = callback;
-      return false;
-    };
-    const out = new RunnerOutput({ stdout: terminal, stderr: terminal }, new SecretLedger([['token', 'a synthetic phrase']]));
-    await out.withholdDuring(async () => { out.write('stderr', 'config '); });
+  it.each([
+    { name: 'split UTF-8 character', config: Buffer.from([0xc3]), runtime: Buffer.from([0xa9]), expected: 'é' },
+    { name: 'buffered ASCII diagnostic', config: 'Loading the project config.', runtime: '!', expected: 'L' },
+  ])('waits for the terminal when a runtime write releases only a $name', async ({ config, runtime, expected }) => {
+    const terminal = delayedTerminal(1);
+    const ledger = new SecretLedger(typeof config === 'string' ? [['token', 'synthetic phrase']] : []);
+    const out = new RunnerOutput({ stdout: terminal.write, stderr: terminal.write }, ledger);
+    await out.withholdDuring(async () => { out.write('stderr', config); });
+    expect(terminal.chunks).toEqual([]);
     let calls = 0;
-    expect(out.write('stderr', 'runtime '.repeat(40), () => { calls++; })).toBe(false);
+    const accepted = out.write('stderr', runtime, () => { calls++; });
     await new Promise<void>((resolve) => process.nextTick(resolve));
-    expect(calls).toBe(0);
-    completed?.();
+    expect(terminal.chunks).toEqual([expected]);
+    expect({ accepted, calls }).toEqual({ accepted: false, calls: 0 });
+    terminal.acknowledge();
     expect(calls).toBe(1);
+    out.end();
+  });
+
+  it.each([
+    { slow: 'config', firstError: undefined },
+    { slow: 'runtime', firstError: new Error('config write failed') },
+  ])('waits for both destinations when the $slow stream is backed up', async ({ slow, firstError }) => {
+    const config = delayedTerminal(slow === 'config' ? 1 : 1024);
+    const runtime = delayedTerminal(slow === 'runtime' ? 1 : 1024);
+    const out = new RunnerOutput({ stdout: config.write, stderr: runtime.write }, new SecretLedger());
+    await out.withholdDuring(async () => { out.write('stdout', Buffer.from([0xc3])); });
+    out.leaveStdout();
+    const results: (Error | undefined)[] = [];
+    const accepted = out.write('stdout', Buffer.from([0xa9, 0x21]), (error) => results.push(error ?? undefined));
+    expect([config.chunks, runtime.chunks]).toEqual([['é'], ['!']]);
+    expect(accepted).toBe(false);
+    const [first, last] = slow === 'config' ? [runtime, config] : [config, runtime];
+    if (firstError !== undefined) first.stream.once('error', () => {});
+    first.acknowledge(firstError);
+    await new Promise<void>((resolve) => process.nextTick(resolve));
+    expect(results).toEqual([]);
+    last.acknowledge();
+    expect(results).toEqual([firstError]);
     out.end();
   });
 

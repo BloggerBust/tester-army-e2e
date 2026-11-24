@@ -19,6 +19,9 @@ export type OutputStream = 'stdout' | 'stderr';
 /** Writes text to one stream of the terminal; the callback fires once the stream took it. Answers false while the stream is backed up, like `Writable.write`. */
 export type TerminalWrite = (text: string | Uint8Array, callback?: () => void) => boolean;
 
+type WriteCallback = (error?: Error | null) => void;
+type RedactedWriter = (text: string, callback?: WriteCallback) => boolean;
+
 type BufferedWrite = {
   readonly stream: OutputStream;
   readonly text: string | Uint8Array;
@@ -242,7 +245,7 @@ export class ConfigLoadHold {
  */
 export class RunnerOutput {
   /** Each stream redacted on its own, across writes: a value split over two writes is still caught. */
-  private readonly redactors: Readonly<Record<OutputStream, StreamRedactor>>;
+  private readonly redactors: Readonly<Record<OutputStream, StreamRedactor<RedactedWriter>>>;
   /** The same for what is written inside `passThrough`, kept apart so it never waits behind, or completes, what the view holds. */
   private readonly passRedactors: Readonly<Record<OutputStream, StreamRedactor>>;
   /** The same for what is written inside `asPrinted`, which lands on other streams. */
@@ -260,8 +263,8 @@ export class RunnerOutput {
     ledger: SecretLedger,
   ) {
     this.redactors = {
-      stdout: new StreamRedactor(ledger, (text) => this.emit('stdout', text)),
-      stderr: new StreamRedactor(ledger, (text) => this.emit('stderr', text)),
+      stdout: new StreamRedactor<RedactedWriter>(ledger, (text, done) => this.emit('stdout', text, done)),
+      stderr: new StreamRedactor<RedactedWriter>(ledger, (text, done) => this.emit('stderr', text, done)),
     };
     this.passRedactors = { stdout: new StreamRedactor(ledger), stderr: new StreamRedactor(ledger) };
     this.printRedactors = { stdout: new StreamRedactor(ledger), stderr: new StreamRedactor(ledger) };
@@ -272,7 +275,7 @@ export class RunnerOutput {
    * could complete into a value waits for it, or for `end`. Held while a
    * config loads. Answers what the terminal did.
    */
-  write(stream: OutputStream, chunk: string | Uint8Array, callback?: () => void): boolean {
+  write(stream: OutputStream, chunk: string | Uint8Array, callback?: WriteCallback): boolean {
     const passing = this.passing.getStore();
     if (passing === 'redacted') return this.handed(stream, this.passRedactors[stream].push(chunk), callback);
     if (passing === 'printed') return this.reporterPrint(stream, this.printRedactors[stream].push(chunk), callback);
@@ -282,7 +285,23 @@ export class RunnerOutput {
       if (callback !== undefined) process.nextTick(callback);
       return true;
     }
-    return this.redactors[stream].writeTo(chunk, (text) => this.emit(stream, text, callback));
+    return this.redactors[stream].writeTo(chunk, (text, done) => this.emit(stream, text, done), (writes) => {
+      if (writes.length === 1) {
+        const { write, text } = writes[0]!;
+        return write(text, callback);
+      }
+      let remaining = writes.length;
+      let failure: Error | null | undefined;
+      const done = callback === undefined ? undefined : (error?: Error | null) => {
+        failure ??= error;
+        if (--remaining === 0) callback(failure);
+      };
+      let accepted = true;
+      for (const { write, text } of writes) {
+        if (!write(text, done)) accepted = false;
+      }
+      return accepted;
+    });
   }
 
   /**
