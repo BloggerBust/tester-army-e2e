@@ -1056,7 +1056,7 @@ function createProgram(version: string, telemetry: Telemetry, updateCheck: Updat
     .command('doctor')
     .summary('check that e2e run can start here, without starting anything')
     .description(
-      'Check the runtime, load and resolve the config, ask each target\'s engine what it needs on this machine, and name the model each agent resolved to. Starts no app and no worker, only the server of an engine that runs in its own process, and calls no model unless --check-model is given. Ctrl-C stops the checks and reports what ran. A model on an e2e login passes when the login is stored; any other model reads its own credential, which doctor reports as unknown. Exits 0 when no check failed, 2 otherwise, and 130 when interrupted.',
+      'Check the runtime, load and resolve the config, ask each target\'s engine what it needs on this machine, and name the model each agent resolved to. Starts no app and no worker, only the server of an engine that runs in its own process, and calls no model unless --check-model is given. Ctrl-C stops the checks and reports what ran. A model on an e2e login passes when the login is stored; a Vercel AI Gateway or OpenRouter model with no key variable set is a warning; any other model reads its own credential, which doctor reports as unknown. Exits 0 when no check failed, 2 otherwise, and 130 when interrupted.',
     )
     .option('--config <path>', 'config file (default: the nearest e2e.config.ts, .mts, .js, or .mjs)')
     .option('--target <ids>', 'target names, comma-separated or repeated (default: all targets)', parseNames('target'))
