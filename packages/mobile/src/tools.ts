@@ -2,7 +2,8 @@
  * Agent-side tools for device targets. Everything a model plans through
  * beyond the grammar verbs the engine already unlocks (tap, type, scroll,
  * screenshot, tap_at) lives here: opening another app, a free-form swipe,
- * typing into the focused field, and system alerts. Each tool is scoped to
+ * typing into the focused field, system alerts, the TV remote, and the hinge
+ * of a foldable. Each tool is scoped to
  * the platforms of the engines it was built from, so a mixed suite never
  * offers it on a browser.
  */
@@ -15,7 +16,7 @@ import { rawSession, type DeviceSession } from './device.ts';
 import { surfaceOf } from './engine.ts';
 import { isAppNotInstalled } from './errors.ts';
 import { pressRemote, REMOTE_KEYS } from './remote.ts';
-import type { AgentDeviceSurface } from './surface.ts';
+import type { AgentDeviceSurface, FoldPose } from './surface.ts';
 
 /**
  * Types a tool the way the SDK's `tool()` does, without importing it: `ai`
@@ -188,6 +189,44 @@ export function tvTools(
             await surface.screenCommand('tv_remote', (client) => pressRemote(client, key, surface.selection()), signal);
           }
           return times === 1 ? `Pressed ${key} on the remote.` : `Pressed ${key} on the remote ${String(times)} times.`;
+        },
+      }),
+      annotate(true),
+    ),
+  };
+}
+
+/** The poses `fold` takes, the ones `device.fold` accepts. */
+const FOLD_POSES = ['closed', 'half-open', 'open'] as const satisfies readonly FoldPose[];
+
+/** What `fold` answers once the device is in a pose. */
+const FOLDED: Readonly<Record<FoldPose, string>> = {
+  closed: 'Folded the device closed; the app is on the outer display.',
+  'half-open': 'Folded the device half-open; the app is on the inner display.',
+  open: 'Unfolded the device flat; the app is on the inner display.',
+};
+
+/**
+ * The hinge as an agent tool, for engines that drive a foldable: the iPhone
+ * Duo simulator or a foldable Android emulator. Spread it beside
+ * `mobileTools`. It is a pack of its own, so a config with no foldable offers
+ * no hinge. Tools are offered by platform: when a device without a hinge
+ * shares the foldable's platform, put the pack on a named agent that the
+ * foldable tests select, since that device answers `UNSUPPORTED_CAPABILITY`.
+ */
+export function foldTools(
+  ...engines: readonly [EngineHandle, ...EngineHandle[]]
+): Readonly<Record<string, DefinedTool>> {
+  const { active, annotate } = pack(engines);
+  return {
+    fold: defineTool(
+      deviceTool({
+        description:
+          'Fold or unfold a foldable device. closed puts the app on the outer (cover) display, open lays the inner display flat, and half-open bends it like a book. The app moves to the other display and can change its layout, so read the screen again before the next action. On the iPhone Duo simulator a fold takes 10 to 16 seconds.',
+        inputSchema: z.object({ pose: z.enum(FOLD_POSES) }),
+        execute: async ({ pose }, options) => {
+          await active().fold(pose, abort(options) ?? new AbortController().signal);
+          return FOLDED[pose];
         },
       }),
       annotate(true),

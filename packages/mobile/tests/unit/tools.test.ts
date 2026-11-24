@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { defineEngine } from '@e2e-dev/core/engine';
 import { buildEngine } from '../../src/engine.ts';
 import { AgentDeviceSurface } from '../../src/surface.ts';
-import { unstable_deviceSession, mobileTools, tvTools } from '../../src/tools.ts';
+import { foldTools, unstable_deviceSession, mobileTools, tvTools } from '../../src/tools.ts';
 import { createFakeClient, type FakeClient } from '../helpers/fake-client.ts';
 import { ignoreTrace, noSecrets } from '../helpers/secrets.ts';
 
@@ -104,6 +104,38 @@ describe('agent tool pack', () => {
       throw new AppError('UNSUPPORTED_OPERATION', 'tv-remote is not supported on this device');
     });
     await expect(run({ key: 'menu' })).rejects.toMatchObject({ code: 'UNSUPPORTED_CAPABILITY' });
+  });
+
+  it('keeps the hinge in a pack of its own, which folds the running device to the pose', async () => {
+    const fake = createFakeClient();
+    const duo = buildEngine(new AgentDeviceSurface({ platform: 'ios', device: 'iPhone Duo' }, () => fake.client));
+    expect(Object.keys(mobileTools(duo))).not.toContain('fold');
+    const tools = foldTools(duo);
+    expect(Object.keys(tools)).toEqual(['fold']);
+    expect(tools.fold!.annotations).toEqual({ mutates: true, platforms: ['ios'] });
+    const foreign = defineEngine({ name: 'other', version: '1', spiVersion: 1 });
+    expect(() => foldTools(foreign)).toThrowError(expect.objectContaining({ code: 'INVALID_STATE' }));
+
+    await duo.init!({ runId: 'r', targetName: 'ios', projectRoot: '/project', app: {}, headed: false, workerSlot: 0, log: () => undefined, env: {}, signal: new AbortController().signal });
+    const run = (input: unknown) =>
+      (tools.fold!.tool.execute as (input: unknown, options: object) => Promise<unknown>)(input, { toolCallId: 'c1', messages: [] });
+    await expect(run({ pose: 'open' })).rejects.toMatchObject({ code: 'INVALID_STATE' });
+
+    await duo.startAttempt!({ attemptId: 'a1', artifactsDir: '/tmp', signal: new AbortController().signal, resolveSecret: noSecrets, ...ignoreTrace });
+    const before = fake.calls.length;
+    expect(await run({ pose: 'open' })).toBe('Unfolded the device flat; the app is on the inner display.');
+    expect(await run({ pose: 'half-open' })).toBe('Folded the device half-open; the app is on the inner display.');
+    expect(await run({ pose: 'closed' })).toBe('Folded the device closed; the app is on the outer display.');
+    expect(fake.calls.slice(before).filter((call) => call.method === 'command.fold').map((call) => call.args)).toEqual([
+      { platform: 'ios', device: 'iPhone Duo', pose: 'open' },
+      { platform: 'ios', device: 'iPhone Duo', pose: 'half-open' },
+      { platform: 'ios', device: 'iPhone Duo', pose: 'closed' },
+    ]);
+
+    fake.respond('command.fold', () => {
+      throw new AppError('UNSUPPORTED_OPERATION', 'fold is not supported on this device');
+    });
+    await expect(run({ pose: 'open' })).rejects.toMatchObject({ code: 'UNSUPPORTED_CAPABILITY' });
   });
 
   it('hands a custom tool the running attempt\'s session and client', async () => {

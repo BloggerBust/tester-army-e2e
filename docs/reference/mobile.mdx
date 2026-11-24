@@ -1205,6 +1205,27 @@ the TV tests.
 | --- | --- | --- |
 | `tv_remote` | gap | Press a [remote button](#pressremote) by `key`, up to 20 `times` in one call. |
 
+`foldTools(...engines)` adds the hinge for engines that drive a foldable: the
+iPhone Duo simulator or a foldable Android emulator. With it in the agent's
+`tools`, `agent.act`, `e2e explore`, and the MCP server's `call` can fold the
+device.
+
+```ts
+tools: { ...mobileTools(iphoneDuo), ...foldTools(iphoneDuo) },
+```
+
+- Tools are offered by platform, as with `tvTools`. When a device without a
+  hinge shares the foldable's platform, put `foldTools` on a
+  [named agent](/reference/config#agents) and select it on the foldable
+  tests.
+- The engine never resets the pose, so a pose the agent leaves carries over
+  to the next test. Fold back in `afterEach`, as for
+  [`device.fold`](#fold).
+
+| Tool | Replay | Purpose |
+| --- | --- | --- |
+| `fold` | gap | Put the device in a hinge [`pose`](#fold): `closed`, `half-open`, or `open`. A device without a hinge fails with `UNSUPPORTED_CAPABILITY`. |
+
 | Throws | When |
 | --- | --- |
 | `INVALID_STATE` | An engine that `mobile()` did not return. In the config this fails the load as `CONFIG_LOAD_FAILED`, whose message includes this one. |
@@ -1545,8 +1566,8 @@ export interface DeviceSelection {
 `beforeEach`, `afterEach`, `beforeAll`, and `afterAll`, typed with the `device`
 fixture. A device keeps its state between tests, so `device`, `app`, and
 `screen` are [worker fixtures](/reference/test#worker-fixtures), and
-`beforeAll` and `afterAll` get them. `mobileTools` and `tvTools` come from
-`@e2e-dev/mobile/tools`.
+`beforeAll` and `afterAll` get them. `mobileTools`, `tvTools`, and `foldTools`
+come from `@e2e-dev/mobile/tools`.
 
 ## Related
 
