@@ -29,6 +29,7 @@ import type { BuiltinReporter, E2EConfig } from '../run-types.ts';
 import { createExploreBody } from './body.ts';
 import { STEP_BOUNDS, TIMEOUT_BOUNDS } from './bounds.ts';
 import { changeContext, readExploreChange, type ChangeBrief, type ExploreChange } from './change.ts';
+import { readPullRequest } from './pull-request.ts';
 import { explorerAgent, withFindingTool } from './executor.ts';
 import { signedInContext, type PlanAccount } from './plan.ts';
 import { ExploreState } from './state.ts';
@@ -148,7 +149,7 @@ export async function explore(options: ExploreOptions = {}): Promise<ExploreOutc
     ? loadConfig()
     : options.processOutput.withholdDuring(loadConfig));
   const target = pickTarget(resolved.targets, options.target, notice);
-  const change = await exploreChange(options.changedSince, projectRoot, resolved.allSecrets, options.interruptSignal, notice);
+  const change = await exploreChange(options.changedSince, projectRoot, env, resolved.allSecrets, options.interruptSignal, notice);
   const goal = givenGoal ?? (change === undefined ? DEFAULT_GOAL : DEFAULT_CHANGE_GOAL);
   const accounts = credentialAccounts(resolved.credentials);
   // An exploration runs as exactly one agent: the one named, else `default`.
@@ -215,20 +216,24 @@ async function loadRawConfig(options: ExploreOptions, cwd: string): Promise<{ ra
 
 /**
  * The change `changedSince` names, read before anything starts, so a ref git
- * cannot measure from fails as a bad flag does. Every text git gives is
+ * cannot measure from fails as a bad flag does, with the pull request the CI
+ * job in `env` runs for. Every text git and the pull request give is
  * redacted of the config's static secrets, fragments included, before the
  * brief cuts it. No change since the base is a notice; the brief says so.
  */
 async function exploreChange(
   changedSince: string | undefined,
   projectRoot: string,
+  env: NodeJS.ProcessEnv,
   secrets: ResolvedConfig['allSecrets'],
   signal: AbortSignal | undefined,
   notice: (message: string) => void,
 ): Promise<ExploreChange | undefined> {
   if (changedSince === undefined) return undefined;
   const { redactFragments } = staticOutputLedger(secrets);
-  const change = await readExploreChange({ cwd: projectRoot, changedSince, signal: signal ?? new AbortController().signal, redact: redactFragments });
+  const interrupt = signal ?? new AbortController().signal;
+  const pullRequest = await readPullRequest(env, interrupt);
+  const change = await readExploreChange({ cwd: projectRoot, changedSince, signal: interrupt, redact: redactFragments, pullRequest });
   if (change.report.files === 0) notice(`no files changed since ${changedSince}`);
   return change;
 }

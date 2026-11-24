@@ -140,8 +140,9 @@ tests only. The run ends `skipped` and passes. It skips only when it read
 the whole change. A large diff, a binary file, or an uncommitted file rules
 a skip out.
 
-The branch's own commit messages and code can sway the call. To tell a skip
-from a clean exploration, read `run.explore.ended`.
+The branch's own commit messages, pull request description, and code can
+sway the call. To tell a skip from a clean exploration, read
+`run.explore.ended`.
 
 For what the model reads, see
 [Security](/reference/security#mcp-and-explore).
@@ -176,13 +177,19 @@ jobs:
 `fetch-depth: 0` puts the base branch in the checkout. Without it, the run
 fails with `INVALID_CHANGED_SINCE`.
 
+In a `pull_request` job or a GitLab merge request pipeline, the planner also
+reads the pull request's title and description. Say there what a user should
+see change. GitHub gives the text from the event that started the job, so an
+edit shows after the next push, not on a re-run.
+
 Keep the working tree clean after install and build, or the run is never
 skipped. Ignore `.e2e/` and build output. Run e2e with `npx`, not
 `pnpm exec`, which can rewrite `pnpm-lock.yaml`.
 
 <Warning>
 Never run it on `pull_request_target`. That run holds your secrets, and the
-model reads the diff and commit messages a fork wrote.
+model reads the diff, commit messages, and pull request description a fork
+wrote.
 </Warning>
 
 ## If the run stops too early
