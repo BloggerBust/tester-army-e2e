@@ -30,6 +30,25 @@ test('a member upgrades to Pro', async ({ app, agent, screen }) => {
 });
 ```
 
+## Liberar ou bloquear uma release na CI
+
+Uma suíte que libera ou bloqueia uma release precisa dar o mesmo resultado
+toda vez que roda no mesmo commit. O e2e consegue rodar essa suíte sem
+nenhuma chamada ao modelo:
+
+- **Testes exatos.** Seu [agente de código](/coding-agents) escreve testes com
+  localizadores e asserções. Eles não precisam de modelo nem de chave. Na web,
+  eles rodam em navegadores que a [engine web](/web) controla pelo Playwright.
+- **Objetivos gravados.** [Faça commit das gravações](/cache#commit-the-replay-cache)
+  e a CI [reproduz](/cache) um `agent.act` gravado sem chamar o modelo. Com
+  [`--strict-cache`](/cache#fail-on-a-stale-recording), uma gravação que não
+  corresponde mais ao app faz o passo falhar, e nenhum modelo assume. Um passo
+  que nunca foi gravado, ou cuja gravação tem uma lacuna, ainda
+  [roda ao vivo](/cache#fail-on-a-stale-recording).
+- **Verificações de localizador.** `expect(locator)` não chama modelo. Com o
+  agente embutido, `agent.assert`, `agent.waitFor` e `agent.extract` chamam o
+  modelo em toda execução.
+
 ## Por que e2e
 
 - **Menos tempo com testes.** Escreva um objetivo em vez de um script de
@@ -38,8 +57,6 @@ test('a member upgrades to Pro', async ({ app, agent, screen }) => {
 - **Execuções baratas.** O e2e grava um passo `agent.act` quando uma
   verificação posterior passa. A próxima execução [reproduz esse passo](/cache)
   sem chamadas ao modelo e devolve o controle ao agente quando o app mudou.
-  Com o agente embutido, `assert`, `waitFor` e `extract` sempre chamam o
-  modelo.
 
 ## Como funciona
 
@@ -51,7 +68,6 @@ test('a member upgrades to Pro', async ({ app, agent, screen }) => {
 - **Passos do agente.** `agent.act` cumpre um objetivo. `agent.assert`,
   `agent.waitFor` e `agent.extract` avaliam a tela. Use sua própria
   [assinatura](/subscriptions), [chave de API ou modelo local](/models).
-  Testes sem passos do agente não precisam de modelo.
 - **Relatórios.** O runner [oculta os segredos registrados](/security) da
   entrada do modelo. Ele registra passos, falhas e artefatos em um
   [relatório](/debugging) que você ou seu agente de código podem ler.

@@ -195,6 +195,19 @@ nova tentativa começa no tamanho do alvo.
 - Um alvo de dispositivo pode ficar na mesma lista. Veja a
   [referência da engine mobile](/reference/mobile).
 
+### Telas de alta densidade
+
+`deviceScaleFactor` define quantos pixels do dispositivo desenham um pixel
+CSS. Com 2, a página é renderizada como em uma tela Retina, e as capturas de
+tela salvas têm o dobro da largura e da altura do viewport:
+
+```ts title="Target fragment"
+{ name: 'retina', engine: web({ deviceScaleFactor: 2 }), app }
+```
+
+O fator não muda a imagem que o modelo lê nem a que `toHaveScreenshot`
+compara.
+
 ### Preencher a janela
 
 `viewport: null` não define tamanho, então a página preenche a janela do

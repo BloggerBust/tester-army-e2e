@@ -61,7 +61,7 @@ translation moves or goes with it in the same change.
   UI labels keep their own formatting.
 - Keep product, package, and API names in English: e2e, Playwright,
   `@e2e-dev/web`, MCP, CI, GitHub Actions. Keep literal CLI option labels
-  such as **None** unchanged so readers can find them in the terminal.
+  such as **Skip for now** unchanged so readers can find them in the terminal.
 - Keep a term in English where Brazilian developers use the English word
   (*runner*, *fixture*, *worker*, *engine*, *pull request*, *prompt*).
   Don't italicize these loanwords. The glossary says which terms stay in
@@ -192,6 +192,7 @@ translation moves or goes with it in the same change.
 | built-in agent | agente embutido |
 | judgment (`assert`, `waitFor`, `extract`) | julgamento |
 | gate (`minProbability`, `minConfidence`) | limiar |
+| gate (a merge or a release in CI) | bloquear; liberar ou bloquear (a release, feminine) |
 | decide call, text call | chamada de decisão, chamada de texto |
 | completion check | verificação de conclusão |
 | tool call, forced tool choice | chamada de ferramenta, escolha de ferramenta forçada |

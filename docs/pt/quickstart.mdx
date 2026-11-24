@@ -12,7 +12,7 @@ import { VideoCard } from '../snippets/video-card.jsx';
 
 export const setupPrompt = `Configure testes end-to-end com o e2e neste projeto. Documentação: \`https://e2e.com/docs/quickstart.md\`
 
-1. Rode \`npx e2e init --yes\` (ou o equivalente em pnpm ou bun para este projeto). Ele escreve uma configuração web que usa o Vercel AI Gateway, um teste de exemplo, a skill do e2e e a configuração do MCP. Ele ainda não instala nada.
+1. Rode \`npx e2e init --yes\` (ou o equivalente em pnpm ou bun para este projeto). Ele escreve uma configuração web que usa o Vercel AI Gateway, um teste de exemplo, a skill do e2e, uma linha no \`AGENTS.md\` e no \`CLAUDE.md\` que aponta para a skill, e a configuração do MCP. Ele ainda não instala nada.
 2. Leia a skill do e2e (\`npx e2e guide\` a exibe, \`npx e2e guide <topic>\` exibe um tópico) e siga-a em todos os passos abaixo.
 3. Aponte o alvo para este app. Para um app web, defina a URL dele e o comando que inicia o servidor de desenvolvimento dele. Para um app iOS ou Android, substitua @e2e-dev/web por @e2e-dev/mobile e reescreva o teste de exemplo para a engine mobile.
 4. Pergunte-me qual modelo usar nos passos do agente: uma assinatura do ChatGPT, GitHub Copilot, OpenCode Console ou SuperGrok, uma chave de API ou um modelo local. Configure-o com o pacote do provedor dele. Se ele exigir login, me passe o comando \`npx e2e login\` e espere até eu confirmar.
@@ -67,7 +67,7 @@ precisam do Xcode com um runtime de simulador iOS, ou do Android SDK com um emul
   </CodeGroup>
 
   Escolha **Web (Playwright)** ou **Mobile (iOS/Android)** e depois uma
-  assinatura, um provedor de modelo ou **None** para testes sem IA. O
+  assinatura, um provedor de modelo ou **Skip for now** para testes sem IA. O
   assistente escreve uma configuração e um teste de exemplo, adiciona
   dependências e se oferece para configurar seu agente de código. Ele mantém
   os arquivos existentes.
@@ -262,7 +262,7 @@ bunx e2e run tests/agent.e2e.ts
 ```
 </CodeGroup>
 
-Se você escolheu **None** no assistente, [adicione um modelo](/models)
+Se você escolheu **Skip for now** no assistente, [adicione um modelo](/models)
 primeiro. Adicione `--headed` para assistir a um teste web. Adicione
 `--no-cache` para chamar o modelo em vez de reproduzir ações em cache.
 

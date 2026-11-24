@@ -278,8 +278,8 @@ jobs:
 ```
 
 Faça upload do `report.json` e do `junit.xml` de cada shard com um nome que
-inclua o índice do shard. O e2e ainda não consegue mesclar relatórios de
-shards.
+inclua o índice do shard. Cada relatório registra seu shard como
+`run.shard`. O e2e ainda não consegue mesclar relatórios de shards.
 
 ## Reexecutando falhas
 
@@ -291,13 +291,17 @@ primeira execução:
       - run: npx e2e run || npx e2e run --last-failed
 ```
 
-A reexecução mantém os artefatos da primeira execução e grava os seus em
+A reexecução mantém os artefatos da primeira execução e salva os seus em
 `rerun-<n>/` no diretório de cada teste, então um único upload contém os
-dois. A [referência da CLI](/reference/cli#flags) lista o que conta como não
-ter passado.
+dois. Ao lado do `report.json`, ela salva o `report-with-reruns.json`: as duas
+execuções em um único relatório. A [referência da CLI](/reference/cli#flags)
+lista o que conta como não ter passado.
 
-Um job separado não tem o relatório no runner dele. Baixe-o primeiro para o
-diretório de saída, ou rode de novo o job que falhou.
+Para uma reexecução em um job separado, baixe o `report.json` do job anterior
+para o diretório de saída. Se o job anterior foi uma reexecução, baixe também
+o `report-with-reruns.json` correspondente para manter os resultados e
+tentativas anteriores. Se você precisar dos arquivos das tentativas, baixe
+`results/` também.
 
 ## Próximos passos
 

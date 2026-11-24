@@ -37,8 +37,10 @@ atualiza pelo seu gerenciador de pacotes. Sem o `init`,
 imprime a partir do pacote instalado. O plugin abaixo instala as três skills
 do e2e para todos os projetos.
 
-O `init` não altera as instruções do seu projeto. Para agentes que precisam de
-uma indicação, adicione esta linha:
+O `init` também adiciona esta linha ao fim do `AGENTS.md`, para que um prompt
+como “adicione um teste para o checkout” chegue à skill. O `CLAUDE.md` recebe
+a linha com o caminho `.claude/skills`, e um arquivo ausente é criado.
+Adicione a linha você mesmo quando instalar a skill de outra forma:
 
 ```md title="AGENTS.md"
 End-to-end tests use e2e; read .agents/skills/e2e/SKILL.md before writing or running one.

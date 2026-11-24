@@ -143,9 +143,9 @@ uma que só mexe em docs ou em testes. A execução termina como `skipped` e
 passa. Ele só pula quando leu a mudança inteira. Um diff grande, um arquivo
 binário ou um arquivo sem commit impede que ele pule.
 
-As mensagens de commit e o código da própria branch podem influenciar essa
-decisão. Para distinguir uma execução pulada de uma exploração limpa, leia
-`run.explore.ended`.
+As mensagens de commit, a descrição do pull request e o código da própria
+branch podem influenciar essa decisão. Para distinguir uma execução pulada
+de uma exploração limpa, leia `run.explore.ended`.
 
 Para saber o que o modelo lê, veja
 [Segurança](/reference/security#mcp-and-explore).
@@ -180,13 +180,20 @@ jobs:
 `fetch-depth: 0` coloca a branch base no checkout. Sem ele, a execução
 falha com `INVALID_CHANGED_SINCE`.
 
+Em um job `pull_request` ou em um pipeline de merge request do GitLab, o
+planejador também lê o título e a descrição do pull request. Descreva ali o
+que um usuário deve ver mudar. O GitHub fornece o texto do evento que iniciou
+o job, então uma edição só aparece depois do próximo push, não ao rodar o job
+de novo.
+
 Mantenha a árvore de trabalho limpa depois da instalação e do build, ou a
 execução nunca é pulada. Ignore `.e2e/` e a saída do build. Rode o e2e com
 `npx`, não com `pnpm exec`, que pode reescrever o `pnpm-lock.yaml`.
 
 <Warning>
 Nunca o rode em `pull_request_target`. Essa execução tem acesso aos seus
-segredos, e o modelo lê o diff e as mensagens de commit que um fork escreveu.
+segredos, e o modelo lê o diff, as mensagens de commit e a descrição do pull
+request que um fork escreveu.
 </Warning>
 
 ## Se a execução parar cedo demais
