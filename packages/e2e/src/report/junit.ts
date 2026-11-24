@@ -9,7 +9,7 @@ import type { FinishedRun, Reporter } from '../run-types.ts';
 import type { Report1Document, ReportError, ReportResult, ReportSerialGroup } from './build.ts';
 import { repeatSuffix } from './format.ts';
 import { failedStepOf, failureScreenshot, toldAttempt } from './failure-text.ts';
-import { outcome, type AttemptView } from './outcome.ts';
+import { listedInCi, outcome, type AttemptView } from './outcome.ts';
 import { toPosixPath } from './write.ts';
 
 interface SuiteCounts {
@@ -100,13 +100,13 @@ function verdictElement(error: ReportError | undefined): 'failure' | 'error' {
 }
 
 /** `CODE (phase): message`; a failure on a step of a session beside the test's own names it, `CODE (phase) on launch-1: message`. */
-function errorBody(error: ReportError, actor?: string): string {
+export function errorBody(error: ReportError, actor?: string): string {
   const phase = error.phase === undefined ? '' : ` (${error.phase})`;
   return `${error.code}${phase}${actor === undefined ? '' : ` on ${actor}`}: ${error.message}`;
 }
 
 /** Why a result was skipped: its reason, after the test filter's name when one left it out. */
-function skippedMessage(result: ReportResult): string {
+export function skippedMessage(result: ReportResult): string {
   const reason = result.skip?.reason ?? 'skipped';
   return result.skip?.filter === undefined ? reason : `left out by filter ${result.skip.filter}: ${reason}`;
 }
@@ -249,8 +249,7 @@ export function renderJunitReport(report: Report1Document, options?: JunitReport
   const groups = new Map(report.run.serialGroups.map((group) => [group.id, group]));
   const byFile = new Map<string, RenderedCase[]>();
   for (const result of report.run.results) {
-    // Other unselected results are report-only; a CI viewer counts what the run selected.
-    if (result.selected === false && result.skip?.filter === undefined) continue;
+    if (!listedInCi(result)) continue;
     const cases = byFile.get(result.file) ?? [];
     cases.push(renderResult(result, groups, options));
     byFile.set(result.file, cases);
@@ -279,7 +278,7 @@ export function renderJunitReport(report: Report1Document, options?: JunitReport
  * root. Undefined when the artifacts are outside it, since GitLab cannot
  * serve those.
  */
-function attachmentBase(run: FinishedRun): string | undefined {
+export function attachmentBase(run: FinishedRun): string | undefined {
   const base = envValue(process.env, 'CI_PROJECT_DIR') ?? run.projectRoot;
   if (realpathOfExisting(base) === realpathOfExisting(run.artifactsRoot)) return '.';
   const relative = relativeToProjectRoot(base, run.artifactsRoot);

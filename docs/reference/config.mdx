@@ -278,6 +278,7 @@ reporters: ['list', 'junit'], // default: ['list']
 | `'line'`, `line()` | One row of terminal progress, each failure as it happens, and a run summary. |
 | `'junit'`, `junit()` | Writes `<output>/junit.xml`, or `outputFile`. |
 | `'markdown'`, `markdown()` | Writes `<output>/summary.md`, or `outputFile`. |
+| `'ctrf'`, `ctrf()` | Writes `<output>/ctrf.json`, or `outputFile`, in the CTRF format. |
 | `'json'`, `json()` | Prints the report on stdout. Beside it, `list`, `dot`, or `line` prints to stderr unless given a `stream`. |
 | another `Reporter` object | Runs beside the built-in ones. `--reporter` never removes it. |
 
@@ -721,7 +722,7 @@ overrides it for one run.
 | Path under the output | What |
 | --- | --- |
 | `report.json` | The canonical report; `--last-failed` reads the one here |
-| `junit.xml`, `summary.md` | The `junit` and `markdown` reporters' files |
+| `junit.xml`, `summary.md`, `ctrf.json` | The `junit`, `markdown`, and `ctrf` reporters' files |
 | `ai-trace.json` | `--ai-trace` |
 | `timings.json` | How long each file took, smoothed over recent runs. A run with more than one worker starts the longest files first by it; see [Cache the timings history](/ci#cache-the-timings-history) |
 | `report-with-reruns.json` | Written by a `--last-failed` rerun: the first run and every rerun since as one report, with the same run id as `report.json`. A run without `--last-failed` removes it |

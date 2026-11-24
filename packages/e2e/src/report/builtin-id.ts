@@ -10,7 +10,7 @@ import type { BuiltinReporter, Reporter } from '../run-types.ts';
 /** A registered symbol, not a module-private one, since the config may import another copy of `e2e`. */
 const BUILTIN_ID = Symbol.for('e2e.reporter.builtin');
 
-export const BUILTIN_REPORTERS = ['list', 'dot', 'line', 'json', 'junit', 'markdown'] as const satisfies readonly BuiltinReporter[];
+export const BUILTIN_REPORTERS = ['list', 'dot', 'line', 'json', 'junit', 'markdown', 'ctrf'] as const satisfies readonly BuiltinReporter[];
 
 export function isBuiltinReporter(value: string): value is BuiltinReporter {
   return (BUILTIN_REPORTERS as readonly string[]).includes(value);

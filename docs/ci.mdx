@@ -186,7 +186,9 @@ These rules apply on each service:
 ## Gate pull requests
 
 Each non-zero exit fails the job, a failed agent step included. To block
-merges on a failed run, make the e2e job a required check.
+merges on a failed run, make the e2e job a required check. A check that
+counts a test report's failed tests alone, such as one built from
+`ctrf.json`, misses a run-level error, so keep the exit code as the gate.
 [Debugging a run](/debugging#read-the-failure) lists each exit code and
 whether rerunning the job can help.
 

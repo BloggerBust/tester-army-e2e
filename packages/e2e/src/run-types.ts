@@ -8,7 +8,7 @@ import type { Report1Document } from './report/build.ts';
 import type { ProjectConfig } from '@e2e-dev/core/lib/types';
 
 /** The reporters the runner ships, named by id; each is a `Reporter` on the same contract. */
-export type BuiltinReporter = 'list' | 'dot' | 'line' | 'json' | 'junit' | 'markdown';
+export type BuiltinReporter = 'list' | 'dot' | 'line' | 'json' | 'junit' | 'markdown' | 'ctrf';
 
 /**
  * The run's report document, the one `.e2e/report.json` holds. Its
@@ -79,9 +79,9 @@ export interface ReportFile {
 
 /**
  * A reporter in `reporters`, the contract the built-in `list`, `dot`, `line`,
- * `json`, `junit`, and `markdown` reporters are built on, with nothing the runner
- * gives them alone. Every hook is optional, but a reporter has at least one,
- * and every reporter that has a hook gets it.
+ * `json`, `junit`, `markdown`, and `ctrf` reporters are built on, with
+ * nothing the runner gives them alone. Every hook is optional, but a
+ * reporter has at least one, and every reporter that has a hook gets it.
  *
  * - `onEvent` is the one live hook. It sees every run event as it happens
  *   and must not block: a throw quarantines it for the rest of the run.
@@ -236,8 +236,8 @@ export interface E2EConfig extends ProjectConfig {
    * The run's reporters: built-in ids, each its factory from
    * `e2e/reporters` with no options, and reporter objects. `list`, `dot`, and
    * `line` show the run on stdout, or on stderr beside `json`, which prints the
-   * report there; `junit` writes `<output>/junit.xml` and `markdown`
-   * `<output>/summary.md`. `--reporter` replaces the built-ins only.
+   * report there; `junit` writes `<output>/junit.xml`, `markdown`
+   * `<output>/summary.md`, and `ctrf` `<output>/ctrf.json`. `--reporter` replaces the built-ins only.
    */
   reporters?: readonly (BuiltinReporter | Reporter)[];
   /** Test filters, in order, run with `--changed-since`: each judges the tests the one before it kept. */

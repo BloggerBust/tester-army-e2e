@@ -52,7 +52,7 @@ npx e2e telemetry [disable|enable] # anonymous usage telemetry: status or switch
 | `--max-failures <n>` | Stop after n failures: the rest skip (cause `failure-limit`), running tests end `interrupted`; exit 1. |
 | `--max-duration <ms>` | Stop after ms of running tests, over config `maxDuration`: the rest skip (cause `time-limit`), running tests end `interrupted`, `RUN_TIMEOUT`; exit 1. |
 | `--repeat-each <n>` | Run every selected test n times, each run its own result (`repeat` 0 through n-1); add `--no-cache` or later runs replay the first's recording. The `Repeats` summary row names each unstable test's failed runs. |
-| `--reporter <ids>` | `list`, `dot`, `line`, `json`, `junit`, `markdown`, comma-separated; two of `list`, `dot`, and `line` together are `INVALID_CONFIG`, and beside `json` each prints to stderr. An empty value is a usage error, exit 2. |
+| `--reporter <ids>` | `list`, `dot`, `line`, `json`, `junit`, `markdown`, `ctrf`, comma-separated; two of `list`, `dot`, and `line` together are `INVALID_CONFIG`, and beside `json` each prints to stderr. An empty value is a usage error, exit 2. |
 | `--output <dir>` | Results directory, over the config's `output` (default `.e2e`). Must be inside the project root, not the root itself (`INVALID_CONFIG`); to keep reports elsewhere, copy them after the run. |
 | `--no-cache` | Replay cache off for this run. |
 | `--strict-cache` | Fail a step whose committed recording no longer replays (`REPLAY_STALE`, exit 2) instead of handing it to the agent; retries replay too, and the run never writes the cache. |
@@ -136,7 +136,7 @@ its own tools.
 ## Output
 
 `<output>` (`.e2e` by default) holds `report.json`, `junit.xml`,
-`summary.md`, `ai-trace.json`, `timings.json` (how long each file took; with more than one worker the next run starts the longest known files first, after any with no time), `sessions/`, and `results/`, one directory
+`summary.md`, `ctrf.json`, `ai-trace.json`, `timings.json` (how long each file took; with more than one worker the next run starts the longest known files first, after any with no time), `sessions/`, and `results/`, one directory
 per test with its `trace.md` and an `attempt-<n>/` per attempt
 (screenshots, videos, `--debug` transcripts, downloads).
 `results/` is cleared once a run's tests start; a run stopping before
@@ -184,6 +184,9 @@ hosted service's video by URL.
   spend, a block per failed test linked to its page, the flaky tests folded
   alike, and every test as one folded table (or an exploration's findings
   and assessment). Paste it into a pull request or handoff.
+- `ctrf` (`--reporter list,ctrf`): `ctrf.json` in the Common Test Report
+  Format, for CTRF tools (test report actions, notifiers, dashboards). Run
+  errors are in `results.errors`, not tests: gate CI on the exit code.
 - `json`: the report on stdout.
 - Custom reporters get step progress with `identity` (`attemptId`,
   `attemptIndex`, `stepId`, `stepIndex`: report IDs, zero-based indexes;
@@ -218,7 +221,7 @@ deterministic, never retry it; only exit 3 is worth a job-level retry.
 
 The first SIGINT or SIGTERM interrupts and writes the report if any test
 had started; the second forces engine teardown and still writes the
-report, plus `junit.xml` and `summary.md` when those reporters are on; the
+report, plus `junit.xml`, `summary.md`, and `ctrf.json` when those reporters are on; the
 third kills the app process groups and exits 130 at once.
 
 ## Continuous integration

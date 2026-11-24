@@ -137,6 +137,7 @@ const GITIGNORE_ENTRIES = [
   '.e2e/timings.json',
   '.e2e/junit.xml',
   '.e2e/summary.md',
+  '.e2e/ctrf.json',
   '.e2e/logs/',
   '.e2e/videos/',
 ];

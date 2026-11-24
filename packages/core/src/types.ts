@@ -1860,7 +1860,7 @@ export interface ProjectConfig {
   video?: RecordingMode;
   /**
    * The directory a run writes its results to, relative to the project root;
-   * default `.e2e`. It holds `report.json`, `junit.xml`, `summary.md`,
+   * default `.e2e`. It holds `report.json`, `junit.xml`, `summary.md`, `ctrf.json`,
    * `ai-trace.json`, `results/` (cleared once the run's tests start, except on a `--last-failed` rerun),
    * `sessions/`, and the `e2e mcp` session videos under `videos/`.
    * `--output <dir>` overrides it for one run. It must be inside the project

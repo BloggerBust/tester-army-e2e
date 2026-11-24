@@ -39,13 +39,14 @@ so a reporter of your own can do anything they do.
 | [`json`](#json) | Report document to stdout |
 | [`junit`](#junit) | Writes `<output>/junit.xml` |
 | [`markdown`](#markdown) | Writes `<output>/summary.md` |
+| [`ctrf`](#ctrf) | Writes `<output>/ctrf.json` |
 | [`github()`](#github) | Pull request comment and job summary |
 | [`htmlReporter()`](#htmlreporter) | Writes `<output>/report.html` |
 
 | Throws | When |
 | --- | --- |
 | `INVALID_CONFIG` | `reporters` is not an array. |
-| `INVALID_CONFIG` | An id other than `list`, `dot`, `line`, `json`, `junit`, or `markdown`. |
+| `INVALID_CONFIG` | An id other than `list`, `dot`, `line`, `json`, `junit`, `markdown`, or `ctrf`. |
 | `INVALID_CONFIG` | A factory not called, such as `junit` for `junit()`. |
 | `INVALID_CONFIG` | An entry that is neither an id nor an object with a `name` and at least one hook. |
 | `INVALID_CONFIG` | More than one [interactive](#interactive) reporter, such as `list` and `dot`. |
@@ -190,6 +191,56 @@ const reporter: Reporter = {
 
 - `traces` links each block to its trace page by result id.
 - [`@e2e-dev/github`](/github) is that reporter for GitHub Actions.
+
+#### `ctrf`
+
+Writes `ctrf.json` beside the report, in the
+[Common Test Report Format](https://ctrf.io) 0.3.0. Any CTRF tool can read
+it: test report actions, chat notifiers, dashboards.
+
+```ts
+reporters: ['list', 'ctrf'],
+```
+
+- It takes the same `outputFile` as `junit`:
+  `ctrf({ outputFile: 'reports/ctrf.json' })`. It writes nothing when the
+  report was not written, so a run that stopped before its tests leaves
+  the previous `ctrf.json` in place, as it leaves `junit.xml`.
+- One CTRF test per `<testcase>` of `junit.xml`, leaving out its `run`
+  suite. Its `name` starts with the test file, and `testId` is the result
+  id, the same in every run. `name` joins the file and titles with ` > `,
+  so a title that holds ` > ` can read the same as another test's; `testId`
+  always tells them apart.
+- `filePath` and `line` point at where the test is declared, which is a
+  module the test file imports when that module declares it. `suite`
+  starts with the test file, and `summary.suites` counts test files.
+- A test stands for one attempt: the last one that reached its verdict.
+  The attempts before it are `retryAttempts`, and a retry the run cut after
+  it is only counted, in `extra`. A test that failed and then passed has
+  `flaky: true`.
+- In a [serial group](/reference/test#serial), a test runs again when the
+  group retries, so it has `retries` even when it passed every time; a tool
+  that reads `retries` as flakiness counts it as flaky, while `flaky` stays
+  unset. A test a retry skipped stands for that skipped attempt: no
+  timing or attachments, and the attempts it ran are its `retryAttempts`.
+  A tool that counts `retries + 1` runs counts the skipped attempt too.
+- `status` is CTRF's `passed`, `failed`, `skipped`, or `other`. `rawStatus`
+  keeps e2e's own: `timed-out` is `failed`, `interrupted` is `other`.
+- Run errors, such as a failed `afterAll`, go in `results.errors` and never
+  count as a test. A tool that counts failed tests alone reads such a run as
+  green, so [gate the job](/ci#gate-pull-requests) on the exit code.
+- Attachments link screenshots, videos, and logs, such as the screen at a
+  failure, by the hosted URL, else by the artifact store's `http(s)`
+  reference, else by path from the project root (`$CI_PROJECT_DIR` when
+  set). A file outside it, and every download, is left out. A test in a
+  serial group lists only its own files, plus files of the group, such as
+  its video, that belong to no single test. A video of a second session a
+  test opened with `launch()` counts as the group's. Files of a cut retry,
+  or of a group attempt no test ran in, are in `report.json` only.
+- Every text copied from the report passes the run's secret redaction
+  again. A link the redaction would change is left out.
+- Data CTRF has no field for, such as each step's e2e status and the run's
+  model tokens and cost, is under the `e2e-inc.e2e` key of each `extra`.
 
 #### `github()`
 
@@ -829,9 +880,9 @@ reporter every run, each starting with its first event.
 `Reporter`, `FinishedRun`, `ReportFile`, `ReporterSummary`, `Report`,
 `RunEvent`, `RunEventOf`, `CollectedTestInfo`, `PausedStep`, and `PausedKey` are exported from the main
 entrypoint, and so is `renderMarkdownReport(report, options)`. `e2e/reporters`
-exports `list`, `dot`, `line`, `json`, `junit`, and `markdown`, with
+exports `list`, `dot`, `line`, `json`, `junit`, `markdown`, and `ctrf`, with
 `ListReporterOptions`, `DotReporterOptions`, `LineReporterOptions`,
-`JunitReporterOptions`, and `MarkdownReporterOptions`.
+`JunitReporterOptions`, `MarkdownReporterOptions`, and `CtrfReporterOptions`.
 
 `foldLastRun(report, lastRun)`, also from the main entrypoint, folds a
 `--last-failed` rerun into the runs before it, the way `@e2e-dev/github` does.

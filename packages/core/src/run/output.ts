@@ -7,7 +7,7 @@
 import path from 'node:path';
 
 export interface OutputLayout {
-  /** The canonical `report.json`; the file reporters write beside it too (`junit.xml`, `summary.md`). */
+  /** The canonical `report.json`; the file reporters write beside it too (`junit.xml`, `summary.md`, `ctrf.json`). */
   readonly report: string;
   /** The `--ai-trace` recording, `ai-trace.json`. */
   readonly aiTrace: string;

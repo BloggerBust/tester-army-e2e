@@ -5,7 +5,7 @@
  */
 
 import { z } from 'zod';
-import { json, junit, line, list as listReporter, markdown } from '../../src/reporters.ts';
+import { ctrf, json, junit, line, list as listReporter, markdown } from '../../src/reporters.ts';
 import {
   credentials,
   expect,
@@ -399,6 +399,9 @@ if (runEvent.type === 'step') {
 ({ targets, reporters: [listReporter(), json(), junit({ outputFile: 'reports/junit.xml' }), markdown(), 'junit', reporter] }) satisfies E2EConfig;
 // @ts-expect-error the junit reporter takes an outputFile, nothing else
 junit({ output: 'reports' });
+({ targets, reporters: ['ctrf', ctrf(), ctrf({ outputFile: 'reports/ctrf.json' })] }) satisfies E2EConfig;
+// @ts-expect-error the ctrf reporter takes an outputFile, nothing else
+ctrf({ output: 'reports' });
 ({
   name: 'dots',
   interactive: true,

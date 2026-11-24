@@ -50,7 +50,7 @@ const recording: StepExecutor = {
 export default {
   targets: [{ name: 'web', engine: web(), app: { url: process.env.APP_URL! } }],
   workers: 1,
-  reporters: ['markdown', 'junit'],
+  reporters: ['markdown', 'junit', 'ctrf'],
   secrets: { probe: ${JSON.stringify(SECRET)} },
   agents: { default: { executor: recording } },
 } satisfies E2EConfig;
@@ -146,12 +146,14 @@ describe('a secret value passed as a plain string', () => {
     const names = pathsUnder(root);
     expect(names).toContain('junit.xml');
     expect(names).toContain('summary.md');
+    expect(names).toContain('ctrf.json');
     expect(names.some((name) => name.endsWith('trace.md'))).toBe(true);
     for (const name of names) expect(name.includes(SECRET), name).toBe(false);
     for (const [file, text] of contentsUnder(root)) {
       for (const form of SECRET_FORMS) expect(text.toLowerCase().includes(form), file).toBe(false);
     }
     expect(readFileSync(path.join(root, 'junit.xml'), 'utf8')).toContain('title holds &lt;secret:probe&gt;');
+    expect(readFileSync(path.join(root, 'ctrf.json'), 'utf8')).toContain('title holds <secret:probe>');
   });
 });
 
