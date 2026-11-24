@@ -7,10 +7,11 @@
 import type { EngineAppDeclaration, EngineAppInfo, EngineHandle } from '../engine/index.ts';
 import { ConfigurationError } from '../internal/errors.ts';
 import { obj } from '../internal/objects.ts';
+import { checkLaunchArguments, engineLaunchArguments } from '../internal/launch-arguments.ts';
 import { rejectUnknownKeys } from '../internal/options.ts';
 import { didYouMean } from '../internal/suggest.ts';
 import { isImplicitTestHost, isRefusedLinkScheme, normalizeBaseUrl, portOf, requestsFreePort, siteOf, withPort, type NormalizedBaseUrl } from '../internal/urls.ts';
-import type { AppPermissionState, CommandConfig, TargetApp } from '../types.ts';
+import type { AppPermissionState, CommandConfig, ResolvedLaunchArguments, TargetApp } from '../types.ts';
 import { checkLog, digestCommand, isRecord, normalizeCommand } from './command.ts';
 import { httpUrl } from './validate.ts';
 
@@ -22,7 +23,7 @@ export interface TargetAppDeclaration {
   readonly appPath: string | undefined;
   readonly identity: string | undefined;
   readonly environment: 'test' | 'staging' | 'production' | undefined;
-  readonly launchArguments: readonly string[] | undefined;
+  readonly launchArguments: ResolvedLaunchArguments | undefined;
   readonly permissions: Readonly<Record<string, AppPermissionState>> | undefined;
   readonly command: CommandConfig | undefined;
   readonly readyUrl: string | undefined;
@@ -68,7 +69,7 @@ export interface ResolvedApp {
   readonly appPath: string | undefined;
   /** The link base `app.open(path)` joins on a device target; see `TargetApp.linkBase`. */
   readonly linkBase: string | undefined;
-  readonly launchArguments: readonly string[] | undefined;
+  readonly launchArguments: ResolvedLaunchArguments | undefined;
   readonly permissions: Readonly<Record<string, AppPermissionState>> | undefined;
   /** `app.command` with `{port}` expanded to the port the app is served on. */
   readonly command: CommandConfig | undefined;
@@ -133,12 +134,16 @@ export function checkTargetApp(targetName: string, engine: EngineHandle | undefi
       `target "${targetName}" declares app without an engine; only an engine can drive an app, so name one: engine: web() or mobile({ platform })`,
     );
   }
-  const { environment, launchArguments, permissions } = app;
+  const { environment, permissions } = app;
   if (environment !== undefined && !ENVIRONMENTS.has(environment)) {
     throw new ConfigurationError('INVALID_CONFIG', `${where}.environment must be one of test, staging, production, got ${JSON.stringify(environment)}`);
   }
-  if (launchArguments !== undefined && (!Array.isArray(launchArguments) || !launchArguments.every((argument) => typeof argument === 'string'))) {
-    throw new ConfigurationError('INVALID_CONFIG', `${where}.launchArguments must be an array of strings`);
+  const launchArguments = checkLaunchArguments(`${where}.launchArguments`, app.launchArguments);
+  if (launchArguments !== undefined && !Array.isArray(launchArguments) && engine !== undefined && engine.launchArgumentValues !== true) {
+    throw new ConfigurationError(
+      'INVALID_CONFIG',
+      `${where}.launchArguments is an object, and engine "${engine.name}" takes only a list of strings: write the arguments as a list, or use an engine version that supports the object syntax`,
+    );
   }
   if (permissions !== undefined && !isRecord(permissions)) {
     throw new ConfigurationError('INVALID_CONFIG', `${where}.permissions must be an object of permission name to grant, deny, or reset`);
@@ -161,11 +166,9 @@ export function checkTargetApp(targetName: string, engine: EngineHandle | undefi
     readyUrl: nonEmptyString(app.readyUrl, `${where}.readyUrl`),
   };
   const { url, bundleId, appPath } = checked;
-  engine?.validateApp?.(obj({ url, bundleId, appPath, launchArguments, permissions }) satisfies EngineAppDeclaration, { targetName });
+  engine?.validateApp?.(obj({ url, bundleId, appPath, ...engineLaunchArguments(launchArguments), permissions }) satisfies EngineAppDeclaration, { targetName });
   return checked;
 }
-
-/** Schemes a link base may not name: local content, an inline document, and the wrappers that carry one. */
 
 /**
  * A link base: an absolute URL, or a bare custom scheme (`shopapp://`), with
@@ -306,7 +309,7 @@ export function resolveTargetApp(targetName: string, app: TargetAppDeclaration, 
 export function engineAppInfo(app: ResolvedApp): EngineAppInfo {
   const { base, portRequest, site, bundleId, appPath, launchArguments, permissions } = app;
   const unassigned = portRequest !== undefined && portRequest.port === undefined;
-  return obj({ origin: unassigned ? undefined : base?.origin, site, bundleId, appPath, launchArguments, permissions });
+  return obj({ origin: unassigned ? undefined : base?.origin, site, bundleId, appPath, ...engineLaunchArguments(launchArguments), permissions });
 }
 
 /**

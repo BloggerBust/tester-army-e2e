@@ -66,7 +66,9 @@ It checks agent-desktop, both permissions, and the `appPath` build.
 Set the target's `app.appPath` to a built `.app` bundle. Or set
 `app.bundleId` to an installed app's bundle id or name, such as
 `com.apple.calculator`. With both, the `appPath` build is launched, and its
-bundle id must be `bundleId`. `app.launchArguments` go to every launch.
+bundle id must be `bundleId`. `app.launchArguments` go to every launch. An
+object entry becomes `-name value`, as on iOS, so
+`{ AppleLanguages: ['fr'] }` opens the app in French.
 
 The app gets only these variables of the run's environment: `HOME`, `USER`,
 `LOGNAME`, `SHELL`, `PATH`, `TMPDIR`, `LANG`, `LC_*`, and

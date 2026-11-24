@@ -104,7 +104,7 @@ Calls on `device` run only on a device, so a test that uses it declares
 | `launchApp` | `app.open()`, a fresh launch of the target's app; nothing launches on its own |
 | `clearState`, `launchApp: { clearState: true }` | `app.clearState()` |
 | `launchApp: { stopApp: false }` | `device.openApp(id)` without `relaunch` |
-| `launchApp: { arguments }` | `app.launchArguments` on the target, a list of strings, not a map; `device.openApp(app, { relaunch: true, launchArguments })` for one launch |
+| `launchApp: { arguments }` | `app.launchArguments` on the target, with the same keys, or a list of strings for an iOS app that reads `ProcessInfo.processInfo.arguments` (an object is spelled for `UserDefaults`: `NO` for `false`, quotes around `a b` or `-1`); `device.openApp(app, { relaunch: true, launchArguments })` for one launch |
 | `launchApp: { permissions }`, `setPermissions` | `app.permissions` on the target, or `device.openApp(app, { relaunch: true, permissions })` for one launch; `grant`, `deny`, `reset` for `allow`, `deny`, `unset`. `device.setPermission(name, state)` before `app.open()` |
 | `stopApp`, `killApp` | `device.closeApp()`, a force stop; `app.restart()` to stop the app and launch it again |
 | `clearKeychain`, `openLink`, `setLocation`, `setAirplaneMode`, `setOrientation`, `setClipboard` | the same on `device`, such as `device.openLink(url)`. `clearKeychain` is iOS simulator only, `setAirplaneMode(true)` Android 11 or newer. For `travel`, loop `device.setLocation` |
@@ -176,7 +176,7 @@ on purpose.
 | `scrollUntilVisible: { centerElement, visibilityPercentage }` | No exact match. After it resolves, read `boundingBox()`, then `screen.swipe({ direction, momentum: 'slow' })` if the node is off center |
 | Device logs and crash reports beside a failure | `adb logcat` or `xcrun simctl spawn <udid> log stream`, collected in a fixture |
 | `maestro hierarchy` as a terminal command | A one-line test that calls `screen.debug()` |
-| `--device-locale` | `app.launchArguments: ['-AppleLanguages', '(de)', '-AppleLocale', 'de_DE']` on iOS, see [Run the app in another language](/mobile#run-the-app-in-another-language); on Android, set the device language before the run |
+| `--device-locale` | `app.launchArguments: { AppleLanguages: ['de'], AppleLocale: 'de_DE' }` on iOS, see [Run the app in another language](/mobile#run-the-app-in-another-language); on Android, set the device language before the run |
 | Maestro Cloud | Your [CI](/ci) with a [hosted device provider](/mobile#hosted-devices) |
 | `pressKey: lock`, `power`, `volume up`, `volume down` | `client.command.hardwareButton` on [`unstable_raw`](/reference/mobile#unstable_raw): power and volume on Android, volume on a physical iPhone |
 | JUnit `properties`, a JUnit path with `--output` | Ids in tags or the title; copy `.e2e/junit.xml` after the run |

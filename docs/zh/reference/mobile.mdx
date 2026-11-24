@@ -297,6 +297,21 @@ export default {
 ```
 
 - iOS 将参数交给应用进程（`ProcessInfo.processInfo.arguments`）。Android 将其追加到 `am start`，因此 `['--ez', 'e2e', 'true']` 是一个布尔类型的 intent extra。
+
+    ```ts title="e2e.config.ts"
+    export default {
+      targets: [
+        {
+          name: 'iphone',
+          engine: mobile({ platform: 'ios' }),
+          app: {
+            bundleId: 'com.example.app',
+            launchArguments: ['-flag', 'false', '-title', 'a b'],
+          },
+        },
+      ],
+    } satisfies E2EConfig;
+    ```
 - 每项权限为 `grant`、`deny` 或 `reset`。在 iOS 上，`deny` 会记录拒绝，应用会直接收到拒绝结果，不显示提示；在 Android 上，它会撤销权限，应用再次请求时系统会重新询问。
 - 权限在应用启动前按名称设置，不会先打开应用，因为 iOS 会终止权限发生变化的运行中应用，Android 会终止权限被撤销的应用。
 - 预热不会传入启动参数，也不会更改权限。
@@ -729,6 +744,7 @@ openApp(app: string, options?: OpenAppOptions): Promise<void>;
 ```ts
 await device.openApp('Settings');
 await device.openApp('com.example.app', { relaunch: true, permissions: { camera: 'grant' } });
+await device.openApp('com.example.app', { relaunch: true, launchArguments: { AppleLocale: 'fr_FR' } });
 ```
 
 - 链接会在发送给设备前被拒绝，因为 agent-device 会将任何 `scheme:rest` 字符串作为 URL 打开。
@@ -1148,11 +1164,12 @@ export interface OpenAppOptions {
   /** Terminate the app first, so it starts fresh; without it a running app is brought forward as it is. */
   readonly relaunch?: boolean;
   /**
-   * Arguments this launch hands the app: its process arguments on iOS,
-   * `am start` arguments on Android. Replaces the target's `app.launchArguments`
-   * for a relaunch of the pinned app.
+   * Arguments this launch hands the app, a list or an object like
+   * `app.launchArguments`: its process arguments on iOS, `am start`
+   * arguments on Android. Replaces the target's `app.launchArguments` for a
+   * relaunch of the pinned app.
    */
-  readonly launchArguments?: readonly string[];
+  readonly launchArguments?: LaunchArguments;
   /**
    * Permissions the app holds before this launch, each granted, denied, or
    * reset. Replaces the target's `app.permissions` for a relaunch of the

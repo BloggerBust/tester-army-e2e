@@ -84,7 +84,7 @@ await device.openApp('com.example.app', { relaunch: true, permissions: { camera:
   engine: mobile({ platform: 'ios' }),
   app: {
     bundleId: 'com.example.app',
-    launchArguments: ['-AppleLanguages', '(fr)', '-AppleLocale', 'fr_FR'],
+    launchArguments: { AppleLanguages: ['fr'], AppleLocale: 'fr_FR' },
   },
 }
 ```

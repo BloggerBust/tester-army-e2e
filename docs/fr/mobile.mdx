@@ -115,7 +115,7 @@ pour ce lancement. L'appareil garde sa propre langue. Ajoutez une cible par lang
   engine: mobile({ platform: 'ios' }),
   app: {
     bundleId: 'com.example.app',
-    launchArguments: ['-AppleLanguages', '(fr)', '-AppleLocale', 'fr_FR'],
+    launchArguments: { AppleLanguages: ['fr'], AppleLocale: 'fr_FR' },
   },
 }
 ```

@@ -36,7 +36,7 @@ function resolve(raw: Partial<E2EConfig>, env: NodeJS.ProcessEnv = BASE_ENV) {
 
 /** A minimal observing engine, the way web() or mobile() would drive a target. */
 function fakeEngine() {
-  return defineEngine({ name: 'fake', version: '1.0.0', spiVersion: 1, observe: async () => snapshot([]) });
+  return defineEngine({ name: 'fake', version: '1.0.0', spiVersion: 1, launchArgumentValues: true, observe: async () => snapshot([]) });
 }
 
 /** One web target on the fake engine declaring `app`. */
@@ -552,7 +552,9 @@ describe('resolveConfig', () => {
     expect(() => resolveApp({ url: 5 } as never)).toThrow('target "web" app.url must be a non-empty string');
     expect(() => resolveApp({ bundleId: '' })).toThrow('app.bundleId must be a non-empty string');
     expect(() => resolveApp({ appPath: ' ' })).toThrow('app.appPath must be a non-empty string');
-    expect(() => resolveApp({ launchArguments: ['-a', 1] } as never)).toThrow('app.launchArguments must be an array of strings');
+    expect(() => resolveApp({ launchArguments: ['-a', 1] } as never)).toThrow(
+      'app.launchArguments must be an array of strings or an object of argument name to string, number, boolean, or array of strings; item 1 is a number',
+    );
     expect(() => resolveApp({ permissions: { camera: 'allow' } } as never)).toThrow(
       'app.permissions.camera must be grant, deny, or reset, got "allow"',
     );
@@ -567,6 +569,51 @@ describe('resolveConfig', () => {
       launchArguments: ['-e2e'],
       permissions: { camera: 'grant' },
     });
+  });
+
+  it('takes launch arguments as an object of name to string, number, boolean, or list of strings, and leaves out an undefined value', () => {
+    const launchArguments = { AppleLanguages: ['fr'], AppleLocale: 'fr_FR', e2e: true, retries: 3, skipOnboarding: undefined };
+    expect(resolveApp({ bundleId: 'dev.shop.app', launchArguments }).launchArguments).toEqual({
+      AppleLanguages: ['fr'],
+      AppleLocale: 'fr_FR',
+      e2e: true,
+      retries: 3,
+    });
+    expect(resolveApp({ bundleId: 'dev.shop.app', launchArguments: {} }).launchArguments).toEqual({});
+    expect(resolveApp({ bundleId: 'dev.shop.app', launchArguments: Object.assign(Object.create(null), { e2e: true }) }).launchArguments).toEqual({ e2e: true });
+
+    const shape = 'target "web" app.launchArguments must be an array of strings or an object of argument name to string, number, boolean, or array of strings';
+    expect(() => resolveApp({ launchArguments: 'fr_FR' } as never)).toThrow(`${shape}, got a string`);
+    expect(() => resolveApp({ launchArguments: null } as never)).toThrow(`${shape}, got null`);
+    expect(() => resolveApp({ launchArguments: new Map([['AppleLocale', 'fr_FR']]) } as never)).toThrow(`${shape}, got a Map`);
+    expect(() => resolveApp({ launchArguments: { '': 'x' } })).toThrow('target "web" app.launchArguments has an empty argument name');
+    expect(() => resolveApp({ launchArguments: { 'Apple Locale': 'fr_FR' } })).toThrow(
+      'target "web" app.launchArguments argument name "Apple Locale" must have no whitespace or control characters',
+    );
+    expect(() => resolveApp({ launchArguments: { '-AppleLocale': 'fr_FR' } })).toThrow(
+      'target "web" app.launchArguments argument name "-AppleLocale" starts with a dash; remove the dash, the engine adds it',
+    );
+    expect(() => resolveApp({ launchArguments: { 'a\u0000b': 'x' } })).toThrow('argument name "a\\u0000b" must have no whitespace or control characters');
+    expect(() => resolveApp({ launchArguments: { env: 'a\u0000' } })).toThrow('target "web" app.launchArguments.env holds a NUL character');
+    expect(() => resolveApp({ launchArguments: { tags: ['a', 'b\u0000'] } })).toThrow('target "web" app.launchArguments.tags holds a NUL character');
+    expect(() => resolveApp({ launchArguments: ['-a', 'b\u0000'] })).toThrow('target "web" app.launchArguments item 1 holds a NUL character');
+
+    const value = (name: string) => `target "web" app.launchArguments.${name} must be a string, number, boolean, or array of strings, got`;
+    expect(() => resolveApp({ launchArguments: { locale: { language: 'fr' } } } as never)).toThrow(`${value('locale')} an object`);
+    expect(() => resolveApp({ launchArguments: { languages: ['fr', 1] } } as never)).toThrow(
+      'target "web" app.launchArguments.languages must be a string, number, boolean, or array of strings; item 1 is a number',
+    );
+    const sparse = ['fr'];
+    sparse[2] = 'de';
+    expect(() => resolveApp({ launchArguments: { languages: sparse } })).toThrow(
+      'target "web" app.launchArguments.languages must be a string, number, boolean, or array of strings; item 1 is undefined',
+    );
+    expect(() => resolveApp({ launchArguments: { retries: Number.NaN } })).toThrow(`${value('retries')} NaN`);
+    expect(() => resolveApp({ launchArguments: { retries: 2 ** 53 } })).toThrow(`${value('retries')} a number beyond 2^53 - 1`);
+    expect(() => resolveApp({ launchArguments: { ratio: -1e300 } })).toThrow(`${value('ratio')} a number beyond 2^53 - 1`);
+    expect(resolveApp({ bundleId: 'dev.shop.app', launchArguments: { retries: 2 ** 53 - 1, ratio: -1.5 } }).launchArguments).toEqual({ retries: 2 ** 53 - 1, ratio: -1.5 });
+    expect(() => resolveApp({ launchArguments: { retries: null } } as never)).toThrow(`${value('retries')} null`);
+    expect(() => resolveApp({ launchArguments: { when: new Date(0) } } as never)).toThrow(`${value('when')} a Date`);
   });
 
   it("hands the declaration to the engine's validateApp, which names the target", () => {

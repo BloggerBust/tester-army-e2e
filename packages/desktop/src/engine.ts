@@ -49,6 +49,7 @@ export function desktop(options: DesktopOptions = {}): DesktopEngine {
     spiVersion: 1,
     platform,
     workers: 1,
+    launchArgumentValues: true,
     prepare: (info) => {
       requireMacOS();
       return surface.prepare(info);

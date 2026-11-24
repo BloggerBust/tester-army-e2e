@@ -212,6 +212,8 @@ export interface EngineManifest {
   readonly tapModifiers?: boolean;
   /** Requires `lifecycle/prepare`: `prepare` binds the device `e2e run --device` names. */
   readonly selectsDevice?: boolean;
+  /** The engine reads the object form of `app.launchArguments` from `EngineAppInfo.launchArgumentValues`. */
+  readonly launchArgumentValues?: boolean;
   /** See `Engine.isolation`; left out for `attempt`. */
   readonly isolation?: 'worker';
 }

@@ -297,6 +297,21 @@ export default {
 ```
 
 - iOS は引数をアプリのプロセス（`ProcessInfo.processInfo.arguments`）に渡します。Android は `am start` に追加するため、`['--ez', 'e2e', 'true']` は真偽値の Intent extra になります。
+
+    ```ts title="e2e.config.ts"
+    export default {
+      targets: [
+        {
+          name: 'iphone',
+          engine: mobile({ platform: 'ios' }),
+          app: {
+            bundleId: 'com.example.app',
+            launchArguments: ['-flag', 'false', '-title', 'a b'],
+          },
+        },
+      ],
+    } satisfies E2EConfig;
+    ```
 - 各権限の状態は `grant`、`deny`、`reset` です。iOS の `deny` は拒否を記録し、確認画面を出さずにアプリへ拒否を返します。Android では権限を取り消し、次にアプリが要求すると OS が再度確認します。
 - アプリを先に開かず、起動前にアプリ名を指定して権限を設定します。iOS は権限が変更された実行中のアプリを終了し、Android は権限を取り消されたアプリを終了するためです。
 - ウォームアップでは起動引数を渡さず、権限にも触れません。
@@ -730,6 +745,7 @@ openApp(app: string, options?: OpenAppOptions): Promise<void>;
 ```ts
 await device.openApp('Settings');
 await device.openApp('com.example.app', { relaunch: true, permissions: { camera: 'grant' } });
+await device.openApp('com.example.app', { relaunch: true, launchArguments: { AppleLocale: 'fr_FR' } });
 ```
 
 - agent-device は `scheme:rest` 形式をすべて URL として開くため、リンクはデバイスへ渡す前に拒否します。
@@ -1149,11 +1165,12 @@ export interface OpenAppOptions {
   /** Terminate the app first, so it starts fresh; without it a running app is brought forward as it is. */
   readonly relaunch?: boolean;
   /**
-   * Arguments this launch hands the app: its process arguments on iOS,
-   * `am start` arguments on Android. Replaces the target's `app.launchArguments`
-   * for a relaunch of the pinned app.
+   * Arguments this launch hands the app, a list or an object like
+   * `app.launchArguments`: its process arguments on iOS, `am start`
+   * arguments on Android. Replaces the target's `app.launchArguments` for a
+   * relaunch of the pinned app.
    */
-  readonly launchArguments?: readonly string[];
+  readonly launchArguments?: LaunchArguments;
   /**
    * Permissions the app holds before this launch, each granted, denied, or
    * reset. Replaces the target's `app.permissions` for a relaunch of the

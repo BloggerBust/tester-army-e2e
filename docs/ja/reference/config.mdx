@@ -311,7 +311,7 @@ targets: [
 | [`linkBase`](#linkbase) | `string` | - |
 | [`identity`](#identity) | `string` | アプリから導出 |
 | [`environment`](#environment) | `'test' \| 'staging' \| 'production'` | `'test'` または `'production'` |
-| [`launchArguments`](#launcharguments) | `string[]` | - |
+| [`launchArguments`](#launcharguments) | `string[] \| Record<string, LaunchArgumentValue>` | - |
 | [`permissions`](#permissions) | `Record<string, AppPermissionState>` | - |
 | [`command`](#command) | `CommandConfig` | - |
 | [`readyUrl`](#readyurl) | `string` | `url` |
@@ -415,6 +415,15 @@ environment: 'staging', // default: 'test' for a local host or no URL, else 'pro
 
 ```ts
 launchArguments: ['-e2e', 'YES'],
+```
+
+```ts
+launchArguments: { AppleLanguages: ['fr'], AppleLocale: 'fr_FR', e2e: true },
+```
+
+```ts
+type LaunchArgumentValue = string | number | boolean | readonly string[];
+type LaunchArguments = readonly string[] | Readonly<Record<string, LaunchArgumentValue | undefined>>;
 ```
 
 ビルドモードを選ぶ引数は、アプリの内容を変えます。モードごとに独自の `identity` を指定してください。

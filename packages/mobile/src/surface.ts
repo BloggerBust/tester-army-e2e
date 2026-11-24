@@ -32,6 +32,8 @@ import {
   type EngineObserveOptions,
   type EngineSnapshot,
   type EngineAppInfo,
+  type LaunchArguments,
+  type ResolvedLaunchArguments,
   type LocatorAction,
   type LocatorExpression,
   type NodeRef,
@@ -49,6 +51,7 @@ import {
 import { isAppNotRunning, isSnapshotPresentationFailure, isUnreadableCapture, ORIGIN_UNKNOWN_BOUNDS, ORIGIN_WARNING, runCommand, staleOr } from './errors.ts';
 import { pointerInteraction, DEFAULT_LONG_PRESS_MS } from './actions.ts';
 import { resolveExpression } from './locate.ts';
+import { launchArgumentList, launchArgumentsForOpen } from './launch-arguments.ts';
 import {
   isWithin,
   keyboardElementsTop,
@@ -119,11 +122,12 @@ export interface OpenAppOptions {
   /** Terminate the app first, so it starts fresh; without it a running app is brought forward as it is. */
   readonly relaunch?: boolean;
   /**
-   * Arguments this launch hands the app: its process arguments on iOS,
-   * `am start` arguments on Android. Replaces the target's
-   * `app.launchArguments` for a relaunch of the pinned app.
+   * Arguments this launch hands the app, a list or an object like
+   * `app.launchArguments`: its process arguments on iOS, `am start`
+   * arguments on Android. Replaces the target's `app.launchArguments` for a
+   * relaunch of the pinned app.
    */
-  readonly launchArguments?: readonly string[];
+  readonly launchArguments?: LaunchArguments;
   /**
    * Permissions the app holds before this launch, each granted, denied, or
    * reset. Replaces the target's `app.permissions` for a relaunch of the
@@ -897,14 +901,15 @@ export class AgentDeviceSurface {
     // app. A foreground-only open of a running app takes no arguments, and a
     // permission change there would terminate the app it means to keep.
     const configured = relaunch && app === this.pinnedApp;
-    const launchArguments = options.launchArguments ?? (configured ? this.app.launchArguments : undefined);
+    const launchArguments = launchArgumentsForOpen(this.options.platform, options.launchArguments) ?? (configured ? (this.app.launchArgumentValues ?? this.app.launchArguments) : undefined);
     const permissions = options.permissions ?? (configured ? this.app.permissions : undefined);
     if (permissions !== undefined) await this.presetPermissions(app, permissions, signal);
     await this.open(app, relaunch, launchArguments, signal);
   }
 
   /** One `open` of an app, remembered as the session's app and as the screen's replacement. */
-  private async open(app: string, relaunch: boolean, launchArguments: readonly string[] | undefined, signal: AbortSignal): Promise<void> {
+  private async open(app: string, relaunch: boolean, launchArguments: ResolvedLaunchArguments | undefined, signal: AbortSignal): Promise<void> {
+    const launchArgs = launchArgumentList(this.options.platform, launchArguments);
     const result = await this.command(
       `open ${app}`,
       (client) =>
@@ -912,7 +917,7 @@ export class AgentDeviceSurface {
           app,
           ...this.selection(),
           ...(relaunch ? { relaunch: true } : {}),
-          ...(launchArguments === undefined || launchArguments.length === 0 ? {} : { launchArgs: [...launchArguments] }),
+          ...(launchArgs === undefined ? {} : { launchArgs: [...launchArgs] }),
         }),
       signal,
     );

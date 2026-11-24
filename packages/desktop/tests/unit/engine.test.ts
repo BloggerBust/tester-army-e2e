@@ -1,3 +1,4 @@
+import { describeEngine } from '@e2e-dev/core/engine';
 import { describe, expect, it } from 'vitest';
 import { desktop } from '../../src/engine.ts';
 import { resolveOptions } from '../../src/options.ts';
@@ -14,6 +15,7 @@ describe('desktop()', () => {
     expect(headed.actions).toEqual(expect.arrayContaining(['doubleTap', 'hover', 'press']));
     expect(headed.pointerActions).toEqual(expect.arrayContaining(['tap']));
     expect(plain.workers).toBe(1);
+    expect(describeEngine(plain).launchArgumentValues).toBe(true);
     expect(plain.keyboard).toBeUndefined();
     expect(headed.keyboard).toBeDefined();
   });

@@ -53,12 +53,20 @@ export default {
     {
       name: 'ios',
       engine: mobile({ platform: 'ios' }),
-      app: { bundleId: 'com.example.app', appPath: 'ios/build/MyApp.app' },
+      app: {
+        bundleId: 'com.example.app',
+        appPath: 'ios/build/MyApp.app',
+        launchArguments: ['-mockServer', 'http://localhost:9001'],
+      },
     },
     {
       name: 'android',
       engine: mobile({ platform: 'android' }),
-      app: { bundleId: 'com.example.app', appPath: 'android/app/build/outputs/apk/debug/app-debug.apk' },
+      app: {
+        bundleId: 'com.example.app',
+        appPath: 'android/app/build/outputs/apk/debug/app-debug.apk',
+        launchArguments: ['--es', 'mockServer', 'http://localhost:9001'],
+      },
     },
   ],
   workers: 1,

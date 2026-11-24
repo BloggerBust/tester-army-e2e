@@ -116,7 +116,7 @@ iOS पर लॉन्च आर्ग्युमेंट से उस ल�
   engine: mobile({ platform: 'ios' }),
   app: {
     bundleId: 'com.example.app',
-    launchArguments: ['-AppleLanguages', '(fr)', '-AppleLocale', 'fr_FR'],
+    launchArguments: { AppleLanguages: ['fr'], AppleLocale: 'fr_FR' },
   },
 }
 ```

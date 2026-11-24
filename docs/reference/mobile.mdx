@@ -316,7 +316,7 @@ export default {
 
 | Throws | When |
 | --- | --- |
-| `INVALID_CONFIG` | At config load: no `app.bundleId` and no `app.appPath`; an `app.url` (not supported yet); a link in `bundleId` (a test opens one with `device.openLink`); an unknown permission name. |
+| `INVALID_CONFIG` | At config load: no `app.bundleId` and no `app.appPath`; an `app.url` (not supported yet); a link in `bundleId` (a test opens one with `device.openLink`); an unknown permission name; an Apple launch argument such as `AppleLocale`, or a list item `am start` cannot carry, in an object on an Android target. |
 | `UNSUPPORTED_CAPABILITY` | `app.open()`, `app.restart()`, or `app.clearState()` on a target with no `app.bundleId` before its build is installed. |
 
 #### Launch arguments and permissions
@@ -344,6 +344,49 @@ export default {
 - iOS hands the arguments to the app process
   (`ProcessInfo.processInfo.arguments`). Android appends them to `am start`,
   so `['--ez', 'e2e', 'true']` is a boolean intent extra.
+- An object gives each argument a name.
+  - On iOS, each entry becomes `-name value` in the format that
+    `NSUserDefaults` reads. A string that the parser could read as a plist or
+    a comment, such as `(draft)`, `a b`, or `//cdn`, gets quotes. An app that
+    reads `ProcessInfo.processInfo.arguments` receives this format, with `NO`
+    for `false` and the quotes included. If your app reads
+    `ProcessInfo.processInfo.arguments`, use the `launchArguments` list format
+    instead:
+
+    ```ts title="e2e.config.ts"
+    export default {
+      targets: [
+        {
+          name: 'iphone',
+          engine: mobile({ platform: 'ios' }),
+          app: {
+            bundleId: 'com.example.app',
+            launchArguments: ['-flag', 'false', '-title', 'a b'],
+          },
+        },
+      ],
+    } satisfies E2EConfig;
+    ```
+  - On Android, each entry becomes an `am start` extra of the value's type.
+    The app reads it with the matching `Intent` getter. A whole number such
+    as `1.0` is an `int`. Android does not read Apple arguments, so
+    `AppleLanguages` or `AppleLocale` in an object on an Android target fails
+    with `INVALID_CONFIG`. A list of strings goes to `am start` unchanged.
+- `am start` splits a list extra at each comma that has no backslash before
+  it, and it keeps that backslash. So on Android, a list in an object fails
+  with `INVALID_CONFIG` when the list is empty, or when an item is empty,
+  contains a comma, or ends with a backslash.
+
+| Value | iOS | Android |
+| --- | --- | --- |
+| `'fr_FR'` | `-name fr_FR` | `--es name fr_FR` |
+| `'(draft)'` | `-name "(draft)"` | `--es name (draft)` |
+| `true` | `-name YES` | `--ez name true` |
+| `3` | `-name 3` | `--ei name 3`, `--el` outside Java's `int` |
+| `1.5` | `-name 1.5` | `--ef name 1.5` |
+| `-1` | `-name "-1"` | `--ei name -1` |
+| `['fr', 'de']` | `-name (fr, de)` | `--esa name fr,de` |
+
 - Each permission is `grant`, `deny`, or `reset`. `deny` is a recorded
   refusal on iOS, where the app is told no without a prompt, and a revocation
   on Android, where the OS asks again when the app requests the permission.
@@ -823,6 +866,7 @@ openApp(app: string, options?: OpenAppOptions): Promise<void>;
 ```ts
 await device.openApp('Settings');
 await device.openApp('com.example.app', { relaunch: true, permissions: { camera: 'grant' } });
+await device.openApp('com.example.app', { relaunch: true, launchArguments: { AppleLocale: 'fr_FR' } });
 ```
 
 - A link is refused before the device sees it, since agent-device opens any
@@ -831,7 +875,7 @@ await device.openApp('com.example.app', { relaunch: true, permissions: { camera:
 | Throws | When |
 | --- | --- |
 | `POLICY_DENIED` | A `file:`, `data:`, `javascript:`, `view-source:`, `blob:`, or `filesystem:` link. |
-| `INVALID_ARGUMENT` | Any other link, with a message pointing at `openLink`; or an invalid permission name or state (see [Launch arguments and permissions](#launch-arguments-and-permissions)). |
+| `INVALID_ARGUMENT` | Any other link, with a message pointing at `openLink`; an invalid permission name or state; or `launchArguments` outside the declared shape, or one Android cannot carry (see [Launch arguments and permissions](#launch-arguments-and-permissions)). |
 
 #### `openLink`
 
@@ -1387,11 +1431,12 @@ export interface OpenAppOptions {
   /** Terminate the app first, so it starts fresh; without it a running app is brought forward as it is. */
   readonly relaunch?: boolean;
   /**
-   * Arguments this launch hands the app: its process arguments on iOS,
-   * `am start` arguments on Android. Replaces the target's `app.launchArguments`
-   * for a relaunch of the pinned app.
+   * Arguments this launch hands the app, a list or an object like
+   * `app.launchArguments`: its process arguments on iOS, `am start`
+   * arguments on Android. Replaces the target's `app.launchArguments` for a
+   * relaunch of the pinned app.
    */
-  readonly launchArguments?: readonly string[];
+  readonly launchArguments?: LaunchArguments;
   /**
    * Permissions the app holds before this launch, each granted, denied, or
    * reset. Replaces the target's `app.permissions` for a relaunch of the

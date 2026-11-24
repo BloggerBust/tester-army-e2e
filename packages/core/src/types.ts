@@ -1428,6 +1428,31 @@ export interface CommandConfig {
 export type AppPermissionState = 'grant' | 'deny' | 'reset';
 
 /**
+ * One value in the object form of `launchArguments`. On iOS
+ * `{ AppleLocale: 'fr_FR' }` is `-AppleLocale fr_FR`, `{ e2e: true }` is
+ * `-e2e YES`, and `{ AppleLanguages: ['fr', 'de'] }` is
+ * `-AppleLanguages (fr, de)`. On Android each value is an `am start` extra
+ * of its type: `{ e2e: true }` is `--ez e2e true`, `{ retries: 3 }` is
+ * `--ei retries 3`, `{ locale: 'fr_FR' }` is `--es locale fr_FR`, and a list
+ * is `--esa tags a,b`.
+ */
+export type LaunchArgumentValue = string | number | boolean | readonly string[];
+
+/**
+ * A target's launch arguments: a list of strings, the arguments themselves
+ * (`['-e2e', 'YES']`), or an object of argument name to value
+ * (`{ AppleLanguages: ['fr'], AppleLocale: 'fr_FR' }`). An `undefined`
+ * value, read from the environment, is the entry left out.
+ */
+export type LaunchArguments = readonly string[] | Readonly<Record<string, LaunchArgumentValue | undefined>>;
+
+/** The object form of launch arguments after the shape check: argument name to value, the `undefined` entries gone. */
+export type LaunchArgumentValues = Readonly<Record<string, LaunchArgumentValue>>;
+
+/** Launch arguments after the shape check: a list of strings, or the object form. */
+export type ResolvedLaunchArguments = readonly string[] | LaunchArgumentValues;
+
+/**
  * The app one target tests, declared on the target and nowhere else: engines
  * only drive it. Every field also accepts `undefined`, so values read straight
  * from `process.env` need no conditional spread. A browser target names the
@@ -1489,7 +1514,7 @@ export interface TargetApp {
    * select a build mode change what the app is: give each mode its own
    * `identity` so their recordings stay apart.
    */
-  launchArguments?: readonly string[] | undefined;
+  launchArguments?: LaunchArguments | undefined;
   /**
    * Permissions the app holds, by name. A device app has each granted,
    * denied, or reset before every fresh launch. A browser target takes

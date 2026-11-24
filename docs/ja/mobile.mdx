@@ -106,7 +106,7 @@ iOS では、起動引数でその起動時のアプリの言語と地域を設�
   engine: mobile({ platform: 'ios' }),
   app: {
     bundleId: 'com.example.app',
-    launchArguments: ['-AppleLanguages', '(fr)', '-AppleLocale', 'fr_FR'],
+    launchArguments: { AppleLanguages: ['fr'], AppleLocale: 'fr_FR' },
   },
 }
 ```

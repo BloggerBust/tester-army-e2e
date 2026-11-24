@@ -386,7 +386,7 @@ targets: [
 | [`linkBase`](#linkbase) | `string` | - |
 | [`identity`](#identity) | `string` | derived from the app |
 | [`environment`](#environment) | `'test' \| 'staging' \| 'production'` | `'test'` or `'production'` |
-| [`launchArguments`](#launcharguments) | `string[]` | - |
+| [`launchArguments`](#launcharguments) | `string[] \| Record<string, LaunchArgumentValue>` | - |
 | [`permissions`](#permissions) | `Record<string, AppPermissionState>` | - |
 | [`command`](#command) | `CommandConfig` | - |
 | [`readyUrl`](#readyurl) | `string` | `url` |
@@ -512,14 +512,39 @@ environment: 'staging', // default: 'test' for a local host or no URL, else 'pro
 #### `launchArguments`
 
 Arguments every fresh launch passes the app: `app.open()`, `app.restart()`,
-and `app.clearState()`.
+and `app.clearState()`. Give a list of strings, the arguments themselves, or
+an object of argument name to value. On iOS and macOS an entry becomes
+`-name value`.
+On Android it becomes an `am start` extra of the value's type: `--es` for a
+string, `--ez` for a boolean, `--ei` for a whole number (`--el` beyond Java's
+`int`), `--ef` for a fraction, `--esa` for a list.
 
 ```ts
 launchArguments: ['-e2e', 'YES'],
 ```
 
-Arguments that select a build mode change what the app is: give each mode its
-own `identity`.
+```ts
+launchArguments: { AppleLanguages: ['fr'], AppleLocale: 'fr_FR', e2e: true },
+```
+
+```ts
+type LaunchArgumentValue = string | number | boolean | readonly string[];
+type LaunchArguments = readonly string[] | Readonly<Record<string, LaunchArgumentValue | undefined>>;
+```
+
+- An object value is a string, a finite number below 2^53 in magnitude, a
+  boolean, or a list of strings. A name has no leading dash, whitespace, or
+  control characters, and nothing holds a NUL character. A value read from the
+  environment may be `undefined`: that entry is left out.
+- The table under
+  [Launch arguments and permissions](/reference/mobile#launch-arguments-and-permissions)
+  shows each value type on iOS and Android.
+- Arguments that select a build mode change what the app is. Give each mode
+  its own `identity`.
+
+| Throws | When |
+| --- | --- |
+| `INVALID_CONFIG` | A list item that is not a string. An object with an empty name, a name with whitespace or a control character, a value of another kind, a number beyond 2^53 - 1 in magnitude, or a NUL character anywhere. The engine adds its own rules: see [the mobile reference](/reference/mobile#launch-arguments-and-permissions). |
 
 #### `permissions`
 

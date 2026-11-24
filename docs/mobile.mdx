@@ -83,7 +83,9 @@ app: {
 ```
 
 - Launch arguments are the process arguments on iOS and `am start`
-  arguments on Android.
+  arguments on Android. An object names each argument, so `{ e2e: true }` is
+  `-e2e YES` on iOS and `--ez e2e true` on Android. See
+  [the reference](/reference/mobile#launch-arguments-and-permissions).
 - Permissions are set before the launch, so no system prompt appears.
   `app.clearState()` resets them with the data, then sets them again.
 - `deny` on iOS tells the app no without a prompt. On Android it revokes
@@ -113,16 +115,19 @@ The device keeps its own language. Add one target per language:
   engine: mobile({ platform: 'ios' }),
   app: {
     bundleId: 'com.example.app',
-    launchArguments: ['-AppleLanguages', '(fr)', '-AppleLocale', 'fr_FR'],
+    launchArguments: { AppleLanguages: ['fr'], AppleLocale: 'fr_FR' },
   },
 }
 ```
 
+- As a list, the same launch is
+  `['-AppleLanguages', '(fr)', '-AppleLocale', 'fr_FR']`.
 - The app must ship the language. If it doesn't, iOS shows its development
   language.
-- Android has no launch argument for the language. On a hosted device, set
-  `language` and `locale` on `browserstack()` or `testmu()`. On a local
-  device, set the device's language before the run.
+- Android has no launch argument for the language. `AppleLanguages` or
+  `AppleLocale` in an object on an Android target fails at config load. On
+  a hosted device, set `language` and `locale` on `browserstack()` or
+  `testmu()`. On a local device, set the device's language before the run.
 
 ### Expo development builds
 

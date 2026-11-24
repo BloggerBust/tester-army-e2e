@@ -26,6 +26,7 @@ import {
   type SemanticNode,
 } from '@e2e-dev/core/lib/engine/index';
 import { resolveConfig } from '../../src/config/resolve-run.ts';
+import { engineAppInfo } from '@e2e-dev/core/lib/config/app';
 import { ConfigurationError, TestTimeoutError } from '@e2e-dev/core/lib/internal/errors';
 import { encodeLocatorAction, decodeLocatorAction } from '@e2e-dev/core/lib/engine/protocol/protocol';
 import { protocolEngine } from '@e2e-dev/core/lib/engine/protocol/client';
@@ -585,6 +586,82 @@ describe('engine protocol', () => {
       expect(validate(refused), JSON.stringify(refused)).toBe(false);
       expect(() => connectEngine({ manifest: refused as never, transport: loopbackTransport(local) }), JSON.stringify(refused)).toThrow(ConfigurationError);
     }
+  });
+
+  describe('launch arguments', () => {
+    const resolveTarget = (engine: EngineHandle, launchArguments: unknown) =>
+      resolveConfig(
+        { targets: [{ name: 'phone', platform: 'toy', engine, app: { bundleId: 'dev.shop.app', launchArguments: launchArguments as never } }] },
+        { projectRoot: process.cwd(), env: {} as NodeJS.ProcessEnv },
+      ).targets[0]!;
+
+    const prepare = (target: ReturnType<typeof resolveTarget>) =>
+      target.engine!.prepare!({ runId: 'run', targetName: target.name, projectRoot: process.cwd(), app: engineAppInfo(target.app), slots: 1, env: {}, headed: false, signal: new AbortController().signal, log: () => {} });
+
+    it('hands an engine that predates the object form a list it can spread, and refuses an object at config load', async () => {
+      const spread: string[][] = [];
+      const legacy = defineEngine(
+        toy({
+          validateApp(app) {
+            spread.push([...(app.launchArguments ?? [])]);
+          },
+          async prepare(info) {
+            spread.push([...(info.app.launchArguments ?? [])]);
+          },
+        }),
+      );
+      await prepare(resolveTarget(legacy, ['-AppleLocale', 'fr_FR']));
+      expect(spread).toEqual([
+        ['-AppleLocale', 'fr_FR'],
+        ['-AppleLocale', 'fr_FR'],
+      ]);
+
+      expect(() => resolveTarget(legacy, { AppleLocale: 'fr_FR', AppleLanguages: ['fr'] })).toThrowError(
+        expect.objectContaining({
+          code: 'INVALID_CONFIG',
+          message:
+            'target "phone" app.launchArguments is an object, and engine "toy" takes only a list of strings: write the arguments as a list, or use an engine version that supports the object syntax',
+        }),
+      );
+      expect(spread).toHaveLength(2);
+    });
+
+    it('carries the object form to an engine that declares launchArgumentValues', async () => {
+      const seen: unknown[] = [];
+      const { local, remote } = overLoopback(
+        toy({
+          launchArgumentValues: true,
+          async prepare(info) {
+            seen.push(info.app);
+          },
+        }),
+        {
+          validateApp(app) {
+            seen.push(app);
+          },
+        },
+      );
+      expect(describeEngine(local).launchArgumentValues).toBe(true);
+      expect(remote.launchArgumentValues).toBe(true);
+
+      const launchArgumentValues = { AppleLocale: 'fr_FR', AppleLanguages: ['fr'], e2e: true, retries: 3 };
+      await prepare(resolveTarget(remote, { ...launchArgumentValues, token: undefined }));
+      expect(seen).toEqual([
+        { bundleId: 'dev.shop.app', launchArgumentValues },
+        { bundleId: 'dev.shop.app', launchArgumentValues },
+      ]);
+
+      seen.length = 0;
+      await prepare(resolveTarget(remote, ['-e2e', 'YES']));
+      expect(seen).toEqual([
+        { bundleId: 'dev.shop.app', launchArguments: ['-e2e', 'YES'] },
+        { bundleId: 'dev.shop.app', launchArguments: ['-e2e', 'YES'] },
+      ]);
+    });
+
+    it('refuses a launchArgumentValues flag that is not a boolean', () => {
+      expect(() => defineEngine(toy({ launchArgumentValues: 'yes' as never }))).toThrow(/launchArgumentValues must be a boolean/);
+    });
   });
 
   it('serves every in-process target through one protocol client and leaves a connected engine as declared', () => {

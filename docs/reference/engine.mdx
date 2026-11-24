@@ -113,6 +113,7 @@ rules:
 | `performAt`, `pointerActions` | One without the other. A `pointerActions` list that is empty, repeats a kind, or names one outside `POINTER_ACTION_KINDS`. |
 | `tapModifiers` | Not a boolean, or `true` without `perform`. |
 | `selectsDevice` | Not a boolean, or `true` without `prepare`. |
+| `launchArgumentValues` | Not a boolean. |
 | `isolation` | Anything but `'attempt'` or `'worker'`. |
 | `keyboard`, `state`, `artifacts`, `session` | An unknown key or a non-function member. `keyboard` without `type` and `press`; `state` without both `capture` and `restore`; `artifacts` without `screenshot`; `startVideo` without `stopVideo`, or the reverse. |
 | `secrets` | Not an array of `secrets.get()` handles. |
@@ -144,6 +145,7 @@ The body of one target. Every member but `name`, `version`, and
 | [`performAt`, `pointerActions`](#pointer-actions) | method, kinds |
 | [`tapModifiers`](#capabilities) | `boolean` |
 | [`selectsDevice`](#capabilities) | `boolean` |
+| [`launchArgumentValues`](#engineappinfo) | `boolean` |
 | [`keyboard`](#keyboard) | `EngineKeyboard` |
 | [`fixtures`](#contributed-fixtures) | factories |
 | [`isolation`](#fixture-isolation) | `'attempt' \| 'worker'` |
@@ -251,6 +253,12 @@ export interface Engine {
    * for the target before anything is prepared.
    */
   readonly selectsDevice?: boolean;
+  /**
+   * The engine reads the object form of `app.launchArguments` from
+   * `EngineAppInfo.launchArgumentValues`. Without it the harness refuses an
+   * object at config load.
+   */
+  readonly launchArgumentValues?: boolean;
   /** capability: keyboard - requires observation. Input to whatever holds focus; see `EngineKeyboard`. */
   readonly keyboard?: EngineKeyboard;
   /**
@@ -401,6 +409,7 @@ member. Three gaps end differently:
 | `locate` | `location` | `observe` | `screen`, `Locator`, `expect(locator)`. |
 | `tapModifiers: true` | - | `perform` | `modifiers` on `tap`, `doubleTap`, and `secondaryTap`. |
 | `selectsDevice: true` | - | `prepare` | `e2e run --device`, the device `prepare` binds. |
+| `launchArgumentValues: true` | - | - | The object form of `app.launchArguments`, in `EngineAppInfo.launchArgumentValues`. |
 | `performAt` + `pointerActions` | `pointer` | `observe` | One pointer action at a viewport point, with no node behind it. |
 | `keyboard.{type,press,dismiss?}` | `keyboard` | `observe` | Input to whatever holds focus. |
 | `fixtures.<name>` | `<name>` | - | A contributed fixture. |
@@ -1408,7 +1417,7 @@ the declaration to [`validateApp`](#validateapp) at config load.
 | `url` | `validateApp` only. The harness opens it through `session.open`. |
 | the origin of `url`, on the run's port | `info.app.origin` in `prepare` and `init` |
 | the site of `url` | `info.app.site` in `prepare` and `init` |
-| `bundleId`, `appPath`, `launchArguments`, `permissions` | `validateApp`, and `info.app` in `prepare` and `init`, as the target declared them |
+| `bundleId`, `appPath`, `launchArguments`, `permissions` | `validateApp`, and `info.app` in `prepare` and `init`, as the target declared them; `launchArguments` declared as an object arrives as `launchArgumentValues` |
 | `command`, `readyUrl` | Never. The runner starts the app. |
 
 `CommandConfig` is exported from `e2e`, not `e2e/engine`.
@@ -1453,6 +1462,18 @@ export interface EngineAppCheckInfo {
 
 /** A permission's state when the app launches: held, refused, or not asked for yet, so the OS asks again. */
 export type AppPermissionState = 'grant' | 'deny' | 'reset';
+
+/** One value in the object form of `launchArguments`; the engine spells it for its platform. */
+export type LaunchArgumentValue = string | number | boolean | readonly string[];
+
+/** A target's launch arguments: the strings the launch command takes, or an object of argument name to value. */
+export type LaunchArguments = readonly string[] | Readonly<Record<string, LaunchArgumentValue | undefined>>;
+
+/** The object form after the shape check: the `undefined` entries are gone. */
+export type LaunchArgumentValues = Readonly<Record<string, LaunchArgumentValue>>;
+
+/** Launch arguments after the shape check: a list of strings, or the object form. */
+export type ResolvedLaunchArguments = readonly string[] | LaunchArgumentValues;
 ```
 
 #### `EngineAppInfo`
@@ -1491,12 +1512,36 @@ export interface EngineAppInfo {
   readonly bundleId?: string;
   /** The build to install, as the target declared it; relative to `projectRoot`. */
   readonly appPath?: string;
-  /** Arguments every fresh launch passes the app. */
+  /** Arguments every fresh launch passes the app, when the target declared them as a list of strings. */
   readonly launchArguments?: readonly string[];
+  /**
+   * Arguments every fresh launch passes the app, when the target declared
+   * them as an object; only an engine that declares `launchArgumentValues`
+   * receives one.
+   */
+  readonly launchArgumentValues?: LaunchArgumentValues;
   /** Permissions the app holds, by name; what each state means is the engine's (a device sets them before every fresh launch). */
   readonly permissions?: Readonly<Record<string, AppPermissionState>>;
 }
 ```
+
+A target declares `app.launchArguments` as a list of strings or as an object.
+A list arrives in `launchArguments`. An object arrives in
+`launchArgumentValues`, and only on an engine that declares
+`launchArgumentValues: true`; for any other engine it fails at config load
+with `INVALID_CONFIG`. The harness sets one of the two fields, never both, so
+an engine that takes both forms reads whichever is present and spells an
+object for its platform's launch command. An iOS or macOS engine spells it
+with `appleUserDefaults`:
+
+```ts
+const launchArguments = info.app.launchArgumentValues ?? info.app.launchArguments;
+const args = launchArguments === undefined ? [] : appleUserDefaults(launchArguments);
+```
+
+An engine for another platform spells the object itself. `mobile()` on Android
+sends each entry as an `am start` extra of the value's type, such as
+`--ez e2e true` or `--es locale fr_FR`.
 
 ### Session
 
@@ -1698,6 +1743,8 @@ reproduces these semantics; import them instead of carrying a copy.
 | [`pollCondition`, `Deadline`](#pollcondition) | `Promise<void>`, `Deadline` |
 | [`validateJsonValue`](#validatejsonvalue) | `void` |
 | [`rejectUnknownKeys`](#rejectunknownkeys) | `void` |
+| [`checkLaunchArguments`](#checklauncharguments) | `ResolvedLaunchArguments \| undefined` |
+| [`appleUserDefaults`](#appleuserdefaults) | `readonly string[]` |
 | [`rejectUnknownOptions`](#rejectunknownoptions) | `void` |
 | [`obj`](#obj) | `WithoutUndefined<T>` |
 | [`raceAbort`, `withTimeout`, `withinCleanupBudget`](#timing-helpers) | `Promise<T>`, `Promise<T>`, `Promise<void>` |
@@ -1873,6 +1920,55 @@ rejectUnknownKeys('web()', options, ['browser', 'viewport']);
   the known keys otherwise.
 - Pass `'INVALID_ARGUMENT'` as `code` for an object a test passes to a
   fixture method.
+
+#### `checkLaunchArguments`
+
+The shape check the runner runs on a target's `app.launchArguments`, for a
+launch a test asks for by hand, such as `device.openApp(app, { launchArguments })`.
+Returns the arguments with every `undefined` object property left out, or
+throws; an `undefined` list item is refused like any other non-string.
+
+```ts
+export function checkLaunchArguments(
+  label: string,
+  declared: unknown,
+  code?: 'INVALID_CONFIG' | 'INVALID_ARGUMENT', // default: 'INVALID_CONFIG'
+): ResolvedLaunchArguments | undefined;
+```
+
+```ts
+const launchArguments = checkLaunchArguments('device.openApp({ launchArguments })', options.launchArguments, 'INVALID_ARGUMENT');
+// device.openApp({ launchArguments }).env must be a string, number, boolean, or array of strings, got null
+```
+
+- A list holds strings. An object maps a non-empty name with no whitespace or
+  control characters to a string, a finite number below 2^53 in magnitude, a
+  boolean, or a list of strings. Nothing holds a NUL character.
+- An object's argument name does not start with a dash: write `AppleLocale`,
+  not `-AppleLocale`. The engine adds the dash, so a dashed name fails.
+- The engine adds its platform's rules after this check, with the same
+  `code`.
+
+#### `appleUserDefaults`
+
+Spells launch arguments as the process arguments of an iOS or macOS app. A
+list stays as it is. An object becomes `-name value` for each entry, in the
+form `NSUserDefaults` reads. Pass the result to the launch command.
+
+```ts
+export function appleUserDefaults(launchArguments: ResolvedLaunchArguments): readonly string[];
+```
+
+```ts
+appleUserDefaults({ AppleLanguages: ['fr', 'en-GB'], e2e: true, offset: -1, mode: '(draft)' });
+// ['-AppleLanguages', '(fr, en-GB)', '-e2e', 'YES', '-offset', '"-1"', '-mode', '"(draft)"']
+```
+
+- A boolean is `YES` or `NO`. A list is an old-style plist array.
+- A string or number is bare when it holds only letters, digits, and
+  `_ $ / : . -` and does not start with `-` or `//`. Other values are quoted,
+  with `\` and `"` escaped. The same rule applies to each item of a list, so
+  `{ cdn: ['//cdn.example'] }` is `-cdn ("//cdn.example")`.
 
 #### `rejectUnknownOptions`
 

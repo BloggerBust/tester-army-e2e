@@ -1,5 +1,5 @@
 /** Compile-time assertions for the device engine's options and the hosted device provider seam. */
-import type { DeviceLease, DeviceProvider, DeviceRequest, DeviceSession, MobileOptions } from '../../src/index.ts';
+import type { DeviceLease, DeviceProvider, DeviceRequest, DeviceSession, MobileOptions, OpenAppOptions } from '../../src/index.ts';
 
 ({ platform: 'ios', device: 'iPhone 16' }) satisfies MobileOptions;
 ({ platform: 'android', device: ['Pixel_8', 'Pixel_9'] }) satisfies MobileOptions;
@@ -35,6 +35,13 @@ const farm = {
 ({ daemon: { baseUrl: 'http://10.0.0.7:4700' } }) satisfies DeviceLease;
 // @ts-expect-error a lease names its daemon by URL.
 ({ id: 'lease-1', daemon: { baseUrl: 4700 } }) satisfies DeviceLease;
+
+({ relaunch: true, launchArguments: ['-reset', 'YES'] }) satisfies OpenAppOptions;
+({ relaunch: true, launchArguments: { AppleLanguages: ['fr'], AppleLocale: 'fr_FR', reset: true, retries: 3, token: process.env['TOKEN'] } }) satisfies OpenAppOptions;
+// @ts-expect-error an object value is flat: no nested object
+({ launchArguments: { locale: { language: 'fr' } } }) satisfies OpenAppOptions;
+// @ts-expect-error a list value holds strings only
+({ launchArguments: { languages: [1] } }) satisfies OpenAppOptions;
 
 const raw = {} as DeviceSession;
 raw.client.settings.update({ ...raw.selection, setting: 'mobile-data', state: 'on' });

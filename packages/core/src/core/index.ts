@@ -19,6 +19,8 @@ export type {
   JsonPrimitive,
   JsonValue,
   KeyModifier,
+  LaunchArgumentValue,
+  LaunchArguments,
   Locator,
   LongPressOptions,
   Point,

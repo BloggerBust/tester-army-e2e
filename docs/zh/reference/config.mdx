@@ -311,7 +311,7 @@ targets: [
 | [`linkBase`](#linkbase) | `string` | - |
 | [`identity`](#identity) | `string` | 根据应用推导 |
 | [`environment`](#environment) | `'test' \| 'staging' \| 'production'` | `'test'` 或 `'production'` |
-| [`launchArguments`](#launcharguments) | `string[]` | - |
+| [`launchArguments`](#launcharguments) | `string[] \| Record<string, LaunchArgumentValue>` | - |
 | [`permissions`](#permissions) | `Record<string, AppPermissionState>` | - |
 | [`command`](#command) | `CommandConfig` | - |
 | [`readyUrl`](#readyurl) | `string` | `url` |
@@ -415,6 +415,15 @@ environment: 'staging', // default: 'test' for a local host or no URL, else 'pro
 
 ```ts
 launchArguments: ['-e2e', 'YES'],
+```
+
+```ts
+launchArguments: { AppleLanguages: ['fr'], AppleLocale: 'fr_FR', e2e: true },
+```
+
+```ts
+type LaunchArgumentValue = string | number | boolean | readonly string[];
+type LaunchArguments = readonly string[] | Readonly<Record<string, LaunchArgumentValue | undefined>>;
 ```
 
 选择构建模式的参数会改变应用本身：为每种模式设置独立的 `identity`。

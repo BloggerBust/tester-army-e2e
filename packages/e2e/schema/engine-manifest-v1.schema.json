@@ -122,6 +122,10 @@
       "description": "prepare binds the device e2e run --device names.",
       "type": "boolean"
     },
+    "launchArgumentValues": {
+      "description": "The engine reads the object form of app.launchArguments from EngineAppInfo.launchArgumentValues; without it the harness refuses an object at config load.",
+      "type": "boolean"
+    },
     "isolation": {
       "description": "What one attempt leaves for the next: present only as worker, when the engine's fixtures, app, and screen outlive an attempt.",
       "const": "worker"

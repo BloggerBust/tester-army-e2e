@@ -227,6 +227,12 @@ export interface Engine {
    * for the target before anything is prepared.
    */
   readonly selectsDevice?: boolean;
+  /**
+   * The engine reads the object form of `app.launchArguments` from
+   * `EngineAppInfo.launchArgumentValues`. Without it the harness refuses an
+   * object at config load.
+   */
+  readonly launchArgumentValues?: boolean;
   /** capability: keyboard - requires observation. Input to whatever holds focus; see `EngineKeyboard`. */
   readonly keyboard?: EngineKeyboard;
   /**
@@ -1340,6 +1346,18 @@ export interface EngineAppCheckInfo {
 
 /** A permission's state when the app launches: held, refused, or not asked for yet, so the OS asks again. */
 export type AppPermissionState = 'grant' | 'deny' | 'reset';
+
+/** One value in the object form of `launchArguments`; the engine spells it for its platform. */
+export type LaunchArgumentValue = string | number | boolean | readonly string[];
+
+/** A target's launch arguments: the strings the launch command takes, or an object of argument name to value. */
+export type LaunchArguments = readonly string[] | Readonly<Record<string, LaunchArgumentValue | undefined>>;
+
+/** The object form after the shape check: the `undefined` entries are gone. */
+export type LaunchArgumentValues = Readonly<Record<string, LaunchArgumentValue>>;
+
+/** Launch arguments after the shape check: a list of strings, or the object form. */
+export type ResolvedLaunchArguments = readonly string[] | LaunchArgumentValues;
 ```
 
 #### `EngineAppInfo`
@@ -1375,8 +1393,14 @@ export interface EngineAppInfo {
   readonly bundleId?: string;
   /** The build to install, as the target declared it; relative to `projectRoot`. */
   readonly appPath?: string;
-  /** Arguments every fresh launch passes the app. */
+  /** Arguments every fresh launch passes the app, when the target declared them as a list of strings. */
   readonly launchArguments?: readonly string[];
+  /**
+   * Arguments every fresh launch passes the app, when the target declared
+   * them as an object; only an engine that declares `launchArgumentValues`
+   * receives one.
+   */
+  readonly launchArgumentValues?: LaunchArgumentValues;
   /** Permissions the app holds, by name; what each state means is the engine's (a device sets them before every fresh launch). */
   readonly permissions?: Readonly<Record<string, AppPermissionState>>;
 }
@@ -1574,6 +1598,8 @@ export class InfrastructureError extends E2EError {
 | [`pollCondition`, `Deadline`](#pollcondition) | `Promise<void>`, `Deadline` |
 | [`validateJsonValue`](#validatejsonvalue) | `void` |
 | [`rejectUnknownKeys`](#rejectunknownkeys) | `void` |
+| [`checkLaunchArguments`](#checklauncharguments) | `ResolvedLaunchArguments \| undefined` |
+| [`appleUserDefaults`](#appleuserdefaults) | `readonly string[]` |
 | [`rejectUnknownOptions`](#rejectunknownoptions) | `void` |
 | [`obj`](#obj) | `WithoutUndefined<T>` |
 | [`raceAbort`, `withTimeout`, `withinCleanupBudget`](#timing-helpers) | `Promise<T>`, `Promise<T>`, `Promise<void>` |
@@ -1732,6 +1758,32 @@ rejectUnknownKeys('web()', options, ['browser', 'viewport']);
 
 - 入力ミスと考えられる近いキーがあれば、メッセージにそのキーを示します。なければ既知のキーを示します。
 - テストからフィクスチャメソッドに渡すオブジェクトでは、`code` に `'INVALID_ARGUMENT'` を指定します。
+
+#### `checkLaunchArguments`
+
+```ts
+export function checkLaunchArguments(
+  label: string,
+  declared: unknown,
+  code?: 'INVALID_CONFIG' | 'INVALID_ARGUMENT', // default: 'INVALID_CONFIG'
+): ResolvedLaunchArguments | undefined;
+```
+
+```ts
+const launchArguments = checkLaunchArguments('device.openApp({ launchArguments })', options.launchArguments, 'INVALID_ARGUMENT');
+// device.openApp({ launchArguments }).env must be a string, number, boolean, or array of strings, got null
+```
+
+#### `appleUserDefaults`
+
+```ts
+export function appleUserDefaults(launchArguments: ResolvedLaunchArguments): readonly string[];
+```
+
+```ts
+appleUserDefaults({ AppleLanguages: ['fr', 'en-GB'], e2e: true, offset: -1, mode: '(draft)' });
+// ['-AppleLanguages', '(fr, en-GB)', '-e2e', 'YES', '-offset', '"-1"', '-mode', '"(draft)"']
+```
 
 #### `rejectUnknownOptions`
 

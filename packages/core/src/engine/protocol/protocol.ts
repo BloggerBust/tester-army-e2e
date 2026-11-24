@@ -118,6 +118,8 @@ export interface EngineManifest {
   readonly tapModifiers?: boolean;
   /** See `Engine.selectsDevice`. */
   readonly selectsDevice?: boolean;
+  /** See `Engine.launchArgumentValues`. */
+  readonly launchArgumentValues?: boolean;
   /** See `Engine.isolation`; left out for `attempt`. */
   readonly isolation?: 'worker';
 }

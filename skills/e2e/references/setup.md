@@ -194,7 +194,7 @@ target's `app`:
 | `url` | Base URL for `app.open()` and relative navigation; required on a `web()` target, not supported on a mobile target yet. Missing scheme: `https://`, `http://` for loopback; port `0` on `127.0.0.1` or `[::1]` takes a free port. |
 | `bundleId` | Device targets: the bundle id, package name, or display name (`Settings`) `app.open()` launches. |
 | `appPath` | Device targets: the `.app` or `.apk` under test. A device target needs `bundleId` or `appPath`. |
-| `launchArguments` | Device targets: arguments every fresh launch gets. |
+| `launchArguments` | Device targets: arguments every fresh launch gets, a list of strings, or an object of argument name to string, number, boolean, or list of strings (`-name value` on iOS; on Android an `am start` extra of the value's type: `--es`, `--ez`, `--ei` or `--el` or `--ef`, `--esa`). |
 | `permissions` | Device targets: states (`grant`, `deny`, `reset`) every fresh launch gets. Web targets: `grant` only, held by every page (`{ 'clipboard-write': 'grant' }` lets headless Chromium write the clipboard). |
 | `command` | The process serving `url`: `{ executable, args, cwd, env, inheritEnv, startupTimeout, shutdownTimeout, log, reuseExisting }`; `{port}` in `args` and `env` expands to `url`'s port. Targets declaring the same command share one process. |
 | `readyUrl` | Readiness probe when it differs from `url`; `{port}` expands too. |
@@ -385,11 +385,11 @@ export default {
   'NO']` loads that dev server on every fresh launch, dev menu off;
   `app.command` (`npx expo start --port 8081`) with `readyUrl:
   'http://localhost:8081/status'` starts it.
-- Another language on iOS: `app.launchArguments: ['-AppleLanguages', '(fr)',
-  '-AppleLocale', 'fr_FR']`, one target per language; the app must ship
-  it. Android has no such argument: on a hosted device set `language` and
-  `locale` on `browserstack()` or `testmu()`, on a local one set the device's
-  language.
+- Another language on iOS: `app.launchArguments: { AppleLanguages: ['fr'],
+  AppleLocale: 'fr_FR' }`, one target per language; the app must ship it.
+  Android has no such argument, and these names in an object fail at config load there:
+  on a hosted device set `language` and `locale` on `browserstack()` or
+  `testmu()`, on a local one set the device's language.
 - One worker per device. No `device`: every booted simulator or emulator of
   the platform, and every reachable paired iPhone or iPad or connected Android phone, is the pool, up to `workers`,
   minus devices another agent-device session holds (one another session takes while `prepare` boots it, starts the runner, or opens the app is swapped for the next free one, or its worker dropped when none is free, unless a short-lived agent-device command only had it busy; none booted: agent-device boots
