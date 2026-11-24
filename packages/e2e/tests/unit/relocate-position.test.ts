@@ -62,6 +62,31 @@ describe('relocation with a recorded position', () => {
     ).toEqual({ kind: 'failed', failure: 'target-ambiguous', candidates: ['p', 'q', 'r', 's'] });
   });
 
+  it('diverges as ambiguous when one of two recorded twins is left, rather than taking it', () => {
+    expect(relocateDescriptor({ role: 'button', name: 'Set up', position: { index: 0, of: 2 } }, screen(button('q')))).toEqual({
+      kind: 'failed',
+      failure: 'target-ambiguous',
+      candidates: ['q'],
+      twinLeft: true,
+    });
+  });
+
+  it('diverges when one of two nameless controls showing the same text is left, with no test id to set the text apart', () => {
+    const preview = (id: string): SemanticNode => ({ ref: { id, revision: 'r' }, role: 'button', text: 'Preview' });
+    const both = screen(preview('p'), preview('q'));
+    expect(describePosition(both.get('p')!, undefined, both)).toEqual({ index: 0, of: 2 });
+    expect(relocateDescriptor({ role: 'button', text: 'Preview', position: { index: 0, of: 2 } }, screen(preview('q')))).toEqual({
+      kind: 'failed',
+      failure: 'target-ambiguous',
+      candidates: ['q'],
+      twinLeft: true,
+    });
+  });
+
+  it('still relocates a lone match the recording saw alone', () => {
+    expect(relocateDescriptor({ role: 'button', name: 'Set up' }, screen(button('q')))).toEqual({ kind: 'found', id: 'q' });
+  });
+
   it('still diverges without a recorded position', () => {
     expect(relocateDescriptor({ role: 'button', name: 'Set up' }, screen(button('p'), button('q')))).toEqual({
       kind: 'failed',

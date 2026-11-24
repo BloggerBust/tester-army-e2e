@@ -354,7 +354,9 @@ function sameTarget(a: TraceTargetDescriptor | undefined, b: TraceTargetDescript
   return (
     DESCRIPTOR_FIELDS.every((field) => a[field] === b[field]) &&
     a.position?.index === b.position?.index &&
-    a.position?.of === b.position?.of
+    a.position?.of === b.position?.of &&
+    a.twinsWithoutTestId === b.twinsWithoutTestId &&
+    a.countedOnEarlierLook === b.countedOnEarlierLook
   );
 }
 

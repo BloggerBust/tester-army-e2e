@@ -218,6 +218,15 @@ page on any other origin is another route.
   of its kind inside the same named row, list item, or group. A control
   known only by a generated test id is found by the id pattern the same
   way, or when it was the only one with that pattern.
+- A control whose test id changed is found by its role and name, unless
+  another control shared them when the step was recorded. Then the one
+  left could be the other, and the replay stops. A step recorded by a
+  unique test id before this rule replays as it did until it is recorded
+  again. An action taken from the same look as an earlier action of the
+  step, which may have changed the twins, also replays as it did once it
+  is recorded with this rule; a recording made before it hands off once,
+  or fails with `REPLAY_STALE` under `--strict-cache`, until the step is
+  recorded again.
 </Accordion>
 
 ## Why a step was not replayed
@@ -248,7 +257,7 @@ the file store.
 | `truncated` | The recording hit a limit, see [below](#limits-and-gaps). | Split the step, or pass the secret as a `Secret`. |
 | `wrong-context` | The app was on another route than when the step was recorded. See [How a replay works](#how-a-replay-works). | Open the same screen before the step. |
 | `target-not-found` | A recorded control did not appear within 15 seconds, or it has no name and no named container to tell it from its twins. | The UI changed: the next passing run records it again. For an unnamed control, give it a label or put it in a named row or group. |
-| `target-ambiguous` | The number of matching controls changed. | Give repeated controls distinct names or use unique test data. |
+| `target-ambiguous` | The number of matching controls changed, or the control the step used is gone and a twin with its role and name is left. Fewer controls than recorded, one twin included, are looked for up to 15 seconds first, since a form may still be rendering; once the count is back, the control in the recorded place is used. Two or more where the step saw one stop at once. | Give repeated controls distinct names or use unique test data. |
 | `gap` | An action can't be replayed, see [below](#limits-and-gaps). | The agent does this part live. Put stable values in `params`. |
 | `action-failed` | The app rejected a replayed action. | Check the app. |
 | `action-uncertain` | A replayed action failed, and it's unknown whether it took effect. The agent is told to check before it acts again. | Check the app. |

@@ -179,6 +179,25 @@ describe('TraceRecorder', () => {
     expect(folded).not.toHaveProperty('spans');
   });
 
+  it('keeps apart two scrolls on one list when only the second saw twins beside its test id', () => {
+    const list = redacted({ ref: { id: 'l1', revision: 'r1' }, role: 'list', name: 'Rows', testId: 'rows' });
+    const recorder = makeRecorder();
+    recorder.record({ name: 'scroll', direction: 'down', node: list });
+    recorder.record({ name: 'scroll', direction: 'down', node: list, twinsWithoutTestId: true });
+    expect(recorder.finalize(conclusion)?.actions.map((action) => (action.name === 'scroll' ? action.target : undefined))).toEqual([
+      { role: 'list', name: 'Rows', testId: 'rows' },
+      { role: 'list', name: 'Rows', testId: 'rows', twinsWithoutTestId: true },
+    ]);
+  });
+
+  it('keeps apart two scrolls on one list when only the second counted on an earlier look', () => {
+    const list = redacted({ ref: { id: 'l1', revision: 'r1' }, role: 'list', name: 'Rows' });
+    const recorder = makeRecorder();
+    recorder.record({ name: 'scroll', direction: 'down', node: list, position: { index: 0, of: 2 } });
+    recorder.record({ name: 'scroll', direction: 'down', node: list, position: { index: 0, of: 2 }, countedOnEarlierLook: true });
+    expect(recorder.finalize(conclusion)?.actions).toHaveLength(2);
+  });
+
   it('folds consecutive identical scrolls into one action with a repeat count', () => {
     const recorder = makeRecorder({ maxActions: 3 });
     for (let i = 0; i < 5; i += 1) recorder.record({ name: 'scroll', direction: 'down' });

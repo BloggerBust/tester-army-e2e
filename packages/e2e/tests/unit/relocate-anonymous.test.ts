@@ -47,6 +47,13 @@ describe('an anonymous target', () => {
     expect(relocateDescriptor({ role: 'textbox', position: { index: 1, of: 2 } }, screen(textbox('a', 'Email'), textbox('b')))).toEqual({ kind: 'failed', failure: 'target-not-found' });
   });
 
+  it('still diverges when one of two unnamed twins in a named group is left, rather than taking it', () => {
+    const group = (...fields: SemanticNode[]): SemanticNode[] => [{ ref: { id: 'g', revision: 'r' }, role: 'group', name: 'Billing', children: fields }, ...fields];
+    const recorded = { role: 'textbox', within: 'Billing', position: { index: 0, of: 2 } };
+    expect(relocateDescriptor(recorded, screen(...group(textbox('a'), textbox('b'))))).toEqual({ kind: 'found', id: 'a' });
+    expect(relocateDescriptor(recorded, screen(...group(textbox('b'))))).toEqual({ kind: 'failed', failure: 'target-ambiguous', candidates: ['b'] });
+  });
+
   it('never lets a churned test id fall back to an anonymous position', () => {
     // Recorded among test-id twins; when the id churns, the position says nothing about unnamed textboxes.
     const recorded = { role: 'textbox', testId: 'field-zz9', position: { index: 0, of: 2 } };

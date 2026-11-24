@@ -299,7 +299,7 @@ const CACHE_REASON_TEXT: Readonly<Record<NonNullable<StepCacheInfo['reason']>, s
   'wrong-context': 'the recording started on another screen',
   gap: 'the recording reached an action it cannot replay',
   'target-not-found': 'a recorded target is not on the screen',
-  'target-ambiguous': 'a recorded target matches several nodes',
+  'target-ambiguous': 'a recorded target cannot be told from its look-alikes',
   'viewport-changed': 'the viewport changed size',
   'action-failed': 'a recorded action failed',
   'action-uncertain': 'a recorded action may or may not have landed',

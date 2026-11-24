@@ -32,7 +32,8 @@ export const REPLAY_POLICY_VERSION = 'conservative/6';
  * The share of the viewport a scrolled node must have covered when it was
  * addressed (`ScrollAction.spans`) to scroll as the viewport does once it
  * cannot be re-found: scrolling the main list and scrolling the screen are
- * the same gesture, while a smaller region that vanished is gone.
+ * the same gesture, while a smaller region that vanished is gone. A list
+ * refused as the twin of one the recording saw (`twinLeft`) is not lost.
  */
 export const MAIN_LIST_SHARE = 0.5;
 
@@ -41,8 +42,12 @@ export type RelocationFailure = 'target-not-found' | 'target-ambiguous';
 export type RelocationResult =
   | { readonly kind: 'found'; readonly id: string }
   | { readonly kind: 'failed'; readonly failure: 'target-not-found' }
-  /** Several nodes share the matched identity; a caller with other evidence (a recorded point) may still tell them apart. */
-  | { readonly kind: 'failed'; readonly failure: 'target-ambiguous'; readonly candidates: readonly string[] };
+  /**
+   * Several nodes share the matched identity; a caller with other evidence (a recorded point) may still tell them apart.
+   * `twinLeft` marks one named match refused because the recording saw twins of it: it is as likely one of them, so no
+   * other evidence settles it. A replay that looks again keeps the mark on later looks of that relocation.
+   */
+  | { readonly kind: 'failed'; readonly failure: 'target-ambiguous'; readonly candidates: readonly string[]; readonly twinLeft?: true };
 
 export type DescriptorField = keyof TraceTargetDescriptor;
 
@@ -228,14 +233,32 @@ export function relocateDescriptor(
   const { ids: matches, tier } = matchingIds(descriptor, nodes);
   if (tier === undefined) return { kind: 'failed', failure: 'target-not-found' };
   const { position } = descriptor;
-  // A lone match is the node for a tier with an identity. One that matches
-  // by place has only the count: one twin where the recording counted two is
-  // as likely the other one.
-  if (matches.length === 1 && (!matchesByPlace(tier) || position?.of === 1)) return { kind: 'found', id: matches[0]! };
+  // A lone match is the node only where the recording saw no twin on the
+  // tier that matched: one twin where it counted two is as likely the other
+  // one. A tier that matches by place has only its count. The strict tier
+  // has twins when the recording counted a position on it (one counted by
+  // place belongs to the shape tier, `describePosition`), and the semantic
+  // tier when the fields beside the test id matched other controls; a count
+  // taken on the strict tier says nothing about the semantic one. A count
+  // taken on a look an earlier action of the step changed proves nothing.
+  // The strict tier of a nameless target with a test id ignores its text, so
+  // its count may cover controls the text tells apart: a lone match showing
+  // the recorded text is the node, unless the recording saw that text twice.
+  const toldByText =
+    matches.length === 1 &&
+    descriptor.name === undefined &&
+    descriptor.testId !== undefined &&
+    descriptor.text !== undefined &&
+    descriptor.twinsWithoutTestId !== true &&
+    describeNodes(nodes).find((candidate) => candidate.id === matches[0])?.descriptor.text === descriptor.text;
+  const countedNamed =
+    tier.kind === 'strict' && position !== undefined && position.of > 1 && !toldByText && !descriptorTiers(descriptor).some(matchesByPlace);
+  const twinned = descriptor.countedOnEarlierLook !== true && (countedNamed || (tier.kind === 'semantic' && descriptor.twinsWithoutTestId === true));
+  const alone = matchesByPlace(tier) ? position?.of === 1 : !twinned;
+  if (matches.length === 1 && alone) return { kind: 'found', id: matches[0]! };
   const positioned = position !== undefined && position.of === matches.length ? matches[position.index] : undefined;
-  return positioned === undefined
-    ? { kind: 'failed', failure: 'target-ambiguous', candidates: matches }
-    : { kind: 'found', id: positioned };
+  if (positioned !== undefined) return { kind: 'found', id: positioned };
+  return { kind: 'failed', failure: 'target-ambiguous', candidates: matches, ...(matches.length === 1 && twinned ? { twinLeft: true } : {}) };
 }
 
 /**
@@ -282,6 +305,24 @@ function tierMatches(tier: DescriptorTier, candidates: readonly DescribedNode[])
       return view !== undefined && equal(recorded, view, fields);
     })
     .map((candidate) => candidate.id);
+}
+
+/**
+ * Whether a node its test id tells apart has twins once the test id is set
+ * aside: other controls in its container that its semantic tier
+ * (`descriptorTiers`) also matches on the screen it was acted on. Replay
+ * falls back to that tier when the test id is gone, and a lone match there
+ * is then as likely one of them. False for a node with no semantic tier.
+ */
+export function hasTwinsWithoutTestId(
+  node: RedactedNode,
+  within: string | undefined,
+  nodes: ReadonlyMap<string, RedactedNode>,
+): boolean {
+  const described = describeTarget(node);
+  if (described === undefined) return false;
+  const semantic = descriptorTiers(described).find((tier) => tier.kind === 'semantic');
+  return semantic !== undefined && tierMatches(semantic, candidatesWithin(within, nodes)).length > 1;
 }
 
 /** Beyond this many twins a description is not a control set but a list; a position there would be noise. */

@@ -146,6 +146,23 @@ export interface TraceTargetDescriptor {
    */
   readonly position?: TracePosition;
   /**
+   * Set only on a target recorded by its test id when its other fields
+   * matched other controls too (one "Set up" per integration, each with its
+   * own test id). Replay falls back to those fields once the test id is gone
+   * (`descriptorTiers`); this tells it that a lone match there is as likely
+   * a twin, so it diverges instead. A target recorded by a unique test id
+   * before this field existed lacks it and is matched as it was.
+   */
+  readonly twinsWithoutTestId?: true;
+  /**
+   * Set when `position` or `twinsWithoutTestId` was counted on the look an
+   * earlier action of the same step had already run from: one look, several
+   * actions. That action may have removed or added a twin, so replay does
+   * not stop on a lone match for this count and matches as it did before
+   * the count was trusted.
+   */
+  readonly countedOnEarlierLook?: true;
+  /**
    * An anchor's states that were on, sorted; anchors only. A switch turned
    * on is the same control before and after, so its state is what tells
    * the step's effect from a tap that did nothing.

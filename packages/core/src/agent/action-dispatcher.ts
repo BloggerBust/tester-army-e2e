@@ -20,7 +20,7 @@ import { resolveNavigationUrl } from '../internal/urls.ts';
 import type { ActionEvent, ActionHook, BeforeActionHook, ClickOptions, JsonValue, Momentum, ScrollDirection, Secret } from '../types.ts';
 import { PROJECT_TOOL_EVENT_PREFIX, READ_ONLY_GRAMMAR, type GrammarActionName } from './action-names.ts';
 import { actionEvent, containerKey, describeAction, type PlacedPoint, type Placement, type RecordableAction } from './actions.ts';
-import { describePosition } from '../cache/relocate.ts';
+import { describePosition, hasTwinsWithoutTestId } from '../cache/relocate.ts';
 import { appNavigation } from '../cache/route.ts';
 import { isTapActionName, type NodeActionName, type PointActionName, type RecordedAction } from '../cache/trace.ts';
 import { derivedJoinReason, derivedReason } from './derived.ts';
@@ -171,6 +171,9 @@ export class ActionDispatcher {
    * of is still judged whole. A mutating project tool ends the run.
    */
   private typedRun: TypedValue[] = [];
+
+  /** The newest look when the last action ran: a later action addressed from it acts on a screen that action may have changed (`placementOf`). */
+  private actedFrom: AgentObservation | undefined;
 
   constructor(
     private readonly runtime: AgentContext,
@@ -784,6 +787,12 @@ export class ActionDispatcher {
       this.accounting.checkpoint(cause);
       throw cause;
     }
+    // Scrolling to text reads its last page after its last swipe, unless the
+    // engine then scrolled the node into view (`armAfter`): that page is a
+    // fresh look, not one the scroll acted from. A scroll that found its
+    // text on the look in hand took no page and no look, and leaves the mark.
+    if (action.name !== 'scrollUntil' || this.verbs.has('scrollTo')) this.actedFrom = this.feed.latest;
+    else if (action.screens > 0) this.actedFrom = undefined;
     this.armAfter(action.name);
     this.recordTrace(action);
     await this.notify(action.name, (fields) => actionEvent(action, { ...fields, summary: describeAction(action, redaction).summary }));
@@ -949,18 +958,22 @@ export class ActionDispatcher {
   }
 
   /**
-   * Where a node sat when it was acted on, for the trace: the container it
-   * sits in (that is what tells this row's "Delete" from the next row's when
-   * the flow replays) and, when the description still matches several
-   * controls, its position among them, so a replay that finds the same
-   * number picks the same one.
+   * Where a node sat when it was acted on, for the trace: its container (this
+   * row's "Delete", not the next row's), its place among the controls its
+   * description matches, and whether a node its test id tells apart has twins
+   * by its other fields. A count taken on a look an earlier action of the step
+   * ran from is marked: that action may have changed the twins.
    */
   private placementOf({ node, observation }: Resolved): Placement {
     const within = containerKey(node.ref.id, observation.nodes, observation.parents);
     const position = describePosition(node, within, observation.nodes);
+    const twinned = hasTwinsWithoutTestId(node, within, observation.nodes);
+    const earlier = (position !== undefined || twinned) && observation === this.actedFrom;
     return {
       ...(within === undefined ? {} : { within }),
       ...(position === undefined ? {} : { position }),
+      ...(twinned ? { twinsWithoutTestId: true } : {}),
+      ...(earlier ? { countedOnEarlierLook: true } : {}),
     };
   }
 

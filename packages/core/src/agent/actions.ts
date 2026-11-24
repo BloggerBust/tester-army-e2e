@@ -89,6 +89,10 @@ export type RecordableAction =
 export interface Placement {
   readonly within?: string;
   readonly position?: TracePosition;
+  /** Other controls matched the node's fields apart from its test id (`TraceTargetDescriptor.twinsWithoutTestId`). */
+  readonly twinsWithoutTestId?: true;
+  /** The count above was taken on a look an earlier action of the step ran from (`TraceTargetDescriptor.countedOnEarlierLook`). */
+  readonly countedOnEarlierLook?: true;
 }
 
 /** A bare viewport point and, when one is listed, the node whose box contained it and where that node sat. */
@@ -354,6 +358,8 @@ function describePlaced(
     ...described,
     ...(placement.within === undefined ? {} : { within: bound(redaction.redact(placement.within), MAX_WITHIN_CHARS) }),
     ...(placement.position === undefined ? {} : { position: placement.position }),
+    ...(placement.twinsWithoutTestId === undefined ? {} : { twinsWithoutTestId: placement.twinsWithoutTestId }),
+    ...(placement.countedOnEarlierLook === undefined ? {} : { countedOnEarlierLook: placement.countedOnEarlierLook }),
   };
 }
 
