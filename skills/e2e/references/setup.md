@@ -44,7 +44,7 @@ The wizard picks the engines (web, mobile, or both) and a model provider (**Skip
 and offers to install this skill, register the MCP server for your coding
 agent, and install dependencies. `--yes` picks the web engine (Playwright) and Vercel AI
 Gateway, installs the skill in `.agents/skills/` (`.claude/skills/e2e`
-symlinks to it), registers MCP in `.mcp.json`, `.cursor/mcp.json`, and `.codex/config.toml`, skips
+symlinks to it) with a line in `AGENTS.md` and `CLAUDE.md` that points at it, registers MCP in `.mcp.json`, `.cursor/mcp.json`, and `.codex/config.toml`, skips
 installing dependencies. A flag per question overrides one default:
 `--engine` (`web,mobile` for both), `--gateway`, `--endpoint`, `--skills`,
 `--mcp` (comma-separated locations, or `none`), `--ci github-actions`, `--ci gitlab`, or `--ci none` (a

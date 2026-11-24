@@ -12,7 +12,7 @@ import { VideoCard } from './snippets/video-card.jsx';
 
 export const setupPrompt = `Set up e2e end-to-end tests in this project. Docs: \`https://e2e.com/docs/quickstart.md\`
 
-1. Run \`npx e2e init --yes\` (or the pnpm or bun equivalent for this project). It writes a web config using Vercel AI Gateway, an example test, the e2e skill, and MCP config. It installs nothing yet.
+1. Run \`npx e2e init --yes\` (or the pnpm or bun equivalent for this project). It writes a web config using Vercel AI Gateway, an example test, the e2e skill, a line in \`AGENTS.md\` and \`CLAUDE.md\` that points at the skill, and MCP config. It installs nothing yet.
 2. Read the e2e skill (\`npx e2e guide\` prints it, \`npx e2e guide <topic>\` prints a topic) and follow it for every step below.
 3. Point the target at this app. For a web app, set its URL and the command that starts its dev server. For an iOS or Android app, replace @e2e-dev/web with @e2e-dev/mobile and rewrite the example test for the mobile engine.
 4. Ask me which model to use for agent steps: a ChatGPT, GitHub Copilot, OpenCode Console, or SuperGrok subscription, an API key, or a local model. Configure it with its provider package. If it needs a sign-in, give me the \`npx e2e login\` command and wait until I confirm.

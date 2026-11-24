@@ -68,6 +68,7 @@ import {
 import { DEFAULT_ENDPOINT, GATEWAYS, getGatewayPreset, validateEndpoint, type GatewayId } from './init/gateways.ts';
 import { isCiMode } from '@e2e-dev/core/lib/config/resolve';
 import { isLoopbackHost } from '@e2e-dev/core/lib/internal/urls';
+import { planAgentInstructions, writeAgentInstructions } from './init/agent-instructions.ts';
 import { findRegisteredMcpFiles, linkOnPath, planMcpRegistration } from './init/mcp-config.ts';
 import { addDependencies, addScripts, declaresDependency, describeManifestError, readPackage, serializePackage } from './init/package.ts';
 import { createScaffold, type ScaffoldModel } from './init/scaffold.ts';
@@ -454,6 +455,14 @@ export async function init(root: string, options: InitOptions = {}): Promise<Ini
   // Where the pipeline goes is known now; its jobs come from the config's targets, read once the dependencies are in.
   const writesCi = ciService !== undefined && ciFile !== undefined && !ciFile.existing && ciLink === undefined;
 
+  const instructions = planAgentInstructions(cwd, skillDirs, skillInstalls);
+  for (const link of instructions.links) {
+    clack.log.warn(`Symlink, not touching: ${link.relative} -> ${link.target} (e2e skill pointer)`);
+  }
+  for (const obstacle of instructions.obstacles) {
+    clack.log.warn(`Broken, not touching: ${obstacle.relative} (${obstacle.reason})`);
+  }
+
   // An example's package.json, config, and tests stay as the example has them.
   const files = example !== undefined ? [] : [
     ...(pkg.original === undefined || dependencies.additions.length > 0 || scripts.length > 0
@@ -465,7 +474,7 @@ export async function init(root: string, options: InitOptions = {}): Promise<Ini
 
   if (
     example === undefined && files.length === 0 && skillInstalls.length === 0 && mcpRegistrations.length === 0 && missingIgnore.length === 0
-    && !writesCi
+    && instructions.writes.length === 0 && !writesCi
   ) {
     clack.outro('Nothing to create; project already initialized');
     return done('already-initialized', 0);
@@ -478,6 +487,7 @@ export async function init(root: string, options: InitOptions = {}): Promise<Ini
       ...skillInstalls.map((install) => install.kind === 'link'
         ? `Link ${install.relative} -> ${install.target}${linkReplaces(install, 'replacing')}`
         : `${install.links.length > 0 ? 'Replace' : install.existing ? 'Update' : 'Create'} ${install.relative}/`),
+      ...instructions.writes.map((write) => `${write.existing ? 'Update' : 'Create'} ${write.relative}`),
       ...mcpRegistrations.map((registration) => `${registration.existing ? 'Update' : 'Create'} ${registration.relative}`),
       ...(missingIgnore.length > 0 ? ['Update .gitignore'] : []),
       ...(writesCi ? [`Create ${ciRelative}`] : []),
@@ -519,6 +529,10 @@ export async function init(root: string, options: InitOptions = {}): Promise<Ini
   }
   if (skillDirs.length === 0) {
     clack.log.info(`Skipped the agent skill; agents can still print it with ${execCommand(manager, 'e2e guide')}`);
+  }
+  for (const { write, error } of writeAgentInstructions(instructions)) {
+    if (error === undefined) clack.log.success(`${write.existing ? 'Updated' : 'Created'} ${write.relative} (e2e skill pointer)`);
+    else clack.log.warn(`Could not update ${write.relative} (${error}); add the line: ${write.line}`);
   }
   for (const registration of mcpRegistrations) {
     mkdirSync(path.dirname(registration.absolute), { recursive: true });

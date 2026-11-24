@@ -42,7 +42,7 @@ export function addInitOptions(command: Command): Command {
         .argParser(parseEndpoint)
         .implies({ gateway: 'openai-compatible' }),
     )
-    .option('--skills <dirs>', `where to install the agent skill, comma-separated: ${SKILL_DIRS.join(', ')}, or none`, parseNames('skill directory'))
+    .option('--skills <dirs>', `where to install the agent skill and point AGENTS.md or CLAUDE.md at it, comma-separated: ${SKILL_DIRS.join(', ')}, or none for neither`, parseNames('skill directory'))
     .option('--mcp <files>', `where to register the MCP server, comma-separated: ${MCP_FILES.join(', ')}, or none`, parseNames('MCP config file'))
     .addOption(
       new Option('--ci <id>', 'CI pipeline that runs the tests, one job per platform; none writes none, and --yes alone writes none').choices([...CI_IDS, 'none']),
