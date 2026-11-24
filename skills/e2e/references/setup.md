@@ -23,9 +23,11 @@
   `tsconfig.json` `paths` and `baseUrl` apply. Decorators need
   `experimentalDecorators`; CommonJS TypeScript goes in `.cts`.
 - Browser tests: `@e2e-dev/web`, pinning `playwright-core` exactly; do not
-  add `playwright` for it. Missing browsers download on first boot; in CI run
-  `npx @e2e-dev/web install chromium --with-deps` (pnpm: `pnpm exec e2e-web
-  install chromium --with-deps`). Mobile tests: `@e2e-dev/mobile`, pinning
+  add `playwright` for it. Missing browsers download on first boot; in CI or a
+  Linux sandbox run `npx @e2e-dev/web install chromium --with-deps` (pnpm:
+  `pnpm exec e2e-web install chromium --with-deps`), since a bare Linux lacks
+  the browser's system libraries and `e2e doctor` then fails `browser`.
+  Mobile tests: `@e2e-dev/mobile`, pinning
   `agent-device` exactly; each pin moves with its engine release.
 
 ## Scaffold

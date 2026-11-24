@@ -1241,7 +1241,10 @@ bunx @e2e-dev/web install chromium --with-deps
 - Name any of `chromium`, `firefox`, and `webkit`. With none named it
   installs `chromium`.
 - `--with-deps` also installs the system libraries the browsers need on
-  Linux.
+  Linux. When chromium or firefox is installed without them,
+  [`e2e doctor`](/reference/cli#e2e-doctor) fails its `browser` check and a
+  run's launch fails; both messages name the missing libraries and this
+  command.
 - The command exits with the installer's exit code.
 
 ## Semantic capture recovery

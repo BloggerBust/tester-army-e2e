@@ -7,39 +7,56 @@ import os from 'node:os';
 import path from 'node:path';
 import { EngineError, InfrastructureError, type EngineDoctorCheck } from '@e2e-dev/core/engine';
 import { browserType, type BrowserName } from './browser-connection.ts';
+import { missingHostLibraries, missingLibrariesMessage, type HostLibraryProbe } from './host-libraries.ts';
 
-/** Whether `chromium_headless_shell-<revision>` under `browsersPath` finished installing and holds its executable. */
-function headlessShellInstalled(browsersPath: string, revision: string): boolean {
+/** The executable of `chromium_headless_shell-<revision>` under `browsersPath`, once it finished installing. */
+function headlessShellExecutable(browsersPath: string, revision: string): string | undefined {
   const shellRoot = path.join(browsersPath, `chromium_headless_shell-${revision}`);
-  if (!existsSync(path.join(shellRoot, 'INSTALLATION_COMPLETE'))) return false;
+  if (!existsSync(path.join(shellRoot, 'INSTALLATION_COMPLETE'))) return undefined;
   const executable = process.platform === 'win32' ? 'chrome-headless-shell.exe' : 'chrome-headless-shell';
-  return readdirSync(shellRoot, { withFileTypes: true }).some(
-    (entry) => entry.isDirectory() && existsSync(path.join(shellRoot, entry.name, executable)),
-  );
+  return readdirSync(shellRoot, { withFileTypes: true })
+    .filter((entry) => entry.isDirectory())
+    .map((entry) => path.join(shellRoot, entry.name, executable))
+    .find((candidate) => existsSync(candidate));
 }
 
 /**
- * Whether the build the run launches (headless shell for headless chromium, else the full build)
- * is on disk, or undefined when `env` points at another cache than this process loaded.
+ * The executable of the build the run launches (headless shell for headless chromium, else the
+ * full build), false when it is not on disk, or undefined when `env` points at another cache
+ * than this process loaded.
  */
-async function isBrowserInstalled(name: BrowserName, env: NodeJS.ProcessEnv, headed: boolean): Promise<boolean | undefined> {
+async function installedExecutable(name: BrowserName, env: NodeJS.ProcessEnv, headed: boolean): Promise<string | false | undefined> {
   if (env['PLAYWRIGHT_BROWSERS_PATH'] !== process.env['PLAYWRIGHT_BROWSERS_PATH']) return undefined;
   try {
     const executable = (await browserType(name)).executablePath();
-    if (headed || name !== 'chromium') return existsSync(executable);
-    return headlessShellAt(executable);
+    if (headed || name !== 'chromium') return existsSync(executable) && executable;
+    return headlessShellBeside(executable) ?? false;
   } catch {
     return false;
   }
 }
 
-/** Whether the shell beside `executable`'s full build is installed. */
-function headlessShellAt(executable: string): boolean {
+async function isBrowserInstalled(name: BrowserName, env: NodeJS.ProcessEnv, headed: boolean): Promise<boolean | undefined> {
+  const executable = await installedExecutable(name, env, headed);
+  return executable === undefined ? undefined : executable !== false;
+}
+
+/** The installed shell beside `executable`'s full build. */
+function headlessShellBeside(executable: string): string | undefined {
   const marker = `${path.sep}chromium-`;
   const at = executable.lastIndexOf(marker);
-  if (at === -1) return false;
+  if (at === -1) return undefined;
   const revision = executable.slice(at + marker.length).split(path.sep)[0] ?? '';
-  return revision !== '' && headlessShellInstalled(executable.slice(0, at), revision);
+  return revision === '' ? undefined : headlessShellExecutable(executable.slice(0, at), revision);
+}
+
+/**
+ * The system libraries the installed build of `name` cannot resolve on Linux;
+ * empty when the build is absent, elsewhere, or on another platform.
+ */
+export async function missingBrowserLibraries(name: BrowserName, env: NodeJS.ProcessEnv, headed: boolean, probe?: HostLibraryProbe): Promise<string[]> {
+  const executable = await installedExecutable(name, env, headed);
+  return typeof executable === 'string' ? missingHostLibraries(executable, env, probe) : [];
 }
 
 /** The `node` arguments that run the pinned `playwright-core` CLI with `args`. */
@@ -80,25 +97,31 @@ export function runPlaywrightCli(args: readonly string[]): Promise<number> {
 
 /**
  * The `browser` check of `e2e doctor`: whether the build a run launches is on
- * disk, a `warn` when the first run will download it, or none when `env`
- * points at another browser cache than this process loaded.
+ * disk and its system libraries resolve, a `warn` when the first run will
+ * download it, a `fail` when libraries are missing, or none when `env` points
+ * at another browser cache than this process loaded.
  */
 export async function browserCheck(
   name: BrowserName,
   env: NodeJS.ProcessEnv,
   headed: boolean,
   isInstalled: (name: BrowserName) => boolean | undefined | Promise<boolean | undefined> = (browser) => isBrowserInstalled(browser, env, headed),
+  missingLibraries: (name: BrowserName) => readonly string[] | Promise<readonly string[]> = (browser) => missingBrowserLibraries(browser, env, headed),
 ): Promise<EngineDoctorCheck[]> {
   const installed = await isInstalled(name);
   if (installed === undefined) return [];
-  if (installed) return [{ id: 'browser', status: 'pass', message: `${name} is installed` }];
-  return [
-    {
-      id: 'browser',
-      status: 'warn',
-      message: `${name} is not installed; the first run downloads it, or run "npx @e2e-dev/web install ${name}" now`,
-    },
-  ];
+  if (!installed) {
+    return [
+      {
+        id: 'browser',
+        status: 'warn',
+        message: `${name} is not installed; the first run downloads it, or run "npx @e2e-dev/web install ${name}" now`,
+      },
+    ];
+  }
+  const missing = await missingLibraries(name);
+  if (missing.length > 0) return [{ id: 'browser', status: 'fail', message: missingLibrariesMessage(name, missing) }];
+  return [{ id: 'browser', status: 'pass', message: `${name} is installed` }];
 }
 
 /** What an installer receives besides the browser names. */
