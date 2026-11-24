@@ -1,0 +1,274 @@
+---
+title: डिसीज़न मॉडल
+description: पूरे LLM एजेंट की जगह एक डिसीज़न मॉडल और एक छोटे टेक्स्ट मॉडल से सीमित एक्शन चलाएँ।
+"og:image": "https://e2e.com/docs/images/og/decision-models.png?v=bc0d69c206"
+"twitter:image": "https://e2e.com/docs/images/og/decision-models.png?v=bc0d69c206"
+---
+
+`@e2e-dev/decision` `agent.act` और `agent.assert` को LLM एजेंट की जगह एक डिसीज़न
+मॉडल से चलाता है। हर एक्शन के लिए डिसीज़न मॉडल पहले एक ऑपरेशन चुनता है, फिर एक
+एलिमेंट। यह चुनाव वह लक्ष्य, हाल के एक्शन और सबसे नए सिमैंटिक ट्री से करता है।
+वह कभी खुला टेक्स्ट नहीं लिखता: फ़ील्ड की वैल्यू एक छोटा टेक्स्ट मॉडल लिखता है।
+हर एक्शन को फिर भी रनर ही ऑथराइज़ करता है।
+
+कोई भी AI SDK डिसीज़न मॉडल चलता है जो `choice` सवालों का जवाब प्रोबेबिलिटी के
+साथ दे, जैसे TypeSafe Jev या OpenAI `gpt-6-luna`। `evaluationModel()` इंस्टेंस भी
+चलते हैं। `model` में मॉडल id की स्ट्रिंग या कोई लैंग्वेज मॉडल दें, तो कॉन्फ़िग
+लोड `INVALID_CONFIG` के साथ फ़ेल होता है।
+
+इसी पैकेज का `decisionFilter()` सिर्फ़ वे टेस्ट चलाता है जिन पर किसी पुल
+रिक्वेस्ट का असर पड़ सकता है। [टेस्ट फ़िल्टर](/filters) देखें।
+
+## इंस्टॉल और कॉन्फ़िगर करें
+
+पैकेज, एक डिसीज़न मॉडल प्रोवाइडर और एक टेक्स्ट मॉडल प्रोवाइडर इंस्टॉल करें।
+डिसीज़न मॉडल को `ai` 7.0.134 या उसके बाद का वर्शन चाहिए।
+
+<CodeGroup>
+```bash npm
+npm install -D @e2e-dev/decision @ai-sdk/typesafe-ai @openrouter/ai-sdk-provider
+```
+
+```bash pnpm
+pnpm add -D @e2e-dev/decision @ai-sdk/typesafe-ai @openrouter/ai-sdk-provider
+```
+
+```bash bun
+bun add -d @e2e-dev/decision @ai-sdk/typesafe-ai @openrouter/ai-sdk-provider
+```
+</CodeGroup>
+
+एजेंट एंट्री पर एक्ज़ीक्यूटर सेट करें:
+
+```ts title="e2e.config.ts"
+import type { E2EConfig } from 'e2e';
+import { web } from '@e2e-dev/web';
+import { decisionExecutor } from '@e2e-dev/decision';
+import { typeSafeAi } from '@ai-sdk/typesafe-ai';
+import { openrouter } from '@openrouter/ai-sdk-provider';
+
+export default {
+  targets: [{ engine: web(), app: { url: 'http://localhost:3000' } }],
+  agents: {
+    default: {
+      executor: decisionExecutor({
+        model: typeSafeAi.decisionModel('jev-latest'),
+        textModel: openrouter('inception/mercury-2.5'),
+      }),
+    },
+  },
+} satisfies E2EConfig;
+```
+
+टेस्ट में बस सादी `agent.act` और `agent.assert` कॉल होती हैं:
+
+```ts title="tests/todos.e2e.ts"
+import { test, expect } from 'e2e';
+
+test('adds a todo', async ({ app, screen, agent }) => {
+  await app.open('/todos');
+  await agent.act('Add a todo named Buy coffee.');
+  await expect(screen.getByTestId('todo')).toContainText('Buy coffee');
+  await agent.assert('The todo list contains Buy coffee.');
+});
+```
+
+<Accordion title="OpenAI gpt-6-luna इस्तेमाल करें">
+
+`@ai-sdk/openai` 4.0.90 या उसके बाद का वर्शन इस्तेमाल करें, जो
+[विज़न](#vision) वाला स्क्रीनशॉट लेता है। `OPENAI_API_KEY` सेट करें।
+
+<CodeGroup>
+```bash npm
+npm install -D @ai-sdk/openai
+```
+
+```bash pnpm
+pnpm add -D @ai-sdk/openai
+```
+
+```bash bun
+bun add -d @ai-sdk/openai
+```
+</CodeGroup>
+
+```ts title="e2e.config.ts"
+import { openai } from '@ai-sdk/openai';
+
+const executor = decisionExecutor({
+  model: openai.decisionModel('gpt-6-luna'),
+  textModel: openai('gpt-6-luna-fast'),
+  vision: true,
+});
+```
+
+</Accordion>
+
+## मॉडल क्या कर सकता है
+
+हर टर्न में सबसे नई स्क्रीन के एलिमेंट पर वे ऑपरेशन मिलते हैं जो इंजन सपोर्ट करता
+है: `tap`, `type`, `typeSecret`, `submit`, `select`, `check`, `upload`, `hover`,
+`secondary_tap` (राइट-क्लिक), `double_tap`, `long_press`, `drag`, `scroll_to`,
+`scroll_up`, `scroll_down` और `back`। होवर, राइट-क्लिक, ड्रैग और स्क्रॉल-टू उन
+लेबल वाले नोड तक भी पहुँचते हैं जो कंट्रोल नहीं हैं, जैसे कोई कार्ड जो होवर पर
+मेन्यू खोलता है। ड्रैग इनमें से किसी पर भी ड्रॉप कर सकता है। `tap` टेक्स्ट फ़ील्ड
+तक भी पहुँचता है, ताकि डेट पिकर या सुझावों की लिस्ट खुल सके। कुछ इंजन, जैसे
+मोबाइल इंजन, ऑन-स्क्रीन कीबोर्ड हटा सकते हैं। ऐसे इंजन पर कीबोर्ड दिख रहा हो,
+तो एक्ज़ीक्यूटर `dismiss_keyboard` भी देता है, चाहे कीबोर्ड ट्री में न हो।
+
+जो भी ऑपरेशन किसी एलिमेंट पर काम करता है, वह उसका टारगेट पूछता है, चाहे सिर्फ़ एक
+एलिमेंट फ़िट बैठता हो।
+टारगेट वाले हर सवाल में एक `none` ऑप्शन होता है। इसलिए जिस प्रोवाइडर को कोई
+फ़िट टारगेट नहीं मिलता, वह मना करने की जगह `none` जवाब देता है। `none` स्टेप को
+ब्लॉक कर देता है।
+
+## टेक्स्ट कैसे टाइप होता है
+
+जब डिसीज़न मॉडल `type` चुनता है, तो टेक्स्ट मॉडल लक्ष्य, params, फ़ील्ड के लेबल
+और पेज के टेक्स्ट से वैल्यू लिखता है। एक्ज़ीक्यूटर ठीक वही स्ट्रिंग टाइप करता है।
+लक्ष्य में कोई वैल्यू न हो, तो वह कुछ टाइप नहीं करता, और डिसीज़न मॉडल फिर से
+चुनता है। `upload` के लिए टेक्स्ट मॉडल वे प्रोजेक्ट-रिलेटिव पाथ लिस्ट करता है जो
+लक्ष्य या params में लिखे हैं, और रनर हर एक को ऑथराइज़ करता है। मॉडल का आउटपुट
+कभी सेलेक्टर, URL या कीबोर्ड का बटन नहीं बनता।
+
+कोई पासवर्ड फ़ील्ड टेक्स्ट मॉडल तक नहीं पहुँचता, जब तक कोई पेज स्क्रिप्ट उस
+फ़ील्ड को e2e से छिपा न दे। तब टेक्स्ट मॉडल उसकी वैल्यू देखता है, और `type` उसे
+भर सकता है ([रेडैक्शन कहाँ रुकता है](/reference/security#where-redaction-stops))।
+कॉन्फ़िगर किया हुआ सीक्रेट सिर्फ़ `typeSecret` भरता है, उसके डिक्लेयर किए हुए
+हैंडल से।
+
+टेक्स्ट मॉडल `waitFor` और `extract` का जवाब भी देता है। `textModel` की जगह आप
+एजेंट एंट्री पर `model` सेट कर सकते हैं। दोनों में से कुछ न हो, तो एक्ज़ीक्यूटर
+कभी `type`, `upload`, `tap_at` या `type_at` नहीं देता।
+
+## स्टेप ख़त्म करना
+
+जब डिसीज़न मॉडल `done` या `failed` जवाब देता है, तो एक्ज़ीक्यूटर एक नई स्क्रीन
+पर एक सवाल से इस दावे को चेक करता है: क्या स्टेप का काम पूरा हो गया? इस जाँच को
+कभी मॉडल की रीज़निंग या कोई सीक्रेट नहीं दिखता।
+
+कन्फ़र्म हुआ `done` स्टेप पास करता है, और कन्फ़र्म हुआ `failed` उसे
+`ACTION_FAILED` के साथ फ़ेल करता है। जो दावा कन्फ़र्म नहीं होता, वह हिस्ट्री बनकर
+डिसीज़न मॉडल के पास वापस जाता है। दूसरा ऐसा दावा स्टेप ख़त्म कर देता है: अगर
+स्क्रीन लक्ष्य से उलटी बात कहती है, तो `ACTION_FAILED`, नहीं तो
+`AUTOMATION_UNSUPPORTED` के साथ `blocked`।
+
+## गेट
+
+दोनों गेट डिफ़ॉल्ट रूप से बंद होते हैं, इसलिए एक्ज़ीक्यूटर सबसे ज़्यादा प्रोबेबिलिटी
+वाला चुनाव मानता है। कमज़ोर एक्शन ब्लॉक करने, कमज़ोर पूरा-होने की जाँच रिजेक्ट
+करने, और कमज़ोर असर्शन को बेनतीजा मानकर फ़ेल करने के लिए `minProbability` या
+`minConfidence` सेट करें:
+
+```ts title="Executor setup"
+const executor = decisionExecutor({ model, minProbability: 0.9, minConfidence: 0.8 });
+```
+
+प्रोबेबिलिटी जवाब के डिस्ट्रिब्यूशन में चुने गए ऑप्शन का हिस्सा है। कॉन्फ़िडेंस
+प्रोवाइडर का अपना आँकड़ा है, और अगर वह कुछ नहीं बताता तो 0। OpenAI दोनों को दो
+दशमलव तक राउंड करता है। थ्रेशोल्ड सेट करने से पहले अपने टेस्ट पर सटीकता मापें।
+
+## विज़न
+
+`vision: true` हर ऑब्ज़र्वेशन में एक मास्क किया हुआ स्क्रीनशॉट जोड़ता है।
+असर्शन और पूरा-होने की जाँच उसे देखती हैं, इसलिए मॉडल वह ड्रॉ किया हुआ कंटेंट भी
+परख सकता है जो ट्री नहीं दिखाता। ऑपरेशन और टारगेट वाले सवाल सिर्फ़ ट्री पढ़ते हैं।
+`agent.assert(..., { vision: true })` और `vision: 'only'` भी चलते हैं।
+
+मॉडल के लिए इमेज लेना और `score` सवालों का जवाब देना ज़रूरी है। TypeSafe Jev यह
+करता है, `@ai-sdk/typesafe-ai` 3.0.19 या उसके बाद के वर्शन के साथ, और
+`TYPESAFE_AI_API_KEY` में TypeSafe API key के साथ:
+
+```ts title="e2e.config.ts"
+import { typeSafeAi } from '@ai-sdk/typesafe-ai';
+import { openrouter } from '@openrouter/ai-sdk-provider';
+
+const executor = decisionExecutor({
+  model: typeSafeAi.decisionModel('jev-latest'),
+  textModel: openrouter('inception/mercury-2.5'),
+  vision: true,
+});
+```
+
+`openai.decisionModel('gpt-6-luna')` भी इमेज लेता है। Vercel AI Gateway हर डिसीज़न
+मॉडल के लिए स्क्रीनशॉट रिजेक्ट करता है, इसलिए वहाँ `vision` बंद रखें।
+
+टेक्स्ट मॉडल हो, तो विज़न उस कंट्रोल के लिए `tap_at` भी देता है जो ट्री में नहीं
+है। टेक्स्ट मॉडल कंट्रोल का नाम बताता है, जैसे "कीपैड पर 3 वाला बटन"। डिसीज़न
+मॉडल उसे स्क्रीनशॉट पर ढूँढता है, फिर दो ज़ूम किए हुए हिस्सों पर। एक पॉइंट टैप
+में चार decide कॉल और एक टेक्स्ट कॉल लगती है। उसी पेज पर वही टैप दोहराने में
+दोनों की एक-एक कॉल लगती है।
+
+जब इंजन फ़ोकस वाली किसी भी चीज़ में टाइप कर सकता है, तो विज़न ड्रॉ किए हुए फ़ील्ड
+के लिए `type_at` भी देता है। टेक्स्ट मॉडल लक्ष्य से फ़ील्ड का नाम और वैल्यू
+बताता है। डिसीज़न मॉडल स्क्रीनशॉट पर फ़ील्ड ढूँढता है। फिर एक्ज़ीक्यूटर उस पर टैप
+करके कैरेट पर वैल्यू टाइप करता है, यानी वहाँ पहले से मौजूद टेक्स्ट के बाद। इसमें
+दो decide कॉल और एक टेक्स्ट कॉल लगती है।
+
+## प्रोवाइडर ऑप्शन
+
+एक्ज़ीक्यूटर के `providerOptions` हर decide कॉल के साथ जाते हैं, पूरा-होने की
+जाँच समेत, और सिर्फ़ डिसीज़न मॉडल तक पहुँचते हैं। इन्हें Vercel AI Gateway पर
+ज़ीरो डेटा रिटेंशन जैसे ऑप्शन के लिए इस्तेमाल करें:
+
+```ts title="Executor setup"
+import { gateway } from 'ai';
+
+const executor = decisionExecutor({
+  model: gateway.decisionModel('typesafe-ai/jev'),
+  textModel: gateway('openai/gpt-6-luna-fast'),
+  providerOptions: { gateway: { zeroDataRetention: true } },
+});
+```
+
+टेक्स्ट मॉडल एजेंट एंट्री के `providerOptions` लेता है। इसलिए एक मॉडल की सेटिंग,
+जैसे गेटवे की फ़ॉलबैक लिस्ट, कभी दूसरे तक नहीं पहुँचती।
+
+AI Gateway किसी अनिश्चित फ़ैसले को दूसरे मॉडल पर दोबारा चला सकता है।
+`gateway.models` में शर्त वाली एंट्री जोड़ें। वह हर decide कॉल तक पहुँचती है, और
+फ़ॉलबैक चलने पर दोनों मॉडल का बिल बनता है:
+
+```ts title="Executor setup"
+const executor = decisionExecutor({
+  model: gateway.decisionModel('typesafe-ai/jev'),
+  textModel: gateway('openai/gpt-6-luna-fast'),
+  providerOptions: {
+    gateway: { models: [{ model: 'openai/gpt-6-luna-decisions', when: { confidenceBelow: 0.6 } }] },
+  },
+});
+```
+
+डिसीज़न मॉडल वाला फ़ॉलबैक गेट बनाए रखता है: एक्ज़ीक्यूटर फ़ॉलबैक मॉडल की
+प्रोबेबिलिटी और कॉन्फ़िडेंस पढ़ता है। लैंग्वेज मॉडल वाला फ़ॉलबैक, जैसे
+`openai/gpt-6-luna-fast`, बिना डिस्ट्रिब्यूशन के बस एक चुनाव देता है। एक्ज़ीक्यूटर
+उस चुनाव को प्रोबेबिलिटी 1 और कॉन्फ़िडेंस 0 के साथ लेता है, इसलिए `minConfidence`
+गेट फ़ॉलबैक मॉडल से आए हर जवाब को ब्लॉक कर देता है।
+
+## सीमाएँ
+
+- `navigate` नहीं है। ऐप के अंदर नेविगेशन किसी लिंक पर `tap` है। URL टेस्ट कोड में
+  रहते हैं (`browser.goto`, `app.open`)।
+- मल्टी-सिलेक्ट `listbox` और `scrollUntil` नहीं हैं। `type_at` ड्रॉ किए हुए फ़ील्ड
+  को पहले कभी ख़ाली नहीं करता, इसलिए यह ख़ाली फ़ील्ड के लिए ठीक है।
+- ड्रॉ किए हुए कंट्रोल का नाम बताने वाला टेक्स्ट मॉडल पिक्सल नहीं देखता। वह ऐसा
+  निर्देश नहीं मान सकता जो सिर्फ़ ड्रॉ किए हुए टेक्स्ट में हो, जैसे कोई विज़ार्ड जो
+  "tap the circle" पेंट करता है।
+- हर decide कॉल और टेक्स्ट कॉल `maxModelCalls` में गिनी जाती है।
+- लगातार तीन एक्शन फ़ेल हों या कुछ न बदलें, तो स्टेप
+  `AUTOMATION_UNSUPPORTED` के साथ ब्लॉक हो जाता है।
+- जिस सवाल को प्रोवाइडर मना कर दे, वह स्टेप को `MODEL_OUTPUT_INVALID` के साथ फ़ेल
+  करता है।
+- एक सवाल में ज़्यादा से ज़्यादा 255 ऑप्शन होते हैं, जो TypeSafe की लिमिट है। बड़ी
+  स्क्रीन पर व्यूपोर्ट के नोड पहले आते हैं और बाकी छोड़े हुए गिने जाते हैं, ताकि
+  मॉडल स्क्रॉल कर सके।
+
+## आगे
+
+<CardGroup cols={2}>
+  <Card title="कस्टम एक्ज़ीक्यूटर" icon="gears" href="/executors">
+    एक्ज़ीक्यूटर रनर से कैसे जुड़ता है।
+  </Card>
+  <Card title="मॉडल" icon="brain" href="/models">
+    इसकी जगह टूल कॉल वाला LLM एजेंट इस्तेमाल करें।
+  </Card>
+</CardGroup>

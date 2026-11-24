@@ -1,0 +1,423 @@
+---
+title: सब्सक्रिप्शन
+description: एजेंट स्टेप के लिए अपना ChatGPT, GitHub Copilot, OpenCode Console, या SuperGrok सब्सक्रिप्शन, अपने Claude Max या Team प्लान के API क्रेडिट, या अपना Claude Code या Codex लॉगिन इस्तेमाल करें।
+"og:image": "https://e2e.com/docs/images/og/subscriptions.png?v=174d49a0e9"
+"twitter:image": "https://e2e.com/docs/images/og/subscriptions.png?v=174d49a0e9"
+---
+
+एजेंट स्टेप उस प्लान पर चलाएँ जिसके पैसे आप पहले से देते हैं। एक बार साइन इन
+करें, फिर `e2e.config.ts` में उस प्लान का मॉडल इस्तेमाल करें।
+
+| प्लान | कैसे कनेक्ट करें |
+| --- | --- |
+| ChatGPT Plus या Pro | `npx e2e login openai` |
+| GitHub Copilot | `npx e2e login github-copilot` |
+| OpenCode Console (OpenCode Zen और OpenCode Go) | `npx e2e login opencode-console` |
+| SuperGrok या X Premium+ | `npx e2e login spacexsi` |
+| Claude Max या Team (Claude Code) | API key, जिसका ख़र्च प्लान के हर महीने के API क्रेडिट से कटता है, उसकी यूसेज लिमिट से नहीं |
+| Claude Code या Codex लॉगिन | [स्टेप अपने कोडिंग एजेंट पर चलाएँ](#use-your-coding-agent) |
+
+## सेटअप करें
+
+नए प्रोजेक्ट के लिए `e2e init` चलाएँ और अपना प्लान चुनें
+([क्विकस्टार्ट](/quickstart))। पहले से बने प्रोजेक्ट के लिए पैकेज इंस्टॉल करें,
+साइन इन करें, और `e2e.config.ts` में `agents: { default: agent }` सेट करें।
+
+<Tabs>
+  <Tab title="ChatGPT">
+<CodeGroup>
+```bash npm
+npm install -D ai @ai-sdk/openai
+npx e2e login openai
+```
+
+```bash pnpm
+pnpm add -D ai @ai-sdk/openai
+pnpm exec e2e login openai
+```
+
+```bash bun
+bun add -d ai @ai-sdk/openai
+bunx e2e login openai
+```
+</CodeGroup>
+
+```ts title="Model setup"
+import { chatgpt } from 'e2e/oauth/chatgpt';
+
+const agent = { model: chatgpt('gpt-6-luna') };
+```
+  </Tab>
+  <Tab title="GitHub Copilot">
+<CodeGroup>
+```bash npm
+npm install -D ai @ai-sdk/openai-compatible @ai-sdk/openai
+npx e2e login github-copilot
+```
+
+```bash pnpm
+pnpm add -D ai @ai-sdk/openai-compatible @ai-sdk/openai
+pnpm exec e2e login github-copilot
+```
+
+```bash bun
+bun add -d ai @ai-sdk/openai-compatible @ai-sdk/openai
+bunx e2e login github-copilot
+```
+</CodeGroup>
+
+```ts title="Model setup"
+import { copilot } from 'e2e/oauth/copilot';
+
+const agent = { model: copilot('claude-sonnet-5') };
+```
+
+आपका प्लान कौन से मॉडल देता है, यह GitHub तय करता है। [मॉडल चुनें](#pick-a-model)
+देखें।
+  </Tab>
+  <Tab title="OpenCode Console">
+<CodeGroup>
+```bash npm
+npm install -D ai @ai-sdk/openai-compatible @ai-sdk/openai @ai-sdk/anthropic @ai-sdk/google
+npx e2e login opencode-console
+```
+
+```bash pnpm
+pnpm add -D ai @ai-sdk/openai-compatible @ai-sdk/openai @ai-sdk/anthropic @ai-sdk/google
+pnpm exec e2e login opencode-console
+```
+
+```bash bun
+bun add -d ai @ai-sdk/openai-compatible @ai-sdk/openai @ai-sdk/anthropic @ai-sdk/google
+bunx e2e login opencode-console
+```
+</CodeGroup>
+
+```ts title="Model setup"
+import { opencodeConsole } from 'e2e/oauth/opencode-console';
+
+// OpenCode Zen, billed to the workspace's credits
+const agent = { model: opencodeConsole('deepseek-v4.1-flash') };
+// OpenCode Go, billed to your Go subscription
+const goAgent = { model: opencodeConsole('go/deepseek-v4.1-flash') };
+```
+
+Anthropic वाले रूट पर, जो कॉल `maxOutputTokens` सेट नहीं करती, वह 8192 माँगती है।
+वजह यह है कि Anthropic SDK उन id को नहीं जानता जो OpenCode वहाँ देता है। अपने आप
+वह रिक्वेस्ट को 4096 टोकन तक सीमित कर देता है, और बस वॉर्निंग देता है।
+  </Tab>
+  <Tab title="SuperGrok">
+<CodeGroup>
+```bash npm
+npm install -D ai @ai-sdk/xai
+npx e2e login spacexsi
+```
+
+```bash pnpm
+pnpm add -D ai @ai-sdk/xai
+pnpm exec e2e login spacexsi
+```
+
+```bash bun
+bun add -d ai @ai-sdk/xai
+bunx e2e login spacexsi
+```
+</CodeGroup>
+
+```ts title="Model setup"
+import { grok } from 'e2e/oauth/grok';
+
+const agent = { model: grok('grok-4') };
+```
+  </Tab>
+  <Tab title="Claude Max या Team">
+Claude प्लान में दूसरे ऐप्स के लिए साइन इन नहीं होता। एजेंट स्टेप खुद Claude Code
+पर, उसके अपने लॉगिन के साथ चलाने हैं, तो [अपना कोडिंग एजेंट](#use-your-coding-agent)
+देखें। नए प्रोजेक्ट में प्लान के API क्रेडिट इस्तेमाल करने हों, तो `e2e init` में
+मॉडल गेटवे के लिए `None` चुनें। फिर:
+
+1. claude.ai में एक Claude Console ऑर्गनाइज़ेशन लिंक करें। Max पर
+   Settings > Billing में जाएँ। Team पर कोई Owner या Primary Owner
+   Organization settings > Billing में जाता है। [Anthropic की गाइड](https://support.claude.com/en/articles/17154008-monthly-api-credits-for-max-and-team-plans) देखें।
+2. उस ऑर्गनाइज़ेशन में एक API key बनाएँ। उसे `ANTHROPIC_API_KEY` में सेट करें।
+3. पैकेज इंस्टॉल करें और मॉडल सेट करें:
+
+<CodeGroup>
+```bash npm
+npm install -D ai @ai-sdk/anthropic
+```
+
+```bash pnpm
+pnpm add -D ai @ai-sdk/anthropic
+```
+
+```bash bun
+bun add -d ai @ai-sdk/anthropic
+```
+</CodeGroup>
+
+```ts title="Model setup"
+import { anthropic } from '@ai-sdk/anthropic';
+
+const agent = { model: anthropic('claude-sonnet-5-5') };
+```
+
+`e2e.config.ts` में `agents: { default: agent }` सेट करें।
+
+बचे हुए क्रेडिट हर बिलिंग साइकिल के आख़िर में ख़त्म हो जाते हैं। बाकी Claude
+प्लान में API क्रेडिट नहीं होते। उन पर कोई [API प्रोवाइडर](/models) इस्तेमाल करें,
+या अपने Copilot प्लान से कोई Claude मॉडल।
+  </Tab>
+</Tabs>
+
+## मॉडल चुनें
+
+`e2e models` उन मॉडल id की लिस्ट देता है जो आपका लॉगिन इस्तेमाल कर सकता है:
+
+<CodeGroup>
+```bash npm
+npx e2e models            # every stored login
+npx e2e models openai     # one provider
+```
+
+```bash pnpm
+pnpm exec e2e models            # every stored login
+pnpm exec e2e models openai     # one provider
+```
+
+```bash bun
+bunx e2e models            # every stored login
+bunx e2e models openai     # one provider
+```
+</CodeGroup>
+
+id हमेशा वह नाम नहीं होता जो वेंडर का ऐप दिखाता है।
+
+`OPENCODE_API_KEY` सेट हो, तो `e2e models opencode-console` उन id की लिस्ट देता है
+जो वह key देती है। यह वही key है जो `opencodeConsole()` लॉगिन की जगह इस्तेमाल
+करता है।
+
+- **Copilot** मॉडल पर `not enabled` लिखता है (GitHub पर अपनी Copilot सेटिंग में
+  मॉडल चालू करें, या अपनी सीट मैनेज करने वाले एडमिन से कहें) और
+  `no chat or responses` लिखता है (कोई दूसरा मॉडल इस्तेमाल करें)। आपका प्लान
+  क्या देता है, यह उसे नहीं दिखता: Copilot Free पर GitHub मॉडल
+  [सिर्फ़ ऑटो मॉडल सिलेक्शन से](https://docs.github.com/en/copilot/get-started/plans)
+  देता है, इसलिए id से बुलाया गया मॉडल अक्सर मना हो जाता है। तब रन
+  `MODEL_UNAVAILABLE` के साथ रुक जाता है, और उसमें मॉडल का नाम होता है। कोई और
+  id या कोई [API प्रोवाइडर](/models) चुनें।
+- **OpenCode Console** `go/` मॉडल तभी दिखाता है जब आपके पास Go हो। जो मॉडल आपके
+  वर्कस्पेस ने बंद किए हैं, और Zen के फ़्री मॉडल, वह लिस्ट में नहीं दिखाता। chat
+  completions मॉडल के लिए `providerOptions` की key `opencode` रखें, बाकी के लिए
+  `openai`, `anthropic` या `google`।
+
+## साइन इन में मदद
+
+- ChatGPT एक ब्राउज़र खोलता है। डिवाइस कोड इस्तेमाल करना हो, तो `--device` जोड़ें।
+- Copilot आपका GitHub CLI लॉगिन इस्तेमाल करता है। `gh` न हो, तो `--client-id` के
+  साथ अपना GitHub OAuth ऐप दें, जिसमें device flow चालू हो। GitHub Enterprise के
+  लिए `--enterprise-url` जोड़ें।
+- OpenCode Console एक डिवाइस कोड दिखाता है। उसे अप्रूव करें और वर्कस्पेस चुनें।
+  पेज e2e को एक अनजान क्लाइंट बताता है। वर्कस्पेस बदलना हो, तो
+  `npx e2e logout opencode-console` चलाएँ और फिर से साइन इन करें।
+- SuperGrok एक डिवाइस कोड दिखाता है, और वह URL भी जहाँ उसे डालना है।
+
+बिना प्रोवाइडर के `npx e2e login` एक पिकर खोलता है, जिसमें दिखता है कि कौन से
+अकाउंट साइन इन हैं। `npx e2e logout` कोई लॉगिन हटाता है। जब सेव किया हुआ लॉगिन
+काम करना बंद कर दे, तो स्टेप `MODEL_PROVIDER_FAILED` के साथ फ़ेल होता है, और
+मैसेज में वह `npx e2e login <provider>` कमांड होती है जो चलानी है। हर फ़्लैग के
+लिए [CLI रेफ़रेंस](/reference/cli#e2e-login) देखें।
+
+टोकन रिफ़्रेश का इंतज़ार करते समय भी मॉडल कॉल कैंसल की जा सकती है।
+
+जब `npx e2e login` से सेव किया हुआ लॉगिन एक्सपायर होता है, तो पैरेलल वर्कर उसे
+आपस में एक ही बार रिफ़्रेश करते हैं। कोई वर्कर दूसरे वर्कर के रिफ़्रेश के लिए
+ज़्यादा से ज़्यादा 30 सेकंड रुकता है। उसके बाद उसका स्टेप `MODEL_PROVIDER_FAILED`
+के साथ फ़ेल होता है, जब तक स्टेप का अपना टाइमआउट उसे पहले `STEP_TIMEOUT` के साथ
+ख़त्म न कर दे।
+
+## CI
+
+CI में API key इस्तेमाल करें। Claude Max या Team पहले से एक key इस्तेमाल करता है।
+OpenCode Console के लिए `OPENCODE_API_KEY` में OpenCode Go सब्सक्रिप्शन की API key
+डालें, या Console में बनी सर्विस अकाउंट API key (Service Accounts, फिर API Keys)।
+ChatGPT, Copilot और SuperGrok के लिए कोई [API प्रोवाइडर](/models) इस्तेमाल करें।
+
+[`E2E_OAUTH_CREDENTIALS`](/reference/environment) CI को सेव किया हुआ लॉगिन दे सकता
+है, लेकिन e2e रिफ़्रेश हुए टोकन वापस उसमें सेव नहीं करता। जिस लॉगिन का रिफ़्रेश
+टोकन बदलता रहता है, वह वहाँ कुछ ही समय तक चलता है।
+
+## अपना कोडिंग एजेंट इस्तेमाल करें
+
+`@e2e-dev/acp` `agent.act` और `agent.assert` को Claude Code या Codex पर
+[Agent Client Protocol](https://agentclientprotocol.com) से चलाता है। एजेंट अपने
+लॉगिन या API key से साइन इन करता है, इसलिए e2e को किसी मॉडल प्रोवाइडर की
+ज़रूरत नहीं होती।
+
+एजेंट को `complete_step` मिलता है, और बिल्ट-इन एजेंट के वे एक्शन टूल भी, जिनके
+वर्ब टारगेट का इंजन सपोर्ट करता है। रनर हर एक्शन रिकॉर्ड करता है, इसलिए स्टेप
+एजेंट के बिना [कैश](/cache) से रीप्ले होते हैं। आपके टेस्ट नहीं बदलते।
+
+<Tabs>
+  <Tab title="Claude Code">
+पैकेज और Zed का Claude Code अडैप्टर इंस्टॉल करें। `claude` से साइन इन करें, या
+`ANTHROPIC_API_KEY` सेट करें।
+
+<CodeGroup>
+```bash npm
+npm install -D @e2e-dev/acp @agentclientprotocol/claude-agent-acp
+```
+
+```bash pnpm
+pnpm add -D @e2e-dev/acp @agentclientprotocol/claude-agent-acp
+```
+
+```bash bun
+bun add -d @e2e-dev/acp @agentclientprotocol/claude-agent-acp
+```
+</CodeGroup>
+
+```ts title="e2e.config.ts"
+import type { E2EConfig } from 'e2e';
+import { web } from '@e2e-dev/web';
+import { claudeCode } from '@e2e-dev/acp';
+
+export default {
+  targets: [{ engine: web(), app: { url: 'http://localhost:3000' } }],
+  agents: { default: { executor: claudeCode({ model: 'sonnet' }) } },
+} satisfies E2EConfig;
+```
+  </Tab>
+  <Tab title="Codex">
+पैकेज और Codex अडैप्टर इंस्टॉल करें। `codex login` से साइन इन करें, या
+`OPENAI_API_KEY` सेट करें। जब Codex में कोई लॉगिन नहीं होता, तो `codex()` उसे
+`CODEX_API_KEY` और `OPENAI_API_KEY` में से उस पहली वैल्यू से साइन इन करता है
+जिसमें व्हाइटस्पेस के अलावा कुछ हो। ऐसा तब नहीं होता जब आप
+`DEFAULT_AUTH_REQUEST` में ऐसी वैल्यू सेट करें जिसमें व्हाइटस्पेस के अलावा कुछ
+हो। Codex उस key को अपने लॉगिन की तरह सेव करता है, जैसे
+`codex login --with-api-key` करता है (डिफ़ॉल्ट क्रेडेंशियल स्टोर में
+`CODEX_HOME/auth.json` में, और `ephemeral` के साथ कहीं नहीं), और `codex logout`
+तक रखता है। जब तक `APP_SERVER_LOGS` सेट है, `codex()` कोई साइन इन रिक्वेस्ट नहीं
+भेजता, आपकी भी नहीं, क्योंकि अडैप्टर का लॉग क्रेडेंशियल को सादे टेक्स्ट में लिख
+देगा। सेव किया हुआ लॉगिन फिर भी चलता है। `codex({ env })` में दिया वेरिएबल
+एनवायरनमेंट वाले की जगह लेता है। इसलिए `env: { OPENAI_API_KEY: '' }` से वह key
+Codex से दूर रहती है जो आपने टेस्ट हो रहे ऐप के लिए सेट की है। नए `CODEX_HOME`
+पर पहले सेशन एक-एक करके शुरू करें: कई एक साथ शुरू हों, तो अक्सर
+`failed to initialize sqlite state runtime` के साथ फ़ेल हो जाते हैं।
+
+<CodeGroup>
+```bash npm
+npm install -D @e2e-dev/acp @agentclientprotocol/codex-acp
+```
+
+```bash pnpm
+pnpm add -D @e2e-dev/acp @agentclientprotocol/codex-acp
+```
+
+```bash bun
+bun add -d @e2e-dev/acp @agentclientprotocol/codex-acp
+```
+</CodeGroup>
+
+```ts title="e2e.config.ts"
+import type { E2EConfig } from 'e2e';
+import { web } from '@e2e-dev/web';
+import { codex } from '@e2e-dev/acp';
+
+export default {
+  targets: [{ engine: web(), app: { url: 'http://localhost:3000' } }],
+  agents: { default: { executor: codex() } },
+} satisfies E2EConfig;
+```
+  </Tab>
+</Tabs>
+
+`claudeCode()` और `codex()` ये ऑप्शन लेते हैं:
+
+| ऑप्शन | क्या करता है |
+| --- | --- |
+| `model` | एजेंट का दिया कोई मॉडल, जैसे `sonnet`। अगर एजेंट वह मॉडल नहीं देता, तो सेशन शुरू नहीं होता, और एरर में वे मॉडल लिखे होते हैं जो वह देता है। न दें, तो एजेंट का डिफ़ॉल्ट मॉडल चलता है। |
+| `env` | एजेंट के एनवायरनमेंट में जोड़े गए वेरिएबल। |
+| `system` | पहले स्टेप के साथ एजेंट को मिलने वाले नियमों के आख़िर में जोड़ा गया टेक्स्ट। |
+| `name` | रिपोर्ट में एक्ज़ीक्यूटर का नाम। |
+
+फ़ॉरवर्डिंग में अचानक आए फ़ेलियर ACP सेशन रोक देते हैं, और रनर के फ़ेलियर आउटपुट
+में दिखते हैं, जिसमें से सीक्रेट छिपा दिए जाते हैं। HTTP क्लाइंट को एक जेनेरिक एरर
+या बंद स्ट्रीम मिलती है, एक्सेप्शन के टेक्स्ट के बिना।
+
+### एजेंट क्या इस्तेमाल कर सकता है
+
+एजेंट अपने टूल से जो एक्शन करता है, वह रिकॉर्ड नहीं होता, रीप्ले नहीं हो सकता,
+और फ़ाइलों या वेब तक पहुँच सकता है। इसलिए e2e एजेंट को स्टेप टूल तक ही रखता है:
+
+- एजेंट का प्रोसेस आपके प्रोजेक्ट में शुरू होता है। उसका सेशन एक ख़ाली टेम्पररी
+  डायरेक्टरी में खुलता है, और e2e उसे फ़ाइल सिस्टम या टर्मिनल का एक्सेस नहीं
+  देता।
+- e2e स्टेप टूल की परमिशन रिक्वेस्ट मंज़ूर करता है और बाकी सब रिजेक्ट करता है।
+- जब एजेंट का अपना कोई टूल बिना पूछे चल जाए, तो e2e टर्न रोक देता है और स्टेप
+  को `POLICY_DENIED` के साथ फ़ेल करता है। उसके बाद की स्टेप टूल कॉल कोई एक्शन
+  नहीं करतीं। सेशन बंद हो जाता है, इसलिए अगला स्टेप एक नया एजेंट शुरू करता है,
+  जिसने कभी नहीं देखा कि उस टूल ने क्या पढ़ा।
+
+हर प्रीसेट एजेंट के वे अपने टूल भी बंद कर देता है जो बिना पूछे चलते हैं:
+
+- **Claude Code**: कोई बिल्ट-इन टूल नहीं, कोई यूज़र, प्रोजेक्ट या लोकल सेटिंग
+  नहीं, स्टेप टूल के अलावा कोई MCP सर्वर नहीं, कोई सेव किया हुआ सेशन नहीं, और
+  परमिशन प्रॉम्प्ट को बायपास करने का कोई रास्ता नहीं।
+- **Codex**: रीड-ओनली मोड, और शेल, वेब सर्च, ऐप्स, प्लगइन, ब्राउज़र या कंप्यूटर
+  यूज़ नहीं। शेल स्नैपशॉट भी नहीं, क्योंकि वे आपका एनवायरनमेंट, key समेत, डिस्क
+  पर कॉपी कर देते। आपके Codex कॉन्फ़िग का हर MCP सर्वर सिर्फ़ इन सेशन के लिए बंद
+  रहता है। Codex फिर भी कोई सबएजेंट शुरू कर सकता है, जो उसके अपने किसी भी टूल की
+  तरह स्टेप को फ़ेल कर देता है।
+
+### सीक्रेट
+
+सीक्रेट param एजेंट तक सिर्फ़ नाम से पहुँचता है। जब टारगेट का इंजन सीक्रेट भर
+सकता है, तो एजेंट `type_secret` कॉल करता है और रनर वैल्यू टाइप करता है, जैसे
+बिल्ट-इन एजेंट के लिए।
+
+एजेंट के प्रोसेस को आपका एनवायरनमेंट मिलता है, लेकिन `E2E_SECRET_*` और
+`E2E_USER_*` वेरिएबल के बिना।
+
+<Warning>
+किसी और वेरिएबल में रखा सीक्रेट एजेंट तक पहुँच जाता है। जैसे
+`secrets: { apiKey: process.env.API_KEY }` के पीछे वाला `API_KEY`, या वह वेरिएबल
+जिससे कोई `E2E_SECRET_*` वैल्यू कॉपी की गई थी। सीक्रेट सिर्फ़ `E2E_SECRET_*` और
+`E2E_USER_*` में रखें।
+</Warning>
+
+<AccordionGroup>
+  <Accordion title="टेस्ट कैसे चलता है">
+एक एजेंट सेशन एक टेस्ट अटेम्प्ट के लिए होता है। जिस पहले एजेंट स्टेप को कैश
+रीप्ले नहीं कर पाता, वही सेशन शुरू करता है। बाद का हर स्टेप उसी बातचीत में एक
+और मैसेज होता है। सेशन अटेम्प्ट ख़त्म होने पर बंद होता है, या उससे पहले, किसी
+`POLICY_DENIED` स्टेप पर।
+
+हर मैसेज में स्टेप, उसके गैर-सीक्रेट params, अब तक हुए स्टेप, और मौजूदा स्क्रीन
+होते हैं। एक्शन के नतीजे बताते हैं कि स्क्रीन पर क्या बदला, और `screenshot`
+एजेंट तक इमेज के रूप में पहुँचता है।
+
+असर्शन स्क्रीन नहीं बदल सकता। `observe`, `screenshot`, स्क्रॉल करना और होवर
+करना फिर भी चलते हैं। एजेंट हर स्टेप `complete_step` से ख़त्म करता है:
+`passed`, `failed`, या एरर कोड के साथ `blocked`, बिल्कुल बिल्ट-इन एजेंट की तरह।
+  </Accordion>
+  <Accordion title="सीमाएँ">
+  - Agent Client Protocol मॉडल रिक्वेस्ट रिपोर्ट नहीं करता। हर प्रॉम्प्ट टर्न
+    `maxModelCalls` में एक मॉडल कॉल गिना जाता है, और एजेंट बताए तो उसके टोकन और
+    ख़र्च भी। `maxSteps` और स्टेप का टाइमआउट टर्न की सीमा तय करते हैं।
+  - `waitFor` और `extract` बिल्ट-इन परख इस्तेमाल करते हैं, इसलिए उन्हें एजेंट
+    एंट्री का `model` चाहिए।
+  - जिस एजेंट एंट्री में `executor` है, वह `tools` नहीं लेती, इसलिए एजेंट को
+    `defineTool` वाले प्रोजेक्ट टूल नहीं मिलते।
+  </Accordion>
+</AccordionGroup>
+
+## आगे
+
+<CardGroup cols={2}>
+  <Card title="मॉडल" icon="brain" href="/models">
+    इसकी जगह API key, गेटवे, या लोकल मॉडल इस्तेमाल करें।
+  </Card>
+  <Card title="एजेंट और पर्सोना" icon="users" href="/agents">
+    टेस्ट को अलग-अलग मॉडल और निर्देश दें।
+  </Card>
+</CardGroup>

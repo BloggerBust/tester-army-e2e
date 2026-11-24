@@ -122,6 +122,7 @@ translation moves or goes with it in the same change.
 | secret | सीक्रेट | m |
 | session | सेशन | m |
 | judge (config field), to judge | जज मॉडल, परखना | m |
+| judgment (`assert`, `waitFor`, `extract`) | परख | f |
 | decision model | डिसीज़न मॉडल | m |
 | model | मॉडल | m |
 | coding agent | कोडिंग एजेंट | m |

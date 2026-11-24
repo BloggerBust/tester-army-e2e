@@ -1,0 +1,309 @@
+---
+title: मॉडल
+description: अपने सब्सक्रिप्शन, API key, या लोकल सर्वर से मॉडल कॉन्फ़िगर करें।
+"og:image": "https://e2e.com/docs/images/og/models.png?v=5d360f2457"
+"twitter:image": "https://e2e.com/docs/images/og/models.png?v=5d360f2457"
+---
+
+import { ModelProvider } from '../snippets/model-provider.jsx';
+
+एजेंट स्टेप वही मॉडल इस्तेमाल करते हैं जो आप `e2e.config.ts` में सेट करते हैं।
+कोई डिफ़ॉल्ट मॉडल नहीं है। मॉडल किसी
+[AI SDK](https://ai-sdk.dev/providers/ai-sdk-providers) प्रोवाइडर से आता है: कोई
+गेटवे, सीधी API key, लोकल सर्वर, या आपका [सब्सक्रिप्शन](/subscriptions)। पहले
+सेटअप के लिए `e2e init` कॉन्फ़िग लिख देता है।
+[क्विकस्टार्ट](/quickstart#use-a-subscription-or-api-key) देखें।
+
+जिन टेस्ट में एजेंट स्टेप नहीं हैं, उन्हें मॉडल नहीं चाहिए। बिल्ट-इन एजेंट को
+ऐसा मॉडल चाहिए जो टूल कॉल और इमेज सपोर्ट करे। Clef या Jev जैसे
+[डिसीज़न मॉडल](/decision-models) इसकी जगह एक कस्टम एक्ज़ीक्यूटर से चलते हैं।
+
+## गेटवे या प्रोवाइडर चुनें
+
+प्रोवाइडर कोई भी हो, बिल्ट-इन एजेंट को `ai` पैकेज चाहिए:
+
+<CodeGroup>
+```bash npm
+npm install -D ai
+```
+
+```bash pnpm
+pnpm add -D ai
+```
+
+```bash bun
+bun add -d ai
+```
+</CodeGroup>
+
+प्रोवाइडर अपनी key एनवायरनमेंट से खुद पढ़ता है। गेटवे एक ही key से कई
+प्रोवाइडर तक पहुँचता है। बदलना हो, तो मॉडल का import और `model` की वैल्यू बदल
+दें। जहाँ स्निपेट `agent` डिफ़ाइन करता है, उसे `agents.default` की तरह इस्तेमाल
+करें:
+
+<Tabs>
+  <Tab title="Vercel AI Gateway">
+
+`gateway` `ai` पैकेज के साथ ही आता है। `AI_GATEWAY_API_KEY` सेट करें, या बिना
+key के [Vercel OIDC टोकन](#vercel-oidc-instead-of-a-key) इस्तेमाल करें।
+
+```ts title="e2e.config.ts"
+import type { E2EConfig } from 'e2e';
+import { web } from '@e2e-dev/web';
+import { gateway } from 'ai';
+
+export default {
+  targets: [{ engine: web(), app: { url: 'http://localhost:3000' } }],
+  agents: { default: { model: gateway('openai/gpt-6-luna-fast') } },
+} satisfies E2EConfig;
+```
+  </Tab>
+  <Tab title="OpenRouter">
+
+`@openrouter/ai-sdk-provider` इंस्टॉल करें और `OPENROUTER_API_KEY` सेट करें:
+
+```ts title="Model setup"
+import { openrouter } from '@openrouter/ai-sdk-provider';
+
+const agent = { model: openrouter('openai/gpt-6-luna-fast') };
+```
+  </Tab>
+  <Tab title="प्रोवाइडर की API key">
+
+प्रोवाइडर का AI SDK पैकेज इंस्टॉल करें और उसकी API key सेट करें। OpenAI के लिए
+`@ai-sdk/openai` इंस्टॉल करें और `OPENAI_API_KEY` सेट करें:
+
+```ts title="Model setup"
+import { openai } from '@ai-sdk/openai';
+
+const agent = { model: openai('gpt-6-luna') };
+```
+
+बाकी प्रोवाइडर भी ऐसे ही चलते हैं, बस उनका पैकेज, मॉडल ID और क्रेडेंशियल
+अपने होते हैं। [AI SDK प्रोवाइडर](#ai-sdk-providers) देखें।
+  </Tab>
+  <Tab title="लोकल या सेल्फ़-होस्टेड">
+
+`@ai-sdk/openai-compatible` इंस्टॉल करें। एंडपॉइंट का URL और ऐसा मॉडल ID सेट
+करें जो वह एंडपॉइंट देता हो। सर्वर को key चाहिए, तो `apiKey` जोड़ें। अगर सर्वर
+JSON स्कीमा वाला रिस्पॉन्स फ़ॉर्मैट लेता है, जैसे Ollama लेता है, तो
+`supportsStructuredOutputs: true` सेट करें। इसके बिना AI SDK `responseFormat`
+वॉर्निंग देकर स्कीमा हटा देता है, और एजेंट स्टेप ज़्यादा मॉडल कॉल ले सकते हैं:
+
+```ts title="Model setup"
+import { createOpenAICompatible } from '@ai-sdk/openai-compatible';
+
+const local = createOpenAICompatible({
+  name: 'local',
+  baseURL: 'http://127.0.0.1:11434/v1',
+  supportsStructuredOutputs: true,
+  // apiKey: process.env.LLM_API_KEY,
+});
+
+const agent = { model: local.chatModel('your-model-id') };
+```
+  </Tab>
+</Tabs>
+
+गेटवे आम तौर पर `provider/model` वाले ID इस्तेमाल करते हैं। सीधे प्रोवाइडर अपने
+ID इस्तेमाल करते हैं।
+
+### key की जगह Vercel OIDC
+
+`AI_GATEWAY_API_KEY` न हो, तो `gateway()` कम समय वाले Vercel OIDC टोकन से साइन
+इन करता है, और उसे रिफ़्रेश भी करता रहता है। एक बार Vercel CLI में साइन इन करें
+और प्रोजेक्ट लिंक करें:
+
+<CodeGroup>
+```bash npm
+npx vercel login
+npx vercel link
+npx e2e run
+```
+
+```bash pnpm
+pnpm dlx vercel login
+pnpm dlx vercel link
+pnpm exec e2e run
+```
+
+```bash bun
+bunx vercel login
+bunx vercel link
+bunx e2e run
+```
+</CodeGroup>
+
+गेटवे कोई वैलिड `VERCEL_OIDC_TOKEN` हो तो वही इस्तेमाल करता है। नहीं तो वह
+`.vercel/project.json` वाले प्रोजेक्ट के लिए टोकन लेता है। यह फ़ाइल वर्किंग
+डायरेक्टरी से ऊपर की तरफ़ ढूँढी जाती है। e2e कोई `.env` फ़ाइल लोड नहीं करता।
+इसलिए `npx vercel env pull` से मिला टोकन तभी चलता है, जब आपका शेल उसे export
+करे, या कॉन्फ़िग उस `.env` फ़ाइल को
+[`process.loadEnvFile()`](/reference/config#loading) से लोड करे।
+
+## AI SDK प्रोवाइडर
+
+टूल कॉल सपोर्ट करने वाला हर AI SDK प्रोवाइडर चलता है। हर प्रोवाइडर का पैकेज और
+वेरिएबल उसके [AI SDK प्रोवाइडर पेज](https://ai-sdk.dev/providers/ai-sdk-providers) पर हैं। अपना चुनें:
+
+<ModelProvider show="select" />
+
+जो प्रोवाइडर लिस्ट में नहीं है, वह भी चलता है, अगर वह AI SDK लैंग्वेज मॉडल
+स्पेसिफ़िकेशन का v2 या उससे नया वर्शन लागू करता हो।
+
+<Steps>
+  <Step title="प्रोवाइडर पैकेज इंस्टॉल करें">
+  `ai` और प्रोवाइडर पैकेज इंस्टॉल करें:
+
+  <ModelProvider show="install" />
+  </Step>
+  <Step title="क्रेडेंशियल सेट करें">
+  वेरिएबल अपने शेल या CI में export करें, या कॉन्फ़िग में
+  [`process.loadEnvFile()`](/reference/config#loading) से `.env` फ़ाइल लोड करें।
+
+  <ModelProvider show="env" />
+  </Step>
+  <Step title="कॉन्फ़िग में मॉडल जोड़ें">
+  मॉडल `agents.default` में सेट करें। मॉडल ID सिर्फ़ एक उदाहरण है।
+
+  <ModelProvider show="config" />
+  </Step>
+</Steps>
+
+<Accordion title="ऐसे मॉडल जो ज़बरदस्ती का टूल चॉइस नहीं मानते">
+एजेंट स्टेप हर टर्न पर हर मॉडल से एक टूल कॉल माँगते हैं। Claude Opus 5.5,
+Sonnet 5.5 और Fable 5.1 रिक्वेस्ट का यह रूप रिजेक्ट करते हैं। DeepSeek के V4
+मॉडल (`@ai-sdk/deepseek`) भी इसे मना करते हैं, क्योंकि वे डिफ़ॉल्ट रूप से
+थिंकिंग करते हैं। Muse Spark मॉडल सिर्फ़ `auto` लेते हैं। तब e2e `auto` के साथ
+आगे बढ़ता है, और उस मॉडल पर बाद के स्टेप भी ऐसे ही शुरू होते हैं। थिंकिंग चालू
+रह सकती है।
+</Accordion>
+
+<Accordion title="Claude Opus 5.5, Sonnet 5.5 और Fable 5.1">
+ये मॉडल हर थिंकिंग ब्लॉक को सिस्टम प्रॉम्प्ट और उससे पहले के मैसेज से बाँध देते
+हैं। इनमें से कुछ भी बदलने के बाद अगर रिक्वेस्ट वह ब्लॉक दोबारा भेजे, तो वे उसे
+रिजेक्ट कर देते हैं। एजेंट स्टेप अपना प्रॉम्प्ट नहीं बदलता। जब वह किसी पुराने
+मैसेज से कोई बदल चुकी स्क्रीन या स्क्रीनशॉट हटाता है, तो उस मैसेज से आगे की
+थिंकिंग भेजना बंद कर देता है। स्टेप के `--debug` ट्रांसक्रिप्ट में यह लिखा होता
+है।
+</Accordion>
+
+## एक कॉन्फ़िग में कई मॉडल
+
+हर मॉडल को उसका अपना एजेंट नाम दें, फिर `--agent` से या टेस्ट में एक चुनें।
+[एजेंट और पर्सोना](/agents) देखें। कॉन्फ़िग बदले बिना मॉडल बदलना हो, तो कोई
+एनवायरनमेंट वेरिएबल पढ़ें:
+
+```ts title="Agent setup"
+const agent = {
+  model: gateway(process.env.MODEL ?? 'openai/gpt-6-luna-fast'),
+};
+```
+
+### जो key सेट है, उससे मॉडल चुनें
+
+जब टीम के लोगों के पास अलग-अलग key हों, तो जो वेरिएबल सेट है उसी से मॉडल चुनें।
+एजेंट का नाम एक ही रखें, ताकि सब वही रिकॉर्डिंग रीप्ले करें:
+
+```ts title="Agent setup"
+import { anthropic } from '@ai-sdk/anthropic';
+import { gateway } from 'ai';
+
+const agent = {
+  model: process.env.ANTHROPIC_API_KEY
+    ? anthropic('claude-sonnet-5-5')
+    : gateway('openai/gpt-6-luna-fast'),
+};
+```
+
+`gateway()` को फ़ॉलबैक रखें: [Vercel OIDC](#vercel-oidc-instead-of-a-key) उसे
+साइन इन कर देता है, और चेक करने के लिए कोई वेरिएबल नहीं चाहिए। `.env` में रखी key
+तभी गिनी जाती है, जब [`process.loadEnvFile()`](/reference/config#loading) इस
+कोड से पहले चले।
+
+दूसरे मॉडल से रिकॉर्ड हुआ स्टेप फिर भी रीप्ले होता है, और उसमें उसी मॉडल का नाम
+आता है। [क्या मैच होना चाहिए](/cache#what-must-match) देखें।
+
+### अपना अलग जज मॉडल
+
+डिफ़ॉल्ट रूप से एक ही मॉडल `agent.act` चलाता है और `agent.assert`,
+`agent.waitFor` और `agent.extract` का जवाब देता है। इन जाँचों के लिए कोई और
+मॉडल चाहिए, तो `judge` सेट करें:
+
+```ts title="Agent setup"
+const agent = {
+  model: gateway('openai/gpt-6-luna-fast'),
+  judge: gateway('anthropic/claude-sonnet-5'),
+};
+```
+
+`explore: true` वाला बिल्ट-इन `agent.assert` टूल लूप `agents.<name>.model` पर
+चलाता है, चाहे `judge` सेट हो।
+
+रिपोर्ट में हर परख का मॉडल लिखा होता है। `judge` एक AI SDK लैंग्वेज मॉडल लेता
+है। Clef या Jev के लिए [डिसीज़न एक्ज़ीक्यूटर](/decision-models) इस्तेमाल करें।
+[परख के समय मॉडल क्या देखता है](/agent-steps#what-the-model-sees) देखें।
+
+## डेटा रिटेंशन और कंप्लायंस
+
+मॉडल को रेडैक्शन के बाद वाली स्क्रीन, स्टेप का निर्देश, और वे स्क्रीनशॉट जाते
+हैं जो एजेंट माँगता है। रिस्पॉन्स के बाद e2e प्रोवाइडर से कुछ वापस नहीं पढ़ता।
+इसलिए रन को प्रोवाइडर के पास सेव किसी स्टेट की ज़रूरत नहीं है।
+
+हर मॉडल रिक्वेस्ट में e2e का नाम होता है: `e2e/<version> (<platform>; <arch>)` से
+शुरू होने वाला `User-Agent`। Vercel AI Gateway और OpenRouter के लिए साथ में
+`HTTP-Referer: https://tester.army/e2e` और `X-Title: e2e` भी जाते हैं। ये
+प्रोवाइडर इंस्टेंस पर सेट इन्हीं हेडर की जगह ले लेते हैं।
+
+<AccordionGroup>
+<Accordion title="OpenAI और Azure OpenAI: ज़ीरो डेटा रिटेंशन">
+Responses मॉडल (`openai(...)`, `azure(...)`, या गेटवे पर `openai/*`) की हर
+रिक्वेस्ट में `store: false` और एक प्रॉम्प्ट कैश key होती है। Chat Completions
+मॉडल और OpenAI-compatible प्रोवाइडर को इनमें से कुछ नहीं मिलता। प्रोवाइडर
+बातचीत की कोई कॉपी नहीं रखता, और प्रॉम्प्ट कैश फिर भी काम करता है। ज़ीरो डेटा
+रिटेंशन वाले संगठनों को कुछ कॉन्फ़िगर नहीं करना पड़ता।
+
+रिस्पॉन्स सेव रखने हों, तो `providerOptions` में `store` सेट करें। Azure OpenAI
+के लिए key `azure` है:
+
+```ts title="Agent setup"
+const agent = {
+  model: openai('gpt-6-luna'),
+  providerOptions: { openai: { store: true } },
+};
+```
+</Accordion>
+<Accordion title="BAA के तहत Anthropic">
+एजेंट स्टेप Messages API को टूल यूज़, प्रॉम्प्ट कैशिंग, इमेज और स्ट्रक्चर्ड
+आउटपुट के साथ इस्तेमाल करते हैं। Anthropic की HIPAA रेडीनेस में ये सब आते हैं।
+
+एग्रीमेंट सिर्फ़ `api.anthropic.com` को कवर करता है। इसे `@ai-sdk/anthropic` से
+कॉल करें, किसी गेटवे या OpenRouter से नहीं। `judge` सेट न करें, ताकि एक ही
+एग्रीमेंट हर रिक्वेस्ट को कवर करे। Anthropic के Covered Models को 30 दिन का
+रिटेंशन चाहिए, इसलिए ज़ीरो डेटा रिटेंशन वाले संगठन उन्हें इस्तेमाल नहीं कर सकते।
+</Accordion>
+</AccordionGroup>
+
+## क्या फ़ेल होता है, और कहाँ
+
+| दिक्कत | कोड | हल |
+| --- | --- | --- |
+| मॉडल AI SDK इंस्टेंस की जगह एक स्ट्रिंग है | `INVALID_CONFIG` | उसे बनाएँ, जैसे `gateway('openai/gpt-6-luna-fast')`। |
+| बिल्ट-इन एजेंट के पास कोई मॉडल नहीं है | `MODEL_UNAVAILABLE` | `agents.<name>.model` सेट करें। |
+| GitHub Copilot आपके अकाउंट को वह मॉडल नहीं देता | `MODEL_UNAVAILABLE` | ऐसा id चुनें जो आपका प्लान देता हो। [मॉडल चुनें](/subscriptions#pick-a-model) देखें। |
+| कॉन्फ़िग लोड होते समय key पढ़ने वाले प्रोवाइडर को key नहीं मिली | `CONFIG_LOAD_FAILED` | key सेट करें। |
+| पहली मॉडल कॉल पर ऑथेंटिकेशन फ़ेल होता है | `MODEL_PROVIDER_FAILED` | प्रोवाइडर की API key चेक करें, या सब्सक्रिप्शन के लिए `npx e2e login` चलाएँ। Vercel OIDC के लिए मैसेज में सिर्फ़ `AI_GATEWAY_API_KEY` का नाम आता है। `vercel login` और `.vercel/project.json` चेक करें। |
+| `ai` पैकेज नहीं है | `MODEL_UNAVAILABLE` | `ai` इंस्टॉल करें। [गेटवे या प्रोवाइडर चुनें](#pick-a-gateway-or-a-provider) देखें। |
+| स्टेप का दूसरा टर्न `Item with id 'rs_…' not found` के साथ फ़ेल होता है | `MODEL_PROVIDER_FAILED` | `providerOptions` में `store` बंद रहने दें, जो डिफ़ॉल्ट है, या OpenAI को गेटवे की जगह सीधे कॉल करें। |
+| कस्टम एक्ज़ीक्यूटर का अपना `model` या `judge` एजेंट एंट्री वाले से अलग है | `INVALID_CONFIG` | [कस्टम एक्ज़ीक्यूटर](/executors#keep-the-loop-change-the-vocabulary) देखें। |
+
+## आगे
+
+<CardGroup cols={2}>
+  <Card title="सब्सक्रिप्शन" icon="key" href="/subscriptions">
+    ChatGPT, Copilot, OpenCode Console, या SuperGrok से साइन इन करें।
+  </Card>
+  <Card title="एजेंट और पर्सोना" icon="users" href="/agents">
+    टेस्ट और साइन इन किए हुए यूज़र के लिए एजेंट चुनें।
+  </Card>
+</CardGroup>
