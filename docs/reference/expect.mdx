@@ -390,7 +390,8 @@ await expect(browser).toHaveURL(/\/orders\/\d+$/);
 ```
 
 - A relative string resolves against the base URL and matches exactly after
-  normalization.
+  normalization. As in Playwright, `*` and `{` are literal here; a glob is for
+  [`browser.waitForURL`](/reference/web#waitforurl).
 - A `RegExp` tests the full URL.
 - Anything else, such as a predicate function, is `INVALID_ARGUMENT`.
 - It takes Playwright's `ignoreCase`, as the locator matchers do

@@ -287,7 +287,7 @@ await expect(browser).toHaveURL('/dashboard');
 await expect(browser).toHaveURL(/\/orders\/\d+$/);
 ```
 
-- 相对字符串根据基础 URL 解析，并在规范化后精确匹配。
+- 相对字符串根据基础 URL 解析，并在规范化后精确匹配。与 Playwright 一样，`*` 和 `{` 在这里按字面匹配；glob 请使用 [`browser.waitForURL`](/reference/web#waitforurl)。
 - `RegExp` 对完整 URL 进行测试。
 - 其他值，例如谓词函数，会导致 `INVALID_ARGUMENT`。
 - 与定位器匹配器一样，它接受 Playwright 的 `ignoreCase`（[文本匹配](#text-matching)）。

@@ -397,6 +397,83 @@ describe('browser route and waitForResponse decisions', () => {
     expect(hits.get('/api/quote')).toBeUndefined();
   });
 
+  /**
+   * One grammar: each row answers the same through `route` (a fetch from the
+   * page reaches the handler) and `waitForURL` (the page at that URL
+   * satisfies the wait), relative patterns resolved against the app's URL.
+   */
+  const SHARED_PATTERNS: readonly (readonly [pattern: string, pathname: string, matches: boolean])[] = [
+    ['**/api/quote', '/api/quote', true],
+    ['/api/quote', '/api/quote', true],
+    ['/api/*', '/api/quote', true],
+    ['/api/*', '/api/a/b', false],
+    ['/api/**', '/api/a/b', true],
+    ['**/api/{quote,flags}', '/api/flags', true],
+    ['**/api/{quote,flags}', '/api/other', false],
+    ['**/api/quote?id=*', '/api/quote?id=7', true],
+    ['**/api/quote?id=?', '/api/quote?id=7', false],
+    ['**/api/q?ote', '/api/quote', false],
+    ['**/api/my file*', '/api/my%20file.txt', true],
+    ['/api/quote#a*/../flags', '/api/flags', false],
+  ];
+
+  /** A miss is that call's timeout; any other rejection fails the row instead of reading as `false`. */
+  const missed = (timeoutCode: string) => (error: { readonly code?: string }): false => {
+    if (error.code !== timeoutCode) throw error;
+    return false;
+  };
+
+  it.each(SHARED_PATTERNS)('reads %s against %s the same through route, waitForURL, and waitForResponse', async (pattern, pathname, expected) => {
+    await browser.route(pattern, (route) => route.fulfill({ body: 'routed' }));
+    expect((await fetchText(`${origin}${pathname}`)) === 'routed', 'route').toBe(expected);
+    await browser.unrouteAll();
+    await page.goto(`${origin}${pathname}`);
+    const waited = await browser.waitForURL(pattern, { timeout: 200 }).then(() => true, missed('ASSERTION_FAILED'));
+    expect(waited, 'waitForURL').toBe(expected);
+    const [responded] = await Promise.all([
+      browser.waitForResponse(pattern, { timeout: 300 }).then(() => true, missed('OPERATION_TIMEOUT')),
+      page.evaluate((url) => { void fetch(url).then((reply) => reply.text()).catch(() => undefined); }, `${origin}${pathname}`),
+    ]);
+    expect(responded, 'waitForResponse').toBe(expected);
+  });
+
+  /** The `browser` fixture on a target with no `app.url`, whose base URL throws as the harness's does. */
+  const noAppUrlBrowser = () => createBrowserFixture(surface, {
+    app: { site: '127.0.0.1', resolveUrl: () => { throw new TestError('APP_URL_REQUIRED', 'this target has no app.url'); } },
+    operation: (timeoutMs?: number) => ({ signal, timeoutMs: Math.min(timeoutMs ?? 5_000, 5_000), runId: 'routes', attemptId: 'routes-no-app' }),
+    timeouts: { test: 5_000, action: 5_000, assertion: 5_000 },
+    expectable: (target: object) => target,
+    fixture: (_fixture: string, target: object) => target,
+    attachArtifact: () => undefined,
+  } as unknown as EngineFixtureContext);
+
+  it.each([
+    ['an absolute URL', (): string | RegExp => `${origin}/api/quote`],
+    ['a ** glob', (): string | RegExp => '**/api/quote'],
+    ['a RegExp', (): string | RegExp => /\/api\/quote$/],
+  ])('routes and waits on %s on a target with no app URL', async (_name, patternFor) => {
+    const noAppUrl = noAppUrlBrowser();
+    const pattern = patternFor();
+    await noAppUrl.route(pattern, (route) => route.fulfill({ body: 'routed' }));
+    const [response, body] = await Promise.all([noAppUrl.waitForResponse(pattern), fetchText(`${origin}/api/quote`)]);
+    expect(body).toBe('routed');
+    expect(response.url).toBe(`${origin}/api/quote`);
+    await noAppUrl.unrouteAll();
+    await page.goto(`${origin}/api/quote`);
+    await noAppUrl.waitForURL(pattern, { timeout: 1_000 });
+  });
+
+  it('refuses a bad { that resolving would drop, and registers no route', async () => {
+    expect(() => browser.route('/{bad/../api/quote', (route) => route.fulfill({ body: 'routed' }))).toThrow(expect.objectContaining({ code: 'INVALID_ARGUMENT' }));
+    expect(await fetchText(`${origin}/api/quote`)).toBe('network:/api/quote');
+  });
+
+  it('refuses a relative pattern on a target with no app URL', async () => {
+    const noAppUrl = noAppUrlBrowser();
+    expect(() => noAppUrl.route('/api/quote', (route) => route.continue())).toThrow(expect.objectContaining({ code: 'APP_URL_REQUIRED' }));
+    await expect((async () => noAppUrl.waitForURL('/api/quote', { timeout: 200 }))()).rejects.toMatchObject({ code: 'APP_URL_REQUIRED' });
+  });
+
   it('matches one method and lets another reach the network', async () => {
     await browser.route({ method: 'post', url: '**/api/orders' }, (route) => route.fulfill({ status: 201, json: { ok: true } }));
     const posted = await page.evaluate(async (url) => {

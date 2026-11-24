@@ -1,4 +1,4 @@
-/** Route URL pattern grammar and the method-narrowed form `route` accepts. */
+/** The method-narrowed form `route` and `waitForResponse` accept; `url-glob.ts` reads its URL half. */
 
 import { types } from 'node:util';
 import {
@@ -20,48 +20,10 @@ export interface NormalizedRoutePattern {
 /** An HTTP method token: RFC 9110's `method = token`, extension methods included. */
 const HTTP_METHOD = /^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$/;
 
-/** Escapes one character for literal use inside a regexp source. */
-function escapeRegexpChar(ch: string): string {
-  return /[a-zA-Z0-9_-]/.test(ch) ? ch : `\\${ch}`;
-}
-
-/**
- * Compiles a string route pattern: `*` matches within one path segment, `**`
- * crosses `/`, `?` matches one character, `\` escapes the next character;
- * everything else is literal. Matches against the complete URL.
- */
-export function compileRoutePattern(pattern: string): RegExp {
-  let source = '^';
-  for (let i = 0; i < pattern.length; i += 1) {
-    const ch = pattern[i]!;
-    if (ch === '\\') {
-      i += 1;
-      const next = pattern[i];
-      if (next !== undefined) source += escapeRegexpChar(next);
-      continue;
-    }
-    if (ch === '*') {
-      if (pattern[i + 1] === '*') {
-        i += 1;
-        source += '.*';
-      } else {
-        source += '[^/]*';
-      }
-      continue;
-    }
-    if (ch === '?') {
-      source += '.';
-      continue;
-    }
-    source += escapeRegexpChar(ch);
-  }
-  return new RegExp(`${source}$`);
-}
-
 /**
  * Validates a route pattern: a string or `RegExp` as before, or
- * `{ method, url }` where `method` is one HTTP method and `url` keeps the
- * string/`RegExp` grammar. The method is normalized to uppercase. `api` names
+ * `{ method, url }` where `method` is one HTTP method and `url` is a
+ * string or `RegExp` as `url-glob.ts` reads one. The method is normalized to uppercase. `api` names
  * the calling member in errors.
  */
 export function toRoutePattern(api: string, pattern: unknown): NormalizedRoutePattern {
@@ -128,14 +90,6 @@ export function patternLabel(pattern: unknown): string {
     }
   }
   return describe(pattern);
-}
-
-/** Matches a URL against the URL half of a validated route pattern. */
-export function routeUrlMatches(pattern: NormalizedRoutePattern, url: string): boolean {
-  if (pattern.url.kind === 'string') {
-    return compileRoutePattern(pattern.url.value).test(url);
-  }
-  return new RegExp(pattern.url.source, pattern.url.flags).test(url);
 }
 
 /** Matches a request method against the method half of a validated route pattern. */

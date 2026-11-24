@@ -595,17 +595,29 @@ Waits for the current URL to match. It reads the URL at 0, 20, and 50 ms, then
 every 100 ms from the start, the same poll as `expect(browser).toHaveURL`.
 
 ```ts
+await browser.waitForURL('**/checkout');
 await browser.waitForURL(/\/orders\/\d+$/, { timeout: 15_000 });
 ```
 
-- A relative string resolves against the base URL and matches exactly after
-  normalization.
+- A string is a glob, read as Playwright reads a URL glob: `*` matches within
+  one path segment, `**` across `/`, `{a,b}` matches either, and `\` escapes
+  the next character. `?` is literal, so a query string reads as written, and a
+  string with no wildcard matches that URL exactly. A glob resolves against the
+  base URL unless it starts with `*` or is an absolute URL such as
+  `https://x.test/**` or `about:blank`, and a
+  resolved glob's scheme and host match in any letter case. Non-ASCII text and
+  spaces in a glob's path and query match the URL as the browser encodes it. The empty string
+  matches any URL.
+- `expect(browser).toHaveURL` reads `*` and `{` as themselves, as Playwright's
+  does; [`route`](#route), `unroute`, and `waitForResponse` read the same
+  globs as this wait.
 - A `RegExp` tests the full URL.
 
 | Throws | When |
 | --- | --- |
-| `INVALID_ARGUMENT` | A pattern that is not a string or `RegExp` (a predicate function, say), or an option other than `timeout`, such as Playwright's `waitUntil`. |
+| `INVALID_ARGUMENT` | A pattern that is not a string or `RegExp` (a predicate function, say), a glob that nests a `{` or leaves a `{` or `}` unmatched, or an option other than `timeout`, such as Playwright's `waitUntil`. |
 | `ASSERTION_FAILED` | The URL did not match before the timeout. |
+| `APP_URL_REQUIRED` | A relative pattern on a target with no `app.url`. |
 
 #### `locator`
 
@@ -713,10 +725,10 @@ with the configured headers when its origin gets them, under the action
 timeout, without deciding the route.
 It does not follow redirects, which could take it past the navigation rule.
 
-- The pattern is a string or a `RegExp`, both tested against the full URL. In
-  a string, `*` matches within a path segment, `**` across `/`, `?` any one
-  character, and `\` escapes the next. `unroute` and `waitForResponse` take
-  the same patterns.
+- The pattern is a string or a `RegExp`, read as [`waitForURL`](#waitforurl)
+  reads one: a string is a glob in Playwright's grammar (`?` literal, `{a,b}`
+  either) resolved against the base URL, so one with no wildcard is an exact
+  URL. `unroute` and `waitForResponse` take the same patterns.
 - `{ method, url }` narrows the pattern to one HTTP method too. `method` is
   case-insensitive, `url` keeps the string or `RegExp` grammar above, and
   `unroute` and `waitForResponse` take the same form.
@@ -743,7 +755,8 @@ It does not follow redirects, which could take it past the navigation rule.
 
 | Throws | When |
 | --- | --- |
-| `INVALID_ARGUMENT` | A pattern that is not a string, `RegExp`, or `{ method, url }`; a `{ method, url }` pattern with a missing or extra key, a method that is not an HTTP method, or a `url` that is not a string or `RegExp`. Separately, an option a decision does not take (Playwright's `abort(errorCode)`, a misspelled key such as `bodyy`) aborts the request and fails the next step. |
+| `INVALID_ARGUMENT` | A pattern that is not a string, `RegExp`, or `{ method, url }`; a glob that nests a `{` or leaves a `{` or `}` unmatched; a `{ method, url }` pattern with a missing or extra key, a method that is not an HTTP method, or a `url` that is not a string or `RegExp`. Separately, an option a decision does not take (Playwright's `abort(errorCode)`, a misspelled key such as `bodyy`) aborts the request and fails the next step. |
+| `APP_URL_REQUIRED` | A relative pattern on a target with no `app.url`. |
 | `ACTION_FAILED` | The handler decided twice or not at all. |
 | `POLICY_DENIED` | A `continue` URL with a forbidden scheme. |
 | `CLEANUP_TIMEOUT` | A handler outlived the cleanup budget. It fails the attempt. |
@@ -865,7 +878,8 @@ expect((await created).status).toBe(201);
 
 | Throws | When |
 | --- | --- |
-| `INVALID_ARGUMENT` | A pattern that is not a string, `RegExp`, or `{ method, url }`; a `{ method, url }` pattern with a missing or extra key, a method that is not an HTTP method, or a `url` that is not a string or `RegExp`. |
+| `INVALID_ARGUMENT` | A pattern that is not a string, `RegExp`, or `{ method, url }`; a glob that nests a `{` or leaves a `{` or `}` unmatched; a `{ method, url }` pattern with a missing or extra key, a method that is not an HTTP method, or a `url` that is not a string or `RegExp`. |
+| `APP_URL_REQUIRED` | A relative pattern on a target with no `app.url`. |
 | `ACTION_FAILED` | Nothing matches inside the deadline. From `body()`, `text()`, and `json()`: a body still streaming when their budget runs out, or a body the browser could not read (a connection reset short of the declared `Content-Length`, a request the page aborted, or a redirect, whose body the browser never keeps), instead of an empty string. |
 
 ```ts

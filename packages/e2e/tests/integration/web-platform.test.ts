@@ -435,6 +435,22 @@ test('a relative toHaveURL prints the expected URL resolved', async ({ app, brow
   await app.open('/classes');
   await expect(browser).toHaveURL('/about', { timeout: 300 });
 });
+
+test('waitForURL reads URL globs, and toHaveURL compares exactly, as in Playwright', async ({ app, browser }) => {
+  await app.open('/classes?tab=a');
+  await browser.waitForURL('**/classes?tab=a');
+  await browser.waitForURL('/class*?tab=*');
+  await browser.waitForURL('**/{about,classes}?tab=a');
+  // toHaveURL reads \`*\` and \`{\` as themselves, so a URL with braces in its query compares exactly.
+  await expect(browser).not.toHaveURL('**/classes?tab=a', { timeout: 300 });
+  await app.open('/classes?filter={"a":1}');
+  await expect(browser).toHaveURL('/classes?filter={"a":1}');
+});
+
+test('a URL glob prints as written', async ({ app, browser }) => {
+  await app.open('/classes');
+  await browser.waitForURL('**/checkout', { timeout: 300 });
+});
 `;
 
 // A predicate, which Playwright accepts and a migrated test may still pass, is
@@ -536,6 +552,7 @@ describe('web platform integration', () => {
     'an empty class attribute is an empty class list',
     'reads wait for a node that arrives late',
     'toHaveURL ignoreCase folds the comparison',
+    'waitForURL reads URL globs, and toHaveURL compares exactly, as in Playwright',
     'string and RegExp URL patterns match what they name',
     'toHaveRole compares the role the tree reads',
     'toBeEditable reads readonly, aria-readonly, and the disabled state',
@@ -794,6 +811,15 @@ describe('web platform integration', () => {
     expect(negated.status).toBe('failed');
     expect(negated.attempts[0]!.error?.code).toBe('ASSERTION_FAILED');
     expect(negated.attempts[0]!.error?.message).toContain(`expected: not URL ${new URL('/CLASSES', app.url).href} (ignoring case)`);
+  });
+
+  it('prints a URL glob as written, not resolved into a URL nothing matches', () => {
+    const result = resultByTitle(outcome, 'a URL glob prints as written');
+    expect(result.status).toBe('failed');
+    expect(result.attempts[0]!.error?.code).toBe('ASSERTION_FAILED');
+    expect(result.attempts[0]!.error?.message).toContain(
+      `browser.waitForURL failed\nexpected: URL **/checkout\nobserved: URL ${new URL('/classes', app.url).href}`,
+    );
   });
 
   it('prints a relative toHaveURL expectation resolved against the app URL, like the observed one', () => {

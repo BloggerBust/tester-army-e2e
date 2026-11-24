@@ -287,7 +287,7 @@ await expect(browser).toHaveURL('/dashboard');
 await expect(browser).toHaveURL(/\/orders\/\d+$/);
 ```
 
-- 相対文字列はベース URL を基準に解決し、正規化後に完全一致で比較します。
+- 相対文字列はベース URL を基準に解決し、正規化後に完全一致で比較します。Playwright と同じく、`*` と `{` はここではリテラルです。グロブは [`browser.waitForURL`](/reference/web#waitforurl) で使います。
 - `RegExp` は URL 全体に適用します。
 - 述語関数など、それ以外は `INVALID_ARGUMENT` です。
 - ロケーターのマッチャーと同じく、Playwright の `ignoreCase` を指定できます（[テキストの照合](#text-matching)）。

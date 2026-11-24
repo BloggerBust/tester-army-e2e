@@ -454,16 +454,19 @@ const title = await browser.title();
 現在の URL が一致するまで待ちます。開始から 0、20、50 ms、その後は 100 ms ごとに URL を読みます。`expect(browser).toHaveURL` と同じポーリングです。
 
 ```ts
+await browser.waitForURL('**/checkout');
 await browser.waitForURL(/\/orders\/\d+$/, { timeout: 15_000 });
 ```
 
-- 相対文字列はベース URL を基準に解決し、正規化後に完全一致で比較します。
+- 文字列はグロブで、Playwright が URL グロブを読むのと同じように読みます。`*` は 1 つのパスセグメントの中で、`**` は `/` をまたいで一致し、`{a,b}` はどちらか一方に一致し、`\` は次の文字をエスケープします。`?` はリテラルなので、クエリ文字列は書いたとおりに読み、ワイルドカードのない文字列はその URL に完全一致します。グロブは `*` や `about:` などのスキームで始まる場合を除いてベース URL を基準に解決し、解決したグロブのスキームとホストは大文字と小文字を区別しません。グロブ中の ASCII 以外の文字や空白は、ブラウザーがエンコードした URL と一致します。空文字列はどの URL にも一致します。
+- Playwright と同じく、`expect(browser).toHaveURL` は `*` と `{` を文字どおりに読みます。[`route`](#route)、`unroute`、`waitForResponse` はこの待機と同じグロブを読みます。
 - `RegExp` は URL 全体に適用します。
 
 | エラー | 発生条件 |
 | --- | --- |
-| `INVALID_ARGUMENT` | パターンが文字列や `RegExp` ではない場合（述語関数など）、または Playwright の `waitUntil` など、`timeout` 以外のオプションがある場合。 |
+| `INVALID_ARGUMENT` | パターンが文字列や `RegExp` ではない場合（述語関数など）、グロブの `{` が入れ子になっているか、`{` または `}` の対応が取れていない場合、または Playwright の `waitUntil` など、`timeout` 以外のオプションがある場合。 |
 | `ASSERTION_FAILED` | タイムアウトまでに URL が一致しなかった場合。 |
+| `APP_URL_REQUIRED` | `app.url` のないターゲットで相対パターンを使った場合。 |
 
 #### `locator`
 
@@ -554,7 +557,7 @@ await browser.route({ method: 'POST', url: '**/api/orders' }, async (route) => {
 
 `route.fetch()` は、ルートの処理方法を決定せずに、本来の送信先からの `{ url, status, headers, body(), text(), json() }` を返します。対象オリジンが設定済みヘッダーの送信対象なら、そのヘッダーを使います。アクションのタイムアウトが適用されます。ページ遷移のルールを超える可能性があるため、リダイレクトには従いません。
 
-- パターンは文字列または `RegExp` で、どちらも URL 全体と照合します。文字列の `*` はパスの 1 セグメント内、`**` は `/` をまたいで一致し、`?` は任意の 1 文字、`\` は次の文字をエスケープします。`unroute` と `waitForResponse` も同じパターンを使います。
+- パターンは文字列または `RegExp` で、[`waitForURL`](#waitforurl) と同じように読みます。文字列は Playwright の文法のグロブ（`?` はリテラル、`{a,b}` はどちらか一方）で、ベース URL を基準に解決するため、ワイルドカードのないものは完全な URL です。`unroute` と `waitForResponse` も同じパターンを使います。
 - `{ method, url }` を渡すと、HTTP メソッドも 1 つに絞り込めます。`method` は大文字と小文字を区別せず、`url` は上記の文字列または `RegExp` の構文を使い、`unroute` と `waitForResponse` も同じ形式を受け付けます。
 - メソッドが一致しないルートは、それより前に登録したルート、次にネットワークへ処理を渡します。URL が一致しなかった場合と同じ扱いです。
 - メソッドパターンはそのメソッドだけに一致します。`GET` のルートは `HEAD` に応答しません。
@@ -568,7 +571,8 @@ await browser.route({ method: 'POST', url: '**/api/orders' }, async (route) => {
 
 | エラー | 発生条件 |
 | --- | --- |
-| `INVALID_ARGUMENT` | パターンが文字列、`RegExp`、`{ method, url }` のいずれでもない場合。`{ method, url }` パターンにキーの不足または余分なキーがある場合、`method` が HTTP メソッドでない場合、`url` が文字列でも `RegExp` でもない場合。また、処理の決定で受け付けないオプション（Playwright の `abort(errorCode)`、`bodyy` のような誤記したキー）がある場合は、リクエストを中断して次のステップを失敗させます。 |
+| `INVALID_ARGUMENT` | パターンが文字列、`RegExp`、`{ method, url }` のいずれでもない場合。 グロブの `{` が入れ子になっているか、`{` または `}` の対応が取れていない場合。`{ method, url }` パターンにキーの不足または余分なキーがある場合、`method` が HTTP メソッドでない場合、`url` が文字列でも `RegExp` でもない場合。また、処理の決定で受け付けないオプション（Playwright の `abort(errorCode)`、`bodyy` のような誤記したキー）がある場合は、リクエストを中断して次のステップを失敗させます。 |
+| `APP_URL_REQUIRED` | `app.url` のないターゲットで相対パターンを使った場合。 |
 | `ACTION_FAILED` | ハンドラーが処理を 2 回決定したか、決定しなかった場合。 |
 | `POLICY_DENIED` | `continue` の URL が禁止スキームを使う場合。 |
 | `CLEANUP_TIMEOUT` | ハンドラーがクリーンアップの時間を超えた場合。試行を失敗させます。 |
@@ -681,7 +685,8 @@ expect((await created).status).toBe(201);
 
 | エラー | 発生条件 |
 | --- | --- |
-| `INVALID_ARGUMENT` | パターンが文字列、`RegExp`、`{ method, url }` のいずれでもない場合。`{ method, url }` パターンにキーの不足または余分なキーがある場合、`method` が HTTP メソッドでない場合、`url` が文字列でも `RegExp` でもない場合。 |
+| `INVALID_ARGUMENT` | パターンが文字列、`RegExp`、`{ method, url }` のいずれでもない場合。 グロブの `{` が入れ子になっているか、`{` または `}` の対応が取れていない場合。`{ method, url }` パターンにキーの不足または余分なキーがある場合、`method` が HTTP メソッドでない場合、`url` が文字列でも `RegExp` でもない場合。 |
+| `APP_URL_REQUIRED` | `app.url` のないターゲットで相対パターンを使った場合。 |
 | `ACTION_FAILED` | 期限内に一致するレスポンスがなかった場合。`body()`、`text()`、`json()` では、期限時点でも本文の受信が続いている場合や、ブラウザが本文を読めなかった場合も、空文字列の代わりにこのエラーになります。後者には、宣言された `Content-Length` に達する前の接続リセット、ページが中断したリクエスト、ブラウザが本文を保持しないリダイレクトが含まれます。 |
 
 ```ts

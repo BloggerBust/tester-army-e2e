@@ -1,47 +1,16 @@
 import { describe, expect, it } from 'vitest';
 import {
-  compileRoutePattern,
   patternLabel,
   routeMethodMatches,
   routePatternsEqual,
-  routeUrlMatches,
   toRoutePattern,
 } from '../../src/route-pattern.ts';
+import { urlPattern } from '../../src/url-glob.ts';
 
-function matches(pattern: string, url: string): boolean {
-  return compileRoutePattern(pattern).test(url);
+/** Whether a validated pattern's URL half matches, as `route` and `waitForResponse` read it. */
+function routeUrlMatches(pattern: ReturnType<typeof toRoutePattern>, url: string): boolean {
+  return urlPattern(pattern.url, () => 'http://x.test/').matches(url);
 }
-
-describe('route pattern grammar', () => {
-  it('* matches within one path segment', () => {
-    expect(matches('http://x.test/api/*', 'http://x.test/api/flags')).toBe(true);
-    expect(matches('http://x.test/api/*', 'http://x.test/api/a/b')).toBe(false);
-  });
-
-  it('** crosses /', () => {
-    expect(matches('**/api/flags', 'http://x.test/api/flags')).toBe(true);
-    expect(matches('http://x.test/**', 'http://x.test/a/b/c')).toBe(true);
-  });
-
-  it('? matches one character', () => {
-    expect(matches('http://x.test/v?', 'http://x.test/v1')).toBe(true);
-    expect(matches('http://x.test/v?', 'http://x.test/v12')).toBe(false);
-  });
-
-  it('backslash escapes the next character', () => {
-    expect(matches('http://x.test/a\\*b', 'http://x.test/a*b')).toBe(true);
-    expect(matches('http://x.test/a\\*b', 'http://x.test/axb')).toBe(false);
-  });
-
-  it('other characters are literal, including dots', () => {
-    expect(matches('http://x.test/a.b', 'http://x.test/a.b')).toBe(true);
-    expect(matches('http://x.test/a.b', 'http://x.test/aXb')).toBe(false);
-  });
-
-  it('matches the complete URL, not a substring', () => {
-    expect(matches('/api/flags', 'http://x.test/api/flags')).toBe(false);
-  });
-});
 
 describe('routeUrlMatches and routeMethodMatches', () => {
   it('supports regexp wire patterns', () => {

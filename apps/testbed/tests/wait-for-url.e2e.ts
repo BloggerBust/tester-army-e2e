@@ -1,7 +1,7 @@
 /**
  * Adapted from microsoft/playwright tests/page/page-wait-for-url.spec.ts at v1.64.1.
  * Copyright Microsoft Corporation. Licensed under the Apache License 2.0 (see ../app/playwright/LICENSE).
- * Rewritten against the e2e public API: `waitForURL` takes a URL or a RegExp, so a glob is the URL it names.
+ * Rewritten against the e2e public API.
  */
 
 /*
@@ -22,13 +22,13 @@ test.describe('page wait for url', { requires: ['browser'], tags: ['playwright']
   test('should work', async ({ browser }) => {
     await browser.goto(EMPTY_PAGE);
     await browser.evaluate('(url) => { window.location.href = url; }', `${PREFIX}/grid.html`);
-    await browser.waitForURL('/grid.html');
+    await browser.waitForURL('**/grid.html');
   });
 
   test('should respect timeout', async ({ browser }) => {
     // e2e opens no page before the first goto, where Playwright starts on about:blank.
     await browser.goto(EMPTY_PAGE);
-    const promise = browser.waitForURL('/frame.html', { timeout: 2500 }).catch((caught: Error) => caught);
+    const promise = browser.waitForURL('**/frame.html', { timeout: 2500 }).catch((caught: Error) => caught);
     await browser.goto(EMPTY_PAGE);
     const error = await promise;
     expect((error as Error).message).toContain('frame.html');
@@ -38,7 +38,7 @@ test.describe('page wait for url', { requires: ['browser'], tags: ['playwright']
     await browser.goto(EMPTY_PAGE);
     await browser.goto(content("<a href='#foobar'>foobar</a>"));
     await browser.locator('a').tap();
-    await browser.waitForURL(/#foobar$/);
+    await browser.waitForURL('**/*#foobar');
   });
 
   test('should work with history.pushState()', async ({ browser }) => {
@@ -50,7 +50,7 @@ test.describe('page wait for url', { requires: ['browser'], tags: ['playwright']
       </script>
     `));
     await browser.locator('a').tap();
-    await browser.waitForURL('/wow.html');
+    await browser.waitForURL('**/wow.html');
     expect(await browser.url()).toBe(`${PREFIX}/wow.html`);
   });
 
@@ -63,7 +63,7 @@ test.describe('page wait for url', { requires: ['browser'], tags: ['playwright']
       </script>
     `));
     await browser.locator('a').tap();
-    await browser.waitForURL('/replaced.html');
+    await browser.waitForURL('**/replaced.html');
     expect(await browser.url()).toBe(`${PREFIX}/replaced.html`);
   });
 
@@ -82,11 +82,11 @@ test.describe('page wait for url', { requires: ['browser'], tags: ['playwright']
     expect(await browser.url()).toBe(`${PREFIX}/second.html`);
 
     await browser.locator('a#back').tap();
-    await browser.waitForURL('/first.html');
+    await browser.waitForURL('**/first.html');
     expect(await browser.url()).toBe(`${PREFIX}/first.html`);
 
     await browser.locator('a#forward').tap();
-    await browser.waitForURL('/second.html');
+    await browser.waitForURL('**/second.html');
     expect(await browser.url()).toBe(`${PREFIX}/second.html`);
   });
 

@@ -137,7 +137,7 @@ test('checkout', async ({ app, agent, screen }) => {
 | --- | --- |
 | `page.goto(path)` | `app.open(path)`。オプションを使うなら `browser.goto(url, { waitUntil, timeout })` |
 | `page.goBack()`, `goForward()`, `reload()`, `url()`, `title()`, `setViewportSize()` | `browser.back()`、`forward()`、`reload()`、`url()`、`title()`、`setViewport()` |
-| `page.waitForURL(url)` | `browser.waitForURL(url)`。glob ではなく `RegExp` または完全一致の URL |
+| `page.waitForURL(url)` | `browser.waitForURL(url)`。glob、`RegExp`、または完全一致の URL |
 | `page.screenshot()` | `app.screenshot(label)`。ビューポートを撮影し、レポートに添付 |
 | テストごとの新しい `context` | 試行ごとに同じ仕組み。`app.restart()` は作り直し、`app.clearState()` はストレージも消去 |
 
@@ -148,7 +148,7 @@ test('checkout', async ({ app, agent, screen }) => {
 | --- | --- |
 | `page.route(pattern, handler)`, `unroute()`, `unrouteAll()` | `browser` の同名メソッド。パターンは URL 全体に対する `RegExp`、glob、または 1 つの HTTP メソッドを指定する `{ method, url }` |
 | `route.fulfill()`, `continue()`, `fallback()`, `abort()`, `fetch()` | 同じ。各オプションは [`route`](/reference/web#route) を参照 |
-| `page.waitForResponse(pattern)` | `browser.waitForResponse(pattern)`。`'/api/orders'` ではなく `'**/api/orders'` |
+| `page.waitForResponse(pattern)` | `browser.waitForResponse(pattern)`。同じ URL グロブを使います |
 | `page.on('dialog')`, `page.waitForEvent('download')` | `browser.onDialog('accept')` またはハンドラー。`browser.waitForDownload(() => trigger)` |
 | `page.waitForEvent('popup')` | 新しいタブをアクティブにする `browser.waitForPopup(() => trigger)`。[タブ](/reference/web#tabs)を参照 |
 | `context.pages()`, `context.newPage()`, `page.bringToFront()` | `browser.tabs()`、`browser.newTab()`、`tab.activate()`。`context.on('page')` イベントはなし |
@@ -264,7 +264,7 @@ export const test = base.extend<{ accountPage: AccountPage }>({
 | Playwright | 現在使える方法 |
 | --- | --- |
 | `devices['iPhone 15']`, `isMobile`, `hasTouch`, `deviceScaleFactor` | `web({ viewport, userAgent })`。実際のタッチにはモバイルターゲット |
-| `waitForURL(glob)`, `waitForFunction()` | `RegExp`。`browser.evaluate` を `expect.poll` で確認 |
+| `waitForFunction()` | `browser.evaluate` を `expect.poll` で確認 |
 | `waitForResponse(predicate)`, `waitForRequest()`, `page.on('request')`, `response.ok()` | `browser.waitForResponse(pattern)`、またはリクエストのメソッドで絞り込む `{ method, url }` を使い、テスト内でレスポンスを検証。`ok()` の代わりに `status`。リクエストは `browser.route` ハンドラーで `route.request` を記録し、`route.fallback()` を呼ぶ |
 | `route.fulfill({ response })`, `route.abort(code)`, `route.fetch(options)`, `request.postDataJSON()` | `route.fetch()` の `status`、`headers`、`body`。`JSON.parse(route.request.postData)` |
 | `page.addLocatorHandler()` | `beforeEach` でオーバーレイを閉じる、または `browser.setCookies` で同意の Cookie を設定 |
@@ -319,7 +319,6 @@ export const test = base.extend<{ accountPage: AccountPage }>({
 | 値による `selectOption('pro')` | `selectOption({ value: 'pro' })`。文字列だけならラベルのみと照合 |
 | `use.storageState: 'file.json'`, `context.storageState({ path })` | `test.setup` と `{ session }`。[セッションは 1 回の実行内だけ有効](#what-differs-on-purpose)なので、ファイルはなし |
 | `page.waitForTimeout(ms)`, `page.waitForNavigation()` | 待ちたい状態へのロケーターアサーション。`browser.waitForURL(url)` |
-| ルートの glob 内のリテラル `?` と `{a,b}` | `RegExp`。glob では `?` はワイルドカード、`{a,b}` はリテラル |
 | `--only-changed` | `filters` の[テストフィルター](/filters)と `--changed-since <ref>` |
 | `page.$()`、`$eval()`、`elementHandle()`、JSON 以外の `evaluate` 値、`locator.page()` | ロケーターと、JSON を入出力する `browser.evaluate`。レポートに記録し、シークレットを秘匿。ページオブジェクトには `browser` を渡す |
 | ハンドラーなしで黙って閉じられるダイアログ | `browser.onDialog('dismiss')`。未処理のダイアログは次のステップを失敗させる |

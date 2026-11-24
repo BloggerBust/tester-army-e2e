@@ -151,7 +151,7 @@ run only in a browser, so a test that uses it declares
 | --- | --- |
 | `page.goto(path)` | `app.open(path)`; `browser.goto(url, { waitUntil, timeout })` for the options |
 | `page.goBack()`, `goForward()`, `reload()`, `url()`, `title()`, `setViewportSize()` | `browser.back()`, `forward()`, `reload()`, `url()`, `title()`, `setViewport()` |
-| `page.waitForURL(url)` | `browser.waitForURL(url)` with a `RegExp` or an exact URL, not a glob |
+| `page.waitForURL(url)` | `browser.waitForURL(url)` with a glob, a `RegExp`, or an exact URL |
 | `page.screenshot()` | `app.screenshot(label)`, the viewport, attached to the report |
 | `locator.screenshot()` | `locator.screenshot(label)`, the part of the match inside the viewport, attached to the report |
 | A fresh `context` for each test | the same for each attempt; `app.restart()` recreates it, `app.clearState()` also clears storage |
@@ -161,9 +161,9 @@ run only in a browser, so a test that uses it declares
 
 | Playwright | e2e |
 | --- | --- |
-| `page.route(pattern, handler)`, `unroute()`, `unrouteAll()` | the same on `browser`; a pattern is a `RegExp`, a glob on the full URL, or `{ method, url }` for one HTTP method |
+| `page.route(pattern, handler)`, `unroute()`, `unrouteAll()` | the same on `browser`; a pattern is a `RegExp`, a URL glob resolved against the app URL, or `{ method, url }` for one HTTP method |
 | `route.fulfill()`, `continue()`, `fallback()`, `abort()`, `fetch()` | the same, see [`route`](/reference/web#route) for the options each takes |
-| `page.waitForResponse(pattern)` | `browser.waitForResponse(pattern)`; `'**/api/orders'`, not `'/api/orders'` |
+| `page.waitForResponse(pattern)` | `browser.waitForResponse(pattern)` with the same URL globs |
 | `page.on('dialog')`, `page.waitForEvent('download')` | `browser.onDialog('accept')` or a handler; `browser.waitForDownload(() => trigger)` |
 | `page.waitForEvent('popup')` | `browser.waitForPopup(() => trigger)`, which makes the new tab active, see [Tabs](/reference/web#tabs) |
 | `context.pages()`, `context.newPage()`, `page.bringToFront()` | `browser.tabs()`, `browser.newTab()`, `tab.activate()`; no `context.on('page')` event |
@@ -284,7 +284,7 @@ purpose. Use the workaround, or keep the test in Playwright.
 | Playwright | Use today |
 | --- | --- |
 | `devices['iPhone 15']`, `isMobile`, `hasTouch` | `web({ viewport, userAgent, deviceScaleFactor })`; a mobile target for real touch |
-| `waitForURL(glob)`, `waitForFunction()` | A `RegExp`; `expect.poll` over `browser.evaluate` |
+| `waitForFunction()` | `expect.poll` over `browser.evaluate` |
 | `waitForResponse(predicate)`, `waitForRequest()`, `page.on('request')`, `response.ok()` | `browser.waitForResponse(pattern)`, or `{ method, url }` to filter on the request's method, then check the response in the test, `status` for `ok()`. For requests, a `browser.route` handler that records `route.request`, then calls `route.fallback()` |
 | `route.fulfill({ response })`, `route.abort(code)`, `route.fetch(options)`, `request.postDataJSON()` | `status`, `headers`, and `body` from `route.fetch()`; `JSON.parse(route.request.postData)` |
 | `page.addLocatorHandler()` | Dismiss the overlay in `beforeEach`, or set its consent cookie with `browser.setCookies` |
@@ -339,7 +339,6 @@ purpose. Use the workaround, or keep the test in Playwright.
 | `selectOption('pro')` by value | `selectOption({ value: 'pro' })`. A bare string matches the label only |
 | `use.storageState: 'file.json'`, `context.storageState({ path })` | `test.setup` and `{ session }`. [Sessions last one run](#what-differs-on-purpose), so there is no file |
 | `page.waitForTimeout(ms)`, `page.waitForNavigation()` | A locator assertion on the state you wait for; `browser.waitForURL(url)` |
-| `?` as a literal and `{a,b}` in a route glob | A `RegExp`. In a glob, `?` is a wildcard and `{a,b}` is literal |
 | `--only-changed` | `--changed-since <ref>` with a [test filter](/filters) in `filters` |
 | `page.$()`, `$eval()`, `elementHandle()`, non-JSON `evaluate` values, `locator.page()` | Locators, and `browser.evaluate` with JSON in and out, which the report records and redacts. Pass `browser` to a page object |
 | A dialog with no handler, dismissed silently | `browser.onDialog('dismiss')`. An unhandled dialog fails the next step |

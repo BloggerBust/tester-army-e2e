@@ -22,7 +22,6 @@
  * - should contain raw response header after fulfill: needs `request.response()`.
  * - should be able to intercept every navigation to a page controlled by service worker: service workers.
  * - should respect URLPattern ignoreCase: `route` takes a glob or RegExp, not a URLPattern.
- * - should not support ? in glob pattern: `?` in a route glob matches one character on purpose, where Playwright reads it literally.
  */
 
 import { test, type WebRoute } from '@e2e-dev/web';
@@ -52,6 +51,22 @@ test.describe('page route', { requires: ['browser'], tags: ['playwright'] }, () 
     const [response] = await Promise.all([browser.waitForResponse('**/empty.html'), browser.goto(EMPTY_PAGE)]);
     expect(response.status).toBe(200);
     expect(intercepted).toBe(true);
+  });
+
+  test('should not support ? in glob pattern', async ({ browser }) => {
+    // The testbed server has no /index routes; the oldest route stands in for it, since routes run newest first.
+    await browser.route('**/index*', (route) => route.fulfill({ body: `server ${route.request.url.slice(PREFIX.length)}` }));
+    await browser.route('**/index?hello', (route) => route.fulfill({ body: 'intercepted any character' }));
+    await browser.route('**/index\\?hello', (route) => route.fulfill({ body: 'intercepted question mark' }));
+
+    await browser.goto(`${PREFIX}/index?hello`);
+    expect(await browser.evaluate<string>('document.body.textContent')).toBe('intercepted question mark');
+
+    await browser.goto(`${PREFIX}/index`);
+    expect(await browser.evaluate<string>('document.body.textContent')).toBe('server /index');
+
+    await browser.goto(`${PREFIX}/index1hello`);
+    expect(await browser.evaluate<string>('document.body.textContent')).toBe('server /index1hello');
   });
 
   test('should unroute', async ({ browser }) => {

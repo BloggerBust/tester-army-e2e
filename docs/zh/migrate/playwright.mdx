@@ -137,7 +137,7 @@ test('checkout', async ({ app, agent, screen }) => {
 | --- | --- |
 | `page.goto(path)` | `app.open(path)`；需要选项时使用 `browser.goto(url, { waitUntil, timeout })` |
 | `page.goBack()`, `goForward()`, `reload()`, `url()`, `title()`, `setViewportSize()` | `browser.back()`、`forward()`、`reload()`、`url()`、`title()`、`setViewport()` |
-| `page.waitForURL(url)` | `browser.waitForURL(url)`，使用 `RegExp` 或精确 URL，不支持 glob |
+| `page.waitForURL(url)` | `browser.waitForURL(url)`，使用 glob、`RegExp` 或精确 URL |
 | `page.screenshot()` | `app.screenshot(label)`，截取视口并附加到报告 |
 | 每个测试使用全新的 `context` | 每次尝试同样如此；`app.restart()` 重新创建上下文，`app.clearState()` 还会清除存储 |
 
@@ -148,7 +148,7 @@ test('checkout', async ({ app, agent, screen }) => {
 | --- | --- |
 | `page.route(pattern, handler)`, `unroute()`, `unrouteAll()` | `browser` 上的同名方法；模式是匹配完整 URL 的 `RegExp`、glob，或用 `{ method, url }` 指定一个 HTTP 方法 |
 | `route.fulfill()`, `continue()`, `fallback()`, `abort()`, `fetch()` | 相同，各方法接受的选项见 [`route`](/reference/web#route) |
-| `page.waitForResponse(pattern)` | `browser.waitForResponse(pattern)`；使用 `'**/api/orders'`，而非 `'/api/orders'` |
+| `page.waitForResponse(pattern)` | `browser.waitForResponse(pattern)`，使用相同的 URL glob |
 | `page.on('dialog')`, `page.waitForEvent('download')` | `browser.onDialog('accept')` 或处理函数；`browser.waitForDownload(() => trigger)` |
 | `page.waitForEvent('popup')` | `browser.waitForPopup(() => trigger)`，会激活新标签页，参阅[标签页](/reference/web#tabs) |
 | `context.pages()`, `context.newPage()`, `page.bringToFront()` | `browser.tabs()`、`browser.newTab()`、`tab.activate()`；没有 `context.on('page')` 事件 |
@@ -264,7 +264,7 @@ export const test = base.extend<{ accountPage: AccountPage }>({
 | Playwright | 目前可用的方式 |
 | --- | --- |
 | `devices['iPhone 15']`, `isMobile`, `hasTouch`, `deviceScaleFactor` | `web({ viewport, userAgent })`；真实触摸使用移动端测试目标 |
-| `waitForURL(glob)`, `waitForFunction()` | `RegExp`；通过 `expect.poll` 检查 `browser.evaluate` |
+| `waitForFunction()` | 通过 `expect.poll` 检查 `browser.evaluate` |
 | `waitForResponse(predicate)`, `waitForRequest()`, `page.on('request')`, `response.ok()` | `browser.waitForResponse(pattern)`，或用 `{ method, url }` 按请求方法过滤，然后在测试中检查响应，以 `status` 代替 `ok()`。对于请求，使用 `browser.route` 处理函数记录 `route.request`，然后调用 `route.fallback()` |
 | `route.fulfill({ response })`, `route.abort(code)`, `route.fetch(options)`, `request.postDataJSON()` | `route.fetch()` 返回的 `status`、`headers` 和 `body`；`JSON.parse(route.request.postData)` |
 | `page.addLocatorHandler()` | 在 `beforeEach` 中关闭覆盖层，或通过 `browser.setCookies` 设置其同意 Cookie |
@@ -319,7 +319,6 @@ export const test = base.extend<{ accountPage: AccountPage }>({
 | 按值选择的 `selectOption('pro')` | `selectOption({ value: 'pro' })`。单独的字符串只匹配标签 |
 | `use.storageState: 'file.json'`, `context.storageState({ path })` | `test.setup` 和 `{ session }`。[会话仅持续一次运行](#what-differs-on-purpose)，因此没有文件 |
 | `page.waitForTimeout(ms)`, `page.waitForNavigation()` | 对等待的状态使用定位器断言；`browser.waitForURL(url)` |
-| 路由 glob 中作为字面量的 `?` 和 `{a,b}` | `RegExp`。在 glob 中，`?` 是通配符，`{a,b}` 是字面量 |
 | `--only-changed` | `--changed-since <ref>` 配合 `filters` 中的[测试过滤器](/filters) |
 | `page.$()`、`$eval()`、`elementHandle()`、非 JSON 的 `evaluate` 值、`locator.page()` | 定位器，以及输入输出为 JSON 的 `browser.evaluate`，报告会记录并脱敏。向页面对象传入 `browser` |
 | 没有处理函数时静默关闭的对话框 | `browser.onDialog('dismiss')`。未处理的对话框会使下一步骤失败 |
