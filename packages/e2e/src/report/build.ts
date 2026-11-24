@@ -506,10 +506,24 @@ export function projectSource(
 /** A step that named no line in the project: a fixture's own call, or a step minted outside one. */
 const UNKNOWN_STEP_SOURCE: ReportSource = { file: 'unknown', line: 1, column: 1 };
 
+/** Code points of a step label report-v1 admits (its `maxLength`, which counts code points). */
+const MAX_STEP_LABEL_CODE_POINTS = 8192;
+
+/**
+ * A label cut to what report-v1 admits. It is cut here, at the report, after
+ * the recorder redacted it whole: a guest session's step reaches its owner
+ * uncut, so the owner's ledger can still match a value it alone knows.
+ */
+function reportLabel(label: string): string {
+  const points = [...label];
+  return points.length <= MAX_STEP_LABEL_CODE_POINTS ? label : `${points.slice(0, MAX_STEP_LABEL_CODE_POINTS - 1).join('')}…`;
+}
+
 function serializeStep(step: StepRecord): ReportStep {
   const { error, source, ...rest } = step;
   return {
     ...rest,
+    label: reportLabel(step.label),
     source: source ?? UNKNOWN_STEP_SOURCE,
     error: error === undefined ? undefined : serializeErrorRecord(error),
   };

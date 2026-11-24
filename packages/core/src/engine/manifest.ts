@@ -83,7 +83,7 @@ const FUNCTION_MEMBERS = [
 ] as const;
 
 /** Universal fixture names a contribution may never shadow. */
-const RESERVED_FIXTURES = new Set(['agent', 'app', 'screen', 'platform', 'session']);
+const RESERVED_FIXTURES = new Set(['agent', 'app', 'screen', 'platform', 'request', 'session']);
 
 /**
  * The methods an `@e2e-dev/core` session holds beside its fixtures. A session

@@ -171,6 +171,8 @@ run only in a browser, so a test that uses it declares
 | `page.webmcp.tools()`, `page.webmcp.callTool(name, input)` | the same on `browser.webmcp`, with `web({ webmcp: true })` in place of the launch argument or preferences; the main frame only, see [WebMCP](/reference/web#webmcp) |
 | `page.addInitScript()`, `page.emulateMedia({ colorScheme, reducedMotion })` | `browser.addInitScript()` or `web({ initScripts })`; `browser.emulateMedia()` |
 | `context.addCookies()`, `cookies()`, `clearCookies()` | `browser.setCookies()`, `browser.cookies()`, `browser.clearCookies()` |
+| The `request` fixture: `get()`, `post()`, `put()`, `patch()`, `delete()`, `head()`, `fetch()` | the same on [`request`](/reference/request): `{ json }` for `data` (it refuses an `undefined` value or a `Date`), the query in the URL for `params`, `{ redirect: 'manual' }` for `maxRedirects: 0`, `status` and `headers` as properties. It keeps no cookies between calls: pass a token or session cookie in `headers` |
+| `page.request`, which shares the page's cookies | `request` with a `cookie` header from `browser.cookies()`, see [Signed-in requests](/api-testing#signed-in-requests) |
 
 </Accordion>
 <Accordion title="Test structure">
@@ -289,7 +291,7 @@ purpose. Use the workaround, or keep the test in Playwright.
 | `page.on('console')`, `page.on('pageerror')`, `page.clock` | A `browser.addInitScript` that records to a `window` array, or that stubs `Date` |
 | `context.setOffline()`, `setGeolocation()`, `grantPermissions()` | A route that aborts every request; a `browser.addInitScript` stub; `app.permissions` on the target |
 | `ignoreHTTPSErrors`, `proxy`, `channel`, `launchOptions` | Serve the app over `http`; start the browser yourself and attach with `web({ connect })` |
-| The `request` fixture, `page.request`, `expect(response).toBeOK()` | Node `fetch` with `app.baseUrl`, see [API](/api-testing); `expect(response.status).toBe(200)` |
+| `expect(response).toBeOK()` | `expect(response.status).toBeGreaterThanOrEqual(200)` and `expect(response.status).toBeLessThan(300)` |
 
 </Accordion>
 <Accordion title="Test structure, reports, and CLI">
@@ -324,7 +326,7 @@ purpose. Use the workaround, or keep the test in Playwright.
 | Option fixtures, overriding `page` or `context` in `extend` | `process.env` in the fixture; a new fixture under its own name |
 | `const response = await page.goto()` | Start `browser.waitForResponse` before the navigation |
 | A Playwright `Reporter` class, third-party reporters | A [custom reporter](/reference/reporters#custom-reporters) with `onEvent` and `onRunFinished`; `junit.xml` for a dashboard |
-| `browser.newContext()` for a second user | Drive the second user through the API with `fetch` |
+| `browser.newContext()` for a second user | Drive the second user through the API with `request` |
 | `page.exposeFunction()`, `addStyleTag()`, `innerHTML()`, `page.viewportSize()` | `browser.evaluate` |
 | `routeFromHAR()`, `routeWebSocket()`, `page.setExtraHTTPHeaders()` | A `browser.route` for each endpoint or header; a `browser.addInitScript` that stubs `WebSocket` |
 | `emulateMedia({ media, forcedColors, contrast })` | - |

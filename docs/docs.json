@@ -191,6 +191,7 @@
               "reference/expect",
               "reference/screen",
               "reference/app",
+              "reference/request",
               "reference/agent",
               "reference/core"
             ]

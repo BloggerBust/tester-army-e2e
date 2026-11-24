@@ -1,4 +1,5 @@
 /** Compile-time assertions for route decisions: the options each one takes, and the ones it refuses at runtime too. */
+import type { WebResponse as CoreWebResponse } from '@e2e-dev/core';
 import type { Browser, Dialog, RouteContinueOverrides, RouteFulfillResponse, RouteMatcher, WebResponse, WebRoute } from '../../src/index.ts';
 
 ({ json: { ok: true }, contentType: 'application/vnd.quote+json' }) satisfies RouteFulfillResponse;
@@ -35,6 +36,11 @@ void (browser.unrouteAll() satisfies Promise<void>);
 void (browser.route({ method: 'POST', url: '**/api/orders' }, () => {}) satisfies Promise<void>);
 void (browser.unroute({ method: 'POST', url: '**/api/orders' }) satisfies Promise<void>);
 void (browser.waitForResponse({ method: 'POST', url: '**/api/orders' }) satisfies Promise<WebResponse>);
+// The web engine's response type is core's, the one the request fixture returns.
+declare const fromWeb: WebResponse;
+declare const fromCore: CoreWebResponse;
+void (fromWeb satisfies CoreWebResponse);
+void (fromCore satisfies WebResponse);
 // @ts-expect-error a method-narrowed pattern needs its url
 void browser.route({ method: 'POST' }, () => {});
 // @ts-expect-error clearing routes takes no options

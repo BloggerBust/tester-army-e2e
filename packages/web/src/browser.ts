@@ -13,7 +13,7 @@
  */
 
 import type { Download, Route } from 'playwright-core';
-import type { ActionOptions, Expectable, JsonValue, Locator, Screen, TextMatch } from '@e2e-dev/core';
+import type { ActionOptions, Expectable, JsonValue, Locator, Screen, TextMatch, WebResponse } from '@e2e-dev/core';
 import {
   ConfigurationError,
   Deadline,
@@ -120,20 +120,8 @@ export interface RouteMatcher {
   readonly url: string | RegExp;
 }
 
-export interface WebResponse {
-  /** Response URL. */
-  readonly url: string;
-  /** HTTP status. */
-  readonly status: number;
-  /** Response headers, lower-cased names; `route.fetch()` joins several `set-cookie` values with `\n`, `waitForResponse` leaves cookie headers out. */
-  readonly headers: Readonly<Record<string, string>>;
-  /** Waits for the body and returns its bytes; rejects with `ACTION_FAILED` when the body could not be read. */
-  body(): Promise<Buffer>;
-  /** Waits for the body and parses it as JSON; rejects with `ACTION_FAILED` when the body could not be read. */
-  json<T = unknown>(): Promise<T>;
-  /** Waits for the body and reads it as text; rejects with `ACTION_FAILED` when the body could not be read. */
-  text(): Promise<string>;
-}
+/** The response type `request` returns too, defined in core so the shapes cannot drift. */
+export type { WebResponse } from '@e2e-dev/core';
 
 /**
  * Reads the body once the response is known and keeps the outcome: a body

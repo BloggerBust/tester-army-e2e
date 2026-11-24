@@ -102,6 +102,27 @@ function build(overrides: Partial<BuildReportOptions>): ReturnType<typeof buildR
   return document;
 }
 
+describe('step labels', () => {
+  const withLabel = (label: string): ResultRecord => {
+    const result = failedResult(productFailure);
+    const step: StepRecord = { id: uuidv7(), index: 0, kind: 'resource', api: 'request.get', label, status: 'passed', startedAt: AT, durationMs: 1, events: [], artifacts: [] };
+    return { ...result, attempts: [{ ...result.attempts[0]!, steps: [step] }] };
+  };
+  const reportedLabel = (label: string): string => build({ results: [withLabel(label)] }).run.results[0]!.attempts[0]!.steps[0]!.label;
+
+  it('keeps a label of 8192 code points whole, though a character outside the BMP takes two UTF-16 units', () => {
+    const label = `${'x'.repeat(8191)}😀`;
+    expect(label).toHaveLength(8193);
+    expect(reportedLabel(label)).toBe(label);
+  });
+
+  it('cuts a longer label to 8192 code points, the last an ellipsis', () => {
+    const cut = reportedLabel(`${'😀'.repeat(8193)}`);
+    expect([...cut]).toHaveLength(8192);
+    expect(cut.endsWith('😀…')).toBe(true);
+  });
+});
+
 describe('result tags', () => {
   it('carries the tags a test declares, an empty list when it declares none', () => {
     const plain = failedResult(productFailure);

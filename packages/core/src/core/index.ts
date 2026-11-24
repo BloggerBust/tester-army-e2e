@@ -43,4 +43,5 @@ export type {
   TapOptions,
   TextMatch,
   TextMatchOptions,
+  WebResponse,
 } from '../types.ts';

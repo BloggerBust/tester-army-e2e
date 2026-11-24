@@ -86,7 +86,7 @@ export {
   RETRYABLE_ENGINE_ERROR_CODES,
   parseKey,
 } from './contract.ts';
-export type { AppPermissionState, Expectable, JsonValue, LaunchArgumentValue, LaunchArgumentValues, LaunchArguments, Locator, ResolvedLaunchArguments, Screen, Secret } from '../types.ts';
+export type { AppPermissionState, Expectable, JsonValue, LaunchArgumentValue, LaunchArgumentValues, LaunchArguments, Locator, ResolvedLaunchArguments, Screen, Secret, WebResponse } from '../types.ts';
 export { isSecret } from '../secrets.ts';
 
 /**

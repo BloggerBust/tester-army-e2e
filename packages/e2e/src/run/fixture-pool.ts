@@ -1,6 +1,6 @@
 /**
  * One pool for every fixture a piece of test code reads: the built-in ones
- * (`agent`, `app`, `screen`, `platform`, `session`), the target engine's, and
+ * (`agent`, `app`, `screen`, `platform`, `request`, `session`), the target engine's, and
  * the `test.extend()` chain it was registered through. Each has a scope, and
  * code sees the fixtures that live at least as long as it does: a test and
  * its per-test hooks see test and worker fixtures, a suite hook and a worker

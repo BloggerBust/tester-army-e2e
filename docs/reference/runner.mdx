@@ -480,8 +480,8 @@ if (failures.length > 0) throw new AggregateError(failures, 'e2e host close fail
 | `tracePath` | `string` |
 | [`session.close`](#session-close) | `Promise<readonly SerializedError[]>` |
 
-- `fixtures` holds `agent`, `app`, `screen`, `platform`, and the engine's
-  fixtures.
+- `fixtures` holds `agent`, `app`, `screen`, `platform`, `request`, and the
+  engine's fixtures.
 - `runId` and `target` are the host's run and target; `attemptId` is unique
   to this attempt.
 - `steps()` returns read-only `StepRecord`s for steps run so far, as the

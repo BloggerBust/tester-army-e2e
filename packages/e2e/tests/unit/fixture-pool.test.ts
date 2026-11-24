@@ -235,7 +235,7 @@ describe('planning', () => {
     const chain = [logged([], 'a', 'A', { uses: ['b'] }), logged([], 'b', 'B', { uses: ['c'] }), logged([], 'c', 'C', { uses: ['a'] }), logged([], 'd', 'D', { uses: ['d'] })];
     expect(() => planAttempt(toyTarget(), testNaming(chain, ['b']), [])).toThrow(planError('fixtures depend on each other in a cycle: "b" -> "c" -> "a" -> "b"'));
     // A fixture that names itself extends the one before it, and here there is none.
-    expect(() => planAttempt(toyTarget(), testNaming(chain, ['d']), [])).toThrow(planError('fixture "d" names "d": target "toy" has no "d" fixture; available: a, agent, app, b, c, gadget, platform, screen, session'));
+    expect(() => planAttempt(toyTarget(), testNaming(chain, ['d']), [])).toThrow(planError('fixture "d" names "d": target "toy" has no "d" fixture; available: a, agent, app, b, c, gadget, platform, request, screen, session'));
     // Found where the fixtures are declared too, before any target is known.
     expect(() => checkDeclaredFixtures(chain, chain)).toThrow(planError('cycle: "a" -> "b" -> "c" -> "a"'));
     // A cycle nothing names is not this test's.
@@ -245,7 +245,7 @@ describe('planning', () => {
   it('refuses a name the target has no fixture for, with the nearest name or the e2e way', () => {
     const chain = [logged([], 'workspace', 'W')];
     expect(() => planAttempt(toyTarget(), testNaming(chain, ['workspce']), [])).toThrow(
-      planError('test "suite > case" names "workspce": target "toy" has no "workspce" fixture; available: agent, app, gadget, platform, screen, session, workspace (engine toy contributes gadget); did you mean "workspace"?'),
+      planError('test "suite > case" names "workspce": target "toy" has no "workspce" fixture; available: agent, app, gadget, platform, request, screen, session, workspace (engine toy contributes gadget); did you mean "workspace"?'),
     );
     expect(() => planAttempt(toyTarget(), testNaming(chain, ['page']), [])).toThrow(planError('there is no Playwright page: open the app with app.open()'));
     expect(() => planAttempt(toyTarget(), testNaming([], []), [hookNaming('beforeEach', chain, ['workspace'])])).toThrow(planError('beforeEach hook names "workspace": target "toy" has no "workspace" fixture'));
@@ -477,7 +477,7 @@ describe('fixtures that extend a built-in', () => {
     expect(planAttempt(toyTarget(), testNaming(chain, ['app']), []).order).toEqual([]);
     expect(() => checkDeclaredFixtures(chain, chain)).not.toThrow();
     expect(() => planAttempt(toyTarget(), testNaming(chain, ['device']), [])).toThrow(
-      planError('fixture "device" names "device": target "toy" has no "device" fixture; available: agent, app, gadget, platform, screen, session (engine toy contributes gadget)'),
+      planError('fixture "device" names "device": target "toy" has no "device" fixture; available: agent, app, gadget, platform, request, screen, session (engine toy contributes gadget)'),
     );
   });
 });

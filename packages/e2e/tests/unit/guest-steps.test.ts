@@ -92,6 +92,14 @@ describe('the steps of a session a test drives beside its own', () => {
     expect(test.all()[0]!.events[0]).toMatchObject({ detail: 'typed <secret:otp>', reasoning: 'I read <secret:otp>' });
   });
 
+  it('hands the test a long label whole, so the test redacts a value it alone knows past the report\'s cut', async () => {
+    const value = 'known-to-the-test-only-7719';
+    const { test, session } = pair('launch-1', { redact: (text) => text.replaceAll(value, '<secret:otp>') });
+    const long = `${'x'.repeat(8185)}${value}`;
+    await session.run('resource', 'request.get', long, async () => {});
+    expect(test.all()[0]!.label).toBe(`${'x'.repeat(8185)}<secret:otp>`);
+  });
+
   it('reads the session\'s test lines against the test\'s project, when the session\'s root is another directory', () => {
     const { test, mirror } = pair('launch-1', { sessionRoot: path.join(ROOT, 'packages', 'bot') });
     const theirs = (id: string, file: string): StepRecord => ({

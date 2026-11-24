@@ -851,7 +851,7 @@ A static, non-empty array of unique names. Each name matches
 
 ### Fixtures
 
-Built-in fixtures are the fixtures a `test` has without `test.extend`: five
+Built-in fixtures are the fixtures a `test` has without `test.extend`: six
 on every engine, and the ones the target's engine contributes. Each has a
 scope on each engine.
 
@@ -861,6 +861,7 @@ scope on each engine.
 | [`app`](/reference/app) | `App` | test | worker |
 | [`screen`](/reference/screen) | `Screen` | test | worker |
 | `platform` | `string` | worker | worker |
+| [`request`](/reference/request) | `APIRequest` | test | test |
 | [`session`](#test-setup) | `SetupSession` | test | test |
 | [`browser`](/reference/web) | `Browser` | test | - |
 | [`device`](/reference/mobile#device) | `Device` | - | worker |
@@ -1331,6 +1332,8 @@ export interface TestFixtures {
   readonly screen: Screen;
   /** The target's platform label: `web`, `ios`, `android`, or an engine's own string. */
   readonly platform: string;
+  /** HTTP calls, each one a step; a path resolves against the app URL. */
+  readonly request: APIRequest;
 }
 
 export interface SetupFixtures extends TestFixtures {

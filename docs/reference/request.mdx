@@ -1,0 +1,234 @@
+---
+title: request
+description: "The request fixture: HTTP calls from a test, each one a step in the report."
+---
+
+The `request` fixture sends HTTP requests from a test. A path resolves
+against the target's app URL. Each call is a step in the report, and it
+ends when the whole response body is read.
+
+```ts title="tests/orders.e2e.ts"
+import { expect, test } from 'e2e';
+
+test('creates an order', async ({ request }) => {
+  const created = await request.post('/api/orders', { json: { sku: 'A1' } });
+  expect(created.status).toBe(201);
+  expect(await created.json()).toMatchObject({ sku: 'A1' });
+});
+```
+
+## Reference
+
+| Method | Returns |
+| --- | --- |
+| [`fetch`](#fetch) | `Promise<WebResponse>` |
+| [`get`](#shorthands) | `Promise<WebResponse>` |
+| [`post`](#shorthands) | `Promise<WebResponse>` |
+| [`put`](#shorthands) | `Promise<WebResponse>` |
+| [`patch`](#shorthands) | `Promise<WebResponse>` |
+| [`delete`](#shorthands) | `Promise<WebResponse>` |
+| [`head`](#shorthands) | `Promise<WebResponse>` |
+
+Every method takes a URL and [options](#options), and returns a
+[`WebResponse`](#webresponse).
+
+### `fetch`
+
+Sends a request with the method in `options.method`, `GET` by default.
+
+```ts
+const removed = await request.fetch('/api/orders/7', { method: 'DELETE' });
+```
+
+The method is any HTTP method name but `CONNECT`, `TRACE`, and `TRACK`,
+which Node's `fetch` cannot send. e2e sends it upper-cased.
+
+### Shorthands
+
+`get`, `post`, `put`, `patch`, `delete`, and `head` send a request with
+their method.
+
+```ts
+const found = await request.get('/api/orders?reference=r1');
+```
+
+A `GET` or `HEAD` request takes no body.
+
+### Options
+
+| Option | Type | Default |
+| --- | --- | --- |
+| `headers` | `Record<string, string>` | - |
+| `json` | `unknown` | - |
+| `body` | `string` | - |
+| `timeout` | `number` | `actionTimeout` |
+| `redirect` | `'follow' \| 'manual' \| 'error'` | `'follow'` |
+| `method` | `string` | `'GET'` |
+
+- `json` is sent through `JSON.stringify`, with
+  `content-type: application/json` unless `headers` sets a content type. It
+  takes JSON-safe values only: plain objects, arrays, strings, finite
+  numbers, booleans, and `null`. A key whose value is `undefined`, a `Date`,
+  and a `secrets.get()` handle are refused, where `JSON.stringify` would drop
+  or convert them.
+- `body` is sent as is, with `content-type: text/plain;charset=UTF-8` unless
+  `headers` sets one. Pass `json` or `body`, not both. Form, multipart,
+  and binary bodies are not supported yet.
+- `timeout` is in milliseconds, at most 2147483647. `0` sets no timeout of
+  its own, so only the running test's or hook's budget bounds the call.
+- `redirect` sets how redirects are handled. `'follow'` follows them;
+  `'manual'` returns the 3xx response as is, with its `location` and
+  `set-cookie` headers; `'error'` fails the call with `ACTION_FAILED` when
+  the server redirects.
+- `method` is an option of `fetch` only.
+
+### `WebResponse`
+
+The response, with its body already read. It is the same type the web
+engine's [`browser.waitForResponse`](/reference/web#waitforresponse) and
+`route.fetch()` return.
+
+| Member | Type |
+| --- | --- |
+| `status` | `number` |
+| `url` | `string` |
+| `headers` | `Record<string, string>` |
+| `body()` | `Promise<Buffer>` |
+| `text()` | `Promise<string>` |
+| `json<T>()` | `Promise<T>` |
+
+- `url` is the URL after redirects when `redirect` is `'follow'`, or the
+  requested URL when `redirect` is `'manual'`.
+- `headers` has lower-cased names. Several `set-cookie` values are joined
+  with `\n`.
+- `text()` decodes the body as UTF-8. `json()` parses it, `unknown` unless
+  you name a type. Nothing checks that type: use
+  [`toMatchSchema`](/reference/expect#matching-a-schema) to check it.
+- Check the status with the value matchers:
+  `expect(response.status).toBe(201)`.
+
+## URLs
+
+A path resolves against the target's `app.url` the way
+[`app.open`](/reference/app#open) resolves one. An absolute `http` or `https`
+URL goes where it names, on any target.
+
+- A leading `/` starts at the origin. With `app.url` set to
+  `https://example.com/shop`, `/api/orders` goes to
+  `https://example.com/api/orders`. To keep the base path, write
+  ``request.get(`${app.baseUrl}/api/orders`)``.
+- The call runs in the runner's process, on the runner's network. An app the
+  runner cannot reach, such as one inside a virtual machine the runner only
+  drives a browser in, is out of reach for `request` too.
+- The web engine's `headers` and `basicAuth` options apply to the browser
+  only. Pass the same values in a call's `headers`.
+
+| Throws | When |
+| --- | --- |
+| `APP_URL_REQUIRED` | The URL is a path and the target declares no `app.url`. |
+| `POLICY_DENIED` | The URL is malformed, or has a scheme other than `http` or `https`, `about:blank` included. Also a `Secret` in `json`. |
+| `INVALID_ARGUMENT` | The URL is not a non-empty string or has credentials (`https://user:pass@...`), an option has the wrong type or is one `request` does not take (Playwright's `data` or `params`, say), `headers` is not a plain object, a header name or value is invalid, the header is `content-length`, `host`, or `sec-fetch-mode`, which `fetch` sets itself, the header is `expect`, `keep-alive`, `transfer-encoding`, or `upgrade`, which `fetch` cannot send, a `connection` header other than `close` or `keep-alive`, `accept-encoding` combined with `range` (where `fetch` appends `identity`), `json` and `body` are both set, `json` is not JSON-safe, a `GET` or `HEAD` request has a body, `timeout` is negative or over 2147483647, `redirect` is not `'follow'`, `'manual'`, or `'error'`, or the method is not an HTTP method name or is `CONNECT`, `TRACE`, or `TRACK`. |
+
+## Steps and timeouts
+
+Each call is a step of kind `resource`, labeled with the method and the
+path: `POST /api/orders`. The label leaves out the query string. A path on
+another origin shows the origin too.
+
+A call these checks refuse is still a failed step, and its promise rejects;
+the method never throws. When the method or the URL is what was refused, the
+step has no label, and no error message quotes the URL or a header value.
+
+A call is bounded by its `timeout`, `actionTimeout` (default 30000 ms) by default, and by the budget of
+the code that makes it: the test timeout in a test body, the cleanup timeout
+in an `afterEach` hook. When either runs out, e2e aborts the request. A
+test that runs out of time fails with its usual timeout error.
+
+| Throws | When |
+| --- | --- |
+| `ACTION_FAILED` | The call ran past its `timeout`, the server redirected with `redirect: 'error'`, or the network failed: the server refused the connection, or the host does not resolve. |
+
+e2e does not retry a call. Node's `fetch` itself sends a request again one
+time when the server answers `421 Misdirected Request`. To retry a read, wrap it in
+[`expect.poll`](/reference/expect#polling-a-value).
+
+## Cookies and scope
+
+`request` does not send the browser's cookies, and it keeps no cookies
+between calls. Pass a token or your app's session cookie in `headers`, as
+[Signed-in requests](/api-testing#signed-in-requests) shows. Credentials in
+the URL are refused.
+
+`request` is a test fixture. Test bodies, `beforeEach`, and `afterEach` get
+it. `beforeAll`, `afterAll`, and worker fixtures do not.
+
+## Types
+
+```ts
+export interface APIRequest {
+  /** Sends a request with `options.method`, GET by default. */
+  fetch(url: string, options?: APIRequestFetchOptions): Promise<WebResponse>;
+  /** Sends a GET request. */
+  get(url: string, options?: APIRequestOptions): Promise<WebResponse>;
+  /** Sends a POST request. */
+  post(url: string, options?: APIRequestOptions): Promise<WebResponse>;
+  /** Sends a PUT request. */
+  put(url: string, options?: APIRequestOptions): Promise<WebResponse>;
+  /** Sends a PATCH request. */
+  patch(url: string, options?: APIRequestOptions): Promise<WebResponse>;
+  /** Sends a DELETE request. */
+  delete(url: string, options?: APIRequestOptions): Promise<WebResponse>;
+  /** Sends a HEAD request. */
+  head(url: string, options?: APIRequestOptions): Promise<WebResponse>;
+}
+
+/** What one `request` call sends beside its URL. */
+export interface APIRequestOptions {
+  /** Request headers. */
+  readonly headers?: Readonly<Record<string, string>>;
+  /** A body sent as JSON, with `content-type: application/json` unless `headers` sets one. Not with `body`. */
+  readonly json?: unknown;
+  /** A body sent as is. Not with `json`. */
+  readonly body?: string;
+  /** Timeout in milliseconds; defaults to `actionTimeout`. 0 sets none of its own, so only the running test's or hook's budget bounds the call. */
+  readonly timeout?: number;
+  /** How redirects are handled; `'follow'` by default. `'manual'` returns the 3xx response as is; `'error'` fails the call with `ACTION_FAILED`. */
+  readonly redirect?: 'follow' | 'manual' | 'error';
+}
+
+/** `request.fetch` options: the method beside the rest. */
+export interface APIRequestFetchOptions extends APIRequestOptions {
+  /** The HTTP method; GET by default. */
+  readonly method?: string;
+}
+
+/**
+ * An HTTP response: what `request` calls, the web engine's
+ * `browser.waitForResponse`, and `route.fetch()` return.
+ */
+export interface WebResponse {
+  /** Response URL. */
+  readonly url: string;
+  /** HTTP status. */
+  readonly status: number;
+  /** Response headers, lower-cased names; `request` and `route.fetch()` join several `set-cookie` values with `\n`, `waitForResponse` leaves cookie headers out. */
+  readonly headers: Readonly<Record<string, string>>;
+  /** Waits for the body and returns its bytes; rejects with `ACTION_FAILED` when the body could not be read. */
+  body(): Promise<Buffer>;
+  /** Waits for the body and parses it as JSON; rejects with `ACTION_FAILED` when the body could not be read. */
+  json<T = unknown>(): Promise<T>;
+  /** Waits for the body and reads it as text; rejects with `ACTION_FAILED` when the body could not be read. */
+  text(): Promise<string>;
+}
+```
+
+## Related
+
+<CardGroup cols={2}>
+  <Card title="API" icon="plug" href="/api-testing">
+    Write API tests in the same files and run as UI tests.
+  </Card>
+  <Card title="expect" icon="circle-check" href="/reference/expect">
+    Value matchers for a response's fields and body.
+  </Card>
+</CardGroup>

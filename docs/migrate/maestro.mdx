@@ -141,7 +141,7 @@ Calls on `device` run only on a device, so a test that uses it declares
 | `assertWithAI`, `assertNoDefectsWithAI`, `extractTextWithAI` | `agent.assert('...', { vision: true })`, `agent.extract('...', { schema })` |
 | `runFlow: file.yaml`, `onFlowStart`, `onFlowComplete` | a function or a `test.extend` fixture; `beforeEach`, `afterEach` |
 | `runFlow: { when: { visible } }` | `if (await locator.isVisible()) { ... }`, see [Rewrite selectors](#rewrite-selectors) |
-| `repeat`, `runScript`, `evalScript`, `${output.x}`, `http.get` | TypeScript in the test: loops, variables, and Node `fetch`, see [API](/api-testing) |
+| `repeat`, `runScript`, `evalScript`, `${output.x}`, `http.get` | TypeScript in the test: loops, variables, and the `request` fixture, see [API](/api-testing) |
 
 </Accordion>
 </AccordionGroup>

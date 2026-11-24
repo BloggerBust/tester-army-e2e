@@ -346,7 +346,8 @@ The engine driving the surface: `web(...)`, `mobile(...)`, or any
 engine: web({ browser: 'firefox' }),
 ```
 
-A target without an engine runs through agent tools only. A target with `app`
+A target without an engine runs through agent tools and
+[`request`](/reference/request) calls to absolute URLs. A target with `app`
 and no engine is `INVALID_CONFIG`.
 
 ### The app under test
@@ -1684,7 +1685,7 @@ export interface E2EConfig {
 ```ts
 /**
  * One named test target: the app under test and the engine that drives it.
- * Without an engine, the target supports agent tools only.
+ * Without an engine, the target supports agent tools and `request` calls to absolute URLs.
  */
 export interface Target {
   /** Label in reports and for `--target`; defaults to the platform. */

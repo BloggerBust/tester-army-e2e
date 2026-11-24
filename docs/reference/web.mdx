@@ -869,18 +869,22 @@ expect((await created).status).toBe(201);
 | `ACTION_FAILED` | Nothing matches inside the deadline. From `body()`, `text()`, and `json()`: a body still streaming when their budget runs out, or a body the browser could not read (a connection reset short of the declared `Content-Length`, a request the page aborted, or a redirect, whose body the browser never keeps), instead of an empty string. |
 
 ```ts
+/**
+ * An HTTP response: what `request` calls, the web engine's
+ * `browser.waitForResponse`, and `route.fetch()` return.
+ */
 export interface WebResponse {
   /** Response URL. */
   readonly url: string;
   /** HTTP status. */
   readonly status: number;
-  /** Response headers, lower-cased names; `route.fetch()` joins several `set-cookie` values with `\n`, `waitForResponse` leaves cookie headers out. */
+  /** Response headers, lower-cased names; `request` and `route.fetch()` join several `set-cookie` values with `\n`, `waitForResponse` leaves cookie headers out. */
   readonly headers: Readonly<Record<string, string>>;
-  /** Waits for the body and returns its bytes. */
+  /** Waits for the body and returns its bytes; rejects with `ACTION_FAILED` when the body could not be read. */
   body(): Promise<Buffer>;
-  /** Waits for the body and parses it as JSON. */
+  /** Waits for the body and parses it as JSON; rejects with `ACTION_FAILED` when the body could not be read. */
   json<T = unknown>(): Promise<T>;
-  /** Waits for the body and reads it as text. */
+  /** Waits for the body and reads it as text; rejects with `ACTION_FAILED` when the body could not be read. */
   text(): Promise<string>;
 }
 ```

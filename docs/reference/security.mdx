@@ -83,6 +83,7 @@ These calls fail with `POLICY_DENIED`.
 | Denied | Why |
 | --- | --- |
 | Navigation to any scheme but `http:` and `https:`, other than `about:blank` | `file:`, `data:`, `javascript:`, and wrappers such as `view-source:file:` would load local or inline content. |
+| A `request` call to any scheme but `http:` and `https:`, `about:blank` included | It sends an HTTP request; nothing else has an answer to read. |
 | A malformed URL | Nothing is repaired. |
 | A `Secret` reaching a JSON sink | Handles carry no value, and no value may be serialized. |
 | Reading a value, text, or attribute from a secure field, with a getter or a `toHaveValue`, `toHaveText`, `toContainText`, or `toHaveAttribute` matcher | Assert the outcome, not the secret. A withheld value is redacted, not empty or absent. |
@@ -101,6 +102,7 @@ These calls fail with `POLICY_DENIED`.
 | Entry point | Accepts | Refuses |
 | --- | --- | --- |
 | `app.open`, `browser.goto`, the agent's `navigate` verb | `http:`, `https:`, and the exact `about:blank` | Every other scheme |
+| The [`request`](/reference/request) fixture | `http:` and `https:`, with no credentials in the URL | Every other scheme, `about:blank` included |
 | `app.open(path)` on a device target with `app.linkBase` | The joined link, or an absolute link: an app's custom scheme, or `http:` and `https:` | `file:`, `data:`, `javascript:`, `view-source:`, `blob:`, `filesystem:` |
 | `device.openLink` | Any absolute URL: an app's custom scheme, or `http:` and `https:` | `file:`, `data:`, `javascript:`, `view-source:`, `blob:`, `filesystem:` |
 | `device.openApp`, the `open_app` tool | An app id | A link |

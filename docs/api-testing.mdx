@@ -1,13 +1,13 @@
 ---
 title: API
-description: Check your API with fetch and value matchers, in the same files and run as UI tests.
+description: Check your API with the request fixture and value matchers, in the same files and run as UI tests.
 "og:image": "https://e2e.com/docs/images/og/api-testing.png?v=bd427bf4fd"
 "twitter:image": "https://e2e.com/docs/images/og/api-testing.png?v=bd427bf4fd"
 ---
 
-An API test calls your API with `fetch` and checks the response with the
-value matchers. It sits in the same files and the same run as UI tests. A
-test that takes only `app` calls no model.
+An API test calls your API with the [`request`](/reference/request) fixture
+and checks the response with the value matchers. It sits in the
+same files and the same run as UI tests, and calls no model.
 
 ```ts title="tests/users-api.e2e.ts"
 import { test, expect } from 'e2e';
@@ -15,15 +15,18 @@ import { z } from 'zod';
 
 const User = z.object({ id: z.number(), name: z.string() });
 
-test('GET /api/users returns the seeded users', async ({ app }) => {
-  const response = await fetch(`${app.baseUrl}/api/users`);
+test('GET /api/users returns the seeded users', async ({ request }) => {
+  const response = await request.get('/api/users');
   expect(response.status).toBe(200);
-  expect(response.headers.get('content-type')).toContain('application/json');
+  expect(response.headers['content-type']).toContain('application/json');
   const users = expect(await response.json()).toMatchSchema(z.array(User));
   expect(users).toHaveLength(3);
   expect(users.map((user) => user.name)).toEqual(['Ada', 'Grace', expect.any(String)]);
 });
 ```
+
+Each call is a step in the report, such as `GET /api/users`, and fails the
+test when it runs past `actionTimeout`.
 
 `toMatchSchema` takes any [Standard Schema](/reference/expect#matching-a-schema),
 such as Zod, Valibot, or ArkType, and returns the value, typed. Use the
@@ -32,9 +35,11 @@ matching it.
 
 ## Where the API runs
 
-`app.baseUrl` is the target's `app.url` without a trailing slash, with the
-port the run picked when the URL declares port `0`. So one file runs against the `app.command` the
-config starts and against a deployed preview.
+A path such as `/api/users` resolves against the target's `app.url`, with
+the port the run picked when the URL declares port `0`. So one file runs
+against the `app.command` the config starts and against a deployed preview.
+A leading `/` starts at the origin: when `app.url` has a path, such as
+`/shop`, write ``request.get(`${app.baseUrl}/api/users`)``.
 
 When the API writes state after it answers, use
 [`expect.poll`](/reference/expect#polling-a-value) to read again until a
@@ -42,37 +47,49 @@ matcher passes.
 
 ## Signed-in requests
 
-To call the API as a signed-in user, write
-[a fixture](/reference/test#your-own-fixtures) that sends
-`browser.cookies()` with each request. Every test that uses this `test`
-gets `browser`, so it needs a web target:
+`request` does not send the browser's cookies. To call the API as the user
+the test signed in, send your app's session cookie in a header. `browser`
+needs a web target:
 
-```ts title="tests/api.ts"
-import { test as base } from '@e2e-dev/web';
+```ts title="tests/orders-api.e2e.ts"
+import { expect } from 'e2e';
+import { test } from '@e2e-dev/web';
 
-export const test = base.extend<{ api: (path: string, init?: RequestInit) => Promise<Response> }>({
-  api: async ({ app, browser }, use) => {
-    await use(async (path, init) => {
-      const url = new URL(`${app.baseUrl}${path}`);
-      if (url.origin !== new URL(app.baseUrl).origin) throw new Error(`${url} is not on the app`);
-      const headers = new Headers(init?.headers);
-      headers.set('cookie', (await browser.cookies()).map((c) => `${c.name}=${c.value}`).join('; '));
-      return fetch(url, { ...init, headers });
-    });
-  },
+test('lists my orders', async ({ app, browser, request }) => {
+  await app.open('/sign-in');
+  // ...sign in through the UI...
+  // The domain your app sets the cookie on: its host, or `.example.com` for `Domain=example.com`.
+  const domain = new URL(app.baseUrl).hostname;
+  const session = (await browser.cookies()).find((c) => c.name === 'session' && c.domain === domain);
+  if (session === undefined) throw new Error('not signed in');
+  const headers = { cookie: `${session.name}=${session.value}` };
+  expect((await request.get('/api/orders', { headers })).status).toBe(200);
 });
 ```
+
+`browser.cookies()` returns every cookie of the browser context, those of
+other sites included, such as a sign-in provider's. Pick your app's session
+cookie by its name and the exact domain your app sets it on, and send it
+only with paths on your app.
 
 ## Without a browser
 
 On a web target, an API test still opens a browser context. A target
-without an engine opens nothing, and has no `app.baseUrl`, so read the URL
-from an environment variable. `e2e init` sets one up when you select no
-engine.
+without an engine opens nothing, and has no `app.url`, so pass an absolute
+URL. Read it from an environment variable:
+
+```ts
+const response = await request.get(`${process.env.API_URL}/api/users`);
+```
+
+`e2e init` sets up such a target when you select no engine.
 
 ## Next
 
 <CardGroup cols={2}>
+  <Card title="request" icon="plug" href="/reference/request">
+    Every method, option, and response field.
+  </Card>
   <Card title="Value matchers" icon="circle-check" href="/reference/expect#value-matchers">
     Every matcher, `toMatchSchema`, and `expect.poll`.
   </Card>
