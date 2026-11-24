@@ -53,7 +53,7 @@ A Playwright key such as `testDir`, `baseURL`, `use`, `webServer`, or
 | `expect.toPass` | Top-level [`toPass`](/reference/config#topass) |
 | `maxFailures`, `use.headless: false` | `--max-failures <n>` and `--headed` on the CLI |
 | `reporter`, `outputDir` | `reporters: ['list', 'junit', htmlReporter()]`, with `htmlReporter` from `@e2e-dev/html-reporter`; also `dot`, `line`, `json`, and `markdown`; `output`, default `.e2e` |
-| `use.viewport`, `locale`, `timezoneId`, `colorScheme`, `reducedMotion`, `userAgent`, `testIdAttribute` | the same keys in `web({ ... })` |
+| `use.viewport`, `deviceScaleFactor`, `locale`, `timezoneId`, `colorScheme`, `reducedMotion`, `userAgent`, `testIdAttribute` | the same keys in `web({ ... })` |
 | `use.browserName`, `httpCredentials`, `extraHTTPHeaders` | `web({ browser, basicAuth, headers })`; `basicAuth` and `headers` apply to the app's origin only, [`credentialOrigins`](/reference/web#credentialorigins) adds more |
 | `chromium.connectOverCDP(url)` | `web({ connect: { cdpEndpoint: () => url } })`, chromium only |
 | `use.trace`, `use.video` | `trace`, `video`: a mode in the config, on a target, or on a test. `web({ screencast: { size } })` sets the video size |
@@ -280,7 +280,7 @@ purpose. Use the workaround, or keep the test in Playwright.
 
 | Playwright | Use today |
 | --- | --- |
-| `devices['iPhone 15']`, `isMobile`, `hasTouch`, `deviceScaleFactor` | `web({ viewport, userAgent })`; a mobile target for real touch |
+| `devices['iPhone 15']`, `isMobile`, `hasTouch` | `web({ viewport, userAgent, deviceScaleFactor })`; a mobile target for real touch |
 | `waitForURL(glob)`, `waitForFunction()` | A `RegExp`; `expect.poll` over `browser.evaluate` |
 | `waitForResponse(predicate)`, `waitForRequest()`, `page.on('request')`, `response.ok()` | `browser.waitForResponse(pattern)`, or `{ method, url }` to filter on the request's method, then check the response in the test, `status` for `ok()`. For requests, a `browser.route` handler that records `route.request`, then calls `route.fallback()` |
 | `route.fulfill({ response })`, `route.abort(code)`, `route.fetch(options)`, `request.postDataJSON()` | `status`, `headers`, and `body` from `route.fetch()`; `JSON.parse(route.request.postData)` |

@@ -31,7 +31,7 @@ export interface KernelOptions extends KernelBrowserParams {
    * `worker` (default): one browser per worker slot, leased in `prepare` and
    * released in `finish`. `attempt`: a fresh browser per test attempt,
    * reattached after a CDP transport drop; rules out `headers`, `basicAuth`,
-   * `userAgent`, `locale`, and `timezoneId`.
+   * `userAgent`, `locale`, `timezoneId`, and `deviceScaleFactor`.
    */
   readonly scope?: BrowserProviderScope | undefined;
   /**

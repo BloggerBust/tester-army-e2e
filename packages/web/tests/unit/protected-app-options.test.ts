@@ -262,6 +262,27 @@ describe('web({ viewport })', () => {
   });
 });
 
+describe('web({ deviceScaleFactor })', () => {
+  it('rejects a factor that is not a number above 0', () => {
+    for (const deviceScaleFactor of [0, -1, Number.NaN, Number.POSITIVE_INFINITY, '2', null, { scale: 2 }]) {
+      expect(() => web({ deviceScaleFactor } as unknown as Parameters<typeof web>[0])).toThrow(
+        expect.objectContaining({ code: 'INVALID_CONFIG', message: 'web({ deviceScaleFactor }) must be a number above 0' }),
+      );
+    }
+  });
+
+  it('needs a viewport size', () => {
+    expect(() => web({ viewport: null, deviceScaleFactor: 2 })).toThrow(
+      expect.objectContaining({ code: 'INVALID_CONFIG', message: 'web({ deviceScaleFactor }) needs a viewport size; viewport: null leaves the window at its own scale' }),
+    );
+  });
+
+  it('takes a whole or fractional factor, with the default viewport or a size', () => {
+    expect(() => web({ deviceScaleFactor: 2 })).not.toThrow();
+    expect(() => web({ deviceScaleFactor: 1.5, viewport: { width: 390, height: 844 } })).not.toThrow();
+  });
+});
+
 describe('web() option keys', () => {
   const refused = (message: string) => expect.objectContaining({ code: 'INVALID_CONFIG', message });
 
@@ -270,7 +291,7 @@ describe('web() option keys', () => {
       refused('web() has unknown key "viewprt"; did you mean "viewport"?'),
     );
     expect(() => web({ launchOptions: {} } as unknown as Parameters<typeof web>[0])).toThrow(
-      refused('web() has unknown key "launchOptions"; expected one of browser, chromiumSandbox, viewport, screencast, connect, headers, basicAuth, credentialOrigins, testIdAttribute, userAgent, locale, timezoneId, colorScheme, reducedMotion, initScripts, webmcp'),
+      refused('web() has unknown key "launchOptions"; expected one of browser, chromiumSandbox, viewport, deviceScaleFactor, screencast, connect, headers, basicAuth, credentialOrigins, testIdAttribute, userAgent, locale, timezoneId, colorScheme, reducedMotion, initScripts, webmcp'),
     );
   });
 

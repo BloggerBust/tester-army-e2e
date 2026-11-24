@@ -189,6 +189,19 @@ Every retry starts at the target's size.
 - A device target can sit in the same list. See the
   [Mobile engine reference](/reference/mobile).
 
+### High-density screens
+
+`deviceScaleFactor` sets how many device pixels draw one CSS pixel. At 2 the
+page renders as on a Retina display, and saved screenshots are twice the
+viewport's size on each side:
+
+```ts title="Target fragment"
+{ name: 'retina', engine: web({ deviceScaleFactor: 2 }), app }
+```
+
+The factor does not change the image the model reads or the one
+`toHaveScreenshot` compares.
+
 ### Fill the window
 
 `viewport: null` sets no size, so the page fills the browser window, and the
