@@ -91,6 +91,10 @@ prompt yourself, and say so in the handoff.
   not do. Finish with the
   [unslop](../../../.claude/skills/unslop/SKILL.md) pass on the title and
   body.
+- For an e2e team member, the title ends with the Linear ticket id so the
+  merge closes the ticket: search Linear yourself when you have a Linear
+  tool, otherwise ask the user for it
+  ([writing-pr, Title](../writing-pr/SKILL.md#title)).
 - Open it ready, not draft:
   `gh pr create --base main --title ... --body-file <file> --attach <each screenshot and video>`
   (`gh` 2.99+). The body must carry the `## Verified` section `writing-pr`

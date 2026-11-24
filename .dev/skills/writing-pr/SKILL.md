@@ -67,6 +67,17 @@ the same as a failing check.
 - Mark spec or API breaks with `!` (`feat(config)!: ...`), same as the commit.
 - Name the outcome, not the activity. "install builds with the appPath
   option", not "agent-device changes".
+- e2e team members end the title with the Linear ticket the PR resolves:
+  `fix(web): wait for the frame before the click (ENG-123)`. Linear links
+  the PR from the id and closes the ticket on merge. Finding the ticket:
+  - With a Linear tool (plugin, MCP server, CLI), search for it yourself by
+    the branch name, the issue the PR fixes, and the change's keywords.
+    Use a ticket only when it clearly covers this change.
+  - Without one, or when the search finds nothing or several candidates,
+    ask the user for the ticket id. Never guess an id, and do not create a
+    ticket unasked. If they say there is none, leave the title without one.
+
+  Community PRs skip this.
 
 ## Body
 
