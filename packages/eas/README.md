@@ -7,7 +7,7 @@ Expo's hosted iOS simulators and Android emulators.
 ## Install
 
 ```bash
-npm install --save-dev @e2e-dev/eas
+npm install --save-dev e2e @e2e-dev/mobile @e2e-dev/eas
 ```
 
 ## Usage
