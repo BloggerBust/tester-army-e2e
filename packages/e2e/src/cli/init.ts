@@ -320,11 +320,11 @@ export async function init(root: string, options: InitOptions = {}): Promise<Ini
     // The gateway is a visible choice, not a runner default: the config imports
     // its provider package and constructs the model.
     const gateway = given.gateway ?? await clack.select<GatewayChoice>({
-      message: 'Which model gateway for agent steps? Adds AI SDK v7.',
+      message: 'Which model for agent steps? No API key needed during setup.',
       initialValue: DEFAULT_GATEWAY,
       options: [
         ...GATEWAYS.map(({ id, label, hint }) => ({ value: id, label, hint })),
-        { value: 'none', label: 'None', hint: 'deterministic tests only; add a gateway later' },
+        { value: 'none', label: 'Skip for now', hint: 'deterministic tests only; add a model later' },
       ],
     });
     if (isCancelled(gateway)) return cancel();

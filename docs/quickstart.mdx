@@ -67,7 +67,7 @@ need Xcode with an iOS simulator runtime, or the Android SDK with an emulator.
   </CodeGroup>
 
   Choose **Web (Playwright)** or **Mobile (iOS/Android)**, then a
-  subscription, a model provider, or **None** for tests without AI. The
+  subscription, a model provider, or **Skip for now** for tests without AI. The
   wizard writes a config and an example test, adds dependencies, and offers
   to set up your coding agent. It keeps existing files.
 
@@ -258,7 +258,7 @@ bunx e2e run tests/agent.e2e.ts
 ```
 </CodeGroup>
 
-If you chose **None** in the wizard, [add a model](/models) first. Add
+If you chose **Skip for now** in the wizard, [add a model](/models) first. Add
 `--headed` to watch a web test. Add `--no-cache` to call the model instead of
 replaying cached actions.
 

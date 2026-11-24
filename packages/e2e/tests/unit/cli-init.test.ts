@@ -322,17 +322,17 @@ describe('e2e init', () => {
 
     expect((await init(dir, { ci: 'none' })).exitCode).toBe(0);
     expect(clack.select).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({
-      message: expect.stringContaining('Which model gateway'),
+      message: expect.stringContaining('Which model for agent steps?'),
       initialValue: 'vercel',
       options: [
         expect.objectContaining({ value: 'vercel', label: 'Vercel AI Gateway' }),
         expect.objectContaining({ value: 'openrouter' }),
-        expect.objectContaining({ value: 'openai-compatible' }),
+        expect.objectContaining({ value: 'openai-compatible', label: 'OpenAI-compatible / local endpoint' }),
         expect.objectContaining({ value: 'chatgpt' }),
         expect.objectContaining({ value: 'copilot' }),
         expect.objectContaining({ value: 'opencode-console' }),
         expect.objectContaining({ value: 'grok' }),
-        expect.objectContaining({ value: 'none' }),
+        expect.objectContaining({ value: 'none', label: 'Skip for now' }),
       ],
     }));
     expect(clack.text).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ placeholder: 'http://127.0.0.1:11434/v1' }));
@@ -441,7 +441,7 @@ describe('e2e init', () => {
       gateway: 'none',
       install: false,
     });
-    expect(clack.select).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ message: expect.stringContaining('Which model gateway') }));
+    expect(clack.select).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ message: expect.stringContaining('Which model for agent steps?') }));
     expect(clack.multiselect).not.toHaveBeenCalled();
     expect(clack.confirm).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ message: 'Apply these changes?' }));
     expect(existsSync(path.join(dir, '.claude/skills/e2e/SKILL.md'))).toBe(true);
@@ -511,7 +511,7 @@ describe('e2e init', () => {
     });
 
     expect((await init(dir)).exitCode).toBe(0);
-    expect(clack.select).toHaveBeenCalledWith(expect.objectContaining({ message: expect.stringContaining('AI SDK v7'), initialValue: 'vercel' }));
+    expect(clack.select).toHaveBeenCalledWith(expect.objectContaining({ message: expect.stringContaining('No API key needed during setup'), initialValue: 'vercel' }));
     expect(clack.confirm).toHaveBeenCalledWith(expect.objectContaining({ message: 'Install dependencies with npm?' }));
     expect(spawnSync).toHaveBeenCalledExactlyOnceWith('npm', ['install'], {
       cwd: dir, stdio: 'inherit', shell: process.platform === 'win32',

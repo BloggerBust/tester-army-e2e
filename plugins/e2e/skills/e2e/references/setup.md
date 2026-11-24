@@ -40,7 +40,7 @@ pnpm dlx e2e init  # pnpm
 With `e2e` installed, run the installed version: `npx e2e init` or `pnpm exec
 e2e init`; `npx e2e init my-app` scaffolds into a new directory.
 
-The wizard picks the engines (web, mobile, or both) and a model provider (None for tests without AI)
+The wizard picks the engines (web, mobile, or both) and a model provider (**Skip for now** for tests without AI)
 and offers to install this skill, register the MCP server for your coding
 agent, and install dependencies. `--yes` picks the web engine (Playwright) and Vercel AI
 Gateway, installs the skill in `.agents/skills/` (`.claude/skills/e2e`
