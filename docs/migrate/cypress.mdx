@@ -103,7 +103,7 @@ describe('todos', () => {
 | `.should($el => ...)` | Use [`expect(fn).toPass()`](/reference/expect#retrying-a-block) for several assertions. Use [`expect.poll`](/reference/expect#polling-a-value) for a single changing value |
 | `have.text`, `contain`, `have.value`, `have.attr`, `have.length`, `not.exist` | `toHaveText`, `toContainText`, `toHaveValue`, `toHaveAttribute`, `toHaveCount(n)`, `toHaveCount(0)` |
 | `cy.url().should('include', p)`, `cy.title()` | `expect(browser).toHaveURL(/p/)`, `expect(browser).toHaveTitle(t)` |
-| `cy.intercept('/api/users', body)` | `browser.route('**/api/users', route => route.fulfill({ json: body }))`, a glob on the full URL |
+| `cy.intercept('/api/users', body)` | `browser.route('**/api/users', route => route.fulfill({ json: body }))`, a URL glob resolved against the app URL |
 | `cy.intercept('POST', '/api/users', body)` | `browser.route({ method: 'POST', url: '**/api/users' }, route => route.fulfill({ json: body }))` |
 | `cy.on('window:confirm')`, `cy.on('window:alert')` | `await browser.onDialog('accept')` before the action, `'dismiss'` to cancel |
 | `cy.session` | `test.setup` and `{ session }` |

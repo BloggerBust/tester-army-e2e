@@ -146,7 +146,7 @@ test('checkout', async ({ app, agent, screen }) => {
 
 | Playwright | e2e |
 | --- | --- |
-| `page.route(pattern, handler)`, `unroute()`, `unrouteAll()` | `browser` の同名メソッド。パターンは URL 全体に対する `RegExp`、glob、または 1 つの HTTP メソッドを指定する `{ method, url }` |
+| `page.route(pattern, handler)`, `unroute()`, `unrouteAll()` | `browser` の同名メソッド。パターンは URL 全体に対する `RegExp`、アプリの URL を基準に解決される URL glob、または 1 つの HTTP メソッドを指定する `{ method, url }` |
 | `route.fulfill()`, `continue()`, `fallback()`, `abort()`, `fetch()` | 同じ。各オプションは [`route`](/reference/web#route) を参照 |
 | `page.waitForResponse(pattern)` | `browser.waitForResponse(pattern)`。同じ URL グロブを使います |
 | `page.on('dialog')`, `page.waitForEvent('download')` | `browser.onDialog('accept')` またはハンドラー。`browser.waitForDownload(() => trigger)` |

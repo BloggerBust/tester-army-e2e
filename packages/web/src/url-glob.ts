@@ -23,7 +23,8 @@ export interface UrlPattern {
 /**
  * Compiles a `waitForURL`, `route`, `unroute`, or `waitForResponse` pattern as
  * Playwright's `urlMatches` does: a string is a URL glob, the empty string
- * matches any URL, and a RegExp tests the full URL. `base` is read only for a
+ * matches any URL, and a RegExp tests the full URL. A string with no `*`, `{`,
+ * `}`, or `\` matches the one URL it resolves to. `base` is read only for a
  * string that needs it, so a target with no app URL takes every other pattern.
  * A glob that nests a `{` or leaves one unmatched is `INVALID_ARGUMENT` here,
  * before it is resolved or anything is matched.
@@ -38,6 +39,12 @@ export function urlPattern(expected: TextPattern, base: () => string): UrlPatter
   if (expected.value === '') return { matches: () => true, label: '' };
   // Refuse a bad `{` in the glob as written, before resolving: `..` can drop the segment that holds it (`/{bad/../x`).
   urlGlobSource(expected.value);
+  if (!/[*{}\\]/.test(expected.value)) {
+    // The URL parser normalizes the whole string, query included, as it does the browser's URL, so the two compare as they are.
+    const baseHref = baseFor(expected.value, base);
+    const exact = URL.canParse(expected.value, baseHref) ? new URL(expected.value, baseHref).href : expected.value;
+    return { matches: (url) => serialized(url) === exact, label: exact };
+  }
   const glob = resolveUrlGlob(expected.value, base);
   const pattern = new RegExp(urlGlobSource(glob));
   return { matches: (url) => pattern.test(serialized(url)), label: glob };
@@ -105,19 +112,21 @@ function literalSource(ch: string): string {
 /**
  * The base a string resolves against, read only when the string needs one.
  * A real or globbed scheme and a full URL stand alone, while `a_b:/x` and
- * `login?next=https://...` are relative. `http:/x` and `http:x` are relative
- * to a base of that scheme, and the full URLs they parse to on a target with
- * no app URL.
+ * `login?next=https://...` are relative. `http:/x`, `http:x`, and a globbed
+ * `http{,s}:/x` are relative to a base of that scheme, and the full URLs they
+ * parse to on a target with no app URL.
  */
 function baseFor(glob: string, base: () => string): string | undefined {
-  if (/^(?:https?|wss?|ftp):(?!\/\/)/i.test(glob)) {
+  const first = glob.split('/', 1)[0]!;
+  const noAuthority = /^(?:https?|wss?|ftp):(?!\/\/)/i.test(glob)
+    || (inSchemePlace(first) && isSchemePattern(first) && !glob.startsWith(`${first}//`));
+  if (noAuthority) {
     try {
       return base();
     } catch {
       return undefined;
     }
   }
-  const first = glob.split('/', 1)[0]!;
   const scheme = inSchemePlace(first) && (/^[a-z][a-z0-9+.-]*:$/i.test(first) || isSchemePattern(first));
   return scheme || URL.canParse(glob) ? undefined : base();
 }
@@ -136,8 +145,6 @@ function baseFor(glob: string, base: () => string): string | undefined {
 function resolveUrlGlob(glob: string, base: () => string): string {
   if (glob.startsWith('*')) return glob;
   const baseHref = baseFor(glob, base);
-  // With nothing to hold back, the URL parser normalizes the whole string, query included, as it does the browser's URL.
-  if (!/[*{}\\]/.test(glob)) return URL.canParse(glob, baseHref) ? new URL(glob, baseHref).href : glob;
   if (UNRESOLVED_GLOB_SCHEMES.some((scheme) => glob.startsWith(scheme))) return glob;
   // A placeholder prefix neither the glob nor the base holds, so restoring a segment never lands on the user's own text.
   let tag = '$_';

@@ -146,7 +146,7 @@ test('checkout', async ({ app, agent, screen }) => {
 
 | Playwright | e2e |
 | --- | --- |
-| `page.route(pattern, handler)`, `unroute()`, `unrouteAll()` | `browser` 上的同名方法；模式是匹配完整 URL 的 `RegExp`、glob，或用 `{ method, url }` 指定一个 HTTP 方法 |
+| `page.route(pattern, handler)`, `unroute()`, `unrouteAll()` | `browser` 上的同名方法；模式是匹配完整 URL 的 `RegExp`、基于应用 URL 解析的 URL glob，或用 `{ method, url }` 指定一个 HTTP 方法 |
 | `route.fulfill()`, `continue()`, `fallback()`, `abort()`, `fetch()` | 相同，各方法接受的选项见 [`route`](/reference/web#route) |
 | `page.waitForResponse(pattern)` | `browser.waitForResponse(pattern)`，使用相同的 URL glob |
 | `page.on('dialog')`, `page.waitForEvent('download')` | `browser.onDialog('accept')` 或处理函数；`browser.waitForDownload(() => trigger)` |

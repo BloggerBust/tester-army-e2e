@@ -53,6 +53,13 @@ describe('URL globs', () => {
     expect(matches('https://*.example.com/A*', 'https://shop.example.com/abc')).toBe(false);
   });
 
+  it('resolves a globbed scheme with no // against the base, as Playwright does', () => {
+    expect(matches('http{,s}:/orders', 'http://localhost:3000/orders')).toBe(true);
+    expect(matches('http*:/orders', 'https://localhost:3000/orders')).toBe(true);
+    expect(matches('http{,s}:/orders', 'http://orders/')).toBe(false);
+    expect(matches('http{,s}:', 'https://localhost:3000/')).toBe(true);
+  });
+
   it('leaves a glob that starts with about: unresolved, and reads an escaped * and other characters as themselves', () => {
     expect(matches('about:*', 'about:blank')).toBe(true);
     expect(matches('/a\\*b', 'http://localhost:3000/a*b')).toBe(true);
@@ -130,13 +137,14 @@ describe('URL globs', () => {
     expect(matches("/search?q=O'Neil", 'http://localhost:3000/search?q=O%27Neil')).toBe(true);
     expect(matches("https://x.test/a b?q=O'Neil", 'https://x.test/a%20b?q=O%27Neil')).toBe(true);
     expect(matches("/search?q=O'Neil", 'http://localhost:3000/search?q=Other')).toBe(false);
+    expect(matches('data:text/html,hello world', 'data:text/html,hello world')).toBe(true);
   });
 
   it('reads the base only for a pattern that needs one, so a target with no app URL takes the rest', () => {
     const noBase = (): string => {
       throw new TestError('APP_URL_REQUIRED', 'no app url');
     };
-    for (const pattern of ['https://x.test/a', 'https://*.x.test/**', 'http{,s}://x.test/a', 'http://localhost:3000**', '**/a', 'about:blank', '', /a$/]) {
+    for (const pattern of ['https://x.test/a', 'https://*.x.test/**', 'http{,s}://x.test/a', 'http://localhost:3000**', 'http{,s}:/a', '**/a', 'about:blank', '', /a$/]) {
       expect(() => urlPattern(toTextPattern(pattern), noBase), String(pattern)).not.toThrow();
     }
     expect(urlPattern(toTextPattern('https://x.test/a'), noBase).matches('https://x.test/a')).toBe(true);
