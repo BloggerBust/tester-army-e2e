@@ -141,7 +141,7 @@ await agent.act('sign in as {username}', { params: { username: ada.username, pas
 
 ## 映射每个命令
 
-`device` 上的调用只在设备上运行。如果测试套件还要在网页端运行，请在这些测试上声明 `requires: ['device']`。
+`device` 上的调用只在设备上运行。如果测试套件还要在网页端运行，请在这些测试上声明 `platforms: ['ios', 'android']`。
 
 <AccordionGroup>
 <Accordion title="元素和手势">

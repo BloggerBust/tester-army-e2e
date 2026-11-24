@@ -60,7 +60,6 @@ web({ viewport: { width: 390, height: 844 }, locale: 'de-DE' });
 | [`webmcp`](#webmcp) | `boolean` | `false` |
 
 - `web()` 测试目标需要 `app.url`，且拒绝设备配置键（`bundleId`、`appPath`、`launchArguments`）。它的 `app.permissions` 只接受 `'grant'`，且权限名称必须受浏览器支持；参阅 [`permissions`](/reference/config#permissions)。
-- 带有 `app.url` 的测试目标是 `browser` 测试目标，因此 `requires: ['browser']` 会选中网页端测试目标。
 - 带 JSDoc 的完整声明见类型章节下的 [`WebOptions`](#weboptions)。
 
 | 抛出错误 | 触发条件 |
@@ -368,7 +367,7 @@ export type WebInitScript = string | { readonly path: string } | (() => unknown)
 - 应用通过 `target="_blank"` 链接或 `window.open` 打开的标签页会在后台打开：活动标签页保持不变，直到 `waitForPopup` 或 `activate` 将其他标签页设为活动。参阅[标签页](#tabs)。
 - 除 `locator` 和 `frameLocator` 外，每个 `browser` 调用都会记录为 `browser.<method>` 步骤。这两个方法只构造定位器，不访问页面；对定位器执行的操作或断言才是步骤。
 - 相对 URL 基于测试目标的 `app.url` 解析，否则触发 `APP_URL_REQUIRED`。
-- 在也会运行于其他平台的测试套件中声明 `requires: ['browser']`。
+- 在也会运行于其他平台的测试套件中声明 `platforms: ['web']`。
 - `expect(browser)` 返回引擎附加的 `BrowserExpectation`：`toHaveURL`、`toHaveTitle` 和 `toHaveClass`。参阅[浏览器匹配器](/reference/expect#browser-matchers)。
 
 | 成员 | 返回值 |

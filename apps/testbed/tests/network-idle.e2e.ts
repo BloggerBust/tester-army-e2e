@@ -67,7 +67,7 @@ async function networkIdleTest(browser: Browser, action: () => Promise<void>): P
   expect(timerTriggered).toBe(true);
 }
 
-test.describe('page network idle', { requires: ['browser'], tags: ['playwright'] }, () => {
+test.describe('page network idle', { platforms: ['web'], tags: ['playwright'] }, () => {
   test('should navigate to empty page with networkidle', async ({ browser }) => {
     const [response] = await Promise.all([
       browser.waitForResponse('**/empty.html'),

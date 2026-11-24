@@ -37,7 +37,7 @@ async function fetched(browser: Browser, url: string, init = '{}'): Promise<Serv
   return JSON.parse(await browser.evaluate<string, string>(`(url) => fetch(url, ${init}).then((response) => response.text())`, url)) as Served;
 }
 
-test.describe('page request continue', { requires: ['browser'], tags: ['playwright'] }, () => {
+test.describe('page request continue', { platforms: ['web'], tags: ['playwright'] }, () => {
   test('should work', async ({ browser }) => {
     await browser.route('**/*', (route) => route.continue());
     await browser.goto(EMPTY_PAGE);

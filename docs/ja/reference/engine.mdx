@@ -238,7 +238,7 @@ export interface Engine {
   /**
    * Named deterministic surfaces this engine contributes to TestFixtures
    * (a device fixture, a document fixture - anything). Keys become fixture and
-   * capability names; `requires: ['<name>']` gates at selection.
+   * capability names.
    */
   readonly fixtures?: Readonly<Record<string, EngineFixtureFactory>>;
   /**
@@ -363,9 +363,8 @@ export interface OperationContext {
 
 ### 対応機能
 
-実装したメンバーによって、エンジンの対応機能が決まります。未実装の機能を必要とする `screen`、`Locator`、`app` の呼び出しは、`UNSUPPORTED_CAPABILITY` で失敗します。各 API が必要とするメンバーは[テスト API](#test-apis)に記載しています。次の 3 ケースは異なる扱いになります。
+実装したメンバーによって、エンジンの対応機能が決まります。未実装の機能を必要とする `screen`、`Locator`、`app` の呼び出しは、`UNSUPPORTED_CAPABILITY` で失敗します。各 API が必要とするメンバーは[テスト API](#test-apis)に記載しています。次の 2 ケースは異なる扱いになります。
 
-- エンジンにないフィクスチャを `requires` で指定したテストは、`capability-unavailable` でスキップします。
 - `state` のないエンジンで、選択したテストが `test.setup` のセッションを使う場合、セットアップ実行前に収集エラーになります。
 - 録画できないエンジンへの `video` モード指定は、通知を表示し、動画を記録しません。
 
@@ -457,7 +456,6 @@ export type ComputedStyleValues = Readonly<Partial<Record<ComputedStyleProperty,
 | `app.back()` | `session.back` |
 | `app.restart()` | `session.restart` |
 | `app.clearState()` | `session.reset` |
-| `requires: ['<name>']` | `fixtures.<name>` |
 
 #### `engine.capabilities`
 
@@ -467,8 +465,6 @@ export type ComputedStyleValues = Readonly<Partial<Record<ComputedStyleProperty,
 const engine = kiosk({ host: 'kiosk.local' });
 engine.capabilities.has('location'); // true: the engine implements locate
 ```
-
-テストの選択では、エンジンではなく、宣言したアプリの種類によってもターゲットを分類します。`app.url` のあるターゲットは `browser`、`app.bundleId` または `app.appPath` のあるターゲットは `native-app` を持つため、テストで `requires: ['native-app']` を指定できます。
 
 ```ts
 /**
@@ -2103,7 +2099,7 @@ import { test as base } from 'e2e';
 
 const test = base.extend<{ printer: { print(text: string): Promise<void> } }>();
 
-test('prints a receipt', { requires: ['printer'] }, async ({ printer }) => {
+test('prints a receipt', { platforms: ['kiosk'] }, async ({ printer }) => {
   await printer.print('Order 42');
 });
 ```

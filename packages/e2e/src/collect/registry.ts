@@ -373,7 +373,6 @@ const TEST_OPTION_KEYS: readonly string[] = Object.keys({
   fail: true,
   only: true,
   platforms: true,
-  requires: true,
   session: true,
   agentContext: true,
   agent: true,
@@ -387,7 +386,6 @@ const SETUP_OPTION_KEYS: readonly string[] = Object.keys({
   retries: true,
   tags: true,
   platforms: true,
-  requires: true,
   agentContext: true,
   agent: true,
   trace: true,
@@ -402,7 +400,6 @@ const DESCRIBE_OPTION_KEYS: readonly string[] = Object.keys({
   skip: true,
   fail: true,
   platforms: true,
-  requires: true,
   session: true,
   agentContext: true,
   agent: true,
@@ -417,6 +414,9 @@ const DESCRIBE_OPTION_KEYS: readonly string[] = Object.keys({
  * and each known option's value.
  */
 function validateCommonOptions(options: TestOptions | DescribeOptions, label: string, keys: readonly string[]): void {
+  if (Object.hasOwn(options, 'requires')) {
+    throw new CollectionError(`${label}: requires was removed; scope the test to targets with platforms, e.g. platforms: ['web']`);
+  }
   const unknown = unknownKeyMessage(label, options, keys);
   if (unknown !== undefined) throw new CollectionError(unknown);
   if (options.timeout !== undefined) {
@@ -516,7 +516,6 @@ function validateTestOptions(options: TestOptions, group: GroupNode | undefined,
       'video',
       'session',
       'platforms',
-      'requires',
       'skip',
       'fail',
       'only',

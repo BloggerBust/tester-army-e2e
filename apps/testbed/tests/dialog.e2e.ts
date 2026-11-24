@@ -28,7 +28,7 @@ async function failure(act: () => unknown): Promise<unknown> {
   }
 }
 
-test.describe('page dialog', { requires: ['browser'], tags: ['playwright'] }, () => {
+test.describe('page dialog', { platforms: ['web'], tags: ['playwright'] }, () => {
   test('should fire', async ({ browser }) => {
     await browser.goto('/empty.html');
     await browser.onDialog(async (dialog) => {

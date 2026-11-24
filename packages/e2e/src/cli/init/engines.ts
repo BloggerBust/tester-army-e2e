@@ -17,8 +17,6 @@ export interface EnginePreset {
   readonly settings: readonly string[];
   /** The test file name beside other engines' examples: `tests/<file>.e2e.ts`. */
   readonly file: string;
-  /** The contributed fixture a test names in `requires` when other engines' targets share the config. */
-  readonly fixture: string;
   /** The example test; `options` is the test options argument with its trailing `, `, or empty. */
   readonly example: (options: string) => string;
   readonly aiExample: (options: string) => string;
@@ -48,7 +46,6 @@ export function getEnginePresets() {
 }`,
       settings: [],
       file: 'web',
-      fixture: 'browser',
       example: (options: string) => `import { test } from '@e2e-dev/web';
 import { expect } from 'e2e';
 
@@ -80,7 +77,6 @@ test('app opens', ${options}async ({ app, browser }) => {
         : "{ name: 'android', engine: mobile({ platform: 'android' }), app: { bundleId: 'com.android.settings' } }",
       settings: ['  workers: 1,'],
       file: 'mobile',
-      fixture: 'device',
       example: (options: string) => `import { test } from '@e2e-dev/mobile';
 import { expect } from 'e2e';
 

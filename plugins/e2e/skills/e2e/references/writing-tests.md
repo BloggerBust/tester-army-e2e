@@ -157,7 +157,6 @@ or a blocked agent verdict still fails the test.
 | `skip` | unset | `true` or a reason string. |
 | `fail` | unset | `true` or a reason string: expected to fail, as `test.fail`. On a group, marks every test in it; not on setup tests or on, inside, or around a serial group. |
 | `platforms` | unset | Only targets with these platforms, e.g. `['ios']`. |
-| `requires` | `[]` | Engine capabilities, e.g. `['browser']`; missing ones skip the test at selection rather than failing it with `UNSUPPORTED_CAPABILITY`. |
 | `session` | unset | Restore state saved by a setup test. |
 | `agentContext` | unset | Extra context for `agent.*` calls in this test or group. |
 | `agent` | the run's agent | A configured name (`agents.<name>`) or a list run once per agent; `--agent` narrows the list, a setup test takes one name. Innermost wins; `agent.act(..., { agent })` names another for one call. |
@@ -165,7 +164,7 @@ or a blocked agent verdict still fails the test.
 | `serial` | `false` | Groups only. Members share app state, run in order on one worker, retry as a whole, and take the group's `trace` and `video`. |
 
 Serial members cannot set `retries`, `trace`, `video`, `session`,
-`platforms`, `requires`, `skip`, `fail`, or `only`, nor can a nested `describe` set
+`platforms`, `skip`, `fail`, or `only`, nor can a nested `describe` set
 `trace` or `video`; nesting serial groups is a `COLLECTION_ERROR`.
 
 Hooks nest: outer `beforeEach` first, inner `afterEach` first. `beforeAll`
@@ -195,7 +194,7 @@ takes `({}, use)`. A test sets up the `test.extend` fixtures its body and its
 for its side effect takes `[fn, { auto: true }]`, set up for every test, or
 `[fn, { scope: 'worker', auto: true }]`, once per worker. A name the target
 has no fixture for fails the run at collection with the file and line; a test
-skipped on that target (`platforms`, `requires`, `test.skipIf`) is not
+skipped on that target (`platforms`, `test.skipIf`) is not
 checked there. An `afterEach` that names a fixture whose setup failed is
 skipped. A fixture named like one the `test` already has, built-in ones
 included, extends it (`app: async ({ app }, use) => { await app.open('/x');
@@ -623,7 +622,7 @@ params. A fixture's run-unique value in a goal's params goes in as
 ## The browser fixture (browser only)
 
 Prefer `app` and `screen`; `browser` is for what only a browser has, and a
-portable suite declares `requires: ['browser']`. Page methods act on the one
+portable suite declares `platforms: ['web']`. Page methods act on the one
 active tab; cookies, routes, and `onDialog` cover the whole browser. A tab
 the app opens (`target="_blank"`, `window.open`) opens in the background:
 the active tab stays where it was. `waitForPopup(() => trigger)` makes the

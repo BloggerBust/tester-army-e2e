@@ -2,7 +2,7 @@ import { test } from '@e2e-dev/web';
 import { expect } from 'e2e';
 import { failure } from './helpers.ts';
 
-test.describe('dialogs', { requires: ['browser'] }, () => {
+test.describe('dialogs', { platforms: ['web'] }, () => {
   test('accepting a confirm dialog', async ({ app, screen, browser }) => {
     await app.open('/dialogs');
     const dispose = await browser.onDialog('accept');
@@ -28,7 +28,7 @@ test.describe('dialogs', { requires: ['browser'] }, () => {
   });
 });
 
-test.describe('frames', { requires: ['browser'] }, () => {
+test.describe('frames', { platforms: ['web'] }, () => {
   test('queries and actions scoped inside an iframe', async ({ app, browser }) => {
     await app.open('/frames');
     const editor = browser.frameLocator('#editor');
@@ -46,7 +46,7 @@ test.describe('frames', { requires: ['browser'] }, () => {
   });
 });
 
-test.describe('downloads', { requires: ['browser'] }, () => {
+test.describe('downloads', { platforms: ['web'] }, () => {
   test('waits for a triggered download', async ({ app, screen, browser }) => {
     await app.open('/downloads');
     const download = await browser.waitForDownload(() =>

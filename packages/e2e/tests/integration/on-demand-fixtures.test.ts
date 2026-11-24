@@ -280,7 +280,6 @@ const test = base.extend<{ gadget: { poke(what: string): Promise<string> } }>();
 
 test('gadget only', { platforms: ['fake'] }, async ({ gadget }) => log('body:' + await gadget.poke('only')));
 test.skipIf(process.env.NEVER !== '1')('skipped', async ({ gadget }) => log('unreachable:' + gadget));
-test('requires it', { requires: ['gadget'] }, async ({ gadget }) => log('body:requires:' + await gadget.poke('required')));
 test.describe('gadget suite', { platforms: ['fake'] }, () => {
   test.beforeAll(({ platform }) => log('beforeAll:' + platform));
   test.beforeEach(async ({ gadget }) => log('beforeEach:' + await gadget.poke('each')));
@@ -311,7 +310,6 @@ test('everywhere', ({ platform }) => log('body:' + platform));
           'body:fake',
           'body:plain',
           'body:poked only',
-          'body:requires:poked required',
           'body:suite',
         ]);
       } finally {

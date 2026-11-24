@@ -118,7 +118,7 @@ function targetsConfig(engines: readonly EnginePreset[], app: ScaffoldApp | unde
 
 /**
  * The example tests. One engine writes `tests/example.e2e.ts`; several write
- * one file per engine, each test requiring its engine's fixture so the other
+ * one file per engine, each test scoped to its engine's platform so the other
  * engines' targets skip it.
  */
 function exampleTests(engines: readonly EnginePreset[], ai: boolean): ScaffoldTest[] {
@@ -126,7 +126,7 @@ function exampleTests(engines: readonly EnginePreset[], ai: boolean): ScaffoldTe
   if (engine === undefined) return [{ name: 'example', content: NO_ENGINE_EXAMPLE }];
   if (others.length === 0) return [{ name: 'example', content: engine.example('') + (ai ? engine.aiExample('') : '') }];
   return engines.map((preset) => {
-    const options = `{ requires: ['${preset.fixture}'] }, `;
+    const options = `{ platforms: ['${preset.platform}'] }, `;
     return { name: preset.file, content: preset.example(options) + (ai ? preset.aiExample(options) : '') };
   });
 }

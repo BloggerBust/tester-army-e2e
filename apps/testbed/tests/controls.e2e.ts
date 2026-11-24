@@ -2,7 +2,7 @@ import { test } from '@e2e-dev/web';
 import { expect } from 'e2e';
 import { failure } from './helpers.ts';
 
-test.describe('controls', { requires: ['browser'], tags: ['controls'] }, () => {
+test.describe('controls', { platforms: ['web'], tags: ['controls'] }, () => {
   test.beforeEach(async ({ app }) => {
     await app.open('/controls');
   });

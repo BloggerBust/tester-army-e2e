@@ -49,7 +49,7 @@ const readPicked = `() => {
   });
 }`;
 
-test.describe('page filechooser', { requires: ['browser'], tags: ['playwright'] }, () => {
+test.describe('page filechooser', { platforms: ['web'], tags: ['playwright'] }, () => {
   test('should upload multiple large files', async ({ browser }) => {
     const filesCount = 10;
     await browser.goto('/input/fileupload-multi.html');

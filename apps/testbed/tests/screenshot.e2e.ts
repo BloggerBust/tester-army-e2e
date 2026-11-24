@@ -169,7 +169,7 @@ test.afterEach(() => {
   stored.clear();
 });
 
-test.describe('page screenshot', { requires: ['browser'], tags: ['playwright'] }, () => {
+test.describe('page screenshot', { platforms: ['web'], tags: ['playwright'] }, () => {
   test('should work', async ({ app, browser }) => {
     await browser.setViewport({ width: 500, height: 500 });
     await browser.goto('/grid.html');
@@ -455,7 +455,7 @@ test.describe('page screenshot', { requires: ['browser'], tags: ['playwright'] }
   });
 });
 
-test('should capture css box-shadow', { requires: ['browser'], tags: ['playwright'] }, async ({ app, browser }) => {
+test('should capture css box-shadow', { platforms: ['web'], tags: ['playwright'] }, async ({ app, browser }) => {
   await browser.goto(content(`<div style="box-shadow: red 10px 10px 10px; width: 50px; height: 50px;"></div>`));
   const screenshot = readPng(await app.screenshot());
   expect(rgb(screenshot, 30, 30)).toEqual([255, 255, 255]);
@@ -464,7 +464,7 @@ test('should capture css box-shadow', { requires: ['browser'], tags: ['playwrigh
   expect(rgb(screenshot, 100, 100)).toEqual([255, 255, 255]);
 });
 
-test.describe('locator screenshot', { requires: ['browser'] }, () => {
+test.describe('locator screenshot', { platforms: ['web'] }, () => {
   test('captures the match and nothing around it', async ({ app, browser }) => {
     await browser.setViewport({ width: 500, height: 500 });
     await browser.goto('/grid.html');

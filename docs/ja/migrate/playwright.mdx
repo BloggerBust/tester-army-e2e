@@ -88,7 +88,7 @@ test('checkout', async ({ app, agent, screen }) => {
 
 ## API を対応付ける
 
-表の各行は、すべて現在使える機能です。載っていない API は、[e2e にまだない機能](#what-e2e-doesnt-have-yet)を確認してください。`browser` の呼び出しはブラウザでのみ動くため、使うテストには `requires: ['browser']` を宣言します。ほかのターゲットではスキップされます。
+表の各行は、すべて現在使える機能です。載っていない API は、[e2e にまだない機能](#what-e2e-doesnt-have-yet)を確認してください。`browser` の呼び出しはブラウザでのみ動くため、使うテストには `platforms: ['web']` を宣言します。ほかのターゲットではスキップされます。
 
 <AccordionGroup>
 <Accordion title="ロケーター">

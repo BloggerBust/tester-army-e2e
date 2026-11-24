@@ -511,7 +511,6 @@ afterAll(async () => {
 | [`fail`](#fail) | `boolean \| string` | - |
 | [`only`](#only) | `boolean` | - |
 | [`platforms`](#platforms) | `readonly string[]` | - |
-| [`requires`](#requires) | `readonly Capability[]` | - |
 | [`session`](#session) | `string` | - |
 | [`agentContext`](#agentcontext) | `string` | - |
 | [`agent`](#agent) | `string \| readonly string[]` | 実行全体のエージェント |
@@ -590,23 +589,6 @@ test('pays', { only: true }, async ({ app }) => {});
 ```ts
 test('uses Face ID', { platforms: ['ios'] }, async ({ app }) => {});
 ```
-
-#### `requires`
-
-ターゲットに必要な機能です。1 つでも欠けていれば、選択時にテストをスキップします。最も内側の指定を優先します。
-
-```ts
-test('onboarding asks for the camera', { requires: ['native-app'] }, async ({ app, agent }) => {
-  await app.open();
-  await agent.assert('The app asks for camera access');
-});
-```
-
-指定できる値は次のとおりです。
-
-- ターゲットのエンジンが提供するハーネスの機能: `observation`、`actions`、`location`、`pointer`、`keyboard`、`computed-style`、`state`、`artifacts`。
-- エンジンが提供する組み込みフィクスチャごとの値: `browser`、`device`。[エンジンの契約](/reference/engine#engine)を参照してください。
-- ターゲットが宣言するアプリの種類: `app.url` なら `browser`、`app.bundleId` または `app.appPath` なら `native-app`。
 
 #### `session`
 
@@ -690,7 +672,7 @@ describe('checkout', { serial: true }, () => {
 
 | エラー | 発生条件 |
 | --- | --- |
-| `COLLECTION_ERROR` | メンバーが `retries`、`trace`、`video`、`session`、`platforms`、`requires`、`skip`、`only`、または入れ子の `serial` を指定した場合。 |
+| `COLLECTION_ERROR` | メンバーが `retries`、`trace`、`video`、`session`、`platforms`、`skip`、`only`、または入れ子の `serial` を指定した場合。 |
 | `COLLECTION_ERROR` | メンバーが `test.skip(title, fn)`、`test.skipIf`、`test.runIf`、または `test.fixme(title, fn)` で登録された場合。 |
 
 #### `sessions`
@@ -730,7 +712,7 @@ test.setup('authenticate', { sessions: ['member', 'admin'] }, async ({ session }
 
 | エラー | 発生条件 |
 | --- | --- |
-| `COLLECTION_ERROR` | ターゲットで実行するテスト、またはそのフックが、ターゲットにないフィクスチャを指定した場合。テストはひとつも実行されません。`requires: ['browser']`、`platforms`、`test.skipIf` を宣言すれば、そのターゲットでのスキップにできます。 |
+| `COLLECTION_ERROR` | ターゲットで実行するテスト、またはそのフックが、ターゲットにないフィクスチャを指定した場合。テストはひとつも実行されません。`platforms` または `test.skipIf` を宣言すれば、そのターゲットでのスキップにできます。 |
 | `COLLECTION_ERROR` | テスト本体、フック、フィクスチャ関数が、オブジェクト全体（`async (fixtures) => {}`）、残余プロパティ（`{ app, ...rest }`）、または計算プロパティを受け取る場合。パラメーターを読み取れないバインド済み関数（`fn.bind()`）の場合も同様です。 |
 
 <Note>
@@ -1058,8 +1040,6 @@ export interface TestOptions {
   only?: boolean;
   /** Platforms the test runs on; other targets skip it. Innermost wins. */
   platforms?: readonly string[];
-  /** Capabilities the target must have; otherwise the test is skipped at selection. Innermost wins. */
-  requires?: readonly Capability[];
   /** Session a setup test saved, restored before the body runs. */
   session?: string;
   /** Extra context for agent steps; layers are concatenated outermost first. */

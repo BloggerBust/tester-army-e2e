@@ -16,7 +16,7 @@ import { test } from '@e2e-dev/web';
 import { expect } from 'e2e';
 import { content } from './helpers.ts';
 
-test.describe('page check', { requires: ['browser'], tags: ['playwright'] }, () => {
+test.describe('page check', { platforms: ['web'], tags: ['playwright'] }, () => {
   test('should check the box', async ({ browser }) => {
     await browser.goto(content("<input id='checkbox' type='checkbox'></input>"));
     await browser.locator('input').check();

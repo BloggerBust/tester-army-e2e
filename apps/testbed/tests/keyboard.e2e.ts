@@ -34,7 +34,7 @@ const captureLastKeydown = `() => {
 
 const isMac = process.platform === 'darwin';
 
-test.describe('page keyboard', { requires: ['browser'], tags: ['playwright'] }, () => {
+test.describe('page keyboard', { platforms: ['web'], tags: ['playwright'] }, () => {
   test('should type into a textarea', async ({ browser }) => {
     await browser.goto('/empty.html');
     await browser.evaluate("() => { const textarea = document.createElement('textarea'); document.body.appendChild(textarea); textarea.focus(); }");

@@ -55,7 +55,7 @@ function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-test.describe('selectors frame', { requires: ['browser'], tags: ['playwright'] }, () => {
+test.describe('selectors frame', { platforms: ['web'], tags: ['playwright'] }, () => {
   test('should work for iframe', async ({ browser }) => {
     await browser.goto(routed);
     const button = browser.frameLocator('iframe').locator('button');

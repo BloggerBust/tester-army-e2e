@@ -22,7 +22,7 @@ async function labels(locator: Locator): Promise<(string | null)[]> {
   return Promise.all((await locator.all()).map((match) => match.getAttribute('aria-label')));
 }
 
-test.describe('selectors role', { requires: ['browser'], tags: ['playwright'] }, () => {
+test.describe('selectors role', { platforms: ['web'], tags: ['playwright'] }, () => {
   test('should detect roles', async ({ screen, browser }) => {
     await browser.goto(content(`
       <button>Hello</button>

@@ -69,8 +69,6 @@ web({ viewport: { width: 390, height: 844 }, locale: 'de-DE' });
   `appPath`, `launchArguments`). Its `app.permissions` takes `'grant'` only,
   for names its browser grants; see
   [`permissions`](/reference/config#permissions).
-- A target with `app.url` is a `browser` target, so `requires: ['browser']`
-  selects web targets.
 - The full declaration with its JSDoc is [`WebOptions`](#weboptions) under
   Types.
 
@@ -498,7 +496,7 @@ export type WebInitScript = string | { readonly path: string } | (() => unknown)
   page, and the action or assertion on it is the step.
 - A relative URL resolves against the target's `app.url`, else
   `APP_URL_REQUIRED`.
-- Declare `requires: ['browser']` in a suite that also runs on other
+- Declare `platforms: ['web']` in a suite that also runs on other
   platforms.
 - `expect(browser)` returns the `BrowserExpectation` the engine attaches:
   `toHaveURL`, `toHaveTitle`, and `toHaveClass`. See

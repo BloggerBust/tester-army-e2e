@@ -27,7 +27,7 @@ const sections = `
     <div><p>A</p><p>A</p><p>A</p></div>
   </section>`;
 
-test.describe('locator query', { requires: ['browser'], tags: ['playwright'] }, () => {
+test.describe('locator query', { platforms: ['web'], tags: ['playwright'] }, () => {
   test('should respect first() and last() @smoke', async ({ browser }) => {
     await browser.goto(content(sections));
     expect(await browser.locator('div p').count()).toBe(6);

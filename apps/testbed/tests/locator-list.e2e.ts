@@ -8,7 +8,7 @@ import { test } from '@e2e-dev/web';
 import { expect } from 'e2e';
 import { content } from './helpers.ts';
 
-test.describe('locator list', { requires: ['browser'], tags: ['playwright'] }, () => {
+test.describe('locator list', { platforms: ['web'], tags: ['playwright'] }, () => {
   test('locator.all should work', async ({ browser }) => {
     await browser.goto(content(`<div><p>A</p><p>B</p><p>C</p></div>`));
     const texts = [];

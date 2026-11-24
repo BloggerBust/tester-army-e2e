@@ -309,10 +309,10 @@ describe('e2e init', () => {
   workers: 1,
 }`);
     expect(existsSync(path.join(dir, 'tests/example.e2e.ts'))).toBe(false);
-    expect(read('tests/web.e2e.ts')).toContain("test('app opens', { requires: ['browser'] }, async ({ app, browser }) => {");
-    expect(read('tests/web.e2e.ts')).toContain("// test('the agent drives a flow', { requires: ['browser'] }, async ({ app, agent }) => {");
-    expect(read('tests/mobile.e2e.ts')).toContain("test('Settings opens', { requires: ['device'] }, async ({ app, screen }) => {");
-    expect(read('tests/mobile.e2e.ts')).toContain("// test('the agent opens General', { requires: ['device'] }, async ({ agent, app, device }) => {");
+    expect(read('tests/web.e2e.ts')).toContain("test('app opens', { platforms: ['web'] }, async ({ app, browser }) => {");
+    expect(read('tests/web.e2e.ts')).toContain("// test('the agent drives a flow', { platforms: ['web'] }, async ({ app, agent }) => {");
+    expect(read('tests/mobile.e2e.ts')).toContain("test('Settings opens', { platforms: ['ios'] }, async ({ app, screen }) => {");
+    expect(read('tests/mobile.e2e.ts')).toContain("// test('the agent opens General', { platforms: ['ios'] }, async ({ agent, app, device }) => {");
     expect(output()).toContain('  - Create tests/web.e2e.ts\n');
     expect(output()).toContain('  - Create tests/mobile.e2e.ts\n');
     expect(output()).toContain('Next: npm install, then APP_URL=http://localhost:3000 npm run test:e2e');

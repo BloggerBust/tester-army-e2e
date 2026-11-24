@@ -511,7 +511,6 @@ afterAll(async () => {
 | [`fail`](#fail) | `boolean \| string` | - |
 | [`only`](#only) | `boolean` | - |
 | [`platforms`](#platforms) | `readonly string[]` | - |
-| [`requires`](#requires) | `readonly Capability[]` | - |
 | [`session`](#session) | `string` | - |
 | [`agentContext`](#agentcontext) | `string` | - |
 | [`agent`](#agent) | `string \| readonly string[]` | 运行使用的智能体 |
@@ -590,23 +589,6 @@ test('pays', { only: true }, async ({ app }) => {});
 ```ts
 test('uses Face ID', { platforms: ['ios'] }, async ({ app }) => {});
 ```
-
-#### `requires`
-
-测试目标必须具备的能力。缺少任一能力的测试目标会在选择阶段跳过该测试。最内层设置优先。
-
-```ts
-test('onboarding asks for the camera', { requires: ['native-app'] }, async ({ app, agent }) => {
-  await app.open();
-  await agent.assert('The app asks for camera access');
-});
-```
-
-接受的值：
-
-- 测试目标引擎的测试执行框架能力：`observation`、`actions`、`location`、`pointer`、`keyboard`、`computed-style`、`state`、`artifacts`。
-- 每个引擎提供的内置测试夹具对应一个值：`browser`、`device`。参阅[引擎契约](/reference/engine#engine)。
-- 测试目标声明的应用类型：`app.url` 对应 `browser`，`app.bundleId` 或 `app.appPath` 对应 `native-app`。
 
 #### `session`
 
@@ -690,7 +672,7 @@ describe('checkout', { serial: true }, () => {
 
 | 抛出 | 条件 |
 | --- | --- |
-| `COLLECTION_ERROR` | 成员设置了 `retries`、`trace`、`video`、`session`、`platforms`、`requires`、`skip`、`only` 或嵌套的 `serial`。 |
+| `COLLECTION_ERROR` | 成员设置了 `retries`、`trace`、`video`、`session`、`platforms`、`skip`、`only` 或嵌套的 `serial`。 |
 | `COLLECTION_ERROR` | 成员通过 `test.skip(title, fn)`、`test.skipIf`、`test.runIf` 或 `test.fixme(title, fn)` 注册。 |
 
 #### `sessions`
@@ -730,7 +712,7 @@ test.setup('authenticate', { sessions: ['member', 'admin'] }, async ({ session }
 
 | 抛出 | 条件 |
 | --- | --- |
-| `COLLECTION_ERROR` | 在某个测试目标上运行的测试或它的钩子列出了该测试目标没有的测试夹具。此时不会运行任何测试。声明 `requires: ['browser']`、`platforms` 或 `test.skipIf` 可改为在该测试目标上跳过此类测试。 |
+| `COLLECTION_ERROR` | 在某个测试目标上运行的测试或它的钩子列出了该测试目标没有的测试夹具。此时不会运行任何测试。声明 `platforms` 或 `test.skipIf` 可改为在该测试目标上跳过此类测试。 |
 | `COLLECTION_ERROR` | 测试主体、钩子或测试夹具函数接收整个对象（`async (fixtures) => {}`）、剩余属性（`{ app, ...rest }`）或计算属性，或者是无法读取参数的绑定函数（`fn.bind()`）。 |
 
 <Note>
@@ -1058,8 +1040,6 @@ export interface TestOptions {
   only?: boolean;
   /** Platforms the test runs on; other targets skip it. Innermost wins. */
   platforms?: readonly string[];
-  /** Capabilities the target must have; otherwise the test is skipped at selection. Innermost wins. */
-  requires?: readonly Capability[];
   /** Session a setup test saved, restored before the body runs. */
   session?: string;
   /** Extra context for agent steps; layers are concatenated outermost first. */

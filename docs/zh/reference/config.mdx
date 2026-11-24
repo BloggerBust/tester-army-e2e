@@ -239,7 +239,7 @@ targets: [
 | [`video`](#video) | `RecordingMode` | 配置中的 `video` |
 
 - `{ engine: web(), app: { url } }` 就是一个完整的测试目标。
-- 如果测试的 `requires` 指定了测试目标缺少的能力，该测试会在此测试目标上跳过。被选中测试所依赖的 `test.setup` 必须能够在该测试目标上运行，否则选择过程会以 `COLLECTION_ERROR` 失败。
+- 如果测试的 `platforms` 不包含测试目标的平台，该测试会在此测试目标上跳过。被选中测试所依赖的 `test.setup` 必须能够在该测试目标上运行，否则选择过程会以 `COLLECTION_ERROR` 失败。
 
 完整声明见 [`Target`](#target)。
 

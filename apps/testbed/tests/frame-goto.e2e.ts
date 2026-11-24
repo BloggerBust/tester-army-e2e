@@ -16,7 +16,7 @@ import { test } from '@e2e-dev/web';
 import { expect } from 'e2e';
 import { PREFIX } from './helpers.ts';
 
-test.describe('frame goto', { requires: ['browser'], tags: ['playwright'] }, () => {
+test.describe('frame goto', { platforms: ['web'], tags: ['playwright'] }, () => {
   test('should continue after client redirect', async ({ browser }) => {
     await browser.route('**/frames/script.js', (route) => route.continue({ url: `${PREFIX}/never` }));
     const url = `${PREFIX}/frames/child-redirect.html`;

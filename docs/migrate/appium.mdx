@@ -158,7 +158,7 @@ await agent.act('sign in as {username}', { params: { username: ada.username, pas
 ## Map each command
 
 Calls on `device` run only on a device. A suite that also runs on the web
-declares `requires: ['device']` on those tests.
+declares `platforms: ['ios', 'android']` on those tests.
 
 <AccordionGroup>
 <Accordion title="Elements and gestures">

@@ -21,7 +21,7 @@ test('the dashboard loads', async ({ app, screen, browser }) => {
 });
 ```
 
-デバイスターゲットを含むスイートでは、`browser` を使うテストに `{ requires: ['browser'] }` を追加します。これにより、ランナーはデバイス上でそのテストをスキップします。
+デバイスターゲットを含むスイートでは、`browser` を使うテストに `{ platforms: ['web'] }` を追加します。これにより、ランナーはデバイス上でそのテストをスキップします。
 
 ## API をモックする
 

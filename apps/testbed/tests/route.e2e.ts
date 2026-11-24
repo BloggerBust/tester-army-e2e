@@ -37,7 +37,7 @@ function deferred<T = void>(): { promise: Promise<T>; resolve: (value: T) => voi
   return { promise, resolve };
 }
 
-test.describe('page route', { requires: ['browser'], tags: ['playwright'] }, () => {
+test.describe('page route', { platforms: ['web'], tags: ['playwright'] }, () => {
   test('should intercept @smoke', async ({ browser }) => {
     let intercepted = false;
     await browser.route('**/empty.html', async (route) => {

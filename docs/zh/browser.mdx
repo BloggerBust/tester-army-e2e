@@ -21,7 +21,7 @@ test('the dashboard loads', async ({ app, screen, browser }) => {
 });
 ```
 
-在包含设备测试目标的测试套件中，为使用 `browser` 的测试添加 `{ requires: ['browser'] }`，让运行器在设备上跳过它。
+在包含设备测试目标的测试套件中，为使用 `browser` 的测试添加 `{ platforms: ['web'] }`，让运行器在设备上跳过它。
 
 ## 模拟 API
 

@@ -35,7 +35,7 @@ test('General opens in dark mode', async ({ app, device, screen }) => {
 ```
 
 - Import `test` from `@e2e-dev/mobile` to have `device` typed. Declare
-  `requires: ['device']` in a suite that also runs on the web.
+  `platforms: ['ios', 'android']` in a suite that also runs on the web.
 - Choose **Mobile (iOS/Android)** in `e2e init` to add the package with a
   Settings example. iOS needs Xcode and a simulator; Android needs the Android
   SDK and an emulator.
@@ -462,7 +462,7 @@ them to finish.
 | `performAt` | `tap`, `doubleTap`, `longPress`, and `swipeTo` at a bare screen point, so `screen.tapAt`, `screen.doubleTapAt`, `tap({ position })`, `screen.swipe({ from, to })`, and the agent's `tap_at` reach a control the tree does not list. No `hover`, `secondaryTap`, or `dragTo` at a point: touch has none without a node, so `hover_at` needs a listed control. |
 | `keyboard` | `type` and `press` into the focused field, the agent's `type` and `press` without a target and the fallback of `type_at` and `press_at`, and `dismiss`, the agent's `dismiss_keyboard`. |
 | `locate` | Every `screen` query. Text and label queries answer with the innermost match, since a device echoes both up the tree (a React Native input is a host view and the field inside it, both labelled). On Android a test id query, a string or a RegExp, also matches a resource id without its `<package>:id/` prefix, for any package but the framework's `android`, when nothing on the screen matches the full id. `screen.locator('id=…')` is agent-device's selector and takes the full id. |
-| `validateApp` | Requires `app.bundleId` or `app.appPath` and refuses `app.url` for now, with a note on reaching this machine from the platform's device. A target with either is a `native-app` target, so `requires: ['native-app']` selects device targets. |
+| `validateApp` | Requires `app.bundleId` or `app.appPath` and refuses `app.url` for now, with a note on reaching this machine from the platform's device. |
 | `session` | `back`, `restart`, `reset`, and `openLink`, behind `app.open(path)` on a target with `app.linkBase`. No `open`: `app.open()` with no path is served with `restart`, the fresh launch of the pinned app; the agent's `navigate` verb is unavailable, and `device.openLink(url)` opens a deep link or web link. |
 | `artifacts` | Redacted screenshots under `screenshots/NNN-<label>.png`; a screenshot that cannot be redacted fails instead of being written. Video, when the attempt's [video mode](/reference/config#video) records, as `video/video.mp4`, or a device provider's own recording. |
 | `location` | `<bundle id> / <screen title>`, the replay cache's anchor. The title is the navigation bar's on iOS and the toolbar's on Android. |

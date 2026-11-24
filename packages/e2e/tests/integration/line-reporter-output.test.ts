@@ -52,10 +52,8 @@ describe('line reporter output at the process boundary', () => {
     const { exitCode, stdout } = cli(
       {
         'e2e.config.ts': fakeConfig("\n  reporters: ['line'],"),
-        // The fake engine saves no session state, so the setup is skipped and never gets a result.
         'tests/line.e2e.ts': `import { existsSync, writeFileSync } from 'node:fs';
 import { test } from 'e2e';
-test.setup('selected auth', { sessions: ['member'], requires: ['state'] }, () => {});
 test('selected pass', () => {});
 test('selected retry', { retries: 1 }, () => {
   const marker = new URL('./first-attempt', import.meta.url);

@@ -88,7 +88,7 @@ test('checkout', async ({ app, agent, screen }) => {
 
 ## 映射每个 API
 
-下表中的每一项目前都可用。未列出的 API 请查看 [e2e 尚未提供的功能](#what-e2e-doesnt-have-yet)。`browser` 上的调用只能在浏览器中运行，因此使用它的测试应声明 `requires: ['browser']`，其他测试目标会跳过该测试。
+下表中的每一项目前都可用。未列出的 API 请查看 [e2e 尚未提供的功能](#what-e2e-doesnt-have-yet)。`browser` 上的调用只能在浏览器中运行，因此使用它的测试应声明 `platforms: ['web']`，其他测试目标会跳过该测试。
 
 <AccordionGroup>
 <Accordion title="定位器">

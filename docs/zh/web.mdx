@@ -196,7 +196,7 @@ test('the menu collapses on a narrow screen', async ({ app, screen, browser }) =
 
 ### 将测试限定为一种尺寸
 
-`platforms` 和 `requires` 不能选择视口，因为每个浏览器测试目标的平台都是 `web`。要在某些尺寸下跳过测试，请在测试中读取宽度：
+`platforms` 不能选择视口，因为每个浏览器测试目标的平台都是 `web`。要在某些尺寸下跳过测试，请在测试中读取宽度：
 
 ```ts
 test('the sidebar stays open', async ({ app, screen, browser }) => {

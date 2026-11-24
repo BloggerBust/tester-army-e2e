@@ -90,7 +90,7 @@ test('asks for the email', async ({ app, agent, screen }) => {
 
 ## 各コマンドの対応付け
 
-`device` の呼び出しはデバイスでのみ実行できるため、使用するテストに `requires: ['device']` を宣言します。
+`device` の呼び出しはデバイスでのみ実行できるため、使用するテストに `platforms: ['ios', 'android']` を宣言します。
 他のターゲットはそのテストをスキップします。シグネチャは
 [screen](/reference/screen)、[expect](/reference/expect)、[test](/reference/test)、
 [モバイルエンジン](/reference/mobile)を参照してください。

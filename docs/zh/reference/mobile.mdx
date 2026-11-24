@@ -30,7 +30,7 @@ test('General opens in dark mode', async ({ app, device, screen }) => {
 });
 ```
 
-- 从 `@e2e-dev/mobile` 导入 `test`，为 `device` 提供类型。在同时运行于网页端的测试套件中声明 `requires: ['device']`。
+- 从 `@e2e-dev/mobile` 导入 `test`，为 `device` 提供类型。在同时运行于网页端的测试套件中声明 `platforms: ['ios', 'android']`。
 - 在 `e2e init` 中选择 **Mobile (iOS/Android)**，添加此包及“设置”应用示例。iOS 需要 Xcode 和模拟器；Android 需要 Android SDK 和模拟器。
 - 此包包含兼容版本的 `agent-device`，无需单独安装。
 
@@ -364,7 +364,7 @@ export default {
 | `performAt` | 支持在屏幕坐标点执行 `tap`、`doubleTap`、`longPress` 和 `swipeTo`，因此 `screen.tapAt`、`screen.doubleTapAt`、`tap({ position })`、`screen.swipe({ from, to })` 以及智能体的 `tap_at` 能操作树中未列出的控件。不支持在坐标点执行 `hover`、`secondaryTap` 或 `dragTo`：触控在没有节点时不提供这些操作，因此 `hover_at` 需要已列出的控件。 |
 | `keyboard` | 向聚焦字段执行 `type` 和 `press`，对应智能体不带测试目标的 `type` 和 `press`，以及 `type_at` 和 `press_at` 的回退操作；还支持 `dismiss`，对应智能体的 `dismiss_keyboard`。 |
 | `locate` | 支持所有 `screen` 查询。文本和标签查询返回最内层匹配项，因为设备会沿树向上重复它们（React Native 输入框由宿主视图和内部字段组成，两者都有标签）。在 Android 上，当屏幕没有节点匹配完整 ID 时，字符串或 RegExp 测试 ID 查询也会匹配去掉 `<package>:id/` 前缀的资源 ID，适用于框架 `android` 之外的所有包。`screen.locator('id=…')` 是 agent-device 选择器，接受完整 ID。 |
-| `validateApp` | 需要 `app.bundleId` 或 `app.appPath`，暂不接受 `app.url`，并提示如何从该平台的设备访问本机。具备任一项的测试目标就是 `native-app` 测试目标，因此 `requires: ['native-app']` 会选择设备测试目标。 |
+| `validateApp` | 需要 `app.bundleId` 或 `app.appPath`，暂不接受 `app.url`，并提示如何从该平台的设备访问本机。 |
 | `session` | 支持 `back`、`restart`、`reset` 和 `openLink`；设置了 `app.linkBase` 的测试目标通过后者实现 `app.open(path)`。没有 `open`：不带路径的 `app.open()` 由 `restart` 实现，即重新启动指定应用；智能体的 `navigate` 动词不可用，`device.openLink(url)` 可打开深度链接或网页链接。 |
 | `artifacts` | 脱敏截图位于 `screenshots/NNN-<label>.png` 下；无法脱敏的截图会失败，而不是写入。当尝试的[视频模式](/reference/config#video)要求录制时，视频保存为 `video/video.mp4`，或使用设备提供方自己的录像。 |
 | `location` | `<bundle id> / <screen title>`，即回放缓存的锚点。标题在 iOS 上来自导航栏，在 Android 上来自工具栏。 |

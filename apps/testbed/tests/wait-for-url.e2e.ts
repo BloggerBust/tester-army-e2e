@@ -18,7 +18,7 @@ import { content, PREFIX } from './helpers.ts';
 
 const EMPTY_PAGE = `${PREFIX}/empty.html`;
 
-test.describe('page wait for url', { requires: ['browser'], tags: ['playwright'] }, () => {
+test.describe('page wait for url', { platforms: ['web'], tags: ['playwright'] }, () => {
   test('should work', async ({ browser }) => {
     await browser.goto(EMPTY_PAGE);
     await browser.evaluate('(url) => { window.location.href = url; }', `${PREFIX}/grid.html`);

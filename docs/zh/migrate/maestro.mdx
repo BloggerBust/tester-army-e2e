@@ -88,7 +88,7 @@ test('asks for the email', async ({ app, agent, screen }) => {
 
 ## 映射每条命令
 
-`device` 上的调用只能在设备上运行，因此使用它的测试应声明 `requires: ['device']`，其他测试目标会跳过该测试。关于签名，参阅 [screen](/reference/screen)、[expect](/reference/expect)、[test](/reference/test) 和[移动端引擎](/reference/mobile)。
+`device` 上的调用只能在设备上运行，因此使用它的测试应声明 `platforms: ['ios', 'android']`，其他测试目标会跳过该测试。关于签名，参阅 [screen](/reference/screen)、[expect](/reference/expect)、[test](/reference/test) 和[移动端引擎](/reference/mobile)。
 
 <AccordionGroup>
 <Accordion title="应用和设备">

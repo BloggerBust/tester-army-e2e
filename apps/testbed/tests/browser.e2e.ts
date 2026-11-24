@@ -1,7 +1,7 @@
 import { test } from '@e2e-dev/web';
 import { expect } from 'e2e';
 
-test.describe('browser fixture', { requires: ['browser'], tags: ['browser'] }, () => {
+test.describe('browser fixture', { platforms: ['web'], tags: ['browser'] }, () => {
   test.beforeEach(async ({ app }) => {
     await app.open('/browser');
   });
@@ -52,7 +52,7 @@ test.describe('browser fixture', { requires: ['browser'], tags: ['browser'] }, (
   });
 });
 
-test('emulated media reaches the page\'s own @media rules, from the first paint on', { requires: ['browser'], tags: ['browser'] }, async ({ app, screen, browser }) => {
+test('emulated media reaches the page\'s own @media rules, from the first paint on', { platforms: ['web'], tags: ['browser'] }, async ({ app, screen, browser }) => {
   await browser.emulateMedia({ colorScheme: 'dark' });
   await app.open('/browser');
   await expect(screen.getByLabel('Media')).toHaveText('dark, full motion');

@@ -238,7 +238,7 @@ export interface Engine {
   /**
    * Named deterministic surfaces this engine contributes to TestFixtures
    * (a device fixture, a document fixture - anything). Keys become fixture and
-   * capability names; `requires: ['<name>']` gates at selection.
+   * capability names.
    */
   readonly fixtures?: Readonly<Record<string, EngineFixtureFactory>>;
   /**
@@ -363,9 +363,8 @@ export interface OperationContext {
 
 ### 能力
 
-引擎实现的成员决定其能力。`screen`、`Locator` 或 `app` 调用如果需要某项缺失的能力，会以 `UNSUPPORTED_CAPABILITY` 失败。[测试 API](#test-apis) 列出了各项功能所需的成员。以下三种缺失情况的处理方式不同：
+引擎实现的成员决定其能力。`screen`、`Locator` 或 `app` 调用如果需要某项缺失的能力，会以 `UNSUPPORTED_CAPABILITY` 失败。[测试 API](#test-apis) 列出了各项功能所需的成员。以下两种缺失情况的处理方式不同：
 
-- 如果测试通过 `requires` 声明了引擎没有的测试夹具，该测试会被跳过（`capability-unavailable`）。
 - 如果选中的测试使用 `test.setup` 会话，而引擎没有 `state`，则会在初始化运行前产生收集错误。
 - 如果引擎不支持视频录制，设置 `video` 模式会输出提示，且不会录制视频。
 
@@ -457,7 +456,6 @@ export type ComputedStyleValues = Readonly<Partial<Record<ComputedStyleProperty,
 | `app.back()` | `session.back` |
 | `app.restart()` | `session.restart` |
 | `app.clearState()` | `session.reset` |
-| `requires: ['<name>']` | `fixtures.<name>` |
 
 #### `engine.capabilities`
 
@@ -467,8 +465,6 @@ export type ComputedStyleValues = Readonly<Partial<Record<ComputedStyleProperty,
 const engine = kiosk({ host: 'kiosk.local' });
 engine.capabilities.has('location'); // true: the engine implements locate
 ```
-
-测试选择还会根据测试目标声明的应用种类，而非其引擎，对测试目标分类。带有 `app.url` 的测试目标具有 `browser`，带有 `app.bundleId` 或 `app.appPath` 的测试目标具有 `native-app`，因此测试可以声明 `requires: ['native-app']`。
 
 ```ts
 /**
@@ -2100,7 +2096,7 @@ import { test as base } from 'e2e';
 
 const test = base.extend<{ printer: { print(text: string): Promise<void> } }>();
 
-test('prints a receipt', { requires: ['printer'] }, async ({ printer }) => {
+test('prints a receipt', { platforms: ['kiosk'] }, async ({ printer }) => {
   await printer.print('Order 42');
 });
 ```

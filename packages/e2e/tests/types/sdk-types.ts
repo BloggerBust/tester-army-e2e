@@ -718,6 +718,9 @@ test.extend<{ x: number }>().runIf(true)('uses x', async ({ x }) => { x satisfie
 test.skipIf(true)('no body');
 // @ts-expect-error the registrar takes test options, not describe options
 test.runIf(true)('serial', { serial: true }, async () => {});
+// @ts-expect-error requires was removed; platforms scopes a test to targets
+test('scoped', { requires: ['browser'] }, async () => {});
+test('scoped', { platforms: ['web'] }, async () => {});
 // @ts-expect-error the registrar registers a test, it is not test.skip
 test.skipIf(true)(true, 'reason');
 // A condition of any non-Promise type passes, an unknown one included; a Promise must be awaited first.

@@ -21,7 +21,7 @@ import { test } from '@e2e-dev/web';
 import { expect } from 'e2e';
 import { content } from './helpers.ts';
 
-test.describe('selectors get by', { requires: ['browser'], tags: ['playwright'] }, () => {
+test.describe('selectors get by', { platforms: ['web'], tags: ['playwright'] }, () => {
   test('getByTestId should work', async ({ screen, browser }) => {
     await browser.goto(content('<div><div data-testid="Hello">Hello world</div></div>'));
     await expect(screen.getByTestId('Hello')).toHaveText('Hello world');

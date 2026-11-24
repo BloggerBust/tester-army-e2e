@@ -38,7 +38,7 @@ import { content, CROSS } from './helpers.ts';
 /** Two animation frames and a task, Playwright's `rafraf`, so a pending tap has had its chance. */
 const giveItAChanceToClick = '() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => setTimeout(resolve, 0))))';
 
-test.describe('page click', { requires: ['browser'], tags: ['playwright'] }, () => {
+test.describe('page click', { platforms: ['web'], tags: ['playwright'] }, () => {
   test('should click the button', async ({ browser }) => {
     await browser.goto('/input/button.html');
     await browser.locator('button').tap();

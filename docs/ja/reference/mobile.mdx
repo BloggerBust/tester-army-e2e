@@ -30,7 +30,7 @@ test('General opens in dark mode', async ({ app, device, screen }) => {
 });
 ```
 
-- `device` に型を付けるには、`@e2e-dev/mobile` から `test` をインポートします。Web でも動くスイートでは、`requires: ['device']` を宣言してください。
+- `device` に型を付けるには、`@e2e-dev/mobile` から `test` をインポートします。Web でも動くスイートでは、`platforms: ['ios', 'android']` を宣言してください。
 - `e2e init` で **Mobile (iOS/Android)** を選ぶと、設定アプリのサンプルとともにパッケージを追加します。iOS には Xcode とシミュレーター、Android には Android SDK とエミュレーターが必要です。
 - パッケージには互換性のあるバージョンの `agent-device` が含まれるため、別途インストールする必要はありません。
 
@@ -364,7 +364,7 @@ export default {
 | `performAt` | ノードを指定しない画面座標での `tap`、`doubleTap`、`longPress`、`swipeTo`。`screen.tapAt`、`screen.doubleTapAt`、`tap({ position })`、`screen.swipe({ from, to })`、エージェントの `tap_at` で、ツリーにないコントロールも操作できます。座標だけの `hover`、`secondaryTap`、`dragTo` はありません。タッチではノードなしのこれらの操作がないため、`hover_at` にはツリー内のコントロールが必要です。 |
 | `keyboard` | フォーカス中のフィールドへの `type` と `press`。エージェントの対象なしの `type` と `press`、`type_at` と `press_at` のフォールバック、および `dismiss`（エージェントの `dismiss_keyboard`）で使います。 |
 | `locate` | すべての `screen` クエリ。デバイスはテキストとラベルを親にも重複して報告するため、テキストとラベルのクエリは最も内側の一致を返します（React Native の入力欄は、ホストビューと内部のフィールドの両方にラベルがあります）。Android のテスト ID クエリは、文字列でも RegExp でも、画面上に完全な ID との一致がなければ `<package>:id/` 接頭辞を除いたリソース ID にも一致します。フレームワークの `android` 以外の全パッケージが対象です。`screen.locator('id=…')` は agent-device のセレクターで、完全な ID を指定します。 |
-| `validateApp` | `app.bundleId` または `app.appPath` が必須です。`app.url` は現時点では拒否し、そのプラットフォームのデバイスからこのマシンへ接続する方法を案内します。どちらかを持つターゲットは `native-app` なので、`requires: ['native-app']` でデバイスのターゲットを選択できます。 |
+| `validateApp` | `app.bundleId` または `app.appPath` が必須です。`app.url` は現時点では拒否し、そのプラットフォームのデバイスからこのマシンへ接続する方法を案内します。 |
 | `session` | `back`、`restart`、`reset`、`openLink`。`openLink` は `app.linkBase` のあるターゲットで `app.open(path)` から使います。`open` はありません。パスなしの `app.open()` は `restart` で指定アプリを新たに起動します。エージェントの `navigate` は使えず、ディープリンクや Web リンクは `device.openLink(url)` で開きます。 |
 | `artifacts` | マスキング済みのスクリーンショットを `screenshots/NNN-<label>.png` に保存します。マスキングできない場合は書き込まずに失敗します。試行の[動画モード](/reference/config#video)が録画する場合は、`video/video.mp4` またはデバイスプロバイダー自身の録画を保存します。 |
 | `location` | リプレイキャッシュの基準となる `<bundle id> / <screen title>`。タイトルは、iOS ではナビゲーションバー、Android ではツールバーのものです。 |

@@ -851,7 +851,7 @@ export interface Engine {
   /**
    * Named deterministic surfaces this engine contributes to TestFixtures
    * (a device fixture, a document fixture - anything). Keys become fixture and
-   * capability names; `requires: ['<name>']` gates at selection.
+   * capability names.
    */
   readonly fixtures?: Readonly<Record<string, EngineFixtureFactory>>;
   /**

@@ -92,7 +92,7 @@ test('asks for the email', async ({ app, agent, screen }) => {
 ## Map each command
 
 Calls on `device` run only on a device, so a test that uses it declares
-`requires: ['device']` and other targets skip it. For signatures, see
+`platforms: ['ios', 'android']` and other targets skip it. For signatures, see
 [screen](/reference/screen), [expect](/reference/expect),
 [test](/reference/test), and the [mobile engine](/reference/mobile).
 

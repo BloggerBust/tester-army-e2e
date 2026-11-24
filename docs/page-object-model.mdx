@@ -79,7 +79,7 @@ it runs on that platform only.
 
 A fixture that names `browser` or `device` makes every test that uses it
 need it. On another target, the run fails at collection with
-`COLLECTION_ERROR`. Give those tests `requires: ['browser']` to skip them
+`COLLECTION_ERROR`. Give those tests `platforms: ['web']` to skip them
 there instead. A test that doesn't name the fixture stays portable.
 
 ## Where agent goals fit

@@ -1581,13 +1581,12 @@ function deviceTarget(targets: readonly ResolvedTarget[], name: string): NonNull
  * The plan's per-file breakdown: reportable pairs (run or explicitly skipped)
  * counted per test file and target, in selection order. Unselected pairs are
  * left out: the list reporter never shows them, so counting them would keep
- * a file's block waiting for results that never print. So is a setup test
- * that will not run, which gets no result either.
+ * a file's block waiting for results that never print.
  */
 function plannedFiles(selection: Selection): { file: string; target: string; tests: number }[] {
   const files = new Map<string, { file: string; target: string; tests: number }>();
   for (const pair of selection.pairs) {
-    if (pair.disposition === 'filtered' || (pair.test.kind === 'setup' && pair.disposition !== 'run')) continue;
+    if (pair.disposition === 'filtered') continue;
     const key = `${pair.target.name}\u0000${pair.test.file}`;
     const entry = files.get(key);
     if (entry === undefined) {

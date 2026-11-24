@@ -3,7 +3,7 @@ import { expect } from 'e2e';
 
 // The swatches page draws solid blocks with no text, so each stored screenshot
 // is the same file on every operating system the suite runs on.
-test.describe('screenshots', { requires: ['browser'] }, () => {
+test.describe('screenshots', { platforms: ['web'] }, () => {
   test.beforeEach(async ({ app }) => {
     await app.open('/swatches');
   });

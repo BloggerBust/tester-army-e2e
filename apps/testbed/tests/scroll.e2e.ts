@@ -1,7 +1,7 @@
 import { test } from '@e2e-dev/web';
 import { expect } from 'e2e';
 
-test.describe('scrolling', { requires: ['browser'], tags: ['scroll'] }, () => {
+test.describe('scrolling', { platforms: ['web'], tags: ['scroll'] }, () => {
   test.beforeEach(async ({ app }) => {
     await app.open('/scroll');
   });

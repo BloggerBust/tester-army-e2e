@@ -195,7 +195,6 @@ describe('filterCandidates', () => {
       });
       test.skip('later', noop);
       test('on ios only', { platforms: ['ios'] }, noop);
-      test('needs a device', { requires: ['device'] }, noop);
       test('slow', { tags: ['slow'] }, noop);
     });
     const cfg = resolveConfig(

@@ -141,7 +141,7 @@ another element covers it or an ancestor makes it invisible.
 | `LOCATOR_NOT_FOUND` | No semantic observation exists, the latest one does not list the ID, or the element detached. Observe again before reading. |
 | `STEP_TIMEOUT` | The read exhausted the step's remaining time, including an engine timeout at the deadline. Catching the read error cannot make the step pass. |
 
-Use `requires: ['computed-style']` on a test to skip targets without style reads.
+Use `platforms` on a test to skip targets without style reads.
 
 ## Device toolkits
 

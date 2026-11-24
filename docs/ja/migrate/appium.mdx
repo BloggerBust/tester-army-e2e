@@ -150,7 +150,7 @@ await agent.act('sign in as {username}', { params: { username: ada.username, pas
 
 ## 各コマンドの対応付け
 
-`device` の呼び出しはデバイスでのみ実行できます。Web でも実行するスイートでは、対象のテストに `requires: ['device']` を宣言します。
+`device` の呼び出しはデバイスでのみ実行できます。Web でも実行するスイートでは、対象のテストに `platforms: ['ios', 'android']` を宣言します。
 
 <AccordionGroup>
 <Accordion title="要素とジェスチャー">

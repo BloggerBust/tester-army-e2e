@@ -28,7 +28,7 @@ async function testWaiting(browser: Browser, after: string): Promise<void> {
   expect(done).toBe(true);
 }
 
-test.describe('elementhandle scroll into view', { requires: ['browser'], tags: ['playwright'] }, () => {
+test.describe('elementhandle scroll into view', { platforms: ['web'], tags: ['playwright'] }, () => {
   test('should work @smoke', async ({ browser }) => {
     await browser.goto('/offscreenbuttons.html');
     const overflow = '(id) => document.getElementById(id).getBoundingClientRect().right - window.innerWidth';

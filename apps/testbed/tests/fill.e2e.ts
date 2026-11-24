@@ -16,7 +16,7 @@ import { content } from './helpers.ts';
 /** Five pairs of animation frames, Playwright's `rafraf(page, 5)`, so a pending fill has had its chance. */
 const giveItAChanceToFill = '() => new Promise((resolve) => { let frames = 0; const step = () => (++frames === 10 ? setTimeout(resolve, 0) : requestAnimationFrame(step)); requestAnimationFrame(step); })';
 
-test.describe('page fill', { requires: ['browser'], tags: ['playwright'] }, () => {
+test.describe('page fill', { platforms: ['web'], tags: ['playwright'] }, () => {
   test('should fill textarea', async ({ browser }) => {
     await browser.goto('/input/textarea.html');
     await browser.locator('textarea').fill('some value');

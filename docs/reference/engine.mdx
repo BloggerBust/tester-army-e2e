@@ -279,7 +279,7 @@ export interface Engine {
   /**
    * Named deterministic surfaces this engine contributes to TestFixtures
    * (a device fixture, a document fixture - anything). Keys become fixture and
-   * capability names; `requires: ['<name>']` gates at selection.
+   * capability names.
    */
   readonly fixtures?: Readonly<Record<string, EngineFixtureFactory>>;
   /**
@@ -407,10 +407,8 @@ export interface OperationContext {
 The members an engine implements set its capabilities. A `screen`,
 `Locator`, or `app` call that needs a missing one fails with
 `UNSUPPORTED_CAPABILITY`. [Test APIs](#test-apis) lists what needs which
-member. Three gaps end differently:
+member. Two gaps end differently:
 
-- A test that `requires` a fixture the engine lacks is skipped
-  (`capability-unavailable`).
 - A selected test that uses a `test.setup` session, on an engine without
   `state`, is a collection error before the setup runs.
 - A `video` mode on an engine without video recording prints a notice and
@@ -550,7 +548,6 @@ engine.
 | `app.back()` | `session.back` |
 | `app.restart()` | `session.restart` |
 | `app.clearState()` | `session.reset` |
-| `requires: ['<name>']` | `fixtures.<name>` |
 
 #### `engine.capabilities`
 
@@ -561,10 +558,6 @@ The computed `ReadonlySet` of capability names. Selection, the report, and
 const engine = kiosk({ host: 'kiosk.local' });
 engine.capabilities.has('location'); // true: the engine implements locate
 ```
-
-Selection also grades a target by the kind of app it declares, not by its
-engine. A target with `app.url` has `browser`, and one with `app.bundleId` or
-`app.appPath` has `native-app`, so a test can `requires: ['native-app']`.
 
 ```ts
 /**
@@ -2373,7 +2366,7 @@ import { test as base } from 'e2e';
 
 const test = base.extend<{ printer: { print(text: string): Promise<void> } }>();
 
-test('prints a receipt', { requires: ['printer'] }, async ({ printer }) => {
+test('prints a receipt', { platforms: ['kiosk'] }, async ({ printer }) => {
   await printer.print('Order 42');
 });
 ```

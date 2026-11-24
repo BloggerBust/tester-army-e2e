@@ -49,7 +49,7 @@ function assertDownloadToPDF(download: { absolutePath: string; suggestedFilename
   expect(data.equals(fs.readFileSync(filePath))).toBe(true);
 }
 
-test.describe('download event', { requires: ['browser'], tags: ['playwright'] }, () => {
+test.describe('download event', { platforms: ['web'], tags: ['playwright'] }, () => {
   test('should report download when navigation turns into download @smoke', async ({ browser }) => {
     // e2e opens no page before the first goto, where Playwright starts on about:blank.
     await browser.goto('/empty.html');
@@ -158,7 +158,7 @@ test.describe('download event', { requires: ['browser'], tags: ['playwright'] },
   });
 });
 
-test.describe('download', { requires: ['browser'], tags: ['playwright'] }, () => {
+test.describe('download', { platforms: ['web'], tags: ['playwright'] }, () => {
   test('should be able to download a PDF file', async ({ browser }) => {
     await browser.goto('/empty.html');
     await browser.goto(content('<a href="/empty.pdf" download>download</a>'));

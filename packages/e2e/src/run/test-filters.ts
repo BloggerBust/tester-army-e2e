@@ -205,8 +205,7 @@ export function rankingNotice(selection: Selection, relevance: ReadonlyMap<strin
  * The tests a filter may leave out: one frozen candidate per ordinary test
  * with at least one pair the selection runs, in report order, with the file
  * of the setup test that saves its session when it uses one. Setup tests,
- * explicit and capability skips, and tests filtered on every target are
- * never candidates.
+ * explicit skips, and tests filtered on every target are never candidates.
  */
 export function filterCandidates(selection: Selection): readonly TestFilterCandidate[] {
   const producers = new Map<string, string>();

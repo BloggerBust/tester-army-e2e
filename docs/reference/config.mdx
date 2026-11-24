@@ -308,7 +308,7 @@ targets: [
 | [`video`](#video) | `RecordingMode` | the config's `video` |
 
 - `{ engine: web(), app: { url } }` is a complete target.
-- A test whose `requires` names a capability the target lacks is skipped for
+- A test whose `platforms` leaves out the target's platform is skipped for
   it. A `test.setup` that a selected test depends on must be runnable there,
   or selection fails with `COLLECTION_ERROR`.
 

@@ -17,7 +17,7 @@ import { test } from '@e2e-dev/web';
 import { expect } from 'e2e';
 import { content, CROSS } from './helpers.ts';
 
-test.describe('page click scroll', { requires: ['browser'], tags: ['playwright'] }, () => {
+test.describe('page click scroll', { platforms: ['web'], tags: ['playwright'] }, () => {
   test('should not hit scroll bar', async ({ screen, browser }) => {
     await browser.goto(content(`
       <style>

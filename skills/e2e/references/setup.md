@@ -464,7 +464,7 @@ export default {
   `@e2e-dev/mobile` types the `device` fixture (`installApp`, `openLink`,
   `setPermission`, `setNetwork`, `setAppearance`, `clearKeychain`, `fold`
   for a foldable's hinge (iPhone Duo, Android foldable emulators), `locator`, more). Portable suites declare
-  `requires: ['device']`.
+  `platforms: ['ios', 'android']`.
 - `device.viewport()` reads `{ width, height }` fresh on each call, in the coordinate space of `screen.tapAt()`.
 - `device.unstable_raw` gives the session name, device id and name, a
   `selection` to spread into a call, and a

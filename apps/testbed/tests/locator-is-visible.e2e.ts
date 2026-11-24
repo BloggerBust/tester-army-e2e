@@ -13,7 +13,7 @@ import { test } from '@e2e-dev/web';
 import { expect } from 'e2e';
 import { content } from './helpers.ts';
 
-test.describe('locator is visible', { requires: ['browser'], tags: ['playwright'] }, () => {
+test.describe('locator is visible', { platforms: ['web'], tags: ['playwright'] }, () => {
   test('isVisible and isHidden should work', async ({ browser }) => {
     await browser.goto(content(`<div>Hi</div><span></span>`));
 

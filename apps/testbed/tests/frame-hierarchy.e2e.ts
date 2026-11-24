@@ -23,7 +23,7 @@ import { test } from '@e2e-dev/web';
 import { expect } from 'e2e';
 import { PREFIX } from './helpers.ts';
 
-test.describe('frame hierarchy', { requires: ['browser'], tags: ['playwright'] }, () => {
+test.describe('frame hierarchy', { platforms: ['web'], tags: ['playwright'] }, () => {
   test('should handle nested frames', async ({ browser }) => {
     await browser.goto('/frames/nested-frames.html');
     await expect(browser.frameLocator('[name=aframe]').locator('div')).toHaveText(`Hi, I'm frame`);

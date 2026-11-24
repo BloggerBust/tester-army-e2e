@@ -63,8 +63,6 @@ export interface FilePayload {
   readonly buffer: Buffer;
 }
 
-export type Capability = string;
-
 export interface StandardSchemaV1<Input = unknown, Output = Input> {
   readonly '~standard': StandardSchemaV1.Props<Input, Output>;
 }
@@ -859,8 +857,6 @@ export interface TestOptions {
   only?: boolean;
   /** Platforms the test runs on; other targets skip it. Innermost wins. */
   platforms?: readonly string[];
-  /** Capabilities the target must have; otherwise the test is skipped at selection. Innermost wins. */
-  requires?: readonly Capability[];
   /** Session a setup test saved, restored before the body runs. */
   session?: string;
   /** Extra context for agent steps; layers are concatenated outermost first. */

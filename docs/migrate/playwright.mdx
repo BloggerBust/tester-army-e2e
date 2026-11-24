@@ -100,7 +100,7 @@ can also stay fully deterministic, with a `screen.getBy*` line for every
 Every row works today. For an API that is not here, check
 [What e2e doesn't have yet](#what-e2e-doesnt-have-yet). Calls on `browser`
 run only in a browser, so a test that uses it declares
-`requires: ['browser']` and other targets skip it.
+`platforms: ['web']` and other targets skip it.
 
 <AccordionGroup>
 <Accordion title="Locators">

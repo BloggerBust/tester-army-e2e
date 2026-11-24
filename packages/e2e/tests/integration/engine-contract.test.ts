@@ -992,28 +992,6 @@ test('refuses a negative timeout', async ({ gadget }) => {
   );
 
   it(
-    'gates requires against the declared capability set at selection',
-    async () => {
-      const fake = createFakeEngine({ fixtures: true });
-      const file = `import { test } from 'e2e';
-
-test('needs gadget', { requires: ['gadget'] }, async () => {});
-test('needs web', { requires: ['web'] }, async () => {});
-`;
-      const { outcome, project } = await runProject(
-        { 'tests/requires.e2e.ts': file },
-        { appUrl: APP_URL, config: engineConfig(fake.engine) },
-      );
-      expect(resultByTitle(outcome, 'needs gadget').status).toBe('passed');
-      const web = resultByTitle(outcome, 'needs web');
-      expect(web.status).toBe('skipped');
-      expect(web.skip?.cause).toBe('capability-unavailable');
-      project.cleanup();
-    },
-    60_000,
-  );
-
-  it(
     'registers an engine screenshot as an attempt artifact',
     async () => {
       const fake = createFakeEngine({ artifacts: true });

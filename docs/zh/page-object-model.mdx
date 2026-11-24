@@ -69,7 +69,7 @@ test('rejects a wrong password', async ({ app, signInPage }) => {
 
 只使用 `screen` 的页面对象可以在网页端和移动端测试目标上运行。如果需要 `browser`（键盘、CSS 选择器、`evaluate`）或 `device`，它就只能在相应平台上运行。
 
-列出 `browser` 或 `device` 的测试夹具会让使用它的每个测试都需要它。在其他测试目标上，运行会在收集阶段以 `COLLECTION_ERROR` 失败。为这些测试设置 `requires: ['browser']`，即可在这些测试目标上跳过它们。不列出该测试夹具的测试仍保持可移植。
+列出 `browser` 或 `device` 的测试夹具会让使用它的每个测试都需要它。在其他测试目标上，运行会在收集阶段以 `COLLECTION_ERROR` 失败。为这些测试设置 `platforms: ['web']`，即可在这些测试目标上跳过它们。不列出该测试夹具的测试仍保持可移植。
 
 ## 智能体目标的使用位置
 

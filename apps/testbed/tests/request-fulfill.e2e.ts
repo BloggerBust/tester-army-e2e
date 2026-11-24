@@ -32,7 +32,7 @@ function deferred<T = void>(): { promise: Promise<T>; resolve: (value: T) => voi
 const waitForFunction = (expression: string): string =>
   `() => new Promise((resolve) => { const check = () => (${expression}) ? resolve(true) : setTimeout(check, 20); check(); })`;
 
-test.describe('page request fulfill', { requires: ['browser'], tags: ['playwright'] }, () => {
+test.describe('page request fulfill', { platforms: ['web'], tags: ['playwright'] }, () => {
   test('should work', async ({ browser }) => {
     await browser.route('**/*', (route) => route.fulfill({ status: 201, headers: { foo: 'bar' }, contentType: 'text/html', body: 'Yo, page!' }));
     const [response] = await Promise.all([browser.waitForResponse('**/empty.html'), browser.goto(EMPTY_PAGE)]);

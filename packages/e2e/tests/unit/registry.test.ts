@@ -82,7 +82,10 @@ describe('registration', () => {
       'test options has unknown key "timout"; did you mean "timeout"?',
     );
     await expect(register(() => test('x', { retry: 2 } as never, noop))).rejects.toThrow(
-      'test options has unknown key "retry"; expected one of timeout, retries, tags, skip, fail, only, platforms, requires, session, agentContext, agent, trace, video',
+      'test options has unknown key "retry"; expected one of timeout, retries, tags, skip, fail, only, platforms, session, agentContext, agent, trace, video',
+    );
+    await expect(register(() => test('x', { requires: ['browser'] } as never, noop))).rejects.toThrow(
+      "test options: requires was removed; scope the test to targets with platforms, e.g. platforms: ['web']",
     );
     await expect(register(() => test.describe('group', { searial: true } as never, () => {}))).rejects.toThrow(
       'describe options has unknown key "searial"; did you mean "serial"?',

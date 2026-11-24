@@ -18,7 +18,7 @@ import { test } from '@e2e-dev/web';
 import { expect } from 'e2e';
 import { content } from './helpers.ts';
 
-test.describe('locator misc 2', { requires: ['browser'], tags: ['playwright'] }, () => {
+test.describe('locator misc 2', { platforms: ['web'], tags: ['playwright'] }, () => {
   test('should press @smoke', async ({ browser }) => {
     await browser.goto(content(`<input type='text' />`));
     await browser.locator('input').press('h');

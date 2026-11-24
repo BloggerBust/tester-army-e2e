@@ -104,7 +104,6 @@ spread.
   every secure field are painted black before the file is kept, and a
   screenshot that cannot be redacted is not written. No `state` capability: a
   simulator has no portable session snapshot.
-- **App kind**: a target with `app.bundleId` or `app.appPath` is a `native-app` target, so a portable suite can `requires: ['native-app']`.
 
 ## Replay cache
 

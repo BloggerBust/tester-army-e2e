@@ -48,7 +48,6 @@ export type SkipInfo =
       readonly cause:
         | SelfSkipCause
         | 'platform-unavailable'
-        | 'capability-unavailable'
         | 'setup-failed'
         | 'serial-predecessor-failed'
         | 'hook-failed'

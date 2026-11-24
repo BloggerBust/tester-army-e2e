@@ -56,7 +56,7 @@ const recordEvents = (selector: string): string => `() => {
   e.addEventListener('change', () => window.events.push('change'));
 }`;
 
-test.describe('page set input files', { requires: ['browser'], tags: ['playwright'] }, () => {
+test.describe('page set input files', { platforms: ['web'], tags: ['playwright'] }, () => {
   test.afterEach(() => {
     for (const dir of outputDirs.splice(0)) fs.rmSync(dir, { recursive: true, force: true });
   });

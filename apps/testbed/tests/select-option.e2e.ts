@@ -35,7 +35,7 @@ const giveItAChanceToResolve = '() => new Promise((resolve) => { let frames = 0;
 /** Appends a `scarlet` option to the page's select. */
 const addScarlet = "() => { const option = document.createElement('option'); option.value = 'scarlet'; option.textContent = 'Scarlet'; document.querySelector('select').appendChild(option); }";
 
-test.describe('page select option', { requires: ['browser'], tags: ['playwright'] }, () => {
+test.describe('page select option', { platforms: ['web'], tags: ['playwright'] }, () => {
   test('should select single option by value', async ({ browser }) => {
     await browser.goto('/input/select.html');
     await browser.locator('select').selectOption({ value: 'blue' });

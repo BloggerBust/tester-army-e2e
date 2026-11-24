@@ -25,7 +25,7 @@ test('the dashboard loads', async ({ app, screen, browser }) => {
 });
 ```
 
-In a suite with device targets, add `{ requires: ['browser'] }` to a test
+In a suite with device targets, add `{ platforms: ['web'] }` to a test
 that uses `browser`, so the runner skips it on devices.
 
 ## Mock an API

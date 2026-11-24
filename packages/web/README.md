@@ -42,8 +42,7 @@ takes `url` (the base URL `app.open()` opens; required on a `web()` target),
 with `readyUrl` to poll, default `url`), `environment` (`test`, `staging`,
 `production`; inferred from the host), and `identity` (a stable cache and
 session key when the origin is ephemeral). `web({ url })` and the other old
-app options are `INVALID_CONFIG`. A target with `app.url` is a `browser`
-target, so a test can `requires: ['browser']`. Browser options:
+app options are `INVALID_CONFIG`. Browser options:
 `browser` (`chromium`, `firefox`, `webkit`; default `chromium`; or a
 `BrowserProvider` that leases hosted browsers, see below), `viewport`
 (`{ width, height }`; default 1280x720), `testIdAttribute` (the attribute

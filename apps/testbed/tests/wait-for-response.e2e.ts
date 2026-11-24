@@ -19,7 +19,7 @@ import { PREFIX } from './helpers.ts';
 
 const EMPTY_PAGE = `${PREFIX}/empty.html`;
 
-test.describe('page wait for response', { requires: ['browser'], tags: ['playwright'] }, () => {
+test.describe('page wait for response', { platforms: ['web'], tags: ['playwright'] }, () => {
   test('should work', async ({ browser }) => {
     await browser.goto(EMPTY_PAGE);
     const [response] = await Promise.all([

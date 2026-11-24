@@ -31,7 +31,7 @@ import { test } from '@e2e-dev/web';
 import { expect } from 'e2e';
 import { content } from './helpers.ts';
 
-test.describe('selectors text', { requires: ['browser'], tags: ['playwright'] }, () => {
+test.describe('selectors text', { platforms: ['web'], tags: ['playwright'] }, () => {
   test('text-is() should ignore comments', async ({ screen, browser }) => {
     await browser.goto(content(`<div id=me>hel<!-- comment -->lo
     <!-- comment -->

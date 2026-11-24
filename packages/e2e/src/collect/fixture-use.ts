@@ -2,7 +2,7 @@
  * The fixture rules that need a target, checked at selection: once the pairs
  * that run are known, and before any worker starts. Only a pair that runs is
  * checked, so a file that names `device` and is skipped on a web target
- * (`platforms`, `requires`, `test.skipIf`) stays valid there.
+ * (`platforms`, `test.skipIf`) stays valid there.
  */
 
 import { CollectionError } from '@e2e-dev/core/lib/internal/errors';

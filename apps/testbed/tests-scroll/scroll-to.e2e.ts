@@ -1,7 +1,7 @@
 import { test } from '@e2e-dev/web';
 import { expect } from 'e2e';
 
-test.describe('scroll_to a text on a windowed list', { requires: ['browser'], tags: ['scroll'] }, () => {
+test.describe('scroll_to a text on a windowed list', { platforms: ['web'], tags: ['scroll'] }, () => {
   for (const [depth, row] of [['near', 'Row 12'], ['middle', 'Row 60'], ['deep', 'Row 118']] as const) {
     test(`reaches a ${depth} row and taps it`, async ({ app, agent, screen }) => {
       await app.open('/scroll');

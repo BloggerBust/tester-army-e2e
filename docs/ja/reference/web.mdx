@@ -60,7 +60,6 @@ web({ viewport: { width: 390, height: 844 }, locale: 'de-DE' });
 | [`webmcp`](#webmcp) | `boolean` | `false` |
 
 - `web()` ターゲットには `app.url` が必須です。デバイス用のキー（`bundleId`、`appPath`、`launchArguments`）は拒否します。`app.permissions` は、ブラウザが許可できる権限名に対する `'grant'` だけを受け付けます。[`permissions`](/reference/config#permissions) を参照してください。
-- `app.url` を持つターゲットは `browser` ターゲットなので、`requires: ['browser']` で Web ターゲットを選択できます。
 - JSDoc を含む完全な宣言は、型セクションの [`WebOptions`](#weboptions) にあります。
 
 | エラー | 発生条件 |
@@ -368,7 +367,7 @@ export type WebInitScript = string | { readonly path: string } | (() => unknown)
 - `target="_blank"` のリンクや `window.open` からアプリが開くタブは、バックグラウンドで開きます。`waitForPopup` または `activate` で別のタブをアクティブにするまで、現在のタブは変わりません。[タブ](#tabs)を参照してください。
 - `locator` と `frameLocator` を除くすべての `browser` 呼び出しは、`browser.<method>` ステップとして記録します。この 2 つはページに触れずにロケーターを作り、それを使うアクションやアサーションがステップになります。
 - 相対 URL はターゲットの `app.url` を基準に解決します。なければ `APP_URL_REQUIRED` です。
-- ほかのプラットフォームでも動くスイートでは、`requires: ['browser']` を宣言してください。
+- ほかのプラットフォームでも動くスイートでは、`platforms: ['web']` を宣言してください。
 - `expect(browser)` は、エンジンが付ける `BrowserExpectation` を返します。`toHaveURL`、`toHaveTitle`、`toHaveClass` を使えます。[browser のマッチャー](/reference/expect#browser-matchers)を参照してください。
 
 | メンバー | 戻り値 |

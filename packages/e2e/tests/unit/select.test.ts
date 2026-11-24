@@ -246,15 +246,14 @@ describe('resolveOptions', () => {
     expect(resolveOptions(col.tests[0]!, config()).agentContext).toBe('outer ctx\nleaf ctx');
   });
 
-  it('replaces platforms, requires, and session', async () => {
+  it('replaces platforms and session', async () => {
     const col = await collection(() => {
-      test.describe('outer', { platforms: ['web'], requires: ['web'], session: 'a' }, () => {
+      test.describe('outer', { platforms: ['web'], session: 'a' }, () => {
         test('leaf', { session: 'b' }, noop);
       });
     });
     const options = resolveOptions(col.tests[0]!, config());
     expect(options.platforms).toEqual(['web']);
-    expect(options.requires).toEqual(['web']);
     expect(options.session).toBe('b');
   });
 
@@ -601,21 +600,6 @@ describe('select', () => {
     expect(selection.pairs.find((pair) => pair.test.title === 'web too')!.disposition).toBe('run');
   });
 
-  it('skips tests whose required capability is unavailable', async () => {
-    const col = await collection(() => {
-      test('needs device', { requires: ['device'] }, noop);
-      test('needs web', { requires: ['web'] }, noop);
-    });
-    // Capabilities are the engine's declared set: harness tiers plus one name
-    // per contributed fixture. This engine contributes `web`, not `device`.
-    const engine = defineEngine({ name: 'toy', version: '1.0.0', spiVersion: 1, fixtures: { web: () => ({}) } });
-    const selection = select(col, config({ targets: [{ name: 'web', platform: 'web', engine }] }));
-    const device = selection.pairs.find((pair) => pair.test.title === 'needs device')!;
-    expect(device.disposition).toBe('skip');
-    expect(device.skip?.cause).toBe('capability-unavailable');
-    expect(selection.pairs.find((pair) => pair.test.title === 'needs web')!.disposition).toBe('run');
-  });
-
   it('selects the session producer for consumers regardless of filters', async () => {
     const col = await collection(() => {
       test.setup('auth', { sessions: ['member'] }, noop);
@@ -853,20 +837,18 @@ describe('select with what the test filters left out', () => {
     expect(pair(second, 'b').skip).toEqual(outside);
   });
 
-  it('leaves out only what would run: platform and capability verdicts on another target stand', async () => {
+  it('leaves out only what would run: a platform verdict on another target stands', async () => {
     const col = await collection(() => {
       test('web only', { platforms: ['web'] }, noop);
-      test('needs device', { requires: ['device'] }, noop);
       test('kept', noop);
     });
     const engine = defineEngine({ name: 'toy', version: '1.0.0', spiVersion: 1, fixtures: { web: () => ({}) } });
     const cfg = config({ targets: [{ name: 'web', platform: 'web', engine }, { name: 'ios', platform: 'ios' }] });
-    const filtered = select(col, cfg, { excluded: leftOut(col, [['web only', 'areas', 'unaffected'], ['needs device', 'areas', 'unaffected']]) });
+    const filtered = select(col, cfg, { excluded: leftOut(col, [['web only', 'areas', 'unaffected']]) });
     /** The pair of the test titled `title` on `target`. */
     const pair = (title: string, target: string) => filtered.pairs.find((entry) => entry.test.title === title && entry.target.name === target)!;
     expect(pair('web only', 'web').skip).toEqual({ cause: 'filtered', reason: 'unaffected', filter: 'areas' });
     expect(pair('web only', 'ios').skip?.cause).toBe('platform-unavailable');
-    expect(pair('needs device', 'web').skip?.cause).toBe('capability-unavailable');
   });
 });
 

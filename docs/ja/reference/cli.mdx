@@ -146,7 +146,7 @@ CI 以外のターミナルでは、ひな形の作成後に GitHub で e2e に�
 | --- | --- |
 | `package.json` | なければ非公開の ESM パッケージとして作成し、既存なら不足する依存関係とスクリプトだけを追加します。関連パッケージ（`@e2e-dev/web`、`@e2e-dev/mobile`）には CLI と同時にリリースしたバージョンのキャレット範囲を指定し、CLI がプレリリースなら完全一致のバージョンを指定します。既存のものがなければ、`e2e run` を実行する `test:e2e` スクリプトを追加します |
 | `e2e.config.ts` | 選んだエンジンごとにターゲットを 1 つ作り、その `app` にアプリを設定します。Playwright は `APP_URL`（デフォルト `http://localhost:3000`）を `app.url` に読み込み、コメントで `app.command` を示します。モバイルは iOS で `app: { bundleId: 'Settings' }`、Android で `com.android.settings`、および `workers: 1` を設定します。ゲートウェイがあれば `agents.default` は `{ model, system }` です |
-| `tests/example.e2e.ts` | どのページでも成功するアプリ起動テストと、コメントアウトしたエージェントテストです。デバイス向けでは、代わりに設定アプリの確認を作ります。両方のエンジンを選ぶと、`tests/web.e2e.ts` と `tests/mobile.e2e.ts` を作り、各テストに `requires: ['browser']` または `requires: ['device']` を付け、もう一方のターゲットではスキップさせます |
+| `tests/example.e2e.ts` | どのページでも成功するアプリ起動テストと、コメントアウトしたエージェントテストです。デバイス向けでは、代わりに設定アプリの確認を作ります。両方のエンジンを選ぶと、`tests/web.e2e.ts` と `tests/mobile.e2e.ts` を作り、各テストの `platforms` にそのターゲットのプラットフォームを指定し、もう一方のターゲットではスキップさせます |
 | `.gitignore` | `node_modules/`、`.e2e/results/`、`.e2e/cache/`、`.e2e/sessions/`、`.e2e/report.json`、`.e2e/ai-trace.json`、`.e2e/timings.json`、`.e2e/junit.xml`、`.e2e/summary.md`、`.e2e/logs/`、`.e2e/videos/` を追記します。キャッシュのコミットは任意です。[リプレイキャッシュのコミット](/cache#commit-the-replay-cache)を参照してください |
 | `.agents/skills/e2e/`, `.claude/skills/e2e/` | `SKILL.md` と、`e2e guide` のトピックごとの `references/<topic>.md` です。両方を選ぶと、Claude Code のディレクトリはコピーを指す相対シンボリックリンク（`../../.agents/skills/e2e`）になります。`npx skills add` と同じ構成です |
 | `.mcp.json`, `.cursor/mcp.json`, `.codex/config.toml` | ほかのサーバーを変更せずに `e2e mcp` を登録します |
