@@ -37,7 +37,8 @@
     "packages/desktop/tests/helpers/fake-agent-desktop.mjs",
     "packages/acp/tests/live/*.ts",
     "packages/e2e/tests/live/*.ts",
-    "packages/e2e/src/config/register.ts"
+    "packages/e2e/src/config/register.ts",
+    "scripts/microbench/child.mjs"
   ],
   "ignorePatterns": [
     "docs/**",
@@ -55,7 +56,7 @@
     "@expo/repack-app",
     "@oxc-project/runtime"
   ],
-  "ignoreBinaries": ["eas", "vhs"],
+  "ignoreBinaries": ["eas", "vhs", "valgrind"],
   "ignoreExports": [
     {
       "file": "packages/core/src/types.ts",

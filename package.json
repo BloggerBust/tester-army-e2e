@@ -39,6 +39,7 @@
     "test:agent": "pnpm run build && pnpm --filter @e2e-dev/testbed test:agent",
     "test:scripts": "node --test \"scripts/**/*.test.ts\"",
     "bench:ab": "node scripts/bench-ab.ts",
+    "microbench": "node scripts/microbench.ts",
     "record:terminal": "node scripts/record-terminal.ts"
   },
   "contributors": [

@@ -668,6 +668,45 @@ calls the model. A load average above half the cores is warned about; shared
 CI runners are too noisy for wall-time verdicts, so trust the behavior and
 counter sections there. The harness's statistics have unit tests under
 `scripts/bench-ab/` (`pnpm test:scripts`).
+## Microbenchmarks
+
+`pnpm microbench` measures small pure-JS functions (secret redaction,
+locator resolution, mobile tree projection; the cases are in
+`scripts/microbench/cases.mjs`) as instruction counts under Valgrind's
+Cachegrind, so the result does not move with the machine's load. Valgrind
+runs on Linux only; on macOS, `--tool time` runs the same cases on wall time
+as a smoke check.
+
+```bash
+pnpm microbench --trials 10 --base-root .                      # repeatability: one build against itself
+pnpm microbench --base-root /path/to/base/checkout             # base against this checkout
+pnpm microbench --tool time --case redact                      # local smoke run, noisy
+```
+
+- Each trial runs a case in two fresh processes, N and 3N iterations, and
+  keeps the difference: startup, loading, warmup, and compilation cancel.
+  Cases and inputs come from this checkout, the code under test from each
+  `--root`/`--base-root`, which must be built. Give both roots paths of the
+  same length: a different length moved one case by a fixed 0.075% between
+  builds of the same code, and the harness warns about it.
+- The default mode, `jitless`, counts the interpreter only, regexps
+  included; in CI, the trials of one commit spread at most 0.17% per case.
+  `--mode jit` keeps V8's compilers under `--predictable`,
+  `--single-threaded`, `--predictable-gc-schedule`, and fixed seeds, but V8
+  still optimizes differently in some processes and its trials cluster up
+  to 2% apart: use it to look at JIT behavior, not to compare. Every
+  process runs with `--v8-pool-size=0`, and with ASLR off (`setarch -R`) on
+  Linux. Counts are not wall time.
+- A direction is reported only when the base and head trial ranges do not
+  overlap and the change reaches the noise floor (`--threshold`, 0.5% for
+  instruction counts). `--expect-same` (implied by one directory twice)
+  makes the run a repeatability check, which exits 1 when any case's ranges
+  separate, under the floor too.
+- `.github/workflows/microbench.yml` runs both checks on a Blacksmith runner
+  with one pinned Node version; dispatch it with a `base` ref to compare.
+- A case's `child.mjs` and `cases.mjs` are plain JavaScript: `--jitless`
+  turns off WebAssembly, which Node's TypeScript stripping needs.
+
 ## Golden device trees
 
 `packages/mobile/tests/fixtures/snapshots/{ios,android}/` holds raw

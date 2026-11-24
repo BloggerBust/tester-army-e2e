@@ -1,0 +1,142 @@
+name: microbench
+
+# Instruction counts of the runner's small pure-JS functions under Valgrind
+# (scripts/microbench.ts). Not a gate: no ruleset requires it, so the
+# workflow-level `paths:` filter is safe here, unlike in the gated workflows.
+#
+# `repeatability` measures two builds of the same commit against each other
+# in jitless mode and fails when any case's trial ranges separate: it
+# is the evidence that a count is stable enough to compare. `compare`
+# measures the pull request's base against its head (or a dispatched base ref
+# against the branch).
+#
+# A pull request runs it when it changes the harness (with the statistics
+# it shares with bench-ab), the code the cases measure
+# (`scripts/microbench/cases.mjs` loads it from packages/core and
+# packages/mobile), what those packages build with, or the captured
+# snapshots the cases read as input.
+on:
+  pull_request:
+    paths:
+      - scripts/microbench.ts
+      - scripts/microbench/**
+      - scripts/bench-ab/stats.ts
+      - .github/workflows/microbench.yml
+      - packages/core/src/**
+      - packages/core/package.json
+      - packages/core/tsconfig*.json
+      - packages/mobile/src/**
+      - packages/mobile/package.json
+      - packages/mobile/tsconfig*.json
+      - packages/mobile/tests/fixtures/snapshots/**
+      - tsconfig.base.json
+      - pnpm-lock.yaml
+  workflow_dispatch:
+    inputs:
+      base:
+        description: Ref to compare the branch against (empty runs only the repeatability check)
+        type: string
+        default: ''
+      trials:
+        description: Trials per case, mode, and checkout
+        type: string
+        default: '10'
+      mode:
+        description: jitless, jit, or both (jit trials cluster up to 2% apart; use it to look at JIT behavior)
+        type: string
+        default: jitless
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  E2E_TELEMETRY_DISABLED: '1'
+  # Tiering heuristics change between V8 versions, so every count here comes
+  # from one exact Node. Bumping it steps every case; say so in the PR.
+  MICROBENCH_NODE: 26.13.1
+
+# Both jobs measure two worktrees at paths of the same length under
+# $RUNNER_TEMP/mb: a root's path is read at startup, and a longer one moves
+# where the collector runs inside the measured loop, which showed up as a
+# fixed offset between the workspace and a worktree of the same code.
+jobs:
+  repeatability:
+    runs-on: blacksmith-4vcpu-ubuntu-2404
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: pnpm/action-setup@9fd676a19091d4595eefd76e4bd31c97133911f1 # v4.2.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: ${{ env.MICROBENCH_NODE }}
+          cache: pnpm
+      - run: sudo apt-get update && sudo apt-get install -y valgrind
+      - name: Check out and build the same commit twice
+        run: |
+          for side in a b; do
+            git worktree add --detach "$RUNNER_TEMP/mb/$side" HEAD
+            (
+              cd "$RUNNER_TEMP/mb/$side"
+              pnpm install --frozen-lockfile
+              pnpm --filter @e2e-dev/core run build
+              pnpm --filter e2e run build
+              pnpm --filter @e2e-dev/mobile run build
+            )
+          done
+      - name: Measure one build against the other
+        env:
+          TRIALS: ${{ inputs.trials || '10' }}
+          MODE: ${{ inputs.mode || 'jitless' }}
+        run: node scripts/microbench.ts --root "$RUNNER_TEMP/mb/b" --base-root "$RUNNER_TEMP/mb/a" --expect-same --mode "$MODE" --trials "$TRIALS" --out "$RUNNER_TEMP/microbench"
+      - if: ${{ always() }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: microbench-repeatability
+          path: ${{ runner.temp }}/microbench
+          if-no-files-found: ignore
+
+  compare:
+    if: ${{ github.event_name == 'pull_request' || inputs.base != '' }}
+    runs-on: blacksmith-4vcpu-ubuntu-2404
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - uses: pnpm/action-setup@9fd676a19091d4595eefd76e4bd31c97133911f1 # v4.2.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: ${{ env.MICROBENCH_NODE }}
+          cache: pnpm
+      - run: sudo apt-get update && sudo apt-get install -y valgrind
+      - name: Check out and build both revisions
+        env:
+          BASE_REF: ${{ github.event.pull_request.base.sha || inputs.base }}
+        run: |
+          base="$(git merge-base "$(git rev-parse --verify "$BASE_REF^{commit}")" HEAD)"
+          git worktree add --detach "$RUNNER_TEMP/mb/base" "$base"
+          git worktree add --detach "$RUNNER_TEMP/mb/head" HEAD
+          for side in base head; do
+            (
+              cd "$RUNNER_TEMP/mb/$side"
+              pnpm install --frozen-lockfile
+              pnpm --filter @e2e-dev/core run build
+              pnpm --filter e2e run build
+              pnpm --filter @e2e-dev/mobile run build
+            )
+          done
+      - name: Measure base against head
+        env:
+          TRIALS: ${{ inputs.trials || '5' }}
+          MODE: ${{ inputs.mode || 'jitless' }}
+        run: node scripts/microbench.ts --root "$RUNNER_TEMP/mb/head" --base-root "$RUNNER_TEMP/mb/base" --mode "$MODE" --trials "$TRIALS" --out "$RUNNER_TEMP/microbench"
+      - if: ${{ always() }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: microbench-compare
+          path: ${{ runner.temp }}/microbench
+          if-no-files-found: ignore
