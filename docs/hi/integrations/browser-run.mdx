@@ -1,0 +1,85 @@
+---
+title: Cloudflare Browser Run
+sidebarTitle: Browser Run
+description: वेब टारगेट को Cloudflare के होस्टेड Chromium में चलाएँ, browserRun() ब्राउज़र प्रोवाइडर से।
+---
+
+`@e2e-dev/browser-run` का `browserRun()` हर वर्कर स्लॉट को, या हर टेस्ट अटेम्प्ट को, Cloudflare पर होस्टेड एक Chromium ब्राउज़र देता है।
+टेस्ट वही वेब इंजन और वही फ़िक्स्चर इस्तेमाल करते हैं।
+
+## अपना अकाउंट जोड़ें
+
+अपने अकाउंट के लिए `Browser Rendering - Edit` परमिशन वाला [Cloudflare API टोकन](https://developers.cloudflare.com/browser-run/cdp/) बनाएँ।
+`CLOUDFLARE_ACCOUNT_ID` और `CLOUDFLARE_API_TOKEN` उस एनवायरनमेंट में सेट करें जहाँ `e2e run` शुरू होता है।
+
+प्रोवाइडर को `e2e` और `@e2e-dev/web` के साथ इंस्टॉल करें:
+
+<CodeGroup>
+```bash npm
+npm install --save-dev @e2e-dev/browser-run
+```
+
+```bash pnpm
+pnpm add -D @e2e-dev/browser-run
+```
+
+```bash bun
+bun add -d @e2e-dev/browser-run
+```
+</CodeGroup>
+
+टारगेट का ब्राउज़र सेट करें:
+
+```ts title="e2e.config.ts"
+import type { E2EConfig } from 'e2e';
+import { web } from '@e2e-dev/web';
+import { browserRun } from '@e2e-dev/browser-run';
+
+export default {
+  targets: [{
+    name: 'cloudflare',
+    engine: web({ browser: browserRun() }),
+    app: { url: 'https://staging.example.com' },
+  }],
+  workers: 2,
+} satisfies E2EConfig;
+```
+
+ऐप का URL पब्लिक और HTTPS वाला होना चाहिए।
+होस्टेड ब्राउज़र रनर के `localhost` तक नहीं पहुँच सकता। लोकल ऐप को किसी टनल से बाहर एक्सपोज़ करें।
+
+## ब्राउज़र कितनी देर चले, यह सेट करें
+
+| ऑप्शन | डिफ़ॉल्ट | मतलब |
+| --- | --- | --- |
+| `scope` | `'worker'` | हर वर्कर स्लॉट पर एक ब्राउज़र। `'attempt'` हर अटेम्प्ट और हर रीट्राई के लिए नया ब्राउज़र लीज़ पर लेता है। |
+| `keepAlive` | `600000` | इनएक्टिविटी टाइमआउट, मिलीसेकंड में, `10000` से `1200000` तक। |
+
+टाइमआउट वह समय गिनता है जिसमें कोई CDP कमांड नहीं आती, कनेक्शन जुड़ा रहने पर भी। कोई टेस्ट दस मिनट से ज़्यादा रुक सकता है, तो `keepAlive` बढ़ाएँ।
+
+वर्कर स्कोप हर अटेम्प्ट के लिए एक अलग, आइसोलेटेड कॉन्टेक्स्ट बनाता है।
+अटेम्प्ट स्कोप नए ब्राउज़र का डिफ़ॉल्ट कॉन्टेक्स्ट इस्तेमाल करता है। ट्रांसपोर्ट ड्रॉप होने पर वह उसी ब्राउज़र से दोबारा कनेक्ट हो सकता है।
+[हर अटेम्प्ट वाले प्रोवाइडर की सीमाएँ](/browser#hosted-browsers) लागू होती हैं।
+
+टियरडाउन के दौरान सेशन डिलीट हो जाते हैं। अगर रनर क्लीनअप से पहले ही बंद हो जाए, तो इनएक्टिविटी टाइमआउट ब्राउज़र को ख़त्म कर देता है।
+
+## कम्पैटिबिलिटी चेक करें
+
+Chromium, नेविगेशन, लोकेटर, नेटवर्क रूट, कुकी, स्क्रीनशॉट और वेब इंजन का स्क्रीनकास्ट वीडियो CDP से चलते हैं।
+CDP के ऑथराइज़ेशन हेडर सिर्फ़ ब्राउज़र कनेक्शन को ऑथेंटिकेट करते हैं। वे पेज की रिक्वेस्ट के हेडर नहीं बनते।
+
+`browser.back()` या `browser.forward()` के बाद Browser Run पर हिस्ट्री नेविगेशन टाइम आउट हो सकता है, जब वह पेज के `load` इवेंट का इंतज़ार कर रहा हो।
+
+रिमोट फ़ाइल डाउनलोड सपोर्ट नहीं होते। Browser Run ऐसा कोई ब्राउज़र फ़ाइलसिस्टम API नहीं देता जिसे प्रोवाइडर पढ़ सके।
+Cloudflare की अपनी सेशन रिकॉर्डिंग रिपोर्ट के साथ नहीं जुड़तीं।
+[वीडियो](/reference/config#video) चालू हो, तो वेब इंजन हर अटेम्प्ट का WebM स्क्रीनकास्ट रिकॉर्ड करता है।
+
+`workers` को अपने अकाउंट की [कनकरेंसी और नए ब्राउज़र लेने की लिमिट](https://developers.cloudflare.com/browser-run/limits/) के अंदर रखें।
+HTTP `401` या `403` आए, तो एरर में उस टोकन परमिशन का नाम होता है जिसे चेक करना है।
+
+## आगे
+
+<CardGroup cols={2}>
+  <Card title="होस्टेड ब्राउज़र" href="/browser#hosted-browsers">प्रोवाइडर स्कोप और आइसोलेशन समझें।</Card>
+  <Card title="वेब इंजन" href="/web">व्यूपोर्ट, ऐप तक पहुँच और वीडियो कॉन्फ़िगर करें।</Card>
+</CardGroup>

@@ -1,0 +1,59 @@
+---
+title: होस्टेड ब्राउज़र और डिवाइस
+sidebarTitle: ओवरव्यू
+description: होस्टेड ब्राउज़र और डिवाइस सर्विसों के ऑफ़िशियल इंटीग्रेशन, हर सर्विस का एक पैकेज।
+"og:image": "https://e2e.com/docs/images/og/integrations/index.png?v=324a20a30f"
+"twitter:image": "https://e2e.com/docs/images/og/integrations/index.png?v=324a20a30f"
+---
+
+ऑफ़िशियल इंटीग्रेशन एक पैकेज होता है। यह इंजन के प्रोवाइडर इंटरफ़ेस से किसी
+होस्टेड सर्विस का `browser` या `device` टारगेट को देता है। कॉन्फ़िग में सिर्फ़
+टारगेट का `browser` या `device` बदलता है।
+
+<CardGroup cols={2}>
+  <Card title="Cloudflare Browser Run" icon="/images/integrations/cloudflare.svg" href="/integrations/browser-run">
+    `@e2e-dev/browser-run`: वेब टारगेट के लिए होस्टेड Chromium, हर वर्कर के लिए या हर टेस्ट के लिए।
+  </Card>
+  <Card title="Kernel" icon="/images/integrations/kernel.svg" href="/integrations/kernel">
+    `@e2e-dev/kernel`: वेब टारगेट के लिए होस्टेड Chromium, हर वर्कर या हर टेस्ट के लिए एक ब्राउज़र।
+  </Card>
+  <Card title="Notte" icon="/images/integrations/notte.svg" href="/integrations/notte">
+    `@e2e-dev/notte`: वेब टारगेट के लिए Notte के क्लाउड ब्राउज़र, हर टेस्ट अटेम्प्ट के लिए एक सेशन।
+  </Card>
+  <Card title="Lightpanda" icon="/images/integrations/lightpanda.svg" href="/integrations/lightpanda">
+    `@e2e-dev/lightpanda`: ओपन सोर्स हेडलेस ब्राउज़र, बिना Chromium के। यह आपकी अपनी मशीन पर हर वर्कर स्लॉट के लिए शुरू होता है।
+  </Card>
+  <Card title="Moli" icon="/images/integrations/moli.png" href="/integrations/moli">
+    `@e2e-dev/moli`: लोकल Moli ब्राउज़र, जो लेआउट और स्क्रीनशॉट सिर्फ़ माँगने पर बनाते हैं। ये हर वर्कर स्लॉट के लिए शुरू होते हैं।
+  </Card>
+  <Card title="Expo Simulators" icon="/images/integrations/expo.svg" href="/integrations/eas">
+    `@e2e-dev/eas`: मोबाइल टारगेट के लिए होस्टेड iOS सिम्युलेटर और Android एम्युलेटर।
+  </Card>
+  <Card title="smol machines" icon="/images/integrations/smol.png" href="/integrations/smol">
+    `@e2e-dev/smol`: आपके कंप्यूटर पर Chromium microVM। हर टेस्ट वॉर्म ब्राउज़र की एक ब्रांच में चलता है।
+  </Card>
+  <Card title="Limrun" icon="/images/integrations/limrun.svg" href="/integrations/limrun">
+    `@e2e-dev/limrun`: होस्टेड iOS सिम्युलेटर और Android एम्युलेटर, ऐप इंस्टॉल और डिवाइस क्लीनअप के साथ।
+  </Card>
+  <Card title="TestMu AI" icon="/images/integrations/testmu.svg" href="/integrations/testmu">
+    `@e2e-dev/testmu`: मोबाइल टारगेट के लिए होस्टेड Android एम्युलेटर, iOS सिम्युलेटर और असली डिवाइस, और वेब टारगेट के लिए Chrome और Edge।
+  </Card>
+  <Card title="BrowserStack" icon="/images/integrations/browserstack.svg" href="/integrations/browserstack">
+    `@e2e-dev/browserstack`: मोबाइल टारगेट के लिए BrowserStack App Automate के असली Android और iOS डिवाइस।
+  </Card>
+  <Card title="E2B" icon="/images/integrations/e2b.svg" href="/integrations/e2b">
+    `@e2e-dev/e2b`: मोबाइल टारगेट के लिए Android 16 सैंडबॉक्स, और वेब टारगेट के लिए Chromium सैंडबॉक्स।
+  </Card>
+  <Card title="Revyl" icon="/images/integrations/revyl.svg" href="/integrations/revyl">
+    `@e2e-dev/revyl`: मोबाइल टारगेट के लिए होस्टेड iOS सिम्युलेटर और Android एम्युलेटर। ऐप `https` URL से इंस्टॉल होता है।
+  </Card>
+</CardGroup>
+
+## जिस सर्विस का इंटीग्रेशन नहीं है, उसे इस्तेमाल करें
+
+किसी और सर्विस के लिए अपने प्रोजेक्ट में एक छोटा प्रोवाइडर लिखें: वेब इंजन के लिए
+[`BrowserProvider`](/browser#hosted-browsers), या मोबाइल इंजन के लिए
+[`DeviceProvider`](/mobile#hosted-devices)।
+
+e2e को GitHub Actions, Expo Workflows या Norrix जैसी CI सर्विस पर चलाना है, तो
+[कंटीन्यूअस इंटीग्रेशन](/ci) देखें।

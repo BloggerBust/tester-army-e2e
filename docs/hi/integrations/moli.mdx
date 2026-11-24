@@ -1,0 +1,90 @@
+---
+title: Moli
+sidebarTitle: Moli
+description: "@e2e-dev/moli से वेब टारगेट लोकल Moli ब्राउज़र में चलाएँ। ब्राउज़र अपने-आप शुरू होते हैं, और उनका क्लीनअप भी अपने-आप होता है।"
+---
+
+[Moli](https://github.com/lexmount/moli) एक ओपन सोर्स ब्राउज़र है, जो Chrome
+DevTools Protocol समझता है। `@e2e-dev/moli` का `moli()` हर वर्कर स्लॉट के लिए
+एक लोकल ब्राउज़र शुरू करता है, और रन के साथ उसे बंद कर देता है।
+
+## Moli टारगेट शुरू करें
+
+[Moli बाइनरी](https://github.com/lexmount/moli#direct-installation) और ये
+पैकेज इंस्टॉल करें:
+
+<CodeGroup>
+```bash npm
+npm install --save-dev e2e @e2e-dev/web @e2e-dev/moli
+```
+
+```bash pnpm
+pnpm add -D e2e @e2e-dev/web @e2e-dev/moli
+```
+
+```bash bun
+bun add -d e2e @e2e-dev/web @e2e-dev/moli
+```
+</CodeGroup>
+
+```ts title="e2e.config.ts"
+import type { E2EConfig } from 'e2e';
+import { web } from '@e2e-dev/web';
+import { moli } from '@e2e-dev/moli';
+
+export default {
+  targets: [
+    {
+      name: 'moli',
+      engine: web({ browser: moli() }),
+      app: { url: 'http://localhost:3000' },
+    },
+  ],
+} satisfies E2EConfig;
+```
+
+अपने टेस्ट [`e2e run`](/reference/cli#e2e-run) से चलाएँ। हर वर्कर किसी खाली
+लूपबैक पोर्ट पर अपना अलग Moli प्रोसेस इस्तेमाल करता है। जो सर्वर दस सेकंड के
+अंदर CDP नहीं खोलता, उसकी लीज़ फ़ेल हो जाती है।
+
+## ब्राउज़र कॉन्फ़िगर करें
+
+| ऑप्शन | डिफ़ॉल्ट | मतलब |
+| --- | --- | --- |
+| `binary` | `MOLI_PATH`, फिर `PATH`, फिर `~/.local/bin/moli` | एक्ज़ीक्यूटेबल का पाथ या नाम। ब्राउज़र शुरू होते समय यह रन के एनवायरनमेंट से रिज़ॉल्व होता है। |
+| `layout` | `true` | सिर्फ़ माँगने पर बनने वाले लेआउट और स्क्रीनशॉट के लिए `--layout` पास करता है। |
+| `loadResources` | `true` | `--resource` पास करता है, ताकि ऑप्शनल इमेज, फ़ॉन्ट, ऑडियो, वीडियो, मीडिया और टेक्स्ट ट्रैक भी फ़ेच हों। |
+| `args` | `[]` | `moli serve` के और फ़्लैग। |
+
+प्रोवाइडर वर्कर स्कोप सपोर्ट करता है। हर अटेम्प्ट वाली लीज़
+इम्प्लीमेंट नहीं है।
+
+<Accordion title="खुद शुरू किए सर्वर से जुड़ें">
+Moli को एक अलग टर्मिनल में शुरू करें:
+
+```bash
+moli serve --host 127.0.0.1 --port 19222 --layout --resource
+```
+
+जुड़ने के लिए वेब इंजन का `connect` ऑप्शन इस्तेमाल करें। रन इस सर्वर को चलता छोड़ देता है:
+
+```ts
+web({ connect: { cdpEndpoint: () => process.env.MOLI_CDP_URL?.trim() || 'http://127.0.0.1:19222' } })
+```
+</Accordion>
+
+## ब्राउज़र कम्पैटिबिलिटी चेक करें
+
+अपना सूट Moli के उसी बिल्ड पर चलाएँ जिसे आप डिप्लॉय करते हैं। CDP कम्पैटिबिलिटी
+में कमियों के लिए [अपस्ट्रीम इश्यू](https://github.com/lexmount/moli/issues) देखें।
+
+## आगे
+
+<CardGroup cols={2}>
+  <Card title="ब्राउज़र API" icon="globe" href="/browser">
+    नेविगेशन, नेटवर्क इंटरसेप्शन, डाउनलोड और स्क्रीनशॉट।
+  </Card>
+  <Card title="ऑथेंटिकेशन" icon="key" href="/authentication">
+    साइन इन किया हुआ सेशन सेव करें, और उसे दूसरे टेस्टों में रिस्टोर करें।
+  </Card>
+</CardGroup>

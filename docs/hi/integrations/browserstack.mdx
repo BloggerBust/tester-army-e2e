@@ -1,0 +1,147 @@
+---
+title: BrowserStack
+sidebarTitle: BrowserStack
+description: "@e2e-dev/browserstack के browserstack() डिवाइस प्रोवाइडर से मोबाइल टारगेट BrowserStack App Automate के असली Android और iOS डिवाइस पर चलाएँ।"
+"og:image": "https://e2e.com/docs/images/og/integrations/browserstack.png?v=e37c085f7a"
+"twitter:image": "https://e2e.com/docs/images/og/integrations/browserstack.png?v=e37c085f7a"
+---
+
+`@e2e-dev/browserstack` का `browserstack()`
+[BrowserStack App Automate](https://www.browserstack.com/app-automate) के असली
+Android और iOS डिवाइस के लिए एक [डिवाइस प्रोवाइडर](/mobile#hosted-devices) है।
+रन शुरू होने पर हर वर्कर स्लॉट एक डिवाइस लीज़ पर लेता है, और रन ख़त्म होने पर
+उसे रिलीज़ कर देता है।
+
+<Tip>
+होस्टेड डिवाइस के साथ e2e चलाने के लिए Mac, Xcode या Android SDK की ज़रूरत नहीं है।
+</Tip>
+
+## सेटअप
+
+इंटीग्रेशन को मोबाइल इंजन के साथ इंस्टॉल करें:
+
+<CodeGroup>
+```bash npm
+npm install --save-dev e2e @e2e-dev/mobile @e2e-dev/browserstack
+```
+
+```bash pnpm
+pnpm add -D e2e @e2e-dev/mobile @e2e-dev/browserstack
+```
+
+```bash bun
+bun add -d e2e @e2e-dev/mobile @e2e-dev/browserstack
+```
+</CodeGroup>
+
+```ts title="e2e.config.ts"
+import type { E2EConfig } from 'e2e';
+import { mobile } from '@e2e-dev/mobile';
+import { browserstack } from '@e2e-dev/browserstack';
+
+const apk = 'https://www.browserstack.com/app-automate/sample-apps/android/WikipediaSample.apk';
+
+export default {
+  targets: [
+    {
+      name: 'pixel-7',
+      engine: mobile({
+        platform: 'android',
+        device: browserstack({ device: 'Google Pixel 7', osVersion: '13.0', app: apk, appiumVersion: '3.2.0' }),
+      }),
+      app: { bundleId: 'org.wikipedia.alpha' },
+    },
+  ],
+  workers: 1,
+} satisfies E2EConfig;
+```
+
+`device` और `osVersion` हूबहू BrowserStack के App Automate कैटलॉग से मेल खाने
+चाहिए, ठीक वैसे जैसे [डिवाइस लिस्ट](https://www.browserstack.com/list-of-browsers-and-platforms/app_automate)
+उन्हें दिखाती है: Android पर `13.0`, iOS पर `18`।
+
+`app` वह बिल्ड है जो BrowserStack हर सेशन पर इंस्टॉल करता है। यह इनमें से एक
+हो सकता है: पहले के किसी अपलोड की `bs://` ऐप id, एक `https` URL जिसे
+BrowserStack हर रन में एक बार फ़ेच करता है, या एक लोकल पाथ, जो `e2e.config.ts`
+की डायरेक्टरी के हिसाब से रिज़ॉल्व होकर अपलोड होता है। Android पर `.apk` या
+`.aab` दें, और iOS पर साइन किया हुआ `.ipa`। टारगेट में `app.appPath` न रखें,
+और `app.open()` के लिए `app.bundleId` रहने दें।
+
+`appiumVersion` सेट करें। इसके बिना BrowserStack अपना डिफ़ॉल्ट Appium 1.x
+चलाता है। उसमें वे `mobile:` कमांड नहीं हैं जिनसे डीप लिंक और हार्डवेयर बटन
+चलते हैं।
+
+टेस्ट वैसे ही हैं जैसे लोकल डिवाइस पर:
+
+```ts title="tests/home.e2e.ts"
+import { test } from '@e2e-dev/mobile';
+import { expect } from 'e2e';
+
+test('Wikipedia home screen', async ({ app, screen }) => {
+  await app.open();
+  await expect(screen.getByText('Search Wikipedia').first()).toBeVisible();
+});
+```
+
+## ऑथेंटिकेट करें
+
+`BROWSERSTACK_USERNAME` और `BROWSERSTACK_ACCESS_KEY` उस एनवायरनमेंट में सेट
+करें जिसमें `e2e run` शुरू होता है, जैसे CI सीक्रेट में। ये दोनों
+**Account & Profile → My profile → Authentication & Security** से कॉपी करें। यूज़रनेम वही
+है जो वहाँ दिखता है, आपका ईमेल एड्रेस नहीं। दोनों में से कोई एक भी छूट जाए, तो कुछ भी
+शुरू होने से पहले ही लीज़ फ़ेल हो जाती है। आपके प्लान में App Automate होना
+चाहिए।
+
+## ऑप्शन
+
+| ऑप्शन           | डिफ़ॉल्ट         | मतलब |
+| ---------------- | --------------- | ------- |
+| `device`         | ज़रूरी        | डिवाइस का नाम, जैसा App Automate कैटलॉग दिखाता है (`'Google Pixel 7'`, `'iPhone 16'`)। |
+| `osVersion`      | ज़रूरी        | OS वर्शन, जैसा कैटलॉग उस डिवाइस के लिए दिखाता है। |
+| `app`            | ज़रूरी        | वह बिल्ड जो BrowserStack इंस्टॉल करता है: `bs://` ऐप id, `https` URL या लोकल पाथ। |
+| `project`        | `'e2e'`         | डैशबोर्ड का प्रोजेक्ट, जिसके नीचे सेशन ग्रुप होते हैं। |
+| `build`          | रन id      | डैशबोर्ड का बिल्ड, जिसके नीचे सेशन ग्रुप होते हैं। |
+| `sessionName`    | `e2e-<run id>-<target>-<slot>` | डैशबोर्ड पर सेशन का नाम। एक से ज़्यादा वर्कर स्लॉट हों, तो आख़िर में `-<slot>` जुड़ता है। |
+| `orientation`    | डिवाइस का    | `'portrait'` या `'landscape'`। |
+| `geoLocation`    | BrowserStack का  | उस देश का कोड, जहाँ का IP डिवाइस को मिलता है (`'US'`)। |
+| `timezone`       | डिवाइस का    | टाइम ज़ोन (`'New_York'`)। |
+| `language`       | ऐप की       | भाषा (`'fr'`)। |
+| `locale`         | डिवाइस का    | लोकेल (`'fr_FR'`)। |
+| `appiumVersion`  | BrowserStack का (1.x) | सेशन का Appium वर्शन (`'3.2.0'`)। |
+| `networkProfile` | कुछ नहीं            | नेटवर्क कंडीशन का एक नाम वाला प्रोफ़ाइल (`'4g-lte-advanced-good'`)। `customNetwork` के साथ नहीं। |
+| `customNetwork`  | कुछ नहीं            | अपना बनाया नेटवर्क शेप। `networkProfile` के साथ नहीं। |
+| `noResignApp`    | `false`         | सिर्फ़ iOS: अपलोड किए ऐप का अपना सिग्नेचर रखें, BrowserStack से दोबारा साइन न करवाएँ। BrowserStack की री-साइनिंग पुश नोटिफ़िकेशन जैसे entitlements हटा देती है। |
+
+डिवाइस फ़ीचर सेशन शुरू होते समय सेट होते हैं और पूरे सेशन तक वैसे ही रहते हैं।
+अनजान ऑप्शन और गलत टाइप वाले ऑप्शन कॉन्फ़िग लोड को `INVALID_CONFIG` के साथ फ़ेल
+करते हैं। कैटलॉग की वैल्यू और प्लेटफ़ॉर्म से जुड़ी शर्तें डिवाइस लीज़ शुरू होने पर
+जाँची जाती हैं।
+
+जो अटेम्प्ट [वीडियो](/reference/config#video) रिकॉर्ड करता है, उसमें सेशन की
+BrowserStack वाली रिकॉर्डिंग का लिंक होता है। यह रिकॉर्डिंग सेशन के `build` और
+`sessionName` से ढूँढी जाती है। रिकॉर्डिंग पूरे सेशन की होती है, इसलिए एक वर्कर
+स्लॉट के हर अटेम्प्ट में वही वीडियो लिंक होता है। जो रन एक ही समय पर चलें और एक
+तय `build` और `sessionName` शेयर करें, वे एक-दूसरे के वीडियो लिंक कर सकते हैं।
+डिफ़ॉल्ट वैल्यू के साथ ऐसा कभी नहीं होता।
+
+## सीमाएँ
+
+- हर सेशन तब शुरू होता है जब उसके स्लॉट का डिवाइस लीज़ होता है, यानी जब e2e
+  टारगेट तैयार कर रहा होता है। डिवाइस तैयार होने में करीब 20 से 50 सेकंड लगते
+  हैं। जब तक रन सेशन को रिलीज़ नहीं करता, उसका बिल बनता रहता है, उस पर कोई टेस्ट न
+  चले तब भी। `workers` गुणा BrowserStack टारगेट की गिनती अपने प्लान के पैरेलल
+  सेशन के अंदर रखें।
+- BrowserStack किसी अपलोड को उसके आख़िरी इस्तेमाल के बाद 30 दिन तक रखता है।
+  `https` वाला `app` हर रन में दोबारा अपलोड होता है। इससे बचना है, तो `bs://`
+  id दोबारा इस्तेमाल करें।
+- अगर रनर डिवाइस रिलीज़ करने से पहले ही किल हो जाए, तो BrowserStack का आइडल टाइमआउट
+  सेशन को उसकी आख़िरी कमांड के बाद ख़त्म कर देता है।
+- अगर agent-device पक्का नहीं कर पाता कि उसने सेशन ख़त्म कर दिया, तो रिलीज़ रन
+  को फ़ेल कर देता है, चाहे हर टेस्ट पास हुआ हो। इसकी वजहें: सेशन का ख़त्म होना
+  agent-device की करीब 3 सेकंड वाली शटडाउन विंडो से आगे चला गया, daemon को
+  ज़बरदस्ती रोका गया, शटडाउन रिपोर्ट खो गई, या रन के दौरान daemon बंद हो गया।
+  सेशन को डैशबोर्ड पर उसके `build` और `sessionName` से ढूँढें।
+- डिवाइस सेटिंग (परमिशन, लोकेशन, नेटवर्क, अपीयरेंस), सिस्टम अलर्ट, agent-device
+  से रिकॉर्डिंग और डिवाइस लॉग, और पोर्ट रिवर्स, ये नहीं मिलते। लॉग BrowserStack
+  डैशबोर्ड पर पढ़ें, और अपने नेटवर्क के किसी सर्वर तक पहुँचने के लिए
+  BrowserStack Local इस्तेमाल करें।

@@ -1,0 +1,195 @@
+---
+title: Lightpanda
+sidebarTitle: Lightpanda
+description: वेब टारगेट को Lightpanda में चलाएँ, जो एक ओपन सोर्स हेडलेस ब्राउज़र है, @e2e-dev/lightpanda के lightpanda() ब्राउज़र प्रोवाइडर से।
+"og:image": "https://e2e.com/docs/images/og/integrations/lightpanda.png?v=b97a3ebae4"
+"twitter:image": "https://e2e.com/docs/images/og/integrations/lightpanda.png?v=b97a3ebae4"
+---
+
+[Lightpanda](https://lightpanda.io) एक ओपन सोर्स हेडलेस ब्राउज़र है, जिसे शुरू से
+नया लिखा गया है, बिना Chromium के। यह मिलीसेकंड में शुरू हो जाता है, Chrome की
+मेमोरी का छोटा-सा हिस्सा लेता है, और Chrome DevTools Protocol समझता है।
+`@e2e-dev/lightpanda` का `lightpanda()` इसके लिए एक
+[ब्राउज़र प्रोवाइडर](/browser#hosted-browsers) है। हर वर्कर स्लॉट को अपना
+`lightpanda serve` मिलता है। यह रन शुरू होने पर किसी खाली पोर्ट पर शुरू होता है,
+और रन ख़त्म होने पर बंद हो जाता है। टेस्ट और CI वैसे ही रहते हैं। कॉन्फ़िग में
+सिर्फ़ टारगेट का `browser` बदलता है।
+
+Lightpanda में कोई लेआउट इंजन नहीं है। यह DOM बनाता है, JavaScript चलाता है, और
+वह ऐक्सेसिबिलिटी ट्री देता है जिसे इंजन पढ़ता है। लोकेटर, असर्शन और
+[एजेंट स्टेप](/agent-steps) इसी ट्री का इस्तेमाल करते हैं। जो भी चीज़ इस पर टिकी है
+कि कोई नोड कहाँ पेंट होता है, वह अलग तरह से चलती है। सूट को इस पर लाने से पहले
+[क्या काम नहीं करता](#what-does-not-work) देख लें।
+
+## सेटअप
+
+पैकेज इंस्टॉल करें:
+
+<CodeGroup>
+```bash npm
+npm install --save-dev @e2e-dev/lightpanda
+```
+
+```bash pnpm
+pnpm add -D @e2e-dev/lightpanda
+```
+
+```bash bun
+bun add -d @e2e-dev/lightpanda
+```
+</CodeGroup>
+
+और Lightpanda की nightly बाइनरी भी, जिसे प्रोवाइडर शुरू करता है:
+
+<CodeGroup>
+```bash macOS
+brew install lightpanda-io/browser/lightpanda
+```
+
+```bash Linux
+curl -L -o lightpanda https://github.com/lightpanda-io/browser/releases/download/nightly/lightpanda-x86_64-linux
+install -D -m 755 lightpanda ~/.local/bin/lightpanda
+```
+</CodeGroup>
+
+```ts title="e2e.config.ts"
+import type { E2EConfig } from 'e2e';
+import { web } from '@e2e-dev/web';
+import { lightpanda } from '@e2e-dev/lightpanda';
+
+export default {
+  targets: [
+    {
+      name: 'lightpanda',
+      engine: web({ browser: lightpanda() }),
+      app: { url: 'http://localhost:3000' },
+    },
+  ],
+} satisfies E2EConfig;
+```
+
+प्रोवाइडर `lightpanda` को `PATH`, `~/.lightpanda/lightpanda` या
+`~/.local/bin/lightpanda` से चलाता है। इन्हीं जगहों पर
+[agent-browser](https://agent-browser.dev/engines/lightpanda) भी देखता है। या फिर
+वह उस बाइनरी को चलाता है जिसका नाम `LIGHTPANDA_PATH` देता है, उस एनवायरनमेंट में
+जिसमें `e2e run` शुरू होता है। या वह ऑप्शन में दिया गया `binary` चलाता है। कोई बाइनरी
+न मिले, तो रन किसी भी टेस्ट से पहले फ़ेल हो जाता है, और एरर में इंस्टॉल
+पेज का नाम होता है।
+हर वर्कर को अपना सर्वर मिलता है। इसलिए `workers` तय करता है कि एक साथ कितने सर्वर
+चलें, और रन के लॉग में हर सर्वर का नाम आता है:
+
+```text
+ℹ lightpanda (1 of 2): lightpanda 1.1.0-nightly at ws://127.0.0.1:51165/
+```
+
+## पहले से चल रहे सर्वर से जुड़ें
+
+पहले से चल रहा Lightpanda, जैसे CI में उसकी Docker इमेज, प्रोवाइडर नहीं बल्कि
+एक [`connect`](/reference/web#options) टारगेट है। इंजन उसके CDP एंडपॉइंट से जुड़ता
+है और उसे चलता छोड़ देता है।
+
+```ts title="e2e.config.ts"
+web({ connect: { cdpEndpoint: () => process.env.LIGHTPANDA_URL ?? 'ws://127.0.0.1:9222/' } })
+```
+
+```bash
+docker run -d --name lightpanda -p 127.0.0.1:9222:9222 lightpanda/browser:nightly
+```
+
+तब हर वर्कर वही एक सर्वर शेयर करता है। एक `lightpanda serve` डिफ़ॉल्ट रूप से 16
+कनेक्शन लेता है। इससे ज़्यादा वर्कर चलाने हैं, तो उसका `--cdp-max-connections`
+`workers` से ऊपर रखें।
+
+## ऑप्शन
+
+| ऑप्शन          | डिफ़ॉल्ट                         | मतलब |
+| --------------- | ------------------------------- | ------- |
+| `binary`        | `LIGHTPANDA_PATH`, नहीं तो जो बाइनरी मिले   | कौन-सी बाइनरी शुरू करनी है: कोई पाथ, या `PATH` पर कोई नाम। |
+| `loadResources` | `['stylesheet']`                | सर्वर कौन-से सब-रिसोर्स फ़ेच करे: `iframe`, `image`, `stylesheet`। [पेज का और हिस्सा फ़ेच करें](#fetch-more-of-the-page) देखें। |
+| `args`          | `[]`                            | `lightpanda serve` के और फ़्लैग, जो प्रोवाइडर के सेट किए फ़्लैग के बाद लगते हैं। |
+
+प्रोवाइडर पूरे रन के लिए हर वर्कर स्लॉट पर एक सर्वर लीज़ पर लेता है। इसमें
+`scope: 'attempt'` नहीं है, क्योंकि Lightpanda डिफ़ॉल्ट कॉन्टेक्स्ट की वह पहचान नहीं
+देता जिससे हर अटेम्प्ट वाली लीज़ दोबारा जुड़ती है। जो सर्वर दस सेकंड के अंदर अपने
+पोर्ट पर जवाब न दे, उससे लीज़ फ़ेल हो जाती है। बाइनरी उससे पहले ही बंद हो जाए, तो
+भी लीज़ फ़ेल होती है, और मैसेज में उसका stderr होता है।
+
+## पेज का और हिस्सा फ़ेच करें
+
+`lightpanda serve` डिफ़ॉल्ट रूप से कोई सब-रिसोर्स नहीं माँगता: न इमेज, न बाहरी
+स्टाइलशीट, न आईफ़्रेम। प्रोवाइडर स्टाइलशीट माँगता है, और `loadResources` यह लिस्ट
+सेट करता है, सर्वर पर `--load-resources` के तौर पर। आपकी लिस्ट उस डिफ़ॉल्ट की जगह
+ले लेती है, इसलिए उसमें `stylesheet` रखें। `[]` कुछ भी फ़ेच नहीं करता:
+
+```ts
+web({ browser: lightpanda({ loadResources: ['stylesheet', 'iframe'] }) })
+```
+
+इनलाइन स्टाइल, `<style>` ब्लॉक और `hidden` एट्रिब्यूट पहले से ही तय करते हैं कि क्या
+दिखेगा। `stylesheet` से बाहरी फ़ाइल के रूल भी गिने जाते हैं। तो जिस नोड को लिंक की
+गई स्टाइलशीट छिपाती है, वह क्वेरी के लिए भी छिपा रहता है। `image` इमेज के हेडर फ़ेच
+करता है, ताकि `load` और `error` असली स्टेटस दिखाएँ।
+
+## क्या काम करता है
+
+e2e टेस्टबेड के लोकल सूट में से Lightpanda 1.0.4 पर ये चीज़ें बिना किसी बदलाव के
+पास होती हैं:
+
+- `app.open`, `app.back`, और `expect(browser).toHaveURL` और `toHaveTitle`।
+- हर `screen` क्वेरी (`getByRole`, `getByLabel`, `getByText`,
+  `getByTestId`, फ़िल्टर, `nth`) और उन पर होने वाले एक्शन: `tap`, `fill`,
+  `check`, `select`, `press`, और कीबोर्ड इनपुट।
+- टेक्स्ट, वैल्यू, काउंट और स्टेट पर पोलिंग असर्शन।
+- `browser.route` मॉक और रिक्वेस्ट का इंतज़ार।
+- `browser.waitForDownload` के साथ [डाउनलोड](/browser#download-a-file)।
+- टेस्ट से `browser.setCookies`।
+- [सेशन](/authentication): `session.save` के साथ `test.setup`, और टेस्ट पर
+  `session:`।
+- `app.screenshot` और फ़ेलियर का स्क्रीनशॉट। Lightpanda DOM का एक सादा रेंडर पेंट
+  करता है, पेज वैसा नहीं दिखता जैसा Chrome में दिखता।
+- एजेंट स्टेप: `agent.act`, `agent.assert`, `agent.extract` और
+  `agent.waitFor` स्क्रीन ट्री पढ़ते हैं, और Lightpanda यह ट्री पूरा देता है।
+  टेस्टबेड का एजेंट सूट अपने ट्री वाले फ़्लो पास करता है (todos, विज़र्ड, साइन इन,
+  होवर, कॉन्टेक्स्ट मेन्यू, लॉन्ग प्रेस, अपलोड)। फ़ेल वही होता है जो कैनवस पर बना
+  हो, ड्रैग होता हो, या फ़ोल्ड के नीचे हो। पिक्सल पर होने वाली परख सादा रेंडर देखती
+  है, इसलिए एजेंट को ट्री पर ही रखें।
+
+जो टेस्ट इस पर असर्ट करता है कि यूज़र क्या देखता है, न कि वह कहाँ बना है, वह जैसा
+है वैसा ही यहाँ चल जाता है।
+
+## क्या काम नहीं करता
+
+इनमें से हर मामले में टेस्ट इंजन के आम एरर के साथ फ़ेल होता है, अटकता नहीं। वजहें
+Lightpanda की तरफ़ हैं, और उसका
+[Playwright कम्पैटिबिलिटी इश्यू](https://github.com/lightpanda-io/browser/issues/3076)
+इनमें से ज़्यादातर को ट्रैक करता है।
+
+| फ़ीचर | क्या होता है | क्यों |
+| ------- | ------------ | --- |
+| [डायलॉग](/browser#handle-a-dialog) | `browser.onDialog` चलता है, फिर `ENGINE_FAILURE` के साथ टेस्ट फ़ेल कर देता है: `Page.handleJavaScriptDialog` बताता है कि कोई डायलॉग नहीं है। | Lightpanda `alert`, `confirm` (`false`) और `prompt` (`null`) का जवाब खुद दे देता है, क्लाइंट के कुछ कर पाने से पहले। |
+| ऐसे बटन से [फ़ाइल अपलोड](/reference/screen#setinputfiles) जो छिपा हुआ फ़ाइल इनपुट खोलता है | बटन पर `setInputFiles` एक्शन टाइमआउट के बाद फ़ेल होता है: क्लिक से कोई फ़ाइल चूज़र नहीं खुलता। सीधे इनपुट पर `setInputFiles` काम करता है। | Lightpanda `Page.setInterceptFileChooserDialog` ले लेता है, लेकिन `Page.fileChooserOpened` कभी नहीं भेजता। |
+| [आईफ़्रेम](/browser#reach-into-an-iframe) | `frameLocator` को कुछ नहीं मिलता। | आईफ़्रेम डिफ़ॉल्ट रूप से लोड नहीं होते। `loadResources: ['stylesheet', 'iframe']` उन्हें लोड करता है। तब क्वेरी और फ़िल काम करते हैं, लेकिन फ़्रेम के बनाए एलिमेंट पर होस्ट पेज का लिसनर नहीं चलता। |
+| ड्रैग एंड ड्रॉप: `locator.swipeTo`, या किसी ड्रॉप टारगेट तक `screen.swipe` पाथ | पॉइंटर हिलता है, लेकिन कुछ ड्रॉप नहीं होता: ड्रैग किया गया नोड वहीं रहता है। | Lightpanda में माउस इनपुट से अभी HTML ड्रैग शुरू नहीं होता। |
+| `browser.setViewport` | पेज नया साइज़ नापता है, लेकिन `resize` लिसनर कभी नहीं चलता। | कोई `resize` इवेंट डिस्पैच नहीं होता। |
+| [मीडिया एम्युलेशन](/reference/web#media-emulation): `colorScheme`, `reducedMotion`, `browser.emulateMedia` | पेज `light` और फ़ुल मोशन ही बताता रहता है। | `Emulation.setEmulatedMedia` से `matchMedia` का जवाब नहीं बदलता। |
+| स्क्रॉलिंग: `scrollIntoView`, `scrollUntilVisible`, और "outside of the viewport" वाले नोड पर कोई एक्शन | स्क्रॉल कुछ नहीं करता, और actionability का इंतज़ार टाइमआउट हो सकता है। | लेआउट के बिना कोई स्क्रॉल पोज़ीशन ही नहीं होती जिसे हिलाया जाए। सादा रेंडर हर ब्लॉक को एक ही कॉलम में ऊपर से नीचे रखता है। इसलिए Chrome के मुकाबले पेज का ज़्यादा हिस्सा फ़ोल्ड के नीचे होता है, और वहाँ की किसी चीज़ तक पहुँचा नहीं जा सकता। |
+| `<canvas>` कंटेंट: 2D कॉन्टेक्स्ट से बना पिन, कीपैड या चार्ट | स्क्रीनशॉट में कोई ड्रॉइंग नहीं दिखती, और कैनवस कोई जगह नहीं लेता। एजेंट के पिक्सल टियर (`tap_at`, `type_at`, विज़न परख) को देखने के लिए कुछ नहीं मिलता। | `getContext('2d')` ऐसा कॉन्टेक्स्ट लौटाता है जिसमें ऐसा कुछ रिकॉर्ड नहीं होता जिसे पेंटर बनाए। |
+
+Lightpanda की कोई रिलीज़ इनमें से कोई कमी ठीक कर दे, तो ऊपर की वह लाइन e2e की
+तरफ़ कोई बदलाव किए बिना हट जाती है। इंजन वही CDP कमांड भेजता है जो वह Chrome को
+भेजता है।
+
+## यह कहाँ फ़िट होता है
+
+Lightpanda उस सूट के लिए अच्छा है जो एजेंट के स्क्रीन पढ़ने पर ज़्यादा और ज्योमेट्री
+पर कम टिका है: स्मोक फ़्लो, फ़ॉर्म, नेविगेशन, API से चलने वाले पेज, और ऐसे
+`agent.act` स्टेप जिनके चेक टेक्स्ट और स्टेट पर हैं। यह ऐसा सूट Chrome के समय और
+मेमोरी के छोटे-से हिस्से में चला देता है, उस मशीन पर भी जिस पर Chrome इंस्टॉल नहीं है।
+
+बाकी के लिए एक Chromium टारगेट रखें। दोनों एक ही कॉन्फ़िग में हों, तो टारगेट से
+चुनें:
+
+```bash
+e2e run --target lightpanda
+e2e run --target chromium
+```

@@ -1,0 +1,178 @@
+---
+title: E2B
+sidebarTitle: E2B
+description: "@e2e-dev/e2b के e2b() और e2bBrowsers() प्रोवाइडर से Android टारगेट और वेब टारगेट E2B सैंडबॉक्स में चलाएँ।"
+---
+
+`@e2e-dev/e2b` आपके टारगेट [E2B](https://e2b.dev) सैंडबॉक्स में चलाता है:
+Android 16 के लिए `e2b()`, जो एक [डिवाइस प्रोवाइडर](/mobile#hosted-devices) है,
+और Chromium के लिए `@e2e-dev/e2b/web` का `e2bBrowsers()`, जो एक
+[ब्राउज़र प्रोवाइडर](/browser#hosted-browsers) है। आपके टेस्ट वैसे ही रहते हैं।
+
+## ऑथेंटिकेट करें
+
+`E2B_API_KEY` उस एनवायरनमेंट में सेट करें जिसमें e2e शुरू होता है। CI में इसे
+सीक्रेट में रखें। Key [E2B डैशबोर्ड](https://e2b.dev/dashboard) से कॉपी करें।
+डेडिकेटेड E2B क्लस्टर के लिए `E2B_DOMAIN` भी सेट करें। Key न हो, तो प्रोवाइडर
+`INVALID_CONFIG` के साथ फ़ेल होता है।
+
+## Android टारगेट चलाएँ
+
+हर वर्कर को अपना Android सैंडबॉक्स मिलता है, जो करीब 15 से 45 सेकंड में आपके
+`.apk` के साथ तैयार हो जाता है। प्रोवाइडर `.apk` को agent-device से इंस्टॉल
+करता है, जैसे `device.installApp()` करता है, और रन ख़त्म होने पर सैंडबॉक्स डिलीट
+कर देता है।
+
+<Tip>
+जिस मशीन पर e2e चलता है, उस पर Android SDK, एम्युलेटर या `adb` की ज़रूरत नहीं है।
+</Tip>
+
+इंटीग्रेशन को मोबाइल इंजन के साथ इंस्टॉल करें:
+
+<CodeGroup>
+```bash npm
+npm install --save-dev e2e @e2e-dev/mobile @e2e-dev/e2b e2b
+```
+
+```bash pnpm
+pnpm add -D e2e @e2e-dev/mobile @e2e-dev/e2b e2b
+```
+
+```bash bun
+bun add -d e2e @e2e-dev/mobile @e2e-dev/e2b e2b
+```
+</CodeGroup>
+
+टारगेट का `device` `e2b()` पर सेट करें:
+
+```ts title="e2e.config.ts"
+import type { E2EConfig } from 'e2e';
+import { mobile } from '@e2e-dev/mobile';
+import { e2b } from '@e2e-dev/e2b';
+
+export default {
+  targets: [
+    {
+      name: 'android',
+      engine: mobile({ platform: 'android', device: e2b() }),
+      app: { bundleId: 'com.example.app', appPath: 'build/app-debug.apk' },
+    },
+  ],
+  workers: 4,
+} satisfies E2EConfig;
+```
+
+`bundleId` ज़रूरी नहीं है। इसके बिना `app.open()` वह पैकेज खोलता है जो
+agent-device उस `.apk` के लिए बताता है।
+
+## वेब टारगेट ब्राउज़र में चलाएँ
+
+हर वर्कर को अपना Chromium सैंडबॉक्स मिलता है, और उसमें हर अटेम्प्ट को नया
+ब्राउज़र कॉन्टेक्स्ट मिलता है, बिल्कुल लोकल रन की तरह। `scope: 'attempt'` के साथ
+हर अटेम्प्ट को इसकी जगह नया सैंडबॉक्स मिलता है
+([इस स्कोप की सीमाएँ](/browser#pick-a-lease-scope))।
+
+इंटीग्रेशन को वेब इंजन के साथ इंस्टॉल करें:
+
+<CodeGroup>
+```bash npm
+npm install --save-dev e2e @e2e-dev/web @e2e-dev/e2b e2b
+```
+
+```bash pnpm
+pnpm add -D e2e @e2e-dev/web @e2e-dev/e2b e2b
+```
+
+```bash bun
+bun add -d e2e @e2e-dev/web @e2e-dev/e2b e2b
+```
+</CodeGroup>
+
+ब्राउज़र टेम्पलेट एक बार Playwright इमेज से बिल्ड करें। इमेज टैग उसी Playwright
+वर्शन का लें जो आपका `@e2e-dev/web` इस्तेमाल करता है। टेम्पलेट को 4 GB मेमोरी
+दें, जैसे नीचे दिया है:
+
+```ts title="build-template.ts"
+import { Template, defaultBuildLogger } from 'e2b';
+
+const template = Template().fromImage('mcr.microsoft.com/playwright:v1.65.1-noble');
+await Template.build(template, 'e2e-chromium', {
+  cpuCount: 4,
+  memoryMB: 4096,
+  onBuildLogs: defaultBuildLogger(),
+});
+```
+
+फिर टारगेट का `browser` `e2bBrowsers()` पर सेट करें। टेम्पलेट को कोई और नाम
+दिया है, तो वह नाम `template` में पास करें:
+
+```ts title="e2e.config.ts"
+import type { E2EConfig } from 'e2e';
+import { web } from '@e2e-dev/web';
+import { e2bBrowsers } from '@e2e-dev/e2b/web';
+
+export default {
+  targets: [
+    {
+      name: 'e2b-web',
+      engine: web({ browser: e2bBrowsers() }),
+      app: { url: 'https://staging.example.com' },
+    },
+  ],
+  workers: 4,
+} satisfies E2EConfig;
+```
+
+ब्राउज़र E2B के क्लाउड में चलता है। इसलिए `app.url` इंटरनेट से पहुँचने लायक
+होना चाहिए, सिर्फ़ `localhost` से नहीं।
+
+## Android ऑप्शन
+
+| ऑप्शन      | डिफ़ॉल्ट        | मतलब |
+| ----------- | -------------- | ------- |
+| `template`  | `'android-16'` | सैंडबॉक्स टेम्पलेट, जो Android बूट करता है। |
+| `timeoutMs` | `3600000` (1 घंटा) | सैंडबॉक्स की उम्र। इसके बाद E2B सैंडबॉक्स को ख़त्म कर देता है, चाहे रन अभी उसे इस्तेमाल कर रहा हो। |
+
+## ब्राउज़र ऑप्शन
+
+| ऑप्शन      | डिफ़ॉल्ट          | मतलब |
+| ----------- | ---------------- | ------- |
+| `template`  | `'e2e-chromium'` | Playwright के Chromium वाला सैंडबॉक्स टेम्पलेट। |
+| `scope`     | `'worker'`       | `'worker'`: पूरे रन के लिए हर वर्कर स्लॉट का एक सैंडबॉक्स। `'attempt'`: हर अटेम्प्ट के लिए नया सैंडबॉक्स। |
+| `timeoutMs` | `3600000` (1 घंटा) | सैंडबॉक्स की उम्र। इसके बाद E2B सैंडबॉक्स को ख़त्म कर देता है, चाहे रन अभी उसे इस्तेमाल कर रहा हो। |
+
+कोई अनजान ऑप्शन या गलत वैल्यू हो, तो कॉन्फ़िग लोड होते समय `INVALID_CONFIG` के
+साथ फ़ेल होता है।
+
+## सैंडबॉक्स प्राइवेट कैसे रहते हैं
+
+सैंडबॉक्स पब्लिक ट्रैफ़िक नहीं लेते। प्रोवाइडर हर सैंडबॉक्स तक `127.0.0.1` पर
+बने एक टनल से पहुँचता है, जो E2B का ऐक्सेस टोकन जोड़ देता है। लोकल Chromium की
+तरह, जब तक रन के पास लीज़ है, आपकी मशीन का कोई भी प्रोग्राम उस टनल को इस्तेमाल
+कर सकता है।
+
+## सीमाएँ
+
+- **सिर्फ़ Android।** E2B में iOS सैंडबॉक्स नहीं हैं, इसलिए `e2b()` iOS टारगेट
+  को रिजेक्ट कर देता है।
+- **Android इमेज।** E2B पर Android 16 सिर्फ़ x86_64 है, उसमें Google Play
+  Services नहीं हैं, और वह सॉफ़्टवेयर में रेंडर करता है। नेटिव लाइब्रेरी वाले
+  ऐप्स को x86_64 बिल्ड चाहिए। [E2B का Android पेज](https://e2b.dev/docs/use-cases/android)
+  देखें। प्रोवाइडर `.apk` इंस्टॉल करता है, `.aab` नहीं।
+- **बिलिंग।** सैंडबॉक्स जब तक चलता है, उसका बिल बनता है। Android सैंडबॉक्स और
+  वर्कर स्कोप वाले ब्राउज़र सैंडबॉक्स रन की शुरुआत से आख़िर तक चलते हैं, तब भी
+  जब कोई टेस्ट उन्हें इस्तेमाल न कर रहा हो। अटेम्प्ट स्कोप वाला ब्राउज़र सैंडबॉक्स
+  सिर्फ़ अपने अटेम्प्ट तक चलता है।
+- **रुके हुए रन।** अगर रनर सैंडबॉक्स डिलीट करने से पहले ही किल हो जाए, तो
+  `timeoutMs` पूरा होने पर E2B उसे डिलीट कर देता है।
+
+## आगे
+
+<CardGroup cols={2}>
+  <Card title="होस्टेड डिवाइस" icon="mobile" href="/mobile#hosted-devices">
+    डिवाइस प्रोवाइडर डिवाइस लीज़ पर कैसे लेता है।
+  </Card>
+  <Card title="होस्टेड ब्राउज़र" icon="globe" href="/browser#hosted-browsers">
+    ब्राउज़र प्रोवाइडर ब्राउज़र लीज़ पर कैसे लेता है।
+  </Card>
+</CardGroup>

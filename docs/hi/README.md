@@ -114,6 +114,16 @@ translation moves or goes with it in the same change.
 | executor | एक्ज़ीक्यूटर | m |
 | provider | प्रोवाइडर | m |
 | hosted browser | होस्टेड ब्राउज़र | m |
+| sandbox | सैंडबॉक्स | m |
+| browser context | ब्राउज़र कॉन्टेक्स्ट | m |
+| slot (worker slot) | स्लॉट | m |
+| queue | क्यू | f |
+| image (container or VM) | इमेज | f |
+| tunnel | टनल | m |
+| plan (vendor pricing) | प्लान | m |
+| limit (vendor quota, in prose) | लिमिट | f |
+| per-attempt lease | हर अटेम्प्ट वाली लीज़ | f |
+| idle (in prose) | आइडल | |
 | device | डिवाइस | m |
 | app, apps | ऐप, ऐप्स | m |
 | worker | वर्कर | m |
@@ -183,6 +193,7 @@ translation moves or goes with it in the same change.
 | command | कमांड | f |
 | call (noun) | कॉल | f |
 | lease | लीज़ | f |
+| release (a lease, a device) | रिलीज़ करना | |
 | request | रिक्वेस्ट | f |
 | reference (docs) | रेफ़रेंस | m |
 | action | एक्शन | m |

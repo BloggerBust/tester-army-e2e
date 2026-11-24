@@ -1,0 +1,138 @@
+---
+title: Revyl पर मोबाइल ऐप्स टेस्ट करें
+sidebarTitle: Revyl
+description: "@e2e-dev/revyl से मोबाइल ऐप टेस्ट Revyl के होस्टेड iOS सिम्युलेटर और Android एम्युलेटर पर चलाएँ।"
+---
+
+`@e2e-dev/revyl` मोबाइल इंजन के लिए एक होस्टेड डिवाइस प्रोवाइडर है।
+यह हर वर्कर के लिए एक Revyl डिवाइस शुरू करता है, उस पर आपका ऐप इंस्टॉल करता है, और रन ख़त्म होने पर डिवाइस रिलीज़ कर देता है।
+अपने ऐप के यूज़र फ़्लो टेस्ट करने के लिए आम `app`, `screen` और `expect` API इस्तेमाल करें।
+
+## इंस्टॉल और ऑथेंटिकेट करें
+
+इंटीग्रेशन को मोबाइल इंजन के साथ इंस्टॉल करें:
+
+<CodeGroup>
+```bash npm
+npm install --save-dev e2e @e2e-dev/mobile @e2e-dev/revyl
+```
+
+```bash pnpm
+pnpm add -D e2e @e2e-dev/mobile @e2e-dev/revyl
+```
+
+```bash bun
+bun add -d e2e @e2e-dev/mobile @e2e-dev/revyl
+```
+</CodeGroup>
+
+`REVYL_API_KEY` उस एनवायरनमेंट में सेट करें जिसमें e2e शुरू होता है। CI में इसे
+सीक्रेट में रखें। यह न हो, तो कोई टेस्ट शुरू होने से पहले ही लीज़ फ़ेल हो जाती है।
+
+टेस्ट रनर को बस Node.js और पैकेज की डिपेंडेंसी चाहिए: Mac, Xcode या Android
+SDK नहीं। अपना ऐप अलग से बिल्ड करें, ज़िप किए हुए iOS सिम्युलेटर `.app` या
+Android `.apk` के रूप में। फिर उसे ऐसे `https` URL पर होस्ट करें जिससे Revyl
+उसे डाउनलोड कर सके।
+
+## टारगेट कॉन्फ़िगर करें
+
+मोबाइल इंजन पर `device: revyl({ app, device })` सेट करें। `app` बिल्ड का
+`https` URL है, और `device` Revyl के कैटलॉग का कोई मॉडल।
+
+```ts title="e2e.config.ts"
+import type { E2EConfig } from 'e2e';
+import { mobile } from '@e2e-dev/mobile';
+import { revyl } from '@e2e-dev/revyl';
+
+export default {
+  targets: [
+    {
+      name: 'ios',
+      engine: mobile({
+        platform: 'ios',
+        device: revyl({ app: 'https://builds.example.com/MyApp-simulator.zip', device: 'iPhone 17 Pro Max', osVersion: 'iOS 27.0' }),
+      }),
+      app: { bundleId: 'com.example.app' },
+    },
+    {
+      name: 'android',
+      engine: mobile({
+        platform: 'android',
+        device: revyl({ app: 'https://builds.example.com/app.apk', device: 'Pixel 7' }),
+      }),
+      app: { bundleId: 'com.example.app' },
+    },
+  ],
+  workers: 2,
+  assertionTimeout: 15_000,
+} satisfies E2EConfig;
+```
+
+Revyl हर डिवाइस शुरू करते समय `app` इंस्टॉल करता है, इसलिए टारगेट में
+`app.appPath` न रखें। Android के लिए `bundleId` ऐप का पैकेज नाम है।
+
+Revyl डिवाइस पर स्क्रीन एक बार पढ़ने में करीब 2.5 s लगते हैं, और कभी-कभी 5 s से
+भी ज़्यादा। `assertionTimeout` को `15_000` पर सेट करें। 5 s के डिफ़ॉल्ट के साथ
+कोई `expect` स्क्रीन को एक बार पढ़ने से पहले ही फ़ेल हो सकता है।
+
+## ऐप फ़्लो टेस्ट करें
+
+टेस्ट वही मोबाइल API इस्तेमाल करते हैं जो किसी और डिवाइस पर, बस [सीमाएँ](#limits) में दिए API छोड़कर:
+
+```ts title="tests/checkout.e2e.ts"
+import { expect } from 'e2e';
+import { test } from '@e2e-dev/mobile';
+
+test('opens the cart', async ({ app, screen }) => {
+  await app.open();
+  await screen.getByText('Cart').click();
+  await expect(screen.getByText('Your cart is empty')).toBeVisible();
+  await app.screenshot('cart');
+});
+```
+
+## डिवाइस ऑप्शन चुनें
+
+| ऑप्शन | डिफ़ॉल्ट | किसलिए |
+| --- | --- | --- |
+| `app` | ज़रूरी | बिल्ड का `https` URL। लोकल पाथ रिजेक्ट होता है, क्योंकि Revyl उसे पढ़ नहीं सकता। |
+| `device` | ज़रूरी | डिवाइस मॉडल, जैसा Revyl दिखाता है, जैसे `iPhone 17 Pro Max` या `Pixel 7`। |
+| `osVersion` | उस मॉडल के लिए Revyl का डिफ़ॉल्ट | OS वर्शन, जैसा Revyl दिखाता है, जैसे `iOS 27.0` या `Android 14`। |
+
+अनजान या गलत ऑप्शन कॉन्फ़िग लोड को `INVALID_CONFIG` के साथ फ़ेल करते हैं।
+
+## सीमाएँ
+
+- `workers` उतने कनकरेंट डिवाइस से ज़्यादा न रखें जितने आपका Revyl प्लान देता है।
+- डिवाइस लीज़ से रिलीज़ तक चलता है। रन ख़त्म होने पर या इंटरप्ट होने पर इंजन हर
+  लिया हुआ डिवाइस रिलीज़ कर देता है।
+- अगर रनर डिवाइस रिलीज़ करने से पहले ही किल हो जाए, तो सेशन को कोई अगली कमांड नहीं
+  भेजता, और 30 मिनट आइडल रहने के बाद Revyl उसे ख़त्म कर देता है।
+- `app` `https` से पहुँचने लायक होना चाहिए, और URL में कोई क्रेडेंशियल न हो। प्रीसाइन
+  किया हुआ स्टोरेज URL चलता है।
+- ऐप Revyl के नेटवर्क पर चलता है, आपके नेटवर्क पर नहीं, और पोर्ट रिवर्स नहीं मिलता।
+  इसलिए वह `localhost` या आपके नेटवर्क के किसी सर्वर तक नहीं पहुँच सकता। उसे ऐसे
+  सर्वर पर पॉइंट करें जिस तक वह `https` पर पहुँच सके।
+- Revyl डिवाइस वीडियो रिकॉर्ड नहीं करते। जो अटेम्प्ट वीडियो रिकॉर्ड करता है, जैसे
+  `--video` के साथ, वह `UNSUPPORTED_CAPABILITY` के साथ फ़ेल होता है। सबूत के लिए
+  इसकी जगह `app.screenshot()` इस्तेमाल करें।
+- Revyl टेक्स्ट स्क्रीन के एक पॉइंट पर डालता है। `fill` इस्तेमाल करें।
+  `pressSequentially` और फ़ोकस वाले फ़ील्ड में टाइप करना
+  `UNSUPPORTED_CAPABILITY` के साथ फ़ेल होते हैं।
+- Revyl डिवाइस सेटिंग कंट्रोल नहीं करता। ये `device` मेथड
+  `UNSUPPORTED_CAPABILITY` के साथ फ़ेल होते हैं: `setNetwork`, `setAirplaneMode`,
+  `setPermission`, `setLocation`, `clearLocation`, `setAppearance`,
+  `setOrientation`, `setBiometrics`, `enrollBiometrics`, `clearKeychain`,
+  `clipboard` और `setClipboard`। `foregroundApp` Android पर फ़ेल होता है, और
+  `back` iOS पर।
+
+## आगे
+
+<CardGroup cols={2}>
+  <Card title="मोबाइल टेस्टिंग" icon="mobile-screen" href="/mobile">
+    ऐप लॉन्च, परमिशन और मोबाइल लोकेटर कॉन्फ़िगर करें।
+  </Card>
+  <Card title="मोबाइल API" icon="code" href="/reference/mobile">
+    डिवाइस फ़िक्स्चर और प्रोवाइडर कॉन्ट्रैक्ट देखें।
+  </Card>
+</CardGroup>

@@ -1,0 +1,165 @@
+---
+title: Limrun पर मोबाइल ऐप्स टेस्ट करें
+sidebarTitle: Limrun
+description: मोबाइल ऐप के टेस्ट होस्टेड iOS सिम्युलेटर और Android एम्युलेटर पर चलाएँ।
+"og:image": "https://e2e.com/docs/images/og/integrations/limrun.png?v=9be019105e"
+"twitter:image": "https://e2e.com/docs/images/og/integrations/limrun.png?v=9be019105e"
+---
+
+`@e2e-dev/limrun` मोबाइल इंजन के लिए एक होस्टेड डिवाइस प्रोवाइडर है।
+यह हर वर्कर के लिए एक डिवाइस बनाता है, आपका ऐप इंस्टॉल करता है, और रन ख़त्म होने पर डिवाइस रिलीज़ कर देता है।
+अपने ऐप के यूज़र फ़्लो टेस्ट करने के लिए आम `app`, `screen` और `expect` API इस्तेमाल करें।
+
+## इंस्टॉल और ऑथेंटिकेट करें
+
+इंटीग्रेशन को मोबाइल इंजन और उसकी पीयर डिपेंडेंसी के साथ इंस्टॉल करें:
+
+<CodeGroup>
+```bash npm
+npm install --save-dev e2e @e2e-dev/mobile @e2e-dev/limrun @limrun/api
+```
+
+```bash pnpm
+pnpm add -D e2e @e2e-dev/mobile @e2e-dev/limrun @limrun/api
+```
+
+```bash bun
+bun add -d e2e @e2e-dev/mobile @e2e-dev/limrun @limrun/api
+```
+</CodeGroup>
+
+जिस एनवायरनमेंट में e2e शुरू होता है, उसमें `LIMRUN_API_KEY` सेट करें। CI में
+इसे सीक्रेट के तौर पर रखें।
+ऐसी key इस्तेमाल करें जिसके पास इंस्टेंस बनाने और कंट्रोल करने की परमिशन हो।
+प्रोवाइडर रन का एनवायरनमेंट पढ़ता है। यह `lim login` वाला सेशन या `LIM_API_KEY`
+नहीं पढ़ता।
+
+टेस्ट रनर को Node.js और पैकेज की डिपेंडेंसी चाहिए। Android के लिए,
+[Android SDK Platform-Tools](https://developer.android.com/tools/releases/platform-tools)
+का `adb` `PATH` पर रखें। कोई लोकल एम्युलेटर नहीं चाहिए। iOS रनर को लोकल Xcode
+या सिम्युलेटर नहीं चाहिए। अपना ऐप अलग से बिल्ड करें, iOS सिम्युलेटर के लिए या
+Android APK के रूप में।
+
+## टारगेट कॉन्फ़िगर करें
+
+मोबाइल इंजन पर `device: limrun()` सेट करें, और `appPath` में अपने बिल्ड का पाथ दें।
+यह कॉन्फ़िग Limrun के
+[app-flow उदाहरण](https://github.com/limrun-inc/testerarmy-e2e-limrun) का SwiftUI
+ऐप चलाता है।
+
+```ts title="e2e.config.ts"
+import type { E2EConfig } from 'e2e';
+import { mobile } from '@e2e-dev/mobile';
+import { limrun } from '@e2e-dev/limrun';
+
+export default {
+  targets: [{
+    name: 'ios',
+    engine: mobile({ platform: 'ios', device: limrun() }),
+    app: {
+      bundleId: 'dev.e2e.examples.swiftui',
+      appPath: 'build/HelloApp.app',
+    },
+  }],
+  workers: 2,
+} satisfies E2EConfig;
+```
+
+Android के लिए `platform: 'android'` इस्तेमाल करें, `bundleId` में ऐप का पैकेज
+नाम दें, और `appPath` में APK। पाथ प्रोजेक्ट रूट के हिसाब से रिज़ॉल्व होते हैं।
+प्रोवाइडर टेस्ट शुरू होने से पहले बिल्ड इंस्टॉल कर देता है।
+
+## ऐप फ़्लो टेस्ट करें
+
+फ़ॉर्म भरने और उनके नतीजे चेक करने के लिए स्टेबल टेस्ट id और स्क्रीन पर दिखने
+वाला टेक्स्ट इस्तेमाल करें।
+यह टेस्ट पहले खाली फ़ॉर्म सबमिट करता है, फिर उसे ठीक करता है, और ग्रीटिंग का
+स्क्रीनशॉट सेव करता है।
+
+```ts title="tests/greeting.e2e.ts"
+import { expect } from 'e2e';
+import { test } from '@e2e-dev/mobile';
+
+test('corrects an empty submission', async ({ app, screen }) => {
+  await app.open();
+  await screen.getByTestId('greet').click();
+  await expect(screen.getByText('Enter a name first.', { exact: true })).toBeVisible();
+
+  await screen.getByTestId('name').fill('Ada');
+  await screen.getByTestId('greet').click();
+  await expect(screen.getByText('Hello, Ada!', { exact: true })).toBeVisible();
+  await expect(screen.getByText('Enter a name first.', { exact: true })).not.toBeVisible();
+  await app.screenshot('greeting');
+});
+```
+
+Limrun एक [चलाने लायक उदाहरण](https://github.com/limrun-inc/testerarmy-e2e-limrun)
+रखता है, जिसमें SwiftUI और Compose ऐप पर यही पाँच टेस्ट चलते हैं।
+इनमें शुरुआती फ़ॉर्म, वैलिडेशन एरर के बाद ठीक करना, ट्रिम किया हुआ इनपुट, बार-बार
+सबमिट करना और ऐप रीस्टार्ट शामिल हैं।
+Limrun दोनों ऐप रिमोट पर बिल्ड करता है, और कॉन्फ़िग में दोनों टारगेट हैं। कोई AI
+key नहीं चाहिए।
+
+## रन रिकॉर्ड करें
+
+हर अटेम्प्ट रिकॉर्ड करने के लिए `--video` जोड़ें:
+
+<CodeGroup>
+```bash npm
+npx e2e run --video
+```
+```bash pnpm
+pnpm exec e2e run --video
+```
+```bash bun
+bunx e2e run --video
+```
+</CodeGroup>
+
+वीडियो और स्क्रीनशॉट `.e2e/` में, रन रिपोर्ट के साथ मिलते हैं।
+
+## डिवाइस ऑप्शन चुनें
+
+| ऑप्शन | डिफ़ॉल्ट | किसलिए |
+| --- | --- | --- |
+| `region` | Limrun चुनता है | पसंद का रीजन, जैसे `eu` या `us-east1`। कैपेसिटी कम हो, तो डिवाइस किसी दूसरे रीजन में जा सकता है। |
+| `hardTimeout` | `1h` | डिवाइस ज़्यादा से ज़्यादा इतनी देर चलता है, छोड़ दिए गए रन में भी। Go duration लिखें, जैसे `30m` या `2h`। |
+| `ios.model` | Limrun चुनता है | `iphone` या `ipad`। |
+| `android.model` | Limrun चुनता है | `phone` या `tablet`। |
+| `android.osVersion` | `15` | Android का मेजर वर्शन, जो शेड्यूलिंग के लिए हिंट की तरह माँगा जाता है। |
+
+हर वर्कर को टेस्ट रनर पर एक अलग agent-device daemon और एक Limrun इंस्टेंस मिलता
+है। daemon ऐप कंट्रोल और रिकॉर्डिंग के लिए agent-device का Limrun ड्राइवर
+इस्तेमाल करता है। इंटीग्रेशन वही agent-device वर्शन पिन करता है जो मोबाइल इंजन
+करता है, और डिवाइस अलॉट करने से पहले यह चेक करता है।
+
+डिवाइस को पाँच मिनट के अंदर तैयार होना और इंस्टॉलेशन पूरा करना होता है।
+सेटअप फ़ेल हो, तो प्रोवाइडर क्लीनअप करता है। रन ख़त्म हो या इंटरप्ट हो, तो इंजन
+लिए हुए सारे डिवाइस रिलीज़ कर देता है। जब दूसरे टारगेट चल रहे हों, तब प्रोवाइडर आइडल
+ड्राइवर लीज़ रिन्यू करता रहता है। daemon कमांड के बीच एक्टिव डिवाइस को चालू
+रखता है। अगर रनर गायब हो जाए, तो हार्ड टाइमआउट ही ऊपरी सीमा रहता है। ऐसा
+टाइमआउट चुनें जो रन से लंबा हो।
+
+इंस्टेंस ID प्रोग्रेस आउटपुट में दिखती हैं। किसी रन के इंस्टेंस Limrun में
+`source=e2e` और `run=<run id>` लेबल से ढूँढें। रिकॉर्डिंग मोबाइल आर्टिफ़ैक्ट का
+आम पाथ इस्तेमाल करती हैं: हर अटेम्प्ट डायरेक्टरी के अंदर `video/video.mp4`।
+
+## ऐप कम्पैटिबिलिटी चेक करें
+
+Limrun का iOS ट्रांसपोर्ट `locator.press('Enter')` जैसे कीबोर्ड एक्शन को `UNSUPPORTED_CAPABILITY` के साथ रिजेक्ट करता है।
+फ़्लो में सबमिट बटन हो, तो उस पर टैप करें।
+
+अपने ऐप के लोकेटर और लाइब्रेरी उसके टारगेट रनटाइम पर टेस्ट करें।
+ग्रीटिंग वाला उदाहरण नेटिव फ़ॉर्म फ़्लो दिखाता है। इससे हर मोबाइल फ़्रेमवर्क या
+कंट्रोल के साथ कम्पैटिबिलिटी साबित नहीं होती।
+
+## आगे
+
+<CardGroup cols={2}>
+  <Card title="मोबाइल टेस्टिंग" icon="mobile-screen" href="/mobile">
+    ऐप लॉन्च, परमिशन और मोबाइल लोकेटर कॉन्फ़िगर करें।
+  </Card>
+  <Card title="मोबाइल API" icon="code" href="/reference/mobile">
+    डिवाइस फ़िक्स्चर और प्रोवाइडर कॉन्ट्रैक्ट देखें।
+  </Card>
+</CardGroup>

@@ -1,0 +1,203 @@
+---
+title: smol machines ब्राउज़र
+sidebarTitle: smol machines
+description: "@e2e-dev/smol के smol() ब्राउज़र प्रोवाइडर से हर वेब टेस्ट अटेम्प्ट अपने कंप्यूटर पर चल रहे वॉर्म Chromium microVM की अलग ब्रांच में चलाएँ।"
+"og:image": "https://e2e.com/docs/images/og/integrations/smol.png?v=93b61e0399"
+"twitter:image": "https://e2e.com/docs/images/og/integrations/smol.png?v=93b61e0399"
+---
+
+`@e2e-dev/smol` का `smol()` एक
+[ब्राउज़र प्रोवाइडर](/browser#hosted-browsers) है, जो आपके कंप्यूटर पर
+[smol machines](https://smolmachines.com) microVM में Chromium चलाता है। हर
+वर्कर स्लॉट एक ब्राउज़र मशीन बूट करता है। डिफ़ॉल्ट रूप से हर टेस्ट अटेम्प्ट उस
+मशीन की कॉपी-ऑन-राइट ब्रांच में चलता है, जो करीब एक सेकंड में तैयार हो जाती
+है। इसलिए हर रीट्राई ब्राउज़र के एक ही स्टेट से शुरू होता है। ऐप का डेटा तभी
+रीसेट होता है जब ऐप [मशीन में चलता है](#run-the-app-in-the-machine)। आपके
+कंप्यूटर पर या बाहरी सर्विस में रखा स्टेट शेयर ही रहता है।
+
+## प्रोवाइडर सेट अप करें
+
+<Note>
+smol machines Apple Silicon वाले macOS पर, या KVM (`/dev/kvm`) वाले Linux पर
+चलती हैं। इन्हें कोई अकाउंट या API key नहीं चाहिए। पहला बूट Playwright Ubuntu
+इमेज डाउनलोड करता है, इसलिए उसमें ज़्यादा समय लगता है।
+</Note>
+
+प्रोवाइडर और smol machines SDK इंस्टॉल करें:
+
+<CodeGroup>
+```bash npm
+npm install --save-dev @e2e-dev/smol smolmachines
+```
+
+```bash pnpm
+pnpm add -D @e2e-dev/smol smolmachines
+```
+
+```bash bun
+bun add -d @e2e-dev/smol smolmachines
+```
+</CodeGroup>
+
+टारगेट के `browser` को `smol()` पर सेट करें:
+
+```ts title="e2e.config.ts"
+import type { E2EConfig } from 'e2e';
+import { web } from '@e2e-dev/web';
+import { smol } from '@e2e-dev/smol';
+
+export default {
+  targets: [
+    {
+      name: 'web',
+      engine: web({ browser: smol({ hostPorts: [3000] }) }),
+      app: {
+        url: 'http://localhost:3000',
+        command: { executable: 'npm', args: ['run', 'dev'] },
+      },
+    },
+  ],
+  workers: 4,
+} satisfies E2EConfig;
+```
+
+मशीन के अंदर `localhost` खुद मशीन है। `hostPorts` आपके कंप्यूटर के वे पोर्ट
+लिस्ट करता है, जिन तक ब्राउज़र अपने `localhost` की तरह पहुँचता है। इसलिए
+`app.url` `http://localhost:3000` ही रहता है।
+
+<Warning>
+`hostPorts` कोई अलाउलिस्ट नहीं है। मशीन `host.smolvm.internal` से आपके कंप्यूटर
+के किसी भी लूपबैक पोर्ट तक पहुँच सकती है, और बाहर के नेटवर्क तक उसका ऐक्सेस
+पूरी तरह खुला है। जिस ऐप पर आप भरोसा नहीं करते, उसे `smol()` से टेस्ट करने से
+पहले सेंसिटिव लूपबैक सर्विस बंद कर दें।
+</Warning>
+
+## हर टेस्ट साइन इन करके शुरू करें
+
+`prepare` हर वॉर्म ब्राउज़र को एक बार कंट्रोल करता है, इससे पहले कि कोई
+अटेम्प्ट उसकी ब्रांच बनाए। उस स्लॉट का हर अटेम्प्ट उन्हीं कुकी, स्टोरेज और
+पेज के साथ शुरू होता है जो इस फ़ंक्शन ने छोड़े हैं। यह [सेशन](/authentication) की
+जगह लेता है, क्योंकि `'attempt'` स्कोप सेशन इस्तेमाल नहीं कर सकता।
+
+`prepare` को ब्राउज़र का DevTools एंडपॉइंट मिलता है। डिफ़ॉल्ट कॉन्टेक्स्ट में
+काम करें, क्योंकि अटेम्प्ट वहीं चलते हैं। `prepare` पूरा होने से पहले
+डिस्कनेक्ट कर लें, और ब्राउज़र को चलता छोड़ दें।
+
+<Accordion title="Playwright से साइन इन करें">
+`playwright-core` का वही वर्शन इंस्टॉल करें जो `@e2e-dev/web` पिन करता है। आज
+यह 1.65.1 है, और अपग्रेड करते समय इसे भी मिलाते रहें। pnpm आपके कॉन्फ़िग को
+किसी डिपेंडेंसी की डिपेंडेंसी इंपोर्ट नहीं करने देता।
+
+<CodeGroup>
+```bash npm
+npm install --save-dev playwright-core@1.65.1
+```
+
+```bash pnpm
+pnpm add -D playwright-core@1.65.1
+```
+
+```bash bun
+bun add -d playwright-core@1.65.1
+```
+</CodeGroup>
+
+```ts title="Provider options"
+import { chromium } from 'playwright-core';
+
+smol({
+  hostPorts: [3000],
+  prepare: async (cdpEndpoint) => {
+    const browser = await chromium.connectOverCDP(cdpEndpoint);
+    const page = browser.contexts()[0]!.pages()[0]!;
+    await page.goto('http://localhost:3000/login');
+    await page.getByLabel('Email').fill('qa@example.com');
+    await page.getByLabel('Password').fill(process.env.QA_PASSWORD!);
+    await page.getByRole('button', { name: 'Sign in' }).click();
+    await page.waitForURL('**/dashboard');
+    await browser.close();
+  },
+})
+```
+
+`connectOverCDP` से मिले ब्राउज़र पर `browser.close()` सिर्फ़ डिस्कनेक्ट करता है।
+</Accordion>
+
+## ऐप को मशीन में चलाएँ
+
+`app` देने पर, जिस ऐप को आप टेस्ट कर रहे हैं, वह आपके कंप्यूटर की जगह हर
+ब्राउज़र मशीन के अंदर चलता है। इसलिए कोई टेस्ट या एजेंट ऐप से जो भी करवाए, वह
+होस्ट पर नहीं चलता। मशीन फिर भी आपके लूपबैक पोर्ट तक पहुँच सकती है, जैसा
+[प्रोवाइडर सेट अप करें](#set-up-the-provider) की वॉर्निंग में लिखा है।
+`'attempt'` स्कोप में हर अटेम्प्ट को चल रहे ऐप और उसकी फ़ाइलों की अपनी कॉपी
+मिलती है, लोकल डेटाबेस भी।
+
+```ts title="Provider options"
+smol({
+  app: {
+    source: '.',
+    setup: 'npm ci && npm run db:seed',
+    start: 'npm start',
+    port: 3000,
+    env: { DATABASE_URL: 'file:/app/dev.db' },
+  },
+})
+```
+
+`app.url` को `http://localhost:<port>` पर सेट करें, और कोई `app.command` न दें।
+`setup` और `start` हर मशीन बूट पर, `prepare` से पहले चलते हैं।
+
+| `app` फ़ील्ड | मतलब |
+| ----------- | ------- |
+| `start`     | ज़रूरी। ऐप सर्व करने वाली शेल कमांड, जो `/app` में बैकग्राउंड में चलती है। प्रोवाइडर 180 सेकंड तक इंतज़ार करता है कि ऐप `port` पर जवाब दे। |
+| `port`      | ज़रूरी। मशीन के अंदर ऐप जिस पोर्ट पर सुनता है। 80 या 9229 नहीं, क्योंकि ब्राउज़र उन्हें इस्तेमाल करता है, और `hostPorts` में से भी नहीं। |
+| `source`    | वह डायरेक्टरी जो `/app` में कॉपी होती है, `node_modules`, `.git` और `.e2e` के बिना। रन जहाँ से शुरू होता है, उसके हिसाब से रिज़ॉल्व होती है। डिफ़ॉल्ट `.` है। |
+| `setup`     | शेल स्क्रिप्ट, जो `start` से पहले `/app` में root के तौर पर चलती है। इमेज में Node.js और npm हैं, इसलिए `npm ci` मशीन के Linux के लिए डिपेंडेंसी इंस्टॉल करता है। |
+| `env`       | `setup` और `start` के एनवायरनमेंट वेरिएबल। नाम शेल वेरिएबल के नाम होने चाहिए। |
+
+## स्कोप चुनें
+
+`scope: 'attempt'`, जो डिफ़ॉल्ट है, हर अटेम्प्ट को स्लॉट के वॉर्म ब्राउज़र की
+अपनी ब्रांच देता है। इसमें [हर अटेम्प्ट वाली लीज़](/browser#hosted-browsers)
+की सीमाएँ लागू होती हैं।
+
+`scope: 'worker'` पूरे रन के लिए हर वर्कर स्लॉट पर एक मशीन रखता है। हर अटेम्प्ट
+को उस पर नया ब्राउज़र कॉन्टेक्स्ट मिलता है, जैसे लोकल रन में। इसलिए सेशन, और
+`headers` और `locale` जैसे ऑप्शन काम करते हैं। कोई ब्रांच नहीं बनती, और
+`prepare` देने पर `INVALID_CONFIG` आता है।
+
+## ऑप्शन
+
+| ऑप्शन      | डिफ़ॉल्ट     | मतलब |
+| ----------- | ----------- | ------- |
+| `scope`     | `'attempt'` | [स्कोप चुनें](#choose-a-scope) देखें। |
+| `prepare`   | कुछ नहीं        | [हर टेस्ट साइन इन करके शुरू करें](#start-every-test-signed-in) देखें। |
+| `hostPorts` | `[]`        | [प्रोवाइडर सेट अप करें](#set-up-the-provider) देखें। 80 या 9229 नहीं। |
+| `app`       | कुछ नहीं        | [ऐप को मशीन में चलाएँ](#run-the-app-in-the-machine) देखें। |
+| `setup`     | कुछ नहीं        | शेल स्क्रिप्ट, जो Chromium शुरू होने से पहले हर मशीन में root के तौर पर चलती है। जैसे ज़्यादा फ़ॉन्ट के लिए `apt-get update && apt-get install -y fonts-noto-cjk`। |
+| `cpus`      | `2`         | हर मशीन के vCPU। |
+| `memoryMb`  | `2048`      | हर मशीन की मेमोरी, MiB में। |
+
+## लोकल ब्राउज़र से क्या अलग है
+
+ब्राउज़र का back/forward कैश बंद है, इसलिए पीछे जाने पर पेज रीलोड होता है।
+`browser.waitForDownload` वैसे ही काम करता है जैसे लोकल में।
+
+## बची हुई मशीनें साफ़ करें
+
+रन ख़त्म होने पर रनर उस रन की मशीनें डिलीट कर देता है, क्रैश हुए वर्कर की
+मशीनें भी। अगर रनर को किल कर दिया जाए, जैसे कैंसल हुए CI जॉब में, तो उसकी
+`'worker'` स्कोप वाली मशीनें बंद हालत में पीछे रह जाती हैं। उनके नाम `e2e-` से
+शुरू होते हैं। उन्हें [smol CLI](https://smolmachines.com) से लिस्ट और डिलीट
+करें, जैसे `smol machine ls`।
+
+## आगे
+
+<CardGroup cols={2}>
+  <Card title="सुरक्षा" icon="shield-halved" href="/security">
+    आपके कंप्यूटर पर क्या चलता है, और क्या अब भी लीक हो सकता है।
+  </Card>
+  <Card title="होस्टेड ब्राउज़र" icon="globe" href="/browser#hosted-browsers">
+    ब्राउज़र प्रोवाइडर ब्राउज़र लीज़ पर कैसे लेता है, और `'attempt'` स्कोप की सीमाएँ।
+  </Card>
+</CardGroup>

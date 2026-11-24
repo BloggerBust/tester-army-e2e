@@ -1,0 +1,260 @@
+---
+title: TestMu AI
+sidebarTitle: TestMu AI
+description: "@e2e-dev/testmu से मोबाइल टारगेट TestMu AI (पहले LambdaTest) के एम्युलेटर, सिम्युलेटर और असली डिवाइस पर चलाएँ, और वेब टारगेट उसके होस्टेड Chrome और Edge में।"
+"og:image": "https://e2e.com/docs/images/og/integrations/testmu.png?v=4bc1e43b07"
+"twitter:image": "https://e2e.com/docs/images/og/integrations/testmu.png?v=4bc1e43b07"
+---
+
+`@e2e-dev/testmu` आपके टारगेट
+[TestMu AI](https://www.lambdatest.com) (पहले LambdaTest) पर चलाता है। `testmu()`
+Android एम्युलेटर, iOS सिम्युलेटर और असली डिवाइस के लिए एक
+[डिवाइस प्रोवाइडर](/mobile#hosted-devices) है। `@e2e-dev/testmu/web` का
+`testmuBrowsers()` होस्टेड Chrome और Edge के लिए एक
+[ब्राउज़र प्रोवाइडर](/browser#hosted-browsers) है। टेस्ट वैसे ही रहते हैं।
+
+## ऑथेंटिकेट करें
+
+`LT_USERNAME` और `LT_ACCESS_KEY` उस एनवायरनमेंट में सेट करें जिसमें `e2e run`
+शुरू होता है, जैसे CI सीक्रेट में। ये दोनों
+**Account Settings → Password & Security → Username and Access Key** से कॉपी करें
+([accounts.lambdatest.com/security/username-accesskey](https://accounts.lambdatest.com/security/username-accesskey))।
+दोनों में से कोई एक भी छूट जाए, तो कोई टेस्ट शुरू होने से पहले ही लीज़ फ़ेल हो जाती है।
+`testmuBrowsers()` इन्हें सिर्फ़ हर सेशन के CDP URL में भेजता है, किसी लॉग लाइन
+में कभी नहीं।
+
+## मोबाइल टारगेट डिवाइस पर चलाएँ
+
+रन शुरू होने पर हर वर्कर स्लॉट एक डिवाइस लीज़ पर लेता है, और रन ख़त्म होने पर
+उसे रिलीज़ कर देता है।
+
+<Tip>
+होस्टेड डिवाइस के साथ e2e चलाने के लिए Mac, Xcode या Android SDK की ज़रूरत नहीं है।
+</Tip>
+
+इंटीग्रेशन को मोबाइल इंजन के साथ इंस्टॉल करें:
+
+<CodeGroup>
+```bash npm
+npm install --save-dev e2e @e2e-dev/mobile @e2e-dev/testmu
+```
+
+```bash pnpm
+pnpm add -D e2e @e2e-dev/mobile @e2e-dev/testmu
+```
+
+```bash bun
+bun add -d e2e @e2e-dev/mobile @e2e-dev/testmu
+```
+</CodeGroup>
+
+```ts title="e2e.config.ts"
+import type { E2EConfig } from 'e2e';
+import { mobile } from '@e2e-dev/mobile';
+import { testmu } from '@e2e-dev/testmu';
+
+const apk = 'https://prod-mobile-artefacts.lambdatest.com/assets/docs/proverbial_android.apk';
+const ipa = 'https://prod-mobile-artefacts.lambdatest.com/assets/docs/proverbial_ios.ipa';
+
+export default {
+  targets: [
+    {
+      name: 'android-emulator',
+      engine: mobile({
+        platform: 'android',
+        device: testmu({ device: 'Galaxy S22 Ultra 5G', osVersion: '14', app: apk }),
+      }),
+      app: { bundleId: 'com.lambdatest.proverbial' },
+    },
+    {
+      name: 'ios-real',
+      engine: mobile({
+        platform: 'ios',
+        device: testmu({ device: 'iPhone 16', osVersion: '18', app: ipa, deviceType: 'real' }),
+      }),
+      app: { bundleId: 'proverbial' },
+    },
+    {
+      name: 'android-real',
+      engine: mobile({
+        platform: 'android',
+        device: testmu({ device: 'Pixel 6', osVersion: '14', app: apk, deviceType: 'real' }),
+      }),
+      app: { bundleId: 'com.lambdatest.proverbial' },
+    },
+  ],
+  workers: 1,
+} satisfies E2EConfig;
+```
+
+`device` और `osVersion` हूबहू TestMu AI के कैटलॉग से मेल खाने चाहिए, ठीक वैसे
+जैसे [capabilities जनरेटर](https://www.lambdatest.com/capabilities-generator)
+उन्हें दिखाता है: वर्चुअल iOS डिवाइस के लिए `18.0`, असली iOS डिवाइस के लिए
+`18`, और Android के लिए `14`। असली और वर्चुअल डिवाइस के कैटलॉग अलग-अलग हैं।
+
+`app` वह बिल्ड है जो TestMu AI हर सेशन पर इंस्टॉल करता है। यह `lt://` ऐप id,
+`https` URL या लोकल पाथ हो सकता है। लोकल पाथ `e2e.config.ts` की डायरेक्टरी के
+हिसाब से रिज़ॉल्व होकर अपलोड होता है। Android पर `.apk` या `.aab` दें, iOS
+सिम्युलेटर पर ज़िप किया हुआ `.app`, और असली iOS डिवाइस पर साइन किया हुआ `.ipa`।
+टारगेट में `app.appPath` न रखें, और `app.open()` के लिए `app.bundleId` रहने दें।
+
+<Accordion title="उदाहरण टेस्ट">
+
+```ts title="tests/home.e2e.ts"
+import { test } from '@e2e-dev/mobile';
+import { expect } from 'e2e';
+
+test('Proverbial home screen', async ({ app, screen }) => {
+  await app.open();
+  await expect(screen.getByText('Proverbial')).toBeVisible();
+  // Android labels the button GEOLOCATION, iOS GeoLocation.
+  await expect(screen.getByRole('button', /^geolocation$/i)).toBeVisible();
+});
+```
+</Accordion>
+
+## वेब टारगेट ब्राउज़र में चलाएँ
+
+हर वर्कर स्लॉट को पूरे रन के लिए अपना Chrome या Edge सेशन मिलता है। उस सेशन
+में हर अटेम्प्ट को नया ब्राउज़र कॉन्टेक्स्ट मिलता है, बिल्कुल लोकल रन की तरह।
+इसलिए कोई टेस्ट किसी दूसरे टेस्ट की कुकी, स्टोरेज या परमिशन कभी नहीं देखता।
+
+इंटीग्रेशन को वेब इंजन के साथ इंस्टॉल करें:
+
+<CodeGroup>
+```bash npm
+npm install --save-dev e2e @e2e-dev/web @e2e-dev/testmu
+```
+
+```bash pnpm
+pnpm add -D e2e @e2e-dev/web @e2e-dev/testmu
+```
+
+```bash bun
+bun add -d e2e @e2e-dev/web @e2e-dev/testmu
+```
+</CodeGroup>
+
+टारगेट का `browser` `testmuBrowsers()` पर सेट करें:
+
+```ts title="e2e.config.ts"
+import type { E2EConfig } from 'e2e';
+import { web } from '@e2e-dev/web';
+import { testmuBrowsers } from '@e2e-dev/testmu/web';
+
+export default {
+  targets: [
+    {
+      name: 'testmu-web',
+      engine: web({ browser: testmuBrowsers(), viewport: null }),
+      app: { url: 'https://staging.example.com' },
+    },
+  ],
+} satisfies E2EConfig;
+```
+
+## डिवाइस ऑप्शन
+
+| ऑप्शन        | डिफ़ॉल्ट         | मतलब |
+| ------------- | --------------- | ------- |
+| `device`      | ज़रूरी        | डिवाइस का नाम, जैसा TestMu AI का कैटलॉग दिखाता है (`'Galaxy S22 Ultra 5G'`, `'iPhone 16'`)। |
+| `osVersion`   | ज़रूरी        | OS वर्शन, जैसा कैटलॉग उस डिवाइस के लिए दिखाता है। |
+| `app`         | ज़रूरी        | वह बिल्ड जो TestMu AI इंस्टॉल करता है: `lt://` ऐप id, `https` URL या लोकल पाथ। |
+| `deviceType`  | `'virtual'`     | एम्युलेटर या सिम्युलेटर के लिए `'virtual'`, असली डिवाइस के लिए `'real'`। |
+| `project`     | `'e2e'`         | डैशबोर्ड का प्रोजेक्ट, जिसके नीचे सेशन ग्रुप होते हैं। |
+| `build`       | रन id      | डैशबोर्ड का बिल्ड, जिसके नीचे सेशन ग्रुप होते हैं। |
+| `sessionName` | `e2e-<run id>-<target>-<slot>` | डैशबोर्ड पर सेशन का नाम। एक से ज़्यादा वर्कर स्लॉट हों, तो आख़िर में `-<slot>` जुड़ता है। |
+| `orientation` | डिवाइस का    | `'portrait'` या `'landscape'`। |
+| `geoLocation` | TestMu AI का     | उस देश का कोड, जहाँ का IP डिवाइस को मिलता है (`'US'`)। |
+| `timezone`    | डिवाइस का    | टाइम ज़ोन (`'UTC+05:30'`)। |
+| `language`    | डिवाइस की    | भाषा का कोड (`'fr'`)। |
+| `locale`      | डिवाइस का    | लोकेल (`'fr_FR'`)। |
+| `appiumVersion` | TestMu AI का   | सेशन का Appium वर्शन (`'2.16.2'`)। |
+
+डिवाइस फ़ीचर सेशन शुरू होते समय सेट होते हैं और पूरे सेशन तक वैसे ही रहते हैं।
+कोई अनजान ऑप्शन या गलत वैल्यू हो, तो कॉन्फ़िग लोड `INVALID_CONFIG` के साथ फ़ेल
+हो जाता है।
+
+## ब्राउज़र ऑप्शन
+
+| ऑप्शन | डिफ़ॉल्ट | मतलब |
+| ------ | ------- | ------- |
+| `browserName` | `'Chrome'` | `'Chrome'` या `'MicrosoftEdge'`। वेब इंजन CDP से जुड़ता है, इसलिए कोई और ब्राउज़र हो तो कॉन्फ़िग फ़ेल हो जाता है। |
+| `capabilities` | कुछ नहीं | `browserVersion`, जो `browserName` के साथ जाता है, और TestMu AI के `LT:Options` फ़ील्ड, जैसे `platform`, `geoLocation`, `timezone`, `video`, `network`, या [TestMu AI Tunnel](https://www.lambdatest.com/support/docs/testing-locally-hosted-pages/) के लिए `tunnel` और `tunnelName`। |
+
+प्रोवाइडर ये फ़ील्ड खुद भेजता है, जब तक `capabilities` में इन्हें सेट न किया जाए:
+`platform` (`Windows 11`, क्योंकि TestMu AI इसके बिना सेशन नहीं देता), `build`
+(रन id), `project` (`e2e`) और `idleTimeout` (600 सेकंड)। Edge सेशन के
+`browserOptions` में `--user-data-dir=remote-debug-profile-edge` जुड़ता है, जब
+तक `capabilities` में पहले से कोई सेट न हो। `user`, `accessKey` और `name` प्रोवाइडर
+खुद सेट करता है। इसलिए `capabilities` में इनमें से कोई भी सेट हो, तो कॉन्फ़िग
+`INVALID_CONFIG` के साथ फ़ेल होता है। ये चीज़ें भी कॉन्फ़िग फ़ेल करती हैं: नेस्टेड
+`LT:Options`, `browserName` (इसके लिए ऑप्शन इस्तेमाल करें), ऐसी वैल्यू जो JSON
+में नहीं आ सकती, और `testmuBrowsers()` का गलत स्पेलिंग वाला ऑप्शन। बाकी
+`capabilities` keys बिना जाँच के TestMu AI तक जाती हैं।
+
+```ts
+testmuBrowsers({
+  browserName: 'MicrosoftEdge',
+  capabilities: { browserVersion: '140', platform: 'Windows 10', build: `checkout ${process.env.GITHUB_SHA}`, video: true },
+})
+```
+
+## सेशन और वीडियो ढूँढें
+
+डिफ़ॉल्ट रूप से डैशबोर्ड हर सेशन को `e2e-<run id>-<target>-<slot>` नाम देता है।
+
+जो अटेम्प्ट [वीडियो](/reference/config#video) रिकॉर्ड करता है, उसे यह मिलता है:
+
+- **डिवाइस पर**, सेशन की TestMu AI वाली रिकॉर्डिंग का लिंक। यह रिकॉर्डिंग
+  सेशन के `build` और `sessionName` से ढूँढी जाती है। रिकॉर्डिंग पूरे सेशन की
+  होती है, इसलिए एक वर्कर स्लॉट के हर अटेम्प्ट में वही वीडियो लिंक होता है। जो
+  रन एक ही समय पर चलें और एक तय `build` और `sessionName` शेयर करें, वे एक-दूसरे
+  के वीडियो लिंक कर सकते हैं। डिफ़ॉल्ट वैल्यू के साथ ऐसा कभी नहीं होता।
+- **ब्राउज़र में**, पेज का वेब इंजन वाला स्क्रीनकास्ट, जैसा लोकल रन में होता है।
+  `capabilities: { video: true }` पास करें, तो TestMu AI सेशन की स्क्रीन
+  रिकॉर्ड करता है। उसे TestMu AI डैशबोर्ड में देखें।
+
+## सीमाएँ
+
+- **पैरेलल सेशन।** `workers` गुणा TestMu AI टारगेट की गिनती अपने प्लान के
+  पैरेलल सेशन के अंदर रखें। प्लान से ऊपर वाला ब्राउज़र सेशन TestMu AI की क्यू
+  में इंतज़ार करता है।
+- **लीज़ रहने तक डिवाइस सेशन की बिलिंग होती है।** डिवाइस सेशन तभी शुरू हो जाता
+  है जब उसका स्लॉट लीज़ होता है, और इसमें करीब 30 से 75 सेकंड लगते हैं। जब तक रन
+  उसे रिलीज़ नहीं करता, उसका बिल बनता रहता है, उस पर कोई टेस्ट न चले तब भी।
+- **डिवाइस पर रुका हुआ रनर।** अगर रनर डिवाइस रिलीज़ करने से पहले ही किल हो जाए, तो
+  सेशन को कोई अगली कमांड नहीं भेजता। TestMu AI का
+  [आइडल टाइमआउट](https://www.lambdatest.com/support/docs/desired-capabilities-in-appium/)
+  (डिफ़ॉल्ट 120 सेकंड) उसे ख़त्म करता है, आख़िरी कमांड के करीब तीन मिनट बाद।
+- **कन्फ़र्म न हुआ रिलीज़ रन को फ़ेल करता है।** अगर agent-device पक्का नहीं कर
+  पाता कि उसने डिवाइस सेशन ख़त्म कर दिया, तो रिलीज़ रन को फ़ेल कर देता है, चाहे
+  हर टेस्ट पास हुआ हो। इसकी वजहें: daemon को ज़बरदस्ती रोकना, शटडाउन रिपोर्ट का
+  खो जाना, या रन के दौरान daemon का बंद हो जाना। सेशन को डैशबोर्ड पर उसके `build`
+  और `sessionName` से ढूँढें।
+- **डिवाइस सेटिंग और लॉग।** डिवाइस सेटिंग (परमिशन, लोकेशन, नेटवर्क, अपीयरेंस),
+  सिस्टम अलर्ट, agent-device से रिकॉर्डिंग और डिवाइस लॉग, और पोर्ट रिवर्स, ये
+  नहीं मिलते। लॉग TestMu AI डैशबोर्ड पर पढ़ें, और अपने नेटवर्क के किसी
+  सर्वर तक पहुँचने के लिए TestMu AI Tunnel इस्तेमाल करें।
+- **ब्राउज़र कनेक्ट के लिए 60 सेकंड।** ब्राउज़र सेशन के CDP कनेक्शन लेने का
+  इंतज़ार वेब इंजन ज़्यादा से ज़्यादा 60 सेकंड करता है। छोटा `launchTimeout`
+  इंतज़ार जल्दी ख़त्म कर देता है, लेकिन लंबा होने पर वह इसे नहीं बढ़ाता।
+  इसके बाद भी जो सेशन क्यू में हो या तैयार हो रहा हो, वह `LAUNCH_TIMEOUT` के साथ
+  फ़ेल होता है। `launchTimeout` 60 सेकंड से ज़्यादा हो, तो वह `ENGINE_FAILURE` के
+  साथ फ़ेल होता है।
+- **टूटे ब्राउज़र कनेक्शन।** ब्राउज़र सेशन रिज़्यूम नहीं किया जा सकता। इसलिए
+  कनेक्शन टूटा, तो अटेम्प्ट फ़ेल हो जाता है।
+- **ब्राउज़र डाउनलोड।** TestMu AI के ब्राउज़र डाउनलोड अपनी ही मशीन पर सेव करते
+  हैं, इसलिए `browser.waitForDownload` `ENGINE_FAILURE` के साथ फ़ेल होता है।
+  इसकी जगह डाउनलोड लिंक या रिक्वेस्ट पर असर्शन लगाएँ।
+
+## आगे
+
+<CardGroup cols={2}>
+  <Card title="होस्टेड डिवाइस" icon="mobile" href="/mobile#hosted-devices">
+    डिवाइस प्रोवाइडर डिवाइस लीज़ पर कैसे लेता है।
+  </Card>
+  <Card title="होस्टेड ब्राउज़र" icon="globe" href="/browser#hosted-browsers">
+    ब्राउज़र प्रोवाइडर ब्राउज़र लीज़ पर कैसे लेता है।
+  </Card>
+</CardGroup>

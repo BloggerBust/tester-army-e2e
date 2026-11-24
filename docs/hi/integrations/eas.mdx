@@ -1,0 +1,227 @@
+---
+title: Expo Simulators
+sidebarTitle: Expo Simulators
+description: "@e2e-dev/eas के expoSimulators() डिवाइस प्रोवाइडर से मोबाइल टारगेट Expo Simulators के होस्टेड iOS सिम्युलेटर और Android एम्युलेटर पर चलाएँ।"
+"og:image": "https://e2e.com/docs/images/og/integrations/eas.png?v=d8cb1fd2c5"
+"twitter:image": "https://e2e.com/docs/images/og/integrations/eas.png?v=d8cb1fd2c5"
+---
+
+`@e2e-dev/eas` का `expoSimulators()`
+[Expo Simulators](https://expo.dev/services/simulators) के लिए एक
+[डिवाइस प्रोवाइडर](/mobile#hosted-devices) है। Expo Simulators होस्टेड iOS
+सिम्युलेटर और Android एम्युलेटर देता है। Expo हर डिवाइस के बगल में एक
+agent-device daemon चलाता है, और इंजन उसी daemon से डिवाइस कंट्रोल करता है।
+Expo के होस्ट किए डिवाइस पर e2e चलाने के लिए आपको Mac, Xcode या Android SDK
+नहीं चाहिए।
+
+<Note>
+e2e को इसकी जगह Expo की CI सर्विस में चलाना है, तो [Expo Workflows](/ci/eas-workflows) देखें।
+</Note>
+
+## सेटअप
+
+Expo Simulators अभी सीमित ऐक्सेस में है। आपको ऐक्सेस है या नहीं, यह देखने के
+लिए `npx eas-cli@latest simulator:availability` चलाएँ। फिर प्रोवाइडर इंस्टॉल
+करें। इसे किसी SDK की ज़रूरत नहीं।
+
+<CodeGroup>
+```bash npm
+npm install --save-dev e2e @e2e-dev/mobile @e2e-dev/eas
+```
+
+```bash pnpm
+pnpm add -D e2e @e2e-dev/mobile @e2e-dev/eas
+```
+
+```bash bun
+bun add -d e2e @e2e-dev/mobile @e2e-dev/eas
+```
+</CodeGroup>
+
+टारगेट के `device` को `expoSimulators()` पर सेट करें:
+
+```ts title="e2e.config.ts"
+import type { E2EConfig } from 'e2e';
+import { mobile } from '@e2e-dev/mobile';
+import { expoSimulators } from '@e2e-dev/eas';
+
+export default {
+  targets: [
+    {
+      name: 'ios',
+      engine: mobile({
+        platform: 'ios',
+        device: expoSimulators({ buildId: process.env.E2E_IOS_BUILD_ID }),
+        videoTouches: false,
+      }),
+      app: { bundleId: 'com.example.app' },
+    },
+  ],
+  workers: 2,
+} satisfies E2EConfig;
+```
+
+`E2E_IOS_BUILD_ID` में किसी सिम्युलेटर बिल्ड का ID डालें। `EAS_BUILD_ID` न
+पढ़ें: [Expo Workflows](/ci/eas-workflows) के जॉब में Expo उसमें चल रहे जॉब का
+ID डालता है। वर्कफ़्लो में यह वेरिएबल टेस्ट जॉब के `env` में सेट करें। वैल्यू उस
+बिल्ड जॉब के आउटपुट से लें, जिस पर टेस्ट जॉब निर्भर है:
+
+```yaml title=".eas/workflows/e2e.yml"
+jobs:
+  e2e_ios:
+    needs: [build_ios]
+    env:
+      E2E_IOS_BUILD_ID: ${{ needs.build_ios.outputs.build_id }}
+```
+
+<Note>
+`expoSimulators()` का पुराना नाम `easSimulators()` था। पुराना नाम अब भी चलता
+है, लेकिन डिप्रिकेटेड है।
+</Note>
+
+## Expo प्रोजेक्ट लिंक करें
+
+प्रोवाइडर प्रोजेक्ट id ऐप कॉन्फ़िग के `extra.eas.projectId` से पढ़ता है। यह ऐप
+कॉन्फ़िग `e2e.config.ts` के बगल में होता है, और `eas init` यही फ़ील्ड लिखता है।
+अगर ऐप कॉन्फ़िग कहीं और है, या उसमें कोई प्रोजेक्ट लिंक नहीं है, तो `projectId`
+पास करें: id, slug नहीं।
+
+<Accordion title="प्रोवाइडर ऐप कॉन्फ़िग कैसे पढ़ता है">
+- **`app.json` या `app.config.json`**: JSON की तरह पढ़ा जाता है। फ़ाइल में
+  `expo` key हो, तो उसके नीचे से।
+- **डायनैमिक कॉन्फ़िग** (`app.config.ts`, `.js`, `.mjs`, `.cjs`, `.mts` या
+  `.cts`): प्रोजेक्ट के अपने `expo config --type public` से, रन के एनवायरनमेंट
+  में इवैल्युएट होता है। वजह यह है कि कॉन्फ़िग id खुद कैलकुलेट कर सकता है।
+  इसके लिए प्रोजेक्ट में `expo` इंस्टॉल होना चाहिए। eas-cli की तरह, `.env`
+  फ़ाइलें लोड नहीं होतीं (`EXPO_NO_DOTENV=1`)। कॉन्फ़िग जो भी वेरिएबल पढ़ता है,
+  वह उस एनवायरनमेंट में होना चाहिए जिसमें `e2e run` शुरू होता है।
+
+अगर कॉन्फ़िग कोई प्रोजेक्ट लिंक नहीं करता, तो कोई सेशन शुरू होने से पहले ही
+लीज़ फ़ेल हो जाती है, और एरर में फ़ाइल का नाम होता है। अगर `@e2e-dev/mobile`
+इतना पुराना है कि प्रोवाइडर को `projectRoot` पास नहीं करता, तो भी लीज़ फ़ेल
+होती है: उसे अपग्रेड करें, या `projectId` पास करें।
+</Accordion>
+
+## ऑथेंटिकेट करें
+
+प्रोवाइडर वैसे ही ऑथेंटिकेट करता है जैसे eas-cli करता है:
+
+- **`EXPO_TOKEN`**: किसी अकाउंट या robot का
+  [ऐक्सेस टोकन](https://expo.dev/settings/access-tokens), जिसके पास प्रोजेक्ट
+  का ऐक्सेस हो। यह उस एनवायरनमेंट में होना चाहिए जिसमें `e2e run` शुरू होता
+  है। लॉगिन भी हो, तो यही टोकन चलता है।
+- **eas-cli लॉगिन**, जो `eas login` से होता है। eas-cli इसे
+  `~/.expo/state.json` में रखता है (Windows पर होम डायरेक्टरी `USERPROFILE` है)।
+
+सेशन हमेशा प्रोडक्शन `api.expo.dev` पर जाते हैं। इसलिए eas-cli के
+`EXPO_STAGING` और `EXPO_LOCAL` लॉगिन नहीं गिने जाते।
+
+<Warning>
+CI रनर या शेयर की हुई मशीन पर `EXPO_TOKEN` सेट करें। इसके बिना, अगर किसी ने
+रनर की होम डायरेक्टरी में अपना लॉगिन छोड़ दिया है, तो सेशन उसके अकाउंट से शुरू
+होते हैं, और बिल भी उसी अकाउंट पर बनता है।
+</Warning>
+
+## ऐप इंस्टॉल करें
+
+सिम्युलेटर बिना किसी ऐप के बूट होता है। अपना ऐप उस पर डालने का एक तरीका चुनें:
+
+| तरीका | `expoSimulators()` | टारगेट का `app` |
+| --- | --- | --- |
+| Expo Build का बिल्ड | `buildId`: सिम्युलेटर बिल्ड (`eas.json` में `"ios": { "simulator": true }`) या APK। सेशन तैयार होने से पहले Expo उसे इंस्टॉल करके लॉन्च करता है। बिल्ड कभी Expo से बाहर नहीं जाता। | `bundleId`, ताकि `app.open()` को पता हो कि क्या लॉन्च करना है। `appPath` नहीं, वरना लीज़ फ़ेल होती है। |
+| URL | `applicationArchiveUrl`: एक ऐप आर्काइव, जिसे Expo डाउनलोड करके इसी तरह इंस्टॉल करता है। | `bundleId`, `appPath` नहीं। |
+| लोकल बिल्ड | दोनों में से कोई ऑप्शन नहीं। | `bundleId`, `appPath`, और एक फ़िक्स्चर जो `device.installApp()` कॉल करे, जैसा [लोकल सिम्युलेटर](/mobile) के साथ होता है। बिल्ड सेशन के daemon से हर सिम्युलेटर पर अपलोड होता है। |
+
+## ऑप्शन
+
+| ऑप्शन                  | डिफ़ॉल्ट     | मतलब |
+| ----------------------- | ----------- | ------- |
+| `projectId`             | ऐप कॉन्फ़िग वाला | [Expo प्रोजेक्ट लिंक करें](#link-the-expo-project) देखें। |
+| `buildId`               | कुछ नहीं        | [ऐप इंस्टॉल करें](#install-the-app) देखें। |
+| `applicationArchiveUrl` | कुछ नहीं        | [ऐप इंस्टॉल करें](#install-the-app) देखें। |
+| `device`                | Expo जो चुने | iOS डिवाइस का नाम या UDID (`'iPhone 17 Pro'`), या Android AVD हार्डवेयर प्रोफ़ाइल (`'pixel_9'`)। |
+| `maxIdleTimeMinutes`    | `10`        | इतने मिनट तक agent-device की कोई कमांड न आए, तो Expo सेशन बंद कर देता है। इससे अचानक बंद हो चुके रन के सेशन भी बंद हो जाते हैं। `maxDurationMinutes` इससे छोटा हो, तो डिफ़ॉल्ट उससे एक कम हो जाता है। |
+| `maxDurationMinutes`    | अकाउंट की लिमिट | सेशन तैयार होने के बाद कितने मिनट चल सकता है। Expo इसे 40 तक सीमित रखता है, या हाई-प्रायोरिटी प्लान पर 115 तक। |
+| `agentDeviceVersion`    | इंजन वाला | सेशन के daemon का agent-device वर्शन। डिफ़ॉल्ट वही है जो `@e2e-dev/mobile` के पिन किए क्लाइंट का है। |
+| `tags`                  | `[]`        | हर सेशन पर लगने वाले टैग, रन के अपने टैग के अलावा। |
+
+कॉन्फ़िग लोड `INVALID_CONFIG` के साथ फ़ेल होता है, अगर कोई अनजान ऑप्शन हो,
+`buildId` के साथ `applicationArchiveUrl` हो, या `maxIdleTimeMinutes` साथ में
+पास किए `maxDurationMinutes` से कम न हो। दोनों मिनट लिमिट में शून्य या उससे
+बड़ा पूरा नंबर ही दें।
+
+## सेशन
+
+हर टारगेट ज़्यादा से ज़्यादा `workers` सेशन शुरू करता है। टेस्ट फ़ाइलें कम हों,
+तो सेशन भी कम। ये रन की घड़ी शुरू होने से पहले पैरेलल में शुरू होते हैं, और हर
+एक में करीब तीन मिनट लगते हैं (क्यू, बूट, बिल्ड इंस्टॉल)। सारे सेशन तैयार होने
+पर टेस्ट शुरू होते हैं।
+
+पूरा रन एक सेशन में पूरा होना चाहिए, क्योंकि Expo सेशन को तैयार होने के
+`maxDurationMinutes` बाद बंद कर देता है। लंबा सूट ज़्यादा वर्कर या CI जॉब में
+बाँट दें।
+
+अकाउंट की कनकरेंसी लिमिट से ज़्यादा सेशन Expo क्यू में रखता है। रन ख़त्म होने
+से पहले कोई सेशन ख़त्म नहीं होता। इसलिए `workers` गुणा Expo टारगेट की गिनती उस
+लिमिट के अंदर रखें:
+
+- जो सेशन दो मिनट बाद भी क्यू में है, उसके लिए
+  `still queued at Expo after two minutes` लॉग होता है।
+- टारगेट एक के बाद एक तैयार होते हैं। इसलिए जब अगले टारगेट के सेशन क्यू में
+  होते हैं और बूट होते हैं, तब पिछले टारगेट के तैयार सेशन आइडल बैठे रहते हैं।
+- कोई सेशन तब भी क्यू में हो, जब दूसरा सेशन `maxIdleTimeMinutes` से तैयार बैठा
+  है, तो लीज़ फ़ेल होती है। वजह यह है कि हो सकता है Expo उस आइडल सेशन को
+  बंद कर रहा हो। फिर रन हर सेशन बंद कर देता है।
+
+## रन देखें
+
+प्रोवाइडर हर सेशन बनाते समय उसका expo.dev पेज लॉग करता है:
+
+```text
+ℹ leasing 2 ios device(s) from expo-simulators
+ℹ expo-simulators (1 of 2): simulator session 01a0…, https://expo.dev/accounts/acme/projects/shop/simulator-sessions/01a0…
+ℹ expo-simulators: leased 01a0…
+```
+
+जो ब्राउज़र प्रीव्यू बिना टोकन के खुलता है, वह `watch at <url>` की तरह लॉग
+होता है। जिस प्रीव्यू को टोकन चाहिए, वह लॉग में नहीं आता, क्योंकि उस टोकन से
+सिम्युलेटर कंट्रोल होता है।
+
+सेशन के नाम `e2e <target> <n> of <total>` होते हैं, और उन पर `e2e`,
+`e2e-run:<run id>` और `e2e-target:<target>` टैग लगते हैं। किसी रन के सेशन की
+लिस्ट के लिए `eas simulator:list --tag e2e-run:<run id>` इस्तेमाल करें।
+
+## रिकॉर्डिंग
+
+जो अटेम्प्ट [वीडियो](/reference/config#video) रिकॉर्ड करता है, वह लोकल की तरह
+agent-device से रिकॉर्ड करता है। फ़ाइल उसकी आर्टिफ़ैक्ट डायरेक्टरी में
+`video/video.mp4` पर बनती है।
+
+मोबाइल इंजन का `videoTouches: false` सेट करें, जैसा [सेटअप](#setup) में है।
+agent-device रिकॉर्डिंग रोकते समय उसमें टच बनाता है, और Expo के iOS
+सिम्युलेटर पर इसमें कई मिनट लगते हैं। तब अटेम्प्ट का `cleanupTimeout` ख़त्म हो
+जाता है, और कोई फ़ाइल नहीं बचती। टच के बिना रिकॉर्डिंग करीब दो सेकंड में रुक
+जाती है।
+
+## जब सेशन शुरू न हो
+
+इन हालात में लीज़ फ़ेल होती है, और रन किसी भी टेस्ट से पहले ख़त्म हो जाता है:
+न `EXPO_TOKEN` हो और न eas-cli लॉगिन, अकाउंट में Expo Simulators न हो, या कोई
+सेशन शुरू न हो पाए। सेशन तब फ़ेल होता है जब उसमें एरर आए, वह बहुत देर तक क्यू
+में रहे ([सेशन](#sessions) देखें), या क्यू से निकलने के 15 मिनट बाद भी बूट हो
+रहा हो।
+
+प्रोवाइडर फ़ेल हुआ सेशन और रन के बाकी सेशन बंद कर देता है। क्यू में पड़े सेशन
+का जॉब वह कैंसल कर देता है, ताकि Expo उसे बाद में शुरू करके अकाउंट का बिल न
+बनाए।
+
+## आगे
+
+<CardGroup cols={2}>
+  <Card title="होस्टेड डिवाइस" icon="mobile" href="/mobile#hosted-devices">
+    डिवाइस प्रोवाइडर डिवाइस लीज़ पर कैसे लेता है, और अपना प्रोवाइडर कैसे लिखें।
+  </Card>
+  <Card title="Expo Workflows" icon="/images/integrations/expo.svg" href="/ci/eas-workflows">
+    सूट को Expo वर्कफ़्लो में चलाएँ।
+  </Card>
+</CardGroup>
