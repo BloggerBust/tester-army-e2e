@@ -71,7 +71,9 @@ gives an engine a device or browser provider:
 is `mobile({ platform: 'ios', device: limrun() })`. That session has one
 target, no credentials, secrets, or project tools, and `engine` excludes
 `target`, `config`, and `test`. `ENGINE_NOT_INSTALLED` names the command that installs the package
-into `~/.e2e/engines`: ask the user to run it, wait, then open again. `e2e run` and
+into `~/.e2e/engines`: run it, then open again. When you cannot run it, because
+the sandbox has no network or cannot write there, ask the user to run it or to
+allow it, and wait. `e2e run` and
 `open_session {test}` still need a config, so set the project up before
 writing tests (topic `setup`). No model is needed: without the optional `ai` package, sessions
 open and the deterministic tools work. A test a session runs needs one only for

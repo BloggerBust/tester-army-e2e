@@ -198,8 +198,8 @@ lines you changed:
   New, changed, and failed goals run live, and so does a replay the trace
   page shows as handed off. `agent.assert`, `agent.waitFor`, and
   `agent.extract` always call the model. Leave `--no-cache` off: it sends every goal to the model
-  again. Only a `read-write` cache records: the local default, but not with
-  `CI` set and no cache mode in the config, nor in strict mode. A stopped
+  again. Only a `read-write` cache records: the local default, but not on CI
+  unless the config names that mode, nor in strict mode. A stopped
   run (Ctrl-C, a command your tool's timeout kills, `--max-duration`) saves
   nothing, so give the command a timeout longer than the test.
 - Don't rename the test, its `describe`, or its file, and don't reword a
@@ -207,8 +207,8 @@ lines you changed:
   `agentContext` once a goal passes. Each is part of a recording's key, so
   every goal it touches records again live. Fixing a locator or an
   expectation keeps the recordings.
-- Add `--retries 0` when retries are on (`retries` in the config, or `CI`
-  set, where the default is 1); a `retries` option on the test or its
+- Add `--retries 0` when retries are on (`retries` in the config, or on
+  CI, where the default is 1); a `retries` option on the test or its
   `describe` wins over the flag. Outside strict mode (`--strict-cache`, `cache.strict`), a
   retry never replays: it runs every goal live and waits out the failure
   again.
@@ -222,7 +222,8 @@ lines you changed:
   ask before adding a test framework, and name any existing framework.
 - Live MCP tools need an `e2e mcp` server in the client: the e2e plugin's
   (Codex and Cursor), or one registered in the project (topic `mcp`). In a directory with no e2e config, a live look still
-  works (topic `mcp`). Tests need a config and run with the CLI.
+  works: `open_session {engine: "@e2e-dev/web", app: {url: "http://localhost:3000"}}` opens a session
+  on the engine's defaults. Tests need a config and run with the CLI.
   Keep a session open across runs while you write or fix a web test; topic
   `mcp` says when a run can go beside it, and what to do on
   `APP_ALREADY_RUNNING`.
@@ -282,8 +283,8 @@ you worked around it or gave up. Never report:
 
 - failures of the app under test, or its own behavior;
 - a problem you saw once and could not see again;
-- anything on an outdated e2e: the command refuses it, so ask the user to
-  upgrade e2e and check the problem still happens first.
+- anything on an outdated e2e: the command refuses it, so upgrade
+  (`npx e2e@latest upgrade`) and check the problem still happens first.
 
 Search [existing issues](https://github.com/e2e-inc/e2e/issues) first
 (`gh issue list -R e2e-inc/e2e --search "<words>"`); comment on a match
