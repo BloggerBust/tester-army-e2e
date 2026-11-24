@@ -1,8 +1,9 @@
 /**
  * The slice of semantic versioning the CLI needs to reason about releases:
  * parsing, ordering, and the peer ranges the published packages carry
- * (`>=0.15.0 <1`, or one exact build for a prerelease). Anything else, a
- * caret or a tilde included, is a range this module does not read.
+ * (`>=0.15.0 <1`, or one exact build for a prerelease), and the specs the
+ * CLI itself writes to a package.json (an exact version, or a caret or a
+ * tilde on one). Anything else is a range this module does not read.
  */
 
 const VERSION = /^v?(\d+)\.(\d+)\.(\d+)(?:-([0-9A-Za-z.-]+))?(?:\+[0-9A-Za-z.-]+)?$/u;
@@ -117,4 +118,24 @@ function setSatisfies(version: Version, set: readonly Comparator[]): boolean {
     ({ version: bound }) =>
       bound.prerelease.length > 0 && bound.major === version.major && bound.minor === version.minor && bound.patch === version.patch,
   );
+}
+
+/**
+ * Whether `version` satisfies `spec`, a dependency as `e2e init` and
+ * `e2e upgrade` write it to a package.json: an exact version, or a caret or
+ * a tilde on one, and `*`, which every release satisfies. Undefined for any
+ * other spec, such as a dist-tag, a workspace link, or a comparator set.
+ */
+export function satisfiesRequest(version: Version, spec: string): boolean | undefined {
+  const text = spec.trim();
+  if (text === '*') return version.prerelease.length === 0;
+  const operator = text.startsWith('^') ? '^' : text.startsWith('~') ? '~' : undefined;
+  const base = parseVersion(operator === undefined ? text : text.slice(1));
+  if (base === undefined) return undefined;
+  if (operator === undefined) return compareVersions(version, base) === 0;
+  // A caret keeps the leftmost part that is not zero, a tilde the minor.
+  const upper = operator === '^' && base.major > 0
+    ? `${base.major + 1}.0.0`
+    : operator === '~' || base.minor > 0 ? `${base.major}.${base.minor + 1}.0` : `0.0.${base.patch + 1}`;
+  return satisfies(version, `>=${formatVersion(base)} <${upper}`);
 }

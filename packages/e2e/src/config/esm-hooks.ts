@@ -50,7 +50,7 @@ import { onBun, unsupportedRuntimeMessage } from '../internal/runtime.ts';
 import { realmSlot } from '@e2e-dev/core/lib/internal/realm-slot';
 import { compiledSource, HOOKED_REQUIRE_KEY, IMPLIED_EXTENSIONS, isProjectFile, writtenCandidates, type CompiledSource } from './compiled-files.ts';
 import { isPathSpecifier, pathTarget, type Target } from './specifiers.ts';
-import { projectView, type ProjectView } from './tsconfig.ts';
+import { projectView, ProjectView } from './tsconfig.ts';
 import { compileTypeScript } from './typescript.ts';
 
 type Resolution = ReturnType<ResolveHookSync>;
@@ -150,6 +150,18 @@ function typeScriptTarget(specifier: string, importer: CompiledSource, requiring
     if (file !== undefined) return { file, suffix: '' };
   }
   return undefined;
+}
+
+/**
+ * The project file the bare `specifier`, imported in `file`, names through
+ * the tsconfig.json `paths` or `baseUrl` that governs `file`, as the resolve
+ * hook finds it; undefined for a specifier the hook leaves to Node.js, which
+ * names a package.
+ */
+export function aliasedFile(specifier: string, file: string): string | undefined {
+  const importer = compiledSource(pathToFileURL(file).href);
+  if (importer === undefined || isPathSpecifier(specifier, false)) return undefined;
+  return typeScriptTarget(specifier, importer, false, new ProjectView(false))?.file;
 }
 
 /** Whether `context` is a `require()`, whose resolver takes paths where `import` takes `file:` URLs. */

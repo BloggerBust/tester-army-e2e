@@ -64,8 +64,12 @@ install needs a separate entry (topic `mcp`).
 
 Init adds dependencies and a `test:e2e` script to `package.json`, writes
 `e2e.config.ts` and `tests/example.e2e.ts`, updates `.gitignore`, leaves
-existing configs and tests alone. Re-run after upgrading to refresh skill and
-MCP entries.
+existing configs and tests alone. Re-running is safe: beside an existing
+config it writes no example test and adds the engine and model packages the
+config imports that `package.json` lacks. It adds none when `package.json`
+declares another `e2e` than the one running init (an older pin under
+`npx e2e@latest init`): it names them, so run the project's own `e2e init`
+after installing. Re-run after upgrading to refresh skill and MCP entries.
 
 Without the wizard (`ai`, Vercel AI SDK v7, only for `agent.*` steps):
 

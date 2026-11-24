@@ -15,7 +15,7 @@ const packageSchema = z.looseObject({
   packageManager: z.string().optional(),
   scripts: z.record(z.string(), z.string()).optional(),
 });
-type PackageManifest = z.infer<typeof packageSchema>;
+export type PackageManifest = z.infer<typeof packageSchema>;
 
 /**
  * Reads and validates the manifest, keeping its original text so edits can
@@ -38,10 +38,16 @@ export function describeManifestError(cause: unknown): string {
   return cause instanceof Error ? cause.message : String(cause);
 }
 
+/** The spec the first dependency section that lists `name` gives it, or undefined when none does. */
+export function declaredSpec(manifest: PackageManifest, name: string): string | undefined {
+  return [manifest.dependencies, manifest.devDependencies, manifest.peerDependencies, manifest.optionalDependencies]
+    .map((block) => block?.[name])
+    .find((spec) => spec !== undefined);
+}
+
 /** True when any dependency section lists `name`, so existing versions and workspace links are kept. */
 export function declaresDependency(manifest: PackageManifest, name: string): boolean {
-  return [manifest.dependencies, manifest.devDependencies, manifest.peerDependencies, manifest.optionalDependencies]
-    .some((block) => block?.[name] !== undefined);
+  return declaredSpec(manifest, name) !== undefined;
 }
 
 /** Adds only missing dependencies to devDependencies and returns what was added. */

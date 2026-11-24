@@ -10,6 +10,9 @@ import { isLoopbackHost } from '@e2e-dev/core/lib/internal/urls';
 /** The local server an OpenAI-compatible gateway points at unless an endpoint is given. */
 export const DEFAULT_ENDPOINT = 'http://127.0.0.1:11434/v1';
 
+/** What every gateway needs. zod is a peer of `ai` and every provider; npm and pnpm install peers, Yarn does not. */
+export const AI_DEPENDENCIES: Readonly<Record<string, string>> = { ai: '^7.0.0', zod: '^4.1.8' };
+
 export type GatewayId = 'vercel' | 'openrouter' | 'openai-compatible' | 'chatgpt' | 'copilot' | 'opencode-console' | 'grok';
 
 export interface GatewayPreset {

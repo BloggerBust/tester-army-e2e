@@ -32,7 +32,7 @@ let compiler: { transform: typeof OxcTransform; parser: typeof OxcParser } | und
  * `--omit=optional`, and from a lockfile written on another platform
  * (npm/cli#4828); the error names it and the way back.
  */
-function oxc(): { transform: typeof OxcTransform; parser: typeof OxcParser } {
+export function oxc(): { transform: typeof OxcTransform; parser: typeof OxcParser } {
   if (compiler !== undefined) return compiler;
   try {
     compiler = { transform: ownRequire('oxc-transform') as typeof OxcTransform, parser: ownRequire('oxc-parser') as typeof OxcParser };

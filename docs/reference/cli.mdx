@@ -185,7 +185,7 @@ field or lockfile, then the invoking package manager, then npm.
 | --- | --- |
 | `package.json` | Created as a private ESM package when missing; otherwise gets only the missing dependencies and scripts. Sibling packages (`@e2e-dev/web`, `@e2e-dev/mobile`) get the caret range of the version released with the CLI, or that exact version when the CLI is a prerelease. Adds a `test:e2e` script that runs `e2e run`, unless one exists |
 | `e2e.config.ts` | One target per selected engine, with the app in its `app`. Playwright reads `APP_URL` (default `http://localhost:3000`) into `app.url` and shows `app.command` in a comment. In a Next.js app, it sets `app.url` and `app.command` instead; see [Next.js apps](#nextjs-apps). Mobile sets `app: { bundleId: 'Settings' }` on iOS and `com.android.settings` on Android, and `workers: 1`. With a gateway, `agents.default` is `{ model, system }` |
-| `tests/example.e2e.ts` | An app-open test that passes against any page, plus a commented agent test. Device setup gets a Settings check instead. With both engines, `tests/web.e2e.ts` and `tests/mobile.e2e.ts` instead, each test with `requires: ['browser']` or `requires: ['device']` so the other target skips it |
+| `tests/example.e2e.ts` | With a new config only. An app-open test that passes against any page, plus a commented agent test. Device setup gets a Settings check instead. With both engines, `tests/web.e2e.ts` and `tests/mobile.e2e.ts` instead, each test with `requires: ['browser']` or `requires: ['device']` so the other target skips it |
 | `.gitignore` | Appends `node_modules/`, `.e2e/results/`, `.e2e/cache/`, `.e2e/sessions/`, `.e2e/report.json`, `.e2e/ai-trace.json`, `.e2e/timings.json`, `.e2e/junit.xml`, `.e2e/summary.md`, `.e2e/logs/`, and `.e2e/videos/`. Committing the cache is opt-in; see [commit the replay cache](/cache#commit-the-replay-cache) |
 | `.agents/skills/e2e/`, `.claude/skills/e2e/` | `SKILL.md` and one `references/<topic>.md` per `e2e guide` topic. With both chosen, the Claude Code directory is a relative symlink (`../../.agents/skills/e2e`) to the copy, the layout `npx skills add` produces |
 | `.mcp.json`, `.cursor/mcp.json`, `.codex/config.toml` | Registers `e2e mcp` without changing other servers |
@@ -336,12 +336,26 @@ bunx e2e init my-app --example with-expo
 ##### Re-running init
 
 - An existing config and existing test files stay byte-for-byte unchanged.
-  The engine and gateway answers apply to a new config only, so their
-  packages are not added. A missing example test is still created, unless
-  per-engine examples exist.
+  The engine and gateway answers apply to a new config only. No example test
+  is written beside an existing config, so one you deleted stays deleted.
 - `package.json` and `.gitignore` are still updated with what they lack: the
   `e2e` dev dependency, the `test:e2e` script, and the ignore entries.
   Existing dependencies, scripts, and entries stay as they are.
+- `init` reads the existing config's imports and adds the packages
+  `package.json` lacks, at the ranges a new project gets: `@e2e-dev/web` and
+  `@e2e-dev/mobile` with `@e2e-dev/core`, `ai` with `zod`, and the provider
+  packages of a gateway `init` offers. Any other package the config imports
+  is yours to add, `zod` on its own included. An import that `tsconfig.json`
+  maps to a project file through `paths` or `baseUrl` is not a package.
+- Those ranges belong to the `e2e` that runs `init`. When `package.json`
+  declares another `e2e`, such as an older pinned version under
+  `npx e2e@latest init`, `init` names the missing packages and adds none.
+  Install the dependencies and run the project's own `e2e init`, or add them
+  at versions that fit your `e2e`. An exact version and a `^` or `~` range
+  are compared with the running version; any other spec, such as
+  `workspace:*`, by the `e2e` under `node_modules`.
+- A config that does not parse gets a warning, and its packages are not
+  checked.
 - MCP registration keeps extra settings on the e2e server, such as
   environment variables and client timeouts, even when it repairs the launch
   command. A current registration stays byte-for-byte unchanged.

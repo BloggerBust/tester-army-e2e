@@ -51,6 +51,7 @@ import {
   type CiTarget,
 } from './init/ci.ts';
 import { MCP_LOCATIONS, type CiChoice } from './init/choices.ts';
+import { missingConfigDependencies } from './init/config-dependencies.ts';
 import { loadConfigModule } from '../config/load.ts';
 import { getEnginePreset, getEnginePresets, DEFAULT_ENGINE_IDS, type EngineId } from './init/engines.ts';
 import { detectFramework, productionScripts, type FrameworkApp, type FrameworkManifest } from './init/frameworks.ts';
@@ -297,7 +298,7 @@ export async function init(root: string, options: InitOptions = {}): Promise<Ini
     ci: options.ci ?? defaults.ci,
   };
 
-  // Engine and model gateway are choices for a new config only; an existing config keeps its own dependencies.
+  // Engine and model gateway are choices for a new config only; an existing config's dependencies come from its imports.
   let engines: readonly EngineId[] = [];
   let model: ScaffoldModel | undefined;
   const configFlags = ([['engines', 'engine'], ['gateway', 'gateway'], ['endpoint', 'endpoint']] as const)
@@ -393,19 +394,25 @@ export async function init(root: string, options: InitOptions = {}): Promise<Ini
     clack.log.warn(`Found ${framework.framework}, but ${framework.reason}; set app.url and app.command in e2e.config.ts, see ${DOCS_URL}${framework.docs}`);
   }
   const scaffold = createScaffold(engines, model, app === undefined ? undefined : { app, manager });
-  const testPath = (name: string): string => path.join('tests', `${name}.e2e.${javascript ? 'js' : 'ts'}`);
-  // A config with several engines keeps one example per engine; a re-run adds no tests/example.e2e.ts beside them.
-  const hasEngineExamples = getEnginePresets().some(({ file }) => existsSync(path.join(cwd, testPath(file))));
-  const tests = existingConfig !== undefined && hasEngineExamples
+  // The scaffold's config and example read APP_URL; an existing config says where its own app is.
+  const needsAppUrl = existingConfig === undefined && scaffold.needsAppUrl;
+  // The example belongs to a new config: beside an existing one, a test that is gone was deleted on purpose.
+  const tests = existingConfig !== undefined
     ? []
-    : scaffold.tests.map((test) => ({ relative: testPath(test.name), content: test.content }));
+    : scaffold.tests.map((test) => ({ relative: path.join('tests', `${test.name}.e2e.ts`), content: test.content }));
   const newTests = tests.filter((test) => !existsSync(path.join(cwd, test.relative)));
   if (example === undefined) {
     for (const test of tests) {
       if (!newTests.includes(test)) clack.log.warn(`Exists, not touching: ${test.relative}`);
     }
   }
-  const dependencies = addDependencies(pkg.manifest, scaffold.dependencies);
+  const existingConfigText = existingConfig === undefined ? undefined : readFileSync(path.join(cwd, existingConfig), 'utf8');
+  // An existing config keeps its engines and gateway, so its own imports say which packages it needs.
+  const imported = existingConfig === undefined || existingConfigText === undefined
+    ? undefined
+    : missingConfigDependencies({ cwd, config: existingConfig, source: existingConfigText, manifest: pkg.manifest, manager });
+  if (imported?.warning !== undefined) clack.log.warn(imported.warning);
+  const dependencies = addDependencies(pkg.manifest, { ...scaffold.dependencies, ...imported?.dependencies });
   const { manifest, additions: scripts } = addScripts(dependencies.manifest, SCRIPTS);
   if (example === undefined && dependencies.additions.length > 0) {
     clack.log.info(`Add dev dependencies: ${dependencies.additions.map(([name, version]) => `${name}@${version}`).join(', ')}`);
@@ -415,7 +422,7 @@ export async function init(root: string, options: InitOptions = {}): Promise<Ini
   }
 
   const repositoryRoot = findRepositoryRoot(cwd, root);
-  // A new config's engines are the ones just chosen; an existing config's are the ones its package.json declares.
+  // A new config's engines are the ones just chosen; an existing config's are the ones its package.json declares, those this run adds for its imports included.
   const engineInstalled = existingConfig === undefined
     ? engines.length > 0
     : declaresDependency(manifest, '@e2e-dev/web') || declaresDependency(manifest, '@e2e-dev/mobile');
@@ -444,7 +451,6 @@ export async function init(root: string, options: InitOptions = {}): Promise<Ini
   // Nothing is written through a symlink: a linked .github or .gitlab could put the file outside the repository.
   const ciLink = ciFile === undefined || ciFile.existing ? undefined : linkOnPath(repositoryRoot, path.join(repositoryRoot, ciFile.file));
   if (ciLink !== undefined) clack.log.warn(`Symlink, not touching: ${ciLink.relative} -> ${ciLink.target} (${ciRelative})`);
-  const existingConfigText = existingConfig === undefined ? undefined : readFileSync(path.join(cwd, existingConfig), 'utf8');
   // Where the pipeline goes is known now; its jobs come from the config's targets, read once the dependencies are in.
   const writesCi = ciService !== undefined && ciFile !== undefined && !ciFile.existing && ciLink === undefined;
 
@@ -588,14 +594,14 @@ export async function init(root: string, options: InitOptions = {}): Promise<Ini
     if (before.length === 0) {
       const target = app !== undefined
         ? ` on ${app.url}`
-        : scaffold.needsAppUrl ? ` on ${process.env['APP_URL'] ?? 'http://localhost:3000'} (set APP_URL for another URL)` : '';
+        : needsAppUrl ? ` on ${process.env['APP_URL'] ?? 'http://localhost:3000'} (set APP_URL for another URL)` : '';
       return finish(`Starting ${command}${target}`, true);
     }
-    const appUrl = scaffold.needsAppUrl && process.env['APP_URL'] === undefined ? 'APP_URL=http://localhost:3000 ' : '';
+    const appUrl = needsAppUrl && process.env['APP_URL'] === undefined ? 'APP_URL=http://localhost:3000 ' : '';
     return finish(`Next: ${[...before, `${appUrl}${execCommand(manager, command)}`].join(', then ')}`);
   }
   const last = example === undefined ? runCommand : runScriptCommand(manager, example.script);
-  const appUrl = example === undefined && scaffold.needsAppUrl ? 'APP_URL=http://localhost:3000 ' : '';
+  const appUrl = example === undefined && needsAppUrl ? 'APP_URL=http://localhost:3000 ' : '';
   return finish(`Next: ${[...before, `${appUrl}${last}`].join(', then ')}`);
 }
 

@@ -14,6 +14,7 @@ import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node
 import path from 'node:path';
 import picocolors from 'picocolors';
 import { z } from 'zod';
+import { installedPackage } from '../internal/installed-package.ts';
 import { detectWorkspacePackageManager, execCommand, LOCKFILE_NAMES, type PackageManager } from '../internal/package-manager.ts';
 import { isCiMode } from '@e2e-dev/core/lib/config/resolve';
 import { insideProjectRoot, realpathOfExisting } from '@e2e-dev/core/lib/internal/paths';
@@ -256,33 +257,13 @@ function declaredPackages(dir: string, manifest: Manifest): { declared: Declared
     for (const [name, spec] of Object.entries(manifest[section] ?? {})) {
       if ((name !== RUNNER && !name.startsWith(SCOPE)) || seen.has(name)) continue;
       seen.add(name);
-      all.push({ name, section, spec, installed: installedVersion(dir, name) });
+      all.push({ name, section, spec, installed: installedPackage(dir, name)?.version });
     }
   }
   // The runner leads every list the command prints.
   all.sort((a, b) => Number(b.name === RUNNER) - Number(a.name === RUNNER));
   const registry = (entry: Declared): boolean => !NON_REGISTRY_SPEC.test(entry.spec.trim());
   return { declared: all.filter(registry), linked: all.filter((entry) => !registry(entry)) };
-}
-
-/** The version under the nearest `node_modules/<name>`, or undefined (not installed, or Plug'n'Play). */
-function installedVersion(dir: string, name: string): string | undefined {
-  return installedPackage(dir, name)?.version;
-}
-
-/** The nearest `node_modules/<name>` from `dir` up whose package.json names a version, or undefined (not installed, or Plug'n'Play). */
-function installedPackage(dir: string, name: string): { dir: string; version: string } | undefined {
-  for (let current = dir; ; current = path.dirname(current)) {
-    const packageDir = path.join(current, 'node_modules', name);
-    try {
-      const manifest: unknown = JSON.parse(readFileSync(path.join(packageDir, 'package.json'), 'utf8'));
-      const version = typeof manifest === 'object' && manifest !== null && 'version' in manifest ? manifest.version : undefined;
-      if (typeof version === 'string') return { dir: packageDir, version };
-    } catch {
-      // Not here; a workspace hoists to a parent.
-    }
-    if (path.dirname(current) === current) return undefined;
-  }
 }
 
 /** The registry the package manager would use when it set one for this process, else npm's. */

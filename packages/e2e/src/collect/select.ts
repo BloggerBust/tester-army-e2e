@@ -456,7 +456,7 @@ function describeNoTests(
     if (nearMisses.length > 0) {
       return `${where}; found ${nameFiles(nearMisses)}, which the pattern does not match: rename to *.e2e.ts, or set tests in the config to a glob that matches`;
     }
-    return `${where}; create tests/example.e2e.ts (e2e init writes one), or set tests in the config`;
+    return `${where}; create a test file such as tests/example.e2e.ts, or set tests in the config`;
   }
   if (!files.some((file) => file.selected) && unmatchedPositionals.length > 0) {
     // A positional may be a whole path or just a file name, so a near miss is looked for as either.

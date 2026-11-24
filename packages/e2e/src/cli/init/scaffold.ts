@@ -3,7 +3,7 @@ import type { PackageManager } from '../../internal/package-manager.ts';
 import { getEnginePreset, type EngineId, type EnginePreset } from './engines.ts';
 import type { FrameworkApp } from './frameworks.ts';
 import { dependencyRange, siblingDependency } from './versions.ts';
-import { getGatewayPreset, type GatewayId } from './gateways.ts';
+import { AI_DEPENDENCIES, getGatewayPreset, type GatewayId } from './gateways.ts';
 
 /** The model choice `init` writes: which gateway, and for an OpenAI-compatible one, where. */
 export interface ScaffoldModel {
@@ -158,8 +158,7 @@ export function createScaffold(engineIds: readonly EngineId[], model: ScaffoldMo
       ...Object.fromEntries(engines.flatMap((engine) => Object.entries(engine.dependencies))),
       // Every engine peers on `@e2e-dev/core`; npm and pnpm install peers, Yarn does not, and Plug'n'Play then cannot load the engine.
       ...(engines.length === 0 ? {} : siblingDependency('@e2e-dev/core')),
-      // zod is a peer of `ai` and every provider; npm and pnpm install peers, Yarn does not.
-      ...(gateway === undefined ? {} : { ai: '^7.0.0', zod: '^4.1.8', ...gateway.dependencies }),
+      ...(gateway === undefined ? {} : { ...AI_DEPENDENCIES, ...gateway.dependencies }),
     },
     config: `${imports.join('\n')}
 

@@ -27,6 +27,10 @@ vi.mock('@clack/prompts', { spy: true });
 vi.mock('../../src/cli/skill.ts', { spy: true });
 vi.mock('node:child_process', () => ({ spawnSync: vi.fn() }));
 
+/** The spec `init` writes for the runner the tests run, which an existing project on this release declares. */
+const RUNNER_VERSION = (JSON.parse(readFileSync(path.resolve(import.meta.dirname, '../../package.json'), 'utf8')) as { version: string }).version;
+const RUNNER_RANGE = dependencyRange(RUNNER_VERSION);
+
 let dir: string;
 let stdoutSpy: ReturnType<typeof vi.spyOn>;
 /** What each multiselect question answers; a test sets one before calling init. */
@@ -106,11 +110,10 @@ describe('e2e init', () => {
   it('adds the runner, Playwright, and AI with --yes and does not install or prompt', async () => {
     expect((await init(dir, { yes: true })).exitCode).toBe(0);
     // The runner pins itself the way it pins engines: a caret on a stable version, exact on a canary.
-    const runnerVersion = (JSON.parse(readFileSync(path.resolve(import.meta.dirname, '../../package.json'), 'utf8')) as { version: string }).version;
     expect(JSON.parse(read('package.json'))).toEqual({
       private: true,
       type: 'module',
-      devDependencies: { 'e2e': dependencyRange(runnerVersion), '@e2e-dev/web': '0.x', '@e2e-dev/core': '0.x', ai: '^7.0.0', zod: '^4.1.8' },
+      devDependencies: { 'e2e': RUNNER_RANGE, '@e2e-dev/web': '0.x', '@e2e-dev/core': '0.x', ai: '^7.0.0', zod: '^4.1.8' },
       scripts: { 'test:e2e': 'e2e run' },
     });
     expect(read('e2e.config.ts')).toContain('agents: {\n    default: {\n      model: ');
@@ -469,6 +472,153 @@ describe('e2e init', () => {
     expect(read('e2e.config.ts')).toBe('export default {};\n');
   });
 
+  it('adds the packages an existing config imports and package.json lacks, at the ranges a new scaffold writes', async () => {
+    writeFileSync(path.join(dir, 'e2e.config.ts'), [
+      "import type { E2EConfig } from 'e2e';",
+      "import { web } from '@e2e-dev/web';",
+      "import { chatgpt } from 'e2e/oauth/chatgpt';",
+      "import 'dotenv/config';",
+      "import { readFileSync } from 'node:fs';",
+      "import { helper } from './helper.ts';",
+      "import { alias } from '@/lib/alias';",
+      "// import { mobile } from '@e2e-dev/mobile';",
+      "const note = \"import { openrouter } from '@openrouter/ai-sdk-provider';\";",
+      'export default { targets: [{ engine: web() }] } satisfies E2EConfig;',
+      '',
+    ].join('\n'));
+    writeFileSync(path.join(dir, 'package.json'), `${JSON.stringify({ name: 'existing-app', type: 'module', devDependencies: { e2e: RUNNER_RANGE, zod: '^3.0.0' } }, null, 2)}\n`);
+    expect((await init(dir, { yes: true })).exitCode).toBe(0);
+    expect(JSON.parse(read('package.json')).devDependencies).toEqual({
+      e2e: RUNNER_RANGE,
+      zod: '^3.0.0',
+      '@e2e-dev/web': '0.x',
+      '@e2e-dev/core': '0.x',
+      '@ai-sdk/openai': '^4.0.0',
+      ai: '^7.0.0',
+    });
+    expect(output()).toContain('Add dev dependencies: @e2e-dev/web@0.x, @e2e-dev/core@0.x, @ai-sdk/openai@^4.0.0, ai@^7.0.0');
+    expect(output()).not.toContain('dotenv');
+    stdoutSpy.mockClear();
+    expect(await init(dir, { yes: true })).toMatchObject({ exitCode: 0, result: 'already-initialized' });
+  });
+
+  it('reads re-exports and literal dynamic imports of an existing JavaScript config', async () => {
+    writeFileSync(path.join(dir, 'e2e.config.mjs'), [
+      "export { mobile } from '@e2e-dev/mobile/engine';",
+      "const { openrouter } = await import('@openrouter/ai-sdk-provider');",
+      "await import('dotenv/config');",
+      "await import(`@e2e-dev/${'web'}`);",
+      'export default {};',
+      '',
+    ].join('\n'));
+    writeFileSync(path.join(dir, 'package.json'), `${JSON.stringify({ type: 'module', dependencies: { dotenv: '^17.0.0' } })}\n`);
+    expect((await init(dir, { yes: true })).exitCode).toBe(0);
+    expect(JSON.parse(read('package.json')).devDependencies).toEqual({
+      e2e: expect.any(String),
+      '@e2e-dev/mobile': '0.x',
+      '@openrouter/ai-sdk-provider': '^3.0.0',
+      '@e2e-dev/core': '0.x',
+      ai: '^7.0.0',
+      zod: '^4.1.8',
+    });
+  });
+
+  it('adds nothing for an existing config that imports zod alone, the schema library of the project', async () => {
+    writeFileSync(path.join(dir, 'e2e.config.ts'), "import { z } from 'zod';\nexport default {};\n");
+    expect((await init(dir, { yes: true })).exitCode).toBe(0);
+    expect(Object.keys(JSON.parse(read('package.json')).devDependencies)).toEqual(['e2e']);
+  });
+
+  it.each([
+    ['an ai subpath', "import { MockLanguageModelV3 } from 'ai/test';", { ai: '^7.0.0', zod: '^4.1.8' }],
+    ['a provider no gateway preset imports', "import { anthropic } from '@ai-sdk/anthropic';", { '@ai-sdk/anthropic': '^4.0.0', ai: '^7.0.0', zod: '^4.1.8' }],
+  ])('adds ai and zod for an existing config that imports %s', async (_name, line, added) => {
+    writeFileSync(path.join(dir, 'e2e.config.ts'), `${line}\nexport default {};\n`);
+    expect((await init(dir, { yes: true })).exitCode).toBe(0);
+    expect(JSON.parse(read('package.json')).devDependencies).toEqual({ e2e: RUNNER_RANGE, ...added });
+  });
+
+  it('reads a range for a package it knows only, not for a name Object.prototype has', async () => {
+    writeFileSync(path.join(dir, 'e2e.config.ts'), "import x from 'constructor';\nimport y from 'toString/sub';\nexport default { x, y };\n");
+    expect((await init(dir, { yes: true })).exitCode).toBe(0);
+    expect(output()).toContain(`Add dev dependencies: e2e@${RUNNER_RANGE}\n`);
+    expect(Object.keys(JSON.parse(read('package.json')).devDependencies)).toEqual(['e2e']);
+  });
+
+  it('warns that the packages were not checked when the existing config does not parse', async () => {
+    writeFileSync(path.join(dir, 'e2e.config.ts'), "<<<<<<< HEAD\nimport { web } from '@e2e-dev/web';\nexport default { targets: [{ engine: web() }] };\n");
+    expect((await init(dir, { yes: true })).exitCode).toBe(0);
+    expect(output()).toContain('Could not read the imports of e2e.config.ts, so its packages were not checked against package.json: syntax error: ');
+    expect(Object.keys(JSON.parse(read('package.json')).devDependencies)).toEqual(['e2e']);
+  });
+
+  it('takes a specifier tsconfig.json maps to a project file for that file, not for a package', async () => {
+    writeFileSync(path.join(dir, 'tsconfig.json'), JSON.stringify({ compilerOptions: { paths: { 'ai/*': ['./ai/*'], '@e2e-dev/*': ['./engines/*'] } } }));
+    mkdirSync(path.join(dir, 'ai'));
+    writeFileSync(path.join(dir, 'ai/targets.ts'), 'export const targets = [];\n');
+    writeFileSync(path.join(dir, 'e2e.config.ts'), "import { targets } from 'ai/targets';\nimport { web } from '@e2e-dev/web';\nexport default { targets, web };\n");
+    expect((await init(dir, { yes: true })).exitCode).toBe(0);
+    // `@e2e-dev/web` matches a pattern too, but no file is behind it, so the loader leaves it to the package.
+    expect(JSON.parse(read('package.json')).devDependencies).toEqual({ e2e: RUNNER_RANGE, '@e2e-dev/web': '0.x', '@e2e-dev/core': '0.x' });
+  });
+
+  it('leaves the specifiers of a JavaScript config to their packages, whatever tsconfig.json maps', async () => {
+    writeFileSync(path.join(dir, 'tsconfig.json'), JSON.stringify({ compilerOptions: { paths: { 'ai/*': ['./ai/*'] } } }));
+    mkdirSync(path.join(dir, 'ai'));
+    writeFileSync(path.join(dir, 'ai/test.ts'), 'export {};\n');
+    writeFileSync(path.join(dir, 'e2e.config.mjs'), "import 'ai/test';\nexport default {};\n");
+    expect((await init(dir, { yes: true })).exitCode).toBe(0);
+    expect(JSON.parse(read('package.json')).devDependencies).toEqual({ e2e: RUNNER_RANGE, ai: '^7.0.0', zod: '^4.1.8' });
+  });
+
+  it('names the packages an existing config imports, and adds none, when package.json pins another e2e than this one', async () => {
+    writeFileSync(path.join(dir, 'e2e.config.ts'), "import { web } from '@e2e-dev/web';\nimport { gateway } from 'ai';\nexport default { targets: [{ engine: web() }], gateway };\n");
+    const manifest = { type: 'module', scripts: { 'test:e2e': 'e2e run' }, devDependencies: { e2e: '0.0.1' } };
+    writeFileSync(path.join(dir, 'package.json'), `${JSON.stringify(manifest, null, 2)}\n`);
+    expect((await init(dir, { yes: true, ci: 'github-actions' })).exitCode).toBe(0);
+    expect(JSON.parse(read('package.json'))).toEqual(manifest);
+    expect(output()).toContain(
+      `e2e.config.ts imports @e2e-dev/web, @e2e-dev/core, ai, zod, which package.json lacks. Not added: package.json has e2e@0.0.1 and this is e2e ${RUNNER_VERSION}, whose ranges for them may not fit it. Run npm install, then npm exec -- e2e init, for the project's own e2e to add them, or add them at versions that fit it.`,
+    );
+    // No engine is declared, so there is still no pipeline to write.
+    expect(output()).toContain('Ignoring --ci');
+  });
+
+  it('answers a spec it cannot compare, such as a workspace link, by the e2e under node_modules', async () => {
+    writeFileSync(path.join(dir, 'e2e.config.ts'), "import { web } from '@e2e-dev/web';\nexport default { targets: [{ engine: web() }] };\n");
+    writeFileSync(path.join(dir, 'package.json'), `${JSON.stringify({ type: 'module', devDependencies: { e2e: 'workspace:*' } })}\n`);
+    expect((await init(dir, { yes: true })).exitCode).toBe(0);
+    expect(output()).toContain('Not added: package.json has e2e@workspace:* and this is e2e');
+    expect(Object.keys(JSON.parse(read('package.json')).devDependencies)).toEqual(['e2e']);
+
+    mkdirSync(path.join(dir, 'node_modules/e2e'), { recursive: true });
+    writeFileSync(path.join(dir, 'node_modules/e2e/package.json'), JSON.stringify({ name: 'e2e', version: RUNNER_VERSION }));
+    stdoutSpy.mockClear();
+    expect((await init(dir, { yes: true })).exitCode).toBe(0);
+    expect(output()).not.toContain('Not added');
+    expect(JSON.parse(read('package.json')).devDependencies).toEqual({ e2e: 'workspace:*', '@e2e-dev/web': '0.x', '@e2e-dev/core': '0.x' });
+  });
+
+  it('ends a re-run without the APP_URL of a new scaffold, which an existing config may never read', async () => {
+    expect((await init(dir, { yes: true, engines: ['mobile'] })).exitCode).toBe(0);
+    const manifest = JSON.parse(read('package.json')) as { devDependencies: Record<string, string> };
+    delete manifest.devDependencies['@e2e-dev/mobile'];
+    writeFileSync(path.join(dir, 'package.json'), JSON.stringify(manifest));
+    stdoutSpy.mockClear();
+    expect((await init(dir, { yes: true })).exitCode).toBe(0);
+    expect(output()).toContain('Add dev dependencies: @e2e-dev/mobile@0.x');
+    expect(output()).toContain('Next: npm install, then npm run test:e2e');
+    expect(output()).not.toContain('APP_URL');
+  });
+
+  it('writes no example test beside an existing config, so a deleted one stays deleted', async () => {
+    expect((await init(dir, { yes: true })).exitCode).toBe(0);
+    rmSync(path.join(dir, 'tests'), { recursive: true });
+    stdoutSpy.mockClear();
+    expect(await init(dir, { yes: true })).toMatchObject({ exitCode: 0, result: 'already-initialized' });
+    expect(existsSync(path.join(dir, 'tests'))).toBe(false);
+  });
+
   it('installs the skill exactly where --skills says on a re-run, leaving earlier locations untouched', async () => {
     writeCopy('.agents/skills', 'stale');
     expect((await init(dir, { yes: true, skills: ['.claude/skills'], mcp: [] })).exitCode).toBe(0);
@@ -774,10 +924,8 @@ describe('e2e init', () => {
     expect(Object.keys(JSON.parse(read('package.json')).devDependencies)).toEqual(['e2e']);
     expect(JSON.parse(read('package.json')).scripts).toEqual({ 'test:e2e': 'e2e run' });
     if (config !== 'e2e.config.ts') expect(existsSync(path.join(dir, 'e2e.config.ts'))).toBe(false);
-    const javascript = config.endsWith('js');
-    expect(existsSync(path.join(dir, 'tests/example.e2e.js'))).toBe(javascript);
-    expect(existsSync(path.join(dir, 'tests/example.e2e.ts'))).toBe(!javascript);
-    expect(output().includes('No tsconfig.json')).toBe(!javascript);
+    expect(existsSync(path.join(dir, 'tests'))).toBe(false);
+    expect(output().includes('No tsconfig.json')).toBe(!config.endsWith('js'));
   });
 
   it('reconciles new .gitignore entries without replacing existing source files', async () => {
@@ -1580,6 +1728,15 @@ export default {
       } finally {
         delete process.env['GROQ_API_KEY'];
       }
+    });
+
+    it('writes the pipeline on a re-run that restores the web engine the config imports', async () => {
+      writeFileSync(path.join(dir, 'package.json'), JSON.stringify({ devDependencies: { e2e: RUNNER_RANGE } }));
+      writeFileSync(path.join(dir, 'e2e.config.ts'), "import { web } from '@e2e-dev/web';\nexport default { targets: [{ engine: web() }] };\n");
+      await init(dir, { yes: true, ci: 'github-actions' });
+      expect(JSON.parse(read('package.json')).devDependencies).toMatchObject({ '@e2e-dev/web': '0.x' });
+      expect(output()).not.toContain('Ignoring --ci');
+      expect(read(workflow)).toContain('run: npx e2e run --reporter list,junit');
     });
 
     it('writes no pipeline when an existing mobile config does not load', async () => {

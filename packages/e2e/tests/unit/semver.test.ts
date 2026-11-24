@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { compareVersions, formatVersion, parseVersion, satisfies } from '../../src/internal/semver.ts';
+import { compareVersions, formatVersion, parseVersion, satisfies, satisfiesRequest } from '../../src/internal/semver.ts';
 
 function version(text: string) {
   const parsed = parseVersion(text);
@@ -58,5 +58,32 @@ describe('satisfies', () => {
     ['0.21.2', '', false],
   ] as const)('%s in %s is %s', (text, range, expected) => {
     expect(satisfies(version(text), range)).toBe(expected);
+  });
+});
+
+describe('satisfiesRequest', () => {
+  it.each([
+    ['0.24.0', '0.24.0', true],
+    ['0.24.0', '0.23.1', false],
+    ['0.24.3', '^0.24.0', true],
+    ['0.24.0', '^0.24.1', false],
+    ['0.25.0', '^0.24.0', false],
+    ['1.9.0', '^1.2.3', true],
+    ['2.0.0', '^1.2.3', false],
+    ['0.0.4', '^0.0.3', false],
+    ['0.24.9', '~0.24.1', true],
+    ['1.3.0', '~1.2.3', false],
+    ['0.0.9', '~0.0.3', true],
+    ['0.25.0-canary.3', '0.25.0-canary.3', true],
+    ['0.25.0-canary.3', '^0.24.0', false],
+    ['0.25.0-canary.3', '^0.25.0-canary.1', true],
+    ['0.24.0', '*', true],
+    ['0.25.0-canary.3', '*', false],
+  ] as const)('%s in %s is %s', (text, spec, expected) => {
+    expect(satisfiesRequest(version(text), spec)).toBe(expected);
+  });
+
+  it.each(['latest', 'workspace:*', 'catalog:', '>=0.24.0 <1', '0.x', ''])('does not read %s', (spec) => {
+    expect(satisfiesRequest(version('0.24.0'), spec)).toBeUndefined();
   });
 });
