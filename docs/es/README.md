@@ -62,9 +62,87 @@ ella en el mismo cambio.
 - Para términos que no están en el glosario, usa la palabra española si es de
   uso común y deja el término inglés en cursiva solo si no hay equivalente
   establecido. No traduzcas identificadores ni nombres de opciones.
-- Usa el glosario de `Terms.md` de forma coherente. Traduce la prosa de las cadenas de prompt
+- Usa el glosario de forma coherente. Traduce la prosa de las cadenas de prompt
   exportadas, pero deja sin cambios sus comandos, código y URL. El código de los
   bloques se queda igual, incluidos los comentarios y las cadenas de prompt.
+- En la tabla, cada fila es un término. Si admite varias formas (el plural, las
+  conjugaciones de un verbo), van separadas por ` / ` y la primera es la
+  preferida; si se mantiene en inglés, la segunda columna lo repite. Mantén la
+  tabla ordenada por la primera columna. MCP, CI, SDK, CLI, API y UI se
+  mantienen en inglés y no están en la tabla.
 
-El glosario está en [`Terms.md`](./Terms.md): una fila por término, con las formas
-aceptadas. Añade o cambia filas allí, no en este archivo, y usa esas formas en todas las páginas.
+| English | Español |
+| --- | --- |
+| agent | agente / agentes |
+| agentic | de agente / de agentes |
+| API key | clave de API / claves de API |
+| artifact | artefacto |
+| assertion | aserción / aserciones |
+| authentication | autenticación |
+| blocked | bloqueado / bloqueada / bloqueados / bloqueadas |
+| bug bash | bug bash |
+| checkpoint | punto de control / puntos de control |
+| coding agent | agente de programación / agentes de programación |
+| config | configuración / configuraciones |
+| configuration | configuración / configuraciones |
+| continuous integration | integración continua |
+| credential | credencial / credenciales |
+| decision model | modelo de decisión / modelos de decisión |
+| dependency | dependencia / dependencias |
+| deterministic | determinista |
+| device | dispositivo |
+| emulator | emulador / emuladores |
+| end-to-end | end-to-end |
+| end-to-end testing | tests end-to-end / test end-to-end |
+| endpoint | endpoint |
+| engine | motor / motores |
+| executor | ejecutor de pasos / ejecutores de pasos |
+| fixture | fixture |
+| flag | bandera / banderas |
+| flaky | inestable / inestables |
+| goal | objetivo / objetivos |
+| harness | arnés de tests |
+| headed | con interfaz (headed) / con interfaz |
+| headless | sin interfaz (headless) / sin interfaz |
+| hook | hook |
+| hosted browser | navegador alojado / navegadores alojados |
+| job | trabajo / trabajos |
+| judge | juez / jueces / juzga / juzgan / juzgar |
+| locator | localizador / localizadores |
+| matcher | matcher |
+| mobile | móvil |
+| placeholder | marcador de posición / marcadores de posición |
+| prompt | prompt |
+| provider | proveedor / proveedores |
+| pull request | pull request |
+| real device | dispositivo real / dispositivos reales |
+| replay | reproducción / reproducciones / reproducir / reproduce |
+| replay cache | caché de reproducción |
+| report | informe / informes |
+| reporter | generador de informes / generadores de informes |
+| retry | reintento / reintentar / reintenta |
+| runner | ejecutor / ejecutores |
+| schema | esquema / esquemas |
+| scope | ámbito / ámbitos |
+| screenshot | captura de pantalla / capturas de pantalla |
+| secret | secreto / secretos |
+| selector | selector / selectores |
+| self-healing | autorreparación |
+| semantic tree | árbol semántico / árboles semánticos |
+| session | sesión / sesiones |
+| setup test | test de preparación / tests de preparación |
+| sign in | iniciar sesión / inicia sesión / inicies sesión / inicie sesión / inicio de sesión |
+| sign out | cerrar sesión / cierra sesión / cierres sesión / cierre sesión |
+| simulator | simulador / simuladores |
+| skill | skill |
+| snapshot | snapshot |
+| step | paso / pasos |
+| subscription | suscripción / suscripciones |
+| target | destino / destinos |
+| test | test / tests |
+| test suite | suite de test / suites de test |
+| timeout | tiempo de espera / tiempos de espera |
+| trace | traza / trazas |
+| visual testing | tests visuales / test visual |
+| web | web |
+| worker | worker |
