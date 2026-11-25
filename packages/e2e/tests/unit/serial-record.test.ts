@@ -109,6 +109,7 @@ function serialPairs(target: ResolvedTarget): TestTargetPair[] {
       parallel: { declared: false, ordered: undefined, suiteHooks: false },
       serialId: `${file}::wizard`,
       selected: true,
+      focused: false,
     };
     return { test, target, agent: 'default', repeat: 0, options: OPTIONS, disposition: 'run', skip: undefined };
   });

@@ -132,7 +132,7 @@ jq '.run.results[] | select(.selected and .status != "passed") | .attempts[-1]
 | `POLICY_DENIED` | A URL whose scheme is not `http:` or `https:` (`file:`, `view-source:`, `data:`), or on a target whose `app.url` is a file, a file outside that file's directory or a directory; a password `Secret` into a non-password sink; reading a secure field, `toHaveValue`, `toHaveText`, `toContainText`, `toHaveAttribute` included; `vision: 'only'` with pixels withheld | http(s) or `about:blank` only; passwords into password inputs only; assert the outcome, not the value |
 | `UNSUPPORTED_CAPABILITY` | A fixture the engine lacks (`browser` on a device), `schema` or `vision` on `act`, an action the surface lacks | Declare `platforms: ['web']`; drop the option or action |
 | `SESSION_UNAVAILABLE`, `SESSION_CONTRACT` | `session: 'x'` with no setup saving `x`; a setup that skipped a declared name. `SESSION_MISMATCH`, `SESSION_EXPIRED`, `SESSION_INVALID`: the stored session is another run's or app's, expired, or corrupt | Add or fix the `test.setup`; rerun it |
-| `ONLY_IN_CI` | `test.only` reached CI | Remove it |
+| `ONLY_IN_CI` | `test.only` or `describe.only` reached CI | Remove it |
 | `PAUSE_UNAVAILABLE` | `screen.pause()` reached CI | Remove it before you commit, or ask the user to run the test with `e2e run` in a terminal |
 | `AUTH_CREDENTIAL_UNAVAILABLE`, `AUTH_CREDENTIAL_INVALID` | `credentials.user('x')` for an undeclared name; the app rejected a configured credential | Add it to `config.credentials`; fix the stored value |
 | `SECRET_UNAVAILABLE` | `secrets.get('x')` for an undeclared name | Add it to `config.secrets`; `E2E_SECRET_X` only overrides a declared one |

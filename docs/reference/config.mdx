@@ -1549,7 +1549,7 @@ CI mode is on unless `CI` is unset, blank, `0`, or `false`.
 | `retries` | `0` | `1` |
 | `workers` | `max(1, floor(availableParallelism() / 2))` | `1` |
 | `cache` | `read-write` | `read-only` when unset |
-| `test.only` | allowed | `ONLY_IN_CI`, exit code 2 |
+| `test.only`, `describe.only` | allowed | `ONLY_IN_CI`, exit code 2 |
 | `command.reuseExisting` | honored | ignored, with a notice |
 
 ## Loading

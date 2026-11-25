@@ -44,6 +44,7 @@ describe('checkout', { tags: ['billing'] }, () => {
 | [`test.extend`](#test-extend) | `TestAPI` |
 | [`describe`](#describe) | `void` |
 | [`describe.fail`](#describe-fail) | `void` |
+| [`describe.only`](#describe-only) | `void` |
 | [钩子](#hooks) | `void` |
 
 `describe` 和四个钩子也作为顶层导出提供，与 `test.describe`、`test.beforeEach` 等是相同的函数：`import { describe, beforeEach, test } from 'e2e'`。
@@ -319,7 +320,7 @@ test.only('pays', async ({ app }) => {
 });
 ```
 
-其他测试报告为 `filtered`。CI 运行中包含此类测试时会以 `ONLY_IN_CI` 失败。
+其他测试报告为 `filtered`。CI 运行中包含此类测试时会以 `ONLY_IN_CI` 失败。要单独运行一个分组中的所有测试，请使用 [`describe.only`](#describe-only)。
 
 #### `test.setup`
 
@@ -381,7 +382,7 @@ describe('checkout', { tags: ['smoke'], serial: true }, () => {
 });
 ```
 
-- 分组接受测试的[选项](#options)，但不包括 `only`，另外还接受 [`serial`](#serial)。
+- 分组接受测试的[选项](#options)，另外还接受 [`serial`](#serial)。
 - 主体必须同步执行。
 
 | 抛出 | 条件 |
@@ -411,6 +412,32 @@ describe('legacy checkout', { fail: 'old payment form' }, () => {}); // with a r
 | --- | --- |
 | `COLLECTION_ERROR` | The group is serial or inside a serial group, or a serial group is inside it. |
 | `COLLECTION_ERROR` | A `fail` option on `describe.fail`. It is also a type error. |
+
+#### `describe.only`
+
+声明一个单独运行的分组，等同于在 `describe` 上设置 `only: true`。分组中的每个测试（包括嵌套分组中的测试）都会像 [`test.only`](#test-only) 那样单独运行。
+
+```ts
+describe.only('checkout', () => {
+  test('pays by card', async ({ screen }) => {}); // runs
+  describe('refunds', () => {
+    test('refunds a card', async ({ screen }) => {}); // runs
+  });
+});
+test('signs in', async ({ app }) => {}); // filtered
+describe('checkout', { only: true }, () => {}); // the same, by option
+```
+
+- 单独运行的分组可以与 `test.only` 一起使用：所有单独运行的测试都会运行，其余测试报告为 `filtered`。
+- 单独运行的分组内部若还有 `test.only` 或 `describe.only`，该分组的范围会像 Playwright 一样收窄：该分组中只运行内部单独运行的测试。
+- 单独运行的分组中被跳过的测试仍属于单独运行的范围，并以自身的跳过原因（`explicit`、`fixme` 或 `todo`）报告。
+- CI 运行中包含单独运行的分组时会以 `ONLY_IN_CI` 失败。
+- serial 分组可以整体单独运行。serial 分组作为一个单元运行，因此其内部的 `only` 会被拒绝。
+
+| 抛出 | 条件 |
+| --- | --- |
+| `COLLECTION_ERROR` | 分组位于 serial 分组内部。 |
+| `COLLECTION_ERROR` | 在 `describe.only` 上设置 `only` 选项。这也是类型错误。 |
 
 ### 钩子
 
@@ -532,7 +559,7 @@ afterAll(async () => {
 | [`serial`](#serial) | `boolean` | - |
 | [`sessions`](#sessions) | `readonly string[]` | 必填 |
 
-`test` 接受除 `serial` 和 `sessions` 外的所有选项。`describe` 接受除 `only` 和 `sessions` 外的所有选项。`test.setup` 要求提供 `sessions`，且不接受 `session`、`only`、`skip` 或 `fail`。
+`test` 接受除 `serial` 和 `sessions` 外的所有选项。`describe` 接受除 `sessions` 外的所有选项。`test.setup` 要求提供 `sessions`，且不接受 `session`、`only`、`skip` 或 `fail`。
 
 解析顺序为：测试、最近的分组、外层分组、配置、内置默认值。在[串行分组](#serial)中，使用分组的 `retries`、`trace` 和 `video`。
 
@@ -589,10 +616,11 @@ describe('legacy checkout', { fail: 'old payment form' }, () => {});
 
 #### `only`
 
-在本地单独运行该测试。CI 会以 `ONLY_IN_CI` 拒绝。
+在本地单独运行该测试，或分组中的所有测试（见 [`describe.only`](#describe-only)）。CI 会以 `ONLY_IN_CI` 拒绝。
 
 ```ts
 test('pays', { only: true }, async ({ app }) => {});
+describe('checkout', { only: true }, () => {});
 ```
 
 #### `platforms`
@@ -843,6 +871,8 @@ export interface DescribeRegistrar<Options = DescribeOptions> {
 export interface DescribeAPI extends DescribeRegistrar {
   /** Declares a group whose tests are expected to fail, as if it had `fail: true`; a reason goes in the `fail` option of `describe`. */
   fail: DescribeRegistrar<Omit<DescribeOptions, 'fail'>>;
+  /** Declares a focused group, as if it had `only: true`: its tests are focused the way `test.only` focuses one. CI rejects it with `ONLY_IN_CI`. */
+  only: DescribeRegistrar<Omit<DescribeOptions, 'only'>>;
 }
 
 /** The two call forms of `test`, shared with what `test.skipIf` and `test.runIf` return. */
@@ -1012,7 +1042,7 @@ export interface TestAPI<Fixtures = TestFixtures, Worker = WorkerFixtures> exten
   extend<Extra = {}, ExtraWorker = {}>(
     fixtures: FixtureDefinitions<Fixtures & Worker, Extra, Worker, ExtraWorker>,
   ): TestAPI<Fixtures & Extra, Worker & ExtraWorker>;
-  /** Declares a group synchronously; `describe.fail` declares one whose tests are expected to fail. */
+  /** Declares a group synchronously; `describe.fail` declares one whose tests are expected to fail, `describe.only` a focused one. */
   describe: DescribeAPI;
   /** Registers a test-attempt setup hook: it runs after the test's fixtures are set up. */
   beforeEach(fn: TestHookFn<Fixtures & Worker>): void;
@@ -1051,7 +1081,12 @@ export interface TestOptions {
    * around a serial group.
    */
   fail?: boolean | string;
-  /** Focuses the test locally. CI rejects it with `ONLY_IN_CI`. */
+  /**
+   * Focuses the test locally; on a group, focuses every test in it, skipped
+   * ones included, unless a test or group inside it is focused too, which
+   * narrows the focus to that one. CI rejects it with `ONLY_IN_CI`. Not
+   * allowed inside a serial group; a serial group itself can be focused.
+   */
   only?: boolean;
   /** Platforms the test runs on; other targets skip it. Innermost wins. */
   platforms?: readonly string[];
@@ -1083,7 +1118,7 @@ export interface TestOptions {
   video?: RecordingMode;
 }
 
-export interface DescribeOptions extends Omit<TestOptions, 'only'> {
+export interface DescribeOptions extends TestOptions {
   /** Runs the group as one ordered retry unit with shared app state. Nesting one serial group in another is a `COLLECTION_ERROR`. */
   serial?: boolean;
 }

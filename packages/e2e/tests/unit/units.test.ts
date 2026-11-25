@@ -87,6 +87,7 @@ function makeTest(
     parallel: { declared: false, ordered: undefined, suiteHooks: false },
     serialId: undefined,
     selected: true,
+    focused: false,
     ...overrides,
   };
 }

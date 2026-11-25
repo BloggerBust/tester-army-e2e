@@ -104,6 +104,7 @@ function makeTest(file: string, title: string, overrides: Partial<CollectedTest>
     parallel: { declared: false, ordered: undefined, suiteHooks: false },
     serialId: undefined,
     selected: true,
+    focused: false,
     ...overrides,
   };
 }

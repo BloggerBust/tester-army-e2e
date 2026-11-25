@@ -348,6 +348,96 @@ describe('select', () => {
     expect(focused.disposition).toBe('run');
   });
 
+  it('focuses the tests of a describe.only group, alongside a test.only elsewhere', async () => {
+    const col = await collection(() => {
+      test('outside', noop);
+      test.describe.only('checkout', () => {
+        test('pays', noop);
+        test.describe('nested', () => test('refunds', noop));
+        test.skip('skipped inside', noop);
+        test.fixme('fixme inside', noop);
+        test.todo('todo inside');
+      });
+      test.describe('profile', { only: true }, () => test('renames', noop));
+      test.describe('settings', { only: false }, () => {
+        test('sibling', noop);
+        test.only('focused elsewhere', noop);
+      });
+    });
+    const selection = select(col, config());
+    expect(selection.pairs.map((pair) => [pair.test.title, pair.disposition, pair.skip?.cause])).toEqual([
+      ['outside', 'filtered', 'filtered'],
+      ['pays', 'run', undefined],
+      ['refunds', 'run', undefined],
+      // A skipped test in a focused group is focused, so it reports its own skip.
+      ['skipped inside', 'skip', 'explicit'],
+      ['fixme inside', 'skip', 'fixme'],
+      ['todo inside', 'skip', 'todo'],
+      ['renames', 'run', undefined],
+      ['sibling', 'filtered', 'filtered'],
+      ['focused elsewhere', 'run', undefined],
+    ]);
+    expect(() => select(col, config({}, { ...ENV, CI: '1' } as NodeJS.ProcessEnv))).toThrow(/\.only is rejected in CI/);
+  });
+
+  it('narrows a focused group to the .only inside it, as Playwright does', async () => {
+    const col = await collection(() => {
+      test.describe.only('outer', () => {
+        test('dropped', noop);
+        test.only('kept', noop);
+        test.describe.only('inner', () => {
+          test('kept too', noop);
+          test.describe('deeper', () => test('kept deeper', noop));
+        });
+      });
+      test.describe.only('through a plain group', () => {
+        test('dropped as well', noop);
+        test.describe('mid', () => {
+          test('dropped in mid', noop);
+          test.only('kept in mid', noop);
+        });
+      });
+      test.describe.only('untouched', () => {
+        test('kept beside', noop);
+        // only: false opts nothing out; it is the same as no only.
+        test.describe('opted out?', { only: false }, () => test('kept anyway', noop));
+      });
+    });
+    expect(running(select(col, config()))).toEqual(['kept', 'kept too', 'kept deeper', 'kept in mid', 'kept beside', 'kept anyway']);
+  });
+
+  it('keeps a focused group that holds only skipped tests focused, so CI and the empty run still see it', async () => {
+    const skippedOnly = await collection(() => {
+      test('other', noop);
+      test.describe.only('focused', () => test.skip('skipped', noop));
+    });
+    expect(() => select(skippedOnly, config())).toThrow(
+      '2 tests were collected but none is runnable: 1 not focused by .only, 1 skipped explicitly; pass --pass-with-no-tests to allow this',
+    );
+    const inSkippedGroup = await collection(() => {
+      test('other', noop);
+      test.describe('broken', { skip: 'broken' }, () => test.describe.only('focused', () => test('x', noop)));
+    });
+    expect(select(inSkippedGroup, config(), {}, { passWithNoTests: true }).pairs.map((pair) => pair.skip)).toEqual([
+      { cause: 'filtered', reason: 'not focused by .only' },
+      { cause: 'explicit', reason: 'broken' },
+    ]);
+    for (const col of [skippedOnly, inSkippedGroup]) {
+      expect(() => select(col, config({}, { ...ENV, CI: '1' } as NodeJS.ProcessEnv))).toThrow(/\.only is rejected in CI/);
+    }
+  });
+
+  it('focuses a serial group whole', async () => {
+    const col = await collection(() => {
+      test('other', noop);
+      test.describe.only('unit', { serial: true }, () => {
+        test('first', noop);
+        test('second', noop);
+      });
+    });
+    expect(running(select(col, config()))).toEqual(['first', 'second']);
+  });
+
   it('rejects .only in CI', async () => {
     const col = await collection(() => {
       test.only('focused', noop);
@@ -936,6 +1026,25 @@ describe('positional file selection', () => {
       ['third', 'filtered'],
     ]);
     expect(selection.pairs[0]!.skip?.reason).toBe('not declared at a line a positional named');
+  });
+
+  it('decides focus after the lines, so a test.only they leave out does not narrow its group', async () => {
+    const col = await collectionAtLines(
+      () => {
+        test.describe.only('group', () => {
+          test('a', noop);
+          test.only('b', noop);
+        });
+        test('c', noop);
+      },
+      (declared) => [declared[0]!, declared[2]!],
+    );
+    expect(select(col, config()).pairs.map((pair) => [pair.test.title, pair.disposition, pair.skip?.cause])).toEqual([
+      ['a', 'run', undefined],
+      ['b', 'filtered', 'filtered'],
+      ['c', 'filtered', 'filtered'],
+    ]);
+    expect(() => select(col, config({}, { ...ENV, CI: '1' } as NodeJS.ProcessEnv))).toThrow(/\.only is rejected in CI/);
   });
 
   it('names the file:line that found no test and the lines the file declares tests at', async () => {

@@ -44,6 +44,7 @@ describe('checkout', { tags: ['billing'] }, () => {
 | [`test.extend`](#test-extend) | `TestAPI` |
 | [`describe`](#describe) | `void` |
 | [`describe.fail`](#describe-fail) | `void` |
+| [`describe.only`](#describe-only) | `void` |
 | [フック](#hooks) | `void` |
 
 `describe` と 4 つのフックはトップレベルからもエクスポートされます。`test.describe`、`test.beforeEach` などと同じ関数です。`import { describe, beforeEach, test } from 'e2e'` のように使えます。
@@ -320,7 +321,7 @@ test.only('pays', async ({ app }) => {
 });
 ```
 
-ほかのテストは `filtered` と報告します。CI でこの指定があると、`ONLY_IN_CI` で実行が失敗します。
+ほかのテストは `filtered` と報告します。CI でこの指定があると、`ONLY_IN_CI` で実行が失敗します。グループ内のすべてのテストに絞るには [`describe.only`](#describe-only) を使います。
 
 #### `test.setup`
 
@@ -382,7 +383,7 @@ describe('checkout', { tags: ['smoke'], serial: true }, () => {
 });
 ```
 
-- グループは `only` を除くテストの[オプション](#options)に加え、[`serial`](#serial) を受け取ります。
+- グループはテストの[オプション](#options)に加え、[`serial`](#serial) を受け取ります。
 - 本体は同期的に実行します。
 
 | エラー | 発生条件 |
@@ -412,6 +413,32 @@ describe('legacy checkout', { fail: 'old payment form' }, () => {}); // with a r
 | --- | --- |
 | `COLLECTION_ERROR` | The group is serial or inside a serial group, or a serial group is inside it. |
 | `COLLECTION_ERROR` | A `fail` option on `describe.fail`. It is also a type error. |
+
+#### `describe.only`
+
+`describe` に `only: true` を指定した場合と同じく、実行対象を絞ったグループを宣言します。ネストしたグループを含め、グループ内のすべてのテストが [`test.only`](#test-only) と同じように対象になります。
+
+```ts
+describe.only('checkout', () => {
+  test('pays by card', async ({ screen }) => {}); // runs
+  describe('refunds', () => {
+    test('refunds a card', async ({ screen }) => {}); // runs
+  });
+});
+test('signs in', async ({ app }) => {}); // filtered
+describe('checkout', { only: true }, () => {}); // the same, by option
+```
+
+- 対象を絞ったグループと `test.only` は併用できます。対象のテストはすべて実行し、ほかのテストは `filtered` と報告します。
+- 対象を絞ったグループの内側に `test.only` や `describe.only` があると、Playwright と同じくそのグループの対象が狭まり、グループ内では内側で対象にしたテストだけを実行します。
+- 対象を絞ったグループ内のスキップしたテストも対象のままで、`explicit`、`fixme`、`todo` のうち自身のスキップ原因で報告します。
+- 対象を絞ったグループがあると、CI では `ONLY_IN_CI` で実行が失敗します。
+- serial グループはグループ全体を対象にできます。serial グループは 1 単位として実行するため、その内側の `only` は拒否します。
+
+| エラー | 発生条件 |
+| --- | --- |
+| `COLLECTION_ERROR` | グループが serial グループの内側にある場合。 |
+| `COLLECTION_ERROR` | `describe.only` に `only` オプションを指定した場合。型エラーにもなります。 |
 
 ### フック
 
@@ -533,7 +560,7 @@ afterAll(async () => {
 | [`serial`](#serial) | `boolean` | - |
 | [`sessions`](#sessions) | `readonly string[]` | 必須 |
 
-`test` は `serial` と `sessions` 以外を受け付けます。`describe` は `only` と `sessions` 以外を受け付けます。`test.setup` では `sessions` が必須で、`session`、`only`、`skip`、`fail` は受け付けません。
+`test` は `serial` と `sessions` 以外を受け付けます。`describe` は `sessions` 以外を受け付けます。`test.setup` では `sessions` が必須で、`session`、`only`、`skip`、`fail` は受け付けません。
 
 優先順位は、テスト、最も近いグループ、外側のグループ、設定、組み込みのデフォルト値の順です。[直列実行グループ](#serial)内では、グループの `retries`、`trace`、`video` を適用します。
 
@@ -590,10 +617,11 @@ describe('legacy checkout', { fail: 'old payment form' }, () => {});
 
 #### `only`
 
-ローカルでこのテストに実行対象を絞ります。CI では `ONLY_IN_CI` で拒否します。
+ローカルでこのテスト、またはグループ内のすべてのテストに実行対象を絞ります（[`describe.only`](#describe-only) を参照）。CI では `ONLY_IN_CI` で拒否します。
 
 ```ts
 test('pays', { only: true }, async ({ app }) => {});
+describe('checkout', { only: true }, () => {});
 ```
 
 #### `platforms`
@@ -844,6 +872,8 @@ export interface DescribeRegistrar<Options = DescribeOptions> {
 export interface DescribeAPI extends DescribeRegistrar {
   /** Declares a group whose tests are expected to fail, as if it had `fail: true`; a reason goes in the `fail` option of `describe`. */
   fail: DescribeRegistrar<Omit<DescribeOptions, 'fail'>>;
+  /** Declares a focused group, as if it had `only: true`: its tests are focused the way `test.only` focuses one. CI rejects it with `ONLY_IN_CI`. */
+  only: DescribeRegistrar<Omit<DescribeOptions, 'only'>>;
 }
 
 /** The two call forms of `test`, shared with what `test.skipIf` and `test.runIf` return. */
@@ -1013,7 +1043,7 @@ export interface TestAPI<Fixtures = TestFixtures, Worker = WorkerFixtures> exten
   extend<Extra = {}, ExtraWorker = {}>(
     fixtures: FixtureDefinitions<Fixtures & Worker, Extra, Worker, ExtraWorker>,
   ): TestAPI<Fixtures & Extra, Worker & ExtraWorker>;
-  /** Declares a group synchronously; `describe.fail` declares one whose tests are expected to fail. */
+  /** Declares a group synchronously; `describe.fail` declares one whose tests are expected to fail, `describe.only` a focused one. */
   describe: DescribeAPI;
   /** Registers a test-attempt setup hook: it runs after the test's fixtures are set up. */
   beforeEach(fn: TestHookFn<Fixtures & Worker>): void;
@@ -1052,7 +1082,12 @@ export interface TestOptions {
    * around a serial group.
    */
   fail?: boolean | string;
-  /** Focuses the test locally. CI rejects it with `ONLY_IN_CI`. */
+  /**
+   * Focuses the test locally; on a group, focuses every test in it, skipped
+   * ones included, unless a test or group inside it is focused too, which
+   * narrows the focus to that one. CI rejects it with `ONLY_IN_CI`. Not
+   * allowed inside a serial group; a serial group itself can be focused.
+   */
   only?: boolean;
   /** Platforms the test runs on; other targets skip it. Innermost wins. */
   platforms?: readonly string[];
@@ -1084,7 +1119,7 @@ export interface TestOptions {
   video?: RecordingMode;
 }
 
-export interface DescribeOptions extends Omit<TestOptions, 'only'> {
+export interface DescribeOptions extends TestOptions {
   /** Runs the group as one ordered retry unit with shared app state. Nesting one serial group in another is a `COLLECTION_ERROR`. */
   serial?: boolean;
 }

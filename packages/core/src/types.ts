@@ -853,7 +853,12 @@ export interface TestOptions {
    * around a serial group.
    */
   fail?: boolean | string;
-  /** Focuses the test locally. CI rejects it with `ONLY_IN_CI`. */
+  /**
+   * Focuses the test locally; on a group, focuses every test in it, skipped
+   * ones included, unless a test or group inside it is focused too, which
+   * narrows the focus to that one. CI rejects it with `ONLY_IN_CI`. Not
+   * allowed inside a serial group; a serial group itself can be focused.
+   */
   only?: boolean;
   /** Platforms the test runs on; other targets skip it. Innermost wins. */
   platforms?: readonly string[];
@@ -885,7 +890,7 @@ export interface TestOptions {
   video?: RecordingMode;
 }
 
-export interface DescribeOptions extends Omit<TestOptions, 'only'> {
+export interface DescribeOptions extends TestOptions {
   /** Runs the group as one ordered retry unit with shared app state. Nesting one serial group in another is a `COLLECTION_ERROR`. */
   serial?: boolean;
   /**
@@ -959,6 +964,8 @@ export interface DescribeAPI extends DescribeRegistrar {
    * run at the same time on separate workers.
    */
   configure(options: DescribeConfigureOptions): void;
+  /** Declares a focused group, as if it had `only: true`: its tests are focused the way `test.only` focuses one. CI rejects it with `ONLY_IN_CI`. */
+  only: DescribeRegistrar<Omit<DescribeOptions, 'only'>>;
 }
 
 /** The two call forms of `test`, shared with what `test.skipIf` and `test.runIf` return. */
@@ -1189,7 +1196,7 @@ export interface TestAPI<Fixtures = TestFixtures, Worker = WorkerFixtures> exten
     ConfigBase<Fixtures, Config> & Extra & ConfigFixtures<Config, 'test'>,
     ConfigBase<Worker, Config> & ExtraWorker & ConfigFixtures<Config, 'worker'>
   >;
-  /** Declares a group synchronously; `describe.fail` declares one whose tests are expected to fail. */
+  /** Declares a group synchronously; `describe.fail` declares one whose tests are expected to fail, `describe.only` a focused one. */
   describe: DescribeAPI;
   /** Registers a test-attempt setup hook: it runs after the test's fixtures are set up. */
   beforeEach(fn: TestHookFn<Fixtures & Worker>): void;

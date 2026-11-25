@@ -1196,7 +1196,7 @@ cache: { strict: true }, // default: false
 | `retries` | `0` | `1` |
 | `workers` | `max(1, floor(availableParallelism() / 2))` | `1` |
 | `cache` | `read-write` | 未設定なら `read-only` |
-| `test.only` | 許可 | `ONLY_IN_CI`、終了コード 2 |
+| `test.only`、`describe.only` | 許可 | `ONLY_IN_CI`、終了コード 2 |
 | `command.reuseExisting` | 適用 | 通知して無視 |
 
 ## 読み込み

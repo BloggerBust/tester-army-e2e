@@ -170,6 +170,7 @@ test('checkout', async ({ app, agent, screen }) => {
 | `beforeEach`, `afterEach`, `beforeAll`, `afterAll` | 相同，但不带标题；`beforeAll` 和 `afterAll` 得到工作进程测试夹具，而不是 `browser`、`app` 或 `screen` |
 | `test.describe.skip`, `test.describe.serial`, `describe.configure({ mode: 'serial', retries, timeout })` | `test.describe(title, { skip, serial, retries, timeout }, fn)` |
 | describe 上的 `test.fail()` | `test.describe.fail(title, fn)`，或在分组上设置 `{ fail: 'reason' }`；按条件标记则在 `beforeEach` 中调用 `test.fail(condition, 'reason')` |
+| `test.describe.only()` | 相同，或在分组上设置 `{ only: true }`；与 `test.only` 一样，CI 会以 `ONLY_IN_CI` 拒绝 |
 | `{ tag: '@smoke' }` | 测试或组上的 `{ tags: ['smoke'] }` |
 | `test.extend({ fixture })` | 结构相同，按需准备：测试、钩子或测试夹具会得到它在第一个参数中列出的测试夹具 |
 | `[fn, { scope: 'worker' }]` 测试夹具 | 相同，用 `extend` 的第二个类型参数提供类型 |
@@ -285,7 +286,7 @@ export const test = base.extend<{ accountPage: AccountPage }>({
 | `globalSetup`, `globalTeardown`, `webServer` 数组 | 在运行前后执行的脚本，或启动所有进程的一个 `app.command` |
 | `projects[].testMatch`, `testDir`, `testIgnore`, `grep` | 测试上的 `platforms` 或标签，或为每个测试目标单独运行 |
 | `--ui`, `npx playwright show-report`, `--reporter html` | `--watch --headed`；`npx e2e report`（打开 `htmlReporter()` 写入的 `<output>/report.html`） |
-| `test.describe.only()`、`test.describe.fixme()`、`test.fixme(title, details, body)` | 测试或组上的 `{ timeout }` 或 `{ skip: 'fixme' }`，details 中的 `tags` 一并写在旁边（报告的跳过原因为 `explicit`，而非 `fixme`）；每个测试上的 `test.only` |
+| `test.describe.fixme()`、`test.fixme(title, details, body)` | 测试或组上的 `{ timeout }` 或 `{ skip: 'fixme' }`，details 中的 `tags` 一并写在旁边（报告的跳过原因为 `explicit`，而非 `fixme`） |
 | `test.skip(callback, description)`、`test.fixme(callback, description)` | 在测试体中使用 `test.skip(condition, reason)` 或 `test.fixme(condition, reason)`，或在测试上设置 `platforms` |
 | `failOnFlakyTests`, `use.navigationTimeout`, `--timeout`, `--quiet` | `report.json` 中的 `run.summary.flaky`；`browser.goto(url, { timeout })`；配置中的 `timeout` |
 | `blob` 报告器和 `merge-reports` | 每个分片一份报告 |

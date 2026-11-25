@@ -825,8 +825,16 @@ describe.fail('gaps', { tags: ['legacy'] }, () => {});
 describe.fail('gaps', { fail: 'legacy checkout' }, () => {});
 // @ts-expect-error describe.fail registration must be synchronous
 test.describe.fail('asynchronous', async () => {});
-// @ts-expect-error a group cannot be focused; describe options take no only
-test.describe.fail('gaps', { only: true }, () => {});
+// A group is focused by describe.only or the only option; describe.only takes no only of its own.
+void (test.describe.only('checkout', () => {}) satisfies void);
+describe.only('checkout', { tags: ['smoke'] }, () => {});
+test.describe('checkout', { only: true }, () => {});
+// @ts-expect-error describe.only is already focused
+describe.only('checkout', { only: true }, () => {});
+// @ts-expect-error describe.only registration must be synchronous
+test.describe.only('asynchronous', async () => {});
+// @ts-expect-error only is true or false, never a reason
+test.describe('checkout', { only: 'debugging' }, () => {});
 
 declare const payloadUploadAction: Extract<import('../../src/engine/index.ts').LocatorAction, { kind: 'setInputFilePayloads' }>;
 payloadUploadAction.files[0]!.buffer satisfies Uint8Array;

@@ -90,9 +90,6 @@ describe('registration', () => {
     await expect(register(() => test.describe('group', { searial: true } as never, () => {}))).rejects.toThrow(
       'describe options has unknown key "searial"; did you mean "serial"?',
     );
-    await expect(register(() => test.describe('group', { only: true } as never, () => {}))).rejects.toThrow(
-      /describe options has unknown key "only"; expected one of timeout, retries/,
-    );
     await expect(register(() => test.setup('login', { sessions: ['admin'], tag: ['auth'] } as never, noop))).rejects.toThrow(
       'setup options has unknown key "tag"; did you mean "tags"?',
     );
@@ -153,13 +150,13 @@ describe('registration', () => {
     ).rejects.toThrow(/synchronously/);
   });
 
-  it('records skip and only modes', async () => {
+  it('records skip modes, and test.only as the only option', async () => {
     const registration = await collectModule(async () => {
       test.skip('skipped', noop);
       test.only('focused', noop);
       test('opt-skip', { skip: 'flaky upstream' }, noop);
     });
-    expect(registration.tests.map((item) => item.mode)).toEqual(['skip', 'only', 'skip']);
+    expect(registration.tests.map((item) => [item.mode, item.options.only])).toEqual([['skip', undefined], ['normal', true], ['skip', undefined]]);
     expect(registration.tests[2]!.options.skip).toBe('flaky upstream');
   });
 
@@ -226,7 +223,7 @@ describe('registration', () => {
       ['skip', { skip: 'no inotify on macOS' }, []],
       ['skip', { skip: '' }, []],
       ['skip', { skip: true }, []],
-      ['only', { only: true, skip: true }, []],
+      ['skip', { only: true, skip: true }, []],
       ['normal', { tags: ['@fs'] }, ['@fs']],
       ['skip', { skip: 'tracked in #42' }, []],
       ['skip', { skip: 'tracked in #42' }, []],
@@ -373,7 +370,7 @@ describe('registration', () => {
     ).toEqual([
       ['skipped 1', 'skip', { skip: 'not yet', tags: ['@each'] }, ['@each'], []],
       ['skipped 2', 'skip', { skip: 'not yet', tags: ['@each'] }, ['@each'], []],
-      ['focused 1', 'only', { only: true }, [], []],
+      ['focused 1', 'normal', { only: true }, [], []],
       ['extended 1', 'normal', {}, [], ['workspace']],
     ]);
   });
@@ -542,6 +539,46 @@ describe('registration', () => {
         "describe.fail() takes no fail option; give a reason with describe(title, { fail: 'reason' }, fn)",
       );
     }
+  });
+
+  it('marks a group focused by describe.only(title, fn) or the only option, and checks both', async () => {
+    const registration = await collectModule(async () => {
+      test.describe.only('shortcut', () => test('a', noop));
+      test.describe.only('shortcut with options', { tags: ['smoke'] }, () => test('b', noop));
+      test.describe('by option', { only: true }, () => test('c', noop));
+      registry.describe.only('top-level import', () => test('d', noop));
+    });
+    expect(registration.tests.map((item) => [item.title, item.group?.options.only, item.mode])).toEqual([
+      ['a', true, 'normal'],
+      ['b', true, 'normal'],
+      ['c', true, 'normal'],
+      ['d', true, 'normal'],
+    ]);
+    expect(registration.tests[1]!.tags).toEqual(['smoke']);
+    await expect(collectModule(async () => test.describe('group', { only: 'yes' } as never, () => {}))).rejects.toThrow(
+      'describe options: only must be true or false, got "yes"',
+    );
+    await expect(collectModule(async () => test('x', { only: 'yes' } as never, noop))).rejects.toThrow(
+      'test options: only must be true or false, got "yes"',
+    );
+    // describe.only rejects what describe() rejects, including keys a spread would drop.
+    const hidden = Object.defineProperty({}, 'bogus', { value: 1, enumerable: false });
+    await expect(collectModule(async () => test.describe.only('group', hidden as never, () => {}))).rejects.toThrow('unknown key "bogus"');
+    for (const only of [true, false]) {
+      await expect(collectModule(async () => test.describe.only('group', { only } as never, () => {}))).rejects.toThrow(
+        'describe.only() takes no only option; it focuses the group already',
+      );
+    }
+  });
+
+  it('refuses only inside a serial group', async () => {
+    const insideRule = 'describe option "only" cannot be set inside a serial group, which runs as one unit; focus the serial group instead';
+    await expect(
+      collectModule(async () => test.describe('unit', { serial: true }, () => test.describe.only('inner', () => {}))),
+    ).rejects.toThrow(insideRule);
+    await expect(
+      collectModule(async () => test.describe('unit', { serial: true }, () => test.describe('inner', { only: true }, () => {}))),
+    ).rejects.toThrow(insideRule);
   });
 
   it('refuses fail on, inside, or around a serial group', async () => {

@@ -48,8 +48,11 @@ export interface GroupNode {
   parallel: boolean | undefined;
 }
 
-/** How a test was registered; `fixme` and `todo` carry their own skip causes. */
-export type TestMode = 'normal' | 'skip' | 'fixme' | 'todo' | 'only';
+/**
+ * How a test was registered; `fixme` and `todo` carry their own skip causes.
+ * Focus is separate: `only` in its options or its groups' (`focusedTests`).
+ */
+export type TestMode = 'normal' | 'skip' | 'fixme' | 'todo';
 
 /**
  * A registered test or hook body. `TestAPI` types what each receives; at run
@@ -269,14 +272,14 @@ class Collector {
     return Object.freeze({ [testCaseBrand]: true as const });
   }
 
-  registerDescribe(title: string, given: DescribeOptions, body: () => unknown, api: string, markFail: boolean): void {
+  registerDescribe(title: string, given: DescribeOptions, body: () => unknown, api: string, mark: GroupMark | undefined): void {
     this.assertOpen(api);
     const normalizedTitle = this.title(title);
     if (typeof body !== 'function') throw new CollectionError('describe body must be a function');
     // The caller's own options are checked, not the copy that adds the mark, which keeps only enumerable keys.
-    validateDescribeOptions(given, this.currentGroup, markFail);
+    validateDescribeOptions(given, this.currentGroup, mark);
     checkParallel('describe options', given.parallel, given.serial === true);
-    const options = markFail ? { ...given, fail: true } : given;
+    const options = mark === undefined ? given : { ...given, [mark]: true };
     const group: GroupNode = {
       title: normalizedTitle,
       options,
@@ -436,7 +439,11 @@ const DESCRIBE_OPTION_KEYS: readonly string[] = Object.keys({
   video: true,
   serial: true,
   parallel: true,
+  only: true,
 } satisfies Record<keyof DescribeOptions, true>);
+
+/** The option a `describe` variant sets on its group: `describe.fail` sets `fail`, `describe.only` sets `only`. */
+type GroupMark = 'fail' | 'only';
 
 /**
  * The checks tests and groups share: only the option `keys` the call takes,
@@ -449,6 +456,9 @@ function validateCommonOptions(options: TestOptions | DescribeOptions, label: st
   }
   const unknown = unknownKeyMessage(label, options, keys);
   if (unknown !== undefined) throw new CollectionError(unknown);
+  if (options.only !== undefined && typeof options.only !== 'boolean') {
+    throw new CollectionError(`${label}: only must be true or false, got ${describeValue(options.only)}`);
+  }
   if (options.timeout !== undefined) {
     if (!Number.isSafeInteger(options.timeout) || options.timeout <= 0) {
       throw new CollectionError(`${label}: timeout must be a positive safe integer`);
@@ -566,14 +576,18 @@ function validateFailOption(fail: unknown, label: string): void {
   }
 }
 
-function validateDescribeOptions(options: DescribeOptions, parent: GroupNode | undefined, markFail: boolean): void {
+function validateDescribeOptions(options: DescribeOptions, parent: GroupNode | undefined, mark: GroupMark | undefined): void {
   validateCommonOptions(options, 'describe options', DESCRIBE_OPTION_KEYS);
   validateFailOption(options.fail, 'describe options');
   if (options.serial === true && insideSerial(parent)) {
     throw new CollectionError('nested serial groups are collection errors');
   }
+  // Focus inside a serial group would run part of a unit; the serial group itself can be focused.
+  if ((mark === 'only' || options.only !== undefined) && insideSerial(parent)) {
+    throw new CollectionError('describe option "only" cannot be set inside a serial group, which runs as one unit; focus the serial group instead');
+  }
   // A serial group's members cannot be marked expected to fail, so neither can the group.
-  if ((markFail || options.fail !== undefined) && (options.serial === true || insideSerial(parent))) {
+  if ((mark === 'fail' || options.fail !== undefined) && (options.serial === true || insideSerial(parent))) {
     throw new CollectionError('describe option "fail" cannot be set on or inside a serial group, which runs as one unit');
   }
   if (options.serial === true && groupChain(parent).some((group) => expectedFailureOption(group.options.fail) !== undefined)) {
@@ -817,11 +831,9 @@ function createTestAPI(chain: readonly FixtureDefinition[]): TestAPI {
       : skip === true
         ? { ...given, skip: typeof given.skip === 'string' ? given.skip : true }
         : given;
-    const mode: TestMode = options.only === true
-      ? 'only'
-      : typeof skip === 'string'
-        ? skip
-        : options.skip !== undefined && options.skip !== false ? 'skip' : 'normal';
+    const mode: TestMode = typeof skip === 'string'
+      ? skip
+      : options.skip !== undefined && options.skip !== false ? 'skip' : 'normal';
     return collector.registerTest('test', mode, title, options, [], fn, chain, namedBy);
   };
   /** The `test()` call forms. */
@@ -866,8 +878,12 @@ function createTestAPI(chain: readonly FixtureDefinition[]): TestAPI {
     };
   };
 
-  /** The `describe()` call forms; `describe.fail` marks the group as if it had `fail: true`, so it takes no `fail` of its own. */
-  const groupRegistrar = (api: string, fail: boolean): DescribeRegistrar => <Result>(
+  /**
+   * The `describe()` call forms; `describe.fail` and `describe.only` mark the
+   * group as if it had `fail: true` or `only: true`, so each takes no option
+   * of that name.
+   */
+  const groupRegistrar = (api: string, mark: GroupMark | undefined): DescribeRegistrar => <Result>(
     title: string,
     optionsOrBody: DescribeOptions | (() => Result),
     maybeBody?: () => Result,
@@ -877,14 +893,18 @@ function createTestAPI(chain: readonly FixtureDefinition[]): TestAPI {
     if (body === undefined) throw new CollectionError('describe body function is required');
     const collector = requireCollector(api);
     // Non-object options reach validation untouched, exactly as describe() passes them.
-    const marks = fail && typeof given === 'object' && given !== null;
-    if (marks && given.fail !== undefined) {
+    const marks = mark !== undefined && typeof given === 'object' && given !== null ? mark : undefined;
+    if (marks === 'fail' && given.fail !== undefined) {
       throw new CollectionError(`${api} takes no fail option; give a reason with describe(title, { fail: 'reason' }, fn)`);
+    }
+    if (marks === 'only' && given.only !== undefined) {
+      throw new CollectionError(`${api} takes no only option; it focuses the group already`);
     }
     collector.registerDescribe(title, given, body, api, marks);
   };
-  const describe: DescribeAPI = Object.assign(groupRegistrar('describe()', false), {
-    fail: groupRegistrar('describe.fail()', true),
+  const describe: DescribeAPI = Object.assign(groupRegistrar('describe()', undefined), {
+    fail: groupRegistrar('describe.fail()', 'fail'),
+    only: groupRegistrar('describe.only()', 'only'),
     configure: (options: DescribeConfigureOptions): void => requireCollector('describe.configure()').configure(options),
   });
 
@@ -944,7 +964,7 @@ function createTestAPI(chain: readonly FixtureDefinition[]): TestAPI {
       return eachRegistrar('test.for()', readRows('test.for()', rows), false);
     },
     only(title: string, fn: TestBody): TestCase {
-      return requireCollector('test.only()').registerTest('test', 'only', title, { only: true }, [], fn, chain);
+      return requireCollector('test.only()').registerTest('test', 'normal', title, { only: true }, [], fn, chain);
     },
     setup(title: string, options: SetupOptions, fn: TestBody): TestCase {
       if (options === undefined || !Array.isArray(options.sessions)) {

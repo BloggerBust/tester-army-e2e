@@ -125,7 +125,7 @@ describe('todos', () => {
 | `Cypress.on('uncaught:exception')` | アプリのエラーだけではテストは失敗しません。失敗させるには、`browser.addInitScript` で `window.onerror` を収集し、`browser.evaluate` で一覧が空だと検証 |
 | `--browser chrome`, `edge`, `electron`, `before:browser:launch` | `web({ browser: 'chromium' })`、または自分で起動した Chrome に `web({ connect: { cdpEndpoint } })` で接続 |
 | `cypress open`、タイムトラベル用のスナップショット | `npx e2e run --headed --watch` または `--step`。[トレースページ](/debugging#traces)で実行後に各ステップを確認 |
-| アプリを操作する `before()` と `after()`、`describe.only` | UI の準備は `beforeEach`、後処理は `afterEach`。サインインはセッションを保存するトップレベルの `test.setup`。各テストに `test.only` |
+| アプリを操作する `before()` と `after()` | UI の準備は `beforeEach`、後処理は `afterEach`。サインインはセッションを保存するトップレベルの `test.setup` |
 | `cy.clock()`, `cy.tick()` | `browser.addInitScript({ path })` でタイマーを模擬するスクリプトを読み、`browser.evaluate` で操作 |
 | ブラウザの Cookie を使う `cy.request()` | `browser.cookies()` を `fetch` で送信。[認証済みのリクエスト](/api-testing#signed-in-requests)を参照 |
 

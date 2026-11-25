@@ -170,6 +170,7 @@ test('checkout', async ({ app, agent, screen }) => {
 | `beforeEach`, `afterEach`, `beforeAll`, `afterAll` | 同じ。ただしタイトルなし。`beforeAll` と `afterAll` が受け取るのはワーカーフィクスチャで、`browser`、`app`、`screen` は受け取らない |
 | `test.describe.skip`, `test.describe.serial`, `describe.configure({ mode: 'serial', retries, timeout })` | `test.describe(title, { skip, serial, retries, timeout }, fn)` |
 | describe に対する `test.fail()` | `test.describe.fail(title, fn)`、またはグループの `{ fail: 'reason' }`。条件付きなら `beforeEach` 内で `test.fail(condition, 'reason')` |
+| `test.describe.only()` | 同じ。またはグループの `{ only: true }`。`test.only` と同様に CI では `ONLY_IN_CI` で拒否 |
 | `{ tag: '@smoke' }` | テストまたはグループの `{ tags: ['smoke'] }` |
 | `test.extend({ fixture })` | 同じ形式で、必要に応じてセットアップ。テスト、フック、フィクスチャは、最初の引数で指定したフィクスチャを受け取る |
 | `[fn, { scope: 'worker' }]` のフィクスチャ | 同じ。`extend` の 2 番目の型引数で型を指定 |
@@ -285,7 +286,7 @@ export const test = base.extend<{ accountPage: AccountPage }>({
 | `globalSetup`、`globalTeardown`、`webServer` の配列 | 実行の前後を囲むスクリプト、または全プロセスを起動する 1 つの `app.command` |
 | `projects[].testMatch`, `testDir`, `testIgnore`, `grep` | テストの `platforms` やタグ、またはターゲットごとに別の実行 |
 | `--ui`, `npx playwright show-report`, `--reporter html` | `--watch --headed`。`npx e2e report`（`htmlReporter()` が書き出す `<output>/report.html` を開く） |
-| `test.describe.only()`、`test.describe.fixme()`、`test.fixme(title, details, body)` | テストやグループに `{ timeout }` または `{ skip: 'fixme' }`、details の `tags` があればその横に指定（スキップ原因は `fixme` ではなく `explicit` と報告）。各テストに `test.only` |
+| `test.describe.fixme()`、`test.fixme(title, details, body)` | テストやグループに `{ timeout }` または `{ skip: 'fixme' }`、details の `tags` があればその横に指定（スキップ原因は `fixme` ではなく `explicit` と報告） |
 | `test.skip(callback, description)`、`test.fixme(callback, description)` | テスト本体内で `test.skip(condition, reason)` または `test.fixme(condition, reason)`、またはテストに `platforms` |
 | `failOnFlakyTests`, `use.navigationTimeout`, `--timeout`, `--quiet` | `report.json` の `run.summary.flaky`。`browser.goto(url, { timeout })`。設定の `timeout` |
 | `blob` レポーターと `merge-reports` | シャードごとに 1 つのレポート |

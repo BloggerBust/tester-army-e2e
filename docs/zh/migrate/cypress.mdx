@@ -125,7 +125,7 @@ describe('todos', () => {
 | `Cypress.on('uncaught:exception')` | 应用错误不会使测试失败。要让它导致失败，在 `browser.addInitScript` 中收集 `window.onerror`，然后用 `browser.evaluate` 断言列表为空 |
 | `--browser chrome`、`edge`、`electron`、`before:browser:launch` | `web({ browser: 'chromium' })`，或使用 `web({ connect: { cdpEndpoint } })` 连接你自己的 Chrome |
 | `cypress open`、时间回溯快照 | `npx e2e run --headed --watch`，或 `--step`；[追踪记录页面](/debugging#traces)会在运行后显示每个步骤 |
-| 操作应用的 `before()` 和 `after()`、`describe.only` | 在 `beforeEach` 中准备 UI，在 `afterEach` 中清理；在保存会话的顶层 `test.setup` 中登录；为每个测试设置 `test.only` |
+| 操作应用的 `before()` 和 `after()` | 在 `beforeEach` 中准备 UI，在 `afterEach` 中清理；在保存会话的顶层 `test.setup` 中登录 |
 | `cy.clock()`、`cy.tick()` | 用 `browser.addInitScript({ path })` 加载模拟计时器脚本，通过 `browser.evaluate` 驱动 |
 | 携带浏览器 Cookie 的 `cy.request()` | 通过 `fetch` 发送 `browser.cookies()`，参阅[已登录请求](/api-testing#signed-in-requests) |
 

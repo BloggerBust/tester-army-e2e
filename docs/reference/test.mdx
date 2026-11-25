@@ -47,6 +47,7 @@ describe('checkout', { tags: ['billing'] }, () => {
 | [`describe`](#describe) | `void` |
 | [`describe.fail`](#describe-fail) | `void` |
 | [`describe.configure`](#describe-configure) | `void` |
+| [`describe.only`](#describe-only) | `void` |
 | [Hooks](#hooks) | `void` |
 
 `describe` and the four hooks are also top-level exports, the same functions
@@ -400,7 +401,8 @@ test.only('pays', async ({ app }) => {
 ```
 
 Other tests are reported as `filtered`. A CI run with a focused test fails
-with `ONLY_IN_CI`.
+with `ONLY_IN_CI`. To focus every test in a group, use
+[`describe.only`](#describe-only).
 
 #### `test.setup`
 
@@ -474,7 +476,7 @@ describe('checkout', { tags: ['smoke'], serial: true }, () => {
 });
 ```
 
-- A group takes the [options](#options) a test takes, except `only`, plus
+- A group takes the [options](#options) a test takes, plus
   [`serial`](#serial) and [`parallel`](#parallel).
 - The body is synchronous.
 
@@ -529,6 +531,38 @@ test('lists invoices', async ({ screen }) => {});
 | `COLLECTION_ERROR` | `parallel` is already set for the scope, by the `describe` option or an earlier call. |
 | `COLLECTION_ERROR` | A key other than `parallel`. |
 | `COLLECTION_ERROR` | Any case [`parallel`](#parallel) lists. |
+
+#### `describe.only`
+
+Declares a focused group, the same as `only: true` on `describe`. Every
+test in it, nested groups included, is focused the way
+[`test.only`](#test-only) focuses one.
+
+```ts
+describe.only('checkout', () => {
+  test('pays by card', async ({ screen }) => {}); // runs
+  describe('refunds', () => {
+    test('refunds a card', async ({ screen }) => {}); // runs
+  });
+});
+test('signs in', async ({ app }) => {}); // filtered
+describe('checkout', { only: true }, () => {}); // the same, by option
+```
+
+- Focused groups and `test.only` combine: every focused test runs, and the
+  rest are reported as `filtered`.
+- A `test.only` or `describe.only` inside a focused group narrows that
+  group, as in Playwright: of its tests, only the inner focused ones run.
+- A skipped test in a focused group stays focused and is reported with its
+  own skip cause, `explicit`, `fixme`, or `todo`.
+- A CI run with a focused group fails with `ONLY_IN_CI`.
+- A serial group can be focused whole. `only` inside a serial group is
+  refused, since the group runs as one unit.
+
+| Throws | When |
+| --- | --- |
+| `COLLECTION_ERROR` | The group is inside a serial group. |
+| `COLLECTION_ERROR` | An `only` option on `describe.only`. It is also a type error. |
 
 ### Hooks
 
@@ -688,7 +722,7 @@ blocked event loop hangs it.
 | [`sessions`](#sessions) | `readonly string[]` | required |
 
 `test` takes every option but `serial`, `parallel`, and `sessions`. `describe` takes
-every option but `only` and `sessions`. `test.setup` requires
+every option but `sessions`. `test.setup` requires
 `sessions` and takes no `session`, `only`, `skip`, or `fail`.
 
 Resolution order: test, nearest group, outer groups, config, built-in
@@ -753,10 +787,12 @@ describe('legacy checkout', { fail: 'old payment form' }, () => {});
 
 #### `only`
 
-Focuses the test locally. CI rejects it with `ONLY_IN_CI`.
+Focuses the test locally, or every test in a group; see
+[`describe.only`](#describe-only). CI rejects it with `ONLY_IN_CI`.
 
 ```ts
 test('pays', { only: true }, async ({ app }) => {});
+describe('checkout', { only: true }, () => {});
 ```
 
 #### `platforms`
@@ -1190,6 +1226,8 @@ export interface DescribeAPI extends DescribeRegistrar {
   fail: DescribeRegistrar<Omit<DescribeOptions, 'fail'>>;
   /** Configures the scope it is called in: the enclosing `describe`, or the whole file at the top level. */
   configure(options: DescribeConfigureOptions): void;
+  /** Declares a focused group, as if it had `only: true`: its tests are focused the way `test.only` focuses one. CI rejects it with `ONLY_IN_CI`. */
+  only: DescribeRegistrar<Omit<DescribeOptions, 'only'>>;
 }
 
 /** The two call forms of `test`, shared with what `test.skipIf` and `test.runIf` return. */
@@ -1379,7 +1417,7 @@ export interface TestAPI<Fixtures = TestFixtures, Worker = WorkerFixtures> exten
     ConfigBase<Fixtures, Config> & Extra & ConfigFixtures<Config, 'test'>,
     ConfigBase<Worker, Config> & ExtraWorker & ConfigFixtures<Config, 'worker'>
   >;
-  /** Declares a group synchronously; `describe.fail` declares one whose tests are expected to fail. */
+  /** Declares a group synchronously; `describe.fail` declares one whose tests are expected to fail, `describe.only` a focused one. */
   describe: DescribeAPI;
   /** Registers a test-attempt setup hook: it runs after the test's fixtures are set up. */
   beforeEach(fn: TestHookFn<Fixtures & Worker>): void;
@@ -1418,7 +1456,12 @@ export interface TestOptions {
    * around a serial group.
    */
   fail?: boolean | string;
-  /** Focuses the test locally. CI rejects it with `ONLY_IN_CI`. */
+  /**
+   * Focuses the test locally; on a group, focuses every test in it, skipped
+   * ones included, unless a test or group inside it is focused too, which
+   * narrows the focus to that one. CI rejects it with `ONLY_IN_CI`. Not
+   * allowed inside a serial group; a serial group itself can be focused.
+   */
   only?: boolean;
   /** Platforms the test runs on; other targets skip it. Innermost wins. */
   platforms?: readonly string[];
@@ -1450,7 +1493,7 @@ export interface TestOptions {
   video?: RecordingMode;
 }
 
-export interface DescribeOptions extends Omit<TestOptions, 'only'> {
+export interface DescribeOptions extends TestOptions {
   /** Runs the group as one ordered retry unit with shared app state. Nesting one serial group in another is a `COLLECTION_ERROR`. */
   serial?: boolean;
   /** `true` runs the group's tests at the same time on separate workers; `false` keeps a group inside a parallel scope in order on one worker. */

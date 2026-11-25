@@ -1195,7 +1195,7 @@ cache: { strict: true }, // default: false
 | `retries` | `0` | `1` |
 | `workers` | `max(1, floor(availableParallelism() / 2))` | `1` |
 | `cache` | `read-write` | 未设置时为 `read-only` |
-| `test.only` | 允许 | `ONLY_IN_CI`，退出码 2 |
+| `test.only`、`describe.only` | 允许 | `ONLY_IN_CI`，退出码 2 |
 | `command.reuseExisting` | 生效 | 忽略，并提示 |
 
 ## 加载
