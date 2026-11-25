@@ -1,0 +1,185 @@
+---
+title: Cypress से
+description: Cypress की कमांड चेन को async टेस्ट से बदलें और अपने data-cy एट्रीब्यूट वैसे ही रखें।
+"og:image": "https://e2e.com/docs/images/og/migrate/cypress.png?v=e4e71f42dc"
+"twitter:image": "https://e2e.com/docs/images/og/migrate/cypress.png?v=e4e71f42dc"
+---
+
+import { SetupPrompt } from '../../snippets/setup-prompt-card.jsx';
+
+export const migrationPrompt = `इस प्रोजेक्ट के Cypress टेस्ट को एक बार में एक स्पेक करके e2e पर माइग्रेट करें। डॉक्स: \`https://e2e.com/docs/migrate/cypress.md\`
+
+1. ऊपर दी गई माइग्रेशन गाइड पढ़ें। इसमें Cypress के कॉन्फ़िग, कमांड और असर्शन को e2e से मैप किया गया है, और यह भी लिखा है कि e2e में अभी क्या नहीं है।
+2. अगर प्रोजेक्ट में कोई e2e कॉन्फ़िग (\`e2e.config.ts\`, \`.mts\`, \`.js\`, या \`.mjs\`) नहीं है, तो \`npx e2e init --yes\` (या pnpm या bun की बराबर कमांड) चलाएँ। यह कॉन्फ़िग और एक उदाहरण टेस्ट लिखता है, और अभी कुछ इंस्टॉल नहीं करता।
+3. e2e स्किल पढ़ें (\`npx e2e guide\` इसे प्रिंट करता है, \`npx e2e guide <topic>\` एक टॉपिक प्रिंट करता है) और नीचे के हर स्टेप में इसका पालन करें।
+4. अगर आपने init चलाया है, तो मुझसे पूछें कि एजेंट स्टेप के लिए कौन-सा मॉडल इस्तेमाल करना है: ChatGPT, GitHub Copilot, OpenCode Console या SuperGrok सब्सक्रिप्शन, कोई API key, या लोकल मॉडल। उसे उसके प्रोवाइडर पैकेज से कॉन्फ़िगर करें। अगर इसमें साइन इन चाहिए, तो मुझे \`npx e2e login\` कमांड दें और मेरे कन्फ़र्म करने तक रुकें।
+5. \`cypress.config.*\` को e2e कॉन्फ़िग में पोर्ट करें: \`baseUrl\` और dev सर्वर कमांड टारगेट का \`app\` बन जाते हैं, और अगर स्पेक \`data-cy\` से चुनते हैं, तो \`web({ testIdAttribute: 'data-cy' })\` सेट करें ताकि \`screen.getByTestId\` इसे पढ़े। दोनों टेस्ट सूट चलते समय Cypress इंस्टॉल रहने दें।
+6. डिपेंडेंसी इंस्टॉल करें।
+7. Cypress के एंड-टू-एंड स्पेक की लिस्ट दिखाएँ और मुझसे पूछें कि पहले किसे माइग्रेट करना है। ऐसा स्पेक सुझाएँ जो बार-बार टूटता हो या \`cy.wait(ms)\` से इंतज़ार करता हो। कॉम्पोनेंट टेस्ट के बराबर e2e में कुछ नहीं है; उन्हें Cypress में ही रहने दें।
+8. गाइड की टेबल देखकर उस स्पेक को \`tests/\` के अंदर \`.e2e.ts\` फ़ाइल में दोबारा लिखें (e2e डिफ़ॉल्ट रूप से \`tests/**/*.e2e.ts\` चलाता है), हर लाइन पर एक awaited कॉल के साथ। टेस्ट पोर्ट करने से पहले "e2e में अभी क्या नहीं है" देखें: "अभी क्या इस्तेमाल करें" वाला वर्कअराउंड इस्तेमाल करें, या टेस्ट को Cypress में ही रहने दें और वजह बताएँ। जहाँ \`cy.contains\` टेक्स्ट के हिस्से से मैच करता था, वहाँ \`{ exact: false }\` पास करें। हर \`cy.wait(ms)\` की जगह उस स्थिति पर असर्शन लिखें जिसका टेस्ट इंतज़ार कर रहा है।
+9. नेविगेशन और आख़िरी असर्शन को \`app.open()\` और लोकेटर असर्शन के साथ डिटर्मिनिस्टिक रखें। जहाँ स्क्रिप्ट किए हुए इंटरैक्शन की कतार बार-बार टूटती है, वहाँ उसके लिए एक \`agent.act\` लक्ष्य सुझाएँ।
+10. नई फ़ाइल को \`npx e2e run <file>\` से चलाएँ और पास होने तक ठीक करें। मेरे कन्फ़र्म करने तक Cypress स्पेक को न हटाएँ।
+11. संक्षेप में बताएँ कि कौन-से टेस्ट माइग्रेट हुए, कौन-से Cypress में ही रहे, और क्यों।`;
+
+e2e Cypress की कमांड चेन की जगह async TypeScript टेस्ट देता है जो Node में
+चलते हैं। एक बार में एक स्पेक माइग्रेट करते समय दोनों टेस्ट सूट प्रोजेक्ट में रह
+सकते हैं।
+
+<SetupPrompt>
+
+<Prompt description={migrationPrompt} children={migrationPrompt} actions={["copy", "cursor"]} />
+
+</SetupPrompt>
+
+कई सेशन तक चलने वाले माइग्रेशन के लिए [`migrate-to-e2e` स्किल](/coding-agents#migrate-an-existing-suite) एक प्रोग्रेस फ़ाइल में नोट करती है कि क्या माइग्रेट हो चुका है, और जब तक आप हर टेस्ट रिटायर नहीं करते, पुराना टेस्ट सूट चालू रखती है।
+
+## कॉन्फ़िग पोर्ट करें
+
+<Note>[क्विकस्टार्ट](/quickstart) से e2e इंस्टॉल करें और एक मॉडल कॉन्फ़िगर करें। नीचे का उदाहरण एक एजेंट कॉल इस्तेमाल करता है।</Note>
+
+| Cypress | e2e |
+| --- | --- |
+| `baseUrl`, `start-server-and-test` | टारगेट पर `app: { url, command }`, [ऐप शुरू करना](/web#starting-your-app) देखें |
+| `data-cy` सेलेक्टर | `web({ testIdAttribute: 'data-cy' })`, फिर `screen.getByTestId` |
+| `viewportWidth`, `viewportHeight`, `cy.visit(url, { auth, headers })` | `web({ viewport, basicAuth, headers })` |
+| `retries: { runMode: 2, openMode: 0 }` | `retries: process.env.CI ? 2 : 0`, सिर्फ़ एक संख्या |
+| `env`, `Cypress.env()`, `cypress.env.json` | `process.env`; साइन-इन वैल्यू `credentials` और `secrets` में जाती हैं, [ऑथेंटिकेशन](/authentication) देखें |
+| `cypress run --browser firefox` | `web({ browser: 'firefox' })` वाला टारगेट, जिसे `--target <name>` से चलाते हैं |
+
+```ts title="e2e.config.ts"
+import type { E2EConfig } from 'e2e';
+import { web } from '@e2e-dev/web';
+
+export default {
+  targets: [{
+    engine: web({ testIdAttribute: 'data-cy' }),
+    app: { url: 'http://localhost:3000' },
+  }],
+} satisfies E2EConfig;
+```
+
+## एक स्पेक दोबारा लिखें
+
+```js title="Cypress"
+describe('todos', () => {
+  it('completes one', () => {
+    cy.visit('/todos');
+    cy.get('[data-cy=new-todo]').type('Buy milk{enter}');
+    cy.get('[data-cy=new-todo]').type('Walk the dog{enter}');
+    cy.contains('li', 'Buy milk').find('[data-cy=toggle]').click();
+    cy.get('[data-cy=todo]').should('have.length', 2);
+    cy.contains('1 item left').should('be.visible');
+  });
+});
+```
+
+```ts title="e2e"
+import { describe, test } from '@e2e-dev/web';
+import { expect } from 'e2e';
+
+describe('todos', () => {
+  test('completes one', async ({ app, agent, screen }) => {
+    await app.open('/todos');
+    await agent.act('add todos "Buy milk" and "Walk the dog"');
+    await expect(screen.getByTestId('todo')).toHaveCount(2);
+    await agent.act('complete "Buy milk"');
+    await expect(screen.getByText('1 item left')).toBeVisible();
+  });
+});
+```
+
+## हर कमांड मैप करें
+
+| Cypress | e2e |
+| --- | --- |
+| `cy.visit(path)`, `cy.reload()`, `cy.viewport(w, h)`, `cy.setCookie()` | `app.open(path)`, `browser.reload()`, `browser.setViewport({ width, height })`, `browser.setCookies()` |
+| `cy.get('[data-cy=x]')`, `.find('[data-cy=x]')` | `screen.getByTestId('x')`, `row.getByTestId('x')` |
+| `cy.get('css')` | `browser.locator('css')`, सिर्फ़ वेब; बेहतर है रोल या लेबल इस्तेमाल करें |
+| `cy.contains('text')`, `cy.contains('li', 'text')` | `screen.getByText('text', { exact: false })`, `screen.getByRole('listitem').filter({ hasText: 'text' })` |
+| `.click()`, `.dblclick()`, `.clear()`, `.check()`, `.uncheck()`, `.focus()`, `.blur()`, `.first()`, `.last()`, `.scrollIntoView()` | वही |
+| `.rightclick()`, `.eq(n)`, `.selectFile(path)` | `.secondaryTap()`, `.nth(n)`, `.setInputFiles(path)` |
+| `.type('text')`, `.type('{enter}')`, `.clear().type('text')` | `.pressSequentially('text')` कीबोर्ड इवेंट के साथ जोड़ता है, `.press('Enter')`, `.fill('text')` |
+| `.select('Pro')` | `.selectOption('Pro')` लेबल से मैच करता है; वैल्यू के लिए `{ value: 'pro' }`, इंडेक्स के लिए `{ index: 1 }` |
+| `.should('be.visible')`, `be.checked`, `be.disabled`, `be.focused`, `exist` | `await expect(locator).toBeVisible()`, `toBeChecked()`, `toBeDisabled()`, `toBeFocused()`, `toBeAttached()` |
+| `.should($el => ...)` | कई असर्शन के लिए [`expect(fn).toPass()`](/reference/expect#retrying-a-block) इस्तेमाल करें। किसी बदलती हुई एक वैल्यू के लिए [`expect.poll`](/reference/expect#polling-a-value) इस्तेमाल करें |
+| `have.text`, `contain`, `have.value`, `have.attr`, `have.length`, `not.exist` | `toHaveText`, `toContainText`, `toHaveValue`, `toHaveAttribute`, `toHaveCount(n)`, `toHaveCount(0)` |
+| `cy.url().should('include', p)`, `cy.title()` | `expect(browser).toHaveURL(/p/)`, `expect(browser).toHaveTitle(t)` |
+| `cy.intercept('/api/users', body)` | `browser.route('**/api/users', route => route.fulfill({ json: body }))`, ऐप URL के हिसाब से रिज़ॉल्व होने वाला URL ग्लॉब |
+| `cy.intercept('POST', '/api/users', body)` | `browser.route({ method: 'POST', url: '**/api/users' }, route => route.fulfill({ json: body }))` |
+| `cy.on('window:confirm')`, `cy.on('window:alert')` | एक्शन से पहले `await browser.onDialog('accept')`, कैंसल करने के लिए `'dismiss'` |
+| `cy.session` | `test.setup` और `{ session }` |
+| `cy.request(method, url, body)` | `request.fetch(url, { method, json: body })`, या स्ट्रिंग के लिए `{ body }`। `cy.request` 2xx और 3xx से बाहर के स्टेटस पर फ़ेल हो जाता है, लेकिन `request` नहीं होता, इसलिए `response.status` जाँचें। [`request`](/reference/request) देखें |
+| `cy.task`, `cy.exec`, `cy.fixture` | Node कोड: `fs`, आपका डेटाबेस क्लाइंट, `import data from './fixture.json'` |
+| `Cypress.Commands.add` | एक फ़ंक्शन, या `test.extend` से बना फ़िक्स्चर |
+
+## e2e में अभी क्या नहीं है
+
+"प्लान में है" वाली कमियाँ रोडमैप पर हैं, और "अभी नहीं" वालों की कोई तारीख़ नहीं
+है। "प्लान में नहीं" को जानबूझकर बाहर रखा गया है।
+
+### प्लान में है
+
+| Cypress | अभी क्या इस्तेमाल करें |
+| --- | --- |
+| `.find('css')`, `.filter('css')`, `.not('css')` | `getBy*` क्वेरी चेन करें, या एक सेलेक्टर लिखें: `browser.locator('li.active >> .title')` |
+| `.invoke()`, `.its()`, `.then($el => ...)` | `getAttribute()`, `textContent()`, `inputValue()`, वरना `browser.evaluate`; रीट्राई करने के लिए `expect.poll` में रखें |
+| `have.class`, `have.css`, `have.prop`, `be.empty` | `expect(browser).toHaveClass(locator, /regexp/)`, खाली फ़ील्ड या बिना टेक्स्ट वाले नोड के लिए `expect(locator).toBeEmpty()` (Cypress के `be.empty` का मतलब कोई चाइल्ड नोड न होना है); वरना `expect.poll(() => browser.evaluate(...))` |
+| `.trigger()`, `cy.scrollTo()` | `hover()`, `dragTo()`, `scrollIntoView()`; बाकी सिंथेटिक इवेंट के लिए `browser.evaluate` इस्तेमाल करें |
+| `cy.intercept({ headers })` और दूसरे हेडर मैचर | हैंडलर में `route.request.headers` जाँचें, वरना `route.fallback()` कॉल करें |
+| `cy.wait('@alias')`, `.its('request.body')`, `@alias.all` | एक्शन से पहले `browser.waitForResponse(pattern)` शुरू करें; `browser.route` हैंडलर में रिक्वेस्ट पढ़ें |
+| `Cypress.on('uncaught:exception')` | ऐप के एरर से टेस्ट फ़ेल नहीं होता। इस पर फ़ेल कराने के लिए `browser.addInitScript` में `window.onerror` इकट्ठा करें, फिर `browser.evaluate` से असर्ट करें कि लिस्ट खाली है |
+| `--browser chrome`, `edge`, `electron`, `before:browser:launch` | `web({ browser: 'chromium' })`, या `web({ connect: { cdpEndpoint } })` से अपने खुद के Chrome से अटैच करें |
+| `cypress open`, टाइम-ट्रैवल स्नैपशॉट | `npx e2e run --headed --watch`, या `--step`; रन के बाद [ट्रेस पेज](/debugging#traces) हर स्टेप दिखाता है |
+| ऐप चलाने वाले `before()` और `after()`, `describe.only` | `beforeEach` में UI सेटअप, `afterEach` में क्लीनअप; साइन इन टॉप-लेवल `test.setup` में जो सेशन सेव करे; हर टेस्ट पर `test.only` |
+| `cy.clock()`, `cy.tick()` | `browser.addInitScript({ path })` से लोड की गई फ़ेक-टाइमर स्क्रिप्ट, जिसे `browser.evaluate` से चलाएँ |
+| ब्राउज़र की कुकी के साथ `cy.request()` | `request` कॉल के `cookie` हेडर में `browser.cookies()` भेजें, [साइन-इन की हुई रिक्वेस्ट](/api-testing#signed-in-requests) देखें |
+
+### अभी नहीं
+
+| Cypress | अभी क्या इस्तेमाल करें |
+| --- | --- |
+| `supportFile`, `blockHosts` | `test.extend` से बना एक शेयर किया हुआ `test` जिसे हर फ़ाइल इम्पोर्ट करे; वहीं `browser.route` से होस्ट ब्लॉक करें |
+| `cypress run --record --parallel`, Cypress Cloud | हर CI जॉब पर `--shard`, `junit` और `github()` रिपोर्टर, और आर्टिफ़ैक्ट के रूप में अपलोड किया गया `.e2e` |
+| 4xx या 5xx पेज पर `cy.visit()` का फ़ेल होना | `app.open` स्टेटस को अनदेखा करता है। पेज के कंटेंट पर असर्ट करें |
+| `cy.stub()`, `cy.spy()`, `cy.clearLocalStorage()` | फ़ंक्शन को `browser.addInitScript` में रैप करें; `browser.evaluate` से कॉल पढ़ें या स्टोरेज साफ़ करें |
+
+### प्लान में नहीं
+
+| Cypress | इसकी जगह क्या इस्तेमाल करें |
+| --- | --- |
+| `cy.wait(ms)` | जिस स्थिति का टेस्ट इंतज़ार कर रहा है उस पर लोकेटर असर्शन |
+| `it`, `context`, `specify`, `xit` | `test`, `describe`, `test.skip` |
+| chai `expect(x).to...`, `assert.*` | `expect(value)` पर `toEqual`, `toContain`, `toMatchObject`, या खुद `chai` इम्पोर्ट करें |
+| `cy.window()`, `cy.document()`, `onBeforeLoad(win)` | JSON वैल्यू के साथ `browser.evaluate` और `browser.addInitScript`। टेस्ट पेज में नहीं, Node में चलते हैं |
+| Mocha रिपोर्टर, `reporterOptions` | `list`, `dot`, `line`, `json`, `junit`, `markdown`, `ctrf`, `htmlReporter()`, `github()`, या आपका अपना [रिपोर्टर](/reference/reporters) |
+| Cucumber `.feature` फ़ाइलें, `file:preprocessor` | फ़ीचर को टेस्ट की तरह दोबारा लिखें। TypeScript को प्रीप्रोसेसर नहीं चाहिए |
+| कॉम्पोनेंट टेस्टिंग | इसे Cypress में ही रहने दें। e2e चल रहे ऐप को टेस्ट करता है |
+| `.parent()`, `.closest()`, `.siblings()`, `.next()` | एंसेस्टर एलिमेंट ढूँढें और उसका दायरा छोटा करें: `card.filter({ has: child })` |
+| `{ force: true }` | दिखने वाले लेबल पर एक्शन करें, या `tap({ position })`, जो एक्शनबिलिटी जाँच छोड़ देता है |
+
+## जानबूझकर रखे गए फ़र्क
+
+- कोई कमांड चेन नहीं है। हर कॉल को `await` करें और लोकेटर या वैल्यू को एक वेरिएबल में रखें, जहाँ Cypress `.as()`, `.within()` या `.then()` इस्तेमाल करता है।
+- [लोकेटर](/reference/screen) स्ट्रिक्ट होते हैं। एक से ज़्यादा मैच पर एक्शन या सिंगल-नोड असर्शन `LOCATOR_AMBIGUOUS` के साथ फ़ेल होता है। `.filter()`, `.first()` या `.nth()` से दायरा छोटा करें, या `await locator.all()` पर लूप चलाएँ।
+- क्वेरी में स्ट्रिंग पूरे टेक्स्ट से मैच करती है। `{ exact: false }` किसी भी केस में टेक्स्ट के हिस्से से मैच करता है। `cy.contains` केस-सेंसिटिव है और पहला मैच लेता है, इसलिए RegExp पास करें या `.first()` जोड़ें।
+- टेक्स्ट मैचर रेंडर हुए टेक्स्ट की तुलना करते हैं। CSS `text-transform` लागू होता है और छिपे हुए चाइल्ड छूट जाते हैं, [लोकेटर रीड](/reference/screen#locator-reads) देखें।
+- डायलॉग आपके लिए अपने आप स्वीकार नहीं किए जाते। बिना हैंडलर वाला `alert` या `confirm` अगले स्टेप को फ़ेल कर देता है, जबकि Cypress उसे स्वीकार कर लेता है।
+
+## अलग डिफ़ॉल्ट
+
+| सेटिंग | Cypress | e2e |
+| --- | --- | --- |
+| व्यूपोर्ट | 1000 x 660 | 1280 x 720 |
+| एक्शन और असर्शन टाइमआउट | `defaultCommandTimeout`, 4 सेकंड | `actionTimeout` 30 सेकंड, `assertionTimeout` 5 सेकंड |
+| CI में रीट्राई | `0` | `1` |
+
+## आगे
+
+<CardGroup cols={2}>
+  <Card title="बुनियादी कॉन्सेप्ट" icon="pen-to-square" href="/core-concepts">
+    स्क्रिप्ट किए हुए सेलेक्टर के बजाय लक्ष्य, असर्शन और लोकेटर।
+  </Card>
+  <Card title="ब्राउज़र के साथ काम करना" icon="globe" href="/browser">
+    रूट, डायलॉग, डाउनलोड, iframe और पेज इवैल्यूएशन।
+  </Card>
+</CardGroup>

@@ -1,0 +1,381 @@
+---
+title: Appium से
+description: Appium और WebdriverIO के मोबाइल टेस्ट को लोकेटर, डिवाइस कॉल और एजेंट लक्ष्यों के साथ TypeScript में ले जाएँ।
+---
+
+import { SetupPrompt } from '../../snippets/setup-prompt-card.jsx';
+
+export const migrationPrompt = `इस प्रोजेक्ट के Appium टेस्ट को एक बार में एक टेस्ट करके e2e पर माइग्रेट करें। डॉक्स: \`https://e2e.com/docs/migrate/appium.md\` और \`https://e2e.com/docs/mobile.md\`
+
+1. ऊपर दी गई माइग्रेशन गाइड पढ़ें। इसमें Appium की कैपेबिलिटी, सेलेक्टर और कमांड को e2e से मैप किया गया है, और यह भी लिखा है कि e2e में अभी क्या नहीं है। मोबाइल गाइड में डिवाइस और ऐप बिल्ड के बारे में बताया गया है।
+2. e2e टेस्ट Node में चलते हैं, डिफ़ॉल्ट रूप से TypeScript में या JavaScript में। अगर Appium टेस्ट सूट Java, Python या किसी और भाषा में है, या प्रोजेक्ट में \`package.json\` नहीं है, तो ऐप के बगल में एक \`e2e/\` फ़ोल्डर में टेस्ट प्रोजेक्ट बनाएँ।
+3. अगर टेस्ट प्रोजेक्ट में कोई e2e कॉन्फ़िग (\`e2e.config.ts\`, \`.mts\`, \`.js\`, या \`.mjs\`) नहीं है, तो वहाँ \`npx e2e init --yes --engine mobile\` (या pnpm या bun की बराबर कमांड) चलाएँ। यह इस मशीन के प्लेटफ़ॉर्म के लिए एक टारगेट वाला मोबाइल कॉन्फ़िग और Settings ऐप पर एक उदाहरण टेस्ट लिखता है, और अभी कुछ इंस्टॉल नहीं करता। \`tests/example.e2e.ts\` को अपने ऐप के लिए दोबारा लिखें या हटा दें।
+4. e2e स्किल पढ़ें (\`npx e2e guide\` इसे प्रिंट करता है, \`npx e2e guide <topic>\` एक टॉपिक प्रिंट करता है) और नीचे के हर स्टेप में इसका पालन करें।
+5. अगर आपने init चलाया है, तो मुझसे पूछें कि एजेंट स्टेप के लिए कौन-सा मॉडल इस्तेमाल करना है: ChatGPT, GitHub Copilot, OpenCode Console या SuperGrok सब्सक्रिप्शन, कोई API key, या लोकल मॉडल। उसे उसके प्रोवाइडर पैकेज से कॉन्फ़िगर करें। अगर इसमें साइन इन चाहिए, तो मुझे \`npx e2e login\` कमांड दें और मेरे कन्फ़र्म करने तक रुकें।
+6. गाइड की टेबल देखकर कैपेबिलिटी को e2e कॉन्फ़िग में पोर्ट करें: हर प्लेटफ़ॉर्म के लिए \`mobile({ platform, device })\` के साथ एक टारगेट, और हर टारगेट पर \`app: { bundleId, appPath, launchArguments, permissions }\`। पासवर्ड और टोकन को \`credentials\` या \`secrets\` में ले जाएँ।
+7. डिपेंडेंसी इंस्टॉल करें, फिर \`npx e2e doctor\` (e2e 0.23.0 या नया) चलाएँ और जो भी वह बताए उसे ठीक करें।
+8. Appium टेस्ट की लिस्ट दिखाएँ और मुझसे पूछें कि पहले किसे माइग्रेट करना है। ऐसा टेस्ट सुझाएँ जिसके XPath सेलेक्टर या एक्सप्लिसिट वेट बार-बार टूटते हों।
+9. उस टेस्ट को \`tests/\` के अंदर \`.e2e.ts\` फ़ाइल में दोबारा लिखें (e2e डिफ़ॉल्ट रूप से \`tests/**/*.e2e.ts\` चलाता है)। इसकी शुरुआत \`app.open()\` से करें, क्योंकि कोई भी ऐप अपने आप लॉन्च नहीं होता। गाइड के "सेलेक्टर दोबारा लिखें" सेक्शन का पालन करें: XPath का कोई पोर्ट नहीं है, और कई मैच मिलने पर e2e फ़ेल हो जाता है। टेस्ट पोर्ट करने से पहले टेस्ट में इस्तेमाल होने वाली हर कैपेबिलिटी और कमांड के लिए "e2e में अभी क्या नहीं है" सेक्शन देखें। "अभी क्या इस्तेमाल करें" वाला वर्कअराउंड इस्तेमाल करें, या उस टेस्ट को Appium में ही रहने दें और मुझे वजह बताएँ।
+10. लॉन्च और आख़िरी असर्शन को \`app.open()\` और लोकेटर असर्शन के साथ डिटर्मिनिस्टिक रखें। जहाँ स्क्रिप्ट किए हुए टैप की कतार बार-बार टूटती है, वहाँ उसके लिए एक \`agent.act\` लक्ष्य सुझाएँ।
+11. ऐप बिल्ड और इंस्टॉल करें, हर प्लेटफ़ॉर्म टारगेट पर नई फ़ाइल को \`npx e2e run <file>\` से चलाएँ, और पास होने तक ठीक करें। मेरे कन्फ़र्म करने तक Appium टेस्ट को न हटाएँ।
+12. संक्षेप में बताएँ कि कौन-से टेस्ट माइग्रेट हुए, कौन-से Appium में ही रहे, और क्यों।`;
+
+e2e Appium सर्वर, उसके ड्राइवर और क्लाइंट लाइब्रेरी की जगह एक Node पैकेज
+देता है। `@e2e-dev/mobile` अपने साथ आने वाले
+[agent-device](https://github.com/callstack/agent-device) के ज़रिए iOS
+सिम्युलेटर, Android एम्युलेटर और जुड़े हुए फ़ोन चलाता है। कैपेबिलिटी
+`e2e.config.ts` में एक टारगेट बन जाती हैं, और `driver` कमांड `app` और
+`device` फ़िक्स्चर बन जाते हैं। आपका ऐप बिल्ड और उसकी ऐक्सेसिबिलिटी id वैसी
+ही रहती हैं।
+
+उदाहरणों में WebdriverIO इस्तेमाल किया गया है। Java या Python क्लाइंट भी इसी
+तरह मैप होता है।
+
+<SetupPrompt>
+
+<Prompt description={migrationPrompt} children={migrationPrompt} actions={["copy", "cursor"]} />
+
+</SetupPrompt>
+
+कई सेशन तक चलने वाले माइग्रेशन के लिए [`migrate-to-e2e` स्किल](/coding-agents#migrate-an-existing-suite) एक प्रोग्रेस फ़ाइल में नोट करती है कि क्या माइग्रेट हो चुका है, और जब तक आप हर टेस्ट रिटायर नहीं करते, पुराना टेस्ट सूट चालू रखती है।
+
+## कैपेबिलिटी पोर्ट करें
+
+<Note>[मोबाइल गाइड](/mobile) से एक टारगेट और [क्विकस्टार्ट](/quickstart) से एक मॉडल सेटअप करें। मॉडल सिर्फ़ एजेंट स्टेप के लिए ज़रूरी है।</Note>
+
+| Appium | e2e |
+| --- | --- |
+| `platformName`, `appium:automationName` | `mobile({ platform: 'ios' })` या `'android'` |
+| `appium:deviceName`, `appium:udid` | `mobile({ device: 'iPhone 17' })`: कोई नाम, सिम्युलेटर UDID, या `emulator-5554` सीरियल। फ़ोन उसके नाम से चुना जाता है |
+| `appium:app` | `app: { appPath }`। बिल्ड खुद इंस्टॉल करें, [अपने ऐप को टारगेट करें](/mobile#point-at-your-app) देखें |
+| `appium:bundleId`, `appium:appPackage` | `app: { bundleId }`, वह ऐप जिसे `app.open()` लॉन्च करता है |
+| `appium:processArguments`, `appium:optionalIntentArguments` | `app.launchArguments`, स्ट्रिंग की लिस्ट या आर्ग्युमेंट नाम से वैल्यू का ऑब्जेक्ट |
+| `appium:permissions` | `app.permissions: { camera: 'grant' }`। हर [`DevicePermission`](/reference/mobile#device-fixture) नाम `grant`, `deny` या `reset` लेता है |
+| `appium:noReset` | `true` डिफ़ॉल्ट है, इसलिए ऐप का डेटा साफ़ नहीं होता। `false` के लिए टेस्ट की शुरुआत में `app.clearState()` कॉल करें |
+| `appium:fullReset` | `device.installApp(path, { reinstall: true })` |
+| `appium:newCommandTimeout`, WebDriverAgent टाइमआउट | ज़रूरत नहीं। एक्शन `actionTimeout`, असर्शन `assertionTimeout` और टेस्ट `timeout` इस्तेमाल करते हैं |
+| `bstack:options`, `lt:options` | डिवाइस प्रोवाइडर: [`browserstack()`](/integrations/browserstack) या [`testmu()`](/integrations/testmu) |
+| होस्टेड डिवाइस पर `appium:platformVersion`, `appium:language`, `appium:locale` | `browserstack()` और `testmu()` पर `osVersion`, `language` और `locale`; [`limrun()`](/integrations/limrun) पर `android.osVersion` |
+| कई कैपेबिलिटी, `maxInstances` | हर प्लेटफ़ॉर्म के लिए एक टारगेट, `workers`, और हर डिवाइस के लिए एक वर्कर के साथ `device` लिस्ट |
+
+```ts title="e2e.config.ts"
+import type { E2EConfig } from 'e2e';
+import { mobile } from '@e2e-dev/mobile';
+
+export default {
+  targets: [
+    {
+      name: 'ios',
+      engine: mobile({ platform: 'ios', device: 'iPhone 17' }),
+      app: {
+        bundleId: 'com.example.app',
+        appPath: 'ios/build/MyApp.app',
+        launchArguments: ['-e2e', 'YES'],
+        permissions: { notifications: 'grant' },
+      },
+    },
+    {
+      name: 'android',
+      engine: mobile({ platform: 'android' }),
+      app: {
+        bundleId: 'com.example.app',
+        appPath: 'android/app/build/outputs/apk/release/app-release.apk',
+        launchArguments: ['--ez', 'e2e', 'true'],
+        permissions: { notifications: 'grant' },
+      },
+    },
+  ],
+  workers: 1,
+} satisfies E2EConfig;
+```
+
+## एक टेस्ट दोबारा लिखें
+
+ऐसे टेस्ट से शुरू करें जिसके XPath सेलेक्टर या एक्सप्लिसिट वेट बार-बार टूटते हैं।
+
+```js title="Appium (WebdriverIO)"
+describe('login', () => {
+  it('signs in', async () => {
+    await $('~email').setValue('ada@example.test');
+    await $('~password').setValue('hunter2');
+    await $('//XCUIElementTypeButton[@name="Sign in"]').click();
+    await $('~welcome').waitForDisplayed({ timeout: 10000 });
+    await expect($('~welcome')).toHaveText('Welcome, Ada');
+  });
+});
+```
+
+```ts title="e2e"
+import { test } from '@e2e-dev/mobile';
+import { expect } from 'e2e';
+
+test('signs in', async ({ app, screen }) => {
+  await app.open();
+  await screen.getByTestId('email').fill('ada@example.test');
+  await screen.getByTestId('password').fill('hunter2');
+  await screen.getByRole('button', 'Sign in').tap();
+  await expect(screen.getByText('Welcome, Ada')).toBeVisible({ timeout: 10_000 });
+});
+```
+
+- कुछ भी अपने आप लॉन्च नहीं होता, इसलिए टेस्ट `app.open()` से शुरू होता है।
+- एक्शन अपने एलिमेंट का इंतज़ार करते हैं और असर्शन रीट्राई होते हैं, इसलिए
+  एक्सप्लिसिट वेट की ज़रूरत नहीं रहती।
+
+जहाँ स्क्रिप्ट किए हुए टैप की कतार बार-बार टूटती है, वहाँ एक `agent.act` लक्ष्य
+उसकी जगह ले सकता है। बाद की जाँच पास होते ही [रीप्ले कैश](/cache) उसके एक्शन
+रिकॉर्ड कर लेता है, और अगले रन में उन्हें बिना मॉडल कॉल के रीप्ले करता है।
+पासवर्ड [कॉन्फ़िगर किए हुए क्रेडेंशियल](/authentication) में जाता है, जिसे मॉडल
+कभी नहीं देखता:
+
+```ts
+import { credentials } from 'e2e';
+
+const ada = credentials.user('ada');
+await agent.act('sign in as {username}', { params: { username: ada.username, password: ada.password } });
+```
+
+## सेलेक्टर दोबारा लिखें
+
+| Appium | e2e |
+| --- | --- |
+| iOS पर `$('~login')`, ऐक्सेसिबिलिटी आइडेंटिफ़ायर या React Native `testID` | `screen.getByTestId('login')` |
+| Android पर `$('~Log in')`, कंटेंट डिस्क्रिप्शन या React Native `accessibilityLabel` | `screen.getByLabel('Log in')` |
+| `$('id=com.example:id/email')`, `resourceId` | `screen.getByTestId('email')`; `com.example:id/` प्रीफ़िक्स ऑप्शनल है |
+| `-ios predicate string:label == "Sign in"`, `android=new UiSelector().text("Sign in")` | `screen.getByText('Sign in')` या `getByLabel('Sign in')` |
+| `-ios class chain`, क्लास नाम (`XCUIElementTypeButton`, `android.widget.Button`) | `screen.getByRole('button', 'Sign in')` |
+| `$$(selector)[2]` | `.nth(2)`; `.all()` हर मैच लौटाता है |
+| ऐसा सेलेक्टर जो क्वेरी से न लिखा जा सके | `device.locator('role=text label="Total"')`, agent-device का सेलेक्टर सिंटैक्स |
+
+- `getByText`, `getByLabel` और `getByTestId` केस समेत पूरी स्ट्रिंग से मैच
+  करते हैं। टेक्स्ट या लेबल के केस-इनसेंसिटिव हिस्से के लिए `RegExp` या
+  `{ exact: false }` पास करें।
+- Appium का `$()` पहला मैच लौटाता है। e2e एक्शन को ठीक एक मैच चाहिए और कई
+  मैच पर `LOCATOR_AMBIGUOUS` के साथ फ़ेल होता है। `.filter()`, `.first()` या
+  `.nth()` से दायरा छोटा करें।
+- `button`, `textbox` और `switch` जैसे रोल iOS और Android पर एक जैसे हैं,
+  इसलिए एक ही टेस्ट दोनों पर चलता है। [रोल](/reference/mobile#roles) देखें।
+
+## हर कमांड मैप करें
+
+`device` पर कॉल सिर्फ़ डिवाइस पर चलती हैं। जो टेस्ट सूट वेब पर भी चलता है, वह
+इन टेस्ट पर `platforms: ['ios', 'android']` लिखता है।
+
+<AccordionGroup>
+<Accordion title="एलिमेंट और जेस्चर">
+
+| Appium | e2e |
+| --- | --- |
+| `.click()`, `.doubleClick()` | `.tap()`, `.doubleTap()` |
+| एलिमेंट पर `mobile: longClickGesture`, `mobile: touchAndHold` | `.longPress({ duration })` |
+| `.setValue(t)`, `.clearValue()` | `.fill(t)`, जो कंटेंट बदल देता है, और `.clear()` |
+| `.addValue(t)` | `.pressSequentially(t)`, जो कर्सर पर एक-एक बटन टाइप करता है |
+| `driver.keys('Enter')`, `pressKeyCode(66)` | फ़ील्ड पर `.press('Enter')` |
+| `.getText()`, `.getValue()`, `.getAttribute('value')` | `.textContent()`, `.inputValue()` |
+| `.isDisplayed()`, `.isEnabled()`, `.getAttribute('checked')` | `.isVisible()`, `.isEnabled()`, `.isChecked()` |
+| `.isExisting()` | `(await locator.count()) > 0` |
+| `.getLocation()`, `.getSize()` | `.boundingBox()` |
+| `.waitForDisplayed({ timeout })` | `await expect(locator).toBeVisible({ timeout })`, या `locator.waitFor()` |
+| `.waitForDisplayed({ reverse: true })` | `await expect(locator).toBeHidden()` |
+| `mobile: swipeGesture`, `mobile: swipe`, `driver.swipe({ direction: 'up' })` | `locator.swipe({ direction: 'down' })` या `screen.swipe(...)`। e2e उँगली की नहीं, कंटेंट की दिशा का नाम लेता है |
+| `mobile: scrollGesture`, किसी एलिमेंट तक `mobile: scroll`, `.scrollIntoView()` | `screen.scrollUntilVisible(locator)` |
+| `.dragAndDrop(target)`, एलिमेंट पर ख़त्म होने वाला ड्रैग | `locator.dragTo(target)` |
+| दो पॉइंट के बीच `performActions` स्वाइप | `screen.swipe({ from: { x, y }, to: { x, y } })` |
+| कोऑर्डिनेट पर टैप | `screen.tapAt({ x, y })`; एलिमेंट के अंदर `.tap({ position: { x, y } })` |
+
+</Accordion>
+<Accordion title="ऐप और डिवाइस">
+
+| Appium | e2e |
+| --- | --- |
+| सेशन शुरू होने पर लॉन्च | `app.open()`, टारगेट के ऐप का नया लॉन्च |
+| `driver.activateApp(id)` | `device.openApp(id)`; `{ relaunch: true }` इसे रीस्टार्ट करता है |
+| टेस्ट हो रहे ऐप पर `driver.terminateApp(id)` | `device.closeApp()`। इससे सेशन ख़त्म हो जाता है, इसलिए आगे कोई ऐप खोलें |
+| `terminateApp`, फिर `activateApp` | `app.restart()` |
+| `mobile: clearApp`, `driver.installApp(path)` | `app.clearState()`, `device.installApp(path)` |
+| `driver.removeApp(id)`, `driver.isAppInstalled(id)` | `device.uninstallApp(id)`, `device.isAppInstalled(id)`। दोनों बूलियन देते हैं |
+| `driver.background(seconds)` | `device.home()`, फिर `device.openApp(id)` |
+| `driver.url('myapp://x')`, `mobile: deepLink` | `device.openLink('myapp://x')` |
+| `driver.back()`, `driver.hideKeyboard()`, Home के लिए `pressKeyCode` | `app.back()`, `device.dismissKeyboard()`, `device.home()` |
+| `driver.isKeyboardShown()` | `device.isKeyboardShown()`। यह स्क्रीन को उसी वक़्त पढ़ता है: कीबोर्ड खोलने या बंद करने वाले एक्शन के बाद इसे `expect.poll` से पोल करें |
+| `driver.getPageSource()` | `screen.tree()`, या प्रिंट करने के लिए `screen.debug()` |
+| `driver.getWindowSize()` | [`device.viewport()`](/reference/mobile#viewport), CSS पिक्सेल में `{ width, height }` |
+| `driver.takeScreenshot()` | `app.screenshot('label')`, सिक्योर फ़ील्ड मास्क रहते हैं |
+| `startRecordingScreen()`, `stopRecordingScreen()` | `app.startRecording()`, `app.stopRecording()`, या `npx e2e run --video` |
+| `mobile: setPermission`, `mobile: changePermissions` | `device.setPermission('camera', 'grant')`, हर कॉल में एक, `app.open()` से पहले |
+| `driver.acceptAlert()`, `driver.dismissAlert()` | `device.alert('accept')`, `device.alert('dismiss')` |
+| `driver.setGeoLocation({ latitude, longitude })` | `device.setLocation({ latitude, longitude })` |
+| `driver.setOrientation('LANDSCAPE')`, `mobile: setAppearance` | `device.setOrientation('landscape-left')`, `device.setAppearance('dark')` |
+| `driver.setClipboard(t)`, `driver.getClipboard()` | `device.setClipboard(t)`, `device.clipboard()`, प्लेन टेक्स्ट में जबकि Appium base64 इस्तेमाल करता है |
+| `driver.toggleWiFi(false)`, `wifi: false` के साथ `mobile: setConnectivity` | `device.setNetwork('offline')`, सिर्फ़ Wi-Fi; सिर्फ़ Android |
+| `driver.toggleAirplaneMode()`, `airplaneMode: true` के साथ `mobile: setConnectivity` | `device.setAirplaneMode(true)`, Wi-Fi और सेलुलर; Android 11 या नया |
+| `mobile: enrollBiometric`, `mobile: sendBiometricMatch`, `driver.fingerPrint(1)` | `device.enrollBiometrics('faceid', true)`, `device.setBiometrics('faceid', 'match')`, या `'fingerprint'` |
+| `mobile: clearKeychains` | `device.clearKeychain()`; सिर्फ़ iOS सिम्युलेटर |
+| `driver.isIOS`, `driver.isAndroid` | टेस्ट पर `{ platforms: ['ios'] }`, या `platform` फ़िक्स्चर |
+
+</Accordion>
+<Accordion title="असर्शन और रनर">
+
+| Appium | e2e |
+| --- | --- |
+| `toBeDisplayed()`, `not.toBeDisplayed()` | `toBeVisible()`, `toBeHidden()` |
+| `toExist()`, `toBeElementsArrayOfSize(n)` | `toBeAttached()`, `toHaveCount(n)` |
+| `toHaveText(t)`, `toHaveText(t, { containing: true })` | `toHaveText(t)`, `toContainText(t)` |
+| `toHaveValue`, `toBeEnabled`, `toBeDisabled`, `toBeSelected`, `toBeChecked` | वही |
+| `@wdio/visual-service` स्क्रीन तुलना | `await expect(screen).toHaveScreenshot('name.png')`, [विज़ुअल तुलना](/visual-testing) देखें |
+| `remote()`, `deleteSession()` | कुछ कॉल नहीं करना। रनर हर वर्कर के लिए एक डिवाइस सेशन खुद खोलता और बंद करता है |
+| `wdio.conf.ts` में `specs` | `tests`, डिफ़ॉल्ट `tests/**/*.e2e.ts` |
+| `specFileRetries`, Mocha `retries` | कॉन्फ़िग में `retries`, या टेस्ट पर `{ retries }` |
+| Mocha `--grep`, टाइटल में टैग | `--grep`, या टेस्ट पर `{ tags }` और `--tag` |
+| `before`, `beforeEach` हुक | `beforeAll`, `beforeEach` |
+| JUnit और spec रिपोर्टर | `--reporter list,junit`, जो `.e2e/junit.xml` लिखता है |
+| HTML रिपोर्ट | `@e2e-dev/html-reporter` से [`htmlReporter()`](/reference/reporters#htmlreporter) |
+
+</Accordion>
+</AccordionGroup>
+
+## परमिशन और डीप लिंक
+
+`app.open()` से पहले परमिशन सेट करें, क्योंकि iOS पर परमिशन बदलने से चलता हुआ
+ऐप बंद हो जाता है। जो परमिशन हर टेस्ट को चाहिए वे `app.permissions` में जाती हैं।
+
+```js title="Appium (WebdriverIO)"
+await driver.execute('mobile: setPermission', {
+  bundleId: 'com.example.app',
+  access: { location: 'yes' },
+});
+await driver.activateApp('com.example.app');
+await driver.url('myapp://orders/42');
+await expect($('~order-title')).toHaveText('Order #42');
+```
+
+```ts title="e2e"
+import { test } from '@e2e-dev/mobile';
+import { expect } from 'e2e';
+
+test('opens an order from a link', async ({ app, device, screen }) => {
+  await device.setPermission('location', 'grant');
+  await app.open();
+  await device.openLink('myapp://orders/42');
+  await expect(screen.getByText('Order #42')).toBeVisible();
+});
+```
+
+## CI में चलाएँ
+
+कोई सर्वर शुरू किए बिना, e2e जॉब बिल्ड इंस्टॉल करता है और टेस्ट सूट चलाता है।
+हर प्लेटफ़ॉर्म के लिए अपना जॉब चाहिए, [मोबाइल जॉब](/ci#mobile-jobs) देखें।
+
+<CodeGroup>
+```bash npm
+xcrun simctl install booted ios/build/MyApp.app
+npx e2e run --target ios --reporter list,junit
+```
+
+```bash pnpm
+xcrun simctl install booted ios/build/MyApp.app
+pnpm exec e2e run --target ios --reporter list,junit
+```
+
+```bash bun
+xcrun simctl install booted ios/build/MyApp.app
+bunx e2e run --target ios --reporter list,junit
+```
+</CodeGroup>
+
+## e2e में अभी क्या नहीं है
+
+"प्लान में है" वाली रो रोडमैप पर हैं, और "अभी नहीं" वालों की कोई तारीख़ नहीं है।
+"प्लान में नहीं" वाली रो जानबूझकर बाहर रखी गई हैं। [`unstable_raw`](/reference/mobile#unstable_raw)
+के ज़रिए की गई कॉल स्टेप नहीं होती, इसलिए वह रिपोर्ट और सीक्रेट रेडैक्शन को छोड़
+देती है।
+
+### प्लान में है
+
+<AccordionGroup>
+<Accordion title="कैपेबिलिटी और डिवाइस">
+
+| Appium | अभी क्या इस्तेमाल करें |
+| --- | --- |
+| `appium:autoGrantPermissions`, लिस्ट से बाहर की Android परमिशन, iOS लोकेशन `always` | हर परमिशन `app.permissions` में लिखें, या रन से पहले `adb shell pm grant` चलाएँ। iOS लोकेशन `always` के लिए प्रॉम्प्ट का बटन टैप करें |
+| `browserstack()` या `testmu()` डिवाइस पर डिवाइस सेटिंग और अलर्ट | प्रॉम्प्ट को UI की तरह टैप करें। वे टेस्ट लोकल डिवाइस पर चलाएँ |
+| `bstack:options.local`, `lt:options.tunnel` | ऐप को ऐसे बैकएंड पर पॉइंट करें जहाँ होस्टेड डिवाइस पहुँच सके |
+| `appium:appActivity`, `appWaitActivity`, `startActivity()` | `device.openLink(url)`, या [`unstable_raw`](/reference/mobile#unstable_raw) के ज़रिए `client.apps.open` |
+| `appium:processArguments.env` | लॉन्च आर्ग्युमेंट पास करें और उसे ऐप में पढ़ें |
+| लोकल डिवाइस पर `appium:language`, `appium:locale` | iOS पर `app.launchArguments: { AppleLanguages: ['fr'], AppleLocale: 'fr_FR' }`, [ऐप को दूसरी भाषा में चलाएँ](/mobile#run-the-app-in-another-language) देखें। Android पर रन से पहले डिवाइस की भाषा सेट करें |
+| `appium:disableWindowAnimation`, `reduceMotion` | Android पर [`unstable_raw`](/reference/mobile#unstable_raw) के ज़रिए `client.settings.update` |
+
+</Accordion>
+<Accordion title="एलिमेंट और जेस्चर">
+
+| Appium | अभी क्या इस्तेमाल करें |
+| --- | --- |
+| लेबल, id या क्लास के लिए `.getAttribute()`, `.isSelected()`, `.getTagName()` | लेबल के लिए `toHaveAccessibleName`, चुनी हुई स्थिति के लिए `toBeSelected`। id, क्लास या टैग नाम पढ़ने का तरीका नहीं है |
+| `pressKeyCode(code)`, `driver.keys('Backspace')` | `.press()` सिर्फ़ `Enter`, `Space` या एक कैरेक्टर लेता है। `.clear()` और `.fill()` इस्तेमाल करें |
+| `driver.getWindowRect()`, `mobile: deviceInfo` | `device.viewport()` सिर्फ़ साइज़ लौटाता है। विंडो की जगह और डिवाइस की पूरी जानकारी के बराबर कुछ नहीं है |
+| `UiScrollable` `scrollToEnd()`, `scrollToBeginning()` | `allTextContents()` बदलना बंद होने तक `locator.swipe({ direction: 'down' })` लूप में चलाएँ; शुरुआत के लिए `'up'` |
+| `mobile: selectPickerWheelValue`, डेट और टाइम पिकर, स्लाइडर वैल्यू | व्हील स्वाइप करें और `.inputValue()` पढ़ें, या `agent.act` लक्ष्य इस्तेमाल करें |
+| `mobile: pinchOpenGesture`, `mobile: pinch`, कोऑर्डिनेट तक `mobile: dragGesture`, `mobile: dragFromToForDuration` | [`unstable_raw`](/reference/mobile#unstable_raw) के ज़रिए `client.interactions.pinch` या `.drag` |
+
+</Accordion>
+<Accordion title="ऐप, डिवाइस और रनर">
+
+| Appium | अभी क्या इस्तेमाल करें |
+| --- | --- |
+| `driver.getLogs('logcat')`, `'syslog'`, `'crashlog'` | किसी हुक से `adb logcat` या `xcrun simctl spawn <udid> log stream` चलाएँ |
+| `driver.queryAppState(id)` | अधूरा: इंस्टॉल के लिए `device.isAppInstalled(id)`, सामने वाले ऐप के लिए `device.foregroundApp()`। बैकग्राउंड में चलने की जाँच के बराबर कुछ नहीं है |
+| `driver.lock()`, `unlock()`, पावर और वॉल्यूम बटन | [`unstable_raw`](/reference/mobile#unstable_raw) के ज़रिए `client.command.hardwareButton` |
+| `driver.openNotifications()`, `mobile: pushNotification` | ऊपर के किनारे से `screen.swipe({ from, to })`; Node से `xcrun simctl push` |
+| `driver.pushFile()`, `pullFile()`, `pullFolder()` | Node से `adb push`, `adb pull`, या `xcrun simctl addmedia`; सिर्फ़ लोकल डिवाइस |
+| `driver.getAlertText()` | iOS पर `screen.getByRole('alert').textContent()`, Android पर `getByText` |
+| `onPrepare` और `afterTest` जैसे `wdio.conf.ts` हुक | `afterEach`, कोई फ़िक्स्चर, या [कस्टम रिपोर्टर](/reference/reporters#custom-reporters) |
+
+</Accordion>
+</AccordionGroup>
+
+### अभी नहीं
+
+| Appium | अभी क्या इस्तेमाल करें |
+| --- | --- |
+| `appium:autoAcceptAlerts`, `appium:autoDismissAlerts` | `app.permissions` सेट करें, या `device.alert('accept')` कॉल करें |
+| Webview कॉन्टेक्स्ट: `getContexts()`, `switchContext()`, CSS सेलेक्टर, `execute(js)` | `getByText` और `getByRole` से webview के ऐक्सेसिबिलिटी नोड पर क्वेरी करें |
+| मोबाइल वेब: `browserName: 'Safari'` या `'Chrome'` | [फ़ोन व्यूपोर्ट](/web#viewports) पर `web()` टारगेट, सिर्फ़ लेआउट के लिए |
+| `appium:unlockType`, `unlockKey` | डिवाइस को अनलॉक रखें |
+| XML के रूप में `driver.getPageSource()` | कोई XML एक्सपोर्ट नहीं है। `screen.tree()` ट्री को टेक्स्ट में लौटाता है, और [`unstable_raw`](/reference/mobile#unstable_raw) के ज़रिए `client.capture.snapshot()` उसके नोड लौटाता है। XML इस्तेमाल करने वाले टेस्ट Appium में ही रहने दें |
+| कई उँगलियों या वेपॉइंट के साथ `performActions()` | सिंगल जेस्चर, या [`unstable_raw`](/reference/mobile#unstable_raw) के ज़रिए `client.interactions.gesture` |
+| `mobile: shell`, `getPerformanceData()` | `device.unstable_raw.deviceId` के साथ Node से `adb` या `simctl` चलाएँ; सिर्फ़ लोकल डिवाइस |
+| iPhone पर `mobile: setSimulatedLocation`, `mobile: setAppearance`, `mobile: setPasteboard` | वे टेस्ट सिम्युलेटर पर चलाएँ, [असली डिवाइस](/mobile#physical-devices) देखें |
+| `gpsLocation` और `uploadMedia` जैसी बाकी `bstack:options` key | - |
+| लोकल डिवाइस पर `appium:platformVersion`, फ़ोन का `appium:udid` | उस वर्ज़न वाले सिम्युलेटर या एम्युलेटर का नाम दें। `device` में फ़ोन का नाम लिखें |
+| `appium:avd`, `avdArgs`, `isHeadless` | रन से पहले एम्युलेटर बूट करें और उसका सीरियल नाम दें |
+| Java, Python, Ruby या C# में टेस्ट | e2e टेस्ट Node में चलते हैं। उन्हें ऐप के बगल में `e2e/` फ़ोल्डर में TypeScript में दोबारा लिखें |
+
+### प्लान में नहीं
+
+| Appium | इसकी जगह क्या इस्तेमाल करें |
+| --- | --- |
+| XPath | क्वेरी चेन करें (`screen.getByTestId('row').getByText('Delete')`) या `filter({ has, hasText })` इस्तेमाल करें। XPath टेस्ट को एक ही प्लेटफ़ॉर्म के ट्री से बाँध देता है |
+| `-image` सेलेक्टर, `findImage` | `screen.tapAt({ x, y })`, या एक `agent.act` लक्ष्य |
+| कई मैच में से पहले पर एक्शन करने वाला `$(selector)` | `.first()`, [सेलेक्टर दोबारा लिखें](#rewrite-selectors) देखें |
+| `usePrebuiltWDA` जैसी WebDriverAgent कैपेबिलिटी | कुछ सेट नहीं करना। agent-device अपना रनर खुद बिल्ड और साइन करता है |
+| कॉम्पाउंड `-ios predicate string` लॉजिक, `UiSelector` फ़्लैग और `fromParent()` | `filter({ has })` या `RegExp` के साथ `getBy*` क्वेरी |
+| Gherkin फ़ीचर फ़ाइलें | हर सिनेरियो के लिए एक टेस्ट। कोई स्टेप `agent.act` लक्ष्य हो सकता है |
+| सेव किए हुए सेशन, `test.setup` और `{ session }` | हर टेस्ट में साइन इन करें या ऐप सीड करें। डिवाइस में सेव करने के लिए कोई सेशन नहीं होता, [वेब से क्या अलग है](/mobile#what-differs-from-the-web) देखें |
+| डिवाइस ग्रिड या हब, बाकी डिवाइस क्लाउड | कोई होस्टेड प्रोवाइडर, या आपका लिखा हुआ `DeviceProvider` |
+| `sauce:options` | एक [`DeviceProvider`](/mobile#hosted-devices) लिखें |
+| Appium Inspector | `screen.debug()`, या कोडिंग एजेंट के लाइव सेशन के लिए [`npx e2e mcp`](/mcp-server) |
+| `driver.updateSettings()`, `appium:settings[...]` | [`mobile()`](/reference/mobile#engine) पर `snapshot`, `settle` और `transition` |
+| `.getAttribute('clickable')`, `.isClickable()` | सीधे एलिमेंट पर एक्शन करें। एक्शन तब तक इंतज़ार करता है जब तक एलिमेंट पर एक्शन न किया जा सके |
+| रिमोट Appium सर्वर (`hostname`, `port`) | e2e को उसी मशीन पर चलाएँ जहाँ डिवाइस हैं |
+| Allure | इसे `.e2e/junit.xml` दें, या `htmlReporter()` इस्तेमाल करें |
+
+## आगे
+
+<CardGroup cols={2}>
+  <Card title="मोबाइल" icon="mobile-screen" href="/mobile">
+    अपना ऐप, डिवाइस और होस्टेड डिवाइस कॉन्फ़िगर करें।
+  </Card>
+  <Card title="मोबाइल इंजन रेफ़रेंस" icon="book" href="/reference/mobile">
+    हर ऑप्शन, `device` फ़िक्स्चर और एजेंट टूल।
+  </Card>
+</CardGroup>

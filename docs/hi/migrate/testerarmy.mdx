@@ -1,0 +1,210 @@
+---
+title: TesterArmy से
+description: TesterArmy के सेव किए हुए टेस्ट को ऐसे e2e टेस्ट में बदलें जो आपकी रिपॉज़िटरी और CI में चलें।
+---
+
+import { SetupPrompt } from '../../snippets/setup-prompt-card.jsx';
+
+export const migrationPrompt = `इस प्रोजेक्ट के TesterArmy के सेव किए हुए टेस्ट को एक बार में एक ग्रुप करके e2e पर माइग्रेट करें। डॉक्स: \`https://e2e.com/docs/migrate/testerarmy.md\`
+
+1. ऊपर दी गई माइग्रेशन गाइड पढ़ें। इसमें TesterArmy की प्रोजेक्ट सेटिंग, स्टेप और ग्रुप को e2e से मैप किया गया है, और यह भी बताया गया है कि e2e में अभी क्या नहीं है।
+2. अगर आपके पास \`testerarmy\` MCP टूल नहीं हैं, तो \`npx add-mcp --global --name testerarmy https://tester.army/mcp\` से सर्वर जोड़ें। अगर Claude Code कस्टम \`CLAUDE_CONFIG_DIR\` इस्तेमाल करता है, तो इसकी जगह \`claude mcp add --transport http testerarmy https://tester.army/mcp\` चलाएँ। मुझसे साइन इन करके सेशन रीस्टार्ट करने को कहें, फिर मेरे कन्फ़र्म करने तक रुकें।
+3. \`list_projects\` कॉल करें और मुझसे पूछें कि कौन-सा प्रोजेक्ट माइग्रेट करना है। उसे \`get_project\`, \`list_project_environments\`, \`list_project_credentials\`, \`list_project_memories\`, \`list_project_files\`, \`list_groups\` और \`list_tests\` से पढ़ें। सिर्फ़ रीड टूल इस्तेमाल करें। TesterArmy में कभी कुछ न बनाएँ, न अपडेट करें, न डिलीट करें और न चलाएँ।
+4. अगर प्रोजेक्ट में कोई e2e कॉन्फ़िग (\`e2e.config.ts\`, \`.mts\`, \`.js\`, या \`.mjs\`) नहीं है, तो \`npx e2e init --yes\` (या pnpm या bun की बराबर कमांड) चलाएँ, और मोबाइल प्रोजेक्ट के लिए साथ में \`--engine mobile\` दें। \`tests/example.e2e.ts\` को ऐप के लिए दोबारा लिखें या हटा दें।
+5. e2e स्किल पढ़ें (\`npx e2e guide\` इसे प्रिंट करता है, \`npx e2e guide <topic>\` एक टॉपिक प्रिंट करता है) और नीचे के हर स्टेप में इसका पालन करें।
+6. अगर आपने init चलाया है, तो मुझसे पूछें कि एजेंट स्टेप के लिए कौन-सा मॉडल इस्तेमाल करना है: ChatGPT, GitHub Copilot, OpenCode Console या SuperGrok सब्सक्रिप्शन, कोई API key, या लोकल मॉडल। उसे उसके प्रोवाइडर पैकेज से कॉन्फ़िगर करें। अगर इसमें साइन इन चाहिए, तो मुझे \`npx e2e login\` कमांड दें और मेरे कन्फ़र्म करने तक रुकें।
+7. गाइड की "प्रोजेक्ट पोर्ट करें" टेबल देखकर प्रोजेक्ट को e2e कॉन्फ़िग में पोर्ट करें। TesterArmy कभी पासवर्ड नहीं लौटाता। हर क्रेडेंशियल का नाम \`credentials\` में लिखें, उसका पासवर्ड एनवायरनमेंट वेरिएबल से पढ़ें, और मुझसे उसे सेट करने को कहें।
+8. ग्रुप और उनके टेस्ट की लिस्ट दिखाएँ, और मुझसे पूछें कि पहले कौन-सा ग्रुप माइग्रेट करना है। कोई छोटा ग्रुप सुझाएँ, या वह ग्रुप जिसमें बाक़ी टेस्ट के लिए ज़रूरी प्रिपरेशन टेस्ट हो।
+9. हर टेस्ट के लिए उसे \`get_test\` से पढ़ें और गाइड की "हर स्टेप मैप करें" टेबल देखकर \`tests/\` के अंदर \`.e2e.ts\` फ़ाइल लिखें, हर चालू स्टेप के लिए एक awaited कॉल के साथ। किसी प्रिपरेशन या लॉगिन टेस्ट को ऐसा \`test.setup\` बना दें जो सेशन सेव करे। जहाँ कोई स्टेप, क्रेडेंशियल या प्रोजेक्ट सेटिंग "e2e में अभी क्या नहीं है" के नीचे हो, वहाँ उसकी रो का वर्कअराउंड ("अभी क्या इस्तेमाल करें" या "इसकी जगह क्या इस्तेमाल करें") इस्तेमाल करें। जब रो में कोई वर्कअराउंड न हो, तो वह टेस्ट TesterArmy में ही रहने दें और मुझे वजह बताएँ।
+10. हर टेस्ट के आख़िरी \`agent.assert\` के बाद, जब कोई लेबल या टेस्ट id उसी आख़िरी स्थिति का नाम बताए, तो उस पर एक लोकेटर असर्शन भी जोड़ें।
+11. नई फ़ाइलों को \`npx e2e run <file>\` से चलाएँ और पास होने तक ठीक करें। मेरे कन्फ़र्म करने तक TesterArmy टेस्ट को न हटाएँ।
+12. संक्षेप में बताएँ कि कौन-से टेस्ट माइग्रेट हुए, कौन-से TesterArmy में ही रहे, और क्यों।`;
+
+TesterArmy का सेव किया हुआ टेस्ट सीधी भाषा में लिखे स्टेप की एक लिस्ट होती है,
+जिसे QA एजेंट TesterArmy के क्लाउड में चलाता है। e2e में हर स्टेप आपकी मशीन
+या CI में चलने वाले TypeScript टेस्ट की एक लाइन बन जाता है: `agent.act` या
+`agent.assert` कॉल, या जब स्टेप में परख की ज़रूरत न हो तो लोकेटर कॉल। कोडिंग
+एजेंट TesterArmy MCP सर्वर के ज़रिए आपके प्रोजेक्ट और टेस्ट पढ़ता है और e2e
+टेस्ट लिख देता है।
+
+<SetupPrompt>
+
+<Prompt description={migrationPrompt} children={migrationPrompt} actions={["copy", "cursor"]} />
+
+</SetupPrompt>
+
+कई सेशन तक चलने वाले माइग्रेशन के लिए [`migrate-to-e2e` स्किल](/coding-agents#migrate-an-existing-suite) एक प्रोग्रेस फ़ाइल में नोट करती है कि क्या माइग्रेट हो चुका है, और जब तक आप हर टेस्ट रिटायर नहीं करते, TesterArmy टेस्ट वैसे ही रखती है।
+
+## TesterArmy MCP सर्वर कनेक्ट करें
+
+कोडिंग एजेंट आपके टेस्ट `https://tester.army/mcp` पर होस्टेड सर्वर से पढ़ता है।
+इसे अपनी मशीन के कोडिंग एजेंट में जोड़ें:
+
+<CodeGroup>
+```bash npm
+npx add-mcp --global --name testerarmy https://tester.army/mcp
+```
+
+```bash pnpm
+pnpm dlx add-mcp --global --name testerarmy https://tester.army/mcp
+```
+
+```bash bun
+bunx add-mcp --global --name testerarmy https://tester.army/mcp
+```
+</CodeGroup>
+
+`add-mcp` Claude Code की एंट्री `~/.claude.json` में लिखता है। अगर आपने
+`CLAUDE_CONFIG_DIR` सेट किया है, तो इसकी जगह
+`claude mcp add --transport http testerarmy https://tester.army/mcp` चलाएँ।
+जब क्लाइंट पूछे तो साइन इन करें। सर्वर जोड़ने के बाकी तरीके
+[TesterArmy के MCP सेटअप](https://tester.army/docs/cli/mcp) में हैं।
+
+माइग्रेशन TesterArmy से सिर्फ़ पढ़ता है। यह वहाँ आपके टेस्ट कभी एडिट, डिलीट
+या रन नहीं करता।
+
+## प्रोजेक्ट पोर्ट करें
+
+<Note>[क्विकस्टार्ट](/quickstart) से e2e इंस्टॉल करें और एक मॉडल कॉन्फ़िगर करें। एजेंट कॉल के लिए मॉडल ज़रूरी है।</Note>
+
+| TesterArmy | e2e |
+| --- | --- |
+| वेब प्रोजेक्ट `url` | `web()` टारगेट पर `app: { url }` |
+| मोबाइल प्रोजेक्ट और उसके अपलोड किए हुए बिल्ड | `app: { bundleId, appPath }` के साथ `mobile({ platform })` टारगेट। ऐप आप बिल्ड करते हैं, और `device.installApp()` इसे इंस्टॉल करता है, [मोबाइल](/mobile) देखें |
+| स्टैटिक एनवायरनमेंट (Staging, QA) | हर एनवायरनमेंट के लिए एक टारगेट, हर एक का अपना `app.url`। `--target staging` से कोई एक चलता है |
+| PR प्रीव्यू एनवायरनमेंट | ऐसा CI जॉब जो `app.url` को प्रीव्यू URL पर सेट करे, [प्रोटेक्टेड प्रीव्यू](/web#protected-previews) देखें |
+| `login` क्रेडेंशियल | एक `credentials` एंट्री। TesterArmy पासवर्ड या TOTP सीक्रेट कभी नहीं लौटाता, इसलिए उसे एनवायरनमेंट वेरिएबल से पढ़ें, [ऑथेंटिकेशन](/authentication#credentials) देखें |
+| क्रेडेंशियल `totpSecret` | एक `secrets` एंट्री जिसकी वैल्यू कोड निकालने वाला फ़ंक्शन हो। e2e में TOTP जनरेटर नहीं आता, इसलिए कोई TOTP लाइब्रेरी जोड़ें |
+| क्रेडेंशियल एनवायरनमेंट ओवरराइड | एक `credentials` एंट्री, जिसमें हर एनवायरनमेंट के लिए `E2E_USER_<NAME>_PASSWORD` सेट हो, [किसी एक रन के लिए वैल्यू ओवरराइड करें](/authentication#override-a-value-per-run) देखें |
+| `agentInstructions` | एजेंट पर `system`, [निर्देश और शब्दावली](/agents#instructions-and-vocabulary) देखें |
+| मेमोरी | एजेंट पर `context` |
+| प्रोजेक्ट फ़ाइलें | रिपॉज़िटरी में फ़ाइलें, जैसे `tests/fixtures/receipt.jpg` |
+| टेस्ट `viewport` सेटिंग | `web({ viewport: { width, height } })`, हर साइज़ के लिए एक टारगेट |
+| PR टेस्टिंग | हर पुल रिक्वेस्ट पर e2e जॉब, कमेंट के लिए [GitHub रिपोर्टर](/github) के साथ |
+| ग्रुप शेड्यूल | शेड्यूल किया हुआ CI वर्कफ़्लो |
+
+## एक टेस्ट दोबारा लिखें
+
+हर स्टेप एक awaited कॉल बन जाता है। `login` स्टेप एक सेटअप टेस्ट बन जाता है जो
+एक बार साइन इन करता है और सेशन सेव कर लेता है:
+
+```json title="TesterArmy (get_test)"
+{
+  "title": "Creates a project",
+  "steps": [
+    { "type": "login", "title": "Log in as the admin" },
+    { "type": "act", "title": "Open Projects from the sidebar and click New Project" },
+    { "type": "act", "title": "Name the project Apollo and save" },
+    { "type": "assert", "title": "Apollo appears in the project list" }
+  ]
+}
+```
+
+<Tabs>
+  <Tab title="tests/projects.e2e.ts">
+
+```ts
+import { test } from '@e2e-dev/web';
+import { expect } from 'e2e';
+
+test('creates a project', { session: 'admin' }, async ({ app, agent, screen }) => {
+  await app.open('/');
+  await agent.act('open Projects from the sidebar and click New Project');
+  await agent.act('name the project {name} and save', { params: { name: 'Apollo' } });
+  await agent.assert('Apollo appears in the project list');
+  await expect(screen.getByText('Apollo')).toBeVisible();
+});
+```
+
+  </Tab>
+  <Tab title="tests/auth.setup.e2e.ts">
+
+```ts
+import { test } from '@e2e-dev/web';
+import { credentials } from 'e2e';
+
+test.setup('log in as the admin', { sessions: ['admin'] }, async ({ app, agent, session }) => {
+  const admin = credentials.user('admin');
+
+  await app.open('/login');
+  await agent.act('log in', { params: { username: admin.username, password: admin.password } });
+  await agent.assert('the dashboard is shown');
+  await session.save('admin');
+});
+```
+
+  </Tab>
+</Tabs>
+
+TesterArmy पहले स्टेप से पहले प्रोजेक्ट URL खोल देता है। e2e में कुछ भी अपने आप
+नहीं खुलता, इसलिए हर टेस्ट `app.open()` से शुरू होता है।
+
+## हर स्टेप मैप करें
+
+| TesterArmy | e2e |
+| --- | --- |
+| `act` स्टेप | `agent.act('...')`, या जब स्टेप कोई तय रूट खोले या एक नाम वाले कंट्रोल पर एक्शन करे तो लोकेटर कॉल |
+| `assert` स्टेप | `agent.assert('...')`, फिर जब कोई लेबल या टेस्ट id आख़िरी स्थिति का नाम बताए तो लोकेटर असर्शन |
+| `login` स्टेप | एक `test.setup` जो साइन इन करके `session.save()` कॉल करे, और हर टेस्ट पर `{ session }`, [ऑथेंटिकेशन](/authentication) देखें |
+| वेब पर `files` स्टेप, स्टेप में `@receipt.jpg` | लक्ष्य में फ़ाइल का रिपॉज़िटरी पाथ: `agent.act('attach tests/fixtures/receipt.jpg')`, या `locator.setInputFiles()` |
+| `screenshot` स्टेप | `app.screenshot('label')` |
+| `javascript` स्टेप | `browser.evaluate()`। यह सिर्फ़ तब फ़ेल होता है जब कोड एरर फेंके, इसलिए `{ success: false }` रिटर्न को `expect` से जाँचें |
+| `disabled: true` वाला स्टेप | इसे छोड़ दें |
+| डिसेबल्ड टेस्ट | `test.skip` |
+| ग्रुप | `tags` के साथ `describe`, जिसे `npx e2e run --tag <tag>` से चलाते हैं |
+| ग्रुप `runMode: sequential` | ग्रुप पर `{ serial: true }` |
+| ग्रुप `maxConcurrentRuns` | कॉन्फ़िग में `workers`। यह सिर्फ़ एक ग्रुप नहीं, पूरे रन की लिमिट तय करता है |
+| ग्रुप `prepTestId` | एक `test.setup` जो सेशन सेव करे, और ग्रुप पर `{ session }` |
+| `run_test`, `run_group` | `npx e2e run <file>`, `npx e2e run --tag <tag>` |
+
+जो स्टेप फ़ैसला लेने के लिए स्क्रीन पढ़ता हो, कई स्क्रीन तक फैला हो, या किसी
+स्थिर कंट्रोल का नाम न ले, उसके लिए एजेंट ही रखें। किसी स्टेप को लोकेटर से
+बदलने से पहले कंट्रोल का सटीक नाम ढूँढें, और उसी आख़िरी स्थिति की जाँच करें।
+
+## e2e में अभी क्या नहीं है
+
+"प्लान में है" रोडमैप पर है। "अभी नहीं" की कोई तारीख़ नहीं है। "प्लान में नहीं"
+को जानबूझकर बाहर रखा गया है। वर्कअराउंड इस्तेमाल करें, या टेस्ट को TesterArmy
+में ही रहने दें।
+
+### प्लान में है
+
+| TesterArmy | अभी क्या इस्तेमाल करें |
+| --- | --- |
+| `inbox` क्रेडेंशियल, `temporaryEmail` के साथ `login` | [फ़िक्स्चर](/fixtures) से अपना खुद का टेस्ट इनबॉक्स कॉल करें |
+| मोबाइल पर `files` स्टेप (फ़ोटो लाइब्रेरी) | iOS सिम्युलेटर पर `app.open()` से पहले `xcrun simctl addmedia`, फिर सिस्टम पिकर में फ़ोटो चुनें; Android की जाँच नहीं हुई है। [device फ़िक्स्चर](/mobile#the-device-fixture) के नीचे "पिकर टेस्ट के लिए फ़ोटो" देखें |
+| `accessibilityAuditEnabled` | - |
+
+### अभी नहीं
+
+| TesterArmy | अभी क्या इस्तेमाल करें |
+| --- | --- |
+| `microphone` स्टेप | - |
+
+### प्लान में नहीं
+
+| TesterArmy | इसकी जगह क्या इस्तेमाल करें |
+| --- | --- |
+| `browserRegion`, `simulatorRegion` | ब्राउज़र वहीं चलता है जहाँ `e2e run` चलता है, या किसी [होस्टेड प्रोवाइडर](/integrations) पर |
+| `webSearchEnabled` | एजेंट को जो जानना ज़रूरी है उसे एजेंट के `context` में रखें |
+
+## जानबूझकर रखे गए फ़र्क
+
+- टेस्ट TesterArmy के क्लाउड में नहीं, आपकी मशीन या CI में चलते हैं। ऐप URL
+  और डिवाइस आप खुद चुनते हैं।
+- मॉडल पासवर्ड कभी नहीं देखता। रनर उसे हैंडल से टाइप करता है,
+  [ऑथेंटिकेशन](/authentication#the-password-is-a-handle) देखें।
+- `agent.act` स्टेप बिना मॉडल कॉल के अपने रिकॉर्ड किए हुए एक्शन रीप्ले करता है।
+  जब स्क्रीन पहले जैसी न रहे, तो एजेंट कमान संभाल लेता है,
+  [रीप्ले कैश](/cache) देखें।
+
+## आगे
+
+<CardGroup cols={2}>
+  <Card title="एजेंट स्टेप" icon="wand-magic-sparkles" href="/agent-steps">
+    मॉडल क्या देखता है, क्या कर सकता है, और एक स्टेप कैसे ख़त्म होता है।
+  </Card>
+  <Card title="ऑथेंटिकेशन" icon="key" href="/authentication">
+    सेशन, क्रेडेंशियल और ऐसे सीक्रेट जिन्हें मॉडल कभी नहीं देखता।
+  </Card>
+</CardGroup>

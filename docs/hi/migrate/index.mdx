@@ -1,0 +1,81 @@
+---
+title: e2e पर माइग्रेट करें
+sidebarTitle: ओवरव्यू
+description: Playwright, Cypress, Selenium, Appium, Detox, Maestro या TesterArmy टेस्ट सूट को एक बार में एक टेस्ट करके e2e पर ले जाएँ।
+---
+
+माइग्रेशन गाइड एक टेस्ट रनर के कॉन्फ़िग, API और कमांड को e2e से मैप करती है।
+इसमें यह भी लिखा है कि e2e में अभी क्या नहीं है: क्या प्लान में है, किसकी अभी
+कोई तारीख़ नहीं है, और क्या जानबूझकर बाहर रखा गया है, साथ में जहाँ मुमकिन हो
+वहाँ का वर्कअराउंड। जिस टेस्ट का कोई वर्कअराउंड नहीं है, उसे पुराने रनर में ही
+रहने दें। एक-एक करके टेस्ट माइग्रेट करते समय पुराना टेस्ट सूट इंस्टॉल रहने दें,
+ताकि दोनों सूट पास होते रहें।
+
+## अपना रनर चुनें
+
+<CardGroup cols={2}>
+  <Card title="Playwright" icon="/images/integrations/playwright.svg" href="/migrate/playwright">
+    वेब। हर कॉन्फ़िग key, `page` कॉल और CLI फ़्लैग, e2e से मैप किया हुआ।
+  </Card>
+  <Card title="Cypress" icon="/images/integrations/cypress.svg" href="/migrate/cypress">
+    वेब। कमांड चेन async टेस्ट बन जाती हैं। आपके `data-cy` एट्रीब्यूट वैसे ही रहते हैं।
+  </Card>
+  <Card title="Selenium" icon="/images/integrations/selenium.svg" href="/migrate/selenium">
+    वेब। WebDriver कॉल और पेज ऑब्जेक्ट, TypeScript में दोबारा लिखे गए।
+  </Card>
+  <Card title="Appium" icon="/images/integrations/appium.png" href="/migrate/appium">
+    मोबाइल। कैपेबिलिटी, सेलेक्टर और `mobile:` कमांड, बिना किसी सर्वर के।
+  </Card>
+  <Card title="Detox" icon="/images/integrations/detox.png" href="/migrate/detox">
+    मोबाइल। आपका ऐप बिल्ड और testIDs, बिना Detox फ़्रेमवर्क के।
+  </Card>
+  <Card title="Maestro" icon="/images/integrations/maestro.svg" href="/migrate/maestro">
+    मोबाइल। YAML फ़्लो TypeScript टेस्ट बन जाते हैं।
+  </Card>
+  <Card title="TesterArmy" icon="/images/integrations/testerarmy.png" href="/migrate/testerarmy">
+    वेब और मोबाइल। सेव किए हुए टेस्ट आपकी रिपॉज़िटरी में एजेंट स्टेप बन जाते हैं।
+  </Card>
+</CardGroup>
+
+## एक बार में एक टेस्ट माइग्रेट करें
+
+<Note>पहले [क्विकस्टार्ट](/quickstart) से e2e इंस्टॉल करें। मॉडल सिर्फ़ एजेंट स्टेप के लिए ज़रूरी है।</Note>
+
+e2e टेस्ट Node में चलते हैं, डिफ़ॉल्ट रूप से TypeScript में या
+[JavaScript](/reference/config#javascript) में। Java, Python या नेटिव टेस्ट सूट
+के लिए, एक `e2e/` फ़ोल्डर में उसकी अपनी `package.json` के साथ e2e इंस्टॉल करें।
+
+हर गाइड में यही स्टेप होते हैं:
+
+1. कॉन्फ़िग पोर्ट करें। पुराने रनर का बेस URL, ऐप कमांड और डिवाइस
+   `e2e.config.ts` में एक टारगेट बन जाते हैं।
+2. एक टेस्ट को `tests/` के अंदर `.e2e.ts` फ़ाइल में दोबारा लिखें। दोनों रनर के
+   फ़ाइल पैटर्न अलग रखें, ताकि कोई भी दूसरे के टेस्ट न चलाए।
+3. नया टेस्ट पास होने तक उसे `npx e2e run <file>` से चलाएँ।
+4. जब नए टेस्ट पर भरोसा हो जाए, तो पुराना टेस्ट हटा दें।
+
+## एजेंट से टेस्ट सूट माइग्रेट कराएँ
+
+कोडिंग एजेंट से एक टेस्ट माइग्रेट कराने के लिए अपने रनर की गाइड के ऊपर दिया
+एजेंट प्रॉम्प्ट कॉपी करें। कई सेशन तक चलने वाले माइग्रेशन के लिए
+[`migrate-to-e2e` स्किल](/coding-agents#migrate-an-existing-suite) इस्तेमाल
+करें। यह प्रोग्रेस को `MIGRATION.md` फ़ाइल में नोट करती है और पुराना टेस्ट सूट
+भी चालू रखती है।
+
+## जिस रनर की गाइड नहीं है, उससे माइग्रेट करें
+
+वेब के लिए WebdriverIO की अलग गाइड नहीं है। इसके WebDriver कॉल को
+[Selenium](/migrate/selenium) गाइड से मैप करें। यह मैपिंग अधूरी है: कोई भी
+गाइड WebdriverIO के अपने API को कवर नहीं करती। मोबाइल ऐप पर Appium के साथ
+WebdriverIO के लिए [Appium से](/migrate/appium) देखें।
+
+## आगे
+
+<CardGroup cols={2}>
+  <Card title="बुनियादी कॉन्सेप्ट" icon="pen-to-square" href="/core-concepts">
+    स्क्रिप्ट किए हुए सेलेक्टर के बजाय लक्ष्य, असर्शन और लोकेटर।
+  </Card>
+  <Card title="कोडिंग एजेंट" icon="robot" href="/coding-agents">
+    e2e स्किल, MCP सर्वर, और एजेंट टेस्ट कैसे लिखता है।
+  </Card>
+</CardGroup>

@@ -1,0 +1,228 @@
+---
+title: Detox से
+description: अपने मौजूदा ऐप बिल्ड और testIDs को screen, expect और एजेंट लक्ष्यों के साथ इस्तेमाल करें।
+"og:image": "https://e2e.com/docs/images/og/migrate/detox.png?v=1715664ae0"
+"twitter:image": "https://e2e.com/docs/images/og/migrate/detox.png?v=1715664ae0"
+---
+
+import { SetupPrompt } from '../../snippets/setup-prompt-card.jsx';
+
+export const migrationPrompt = `इस प्रोजेक्ट के Detox टेस्ट को एक बार में एक स्पेक करके e2e पर माइग्रेट करें। डॉक्स: \`https://e2e.com/docs/migrate/detox.md\` और \`https://e2e.com/docs/mobile.md\`
+
+1. ऊपर दी गई माइग्रेशन गाइड पढ़ें। इसमें \`.detoxrc.js\` और Detox API को e2e से मैप किया गया है, और यह भी लिखा है कि e2e में अभी क्या नहीं है। मोबाइल गाइड में डिवाइस और ऐप बिल्ड के बारे में बताया गया है।
+2. अगर प्रोजेक्ट में कोई e2e कॉन्फ़िग (\`e2e.config.ts\`, \`.mts\`, \`.js\`, या \`.mjs\`) नहीं है, तो \`npx e2e init --yes --engine mobile\` (या pnpm या bun की बराबर कमांड) चलाएँ। यह इस मशीन के प्लेटफ़ॉर्म के लिए एक टारगेट वाला मोबाइल कॉन्फ़िग और Settings ऐप पर एक उदाहरण टेस्ट लिखता है, और अभी कुछ इंस्टॉल नहीं करता। \`tests/example.e2e.ts\` को अपने ऐप के लिए दोबारा लिखें या हटा दें।
+3. e2e स्किल पढ़ें (\`npx e2e guide\` इसे प्रिंट करता है, \`npx e2e guide <topic>\` एक टॉपिक प्रिंट करता है) और नीचे के हर स्टेप में इसका पालन करें।
+4. अगर आपने init चलाया है, तो मुझसे पूछें कि एजेंट स्टेप के लिए कौन-सा मॉडल इस्तेमाल करना है: ChatGPT, GitHub Copilot, OpenCode Console या SuperGrok सब्सक्रिप्शन, कोई API key, या लोकल मॉडल। उसे उसके प्रोवाइडर पैकेज से कॉन्फ़िगर करें। अगर इसमें साइन इन चाहिए, तो मुझे \`npx e2e login\` कमांड दें और मेरे कन्फ़र्म करने तक रुकें।
+5. \`.detoxrc.js\` को e2e कॉन्फ़िग में पोर्ट करें: हर प्लेटफ़ॉर्म के लिए \`mobile({ platform })\` के साथ एक टारगेट, टारगेट पर ऐप का \`bundleId\` और \`appPath\`, और डिवाइस टाइप को \`mobile({ device })\` के रूप में। e2e सामान्य डीबग या रिलीज़ बिल्ड इस्तेमाल करता है, बिना Detox फ़्रेमवर्क के।
+6. डिपेंडेंसी इंस्टॉल करें, फिर \`npx e2e doctor\` (e2e 0.23.0 या नया) चलाएँ और जो भी वह बताए उसे ठीक करें।
+7. Detox के स्पेक की लिस्ट दिखाएँ और मुझसे पूछें कि पहले किसे माइग्रेट करना है। ऐसा फ़्लो सुझाएँ जिसमें बार-बार मेंटेनेंस लगता हो।
+8. उस स्पेक की हर Detox कॉल को "e2e में अभी क्या नहीं है" से मिलाएँ। "अभी क्या इस्तेमाल करें" या "इसकी जगह क्या इस्तेमाल करें" वाली एंट्री इस्तेमाल करें, या स्पेक को Detox में ही रहने दें और वजह बताएँ। फिर गाइड की मैपिंग टेबल देखकर स्पेक को Detox फ़ोल्डर में नहीं, \`tests/\` के अंदर \`.e2e.ts\` फ़ाइल में दोबारा लिखें (e2e डिफ़ॉल्ट रूप से \`tests/**/*.e2e.ts\` चलाता है)। इसकी शुरुआत \`app.open()\` से करें, क्योंकि कोई भी ऐप अपने आप लॉन्च नहीं होता। जो क्वेरी कई नोड से मैच करे, उसका दायरा छोटा करें।
+9. लॉन्च और आख़िरी असर्शन को \`app.open()\` और लोकेटर असर्शन के साथ डिटर्मिनिस्टिक रखें। जहाँ स्क्रिप्ट किए हुए इंटरैक्शन की कतार बार-बार टूटती है, वहाँ उसके लिए एक \`agent.act\` लक्ष्य सुझाएँ।
+10. ऐप बिल्ड और इंस्टॉल करें, हर प्लेटफ़ॉर्म टारगेट पर नई फ़ाइल को \`npx e2e run <file>\` से चलाएँ, और पास होने तक ठीक करें। मेरे कन्फ़र्म करने तक Detox स्पेक को न हटाएँ।
+11. संक्षेप में बताएँ कि कौन-से टेस्ट माइग्रेट हुए, कौन-से Detox में ही रहे, और क्यों।`;
+
+e2e आपके सामान्य डीबग या रिलीज़ बिल्ड के साथ सिम्युलेटर या एम्युलेटर पर React
+Native ऐप को टेस्ट करता है, और ऐप में Detox फ़्रेमवर्क की ज़रूरत नहीं होती।
+आपके `testID` प्रॉप दोनों प्लेटफ़ॉर्म पर `getByTestId` के साथ काम करते हैं।
+
+<SetupPrompt>
+
+<Prompt description={migrationPrompt} children={migrationPrompt} actions={["copy", "cursor"]} />
+
+</SetupPrompt>
+
+कई सेशन तक चलने वाले माइग्रेशन के लिए [`migrate-to-e2e` स्किल](/coding-agents#migrate-an-existing-suite) एक प्रोग्रेस फ़ाइल में नोट करती है कि क्या माइग्रेट हो चुका है, और जब तक आप हर टेस्ट रिटायर नहीं करते, पुराना टेस्ट सूट चालू रखती है।
+
+## कॉन्फ़िग पोर्ट करें
+
+<Note>[मोबाइल गाइड](/mobile) से एक टारगेट और [क्विकस्टार्ट](/quickstart) से एक मॉडल सेटअप करें। एक बार में एक स्पेक माइग्रेट करते समय दोनों रनर एक ही सिम्युलेटर इस्तेमाल कर सकते हैं।</Note>
+
+| Detox (`.detoxrc.js`) | e2e |
+| --- | --- |
+| `apps.<name>.binaryPath`, `bundleId` | टारगेट पर `app: { appPath, bundleId }` |
+| `devices.<name>.device.type` | `mobile({ device: 'iPhone 17' })` |
+| `configurations` | `targets`, हर प्लेटफ़ॉर्म के लिए एक इंजन |
+| Jest `maxWorkers` | `workers`, हर डिवाइस के लिए एक |
+| `apps.<name>.launchArgs` | टारगेट पर `app.launchArguments`। उन्हीं key वाला ऑब्जेक्ट, या हर प्लेटफ़ॉर्म के लिए स्ट्रिंग की लिस्ट इस्तेमाल करें। Android पर हर key लॉन्च इंटेंट पर अलग टाइप्ड एक्स्ट्रा होती है। Detox सभी key को स्ट्रिंग के रूप में एक ही `launchArgs` बंडल एक्स्ट्रा में डालता है, इसलिए `getIntent().getBundleExtra("launchArgs")` पढ़ने वाला कोड बदलें। iOS पर हर key `UserDefaults` आर्ग्युमेंट होती है: `false` `NO` बन जाता है, और `a b` या `-1` जैसी स्ट्रिंग पर कोट्स लगते हैं। अगर ऐप `ProcessInfo.processInfo.arguments` पढ़ता है, तो लिस्ट फ़ॉर्मेट इस्तेमाल करें। नेस्टेड ऑब्जेक्ट सपोर्ट नहीं होते |
+| `launchApp({ permissions })` | टारगेट पर `app.permissions`: `YES`, `NO`, `unset` के लिए `grant`, `deny`, `reset`। और नाम [प्लान में हैं](#planned) |
+
+```ts title="e2e.config.ts"
+import type { E2EConfig } from 'e2e';
+import { mobile } from '@e2e-dev/mobile';
+
+export default {
+  targets: [
+    {
+      name: 'ios',
+      engine: mobile({ platform: 'ios' }),
+      app: {
+        bundleId: 'com.example.app',
+        appPath: 'ios/build/MyApp.app',
+        launchArguments: ['-mockServer', 'http://localhost:9001'],
+      },
+    },
+    {
+      name: 'android',
+      engine: mobile({ platform: 'android' }),
+      app: {
+        bundleId: 'com.example.app',
+        appPath: 'android/app/build/outputs/apk/debug/app-debug.apk',
+        launchArguments: ['--es', 'mockServer', 'http://localhost:9001'],
+      },
+    },
+  ],
+  workers: 1,
+} satisfies E2EConfig;
+```
+
+## एक स्पेक दोबारा लिखें
+
+कुछ भी अपने आप लॉन्च नहीं होता, इसलिए e2e टेस्ट `app.open()` से शुरू होता है।
+पासवर्ड [कॉन्फ़िगर किए हुए क्रेडेंशियल](/authentication) से आता है।
+
+```js title="Detox"
+describe('login', () => {
+  beforeAll(async () => { await device.launchApp({ newInstance: true }); });
+
+  it('shows the home screen', async () => {
+    await element(by.id('email')).typeText('ada@example.test');
+    await element(by.id('password')).typeText('hunter2');
+    await element(by.text('Sign in')).tap();
+    await waitFor(element(by.id('home'))).toBeVisible().withTimeout(10000);
+    await expect(element(by.text('Welcome, Ada'))).toBeVisible();
+  });
+});
+```
+
+```ts title="e2e"
+import { test } from '@e2e-dev/mobile';
+import { expect, credentials } from 'e2e';
+
+test('shows the home screen', async ({ agent, app, screen }) => {
+  await app.open();
+  const ada = credentials.user('ada');
+  await agent.act('sign in as {username}', { params: { username: ada.username, password: ada.password } });
+  await expect(screen.getByTestId('home')).toBeVisible({ timeout: 10_000 });
+  await expect(screen.getByText('Welcome, Ada')).toBeVisible();
+});
+```
+
+## हर Detox कॉल मैप करें
+
+### मैचर और एक्शन
+
+| Detox | e2e |
+| --- | --- |
+| `by.id('x')`, `by.text('t')`, `by.label('l')` | `screen.getByTestId('x')`, `screen.getByText('t')`, `screen.getByLabel('l')` |
+| `by.id('x').withAncestor(by.id('row'))` | `screen.getByTestId('row').getByTestId('x')` |
+| `.atIndex(n)` | `.nth(n)` |
+| `.tap()`, `.tap({ x, y })`, `.longPress()`, `.multiTap(2)`, `.multiTap(3)` | `.tap()`, `.tap({ position: { x, y } })`, `.longPress()`, `.doubleTap()`, `.tap({ count: 3 })` |
+| `.typeText(t)` | `.pressSequentially(t)` |
+| `.replaceText(t)`, `.clearText()`, `.tapReturnKey()` | `.fill(t)`, `.clear()`, `.press('Enter')` |
+| `.swipe('up', 'fast')` | `.swipe({ direction: 'down', momentum: 'fast' })`। Detox उँगली की दिशा का नाम लेता है, e2e कंटेंट की |
+| `list.scroll(200, 'down')` | `list.swipe({ direction: 'down' })`, बिना ऑफ़सेट के |
+| `waitFor(el).toBeVisible().whileElement(list).scroll(...)` | `list.scrollUntilVisible(el)`, जब Detox ऊपर स्क्रॉल करे तो `{ direction: 'up' }` के साथ |
+
+### एक्सपेक्टेशन
+
+| Detox | e2e |
+| --- | --- |
+| `waitFor(el).toBeVisible().withTimeout(ms)` | `await expect(el).toBeVisible({ timeout: ms })` |
+| `.toBeVisible()`, `.toHaveText(t)` | वही |
+| `.not.toBeVisible()` | `.toBeHidden()` |
+| `.toExist()`, `.not.toExist()` | `.toBeAttached()`, `.toBeAttached({ attached: false })` |
+| `.toHaveToggleValue(true)` | `.toBeChecked()` |
+| `.toHaveLabel(l)` | `.toHaveAccessibleName(l)` |
+| `.toHaveValue(v)` | `.toHaveValue(v)`, सिर्फ़ फ़ॉर्म कंट्रोल पर |
+
+### डिवाइस
+
+| Detox | e2e |
+| --- | --- |
+| `device.launchApp({ newInstance: true })` | `app.restart()` |
+| `beforeAll` में `device.launchApp()` | `beforeAll` में `app.open()`, जिसे `device`, `app` और `screen` मिलते हैं |
+| `device.launchApp({ newInstance: false })` | बिना `relaunch` के `device.openApp(id)` |
+| `device.launchApp({ launchArgs, permissions })` | `device.openApp(id, { relaunch: true, launchArguments, permissions })` |
+| `device.resetAppState()` | `app.clearState()` |
+| `device.launchApp({ delete: true })` | `device.installApp(path, { reinstall: true })`, फिर `app.open()` |
+| `device.uninstallApp()` | `device.uninstallApp(id)`; बिना id के पिन किया हुआ ऐप |
+| `device.launchApp({ url })`, `device.openURL({ url })` | `device.openLink(url)` |
+| `device.terminateApp()`, `sendToHome()`, `pressBack()` | `device.closeApp()`, `home()`, `back()` |
+| `device.setLocation(lat, lon)`, `setOrientation('landscape')` | `device.setLocation({ latitude, longitude })`, `setOrientation('landscape-left')` |
+| `device.shake()` | `device.shake()`, लोकल सिम्युलेटर या एम्युलेटर पर |
+| `device.setBiometricEnrollment(true)` | `device.enrollBiometrics('faceid', true)` |
+| `device.matchFace()`, `unmatchFace()`, `matchFinger()`, `unmatchFinger()` | `device.setBiometrics('faceid' \| 'touchid', 'match' \| 'nonmatch')` |
+| `device.takeScreenshot()` | `app.screenshot('label')`, या तुलना के लिए [`toHaveScreenshot`](/visual-testing) |
+| `device.getPlatform()` | `platform` फ़िक्स्चर |
+| टेस्ट के नाम में `:ios:` / `:android:` | टेस्ट पर `{ platforms: ['ios'] }` |
+
+## e2e में अभी क्या नहीं है
+
+"प्लान में है" रोडमैप पर है, और "अभी नहीं" की कोई तारीख़ नहीं है। "प्लान में
+नहीं" को जानबूझकर बाहर रखा गया है।
+
+### प्लान में है
+
+| Detox | अभी क्या इस्तेमाल करें |
+| --- | --- |
+| `artifacts.plugins.log`, `--record-logs` | CI स्टेप में `adb logcat` या `xcrun simctl spawn booted log stream` |
+| `by.id('x').and(by.text('y'))` | `.filter({ hasText })`, या `device.locator('id=x label="y"')` |
+| `system.element(by.system.label('Allow'))` | `device.alert('accept' \| 'dismiss')`, या `app.permissions` ताकि प्रॉम्प्ट दिखे ही नहीं |
+| `.longPressAndDrag()`, `.swipe()` ऑफ़सेट | `.dragTo(target)`, `screen.swipe({ from, to })` |
+| `.scrollTo('bottom')` | `list.scrollUntilVisible(lastRow)`, या `{ direction: 'up' }` के साथ पहली रो |
+| `.tapBackspaceKey()` | छोटे टेक्स्ट के साथ `.fill(t)` |
+| `.setDatePickerDate()`, `.setColumnToValue()`, `.adjustSliderToPosition()` | एक `agent.act` लक्ष्य, या स्लाइडर पर `screen.swipe({ from, to })` |
+| फ़ॉर्म कंट्रोल के बाहर `.toHaveValue(v)` | `expect(device.locator('id=x value="v"')).toBeVisible()` |
+| `health`, `homekit`, `speech`, `faceid`, `userTracking` के लिए `permissions`; वैल्यू `always`, `inuse`, `limited` | प्रॉम्प्ट का बटन टैप करें, या `device.alert('accept')` |
+| `device.sendUserNotification()`, `.pinch()` | [`unstable_raw`](/reference/mobile#unstable_raw) पर `client.apps.push()`, `client.interactions.pinch()` |
+| `launchApp({ languageAndLocale })` | iOS पर `app.launchArguments: { AppleLanguages: ['fr'], AppleLocale: 'fr_FR' }`, [ऐप को दूसरी भाषा में चलाएँ](/mobile#run-the-app-in-another-language) देखें |
+| Jest `globalSetup`, `globalTeardown` | रन से पहले डिपेंडेंसी शुरू करें |
+| `device.reverseTcpPort()` | CI स्टेप में `adb reverse` चलाएँ |
+| `.getAttributes()` | `.textContent()`, `.inputValue()`, `.isEnabled()`, `.isVisible()`, `.isChecked()`, `.boundingBox()` |
+| `device.setStatusBar()` | `xcrun simctl status_bar`। `toHaveScreenshot` स्टेटस बार को स्थिर रखता है |
+
+### अभी नहीं
+
+| Detox | अभी क्या इस्तेमाल करें |
+| --- | --- |
+| `.toBeVisible(50)`, और 75% डिफ़ॉल्ट | `.toBeVisible()` एरिया नहीं, प्लेटफ़ॉर्म का फ़्लैग जाँचता है। `.boundingBox()` की तुलना करें |
+| `web.element(by.web.cssSelector('x'))` | WebView का ऐक्सेसिबिलिटी टेक्स्ट और लेबल, या एक `agent.act` लक्ष्य |
+| `device.resetContentAndSettings()` | `app.clearState()`, और iOS पर साथ में `device.clearKeychain()` |
+| `device: { type, os }`, `headless`, `bootArgs` | CI स्टेप में डिवाइस बनाएँ और बूट करें |
+
+### प्लान में नहीं
+
+| Detox | इसकी जगह क्या इस्तेमाल करें |
+| --- | --- |
+| `device.reloadReactNative()` | `app.restart()`। रीलोड के लिए ऐप में Detox फ़्रेमवर्क चाहिए |
+| `device.disableSynchronization()`, `enableSynchronization()` | ये कॉल हटा दें। बंद करने के लिए कोई सिंक्रोनाइज़ेशन नहीं होता |
+| `device.setURLBlacklist()` | यह कॉल हटा दें। नेटवर्क एक्टिविटी कभी किसी एक्शन को नहीं रोकती |
+| init पर इंस्टॉल, `behavior.init.reinstallApp`, `--reuse` | `auto: true` के साथ वर्कर फ़िक्स्चर में `device.installApp()` |
+| `apps.<name>.build`, `detox build` | `e2e run` से पहले आपका सामान्य बिल्ड |
+| सटीक ऑफ़सेट से `.scroll()` | `screen.swipe({ from, to })` |
+| `by.type('RCTImageView')` | `device.locator('role=image')`, या एक `testID` |
+| Jest रिपोर्टर, Allure | `junit` रिपोर्टर, या कोई कस्टम रिपोर्टर |
+
+## जानबूझकर रखे गए फ़र्क
+
+- e2e ऐप के आइडल होने का इंतज़ार नहीं करता। एक्शन इंतज़ार करते हैं और असर्शन
+  रीट्राई होते हैं। जो कंट्रोल अभी स्क्रीन पर आ रहा है उसके लिए
+  [`transition`](/reference/mobile#transition) बढ़ाएँ; एजेंट एक्शन के लिए
+  [`settle`](/reference/mobile#settle)।
+- इंजन खुद कुछ इंस्टॉल नहीं करता। `device.installApp()` कॉल करें।
+- [लोकेटर](/reference/screen) स्ट्रिक्ट होते हैं। एक से ज़्यादा मैच पर एक्शन
+  `LOCATOR_AMBIGUOUS` के साथ फ़ेल होता है। `.filter()`, `.first()` या `.nth()`
+  से दायरा छोटा करें।
+- डिवाइस में `test.setup` या `{ session }` नहीं होता।
+  [वेब से क्या अलग है](/mobile#what-differs-from-the-web) देखें।
+
+## आगे
+
+<CardGroup cols={2}>
+  <Card title="मोबाइल" icon="mobile-screen" href="/mobile">
+    अपना ऐप और डिवाइस कॉन्फ़िगर करें।
+  </Card>
+  <Card title="मोबाइल इंजन रेफ़रेंस" icon="book" href="/reference/mobile">
+    हर ऑप्शन, `device` फ़िक्स्चर और टूल पैक।
+  </Card>
+</CardGroup>

@@ -1,0 +1,157 @@
+---
+title: Selenium से
+description: लोकेटर, रीट्राई होने वाले असर्शन और एजेंट लक्ष्यों के साथ Selenium फ़्लो को TypeScript में दोबारा लिखें।
+"og:image": "https://e2e.com/docs/images/og/migrate/selenium.png?v=32737f50da"
+"twitter:image": "https://e2e.com/docs/images/og/migrate/selenium.png?v=32737f50da"
+---
+
+import { SetupPrompt } from '../../snippets/setup-prompt-card.jsx';
+
+export const migrationPrompt = `इस प्रोजेक्ट के Selenium टेस्ट को एक बार में एक फ़्लो करके e2e पर माइग्रेट करें। डॉक्स: \`https://e2e.com/docs/migrate/selenium.md\`
+
+1. ऊपर दी गई माइग्रेशन गाइड पढ़ें। इसमें Selenium कॉन्फ़िग और WebDriver कॉल को e2e से मैप किया गया है, और यह भी लिखा है कि e2e में अभी क्या नहीं है।
+2. e2e टेस्ट TypeScript में होते हैं। अगर Selenium टेस्ट सूट Java, Python या किसी और भाषा में है, तो मुझसे पूछें कि नया टेस्ट प्रोजेक्ट कहाँ रखना है, जैसे एक \`e2e/\` फ़ोल्डर में उसकी अपनी \`package.json\` के साथ।
+3. अगर उस प्रोजेक्ट में कोई e2e कॉन्फ़िग (\`e2e.config.ts\`, \`.mts\`, \`.js\`, या \`.mjs\`) नहीं है, तो वहाँ \`npx e2e init --yes\` (या pnpm या bun की बराबर कमांड) चलाएँ। यह कॉन्फ़िग और एक उदाहरण टेस्ट लिखता है, और अभी कुछ इंस्टॉल नहीं करता।
+4. e2e स्किल पढ़ें (\`npx e2e guide\` इसे प्रिंट करता है, \`npx e2e guide <topic>\` एक टॉपिक प्रिंट करता है) और नीचे के हर स्टेप में इसका पालन करें।
+5. अगर आपने init चलाया है, तो मुझसे पूछें कि एजेंट स्टेप के लिए कौन-सा मॉडल इस्तेमाल करना है: ChatGPT, GitHub Copilot, OpenCode Console या SuperGrok सब्सक्रिप्शन, कोई API key, या लोकल मॉडल। उसे उसके प्रोवाइडर पैकेज से कॉन्फ़िगर करें। अगर इसमें साइन इन चाहिए, तो मुझे \`npx e2e login\` कमांड दें और मेरे कन्फ़र्म करने तक रुकें।
+6. टारगेट का \`app\` उसी URL पर सेट करें जिसे हर \`driver.get\` इस्तेमाल करता था, और अगर टेस्ट सूट ऐप शुरू करता है तो वह कमांड भी दें। पासवर्ड और टोकन को \`credentials\` या \`secrets\` में ले जाएँ।
+7. डिपेंडेंसी इंस्टॉल करें।
+8. पेज ऑब्जेक्ट और उन्हें इस्तेमाल करने वाले फ़्लो की लिस्ट दिखाएँ, और मुझसे पूछें कि पहले किसे माइग्रेट करना है। एक पेज ऑब्जेक्ट और उसके फ़्लो सुझाएँ।
+9. गाइड की टेबल देखकर उन फ़्लो को \`tests/\` के अंदर \`.e2e.ts\` फ़ाइलों में दोबारा लिखें (e2e डिफ़ॉल्ट रूप से \`tests/**/*.e2e.ts\` चलाता है)। किसी फ़्लो को पोर्ट करने से पहले "e2e में अभी क्या नहीं है" देखें। अगर उसमें ऐसी कोई कॉल है जिसकी फ़्लो को ज़रूरत है, तो "अभी क्या इस्तेमाल करें" वाला वर्कअराउंड इस्तेमाल करें, या फ़्लो को Selenium में ही रहने दें और वजह बताएँ। CSS और XPath के बजाय रोल, लेबल और टेस्ट id क्वेरी को प्राथमिकता दें। हर वेट और \`Thread.sleep\` की जगह लोकेटर असर्शन लिखें। जो क्वेरी कई नोड से मैच करे, उसका दायरा छोटा करें। पेज ऑब्जेक्ट के सेटअप कोड को फ़िक्स्चर बना दें।
+10. नेविगेशन और आख़िरी असर्शन को \`app.open()\` और लोकेटर असर्शन के साथ डिटर्मिनिस्टिक रखें। जहाँ स्क्रिप्ट किए हुए इंटरैक्शन की कतार बार-बार टूटती है, वहाँ उसके लिए एक \`agent.act\` लक्ष्य सुझाएँ।
+11. नई फ़ाइलों को \`npx e2e run <file>\` से चलाएँ और पास होने तक ठीक करें। मेरे कन्फ़र्म करने तक Selenium टेस्ट को न हटाएँ।
+12. संक्षेप में बताएँ कि कौन-से फ़्लो माइग्रेट हुए, कौन-से Selenium में ही रहे, और क्यों।`;
+
+e2e Selenium टेस्ट सूट की जगह TypeScript टेस्ट देता है। लोकेटर नोड को रोल और
+लेबल से ढूँढते हैं, और असर्शन पास होने या टाइमआउट होने तक रीट्राई होते रहते हैं।
+Java या Python टेस्ट सूट को दोबारा लिखना पड़ता है, इसलिए दोनों सूट साथ चलाएँ और
+एक बार में एक फ़्लो माइग्रेट करें।
+
+<SetupPrompt>
+
+<Prompt description={migrationPrompt} children={migrationPrompt} actions={["copy", "cursor"]} />
+
+</SetupPrompt>
+
+कई सेशन तक चलने वाले माइग्रेशन के लिए [`migrate-to-e2e` स्किल](/coding-agents#migrate-an-existing-suite) एक प्रोग्रेस फ़ाइल में नोट करती है कि क्या माइग्रेट हो चुका है, और जब तक आप हर टेस्ट रिटायर नहीं करते, पुराना टेस्ट सूट चालू रखती है।
+
+## कॉन्फ़िग पोर्ट करें
+
+<Note>[क्विकस्टार्ट](/quickstart) से e2e इंस्टॉल करें। मॉडल सिर्फ़ एजेंट कॉल के लिए ज़रूरी है, इसलिए नीचे का उदाहरण बिना मॉडल के चलता है।</Note>
+
+| Selenium | e2e |
+| --- | --- |
+| हर `driver.get` में दिया URL | टारगेट पर `app: { url }`, फिर रिलेटिव पाथ |
+| किसी स्क्रिप्ट में ऐप शुरू करना | `app: { url, command }`, [ऐप शुरू करना](/web#starting-your-app) देखें |
+| हर ब्राउज़र के लिए एक ड्राइवर | हर `web({ browser })` बिल्ड के लिए एक टारगेट: `chromium`, `firefox`, या `webkit`, न कि Chrome, Edge, या Safari |
+| Selenium Grid | पैरेलल रन के लिए `workers`, होस्टेड Chromium के लिए [ब्राउज़र प्रोवाइडर](/browser#hosted-browsers) |
+| `System.getenv` से पासवर्ड | कॉन्फ़िग में `credentials` या `secrets`, [ऑथेंटिकेशन](/authentication) देखें |
+
+## एक फ़्लो दोबारा लिखें
+
+```java title="Selenium"
+driver.get("http://localhost:3000/login");
+WebDriverWait wait = new WebDriverWait(driver, Duration.ofSeconds(10));
+wait.until(visibilityOfElementLocated(By.id("username"))).sendKeys("admin@example.test");
+driver.findElement(By.id("password")).sendKeys(System.getenv("ADMIN_PASSWORD"));
+driver.findElement(By.xpath("//button[contains(., 'Sign in')]")).click();
+wait.until(urlContains("/dashboard"));
+assertEquals("Welcome back, admin!",
+    driver.findElement(By.cssSelector(".greeting")).getText());
+```
+
+```ts title="e2e"
+import { test } from '@e2e-dev/web';
+import { expect, credentials } from 'e2e';
+
+test('signs in', async ({ app, screen, browser }) => {
+  const admin = credentials.user('admin');
+  await app.open('/login');
+  await screen.getByLabel('Username').fill(admin.username);
+  await screen.getByLabel('Password').fill(admin.password);
+  await screen.getByRole('button', 'Sign in').tap();
+  await expect(browser).toHaveURL('/dashboard');
+  await expect(screen.getByRole('status')).toHaveText('Welcome back, admin!');
+});
+```
+
+## हर WebDriver कॉल मैप करें
+
+| Selenium | e2e |
+| --- | --- |
+| `driver.get(url)`, `navigate().back()`, `.forward()`, `.refresh()` | `app.open(path)`, `app.back()`, `browser.forward()`, `browser.reload()` |
+| `getCurrentUrl()`, `getTitle()`, `manage().addCookie`, `getScreenshotAs` | `browser.url()`, `browser.title()`, `browser.setCookies`, `app.screenshot('label')` |
+| `By.id('x')` | `browser.locator('#x')`, या `'[id="x"]'` जब id में `:`, `.`, `$` हो या वह अंक से शुरू हो |
+| `By.name`, `By.cssSelector`, `By.xpath` | `browser.locator('[name="x"]')`, `browser.locator('css or xpath')` |
+| `By.linkText`, `By.partialLinkText` | `screen.getByRole('link', { name })`, `name: /part/` |
+| `findElements(...).size()`, `.get(n)` | `await locator.count()`, `locator.nth(n)` |
+| `.click()`, `.clear()`, `Actions.moveToElement`, `Actions.dragAndDrop` | `.tap()`, `.clear()`, `.hover()`, `.dragTo(target)` |
+| `.sendKeys('text')` | `.fill('text')` कंटेंट बदल देता है, `.pressSequentially('text')` आगे जोड़ता है |
+| `.sendKeys(Keys.ENTER)`, `Actions.keyDown(CONTROL).sendKeys('a')` | `.press('Enter')`, `.press('ControlOrMeta+a')` |
+| फ़ाइल इनपुट पर `.sendKeys(path)`, `new Select(el).selectByVisibleText` | `.setInputFiles(path)`, `.selectOption({ label })` |
+| `.getText()`, `.isDisplayed()`, `.getDomAttribute(name)` | `.textContent()`, `.isVisible()`, `.getAttribute(name)` |
+| `.getAttribute('value')`, `.getAttribute('checked')` | `.inputValue()`, `.isChecked()`। e2e का `.getAttribute()` प्रॉपर्टी नहीं, DOM एट्रीब्यूट पढ़ता है |
+| `wait.until(visibilityOf(...))`, `textToBe(...)`, `urlContains(...)` | `expect(locator).toBeVisible()`, `.toHaveText(...)`, `expect(browser).toHaveURL(/.../)` |
+| `switchTo().frame()`, `switchTo().alert().accept()` | `browser.frameLocator('#frame')`, एक्शन से पहले `browser.onDialog('accept')` |
+| `switchTo().window(handle)`, `getWindowHandles()`, `switchTo().newWindow()` | `tab.activate()`, `browser.tabs()`, `browser.newTab()`; ऐप जो टैब खोले उसके लिए `browser.waitForPopup(() => trigger)`, [टैब](/reference/web#tabs) देखें |
+| `executeScript(script, args)` | `browser.evaluate(fn, arg)`, इनपुट और आउटपुट सिर्फ़ JSON |
+| पेज ऑब्जेक्ट | `test.extend` से बना फ़िक्स्चर, या `agent.act` का एक लक्ष्य, [पेज ऑब्जेक्ट](/page-object-model) देखें |
+
+## e2e में अभी क्या नहीं है
+
+"प्लान में है" का मतलब रोडमैप पर है, और "अभी नहीं" का मतलब अभी कोई तारीख़ नहीं
+है। "प्लान में नहीं" का मतलब e2e इसे जानबूझकर बाहर रखता है।
+
+### प्लान में है
+
+| Selenium | अभी क्या इस्तेमाल करें |
+| --- | --- |
+| `executeScript(script, element)`, `getDomProperty`, `getCssValue` | `.tap()` या `.scrollIntoView()` जैसा लोकेटर एक्शन, या CSS सेलेक्टर के साथ `browser.evaluate` |
+| `element.findElement(By.cssSelector)`, WebdriverIO `$('a').$('b')` | एक `browser.locator('a >> b')` सेलेक्टर, या चेन की हुई `getBy*` क्वेरी |
+| `ChromeOptions.addArguments`, `setBinary`, `Proxy`, `acceptInsecureCerts` | Chrome या Edge को उन फ़्लैग के साथ शुरू करें, फिर `web({ connect })` से अटैच करें |
+| `@BeforeSuite`, `@AfterSuite`, pytest सेशन-स्कोप्ड फ़िक्स्चर, WebdriverIO `onPrepare` | रन के लिए एक बार: `app.command` जो स्क्रिप्ट चलाए, या `e2e run` के आसपास एक रैपर। फ़ाइल के लिए एक बार: `beforeAll` और `afterAll`। साइन इन: टॉप-लेवल `test.setup` जो सेशन सेव करे |
+| वेब के लिए BrowserStack या Sauce Labs | आपका अपना [ब्राउज़र प्रोवाइडर](/browser#write-a-provider), अगर वेंडर CDP एंडपॉइंट देता हो |
+| `manage().logs()`, रिक्वेस्ट लिसनर, जियोलोकेशन | `browser.addInitScript` में पेज पैच करें, `browser.route` में रिक्वेस्ट रिकॉर्ड करें |
+| `setNetworkConditions` | ऑफ़लाइन के लिए `browser.route` में रिक्वेस्ट रोकें। थ्रॉटलिंग या लेटेंसी नहीं है, वे टेस्ट Selenium में ही रहने दें |
+
+### अभी नहीं
+
+| Selenium | अभी क्या इस्तेमाल करें |
+| --- | --- |
+| `new RemoteWebDriver(gridUrl)`, रिमोट नोड पर Firefox या Safari | CDP एंडपॉइंट पर `web({ connect })`। `firefox` और `webkit` टारगेट लोकल पर चलाएँ |
+| एक टेस्ट में दो ड्राइवर, WebdriverIO `multiremote` | दूसरे यूज़र को ऐप के API से चलाएँ |
+| `getPageSource()`, `getLocalStorage()`, `getSessionStorage()` | `browser.evaluate`, जैसे `() => localStorage.getItem('k')` |
+| Java, Python, C#, या Ruby बाइंडिंग | टेस्ट TypeScript या JavaScript में होते हैं |
+
+### प्लान में नहीं
+
+| Selenium | इसकी जगह क्या इस्तेमाल करें |
+| --- | --- |
+| Cucumber फ़ीचर फ़ाइलें | हर सिनेरियो को एक टेस्ट के रूप में दोबारा लिखें। अक्सर एक स्टेप एक `agent.act` लक्ष्य में फ़िट बैठता है |
+| `Thread.sleep`, `Actions.pause`, `wait.until(elementToBeClickable(...))` | जिस स्थिति का इंतज़ार है उस पर लोकेटर असर्शन। हर एक्शन अपने नोड का इंतज़ार करता है |
+| डायलॉग खुलने के बाद `switchTo().alert()`, `alertIsPresent()` | डायलॉग खोलने वाले एक्शन से पहले `browser.onDialog(handler)` |
+| असली Safari, IE मोड | Safari के सबसे क़रीब `webkit` बिल्ड है। IE मोड के टेस्ट Selenium में ही रहने दें |
+| `executeCdpCommand`, `DevTools.send`, ऐसे SDK जो ड्राइवर लेते हैं | वे टेस्ट Selenium में ही रहने दें। रॉ ड्राइवर कॉल न रिकॉर्ड होती है न छिपाई जाती है |
+| Allure रिपोर्ट | `junit` रिपोर्टर का XML Allure को दें, या `htmlReporter()` इस्तेमाल करें |
+
+## जानबूझकर रखे गए फ़र्क
+
+- `findElement` पहला मैच लेता है। e2e कई मैच मिलने पर `LOCATOR_AMBIGUOUS` के
+  साथ फ़ेल होता है, इसलिए `.filter()`, `.first()` या `.nth()` से दायरा छोटा करें।
+- कोई इम्प्लिसिट वेट नहीं होता। एक्शन और असर्शन खुद `actionTimeout` और
+  `assertionTimeout` तक इंतज़ार करते हैं।
+- हर टेस्ट को शेयर किया हुआ ड्राइवर नहीं, नया ब्राउज़र कॉन्टेक्स्ट मिलता है। एक
+  बार साइन इन करने के लिए `test.setup` और `{ session }` इस्तेमाल करें,
+  [ऑथेंटिकेशन](/authentication) देखें।
+- पेज का साइज़ `setSize` या `maximize()` से नहीं, `web({ viewport })` से आता है।
+
+## आगे
+
+<CardGroup cols={2}>
+  <Card title="बुनियादी कॉन्सेप्ट" icon="pen-to-square" href="/core-concepts">
+    स्क्रिप्ट किए हुए सेलेक्टर के बजाय लक्ष्य, असर्शन और लोकेटर।
+  </Card>
+  <Card title="screen रेफ़रेंस" icon="crosshairs" href="/reference/screen">
+    हर क्वेरी, रिफ़ाइनमेंट, एक्शन और रीड।
+  </Card>
+</CardGroup>

@@ -1,0 +1,416 @@
+---
+title: Playwright से
+description: Playwright के साथ-साथ e2e चलाएँ और एक बार में एक फ़ाइल करके टेस्ट माइग्रेट करें।
+"og:image": "https://e2e.com/docs/images/og/migrate/playwright.png?v=e01f34cedb"
+"twitter:image": "https://e2e.com/docs/images/og/migrate/playwright.png?v=e01f34cedb"
+---
+
+import { SetupPrompt } from '../../snippets/setup-prompt-card.jsx';
+
+export const migrationPrompt = `इस प्रोजेक्ट के Playwright टेस्ट को एक बार में एक स्पेक करके e2e पर माइग्रेट करें। डॉक्स: \`https://e2e.com/docs/migrate/playwright.md\`
+
+1. ऊपर दी गई माइग्रेशन गाइड पढ़ें। इसमें वे Playwright कॉन्फ़िग key, API और CLI फ़्लैग मैप किए गए हैं जो e2e में काम करते हैं, और यह भी लिखा है कि e2e में अभी क्या नहीं है।
+2. अगर प्रोजेक्ट में कोई e2e कॉन्फ़िग (\`e2e.config.ts\`, \`.mts\`, \`.js\`, या \`.mjs\`) नहीं है, तो \`npx e2e init --yes\` (या pnpm या bun की बराबर कमांड) चलाएँ। यह कॉन्फ़िग और एक उदाहरण टेस्ट लिखता है, और अभी कुछ इंस्टॉल नहीं करता।
+3. e2e स्किल पढ़ें (\`npx e2e guide\` इसे प्रिंट करता है, \`npx e2e guide <topic>\` एक टॉपिक प्रिंट करता है) और नीचे के हर स्टेप में इसका पालन करें।
+4. अगर आपने init चलाया है, तो मुझसे पूछें कि एजेंट स्टेप के लिए कौन-सा मॉडल इस्तेमाल करना है: ChatGPT, GitHub Copilot, OpenCode Console या SuperGrok सब्सक्रिप्शन, कोई API key, या लोकल मॉडल। उसे उसके प्रोवाइडर पैकेज से कॉन्फ़िगर करें। अगर इसमें साइन इन चाहिए, तो मुझे \`npx e2e login\` कमांड दें और मेरे कन्फ़र्म करने तक रुकें।
+5. गाइड की कॉन्फ़िग टेबल देखकर \`playwright.config.ts\` को e2e कॉन्फ़िग में पोर्ट करें। \`@playwright/test\` इंस्टॉल रहने दें और दोनों फ़ाइल पैटर्न अलग रखें।
+6. डिपेंडेंसी इंस्टॉल करें।
+7. Playwright के स्पेक की लिस्ट दिखाएँ और मुझसे पूछें कि पहले किसे माइग्रेट करना है। ऐसा फ़्लो सुझाएँ जिसके स्टेप अक्सर बदलते हैं, जैसे विज़ार्ड या चेकआउट।
+8. उस स्पेक के हर Playwright API को "e2e में अभी क्या नहीं है" से मिलाएँ। "अभी क्या इस्तेमाल करें" या "इसकी जगह क्या इस्तेमाल करें" वाली एंट्री इस्तेमाल करें, या वह टेस्ट Playwright में ही रहने दें और मुझे वजह बताएँ। फिर स्पेक को \`tests/\` के अंदर \`.e2e.ts\` फ़ाइल में दोबारा लिखें (e2e डिफ़ॉल्ट रूप से \`tests/**/*.e2e.ts\` चलाता है)। गाइड देखकर हर \`page\` कॉल को \`screen\`, \`app\`, या \`browser\` पर मैप करें। जहाँ Playwright क्वेरी टेक्स्ट के हिस्से से मैच करती थी, वहाँ \`{ exact: false }\` या RegExp जोड़ें।
+9. नेविगेशन और आख़िरी असर्शन को \`app.open()\` और लोकेटर असर्शन के साथ डिटर्मिनिस्टिक रखें। जहाँ स्क्रिप्ट किए हुए इंटरैक्शन की कतार बार-बार टूटती है, वहाँ उसके लिए एक \`agent.act\` लक्ष्य सुझाएँ।
+10. नई फ़ाइल को \`npx e2e run <file>\` से चलाएँ और पास होने तक ठीक करें। मेरे कन्फ़र्म करने तक Playwright स्पेक को न हटाएँ।
+11. संक्षेप में बताएँ कि कौन-से टेस्ट माइग्रेट हुए, कौन-से Playwright में ही रहे, और क्यों।`;
+
+एक ही प्रोजेक्ट में Playwright के साथ-साथ e2e चलाया जा सकता है, ताकि आप एक बार में
+एक फ़ाइल करके टेस्ट माइग्रेट कर सकें। `@e2e-dev/web` अपना पिन किया हुआ
+`playwright-core` साथ लाता है, इसलिए आपका `@playwright/test` वर्ज़न वैसा ही
+रहता है। e2e `e2e.config.ts` पढ़ता है और डिफ़ॉल्ट रूप से `tests/**/*.e2e.ts`
+ढूँढता है, इसलिए दोनों फ़ाइल पैटर्न अलग रखें।
+
+<SetupPrompt>
+
+<Prompt description={migrationPrompt} children={migrationPrompt} actions={["copy", "cursor"]} />
+
+</SetupPrompt>
+
+कई सेशन तक चलने वाले माइग्रेशन के लिए [`migrate-to-e2e` स्किल](/coding-agents#migrate-an-existing-suite) एक प्रोग्रेस फ़ाइल में नोट करती है कि क्या माइग्रेट हो चुका है, और जब तक आप हर टेस्ट रिटायर नहीं करते, पुराना टेस्ट सूट चालू रखती है।
+
+## कॉन्फ़िग पोर्ट करें
+
+<Note>[क्विकस्टार्ट](/quickstart) से e2e इंस्टॉल करें और एक मॉडल कॉन्फ़िगर करें।</Note>
+
+Playwright की `testDir`, `baseURL`, `use`, `webServer` या `projects` जैसी कोई
+key देने पर एरर आता है, जिसमें सही e2e key का नाम लिखा होता है। हर key की लिस्ट
+[कॉन्फ़िग रेफ़रेंस](/reference/config) में है।
+
+| Playwright | e2e |
+| --- | --- |
+| `use.baseURL`, `webServer` | टारगेट पर `app: { url, command }`, [ऐप शुरू करना](/web#starting-your-app) देखें |
+| `webServer.reuseExistingServer` | `app.command: { reuseExisting: true }`; CI इसे अनदेखा करता है |
+| `projects` | `targets`, हर एक का अपना इंजन इंस्टेंस |
+| `testDir`, `testMatch`, `testIgnore` | `tests`, प्रोजेक्ट रूट से ग्लॉब; शुरुआत में `!` से फ़ाइलें बाहर रखी जाती हैं |
+| `retries`, `workers`, `timeout` | वही नाम, [अलग डिफ़ॉल्ट](#defaults-that-differ) के साथ; `workers` एक इंटीजर है |
+| `expect.timeout`, `use.actionTimeout`, `globalTimeout` | `assertionTimeout`, `actionTimeout`, `maxDuration`; `maxDuration` की घड़ी ऐप शुरू होने पर नहीं, टेस्ट शुरू होने पर चलती है |
+| `expect.toPass` | टॉप-लेवल [`toPass`](/reference/config#topass) |
+| `maxFailures`, `use.headless: false` | CLI पर `--max-failures <n>` और `--headed` |
+| `reporter`, `outputDir` | `reporters: ['list', 'junit', htmlReporter()]`, जहाँ `htmlReporter` `@e2e-dev/html-reporter` से आता है; साथ में `dot`, `line`, `json`, `markdown` और `ctrf` भी; `output`, डिफ़ॉल्ट `.e2e` |
+| `use.viewport`, `deviceScaleFactor`, `locale`, `timezoneId`, `colorScheme`, `reducedMotion`, `userAgent`, `testIdAttribute` | `web({ ... })` में वही key |
+| `use.browserName`, `httpCredentials`, `extraHTTPHeaders` | `web({ browser, basicAuth, headers })`; `basicAuth` और `headers` सिर्फ़ ऐप के ऑरिजिन पर लागू होते हैं, [`credentialOrigins`](/reference/web#credentialorigins) से और ऑरिजिन जुड़ते हैं |
+| `chromium.connectOverCDP(url)` | `web({ connect: { cdpEndpoint: () => url } })`, सिर्फ़ chromium के लिए |
+| `use.trace`, `use.video` | `trace`, `video`: कॉन्फ़िग, टारगेट या टेस्ट पर एक मोड। `web({ screencast: { size } })` वीडियो का साइज़ तय करता है |
+| `use.permissions` | टारगेट पर `app.permissions`, [ब्राउज़र परमिशन देना](/web#granting-browser-permissions) देखें |
+| `setup` प्रोजेक्ट से `use.storageState` | `session.save(name)` के साथ `test.setup`, फिर टेस्ट पर `{ session }`, [ऑथेंटिकेशन](/authentication) देखें |
+| तय वैल्यू के साथ `use.storageState: { cookies }` | फ़िक्स्चर में `browser.setCookies(cookies)` |
+
+## एक स्पेक दोबारा लिखें
+
+ऐसे फ़्लो से शुरू करें जिसके स्टेप अक्सर बदलते हैं, जैसे विज़ार्ड या चेकआउट।
+जो Playwright टेस्ट स्थिर हैं, वे वहीं रह सकते हैं।
+
+```ts title="Playwright"
+import { test, expect } from '@playwright/test';
+
+test('checkout', async ({ page }) => {
+  await page.goto('/cart');
+  await page.getByRole('button', { name: 'Checkout' }).click();
+  await page.getByLabel('Card number').fill('4242424242424242');
+  await page.getByLabel('Expiry').fill('12/30');
+  await page.getByLabel('CVC').fill('123');
+  await page.getByRole('button', { name: 'Pay' }).click();
+  await expect(page.getByRole('heading')).toHaveText('Order confirmed');
+});
+```
+
+```ts title="e2e"
+import { test } from '@e2e-dev/web';
+import { expect } from 'e2e';
+
+test('checkout', async ({ app, agent, screen }) => {
+  await app.open('/cart');
+  await agent.act('pay with the test card 4242 4242 4242 4242, expiry 12/30, CVC 123');
+  await expect(screen.getByRole('heading')).toHaveText('Order confirmed');
+});
+```
+
+एजेंट चेकआउट के स्टेप खुद करता है और फ़ॉर्म बदलने पर ढल जाता है। आप चाहें तो
+टेस्ट को पूरी तरह डिटर्मिनिस्टिक भी रख सकते हैं, हर `page.getBy*` लाइन की जगह
+`screen.getBy*` लिखकर।
+
+## हर API मैप करें
+
+यहाँ दी गई हर रो आज काम करती है। जो API यहाँ नहीं है, उसके लिए
+[e2e में अभी क्या नहीं है](#what-e2e-doesnt-have-yet) देखें। `browser` पर कॉल
+सिर्फ़ ब्राउज़र में चलती हैं, इसलिए जो टेस्ट इसे इस्तेमाल करता है वह
+`platforms: ['web']` लिखता है और बाकी टारगेट उसे छोड़ देते हैं।
+
+<AccordionGroup>
+<Accordion title="लोकेटर">
+
+| Playwright | e2e |
+| --- | --- |
+| `page.getByRole`, `getByLabel`, `getByText`, `getByTestId`, `getByPlaceholder` | `screen` पर वही; स्ट्रिंग [पूरे टेक्स्ट](#what-differs-on-purpose) से मैच करती है |
+| `getByAltText(alt)` | `getByRole('image', alt)` |
+| `filter({ hasText, hasNotText, has, hasNot })`, `first()`, `last()`, `nth(i)`, `count()`, `or()`, `all()` | वही |
+| `page.locator(selector)`, `page.frameLocator(selector)` | `browser` पर वही; CSS, `xpath=` और `>>` चेन काम करते हैं |
+| `page.click(selector)`, `page.fill(selector, value)`, `page.waitForSelector(selector)` | `browser.locator(selector).tap()`, `.fill(value)`, `.waitFor()` |
+
+</Accordion>
+<Accordion title="एक्शन">
+
+| Playwright | e2e |
+| --- | --- |
+| `click()`, `dblclick()` | `tap()`, `doubleTap()`; `click()` और `dblclick()` इनके एलियास हैं |
+| `click({ button: 'right' })`, `click({ delay })` | `secondaryTap()`, `longPress({ duration })` |
+| `click({ position })`, `click({ modifiers })`, `click({ clickCount: 3 })` | `tap({ position })`, `tap({ modifiers })`, `tap({ count: 3 })` |
+| `fill()`, `pressSequentially()`, `clear()`, `focus()`, `blur()`, `hover()`, `check()`, `uncheck()`, `dragTo()`, `setInputFiles(path)`, `selectOption({ label })` या `{ value }` | वही, बिना `force`, `trial` या `position` के |
+| `setInputFiles({ name, mimeType, buffer })` | सिर्फ़ वेब। ऐसा प्लेन ऑब्जेक्ट पास करें जिसमें सिर्फ़ `name`, `mimeType` और `buffer` हों। |
+| `press(key)` | एक कैरेक्टर या [नेम्ड कीबोर्ड बटन](/reference/engine#keys) के लिए वही; कीबोर्ड कोड के लिए `focus()` के बाद `browser.keyboard.press` |
+| `innerText()`, `allInnerTexts()`, `scrollIntoViewIfNeeded()` | `textContent()`, `allTextContents()`, `scrollIntoView()` |
+| `textContent()`, `allTextContents()`, `inputValue()`, `getAttribute()`, `boundingBox()`, `isVisible()`, `isHidden()`, `isEnabled()`, `isDisabled()`, `isChecked()`, `waitFor({ state })` | वही |
+| `page.keyboard.press`, `type`, `down`, `up`; `page.mouse.move`, `wheel`, `down`, `up` | `browser.keyboard` और `browser.mouse` पर वही |
+| `page.mouse.click(x, y)`, `page.mouse.dblclick(x, y)`, `page.dragAndDrop(source, target)` | `screen.tapAt({ x, y })`, `screen.doubleTapAt({ x, y })`, `source.dragTo(target)` |
+
+</Accordion>
+<Accordion title="असर्शन">
+
+| Playwright | e2e |
+| --- | --- |
+| `toBeVisible()`, `toBeHidden()`, `toBeEnabled()`, `toBeDisabled()`, `toBeChecked()`, `toBeFocused()`, `toBeAttached()`, `toBeInViewport()`, `toHaveText()`, `toContainText()`, `toHaveValue()`, `toHaveAttribute()`, `toHaveCount()`, `toHaveAccessibleName()`, `toHaveRole()`, `toBeEditable()` | वही, `{ visible }`, `{ enabled }`, `{ editable }`, `{ checked }`, `{ attached }`, `{ ratio }` और `{ ignoreCase }` के साथ; `toBeInViewport` ज़ीरो-साइज़ एलिमेंट को व्यूपोर्ट से बाहर मानता है और [डिवाइस पर अलग काम करता है](/reference/expect#tobeinviewport) |
+| `toBeEmpty()` | वही, `{ timeout }` के साथ |
+| `toHaveId(id)`, `toContainClass(name)` | `toHaveAttribute('id', id)`, `toHaveAttribute('class', RegExp)` |
+| `expect(page).toHaveURL()`, `toHaveTitle()` | `expect(browser).toHaveURL()`, `toHaveTitle()` |
+| `expect(page).toHaveScreenshot()`, `expect(locator).toHaveScreenshot()` | `expect(screen).toHaveScreenshot()` और लोकेटर रूप, [विज़ुअल तुलना](/visual-testing) देखें |
+| `expect(value)` के साथ `toBe()`, `toEqual()`, `toMatchObject()`, `toContain()`, `toHaveLength()`, `toHaveProperty()`, `toMatch()`, और ट्रुथिनेस और नंबर मैचर | वही, [वैल्यू मैचर](/reference/expect#value-matchers) देखें |
+| `expect(locator, 'message')`, `expect(page, 'message').toHaveScreenshot()`, `expect(value, 'message')` | वही, पेज के लिए `expect(screen, 'message')`; फ़ेलियर की शुरुआत इसी मैसेज से होती है, [लोकेटर मैचर](/reference/expect#locator-matchers) देखें |
+| `expect.any()`, `anything()`, `objectContaining()`, `arrayContaining()`, `stringMatching()`, `stringContaining()`, `expect.poll()`, `expect.soft()` | वही |
+| `expect.poll(read, { intervals })` | वही। [वैल्यू पोल करना](/reference/expect#polling-a-value) देखें |
+| `expect(fn).toPass(options?)` | वही। [ब्लॉक रीट्राई करना](/reference/expect#retrying-a-block) देखें |
+
+</Accordion>
+<Accordion title="नेविगेशन और ऐप">
+
+| Playwright | e2e |
+| --- | --- |
+| `page.goto(path)` | `app.open(path)`; ऑप्शन के लिए `browser.goto(url, { waitUntil, timeout })` |
+| `page.goBack()`, `goForward()`, `reload()`, `url()`, `title()`, `setViewportSize()` | `browser.back()`, `forward()`, `reload()`, `url()`, `title()`, `setViewport()` |
+| `page.waitForURL(url)` | `browser.waitForURL(url)` ग्लॉब, `RegExp` या सटीक URL के साथ |
+| `page.screenshot()` | `app.screenshot(label)`, व्यूपोर्ट का स्क्रीनशॉट, रिपोर्ट के साथ अटैच होता है |
+| `locator.screenshot()` | `locator.screenshot(label)`, मैच का व्यूपोर्ट के अंदर वाला हिस्सा, रिपोर्ट के साथ अटैच होता है |
+| हर टेस्ट के लिए नया `context` | हर अटेम्प्ट के लिए वही; `app.restart()` इसे दोबारा बनाता है, `app.clearState()` स्टोरेज भी साफ़ करता है |
+
+</Accordion>
+<Accordion title="नेटवर्क और ब्राउज़र">
+
+| Playwright | e2e |
+| --- | --- |
+| `page.route(pattern, handler)`, `unroute()`, `unrouteAll()` | `browser` पर वही; पैटर्न एक `RegExp`, ऐप URL के हिसाब से रिज़ॉल्व होने वाला URL ग्लॉब, या एक HTTP मेथड के लिए `{ method, url }` होता है |
+| `route.fulfill()`, `continue()`, `fallback()`, `abort()`, `fetch()` | वही, हर मेथड के ऑप्शन के लिए [`route`](/reference/web#route) देखें |
+| `page.waitForResponse(pattern)` | उन्हीं URL ग्लॉब के साथ `browser.waitForResponse(pattern)` |
+| `page.on('dialog')`, `page.waitForEvent('download')` | `browser.onDialog('accept')` या कोई हैंडलर; `browser.waitForDownload(() => trigger)` |
+| `page.waitForEvent('popup')` | `browser.waitForPopup(() => trigger)`, जो नए टैब को एक्टिव कर देता है, [टैब](/reference/web#tabs) देखें |
+| `context.pages()`, `context.newPage()`, `page.bringToFront()` | `browser.tabs()`, `browser.newTab()`, `tab.activate()`; कोई `context.on('page')` इवेंट नहीं |
+| `page.evaluate(fn, arg)` | `browser.evaluate(fn, arg)`, इनपुट और आउटपुट सिर्फ़ JSON |
+| `page.webmcp.tools()`, `page.webmcp.callTool(name, input)` | `browser.webmcp` पर वही, लॉन्च आर्ग्युमेंट या प्रेफ़रेंस के बजाय `web({ webmcp: true })` के साथ; सिर्फ़ मेन फ़्रेम, [WebMCP](/reference/web#webmcp) देखें |
+| `page.addInitScript()`, `page.emulateMedia({ colorScheme, reducedMotion })` | `browser.addInitScript()` या `web({ initScripts })`; `browser.emulateMedia()` |
+| `context.addCookies()`, `cookies()`, `clearCookies()` | `browser.setCookies()`, `browser.cookies()`, `browser.clearCookies()` |
+| `request` फ़िक्स्चर: `get()`, `post()`, `put()`, `patch()`, `delete()`, `head()`, `fetch()` | [`request`](/reference/request) पर वही: `data` के लिए `{ json }` (यह `undefined` वैल्यू या `Date` नहीं लेता), `params` के लिए URL में क्वेरी, `maxRedirects: 0` के लिए `{ redirect: 'manual' }`, प्रॉपर्टी के रूप में `status` और `headers`। यह कॉल के बीच कुकी सेव नहीं रखता: `headers` में टोकन या सेशन कुकी पास करें |
+| `page.request`, जो पेज की कुकी शेयर करता है | `browser.cookies()` से मिले `cookie` हेडर के साथ `request`, [साइन-इन की हुई रिक्वेस्ट](/api-testing#signed-in-requests) देखें |
+
+</Accordion>
+<Accordion title="टेस्ट स्ट्रक्चर">
+
+| Playwright | e2e |
+| --- | --- |
+| `import { test, expect } from '@playwright/test'` | `import { test } from '@e2e-dev/web'` और `import { expect } from 'e2e'` |
+| टेस्ट में `{ page }` | `{ screen, app, browser }` |
+| `test()`, `test.describe()`, `test.only`, `test.fail()`, `test.skip(title, fn)`, `test.skip(condition, reason)`, `test.fixme(title, fn)`, `test.fixme(condition, reason)` | वही, लेकिन सीरियल ग्रुप में `skip` ग्रुप पर ही दिया जाता है; शर्त वाले रूप टेस्ट बॉडी या `beforeEach` के अंदर काम करते हैं |
+| `test.setTimeout()` | टेस्ट बॉडी, `beforeEach` या `beforeAll` (उस हुक का अपना टाइमआउट) के अंदर वही; `afterEach` और `afterAll` इसे कॉल नहीं कर सकते। `describe` कॉलबैक में इसकी जगह `test.describe` को `{ timeout }` पास करें। बिना टाइमआउट के लिए `0` नहीं है: कोई बड़ी वैल्यू पास करें |
+| `test.slow()`, `test.slow(condition, description)` | टेस्ट बॉडी या `beforeEach` के अंदर वही: लागू टाइमआउट को तीन गुना करता है; `beforeAll` में उस हुक का अपना टाइमआउट। Playwright की तरह हर अटेम्प्ट में एक बार। describe लेवल पर (किसी भी रूप में) यह `COLLECTION_ERROR` देता है: इसे `beforeEach` में कॉल करें |
+| `beforeEach`, `afterEach`, `beforeAll`, `afterAll` | वही, बिना टाइटल के; `beforeAll` और `afterAll` को वर्कर फ़िक्स्चर मिलते हैं, `browser`, `app` या `screen` नहीं |
+| `test.describe.skip`, `test.describe.serial`, `describe.configure({ mode: 'serial', retries, timeout })` | `test.describe(title, { skip, serial, retries, timeout }, fn)` |
+| describe पर `test.fail()` | `test.describe.fail(title, fn)`, या ग्रुप पर `{ fail: 'reason' }`; किसी शर्त के लिए `beforeEach` में `test.fail(condition, 'reason')` |
+| `{ tag: '@smoke' }` | टेस्ट या ग्रुप पर `{ tags: ['smoke'] }` |
+| `test.extend({ fixture })` | वही रूप, ज़रूरत पड़ने पर सेटअप होता है: किसी टेस्ट, हुक या फ़िक्स्चर को वही फ़िक्स्चर मिलते हैं जिनका नाम उसके पहले पैरामीटर में है |
+| `[fn, { scope: 'worker' }]` फ़िक्स्चर | वही, `extend` के दूसरे टाइप आर्ग्युमेंट से टाइप किया जाता है |
+| `[fn, { auto: true }]` फ़िक्स्चर | वही, दोनों स्कोप में |
+| फ़िक्स्चर ओवरराइड करना, `page: async ({ page }, use) => {}` | `app`, `screen`, `browser` और आपके अपने फ़िक्स्चर के लिए वही, [फ़िक्स्चर एक्सटेंड करना](/reference/test#extending-a-fixture) देखें |
+| `page.pause()` | `screen.pause()`, ब्राउज़र देखने के लिए `--headed` के साथ |
+
+</Accordion>
+<Accordion title="CLI">
+
+| Playwright | e2e |
+| --- | --- |
+| `npx playwright test tests/login.spec.ts:12` | `npx e2e run tests/login.e2e.ts:12`; डायरेक्टरी, सीधा नाम या ग्लॉब से भी चुन सकते हैं |
+| `--project web`, `--list` | `--target web`, `npx e2e list` |
+| `--grep`, `--grep-invert`, `--headed`, `--retries`, `--workers`, `--config`, `--output`, `--reporter`, `--trace`, `--shard`, `--repeat-each`, `--max-failures`, `--last-failed`, `--pass-with-no-tests`, `-u` | वही; शॉर्ट फ़्लैग में सिर्फ़ `-u` |
+| `npx playwright install` | `npx @e2e-dev/web install`; रन खुद भी छूटा हुआ ब्राउज़र इंस्टॉल कर लेता है |
+
+</Accordion>
+</AccordionGroup>
+
+## पेज ऑब्जेक्ट पोर्ट करें
+
+पेज ऑब्जेक्ट क्वेरी और एक्शन के लिए `screen` लेता है, और कीबोर्ड, माउस, CSS
+सेलेक्टर और `evaluate` के लिए `browser`। इसे फ़िक्स्चर के ज़रिए टेस्ट को दें:
+
+```ts title="tests/page-models/account-page.ts"
+import type { Locator, Screen } from 'e2e';
+import type { Browser } from '@e2e-dev/web';
+
+export class AccountPage {
+  readonly accountName: Locator;
+
+  constructor(
+    readonly screen: Screen,
+    readonly browser: Browser,
+  ) {
+    this.accountName = screen.getByTestId('account-name');
+  }
+
+  async filterByNote(note: string) {
+    await this.screen.getByRole('button', 'Filter').click();
+    await this.screen.getByRole('button', 'Note').click();
+    await this.browser.keyboard.type(note);
+  }
+}
+```
+
+```ts title="tests/fixtures.ts"
+import { test as base } from '@e2e-dev/web';
+import { AccountPage } from './page-models/account-page.ts';
+
+export const test = base.extend<{ accountPage: AccountPage }>({
+  accountPage: async ({ screen, browser }, use) => {
+    await use(new AccountPage(screen, browser));
+  },
+});
+```
+
+जिस फ़िक्स्चर में `browser` आता है, उसे इस्तेमाल करने वाला हर टेस्ट सिर्फ़ वेब पर
+चलता है, [पोर्टेबल रखें](/page-object-model#keep-it-portable) देखें। हुक से
+`newPage()` और `page.close()` हटा दें: हर अटेम्प्ट नए कॉन्टेक्स्ट में शुरू होता है।
+
+## e2e में अभी क्या नहीं है
+
+"प्लान में है" रोडमैप पर है। "अभी नहीं" की कोई तारीख़ नहीं है। "प्लान में नहीं" को
+जानबूझकर बाहर रखा गया है। वर्कअराउंड इस्तेमाल करें, या टेस्ट को Playwright में ही
+रहने दें।
+
+### प्लान में है
+
+<AccordionGroup>
+<Accordion title="लोकेटर और एक्शन">
+
+| Playwright | अभी क्या इस्तेमाल करें |
+| --- | --- |
+| `locator.locator(selector)`, `locator.and()`, `filter({ visible })` | एक `browser.locator` सेलेक्टर, जैसे `'.card >> .close'`, या स्कोप के अंदर `screen` क्वेरी |
+| `locator.evaluate()`, `expect(locator).toHaveClass()`, `toHaveCSS()`, `dispatchEvent()` | `browser.evaluate(fn, selector)`; `expect(browser).toHaveClass(locator, cls)` |
+| `selectOption([...])`, `hover({ position })` | मल्टी-सिलेक्ट के लिए `browser.evaluate`; `boundingBox()` के साथ `browser.mouse` |
+
+</Accordion>
+<Accordion title="असर्शन">
+
+| Playwright | अभी क्या इस्तेमाल करें |
+| --- | --- |
+| `{ fullPage, clip }`, `snapshotPathTemplate`, `ignoreSnapshots` | `toHaveScreenshot` में व्यूपोर्ट या एक लोकेटर; विज़ुअल टेस्ट छोड़ने के लिए एक टैग और `--exclude-tag` |
+| `expect.configure()` | हर कॉल पर `{ timeout }` |
+| `@axe-core/playwright` | `browser.addInitScript({ path: 'node_modules/axe-core/axe.min.js' })` से axe-core लोड करें, फिर `browser.evaluate` में `axe.run()` चलाएँ |
+| `.resolves`, `.rejects`, `toThrow()`, `toStrictEqual()`, `toContainEqual()`, `toBeInstanceOf()`, `expect.closeTo()` | पहले `await` करें, या एरर कैच करके उस पर असर्ट करें; `toEqual`; `toContain`, जो डीप इक्वलिटी से तुलना करता है; `toBeCloseTo` |
+| `.not` लोकेटर मैचर जो पहली रीड पर पास हो जाए | यह शर्त 1 सेकंड तक टिकने के बाद पास होता है। पॉज़िटिव इनवर्स पहली रीड पर पास होता है: `toBeHidden()`, `toBeDisabled()`, `toBeChecked({ checked: false })` |
+| `expect.extend()` | एक async हेल्पर जो `expect` कॉल करता है |
+
+</Accordion>
+<Accordion title="नेविगेशन, नेटवर्क और ब्राउज़र">
+
+| Playwright | अभी क्या इस्तेमाल करें |
+| --- | --- |
+| `devices['iPhone 15']`, `isMobile`, `hasTouch` | `web({ viewport, userAgent, deviceScaleFactor })`; असली टच के लिए मोबाइल टारगेट |
+| `waitForFunction()` | `browser.evaluate` के ऊपर `expect.poll` |
+| `waitForResponse(predicate)`, `waitForRequest()`, `page.on('request')`, `response.ok()` | `browser.waitForResponse(pattern)`, या रिक्वेस्ट के मेथड पर फ़िल्टर करने के लिए `{ method, url }`, फिर टेस्ट में रिस्पॉन्स जाँचें, `ok()` के लिए `status`। रिक्वेस्ट के लिए ऐसा `browser.route` हैंडलर जो `route.request` रिकॉर्ड करे और फिर `route.fallback()` कॉल करे |
+| `route.fulfill({ response })`, `route.abort(code)`, `route.fetch(options)`, `request.postDataJSON()` | `route.fetch()` से `status`, `headers` और `body`; `JSON.parse(route.request.postData)` |
+| `page.addLocatorHandler()` | `beforeEach` में ओवरले बंद करें, या `browser.setCookies` से उसकी कंसेंट कुकी सेट करें |
+| `page.on('console')`, `page.on('pageerror')`, `page.clock` | ऐसा `browser.addInitScript` जो `window` एरे में रिकॉर्ड करे, या `Date` को स्टब करे |
+| `context.setOffline()`, `setGeolocation()`, `grantPermissions()` | हर रिक्वेस्ट रोकने वाला रूट; `browser.addInitScript` स्टब; टारगेट पर `app.permissions` |
+| `ignoreHTTPSErrors`, `proxy`, `channel`, `launchOptions` | ऐप को `http` पर सर्व करें; ब्राउज़र खुद शुरू करें और `web({ connect })` से अटैच करें |
+| `expect(response).toBeOK()` | `expect(response.status).toBeGreaterThanOrEqual(200)` और `expect(response.status).toBeLessThan(300)` |
+
+</Accordion>
+<Accordion title="टेस्ट स्ट्रक्चर, रिपोर्ट और CLI">
+
+| Playwright | अभी क्या इस्तेमाल करें |
+| --- | --- |
+| `test.step()`, `testInfo.attach()` | हर कॉल रिपोर्ट में पहले से नाम वाले स्टेप की तरह दिखती है; `app.screenshot(label)` स्क्रीनशॉट अटैच करता है |
+| `test.info()`, हुक और फ़िक्स्चर में `testInfo`, `annotations` | आपका अपना फ़िक्स्चर या मॉड्यूल स्टेट; टाइटल में इश्यू id या एक टैग |
+| `fullyParallel`, `describe.configure({ mode: 'parallel' })` | फ़ाइल बाँट दें। फ़ाइलें पैरेलल चलती हैं, एक फ़ाइल के टेस्ट क्रम से |
+| `mergeTests()` | `extend` कॉल की एक चेन |
+| `globalSetup`, `globalTeardown`, `webServer` एरे | रन के आसपास एक स्क्रिप्ट, या एक `app.command` जो हर प्रोसेस शुरू करे |
+| `projects[].testMatch`, `testDir`, `testIgnore`, `grep` | टेस्ट पर `platforms` या टैग, या हर टारगेट के लिए एक रन |
+| `--ui`, `npx playwright show-report`, `--reporter html` | `--watch --headed`; `npx e2e report` (`htmlReporter()` से लिखी `<output>/report.html` खोलता है) |
+| `test.describe.only()`, `test.describe.fixme()`, `test.fixme(title, details, body)` | टेस्ट या ग्रुप पर `{ timeout }` या `{ skip: 'fixme' }`, साथ में details के `tags` (रिपोर्ट में स्किप की वजह `fixme` नहीं, `explicit` दिखती है); हर टेस्ट पर `test.only` |
+| `test.skip(callback, description)`, `test.fixme(callback, description)` | बॉडी के अंदर `test.skip(condition, reason)` या `test.fixme(condition, reason)`, या टेस्ट पर `platforms` |
+| `failOnFlakyTests`, `use.navigationTimeout`, `--timeout`, `--quiet` | `report.json` में `run.summary.flaky`; `browser.goto(url, { timeout })`; कॉन्फ़िग में `timeout` |
+| `blob` रिपोर्टर और `merge-reports` | हर शार्ड के लिए एक रिपोर्ट |
+| Playwright Docker इमेज | `@e2e-dev/web` जिस `playwright-core` वर्ज़न को पिन करता है उसकी इमेज, या `npx @e2e-dev/web install chromium --with-deps` |
+| फ़ाइल या describe में `test.use({ ... })` | ग्रुप पर रनर ऑप्शन, टारगेट पर इंजन ऑप्शन, रनटाइम पर `browser.setViewport` |
+| `projects[].dependencies`, `teardown` | साइन इन के लिए टॉप-लेवल `test.setup`; रन के आसपास एक स्क्रिप्ट |
+| `github` रिपोर्टर | `github()` पुल रिक्वेस्ट पर कमेंट पोस्ट करता है |
+
+</Accordion>
+</AccordionGroup>
+
+### अभी नहीं
+
+| Playwright | अभी क्या इस्तेमाल करें |
+| --- | --- |
+| `projects[].retries`, `projects[].timeout` | ग्रुप पर ऑप्शन |
+| `--debug`, VS Code एक्सटेंशन | `--step --headed` कीबोर्ड का बटन दबाने तक हर स्टेप पर रुकता है; `screen.debug()` ट्री प्रिंट करता है |
+| ऑप्शन फ़िक्स्चर, `extend` में `page` या `context` ओवरराइड करना | फ़िक्स्चर में `process.env`; अपने नाम से एक नया फ़िक्स्चर |
+| `const response = await page.goto()` | नेविगेशन से पहले `browser.waitForResponse` शुरू करें |
+| Playwright `Reporter` क्लास, थर्ड-पार्टी रिपोर्टर | `onEvent` और `onRunFinished` के साथ [कस्टम रिपोर्टर](/reference/reporters#custom-reporters); डैशबोर्ड के लिए `junit.xml` |
+| दूसरे यूज़र के लिए `browser.newContext()` | दूसरे यूज़र को `request` से API के ज़रिए चलाएँ |
+| `page.exposeFunction()`, `addStyleTag()`, `innerHTML()`, `page.viewportSize()` | `browser.evaluate` |
+| `routeFromHAR()`, `routeWebSocket()`, `page.setExtraHTTPHeaders()` | हर एंडपॉइंट या हेडर के लिए `browser.route`; `WebSocket` स्टब करने के लिए `browser.addInitScript` |
+| `emulateMedia({ media, forcedColors, contrast })` | - |
+| `npx playwright show-trace`, `trace.zip`, `context.tracing` | `.e2e/results/` में टेस्ट की डायरेक्टरी के अंदर `trace.md`। ट्रेस एक मार्कडाउन पेज है, इसमें कोई zip या व्यूअर नहीं होता |
+
+### प्लान में नहीं
+
+| Playwright | इसकी जगह क्या इस्तेमाल करें |
+| --- | --- |
+| वैल्यू से `selectOption('pro')` | `selectOption({ value: 'pro' })`। सीधी स्ट्रिंग सिर्फ़ लेबल से मैच करती है |
+| `use.storageState: 'file.json'`, `context.storageState({ path })` | `test.setup` और `{ session }`। [सेशन एक रन तक चलते हैं](#what-differs-on-purpose), इसलिए कोई फ़ाइल नहीं होती |
+| `page.waitForTimeout(ms)`, `page.waitForNavigation()` | जिस स्थिति का इंतज़ार है उस पर लोकेटर असर्शन; `browser.waitForURL(url)` |
+| `--only-changed` | `filters` में [टेस्ट फ़िल्टर](/filters) के साथ `--changed-since <ref>` |
+| `page.$()`, `$eval()`, `elementHandle()`, नॉन-JSON `evaluate` वैल्यू, `locator.page()` | लोकेटर, और JSON इनपुट-आउटपुट के साथ `browser.evaluate`, जिसे रिपोर्ट रिकॉर्ड और छिपाती है। पेज ऑब्जेक्ट को `browser` पास करें |
+| बिना हैंडलर वाला डायलॉग, जो चुपचाप बंद हो जाए | `browser.onDialog('dismiss')`। बिना हैंडलर वाला डायलॉग अगले स्टेप को फ़ेल कर देता है |
+| `page.goto('data:...')`, `'file://...'` | ऐप URL पर `route.fulfill({ body, contentType: 'text/html' })`। सिर्फ़ `http` और `https` खुलते हैं |
+| `getByRole(role, { includeHidden })` | `browser.locator('role=button[include-hidden=true]')`। रोल क्वेरी ऐक्सेसिबिलिटी ट्री के हिसाब से चलती है |
+| टैग के लिए `--grep @smoke`, रेगेक्स पोज़िशनल, `file:line:column` | `--tag smoke`; ग्लॉब या सीधा नाम; `file:line` |
+| `getByTitle()` | `browser.locator('[title="Close"]')`। title एक DOM एट्रीब्यूट है, इसलिए इसकी कोई `screen` क्वेरी नहीं है |
+| `page.waitForLoadState()` | अगले पेज पर जो दिखता है उस पर असर्शन। नेविगेशन `load` का इंतज़ार करता है, और हर एक्शन और असर्शन अपने नोड का |
+| `npx playwright codegen`, Inspector | [`npx e2e mcp`](/mcp-server) से कोडिंग एजेंट टेस्ट लिखते समय ऐप चला सकता है; `screen.debug()` ट्री प्रिंट करता है |
+| `{ force: true }`, `{ trial: true }` | `tap({ position })` एक्शनबिलिटी जाँच छोड़ देता है; ट्रायल के लिए `toBeVisible()` और `toBeEnabled()` |
+| `ariaSnapshot()`, `toMatchAriaSnapshot()`, `toMatchSnapshot()` | `expect(await screen.tree()).toContain(...)`; एक फ़िक्स्चर फ़ाइल और `toEqual` |
+| `keyboard.insertText()`, `<label>` पर `inputValue()` | `fill()`; `getByLabel` से ढूँढा गया खुद कंट्रोल |
+| `use.connectOptions`, ट्रेस मोड `retain-on-first-failure` और `retain-on-failure-and-retries` | CDP पर `web({ connect })`, सिर्फ़ chromium; `retain-on-failure` |
+
+## जानबूझकर रखे गए फ़र्क
+
+- स्ट्रिंग पूरे टेक्स्ट से मैच करती है और केस-सेंसिटिव होती है। Playwright के
+  `getByRole` नाम, `getByLabel`, `getByPlaceholder` और `getByText` केस-इनसेंसिटिव
+  सबस्ट्रिंग से मैच करते हैं। टेक्स्ट के हिस्से के लिए `{ exact: false }` या
+  `RegExp` पास करें। [क्वेरी](/reference/screen#queries) देखें।
+
+  ```ts
+  // <button>Save changes</button>, <label>Email address <input></label>
+  screen.getByRole('button', 'Save');                  // no match
+  screen.getByRole('button', { name: 'Save', exact: false });    // matches
+  screen.getByRole('button', 'save changes');          // no match, case differs
+  screen.getByLabel('Email');                                    // no match
+  ```
+- टेक्स्ट रीड रेंडर हुआ टेक्स्ट पढ़ते हैं। `textContent()`, `toHaveText` और
+  `toContainText` वही पढ़ते हैं जो `innerText` लौटाता है, इसलिए छिपा हुआ टेक्स्ट
+  छूट जाता है और `text-transform` लागू होता है।
+  [लोकेटर रीड](/reference/screen#locator-reads) देखें। इसके बजाय `toBeEmpty`
+  Playwright का नियम रखता है, इसलिए छिपे टेक्स्ट से नोड खाली नहीं माना जाता।
+- `toHaveRole` में `getByRole` की शब्दावली चलती है, इसलिए `paragraph`, `generic`
+  और बाकी छोड़े गए रोल टाइप एरर देते हैं, और `img` को `image` पढ़ा जाता है। यह
+  उस रोल से तुलना करता है जो ट्री पढ़ता है, जहाँ `contenteditable` एडिटर
+  `textbox` होता है।
+- लोकेटर स्ट्रिक्ट होता है। एक से ज़्यादा मैच पर एक्शन, रीड या पॉज़िटिव मैचर
+  `LOCATOR_AMBIGUOUS` देता है, जबकि Playwright के `page.click(selector)` और
+  `isVisible()` पहला मैच लेते हैं। `filter` या `first()` से दायरा छोटा करें।
+- `.not.toBeChecked()` किसी बटन या हेडिंग पर भी पास हो जाता है। कंट्रोल को उसके
+  रोल से ढूँढें, ताकि कंट्रोल का प्रकार बदलने पर असर्शन फ़ेल हो।
+- अगर `expect.poll` की रीड एरर फेंकती है, तो उसे रीट्राई किया जाता है।
+- `toPass` के लिए रिपोर्ट में हर कोशिश के अंदर वाले स्टेप ही दिखते हैं।
+- सेशन एक रन तक चलते हैं। `test.setup` स्टेट को एक नाम से सेव करता है और
+  `{ session }` उसे रिस्टोर करता है। फ़ाइल एन्क्रिप्ट होती है और क्लीनअप पर डिलीट
+  हो जाती है, इसलिए दोबारा इस्तेमाल के लिए कोई `.auth/user.json` नहीं होती।
+- टेस्ट को रॉ `Page` नहीं मिलता, क्योंकि उस पर कुछ भी रिकॉर्ड, छिपाया या मास्क
+  नहीं होता। `surfaceOf(engine)` टेस्ट कोड के लिए नहीं,
+  [कस्टम एक्ज़ीक्यूटर](/executors#driving-the-page-yourself) के लिए है।
+
+## अलग डिफ़ॉल्ट
+
+| सेटिंग | Playwright | e2e |
+| --- | --- | --- |
+| टेस्ट टाइमआउट | 30 सेकंड | 120 सेकंड, `timeout` |
+| एक्शन टाइमआउट | कोई नहीं | 30 सेकंड, `actionTimeout` |
+| Expect टाइमआउट | 5 सेकंड | 5 सेकंड, `assertionTimeout` |
+| नेविगेशन टाइमआउट | कोई नहीं | 120 सेकंड, टेस्ट बजट |
+| रीट्राई | 0 | CI में 1, लोकल पर 0 |
+| वर्कर | CPU कोर के आधे | CI में 1, लोकल पर CPU कोर के आधे |
+| ट्रेस | `off` (स्कैफ़ोल्ड कॉन्फ़िग में `on-first-retry`) | `retain-on-failure` |
+
+## आगे
+
+<CardGroup cols={2}>
+  <Card title="बुनियादी कॉन्सेप्ट" icon="pen-to-square" href="/core-concepts">
+    स्क्रिप्ट किए हुए सेलेक्टर के बजाय लक्ष्य, असर्शन और लोकेटर।
+  </Card>
+  <Card title="वेब इंजन रेफ़रेंस" icon="masks-theater" href="/reference/web">
+    हर ऑप्शन और हर `browser` मेथड।
+  </Card>
+</CardGroup>
