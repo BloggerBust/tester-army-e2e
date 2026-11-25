@@ -200,6 +200,32 @@ describe('AttemptSession', () => {
     await owner.close(cleanup());
   });
 
+  it('reads a failed navigation as offline only while a test holds a connected browser with an open page offline', async () => {
+    const current = remote('current');
+    const initial = target('initial');
+    let closed = false;
+    Object.assign(initial.page, { isClosed: () => closed });
+    current.pages.push(initial.page);
+    const setOffline = vi.fn(async () => undefined);
+    const context = { ...current.browser.contexts()[0]!, setOffline };
+    Object.assign(current.browser, { contexts: () => [context] });
+    vi.mocked(connectCdp).mockResolvedValue(current.browser);
+    const owner = session();
+    await owner.start(new AbortController().signal);
+    await owner.ensurePage();
+    expect(owner.navigatedOffline()).toBe(false);
+    await owner.setOffline(true);
+    expect(setOffline).toHaveBeenLastCalledWith(true);
+    expect(owner.navigatedOffline()).toBe(true);
+    // A page that closed or a browser that dropped failed the navigation itself.
+    closed = true;
+    expect(owner.navigatedOffline()).toBe(false);
+    closed = false;
+    current.disconnect();
+    expect(owner.navigatedOffline()).toBe(false);
+    await owner.close(cleanup());
+  });
+
   it('emulates the configured media on each page it opens, and merges a change into it for the rest of the attempt', async () => {
     const current = remote('current');
     const initial = target('initial');

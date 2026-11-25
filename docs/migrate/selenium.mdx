@@ -111,7 +111,7 @@ e2e leaves it out on purpose.
 | `@BeforeSuite`, `@AfterSuite`, pytest session-scoped fixtures, WebdriverIO `onPrepare` | Once for the run: the script `app.command` starts, or a wrapper around `e2e run`. Once for a file: `beforeAll` and `afterAll`. Sign-in: a top-level `test.setup` that saves a session |
 | BrowserStack or Sauce Labs for web | Your own [browser provider](/browser#write-a-provider), if the vendor has a CDP endpoint |
 | `manage().logs()`, request listeners, geolocation | Patch the page in `browser.addInitScript`, record requests in `browser.route` |
-| `setNetworkConditions` | For offline, abort requests in `browser.route`. No throttling or latency, keep those tests in Selenium |
+| `setNetworkConditions` | For offline, [`browser.setNetwork('offline')`](/reference/web#setnetwork). No throttling or latency, keep those tests in Selenium |
 
 ### Not yet
 

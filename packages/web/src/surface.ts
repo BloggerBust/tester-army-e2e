@@ -777,6 +777,11 @@ export class PlaywrightSurface {
     return this.requireSession().emulateMedia(media);
   }
 
+  /** Takes the attempt's browser offline or back online, for the rest of the attempt. */
+  setOffline(offline: boolean): Promise<void> {
+    return this.requireSession().setOffline(offline);
+  }
+
   /**
    * The single entry of every operation: rethrows an error latched on an
    * unawaited path, refuses a cancelled operation, races `fn` against the
@@ -878,8 +883,9 @@ export class PlaywrightSurface {
   /**
    * Runs one navigation the engine itself makes, so the app log leaves it to
    * the step that asked for it. A navigation that fails after a test route
-   * aborted its document request failed because the test aborted it: an
-   * action failure, not an engine fault.
+   * aborted its document request, or while the test holds the browser
+   * offline, failed because of what the test did: an action failure, not an
+   * engine fault.
    */
   async navigating<T>(work: () => Promise<T>): Promise<T> {
     this.ownNavigations += 1;
@@ -890,8 +896,14 @@ export class PlaywrightSurface {
       this.trace?.tellEnvironment();
       return result;
     } catch (cause) {
-      if (watch.url === undefined || isClassified(cause) || isPwTimeout(cause)) throw cause;
-      throw new TestError('ACTION_FAILED', `navigation failed: a route aborted the request for ${watch.url}: ${message(cause)}`, { cause });
+      if (isClassified(cause) || isPwTimeout(cause)) throw cause;
+      const reason = watch.url !== undefined
+        ? `a route aborted the request for ${watch.url}`
+        : this.session?.navigatedOffline() === true
+          ? "the browser is offline (browser.setNetwork('offline'))"
+          : undefined;
+      if (reason === undefined) throw cause;
+      throw new TestError('ACTION_FAILED', `navigation failed: ${reason}: ${message(cause)}`, { cause });
     } finally {
       this.navigationAborts.delete(watch);
       this.ownNavigations -= 1;

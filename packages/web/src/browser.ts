@@ -330,6 +330,14 @@ export interface Browser extends Expectable<BrowserExpectation> {
    * navigation, so the page loads with them.
    */
   emulateMedia(media: WebMedia): Promise<void>;
+  /**
+   * Takes the browser offline or back online for the rest of the attempt:
+   * every tab, every tab opened after, and the page's service workers.
+   * Offline, a request that reaches the network fails as it does with no
+   * connection, and `navigator.onLine` is `false`. A service worker can
+   * still answer from its cache. Every attempt starts online.
+   */
+  setNetwork(state: 'online' | 'offline'): Promise<void>;
   /** Registers an attempt-scoped dialog handler and returns an unsubscribe function. */
   onDialog(handler: DialogHandler): Promise<() => Promise<void>>;
   /** Returns the open tabs, in the order they opened. */
@@ -906,6 +914,12 @@ export function createBrowserFixture(surface: PlaywrightSurface, context: Engine
       const requested = obj({ colorScheme: media.colorScheme, reducedMotion: media.reducedMotion });
       await surface.guard(context.operation(), 'emulateMedia', () => surface.emulateMedia(requested));
     },
+    async setNetwork(state) {
+      if (state !== 'online' && state !== 'offline') {
+        throw new TestError('INVALID_ARGUMENT', `browser.setNetwork takes "online" or "offline", got ${JSON.stringify(state)}`);
+      }
+      await surface.guard(context.operation(), 'setNetwork', () => surface.setOffline(state === 'offline'));
+    },
     // Async so the harness records the registration as a `browser.onDialog` step.
     async onDialog(handler: DialogHandler) {
       const unsubscribe = surface.dialogs.add(handler);
@@ -977,6 +991,7 @@ export function createBrowserFixture(surface: PlaywrightSurface, context: Engine
     clearCookies: action,
     setViewport: action,
     emulateMedia: { ...action, label: (media) => mediaLabel(media) },
+    setNetwork: { ...action, label: (state) => String(state) },
     onDialog: action,
     waitForPopup: { ...action, timeout: false },
     newTab: action,

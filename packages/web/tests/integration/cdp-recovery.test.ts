@@ -4,7 +4,7 @@ import { existsSync, mkdtempSync, readFileSync, rmSync, statSync } from 'node:fs
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
-import { chromium } from 'playwright-core';
+import { chromium, type Page } from 'playwright-core';
 import type { EngineFixtureContext, EngineHandle, OperationContext } from '@e2e-dev/core/engine';
 import { web as webEngine, surfaceOf, type WebConnectOptions, type WebOptions, type Browser } from '../../src/index.ts';
 import { closeRemoteChrome, launchRemoteChrome, type RemoteChrome } from '../helpers/cdp-host.ts';
@@ -167,6 +167,31 @@ describe('CDP session recovery', () => {
     } finally {
       await engine.dispose!(cleanup());
       await closeRemoteChrome(remote);
+    }
+  }, 60_000);
+
+  it('keeps the browser offline after reconnect, and puts it back online when the test does', async () => {
+    const remote = await host();
+    const engine = await start({ cdpEndpoint: () => remote.endpoint, reconnectEndpoint: () => remote.endpoint });
+    const answered = (page: Page) => page.evaluate(() => fetch('/form', { cache: 'no-store' }).then((response) => response.ok, () => false));
+    const browser = fixtureOf(engine);
+    await browser.setNetwork('offline');
+    expect(await answered(surfaceOf(engine)!.page())).toBe(false);
+    await surfaceOf(engine)!.context().browser()!.close();
+    expect((await engine.locate!(heading, operation()))[0]?.name).toBe('Login');
+    expect(await answered(surfaceOf(engine)!.page())).toBe(false);
+    await browser.setNetwork('online');
+    expect(await answered(surfaceOf(engine)!.page())).toBe(true);
+    // The host's browser outlives an attempt that ended offline, and is online again without it.
+    await browser.setNetwork('offline');
+    await engine.dispose!(cleanup());
+    const direct = await chromium.connectOverCDP(remote.endpoint);
+    try {
+      const page = direct.contexts()[0]?.pages().find((open) => open.url().endsWith('/login'));
+      expect(page).toBeDefined();
+      expect(await answered(page!)).toBe(true);
+    } finally {
+      await direct.close();
     }
   }, 60_000);
 

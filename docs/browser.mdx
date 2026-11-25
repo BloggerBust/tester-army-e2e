@@ -171,6 +171,22 @@ await app.open('/');
 A value holds for the rest of the test, through `app.restart()` and
 `app.clearState()`. See [media emulation](/reference/web#media-emulation).
 
+## Go offline
+
+`browser.setNetwork('offline')` cuts the network for every tab and service
+worker, until the test ends or goes back online:
+
+```ts
+await app.open('/');
+await browser.setNetwork('offline');
+await screen.getByRole('button', 'Refresh').tap();
+await expect(screen.getByText('You are offline')).toBeVisible();
+```
+
+`browser.reload()` loads a page its service worker cached. A navigation to a
+page no cache holds fails with `ACTION_FAILED`. See
+[`setNetwork`](/reference/web#setnetwork).
+
 ## Cookies
 
 ```ts

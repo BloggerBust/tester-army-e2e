@@ -22,6 +22,7 @@
     "packages/web/tests/types/init-scripts.ts",
     "packages/web/tests/types/keyboard.ts",
     "packages/web/tests/types/media.ts",
+    "packages/web/tests/types/network.ts",
     "packages/web/tests/types/routes.ts",
     "packages/web/tests/types/webmcp.ts",
     "packages/web/tests/types/clear-cookies.ts",

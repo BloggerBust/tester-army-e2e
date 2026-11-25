@@ -488,6 +488,7 @@ export type WebInitScript = string | { readonly path: string } | (() => unknown)
   `addInitScript`.
 - `setViewport` sizes the active tab and every tab opened after it.
 - [`emulateMedia`](#media-emulation) changes media on all open and future tabs.
+- [`setNetwork`](#setnetwork) takes every tab and service worker offline.
 - A tab the app opens, from a `target="_blank"` link or `window.open`,
   opens in the background: the active tab stays where it was until
   `waitForPopup` or `activate` makes another one active. See [Tabs](#tabs).
@@ -524,6 +525,7 @@ export type WebInitScript = string | { readonly path: string } | (() => unknown)
 | [`clearCookies`](#clearcookies) | `Promise<void>` |
 | [`setViewport`](#setviewport) | `Promise<void>` |
 | [`emulateMedia`](#media-emulation) | `Promise<void>` |
+| [`setNetwork`](#setnetwork) | `Promise<void>` |
 | [`onDialog`](#ondialog) | `Promise<() => Promise<void>>` |
 | [`tabs`](#tabs) | `readonly BrowserTab[]` |
 | [`waitForPopup`](#tabs) | `Promise<BrowserTab>` |
@@ -546,7 +548,7 @@ A `{ timeout }` option overrides the budget on `goto`, `reload`, `back`,
 `forward`, `waitForResponse`, `waitForPopup`, `waitForDownload`, and `waitForDownloads`, capped
 by the test deadline (`cleanupTimeout` in `afterEach`); `0` waits until it. `url`, `title`, `evaluate`, `addInitScript`, `route`,
 `unroute`, `unrouteAll`, `cookies`, `setCookies`, `clearCookies`, `setViewport`,
-`emulateMedia`, `onDialog`, `newTab`, the `BrowserTab` methods, `keyboard.*`, `mouse.*`, and `webmcp.*` take no override.
+`emulateMedia`, `setNetwork`, `onDialog`, `newTab`, the `BrowserTab` methods, `keyboard.*`, `mouse.*`, and `webmcp.*` take no override.
 
 #### `goto`
 
@@ -983,6 +985,45 @@ await app.open('/');
   phone-sized test never renders the desktop layout first.
 - The size holds for the rest of the attempt, through `app.restart()` and
   `app.clearState()`.
+
+#### `setNetwork`
+
+Takes the browser offline, or back online, for the rest of the attempt.
+
+```ts
+await app.open('/');
+await browser.setNetwork('offline');
+await screen.getByRole('button', 'Refresh').tap();
+await expect(screen.getByText('You are offline')).toBeVisible();
+await browser.setNetwork('online');
+```
+
+- Offline, a request that reaches the network fails as it does with no
+  connection, and `navigator.onLine` is `false`. The open page gets an
+  `offline` event.
+- It covers every tab, every tab opened after, and the page's service
+  workers. A worker can still answer from its cache, so `browser.reload()`
+  loads a page it cached.
+- The browser's HTTP cache still answers too. Chromium serves a response
+  that is still fresh, Firefox any response it stored, and WebKit none. A
+  navigation to a page no cache holds fails.
+- A connection that is already open, such as an event stream, stays open.
+- After a navigation fails, Chromium shows its own error page, and a
+  `reload()` of that page resolves. Assert on the screen.
+- It holds through `app.restart()` and `app.clearState()`. Every attempt
+  starts online, a retry too.
+- It works before the first navigation.
+- Chromium and WebKit still fulfill a request a [`route`](#route) answers.
+  Firefox fails it.
+- With [`headers`](#headers) configured, service workers are blocked, so no
+  worker serves a cached page.
+- The [`request`](/reference/request) fixture runs in the runner's process
+  and stays online.
+
+| Throws | When |
+| --- | --- |
+| `INVALID_ARGUMENT` | A state other than `'online'` or `'offline'`. |
+| `ACTION_FAILED` | A navigation fails while the browser is offline. |
 
 #### `onDialog`
 
@@ -1512,6 +1553,8 @@ export interface Browser extends Expectable<BrowserExpectation> {
   setViewport(size: { width: number; height: number }): Promise<void>;
   /** Emulates CSS media features on every open tab and every tab opened after them. */
   emulateMedia(media: WebMedia): Promise<void>;
+  /** Takes the browser offline or back online for the rest of the attempt: every tab and the page's service workers. */
+  setNetwork(state: 'online' | 'offline'): Promise<void>;
   /** Registers an attempt-scoped dialog handler and returns an unsubscribe function. */
   onDialog(handler: DialogHandler): Promise<() => Promise<void>>;
   /** Returns the open tabs, in the order they opened. */

@@ -75,6 +75,8 @@ export class AttemptSession {
   private firstPage = true;
   private requestedViewport: { readonly width: number; readonly height: number } | undefined;
   private media: WebMedia;
+  /** Whether a test took the attempt's browser offline. */
+  private offline = false;
   /** The emulation each page got as it appeared, so the attempt's own page is ready before it shows. */
   private readonly emulated = new WeakMap<Page, Promise<void>>();
   /** The active page being opened for the current binding, shared by concurrent callers. */
@@ -237,6 +239,8 @@ export class AttemptSession {
       try {
         if (budget.signal.aborted) throw connectionAbort(budget.signal, 'connection');
         await this.options.configure(candidate.context);
+        // Offline belongs to the context and to the CDP session that set it, so a replaced context and a new transport take it again.
+        if (this.offline) await candidate.context.setOffline(true);
         this.watchPages(candidate.context);
         if (recover) await this.remapTabs(candidate);
         if (recover && candidate.page !== null) {
@@ -660,6 +664,24 @@ export class AttemptSession {
     const { context, page } = this.current();
     if (page !== null && !page.isClosed()) await page.emulateMedia(this.media);
     await this.emulateOnOthers(context, page, (other) => other.emulateMedia(this.media));
+  }
+
+  /**
+   * Whether a navigation that just failed ran on a live browser a test holds
+   * offline. A browser that dropped or a page that closed is an engine
+   * fault whatever the network state.
+   */
+  navigatedOffline(): boolean {
+    if (!this.offline || this.state.kind !== 'ready') return false;
+    const { browser, page } = this.state.binding;
+    return browser.isConnected() && page !== null && !page.isClosed();
+  }
+
+  /** Cuts or restores the network of every tab and service worker of the attempt's context, and of each one opened after. */
+  async setOffline(offline: boolean): Promise<void> {
+    // Set before the await, so a context or transport that replaces this one meanwhile takes the new state.
+    this.offline = offline;
+    await this.current().context.setOffline(offline);
   }
 
   /**

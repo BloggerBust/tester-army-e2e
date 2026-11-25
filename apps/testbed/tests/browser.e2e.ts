@@ -52,6 +52,22 @@ test.describe('browser fixture', { platforms: ['web'], tags: ['browser'] }, () =
   });
 });
 
+test('offline fails the page\'s requests and navigations until the test goes back online', { platforms: ['web'], tags: ['browser'] }, async ({ app, screen, browser }) => {
+  await app.open('/browser');
+  await expect(screen.getByLabel('Network')).toHaveText('online');
+  await browser.setNetwork('offline');
+  await expect(screen.getByLabel('Network')).toHaveText('offline');
+  await screen.getByRole('button', 'Ping').tap();
+  await expect(screen.getByLabel('Ping')).toHaveText('no answer');
+  const failure = await browser.reload().then(() => undefined, (error: unknown) => error);
+  expect(failure).toMatchObject({ code: 'ACTION_FAILED' });
+  await browser.setNetwork('online');
+  await app.open('/browser');
+  await expect(screen.getByLabel('Network')).toHaveText('online');
+  await screen.getByRole('button', 'Ping').tap();
+  await expect(screen.getByLabel('Ping')).toHaveText('answered');
+});
+
 test('emulated media reaches the page\'s own @media rules, from the first paint on', { platforms: ['web'], tags: ['browser'] }, async ({ app, screen, browser }) => {
   await browser.emulateMedia({ colorScheme: 'dark' });
   await app.open('/browser');

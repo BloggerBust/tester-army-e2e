@@ -259,6 +259,9 @@ const pages = {
          @media (prefers-reduced-motion: reduce) { #media-probe { transition-duration: 0s; } }
        </style>
        <output aria-label="Cookies"></output>
+       <output aria-label="Network"></output>
+       <button id="ping">Ping</button>
+       <output aria-label="Ping"></output>
        <output aria-label="Loads"></output>
        <output aria-label="Random"></output>
        <script>
@@ -285,6 +288,18 @@ const pages = {
          }
          reportMedia();
          document.querySelector('output[aria-label="Cookies"]').textContent = document.cookie || 'no cookies';
+         const network = document.querySelector('output[aria-label="Network"]');
+         const reportNetwork = () => {
+           network.textContent = navigator.onLine ? 'online' : 'offline';
+         };
+         addEventListener('online', reportNetwork);
+         addEventListener('offline', reportNetwork);
+         reportNetwork();
+         document.getElementById('ping').addEventListener('click', () => {
+           fetch('/about', { cache: 'no-store' }).then((response) => response.ok, () => false).then((answered) => {
+             document.querySelector('output[aria-label="Ping"]').textContent = answered ? 'answered' : 'no answer';
+           });
+         });
          const loads = Number(sessionStorage.getItem('loads') ?? '0') + 1;
          sessionStorage.setItem('loads', String(loads));
          document.querySelector('output[aria-label="Loads"]').textContent = 'loads: ' + loads;

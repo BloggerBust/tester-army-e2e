@@ -699,6 +699,11 @@ the opener is gone. `tabs()`, `newTab()`, `tab.activate()`, and
 - `emulateMedia({ colorScheme?, reducedMotion? })`: what the page's `@media`
   rules and `matchMedia` read, for the rest of the test. Call it before
   `app.open` to load the page with it; a feature left out keeps its value.
+- `setNetwork('offline' | 'online')`: cuts or restores the network of every
+  tab and service worker for the rest of the test. A request that reaches
+  the network fails, and a navigation to a page no cache holds is
+  `ACTION_FAILED`; a page its service worker cached still loads. Every test
+  starts online.
 - `onDialog('accept' | 'dismiss' | handler)`: awaited; resolves to an async
   unsubscribe. Register it before the tap that opens the dialog. A handler
   gets `{ type, message, accept(text?), dismiss() }`, where `type` is

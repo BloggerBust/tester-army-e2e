@@ -372,6 +372,35 @@ const CARET_CSP = `<!doctype html>
 <body><input id="plain" value="csp"></body>
 </html>`;
 
+/** A page a service worker caches at install and serves when the network fails. */
+const PWA = `<!doctype html>
+<html>
+<head><title>Fixture PWA</title></head>
+<body>
+<h1>PWA</h1>
+<script>
+  window.controlled = navigator.serviceWorker.register('/pwa-sw.js')
+    .then(() => navigator.serviceWorker.ready)
+    .then(() => navigator.serviceWorker.controller ?? new Promise((resolve) => {
+      navigator.serviceWorker.addEventListener('controllerchange', resolve, { once: true });
+    }))
+    .then(() => true);
+</script>
+</body>
+</html>`;
+
+/** Network first: the cached page answers only when the worker's own fetch fails. */
+const PWA_WORKER = `
+self.addEventListener('install', (event) => {
+  event.waitUntil(caches.open('pwa').then((cache) => cache.add('/pwa')).then(() => self.skipWaiting()));
+});
+self.addEventListener('activate', (event) => { event.waitUntil(self.clients.claim()); });
+self.addEventListener('fetch', (event) => {
+  event.respondWith(fetch(event.request).catch(() =>
+    caches.match(event.request).then((cached) => cached ?? Response.error())));
+});
+`;
+
 const PAGES: Readonly<Record<string, string>> = {
   '/': HOME,
   '/pointer': POINTER,
@@ -389,6 +418,7 @@ const PAGES: Readonly<Record<string, string>> = {
   '/twins': TWINS,
   '/rows': ROWS,
   '/media': MEDIA,
+  '/pwa': PWA,
 };
 
 /** Delay before `/slow` answers, long enough for a caller to cancel first. */
@@ -417,6 +447,23 @@ export function startFixtureApp(): Promise<FixtureApp> {
     if (url.pathname === '/sw.js') {
       response.writeHead(200, { 'content-type': 'text/javascript; charset=utf-8' });
       response.end("self.addEventListener('fetch', () => {});");
+      return;
+    }
+    if (url.pathname === '/events') {
+      // An event stream that sends a tick every 50 ms until the client leaves.
+      response.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-store' });
+      const timer = setInterval(() => { response.write('data: tick\n\n'); }, 50);
+      request.on('close', () => clearInterval(timer));
+      return;
+    }
+    if (url.pathname === '/fresh') {
+      response.writeHead(200, { 'content-type': 'text/plain; charset=utf-8', 'cache-control': 'max-age=3600' });
+      response.end('fresh');
+      return;
+    }
+    if (url.pathname === '/pwa-sw.js') {
+      response.writeHead(200, { 'content-type': 'text/javascript; charset=utf-8' });
+      response.end(PWA_WORKER);
       return;
     }
     const redirect = redirects.get(url.pathname);
