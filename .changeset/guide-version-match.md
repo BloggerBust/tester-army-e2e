@@ -1,5 +1,0 @@
----
-'e2e': patch
----
-
-`e2e guide` matches the project's e2e version. `npx e2e guide` downloads the latest release when the project's dependencies are not installed yet, and printed that release's guide with nothing saying so. The guide's version now goes to stderr on every run (`Guide for e2e 0.24.0`), stdout is unchanged. When package.json declares a version or range the running CLI is outside of and no installed copy is found, that line names both versions and the commands that print the matching guide (install first, or `npx e2e@0.23.0 guide`). For a range, it says that installing gives the version the lockfile pins. Ranges are read as npm reads them (`^0.23`, `0.23.x`, `>= 0.23.0`, `||`, hyphen ranges). When another version is installed than the CLI that runs, as with a global install, `guide` prints the installed version's guide and topics, and `guide --help` lists those topics. It also says when the installed copy is outside the range package.json declares. With different specs in several sections of package.json, the one the project's package manager installs from counts.

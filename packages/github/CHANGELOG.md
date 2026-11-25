@@ -1,5 +1,16 @@
 # @e2e-dev/github
 
+## 0.4.7
+
+### Patch Changes
+
+- [#1887](https://github.com/e2e-inc/e2e/pull/1887) [`198d25f`](https://github.com/e2e-inc/e2e/commit/198d25f038c5f69c697224ce22e2d73b38c97766) Thanks [@samanyudas](https://github.com/samanyudas)! - After a rerun, the merged report counts a serial test that calls `test.fixme()` in its body as executed, as it does for `test.skip()`. The pull request comment does not change.
+
+- [#2151](https://github.com/e2e-inc/e2e/pull/2151) [`29a7559`](https://github.com/e2e-inc/e2e/commit/29a755976be017d589665baf52c76f2dcdbbed5e) Thanks [@michal-e2e](https://github.com/michal-e2e)! - A sharded run's report now records its shard as `run.shard { index, total }`, and marks each test this invocation's cut gave to another shard with `skip.otherShard: true`. A `--last-failed` rerun writes `report-with-reruns.json` beside its report: the first run and every rerun since as one report. It also hands its reporters every earlier run folded together as `lastRun`, through `foldLastRun`, now exported from `e2e`. The `@e2e-dev/github` comment after a second rerun no longer shows the first pass's passing tests as not run, and a second rerun keeps the first run's evidence on disk. The fold drops deleted tests and explains failures of out-of-shard consumers without counting them in the shard's totals. `@e2e-dev/github` now needs `e2e` 0.25.0 or later.
+
+- [#2015](https://github.com/e2e-inc/e2e/pull/2015) [`23aa697`](https://github.com/e2e-inc/e2e/commit/23aa697e2627b9c0ee436ea40128b3ee8f682c1c) Thanks [@satya164](https://github.com/satya164)! - `--step` and `screen.pause()` keys now appear below the live summary, with `s` for the screen and `l` for the app log.
+  Time when every running worker is paused is excluded from the terminal's `Duration` row and the report's new `run.durationMs` field.
+
 ## 0.4.6
 
 ### Patch Changes

@@ -1,5 +1,0 @@
----
-"@e2e-dev/mobile": patch
----
-
-Add `device.isKeyboardShown()`, which returns whether the soft keyboard is on screen. It answers from what agent-device reports for the keyboard, else from the keyboard or its keys drawn on screen in the accessibility tree; the suggestion strip alone, as with a hardware keyboard, does not count. It answers `false` only when agent-device proves there is no keyboard; otherwise it fails with the reason. It changes nothing on the device. `device.dismissKeyboard()`, and the wait before acting on a control that waits out a relayout when the keyboard opened or closed, now use the same rule, so a probe that says the keyboard is hidden wins over keys the tree still lists. The dismissing drag starts above the suggestion strip, also when agent-device derived the keyboard's frame from the keys under it. When agent-device reports the keyboard up with no frame and no keyboard element on screen, `dismissKeyboard()` fails with `UNSUPPORTED_CAPABILITY` instead of dragging, since no point is known to be above the keyboard.

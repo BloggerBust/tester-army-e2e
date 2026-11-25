@@ -1,5 +1,37 @@
 # @e2e-dev/html-reporter
 
+## 0.0.3
+
+### Patch Changes
+
+- [#2096](https://github.com/e2e-inc/e2e/pull/2096) [`634d060`](https://github.com/e2e-inc/e2e/commit/634d06047c7ad2493a9a54541e9e9ede007f37c6) Thanks [@Wali05](https://github.com/Wali05)! - An embedded report just under 1 MB now reads `1.0 MB` instead of `1024 KB`.
+
+- [#2107](https://github.com/e2e-inc/e2e/pull/2107) [`74904fc`](https://github.com/e2e-inc/e2e/commit/74904fcbfdefc27be8db0fffa73a3af8a92fb6d0) Thanks [@okwasniewski](https://github.com/okwasniewski)! - The HTML report shows names as written instead of lowercasing them. A hook step's tag reads `beforeEach`, not `beforeeach`, and target names, test tags, session names, skip reasons, screen URLs, and token counts (`1.2M`, not `1.2m`) keep their casing too.
+
+- [#1936](https://github.com/e2e-inc/e2e/pull/1936) [`eddf577`](https://github.com/e2e-inc/e2e/commit/eddf5775264134b61ce5ac986370dce2bf75844b) Thanks [@KrzysztofMoch](https://github.com/KrzysztofMoch)! - **Breaking:** without `list`, `dot`, or another interactive reporter, what your code prints goes to stderr where it went to stdout before. So does what the config prints while it loads. Stdout now holds only what a reporter prints there, and beside `json` only the JSON report.
+  
+  **Deprecated:** the `plan` run event. Read `collected`, which follows it with the same `total` and `files`. `plan` is removed no earlier than April 1, 2027.
+  
+  The built-in reporters are built on the public `Reporter` contract, so a reporter of your own can do everything they do. Ids such as `'list'` and `'junit'` work as before; to pass options, call the factory from `e2e/reporters`: `list()`, `dot()`, `json()`, `junit({ outputFile })`, and `markdown({ outputFile })`. `--reporter` keeps the options of a built-in the config configured, and `--reporter list,json` works like `dot,json`: `list` prints to stderr beside `json`.
+  
+  A reporter has one live hook, `onEvent`, and three for the finished run: `reportFiles` returns files the runner writes atomically, `onRunFinished` uploads or notifies, and `onSummary(rows, run)` prints, redacted, such as every reporter's summary rows or a document on stdout. `interactive: true` marks the one reporter that shows the run in the terminal, as `list` and `dot` do; the runner then prints nothing itself.
+  
+  New in the event stream:
+  
+  - `collected` lists every test of the run in `tests` before the first one starts, with `repeatEach`.
+  - A step's `start` progress has `source`, the test file line that called it.
+  - `paused` and `resumed` say when a test waits at a `--step` prompt or `screen.pause()`.
+  - `output` events include what the runner process prints, with no `target`.
+  
+  Every reporter gets the same event object, with its own fields frozen.
+  
+  `--step` works with the json reporter in a terminal. After a second Ctrl-C, `reportFiles` has 5 seconds left.
+  
+  `@e2e-dev/html-reporter` writes `report.html` through `reportFiles` and needs `e2e` 0.24.1 or later.
+
+- [#2015](https://github.com/e2e-inc/e2e/pull/2015) [`23aa697`](https://github.com/e2e-inc/e2e/commit/23aa697e2627b9c0ee436ea40128b3ee8f682c1c) Thanks [@satya164](https://github.com/satya164)! - `--step` and `screen.pause()` keys now appear below the live summary, with `s` for the screen and `l` for the app log.
+  Time when every running worker is paused is excluded from the terminal's `Duration` row and the report's new `run.durationMs` field.
+
 ## 0.0.2
 
 ### Patch Changes

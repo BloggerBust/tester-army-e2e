@@ -1,5 +1,11 @@
 # @e2e-dev/integrations
 
+## 0.2.4
+
+### Patch Changes
+
+- [#2122](https://github.com/e2e-inc/e2e/pull/2122) [`13b5450`](https://github.com/e2e-inc/e2e/commit/13b5450384eb7aad4c44f9d2f95dc1821a47ec2e) Thanks [@DeryFerd](https://github.com/DeryFerd)! - The Kernel provider no longer prints the browser's live view URL into the run log; it logs `browser <id>` alone. The view URL carries tokens that act on the session, and a run's log is often public CI output. The browser keeps its `e2e_run`, `e2e_target`, and `e2e_slot` tags, so Kernel's dashboard still finds it.
+
 ## 0.2.3
 
 ### Patch Changes

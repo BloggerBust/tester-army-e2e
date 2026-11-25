@@ -1,5 +1,13 @@
 # @e2e-dev/eas
 
+## 0.3.6
+
+### Patch Changes
+
+- [#2184](https://github.com/e2e-inc/e2e/pull/2184) [`a560224`](https://github.com/e2e-inc/e2e/commit/a5602240c9e37ecf60310b68fb508a0225676524) Thanks [@DeryFerd](https://github.com/DeryFerd)! - The install command now lists `e2e` and `@e2e-dev/mobile`. Installing `@e2e-dev/eas` alone left them out of `package.json`, and with pnpm `e2e.config.ts` could not import them.
+
+- [#2224](https://github.com/e2e-inc/e2e/pull/2224) [`06aa108`](https://github.com/e2e-inc/e2e/commit/06aa108bb858e9acacd06099a38fe7633cee2060) Thanks [@okwasniewski](https://github.com/okwasniewski)! - `expoSimulators()` installs a local build itself: with no `buildId` or `applicationArchiveUrl`, the target's `app.appPath` is uploaded to each simulator and installed there, before the first test. Remove a fixture that calls `device.installApp()` for that build, since it now uploads the build a second time. A session whose build does not install is stopped. Needs `@e2e-dev/mobile` 0.12.9 or later.
+
 ## 0.3.5
 
 ### Patch Changes
