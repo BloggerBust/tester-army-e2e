@@ -219,3 +219,23 @@ describe('Android resource ids without their package', () => {
     expect(testIds(query('testId', 'greet'), { platform: 'ios' })).toEqual([]);
   });
 });
+
+describe('a value outside the form roles', () => {
+  it('keeps the value a device reports, and drops an Android text view echoing its label', () => {
+    let counter = 0;
+    const { index } = projectSnapshot(
+      [
+        { ref: '@e1', index: 0, depth: 0, type: 'Application', label: 'Benchmark' },
+        { ref: '@e2', index: 1, parentIndex: 0, depth: 1, type: 'Other', identifier: 'ios-state', label: 'Power', value: 'On' },
+        { ref: '@e3', index: 2, parentIndex: 0, depth: 1, type: 'android.widget.TextView', identifier: 'android-state', label: 'Power', value: 'On' },
+        { ref: '@e4', index: 3, parentIndex: 0, depth: 1, type: 'android.widget.TextView', identifier: 'android-echo', label: 'On', value: 'On' },
+      ],
+      { mintId: () => `n${++counter}` },
+    );
+    const node = (id: string) => index.find((entry) => entry.raw.identifier === id)?.node;
+    expect(node('ios-state')?.value).toBe('On');
+    expect(node('android-state')?.value).toBe('On');
+    expect(node('android-echo')?.value).toBeUndefined();
+    expect(node('android-echo')?.text).toBe('On');
+  });
+});

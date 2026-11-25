@@ -453,7 +453,7 @@ typed; prefer it when the app already has a schema for the response.
 | `toBeVisible`, `toBeHidden`, `toBeInViewport`, `toBeAttached`, `toBeEnabled`, `toBeDisabled`, `toBeEditable`, `toBeChecked`, `toBeSelected`, `toBeExpanded`, `toBeFocused`, `toBeEmpty`, `toHaveText`, `toContainText`, `toHaveValue`, `toHaveAttribute`, `toHaveCount`, `toHaveAccessibleName`, `toHaveRole`, `toHaveScreenshot` (also on `screen`) | `toHaveURL`, `toHaveTitle`, `toHaveClass(locator, expected)` | `toBe`, `toEqual`, `toMatchObject`, `toBeTruthy`, `toBeFalsy`, `toBeNull`, `toBeUndefined`, `toBeDefined`, `toHaveLength`, `toHaveProperty`, `toContain`, `toMatch`, `toBeGreaterThan`, `toBeGreaterThanOrEqual`, `toBeLessThan`, `toBeLessThanOrEqual`, `toBeCloseTo`, `toMatchSchema`, `toBeOK` |
 
 `toHaveText` compares the whole normalized text, `toContainText` a substring
-or RegExp, `toHaveValue` a form control's value as is, whitespace included
+or RegExp, `toHaveValue` a control's value as is, whitespace included
 (it fails on a node with none). `toBeEmpty` passes on a field whose value
 is `''` (read as is, so a space is not empty) and on any other node with no
 text, where hidden text counts on the web, as in Playwright; it takes only

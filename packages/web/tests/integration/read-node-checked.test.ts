@@ -144,6 +144,13 @@ describe('checked and selected', () => {
     expect(await page.getByRole('button', { name: 'Pick Chosen', exact: true }).count()).toBe(1);
   });
 
+  it('keeps a range widget\'s value out of the tree, which the model and recordings read', async () => {
+    await page.setContent('<div role="slider" aria-label="Volume" aria-valuenow="50" tabindex="0" data-testid="volume" style="width:100px;height:10px"></div>');
+    const nodes = await captureByTestId();
+    expect(nodes.get('volume')?.role).toBe('slider');
+    expect(nodes.get('volume')?.value).toBeUndefined();
+  });
+
   it('excludes uppercase hidden subtrees from observations and names but reads hidden references whole', async () => {
     await page.setContent(`
       <div aria-hidden="TRUE"><button data-testid="hidden" aria-hidden="false">Hidden action</button></div>

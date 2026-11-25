@@ -86,7 +86,7 @@ await expect(screen.getByTestId('cart-empty'), 'the cart is empty').toBeVisible(
 | [`toBeEmpty`](#tobeempty) | Waits for an empty field or a node with no text |
 | [`toHaveText`](#tohavetext-and-tocontaintext) | Waits for exact normalized text |
 | [`toContainText`](#tohavetext-and-tocontaintext) | Waits for contained normalized text |
-| [`toHaveValue`](#tohavevalue) | Waits for a form control's value |
+| [`toHaveValue`](#tohavevalue) | Waits for a control's value |
 | [`toHaveAttribute`](#tohaveattribute) | Waits for an attribute |
 | [`toHaveCount`](#tohavecount) | Waits for an exact match count |
 | [`toHaveAccessibleName`](#tohaveaccessiblename) | Waits for an accessible name |
@@ -272,7 +272,7 @@ exists, so `not.toContainText(['Deleted'])` fails while any match contains
 
 #### `toHaveValue`
 
-Waits for a form control's value, compared as it is.
+Waits for a control's value, compared as it is.
 
 ```ts
 await expect(screen.getByLabel('Email')).toHaveValue('ada@example.test');
@@ -285,8 +285,19 @@ await expect(screen.getByLabel('Search')).toHaveValue('');
   An empty editor reads as `''`.
 - A control the platform reports without a value, such as a cleared field on
   a device, reads as `''`.
-- A node whose role carries no value, such as a heading or a link, never
-  satisfies `toHaveValue`, negated or not. The message reads
+- On the web, a `slider`, `spinbutton`, `progressbar`, `meter`, or `scrollbar`
+  that is not a native form control or an editor reads its `aria-valuetext`,
+  else its `aria-valuenow`, skipping a blank one. Without either, a native
+  `<progress>` or `<meter>` with a `value` attribute reads the browser's
+  built-in `.value`, clamped to its range, even when a customized built-in
+  (`<progress is="...">`) overrides that getter. A `slider` or `spinbutton`
+  with none reads as `''`, and any other widget with none, such as an
+  indeterminate `<progress>`, has no value and is refused.
+- On a device, a node reads the accessibility value the platform reports.
+  Android drops the value of a non-editable node when it repeats the node's
+  label.
+- Any other node with no value, such as a heading or a link, never satisfies
+  `toHaveValue`, negated or not. The message reads
   `no value (not a form control)`.
 
 #### `toHaveAttribute`
@@ -1090,7 +1101,7 @@ export interface AsyncExpectation {
   /** Waits for contained normalized text; a list waits for each entry to be contained by a distinct match, in order, extra matches allowed. */
   toContainText(expected: TextMatch, options?: TextMatcherOptions): Promise<void>;
   toContainText(expected: readonly TextMatch[], options?: TextMatcherOptions): Promise<void>;
-  /** Waits for a form control's value, compared as it is. */
+  /** Waits for a control's value, compared as it is. */
   toHaveValue(expected: TextMatch, options?: { timeout?: number }): Promise<void>;
   /** Waits for the attribute to be present; with `value`, for it to match. */
   toHaveAttribute(name: string, options?: { timeout?: number }): Promise<void>;

@@ -133,7 +133,7 @@ test('shows the home screen', async ({ agent, app, screen }) => {
 | `.toExist()`, `.not.toExist()` | `.toBeAttached()`, `.toBeAttached({ attached: false })` |
 | `.toHaveToggleValue(true)` | `.toBeChecked()` |
 | `.toHaveLabel(l)` | `.toHaveAccessibleName(l)` |
-| `.toHaveValue(v)` | `.toHaveValue(v)`, on a form control only |
+| `.toHaveValue(v)` | `.toHaveValue(v)` |
 
 ### Device
 
@@ -172,7 +172,6 @@ on purpose.
 | `.scrollTo('bottom')` | `list.scrollUntilVisible(lastRow)`, or the first row with `{ direction: 'up' }` |
 | `.tapBackspaceKey()` | `.fill(t)` with the shorter text |
 | `.setDatePickerDate()`, `.setColumnToValue()`, `.adjustSliderToPosition()` | An `agent.act` goal, or `screen.swipe({ from, to })` on a slider |
-| `.toHaveValue(v)` outside a form control | `expect(device.locator('id=x value="v"')).toBeVisible()` |
 | `permissions` for `health`, `homekit`, `speech`, `faceid`, `userTracking`; values `always`, `inuse`, `limited` | Tap the prompt's button, or `device.alert('accept')` |
 | `device.sendUserNotification()`, `.pinch()` | `client.apps.push()`, `client.interactions.pinch()` on [`unstable_raw`](/reference/mobile#unstable_raw) |
 | `launchApp({ languageAndLocale })` | On iOS, `app.launchArguments: { AppleLanguages: ['fr'], AppleLocale: 'fr_FR' }`, see [Run the app in another language](/mobile#run-the-app-in-another-language) |
@@ -188,6 +187,7 @@ on purpose.
 | `.toBeVisible(50)`, and the 75% default | `.toBeVisible()` checks the platform's flag, not the area. Compare `.boundingBox()` |
 | `web.element(by.web.cssSelector('x'))` | The WebView's accessibility text and labels, or an `agent.act` goal |
 | `device.resetContentAndSettings()` | `app.clearState()`, plus `device.clearKeychain()` on iOS |
+| `.toHaveValue(v)` on a non-editable Android node whose value repeats its label | `.toHaveText(v)` |
 | `device: { type, os }`, `headless`, `bootArgs` | Create and boot the device in a CI step |
 
 ### Not planned

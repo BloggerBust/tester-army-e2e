@@ -80,6 +80,8 @@ export const readSemanticsFunction = <Mode extends SemanticMode>(
     documentRoot: boolean;
     checkableValue: boolean;
     emptyState: boolean;
+    /** Whether a range widget reports its value. A locator read does; the tree keeps what the model and the recordings read. */
+    rangeValue: boolean;
   } =
     options.mode.kind === 'tree'
       ? {
@@ -91,6 +93,7 @@ export const readSemanticsFunction = <Mode extends SemanticMode>(
           documentRoot: true,
           checkableValue: false,
           emptyState: false,
+          rangeValue: false,
         }
       : {
           attributes: null,
@@ -101,6 +104,7 @@ export const readSemanticsFunction = <Mode extends SemanticMode>(
           documentRoot: false,
           checkableValue: true,
           emptyState: true,
+          rangeValue: true,
         };
 
   /**
@@ -645,6 +649,39 @@ export const readSemanticsFunction = <Mode extends SemanticMode>(
     return contributions.map((text) => text.replace(/\s+/g, ' ').trim()).filter((name) => name !== '');
   };
 
+  const RANGE_ROLES = ['progressbar', 'scrollbar', 'slider', 'spinbutton', 'meter'];
+
+  /**
+   * A range widget's value as a locator read reports it. An ARIA value reads
+   * as the author wrote it, for an assertion to compare, where Chrome clamps it
+   * to the range; a blank one is none. Without one, a native `<progress>` or
+   * `<meter>` with a `value` attribute reads its `.value`, the value its range
+   * clamps it to, as the browser parses it.
+   *
+   * Separate from the range contribution in `embeddedControlNameOf`, which
+   * follows Playwright's accname rules (a blank ARIA value counts there).
+   */
+  const rangeValueOf = (el: Element): string | null => {
+    const filled = (name: string): string | null => {
+      const text = el.getAttribute(name);
+      return text === null || text.trim() === '' ? null : text;
+    };
+    const aria = filled('aria-valuetext') ?? filled('aria-valuenow');
+    if (aria !== null) return aria;
+    // Only a native range control has a value beyond its ARIA attributes, so a
+    // stray `value` attribute on a generic widget is not read. By name, since
+    // an element adopted from another frame keeps that frame's prototype.
+    if (!isHtml(el) || (el.localName !== 'meter' && el.localName !== 'progress') || !el.hasAttribute('value')) {
+      return null;
+    }
+    // The built-in getter, never `el.value`, which a page's own getter (a
+    // customized built-in `<progress is>`) can replace. It accepts an element
+    // from another frame.
+    const prototype = el.localName === 'progress' ? HTMLProgressElement.prototype : HTMLMeterElement.prototype;
+    const read = Object.getOwnPropertyDescriptor(prototype, 'value')?.get;
+    return read === undefined ? null : String(read.call(el));
+  };
+
   /**
    * What an embedded control contributes to a name computed through another
    * element (accname 2C), by the rules Playwright's role selector applies, so
@@ -680,7 +717,7 @@ export const readSemanticsFunction = <Mode extends SemanticMode>(
       if (selected.length === 0 && el instanceof HTMLInputElement) return el.value;
       return selected.map((option) => contentNameOf(option, styleOf(option), walk)).join(' ');
     }
-    if (role === 'progressbar' || role === 'scrollbar' || role === 'slider' || role === 'spinbutton' || role === 'meter') {
+    if (RANGE_ROLES.indexOf(role ?? '') !== -1) {
       if (el.hasAttribute('aria-valuetext')) return el.getAttribute('aria-valuetext') ?? '';
       if (el.hasAttribute('aria-valuenow')) return el.getAttribute('aria-valuenow') ?? '';
       return el.getAttribute('value') ?? '';
@@ -1738,6 +1775,12 @@ export const readSemanticsFunction = <Mode extends SemanticMode>(
       const text = (el.textContent ?? '').replace(/﻿/g, '');
       value = text === '' || (text.trim() === '' && rendered === '\n') ? '' : rendered;
       if (projection.textLimit !== null) value = value.slice(0, projection.textLimit);
+    } else if (
+      projection.rangeValue && RANGE_ROLES.indexOf(implicitRole(el) ?? '') !== -1 &&
+      // A form control adopted from another frame fails the `instanceof` checks above; it is not a range widget.
+      ['input', 'textarea', 'select', 'option'].indexOf(tag) === -1
+    ) {
+      value = rangeValueOf(el);
     }
     // A native control's state is the control's, as Playwright reads it: a
     // stale aria-checked on a checkbox or aria-selected on an option says
