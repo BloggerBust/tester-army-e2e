@@ -724,7 +724,11 @@ pnpm microbench --tool time --case redact                      # local smoke run
   makes the run a repeatability check, which exits 1 when any case's ranges
   separate, under the floor too.
 - `.github/workflows/microbench.yml` runs both checks on a Blacksmith runner
-  with one pinned Node version; dispatch it with a `base` ref to compare.
+  with one pinned Node version; dispatch it with a `base` ref to compare. On
+  a pull request from this repository it posts the comparison and the
+  repeatability result as one comment and edits it on every run; a fork's or
+  Dependabot's pull request has the tables in the job summaries only. A
+  measured regression never fails the job: read the comment.
 - A case's `child.mjs` and `cases.mjs` are plain JavaScript: `--jitless`
   turns off WebAssembly, which Node's TypeScript stripping needs.
 

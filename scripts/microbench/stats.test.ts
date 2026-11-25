@@ -101,6 +101,8 @@ describe('renderSummary', () => {
 
   it('renders a single checkout as a spread table', () => {
     const single: Result = { ...result(false, [1, 2, 3]), rows: [{ case: 'locate/catalog', mode: 'jitless', head: side([500, 505, 510]) }] };
-    assert.match(renderSummary(single), /\| `locate\/catalog` \| jitless \| 505 \| 500 – 510 \| 1\.980% \|/);
+    const text = renderSummary(single);
+    assert.match(text, /\| Case \| Mode \| Median \| Min – max \| Spread \|/);
+    assert.match(text, /\| `locate\/catalog` \| jitless \| 505 \| 500 – 510 \| 1\.980% \|/);
   });
 });

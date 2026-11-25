@@ -8,10 +8,11 @@ name: microbench
 # in jitless mode and fails when any case's trial ranges separate: it
 # is the evidence that a count is stable enough to compare. `compare`
 # measures the pull request's base against its head (or a dispatched base ref
-# against the branch).
+# against the branch). `comment` posts both to the pull request.
 #
 # A pull request runs it when it changes the harness (with the statistics
-# it shares with bench-ab), the code the cases measure
+# it shares with bench-ab and the comment helper it shares with
+# review-label), the code the cases measure
 # (`scripts/microbench/cases.mjs` loads it from packages/core and
 # packages/mobile), what those packages build with, or the captured
 # snapshots the cases read as input.
@@ -21,6 +22,8 @@ on:
       - scripts/microbench.ts
       - scripts/microbench/**
       - scripts/bench-ab/stats.ts
+      - scripts/review-label/github.ts
+      - scripts/review-label/stale.ts
       - .github/workflows/microbench.yml
       - packages/core/src/**
       - packages/core/package.json
@@ -140,3 +143,53 @@ jobs:
           name: microbench-compare
           path: ${{ runner.temp }}/microbench
           if-no-files-found: ignore
+
+  # Posts both jobs' results to the pull request as one comment and edits it
+  # on every run (scripts/microbench/post-comment.ts). A fork's pull request
+  # and a run Dependabot triggers get a read-only token, so they get no
+  # comment. A Dependabot pull request gets none either, even when a
+  # maintainer's push triggers the run; the job summaries still hold the
+  # tables.
+  comment:
+    needs: [repeatability, compare]
+    if: ${{ !cancelled() && github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.actor != 'dependabot[bot]' && github.event.pull_request.user.login != 'dependabot[bot]' }}
+    runs-on: blacksmith-4vcpu-ubuntu-2404
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          sparse-checkout: scripts
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: ${{ env.MICROBENCH_NODE }}
+      # One download per job, each into its own directory: a pattern that
+      # matches one artifact extracts it into `path` itself. A job that
+      # failed before measuring uploaded nothing, so its download fails and
+      # the comment says it has no result for that job.
+      - id: repeatability
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        continue-on-error: true
+        with:
+          name: microbench-repeatability
+          path: ${{ runner.temp }}/results/microbench-repeatability
+      - id: compare
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        continue-on-error: true
+        with:
+          name: microbench-compare
+          path: ${{ runner.temp }}/results/microbench-compare
+      # The action extracts an archive before it checks the digest, so a
+      # failed download can leave files behind; drop them.
+      - name: Post the results
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          REPEATABILITY: ${{ steps.repeatability.outcome }}
+          COMPARE: ${{ steps.compare.outcome }}
+        run: |
+          [ "$REPEATABILITY" = success ] || rm -rf "$RUNNER_TEMP/results/microbench-repeatability"
+          [ "$COMPARE" = success ] || rm -rf "$RUNNER_TEMP/results/microbench-compare"
+          node scripts/microbench/post-comment.ts "$RUNNER_TEMP/results"
