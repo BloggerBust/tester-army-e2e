@@ -275,6 +275,7 @@ class SchedulerWorker {
       file: unit.file,
       absolutePath: unit.absolutePath,
       pairs,
+      ...(unit.split ? { split: true as const } : {}),
       ...(answersFailures ? { answersFailures: true as const } : {}),
     });
   }

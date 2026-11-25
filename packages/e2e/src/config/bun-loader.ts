@@ -78,7 +78,7 @@ function bun(): BunApi {
 }
 
 /**
- * Loads `absolutePath` afresh on Bun, as `load.ts`'s `importModule` asks:
+ * Loads `absolutePath` afresh on Bun, as `load.ts`'s `loadModule` asks:
  * in the fresh graph `graphName` names, or with the files it imports shared
  * when `graphName` is undefined.
  */

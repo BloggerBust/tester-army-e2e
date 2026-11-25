@@ -86,6 +86,8 @@ export interface RunUnitMessage {
   readonly file: string;
   readonly absolutePath: string;
   readonly pairs: readonly WirePair[];
+  /** Set when the unit is one of several its file was cut into; see `WorkUnit.split`. */
+  readonly split?: true;
   /**
    * Set when the run has a `--max-failures` limit. Only the runner counts
    * failures toward it, so after each result that counts the worker starts

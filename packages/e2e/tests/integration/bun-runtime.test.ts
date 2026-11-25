@@ -145,6 +145,28 @@ describe.runIf(bun !== undefined && (supported || Boolean(process.env['E2E_BUN']
     expect(report.run.environment.runtime).toBe(`bun v${bun!.version}`);
   });
 
+  it('gives every test of a parallel file the hook a module it imports declares', async () => {
+    createTypeScriptProject(dir, { type: 'module' }, {
+      ...BUN_FILES,
+      'tests/state.ts': 'export const state = { hookRan: false };\n',
+      'tests/hooks.ts': "import { test } from 'e2e';\nimport { state } from './state.ts';\n\ntest.beforeEach(() => {\n  state.hookRan = true;\n});\n",
+      'tests/parallel.e2e.ts': `import { expect, test } from 'e2e';
+import './hooks.ts';
+import { state } from './state.ts';
+
+test.describe.configure({ parallel: true });
+// Each test has to get the hook itself: the mark of the test before it is gone.
+test.afterEach(() => { state.hookRan = false; });
+for (const title of ['one', 'two', 'three']) {
+  test(title, () => { expect(state.hookRan).toBe(true); });
+}
+`,
+    });
+    const { code, stdout } = await runBun([CLI, 'run', '--no-cache', 'tests/parallel.e2e.ts', '--workers', '1']);
+    expect(stdout).toContain('3 passed');
+    expect(code).toBe(0);
+  });
+
   it('redacts a secret console.log prints from the config, a test file, and a test', async () => {
     const value = 'bun-console-sentinel-4521';
     createTypeScriptProject(dir, { type: 'module' }, {

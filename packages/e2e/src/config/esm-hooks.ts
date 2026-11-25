@@ -32,6 +32,15 @@
  * instance. The graph's tsconfig.json and file lookups are its own too
  * (`tsconfig.ts`).
  *
+ * Registrars: a project file that registered a test or a hook while it
+ * evaluated (`registrar-modules.ts`), and every project file that imports
+ * it, evaluates again with each fresh load that reaches it, by taking the
+ * importer's `e2e` query. A test file imported again then gets the tests and
+ * hooks of the helper it imports again, where one shared instance of the
+ * helper would register them for its first importer alone. The load that
+ * first reached a file keeps the one instance it evaluated. `require()` has
+ * no query, so a CommonJS registrar stays one instance.
+ *
  * Bun runs none of this: it compiles TypeScript and resolves the project's
  * imports itself, and `bun-loader.ts` keeps its loads fresh.
  *
@@ -41,6 +50,7 @@
  * properties.
  */
 
+import { AsyncLocalStorage } from 'node:async_hooks';
 import { readFileSync } from 'node:fs';
 import nodeModule, { type LoadHookSync, type ResolveHookContext, type ResolveHookSync } from 'node:module';
 import path from 'node:path';
@@ -48,6 +58,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { InfrastructureError } from '@e2e-dev/core/lib/internal/errors';
 import { onBun, unsupportedRuntimeMessage } from '../internal/runtime.ts';
 import { realmSlot } from '@e2e-dev/core/lib/internal/realm-slot';
+import { registrarModuleSlot } from '../internal/registrar-modules.ts';
 import { compiledSource, HOOKED_REQUIRE_KEY, IMPLIED_EXTENSIONS, isProjectFile, writtenCandidates, type CompiledSource } from './compiled-files.ts';
 import { isPathSpecifier, pathTarget, type Target } from './specifiers.ts';
 import { projectView, ProjectView } from './tsconfig.ts';
@@ -60,6 +71,61 @@ type NextResolve = Parameters<ResolveHookSync>[2];
 const URL_SCHEME = /^[a-z][\d+.a-z-]*:/i;
 /** The query parameter a fresh module graph carries on every project file. */
 const GRAPH_PARAM = 'e2e-graph';
+/** The query parameter a fresh load carries: the key of the load. */
+const FRESH_PARAM = 'e2e';
+/** The project files that import each project file, by path. */
+const importers = new Map<string, Set<string>>();
+/** The registrars and the files that import them, by path; see "Registrars" above. */
+const registrars = new Set<string>();
+/**
+ * The fresh load that first reached each project file, by path. That load
+ * evaluated the file without a query, so it keeps that instance when the
+ * file turns out to be a registrar while the load is still importing.
+ */
+const firstLoads = new Map<string, string>();
+/**
+ * The key of the fresh load at work: the one importing its module, or the
+ * one whose module's code runs (a test or a hook of the file it imported).
+ * A file that carries no query is one instance for every load, so an import
+ * it makes (a function of it that a test file or a test calls, say) belongs
+ * to the load at work, not to the load that first reached the file.
+ */
+const atWork = new AsyncLocalStorage<string>();
+
+/** Runs `work` as part of the fresh load `key`: the import of its module, or code of that module. */
+export function runInLoad<T>(key: string, work: () => T): T {
+  return atWork.run(key, work);
+}
+
+/** Makes `file`, and every project file that reaches it by import, a registrar. */
+function addRegistrar(file: string): void {
+  if (registrars.has(file)) return;
+  registrars.add(file);
+  for (const importer of importers.get(file) ?? []) addRegistrar(importer);
+}
+
+/**
+ * The resolution of an import written in a project file, noted as an edge
+ * of the import graph and, for a registrar imported from a fresh load,
+ * moved into that load.
+ */
+function inFreshLoad(parentURL: string | undefined, resolution: Resolution): Resolution {
+  if (parentURL?.startsWith('file:') !== true || !resolution.url.startsWith('file:')) return resolution;
+  const parent = new URL(parentURL);
+  const child = new URL(resolution.url);
+  if (!isProjectFile(parent) || !isProjectFile(child)) return resolution;
+  const [parentFile, childFile] = [fileURLToPath(parent), fileURLToPath(child)];
+  let known = importers.get(childFile);
+  if (known === undefined) importers.set(childFile, (known = new Set()));
+  known.add(parentFile);
+  if (registrars.has(childFile)) addRegistrar(parentFile);
+  const key = parent.searchParams.get(FRESH_PARAM) ?? atWork.getStore();
+  if (key === undefined) return resolution;
+  if (!firstLoads.has(childFile)) firstLoads.set(childFile, key);
+  if (!registrars.has(childFile) || firstLoads.get(childFile) === key || child.searchParams.has(FRESH_PARAM)) return resolution;
+  child.searchParams.set(FRESH_PARAM, key);
+  return { ...resolution, url: child.href };
+}
 
 /**
  * How a specifier reaches its file: by path (a relative or absolute path, a
@@ -86,7 +152,7 @@ function graphOf(url: string | undefined): string | null {
  */
 export function freshModuleURL(absolutePath: string, key: string, graph: string | undefined): string {
   const url = pathToFileURL(absolutePath);
-  url.searchParams.set('e2e', key);
+  url.searchParams.set(FRESH_PARAM, key);
   if (graph !== undefined) url.searchParams.set(GRAPH_PARAM, graph);
   return url.href;
 }
@@ -247,7 +313,7 @@ export const resolve: ResolveHookSync = (specifier, context, nextResolve) => {
     view !== undefined && how !== 'path' ? resolveExport(request, context, nextResolve, view) : nextResolve(request, context),
   );
   // CommonJS caches modules by file, with no query to make one fresh.
-  return requires(context) ? resolution : inGraph(how, context.parentURL, resolution);
+  return requires(context) ? resolution : inFreshLoad(context.parentURL, inGraph(how, context.parentURL, resolution));
 };
 
 export const load: LoadHookSync = (url, context, nextLoad) => {
@@ -316,6 +382,7 @@ export function registerLoader(): void {
   if (unsupported !== undefined) throw new InfrastructureError('NODE_UNSUPPORTED', unsupported);
   if (!onBun) {
     nodeModule.registerHooks({ resolve, load });
+    registrarModuleSlot.set(globalThis, addRegistrar);
     hookedRequireSlot.set(globalThis, hookedRequire);
     process.setSourceMapsEnabled(true);
   }

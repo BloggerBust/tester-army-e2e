@@ -137,15 +137,15 @@ function startFixture(
 
 /**
  * The worker-scoped `test.extend()` fixtures of one worker and target: one
- * instance per definition, set up the first time a test or suite hook of
- * its chain needs it, and torn down when the worker ends. A definition the
- * test file itself declares is a new definition each time the file is
- * imported again (after a failed test, for a serial group or a setup test),
- * so it gets a new instance; one declared in a module the file imports keeps
- * its instance.
+ * instance per fixture, set up the first time a test or suite hook of
+ * its chain needs it, and torn down when the worker ends. A module that is
+ * evaluated again (the test file after a failed test, a module that
+ * registers hooks with each file that imports it) defines its fixtures
+ * again, and they keep their instance: a fixture is known by its
+ * `identity`, and by the definition itself only where it has none.
  */
 export class WorkerFixturePool {
-  private readonly instances = new Map<FixtureDefinition, Promise<unknown>>();
+  private readonly instances = new Map<FixtureDefinition | string, Promise<unknown>>();
   private readonly active: WorkerFixtureTeardown[] = [];
   private closed = false;
   /** The built-in fixtures of the attempt or suite hook running now; see `enter`. */
@@ -180,7 +180,8 @@ export class WorkerFixturePool {
    * the fixture reaches the engine, kept for its teardown.
    */
   acquire(definition: FixtureDefinition, fixtures: object, usesEngine: boolean): Promise<unknown> {
-    const known = this.instances.get(definition);
+    const key = definition.identity ?? definition;
+    const known = this.instances.get(key);
     if (known !== undefined) return known;
     let value: unknown;
     const instance = startFixture(definition, fixtures, (provided, teardown) => {
@@ -189,9 +190,9 @@ export class WorkerFixturePool {
       this.active.push({ ...teardown, usesEngine });
       return true;
     }, true).then(() => value);
-    this.instances.set(definition, instance);
+    this.instances.set(key, instance);
     instance.catch(() => {
-      if (this.instances.get(definition) === instance) this.instances.delete(definition);
+      if (this.instances.get(key) === instance) this.instances.delete(key);
     });
     return instance;
   }

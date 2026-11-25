@@ -16,8 +16,10 @@ import type { AttemptRecord, ResultRecord, ResultStatus } from '@e2e-dev/core/li
 import type { WirePair } from './worker/protocol.ts';
 
 /**
- * One schedulable unit: either a single setup pair or every runnable ordinary
- * pair of one file for one target. Units execute on exactly one worker.
+ * One schedulable unit: either a single setup pair, or runnable ordinary
+ * pairs of one file for one target that run in order on one worker. That is
+ * every such pair of the file, unless some are in a parallel scope; see
+ * `splitFile`. Units execute on exactly one worker.
  */
 export interface WorkUnit {
   readonly id: string;
@@ -28,6 +30,10 @@ export interface WorkUnit {
   readonly absolutePath: string;
   /** Pairs with disposition `run`, in declaration order. */
   readonly pairs: readonly TestTargetPair[];
+  /** The part of its file's runnable pairs a file unit holds, from above 0 through 1; 1 for a setup unit. */
+  readonly share: number;
+  /** Whether the unit is one of several its file was cut into: a worker keeps its import of the file for the next of them, and holds none for a file with one unit. */
+  readonly split: boolean;
 }
 
 /** Per-target schedule: setup units gate file units. */
@@ -43,13 +49,22 @@ export interface TargetWorkPlan {
   readonly env?: Readonly<Record<string, string>>;
 }
 
-/** Builds per-target work plans from a selection, preserving report order. */
+/**
+ * Builds per-target work plans from a selection, preserving report order.
+ * `workers` is the run's worker cap, which decides how many units the tests
+ * with suite hooks of a parallel scope share; see `splitFile`. `inMemoryFile`
+ * names the file of tests registered in memory, which stays one unit: there
+ * is no module to import again for a second.
+ */
 export function buildWorkPlans(
   selection: Selection,
   collection: Collection,
   projectRoot: string,
+  workers: number,
+  inMemoryFile?: string,
 ): TargetWorkPlan[] {
   return selection.perTarget.map(({ target, pairs }) => {
+    const parallelism = targetWorkers(target, workers);
     // One pass sorts every pair into its bucket; files are then visited in
     // collection order so unit order (and thus report order) is stable.
     const setupUnits: WorkUnit[] = [];
@@ -65,6 +80,8 @@ export function buildWorkPlans(
           file: pair.test.file,
           absolutePath: path.resolve(projectRoot, pair.test.file),
           pairs: [pair],
+          share: 1,
+          split: false,
         });
       } else if (pair.disposition !== 'run') {
         immediate.push(pair);
@@ -79,22 +96,131 @@ export function buildWorkPlans(
     for (const file of collection.files) {
       const filePairs = runnableByFile.get(file.file);
       if (filePairs === undefined) continue;
-      fileUnits.push({
-        id: `file::${target.name}::${file.file}`,
-        kind: 'file',
-        targetName: target.name,
-        file: file.file,
-        absolutePath: file.absolutePath,
-        pairs: filePairs.toSorted((a, b) => a.test.declarationIndex - b.test.declarationIndex),
-      });
+      // Not spread into `push`: a file can be cut into more units than a call takes arguments.
+      for (const unit of unitsOfFile(target, file, filePairs, parallelism, file.file === inMemoryFile)) fileUnits.push(unit);
     }
 
     return { target, setupUnits, fileUnits, immediate };
   });
 }
 
+/** The units that run one file's runnable pairs on a target that runs `parallelism` workers; see `splitFile`. */
+function unitsOfFile(
+  target: ResolvedTarget,
+  file: Pick<WorkUnit, 'file' | 'absolutePath'>,
+  pairs: readonly TestTargetPair[],
+  parallelism: number,
+  whole = false,
+): WorkUnit[] {
+  const ordered = pairs.toSorted((a, b) => a.test.declarationIndex - b.test.declarationIndex);
+  const id = `file::${target.name}::${file.file}`;
+  const cut = whole ? [ordered] : splitFile(ordered, target.fullyParallel, parallelism);
+  return cut.map((unitPairs, index) => ({
+    // A file that is one unit keeps the id it always had.
+    id: index === 0 ? id : `${id}::${index}`,
+    kind: 'file',
+    targetName: target.name,
+    file: file.file,
+    absolutePath: file.absolutePath,
+    pairs: unitPairs,
+    share: unitPairs.length / ordered.length,
+    split: cut.length > 1,
+  }));
+}
+
+/**
+ * The plan for a target whose engine's `prepare` reported `workers`, fewer
+ * than the plan was cut for: each file is cut again for that many, so its
+ * tests do not run its suite hooks more often than the workers there are
+ * can use. The caller orders the plan again.
+ */
+export function withWorkerCap(plan: TargetWorkPlan, workers: number): TargetWorkPlan {
+  const byFile = new Map<string, WorkUnit[]>();
+  for (const unit of plan.fileUnits) {
+    const units = byFile.get(unit.file);
+    if (units === undefined) byFile.set(unit.file, [unit]);
+    else units.push(unit);
+  }
+  const fileUnits = [...byFile.values()].flatMap((units) =>
+    units.length === 1 ? units : unitsOfFile(plan.target, units[0]!, units.flatMap((unit) => unit.pairs), workers),
+  );
+  return { ...plan, workers, fileUnits };
+}
+
+/**
+ * Cuts one file's runnable pairs, in declaration order, into the units that
+ * run them, each unit's pairs in order on one worker. A pair in no parallel
+ * scope (a group or file with `parallel: true`, or every file under
+ * `fullyParallel`) stays in the file's one ordered unit, the first. In a
+ * parallel scope:
+ *
+ * - a serial group, or a scope with `parallel: false`, is one unit for each
+ *   agent it runs as;
+ * - a test with no `beforeAll` or `afterAll` around it is a unit of its own
+ *   for each agent;
+ * - the tests with such hooks share as few units as keep `parallelism`
+ *   workers busy, since each unit runs the hooks again; an agent's tests
+ *   never share a unit with another's.
+ *
+ * A unit holds every repeat of its tests, in order: the first repeat records
+ * the replay cache and the rest replay it, which repeats that ran at the
+ * same time could not.
+ *
+ * The cut is the same whatever `parallelism` is, but for how many units the
+ * tests with hooks share: a test that runs apart from another does so on
+ * one worker too. Units of a file that one worker runs share its import of
+ * the file (`RealmManager.keep`), so they share the file's state there.
+ */
+function splitFile(pairs: readonly TestTargetPair[], fullyParallel: boolean, parallelism: number): TestTargetPair[][] {
+  const inOrder: TestTargetPair[] = [];
+  const scopes = new Map<string, TestTargetPair[]>();
+  const alone = new Map<string, TestTargetPair[]>();
+  const hooked = new Map<string, Map<string, TestTargetPair[]>>();
+  for (const pair of pairs) {
+    const { declared, ordered, suiteHooks } = pair.test.parallel;
+    if (!(declared || fullyParallel) || ordered === 'file') inOrder.push(pair);
+    else if (ordered !== undefined) gather(scopes, agentKey(ordered, pair.agent), pair);
+    else if (suiteHooks) {
+      let tests = hooked.get(pair.agent);
+      if (tests === undefined) hooked.set(pair.agent, (tests = new Map()));
+      gather(tests, pair.test.id, pair);
+    } else gather(alone, agentKey(pair.test.id, pair.agent), pair);
+  }
+  const sharing: TestTargetPair[][] = [];
+  for (const tests of hooked.values()) {
+    for (const batch of evenBatches([...tests.values()], parallelism)) sharing.push(batch.flat());
+  }
+  const split = [...scopes.values(), ...alone.values(), ...sharing].toSorted((a, b) => a[0]!.test.declarationIndex - b[0]!.test.declarationIndex);
+  return inOrder.length === 0 ? split : [inOrder, ...split];
+}
+
+/** The key of what one agent runs of `id`, a test or a scope. */
+function agentKey(id: string, agent: string): string {
+  return `${id}\u0000${agent}`;
+}
+
+/** Adds `pair` to the pairs `groups` holds under `key`. */
+function gather(groups: Map<string, TestTargetPair[]>, key: string, pair: TestTargetPair): void {
+  const group = groups.get(key);
+  if (group === undefined) groups.set(key, [pair]);
+  else group.push(pair);
+}
+
+/** `items` in order, cut into `count` runs (fewer when there are fewer items) whose lengths differ by one at most. */
+function evenBatches<Item>(items: readonly Item[], count: number): Item[][] {
+  const batches: Item[][] = [];
+  const total = Math.min(items.length, Math.max(1, count));
+  let start = 0;
+  for (let index = 0; index < total; index += 1) {
+    const size = Math.ceil((items.length - start) / (total - index));
+    batches.push(items.slice(start, start + size));
+    start += size;
+  }
+  return batches;
+}
+
 /** What `orderWorkPlans` ranks the work by. */
-interface WorkOrder {
+export interface WorkOrder {
   /** How likely the test filters rated a test to fail on this change, from 0 to 1; 0 for a test none scored. */
   readonly relevanceOf: (testId: string) => number;
   /** How long the previous run spent in a target's file; `undefined` when it has no timing, as every file does when the run reads none. */
@@ -111,13 +237,14 @@ export function relevanceBand(score: number): number {
 
 /**
  * Orders each plan's file units, and the plans, so the work likeliest to fail
- * starts first and long files start early. A file ranks by the highest
+ * starts first and long units start early. A unit ranks by the highest
  * relevance band of the tests it runs, and within a band longest first by
- * the time the previous run spent in it, so a long file starts while short
- * ones fill the other workers instead of starting last and running alone.
- * Files without a timing go first, being of unknown length; ties keep
- * collection order. A target ranks by its best file, ties keeping config
- * order. Report order does not depend on dispatch order.
+ * the time the previous run spent in its file, counted by the unit's share
+ * of the file's pairs, so a long unit starts while short ones fill the other
+ * workers instead of starting last and running alone. Units of a file
+ * without a timing go first, being of unknown length; ties keep collection
+ * order. A target ranks by its best unit, ties keeping config order. Report
+ * order does not depend on dispatch order.
  */
 export function orderWorkPlans(plans: readonly TargetWorkPlan[], { relevanceOf, durationOf }: WorkOrder): TargetWorkPlan[] {
   const ranked = plans.map((plan) => {
@@ -125,7 +252,7 @@ export function orderWorkPlans(plans: readonly TargetWorkPlan[], { relevanceOf, 
       .map((unit) => ({
         unit,
         band: unit.pairs.reduce((best, pair) => Math.max(best, relevanceBand(relevanceOf(pair.test.id))), 0),
-        duration: durationOf(unit.targetName, unit.file) ?? Number.POSITIVE_INFINITY,
+        duration: (durationOf(unit.targetName, unit.file) ?? Number.POSITIVE_INFINITY) * unit.share,
       }))
       .toSorted((a, b) => {
         const longer = b.duration - a.duration;
@@ -145,7 +272,12 @@ export function orderWorkPlans(plans: readonly TargetWorkPlan[], { relevanceOf, 
  */
 export function plannedSlots(plan: TargetWorkPlan, runWorkers: number): number {
   const units = plan.setupUnits.length + plan.fileUnits.length;
-  return Math.min(runWorkers, plan.target.engine?.workers ?? runWorkers, units);
+  return Math.min(targetWorkers(plan.target, runWorkers), units);
+}
+
+/** The workers a target can have at once: the run's worker cap, or the fewer its engine declares. */
+function targetWorkers(target: ResolvedTarget, runWorkers: number): number {
+  return Math.min(runWorkers, target.engine?.workers ?? runWorkers);
 }
 
 /** Skip info for a pair whose session-producing setup did not pass. */

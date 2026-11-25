@@ -13,7 +13,7 @@ import { isStepExecutor } from '../agent/executor.ts';
 import { compileGlob, compileGlobList, literalPrefix } from '../internal/globs.ts';
 import { isPlainObject, rejectUnknownKeys } from '../internal/options.ts';
 import { isRecord } from './command.ts';
-import { boundedInt, checkIntervals, DEFAULT_PASS_OPTIONS, describeValue, timerMs } from './validate.ts';
+import { boundedInt, checkIntervals, DEFAULT_PASS_OPTIONS, describeValue, optionalBoolean, timerMs } from './validate.ts';
 import type { ArtifactStore, ArtifactsConfig, CacheMode, ModelInstance, PassOptions, SecretProvider, SecretPurpose, RecordingMode, CacheStore, ProjectConfig } from '../types.ts';
 import { isModelInstance, resolveAgentConfig, runLimits, type ResolvedAgentConfig, type ResolvedLimits } from './agent.ts';
 import { bindTargets, digestTargets, resolveTargets, TARGET_NAME_PATTERN, type PortAssignments, type ResolvedTarget } from './targets.ts';
@@ -120,6 +120,8 @@ export interface CacheStrictSource {
 export interface CliOverrides {
   retries?: number;
   workers?: number;
+  /** `--fully-parallel`: every target runs the tests of one file in parallel, over the config's and every target's `fullyParallel`. */
+  fullyParallel?: boolean;
   /** `--action-timeout <ms>`: the budget of every engine operation, over the config's `actionTimeout`. */
   actionTimeout?: number;
   /** `--assertion-timeout <ms>`: the default `expect` deadline, over the config's `assertionTimeout`. */
@@ -156,6 +158,7 @@ const TOP_LEVEL_KEYS = new Set([
   'failOnSkippedFailure',
   'maxDuration',
   'workers',
+  'fullyParallel',
   'artifacts',
   'output',
   'trace',
@@ -245,10 +248,16 @@ export function resolveProjectConfig(
   }
 
   const recordings = runRecordings(raw, cli);
-  const targets = resolveTargets(raw.targets, options.projectRoot, (target, where) => ({
-    trace: targetRecording(recordings.trace, target.trace, `${where} trace`, 'trace'),
-    video: targetRecording(recordings.video, target.video, `${where} video`, 'video'),
-  }));
+  const fullyParallel = optionalBoolean(raw.fullyParallel, 'fullyParallel');
+  const targets = resolveTargets(raw.targets, options.projectRoot, (target, where) => {
+    // Read before the flag is consulted, so a broken value fails with or without it.
+    const own = optionalBoolean(target.fullyParallel, `${where} fullyParallel`);
+    return {
+      trace: targetRecording(recordings.trace, target.trace, `${where} trace`, 'trace'),
+      video: targetRecording(recordings.video, target.video, `${where} video`, 'video'),
+      fullyParallel: cli.fullyParallel ?? own ?? fullyParallel ?? false,
+    };
+  });
   const tests = normalizeTests(raw.tests, options.projectRoot);
 
   const timeout = timerMs(raw.timeout, 'timeout') ?? 120_000;
@@ -1005,14 +1014,17 @@ function computeConfigDigest(
   // enters the digest either; the built-in ids digest as they always have,
   // so adding a reporter to a config leaves its cache valid.
   // `failOnSkippedFailure` decides only the exit code, never what runs, and
-  // `maxDuration` only when the run stops. A test filter decides what runs
-  // before any worker starts and never changes what a test does, so adding
-  // one leaves the replays valid, like a reporter.
+  // `maxDuration` only when the run stops. `fullyParallel`, at the top or on
+  // a target, decides which worker runs a test, never what the test does.
+  // A test filter decides what runs before any worker starts and never
+  // changes what a test does, so adding one leaves the replays valid, like
+  // a reporter.
   // `targets` digest by declaration below and never enter the clone: an
   // engine holds `secrets.get()` handles, which refuse to serialize.
   const {
     failOnSkippedFailure: _failOnSkippedFailure,
     maxDuration: _maxDuration,
+    fullyParallel: _fullyParallel,
     filters: _filters,
     artifacts: _artifacts,
     output: _output,

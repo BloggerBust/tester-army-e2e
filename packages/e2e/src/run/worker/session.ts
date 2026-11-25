@@ -27,19 +27,21 @@ export interface ResolvedUnitPairs {
   /** Planned pairs whose test is absent from this worker's view of the file. */
   readonly missing: readonly WirePair[];
   /**
-   * The module registration the resolver imported to resolve the pairs, when
-   * it imported one. Nothing has run in it, so the executor adopts it as the
-   * unit's first realm instead of importing the same file a second time.
+   * The module registration the pairs were resolved against, when there is
+   * one: `reusable`, or the resolver's own import, in which nothing has run.
+   * The executor adopts it as the unit's first realm instead of importing the
+   * file again.
    */
   readonly registration?: ModuleRegistration;
 }
 
 /**
  * Turns a unit's wire pairs into executable pairs. A child-process worker
- * re-imports the file; an in-process worker looks the pairs up in the
- * selection the runner already collected.
+ * imports the file, unless an earlier unit of the file left `reusable`; an
+ * in-process worker looks the pairs up in the selection the runner already
+ * collected.
  */
-export type ResolveUnitPairs = (unit: RunUnitMessage) => Promise<ResolvedUnitPairs>;
+export type ResolveUnitPairs = (unit: RunUnitMessage, reusable: ModuleRegistration | undefined) => Promise<ResolvedUnitPairs>;
 
 export interface TargetWorkerDeps {
   readonly config: ResolvedConfig;
@@ -406,7 +408,9 @@ export class TargetWorker {
     // failed results for every pair it never heard about. Reporting the unit
     // done first would clear that bookkeeping and drop those tests silently.
     this.answersFailures = message.answersFailures === true;
-    const { pairs, missing, registration } = await deps.resolvePairs(message);
+    // A setup test owns its realm, so only a file unit runs in an instance an earlier one left.
+    const reusable = message.kind === 'file' ? executor.realms.takeReusable(message.file) : undefined;
+    const { pairs, missing, registration } = await deps.resolvePairs(message, reusable);
     for (const wire of missing) {
       executor.recordDisappeared(
         `test ${wire.test.id} disappeared before execution; registration must be deterministic`,
@@ -424,6 +428,7 @@ export class TargetWorker {
         { file: message.file, absolutePath: message.absolutePath },
         pairs,
         registration,
+        message.split === true,
       );
     }
     this.inFlight = undefined;

@@ -188,6 +188,9 @@ run only in a browser, so a test that uses it declares
 | `test.slow()`, `test.slow(condition, description)` | the same inside a test body or `beforeEach`: triples the test's timeout in force; in `beforeAll`, that hook's own timeout. Once per attempt, as in Playwright. At describe level (any form) it is a `COLLECTION_ERROR`: call it in a `beforeEach` |
 | `beforeEach`, `afterEach`, `beforeAll`, `afterAll` | the same, with no title; `beforeAll` and `afterAll` get worker fixtures, not `browser`, `app`, or `screen` |
 | `test.describe.skip`, `test.describe.serial`, `describe.configure({ mode: 'serial', retries, timeout })` | `test.describe(title, { skip, serial, retries, timeout }, fn)` |
+| `fullyParallel` in the config or a project, `--fully-parallel` | the same, in the config or on a target |
+| `describe.configure({ mode: 'parallel' })`, `test.describe.parallel` | `describe.configure({ parallel: true })`, or `{ parallel: true }` on a `describe`, see [`parallel`](/reference/test#parallel) |
+| `describe.configure({ mode: 'default' })` | `describe.configure({ parallel: false })`, or `{ parallel: false }` on a `describe` |
 | `test.fail()` on a describe | `test.describe.fail(title, fn)`, or `{ fail: 'reason' }` on the group; for a condition, `test.fail(condition, 'reason')` in a `beforeEach` |
 | `{ tag: '@smoke' }` | `{ tags: ['smoke'] }` on a test or group |
 | `test.extend({ fixture })` | the same shape, set up on demand: a test, a hook, or a fixture gets the fixtures it names in its first parameter |
@@ -300,7 +303,6 @@ purpose. Use the workaround, or keep the test in Playwright.
 | --- | --- |
 | `test.step()`, `testInfo.attach()` | Each call is already a named step in the report; `app.screenshot(label)` attaches a screenshot |
 | `test.info()`, `testInfo` in hooks and fixtures, `annotations` | Your own fixture or module state; an issue id in the title or a tag |
-| `fullyParallel`, `describe.configure({ mode: 'parallel' })` | Split the file. Files run in parallel, a file's tests in order |
 | `mergeTests()` | One chain of `extend` calls |
 | `globalSetup`, `globalTeardown`, a `webServer` array | A script around the run, or one `app.command` that starts every process |
 | `projects[].testMatch`, `testDir`, `testIgnore`, `grep` | `platforms` or tags on the tests, or one run for each target |

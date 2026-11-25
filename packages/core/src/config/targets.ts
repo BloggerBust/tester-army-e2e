@@ -34,6 +34,8 @@ export interface ResolvedTarget {
   readonly trace: ResolvedRecording;
   /** Which attempts on the target record a video: `--video`, else the target's `video`, else the config's, else `off`. A test's own `video` wins over it. */
   readonly video: ResolvedRecording;
+  /** Whether the target runs the tests of one file in parallel: `--fully-parallel`, else the target's `fullyParallel`, else the config's, else false. */
+  readonly fullyParallel: boolean;
   /**
    * Engine fixture scopes shared by all targets in the config. On a target
    * without the fixture, the scope is `worker` if `isolation: 'worker'` is
@@ -46,15 +48,15 @@ export interface ResolvedTarget {
 export const TARGET_NAME_PATTERN = /^(?!\.+$)[A-Za-z0-9_.-]+$/;
 
 /**
- * Resolves `targets`: each target's name, platform, engine, recordings, and
- * app, without the run's ports. An engine in this process is served over
+ * Resolves `targets`: each target's name, platform, engine, recordings,
+ * `fullyParallel`, and app, without the run's ports. An engine in this process is served over
  * the engine protocol, so each call crosses the wire format a remote engine
  * would receive.
  */
 export function resolveTargets(
   declared: unknown,
   projectRoot: string,
-  recordings: (target: Target, where: string) => Pick<ResolvedTarget, 'trace' | 'video'>,
+  settings: (target: Target, where: string) => Pick<ResolvedTarget, 'trace' | 'video' | 'fullyParallel'>,
 ): readonly ResolvedTarget[] {
   if (declared === undefined) {
     throw new ConfigurationError(
@@ -110,7 +112,7 @@ export function resolveTargets(
       engine,
       app: resolveTargetApp(name, declaredApp, projectRoot),
       declaredApp,
-      ...recordings(target, where),
+      ...settings(target, where),
       fixtureScopes,
     };
   });

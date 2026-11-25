@@ -672,6 +672,7 @@ function createProgram(version: string, telemetry: Telemetry, updateCheck: Updat
       parseNames('agent'),
     )
     .option('--workers <n>', 'parallel workers (default: from the config)', parseNonNegativeInt)
+    .option('--fully-parallel', 'run the tests of one file in parallel too, on every target (default: fullyParallel in the config)')
     .option('--retries <n>', 'retries per failing test (default: from the config)', parseNonNegativeInt)
     .option('--action-timeout <ms>', 'budget of every engine operation, such as a locator waiting for its element; a call\'s own timeout still wins (default: actionTimeout in the config, else 30000)', parseBoundedInt({ min: 1, max: MAX_TIMER_MS }))
     .option('--assertion-timeout <ms>', 'default expect deadline; a matcher\'s own timeout still wins (default: assertionTimeout in the config, else 5000)', parseBoundedInt({ min: 1, max: MAX_TIMER_MS }))
@@ -745,6 +746,7 @@ function createProgram(version: string, telemetry: Telemetry, updateCheck: Updat
           agent?: string[];
           retries?: number;
           workers?: number;
+          fullyParallel?: boolean;
           actionTimeout?: number;
           assertionTimeout?: number;
           maxFailures?: number;
@@ -794,6 +796,7 @@ function createProgram(version: string, telemetry: Telemetry, updateCheck: Updat
           retries: options.retries,
           // A stepped run is one test at a time, so there is one prompt at a time.
           workers: options.step === true ? 1 : options.workers,
+          fullyParallel: options.fullyParallel,
           actionTimeout: options.actionTimeout,
           assertionTimeout: options.assertionTimeout,
           maxFailures: options.maxFailures,

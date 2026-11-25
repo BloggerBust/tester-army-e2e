@@ -186,12 +186,12 @@ class InProcessRunner implements UnitRunner {
       debug: this.options.debug,
       holdSteps: this.options.holdSteps,
       inMemory: this.options.inMemory,
-      resolvePairs: (unit) =>
+      resolvePairs: (unit, reusable) =>
         resolveFromSelection(
           this.options.selection,
           target,
           unit,
-          this.options.inMemory?.file === unit.file ? this.options.inMemory.registration : undefined,
+          this.options.inMemory?.file === unit.file ? this.options.inMemory.registration : reusable,
         ),
     };
   }

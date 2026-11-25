@@ -170,6 +170,7 @@ or `E2E_USER_ADMIN_PASSWORD` first, or defer to fill time with
 | `cleanupTimeout` | `30000` | Each `afterEach` hook, fixture teardown, engine cleanup, ms. |
 | `retries` | `0`, `1` in CI | 0 to 10. |
 | `workers` | half the cores, `1` in CI | Parallel test files, capped by the `workers` the engine declares per target. |
+| `fullyParallel` | `false` | Run the tests of one file in parallel too, on separate workers; also on a target, and `--fully-parallel`. One file or group: topic `writing-tests`, option `parallel`. |
 | `reporters` | `['list']` | `list`, `dot`, `line`, `json`, `junit`, `markdown`, `ctrf` ids, the same as factories from `e2e/reporters` (`junit({ outputFile })`), or `{ name, interactive?, onEvent?, reportFiles?, onRunFinished?, onSummary? }` objects; two of `list`, `dot`, and `line` together are `INVALID_CONFIG`, and beside `json` their ids print to stderr; without one of them or another `interactive` reporter, what the code prints goes to stderr; `--reporter` keeps the other objects. |
 | `cache` | `'read-write'` | `'read-write'`, `'read-only'`, `'off'`, or `{ mode, store, dir, strict }`; CI demotes only a defaulted mode to `'read-only'`. `strict` (`--strict-cache`) fails a step whose recording no longer replays (`REPLAY_STALE`) instead of handing it to the agent; retries replay too, and the run never writes the cache. |
 | `agents` | `{ default: built-in }` | Tests run with `default`, `e2e run --agent <name>` picks another, entries never inherit from `default`. Options: topic `agent`. |

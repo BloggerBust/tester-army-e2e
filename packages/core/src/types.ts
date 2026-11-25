@@ -888,6 +888,20 @@ export interface TestOptions {
 export interface DescribeOptions extends Omit<TestOptions, 'only'> {
   /** Runs the group as one ordered retry unit with shared app state. Nesting one serial group in another is a `COLLECTION_ERROR`. */
   serial?: boolean;
+  /**
+   * `true` lets the group's tests run at the same time on separate workers
+   * instead of in order on one. `false` keeps a group inside a parallel
+   * scope in order on one worker. Unset, the group runs as the scope around
+   * it does. A `COLLECTION_ERROR` on a serial group, and for `true` inside
+   * a serial group or inside a group or file with `parallel: false`.
+   */
+  parallel?: boolean;
+}
+
+/** What `test.describe.configure()` sets on the scope it is called in. */
+export interface DescribeConfigureOptions {
+  /** The scope's `parallel`, as the `describe` option of that name; at the top of a file it applies to the whole file. */
+  parallel?: boolean;
 }
 
 export interface SetupOptions extends Omit<TestOptions, 'session' | 'only' | 'skip' | 'fail' | 'agent'> {
@@ -939,6 +953,12 @@ export interface DescribeRegistrar<Options = DescribeOptions> {
 export interface DescribeAPI extends DescribeRegistrar {
   /** Declares a group whose tests are expected to fail, as if it had `fail: true`; a reason goes in the `fail` option of `describe`. */
   fail: DescribeRegistrar<Omit<DescribeOptions, 'fail'>>;
+  /**
+   * Configures the scope it is called in: the enclosing `describe`, or the
+   * whole file at the top level. `{ parallel: true }` lets the scope's tests
+   * run at the same time on separate workers.
+   */
+  configure(options: DescribeConfigureOptions): void;
 }
 
 /** The two call forms of `test`, shared with what `test.skipIf` and `test.runIf` return. */
@@ -1690,6 +1710,8 @@ export interface Target {
    * `UNSUPPORTED_ARTIFACT`.
    */
   video?: RecordingMode;
+  /** Whether this target runs the tests of one file in parallel, in place of the config's `fullyParallel`; `--fully-parallel` wins over it. */
+  fullyParallel?: boolean;
 }
 
 /**
@@ -1957,6 +1979,14 @@ export interface ProjectConfig {
   maxDuration?: number;
   /** Parallel workers, 1 through 1024; default 1 in CI, else half the cores. An engine may cap it lower. */
   workers?: number;
+  /**
+   * Runs the tests of one file at the same time on separate workers, as if
+   * every file had `parallel: true`; default false, where files run in
+   * parallel and a file's tests in order. A target's `fullyParallel` wins
+   * over it, and `--fully-parallel` over both. A serial group still runs as
+   * one unit, and `parallel: false` keeps a group or a file in order.
+   */
+  fullyParallel?: boolean;
   /** `{ store }` hands every artifact to a host store as it is produced. */
   artifacts?: ArtifactsConfig;
   /**

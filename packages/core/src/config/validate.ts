@@ -69,6 +69,15 @@ export function describeValue(value: unknown): string {
   return `a ${typeof value}`;
 }
 
+/** A present value that is not a boolean is a config error naming the key. */
+export function optionalBoolean(value: unknown, label: string): boolean | undefined {
+  if (value === undefined) return undefined;
+  if (typeof value !== 'boolean') {
+    throw new ConfigurationError('INVALID_CONFIG', `${label} must be a boolean, got ${describeValue(value)}`);
+  }
+  return value;
+}
+
 /** A safe integer within [min, max], or undefined when the value is absent. */
 export function boundedInt(
   value: number | undefined,

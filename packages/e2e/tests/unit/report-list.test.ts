@@ -1146,6 +1146,21 @@ describe('ListReporter', () => {
       expect(window).not.toContain('step 1');
       expect(window).not.toContain('app.open');
     });
+    it.each([
+      ['repeat', { agent: 'default', repeat: 1 }],
+      ['agent', { agent: 'second', repeat: 0 }],
+    ])('keeps a serial member in the live window while another %s of its group starts', (_what, other) => {
+      const chunks: string[] = [];
+      const output = { write: (line: string) => chunks.push(`${line}\n`), raw: (text: string) => chunks.push(text) };
+      const reporter = plainReporter(output, true);
+      reporter.handle(runStarted());
+      reporter.handle(plan([{ file: 'tests/case.e2e.ts', tests: 2 }]));
+      reporter.handle(testStarted('m1', 'step 1', 'chromium', 'tests/case.e2e.ts', 'wizard'));
+      reporter.handle({ type: 'test-started', testId: 'm1', ...other, title: 'step 1 again', file: 'tests/case.e2e.ts', serialId: 'wizard', target: 'chromium' });
+      const window = chunks.at(-1)!;
+      expect(window).toContain('step 1 again');
+      expect(window.replaceAll('step 1 again', '')).toContain('step 1');
+    });
   });
 
   describe('step streaming', () => {

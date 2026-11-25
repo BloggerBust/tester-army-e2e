@@ -81,6 +81,8 @@ export interface RecordedSessionCall {
 export type RecordedCall = RecordedPerform | RecordedPointerAction | RecordedKey | RecordedSessionCall;
 
 export interface FakeEngineBehavior {
+  /** The worker cap `prepare` reports to the run; without it the engine has no `prepare`. */
+  preparedWorkers?: number;
   /** Throw to fail worker boot. Called before any attempt. */
   onInit?(info: EngineInitInfo): void | Promise<void>;
   /** Throw or hang to fail attempt launches. */
@@ -254,10 +256,12 @@ export function createFakeEngine(behavior: FakeEngineBehavior = {}): FakeEngineH
   const location = `${FAKE_APP_URL}/`;
   let videoStartedAt: string | undefined;
 
+  const { preparedWorkers } = behavior;
   const engine = defineEngine({
     name: 'fake',
     version: '1.0.0',
     spiVersion: ENGINE_SPI_VERSION,
+    ...(preparedWorkers === undefined ? {} : { prepare: async () => ({ workers: preparedWorkers }) }),
     async init(info) {
       events.push('init');
       inits.push(info);

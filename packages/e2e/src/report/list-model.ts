@@ -60,6 +60,9 @@ export interface RunningTest {
   readonly group: FileGroup;
   /** The pair's serial group, when it belongs to one. */
   readonly serialId: string | undefined;
+  /** The pair's agent and repeat: each runs a serial group of its own. */
+  readonly agent: string | undefined;
+  readonly repeat: number | undefined;
   readonly title: string;
   readonly startedMs: number;
   /**

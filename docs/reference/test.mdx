@@ -46,6 +46,7 @@ describe('checkout', { tags: ['billing'] }, () => {
 | [`test.extend`](#test-extend) | `TestAPI` |
 | [`describe`](#describe) | `void` |
 | [`describe.fail`](#describe-fail) | `void` |
+| [`describe.configure`](#describe-configure) | `void` |
 | [Hooks](#hooks) | `void` |
 
 `describe` and the four hooks are also top-level exports, the same functions
@@ -474,7 +475,7 @@ describe('checkout', { tags: ['smoke'], serial: true }, () => {
 ```
 
 - A group takes the [options](#options) a test takes, except `only`, plus
-  [`serial`](#serial).
+  [`serial`](#serial) and [`parallel`](#parallel).
 - The body is synchronous.
 
 | Throws | When |
@@ -504,6 +505,30 @@ describe('legacy checkout', { fail: 'old payment form' }, () => {}); // with a r
 | --- | --- |
 | `COLLECTION_ERROR` | The group is serial or inside a serial group, or a serial group is inside it. |
 | `COLLECTION_ERROR` | A `fail` option on `describe.fail`. It is also a type error. |
+
+#### `describe.configure`
+
+Sets [`parallel`](#parallel) on the scope it is called in: the enclosing
+`describe`, or the whole file at the top level.
+
+```ts
+import { describe, test } from 'e2e';
+
+describe.configure({ parallel: true }); // every test of this file
+
+test('lists orders', async ({ screen }) => {});
+test('lists invoices', async ({ screen }) => {});
+```
+
+- The call can come before or after the tests of its scope.
+- `{ parallel: false }` at the top level keeps the file in order under
+  [`fullyParallel`](/reference/config#fullyparallel).
+
+| Throws | When |
+| --- | --- |
+| `COLLECTION_ERROR` | `parallel` is already set for the scope, by the `describe` option or an earlier call. |
+| `COLLECTION_ERROR` | A key other than `parallel`. |
+| `COLLECTION_ERROR` | Any case [`parallel`](#parallel) lists. |
 
 ### Hooks
 
@@ -563,7 +588,8 @@ test.beforeAll(async ({ database, device }) => {
 ```
 
 The module is re-imported for every retry, serial group, and setup test, so
-`beforeAll` runs again in each.
+`beforeAll` runs again in each, and in each batch of a
+[parallel](#parallel) scope.
 
 It receives [worker fixtures](#worker-fixtures) only:
 
@@ -658,9 +684,10 @@ blocked event loop hangs it.
 | [`trace`](#trace) | `RecordingMode` | the run's |
 | [`video`](#video) | `RecordingMode` | the run's |
 | [`serial`](#serial) | `boolean` | - |
+| [`parallel`](#parallel) | `boolean` | - |
 | [`sessions`](#sessions) | `readonly string[]` | required |
 
-`test` takes every option but `serial` and `sessions`. `describe` takes
+`test` takes every option but `serial`, `parallel`, and `sessions`. `describe` takes
 every option but `only` and `sessions`. `test.setup` requires
 `sessions` and takes no `session`, `only`, `skip`, or `fail`.
 
@@ -840,6 +867,51 @@ describe('checkout', { serial: true }, () => {
 | `COLLECTION_ERROR` | A member sets `retries`, `trace`, `video`, `session`, `platforms`, `skip`, `only`, or a nested `serial`. |
 | `COLLECTION_ERROR` | A member registers through `test.skip(title, fn)`, `test.todo(title)`, `test.skipIf`, `test.runIf`, or `test.fixme(title, fn)`. |
 
+#### `parallel`
+
+`describe` only. `true` runs the group's tests at the same time on separate
+workers. By default, a file's tests run in order on one worker.
+
+```ts
+describe('reports', { parallel: true }, () => {
+  test('exports a CSV', async ({ screen }) => {});
+  test('exports a PDF', async ({ screen }) => {});
+});
+```
+
+- For a whole file, call [`describe.configure`](#describe-configure) at the
+  top level. For every file, set
+  [`fullyParallel`](/reference/config#fullyparallel).
+- Tests that run apart on the same worker share the state in the test
+  file: the worker imports the file one time for them. Tests on different
+  workers do not, so keep no state in the file that one test leaves for
+  another. A `beforeAll` and its `afterAll` can run several times on that
+  state, so create in `beforeAll` what `afterAll` closes.
+- Declare shared tests and hooks in ES modules of your project. A CommonJS
+  module, a package from `node_modules`, and every imported
+  module on Bun stays one instance, so the tests and hooks it declares
+  are missing from a retry, from the tests after a failed one, and from a
+  second file that imports it.
+- A [serial](#serial) group inside a parallel scope still runs as one unit
+  on one worker.
+- `false` keeps a group inside a parallel scope in order on one worker.
+- Tests with a `beforeAll` or `afterAll` hook around them run in batches,
+  at most as many as the target has workers, for each agent. Each batch
+  runs in order on one worker and runs the hooks one time, and again after
+  a failed test. A serial group or a `parallel: false` group runs the hooks
+  around it one time more.
+- The repeats of a test (`--repeat-each`) run one after another on one
+  worker, so the first records the replay cache and the rest replay it.
+- With one worker the tests run one at a time, and not always in
+  declaration order.
+- The report lists the tests in declaration order.
+
+| Throws | When |
+| --- | --- |
+| `COLLECTION_ERROR` | `true` inside a serial group, or inside a group or file with `parallel: false`. |
+| `COLLECTION_ERROR` | `parallel` on a group with `serial: true`. |
+| `COLLECTION_ERROR` | A value that is not a boolean. |
+
 #### `sessions`
 
 `test.setup` only. The session names the setup test must save.
@@ -1017,11 +1089,14 @@ export const test = base.extend<{}, { database: Database }>({
   hook that is running when it calls them. Its teardown can still drive the
   device: it runs in a short engine attempt when the fixture names one of
   them, and without one when it names none.
-- A worker keeps one instance per definition. A test file is imported again
-  after a failed test and for each serial group and setup test, so a worker
-  fixture the file declares gets a new instance each time, and the old one
-  stays set up until the worker ends.
-  Declare worker fixtures in a module the file imports.
+- A worker keeps one instance of a worker fixture, also when the module
+  that declares it is evaluated again: a test file after a failed test, or
+  a module that declares tests or hooks. Only the fixture's value is kept,
+  not the module's variables, so hand tests what they need through the
+  value. On Bun, a worker fixture the test file
+  declares gets a new instance each time the file is imported again, and
+  the old one stays set up until the worker ends: declare it in a module
+  the file imports.
 - `extend({ ... })` without type arguments infers test fixtures only.
 
 #### Engine fixtures across targets
@@ -1112,6 +1187,8 @@ export interface DescribeRegistrar<Options = DescribeOptions> {
 export interface DescribeAPI extends DescribeRegistrar {
   /** Declares a group whose tests are expected to fail, as if it had `fail: true`; a reason goes in the `fail` option of `describe`. */
   fail: DescribeRegistrar<Omit<DescribeOptions, 'fail'>>;
+  /** Configures the scope it is called in: the enclosing `describe`, or the whole file at the top level. */
+  configure(options: DescribeConfigureOptions): void;
 }
 
 /** The two call forms of `test`, shared with what `test.skipIf` and `test.runIf` return. */
@@ -1375,6 +1452,14 @@ export interface TestOptions {
 export interface DescribeOptions extends Omit<TestOptions, 'only'> {
   /** Runs the group as one ordered retry unit with shared app state. Nesting one serial group in another is a `COLLECTION_ERROR`. */
   serial?: boolean;
+  /** `true` runs the group's tests at the same time on separate workers; `false` keeps a group inside a parallel scope in order on one worker. */
+  parallel?: boolean;
+}
+
+/** What `test.describe.configure()` sets on the scope it is called in. */
+export interface DescribeConfigureOptions {
+  /** The scope's `parallel`; at the top of a file it applies to the whole file. */
+  parallel?: boolean;
 }
 
 export interface SetupOptions extends Omit<TestOptions, 'session' | 'only' | 'skip' | 'fail' | 'agent'> {

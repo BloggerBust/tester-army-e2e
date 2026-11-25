@@ -7,7 +7,7 @@ import { onBun } from '../internal/runtime.ts';
 import { withConfigSecretReferences } from '@e2e-dev/core/lib/secrets';
 import type { E2EConfig } from '../run-types.ts';
 import { explainModuleError } from './diagnose.ts';
-import { freshModuleURL, registerLoader } from './esm-hooks.ts';
+import { freshModuleURL, registerLoader, runInLoad } from './esm-hooks.ts';
 import { CONFIG_NAMES, JS_CONFIG_NAMES, TS_CONFIG_NAMES } from './names.ts';
 
 /** Spellings a config author might reach for that the loader does not read. */
@@ -116,23 +116,31 @@ export interface ConfigLoadOptions {
  * receives another realm's instance of it and a second `run()` in one
  * process sees the file as it is now. The files it imports keep one instance
  * per process, unless `graph` names a fresh graph to load them in, shared
- * by every module loaded under that name. Bun ignores the query, so there
+ * by every module loaded under that name, or the file registers tests or
+ * hooks itself, which the loader then evaluates with each load too
+ * (`esm-hooks.ts`, "Registrars"). Bun ignores the query, so there
  * `bun-loader.ts` takes the module out of Bun's registry instead.
  */
-export async function importModule(absolutePath: string, cacheKey = 'module', graph?: string): Promise<unknown> {
+export function loadModule(absolutePath: string, cacheKey: string, graph?: string): FreshLoad {
   return importFresh(absolutePath, cacheKey, graph ?? false);
+}
+
+/** A fresh load: the module it evaluates, and the key `runInLoad` (`esm-hooks.ts`) knows it by; Bun keys no loads. */
+export interface FreshLoad {
+  readonly key: string | undefined;
+  readonly module: Promise<unknown>;
 }
 
 /** Process-unique sequence that keeps every fresh import's URL distinct. */
 let imports = 0;
 
-async function importFresh(absolutePath: string, cacheKey: string, graph: boolean | string): Promise<unknown> {
+function importFresh(absolutePath: string, cacheKey: string, graph: boolean | string): FreshLoad {
   imports += 1;
   registerLoader();
   const key = `${cacheKey}-${imports}`;
   const graphName = graph === true ? key : graph === false ? undefined : graph;
-  if (onBun) return (await import('./bun-loader.ts')).importFreshOnBun(absolutePath, graphName);
-  return import(freshModuleURL(absolutePath, key, graphName));
+  if (onBun) return { key: undefined, module: import('./bun-loader.ts').then((loader) => loader.importFreshOnBun(absolutePath, graphName)) };
+  return { key, module: runInLoad(key, () => import(freshModuleURL(absolutePath, key, graphName))) };
 }
 
 /** Loads and returns the raw default export of a config module. */
@@ -141,7 +149,7 @@ export async function loadConfigModule(configPath: string, options: ConfigLoadOp
   registerLoader();
   let moduleValue: unknown;
   try {
-    moduleValue = await withConfigSecretReferences(() => importFresh(configPath, 'module', options.graph ?? false));
+    moduleValue = await withConfigSecretReferences(() => importFresh(configPath, 'module', options.graph ?? false).module);
   } catch (cause) {
     // A factory the config calls (web(), mobile()) or
     // `secrets.get()` refusing its options at evaluation is a config error

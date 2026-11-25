@@ -231,6 +231,7 @@ customExecutorObservation.keyboardVisible satisfies boolean | undefined;
 ({ targets, cache: 'read-write' }) satisfies E2EConfig;
 ({ targets, failOnSkippedFailure: true }) satisfies E2EConfig;
 ({ targets, maxDuration: 900_000 }) satisfies E2EConfig;
+({ targets: [{ ...targets[0], fullyParallel: false }], fullyParallel: true }) satisfies E2EConfig;
 ({ targets, toPass: { timeout: 200, intervals: [10, 20] } }) satisfies E2EConfig;
 // @ts-expect-error Only timeout and intervals are valid in toPass config.
 ({ targets, toPass: { timeout: 200, interval: 10 } }) satisfies E2EConfig;
@@ -727,6 +728,13 @@ test.extend<{ x: number }>().runIf(true)('uses x', async ({ x }) => { x satisfie
 test.skipIf(true)('no body');
 // @ts-expect-error the registrar takes test options, not describe options
 test.runIf(true)('serial', { serial: true }, async () => {});
+// @ts-expect-error parallel is a describe option, not a test option
+test('parallel', { parallel: true }, async () => {});
+test.describe('parallel', { parallel: true }, () => {});
+test.describe.configure({ parallel: true });
+test.extend<{ x: number }>().describe.configure({ parallel: false });
+// @ts-expect-error configure takes parallel, not the mode other runners take
+test.describe.configure({ mode: 'parallel' });
 // @ts-expect-error requires was removed; platforms scopes a test to targets
 test('scoped', { requires: ['browser'] }, async () => {});
 test('scoped', { platforms: ['web'] }, async () => {});

@@ -451,6 +451,14 @@ describe('e2e run argument parsing', () => {
     expect(written(stderrSpy)).toContain("option '--device <name>' argument '   ' is invalid. must name a simulator, emulator, or phone");
   });
 
+  it('passes --fully-parallel on, and leaves it unset without the flag', async () => {
+    await invoke('run', '--fully-parallel');
+    expect(lastRunOptions().fullyParallel).toBe(true);
+    runMock.mockClear();
+    await invoke('run');
+    expect(lastRunOptions().fullyParallel).toBeUndefined();
+  });
+
   it('parses numeric --retries and --workers', async () => {
     await invoke('run', '--retries', '2', '--workers', '4');
     const options = lastRunOptions();
@@ -913,6 +921,7 @@ describe('e2e --version and --help', () => {
       '--device',
       '--agent',
       '--workers',
+      '--fully-parallel',
       '--retries',
       '--action-timeout',
       '--assertion-timeout',

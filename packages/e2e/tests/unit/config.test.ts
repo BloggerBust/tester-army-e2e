@@ -79,6 +79,27 @@ describe('resolveConfig', () => {
     }
   });
 
+  it('resolves fullyParallel for each target, the flag over the target over the config, without invalidating recordings', () => {
+    const targets: Target[] = [
+      { name: 'plain', platform: 'web' },
+      { name: 'on', platform: 'web', fullyParallel: true },
+      { name: 'off', platform: 'web', fullyParallel: false },
+    ];
+    const resolved = (config: Partial<E2EConfig>, cli: CliOverrides = {}): boolean[] =>
+      resolveConfig({ targets, ...config }, { projectRoot: ROOT, env: BASE_ENV, cli }).targets.map((target) => target.fullyParallel);
+    expect(resolved({})).toEqual([false, true, false]);
+    expect(resolved({ fullyParallel: true })).toEqual([true, true, false]);
+    expect(resolved({}, { fullyParallel: true })).toEqual([true, true, true]);
+    const plain: Target[] = ['plain', 'on', 'off'].map((name) => ({ name, platform: 'web' }));
+    expect(resolve({ targets, fullyParallel: true }).configDigest).toBe(resolve({ targets: plain }).configDigest);
+    for (const value of ['true', 1, null]) {
+      expect(() => resolve(invalid({ fullyParallel: value }))).toThrow(/^fullyParallel must be a boolean/);
+      expect(() =>
+        resolveConfig(invalid({ targets: [{ ...WEB, fullyParallel: value }] }), { projectRoot: ROOT, env: BASE_ENV, cli: { fullyParallel: true } }),
+      ).toThrow('target "web" fullyParallel must be a boolean');
+    }
+  });
+
   it('validates maxDuration as milliseconds without invalidating recordings', () => {
     expect(resolve({}).maxDuration).toBeUndefined();
     expect(resolve({ maxDuration: 900_000 }).maxDuration).toBe(900_000);

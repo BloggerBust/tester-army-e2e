@@ -1,6 +1,6 @@
 /** Suite realm lifecycle: module re-import, beforeAll/afterAll scope tracking. */
 
-import { importModule } from '../config/load.ts';
+import { collectFile, inLoadOf } from '../collect/collect-file.ts';
 import { PollScope, runInPollScope } from '@e2e-dev/core/lib/expect/poll-scope';
 import {
   classifyError,
@@ -15,7 +15,6 @@ import { withTimeout } from '@e2e-dev/core/lib/internal/time';
 import type { AttemptTimeout } from '@e2e-dev/core/lib/run/budget';
 import type { CollectedFile, CollectedTest } from '../collect/collect.ts';
 import {
-  collectModule,
   groupTitles,
   hooksFor,
   scopeChain,
@@ -111,6 +110,13 @@ export interface RealmManagerOptions {
 export class RealmManager {
   private realmCounter = 0;
   private readonly debug: DebugTrace;
+  /**
+   * By file, the module instance `keep` was handed. The file's next unit on
+   * this worker runs in it, so tests of one file that run apart import the
+   * file once per worker, and whatever the file's imports registered on that
+   * import stays registered.
+   */
+  private readonly reusable = new Map<string, ModuleRegistration>();
 
   constructor(private readonly options: RealmManagerOptions) {
     this.debug = options.debug ?? new DebugTrace(false);
@@ -120,24 +126,33 @@ export class RealmManager {
   async create(file: FileRef): Promise<Realm> {
     this.realmCounter += 1;
     const registration = await this.debug.time('realm.import', () =>
-      collectModule(
-        () => importModule(file.absolutePath, `${this.options.targetName}-${this.realmCounter}`),
-        file.absolutePath,
-        this.options.redactTitle,
-      ),
+      collectFile(file.absolutePath, `${this.options.targetName}-${this.realmCounter}`, this.options.redactTitle),
     );
     return this.adopt(registration, file);
   }
 
   /**
-   * Wraps a registration that was just imported and has run nothing yet as a
-   * realm. The worker imports every unit's file once to resolve its pairs;
-   * adopting that import saves the second, identical one per unit.
+   * Wraps a registration no realm holds as a realm: one that was just
+   * imported and has run nothing yet, or one `takeReusable` handed over. The
+   * worker resolves every unit's pairs against a registration; adopting that
+   * one saves the unit an import of the same file.
    */
   adopt(registration: ModuleRegistration, file: FileRef): Realm {
     const testsByKey = new Map<string, RegisteredTest>();
     for (const test of registration.tests) testsByKey.set(titlePathKey(test.titlePath), test);
     return { file: file.file, registration, testsByKey, entered: new Map() };
+  }
+
+  /** Hands over the instance `keep` was handed for a file, which the caller's unit then runs in. */
+  takeReusable(file: string): ModuleRegistration | undefined {
+    const registration = this.reusable.get(file);
+    this.reusable.delete(file);
+    return registration;
+  }
+
+  /** Keeps the instance of a realm that was left, in a unit where nothing failed, for the file's next unit. */
+  keep(realm: Realm): void {
+    this.reusable.set(realm.file, realm.registration);
   }
 
   /**
@@ -158,7 +173,7 @@ export class RealmManager {
    * test's), which the hooks run on.
    */
   async enterScopes(realm: Realm, test: RegisteredTest, shared?: TargetSession): Promise<SerializedError | undefined> {
-    return this.withSuiteHooks(shared, async (hooks) => {
+    return this.withSuiteHooks(realm, shared, async (hooks) => {
       for (const scope of scopeChain(test)) {
         const entered = realm.entered.get(scope);
         if (entered !== undefined) {
@@ -203,7 +218,7 @@ export class RealmManager {
       const registered = findRegistered(realm, pair.test);
       if (registered !== undefined) for (const scope of scopeChain(registered)) needed.add(scope);
     }
-    return this.withSuiteHooks(shared, async (hooks) => {
+    return this.withSuiteHooks(realm, shared, async (hooks) => {
       let failure: SerializedError | undefined;
       for (const scope of [...realm.entered.keys()].toReversed()) {
         if (needed.has(scope)) continue;
@@ -227,10 +242,10 @@ export class RealmManager {
   }
 
   /** Runs `work` with a pass of suite hooks, closed after it. Opening one costs nothing until a hook needs the engine. */
-  private async withSuiteHooks<T>(shared: TargetSession | undefined, work: (hooks: SuiteHookSession) => Promise<T>): Promise<T> {
+  private async withSuiteHooks<T>(realm: Realm, shared: TargetSession | undefined, work: (hooks: SuiteHookSession) => Promise<T>): Promise<T> {
     const hooks = this.options.openSuiteHooks(shared);
     try {
-      return await work(hooks);
+      return await inLoadOf(realm.registration, () => work(hooks));
     } finally {
       await hooks.close();
     }
