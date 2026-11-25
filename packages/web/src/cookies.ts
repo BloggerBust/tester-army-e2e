@@ -6,7 +6,7 @@
  */
 
 import { domainToUnicode } from 'node:url';
-import { rejectUnknownKeys, TestError } from '@e2e-dev/core/engine';
+import { ConfigurationError, rejectUnknownKeys, TestError } from '@e2e-dev/core/engine';
 import type { Cookie } from './browser.ts';
 import { describe } from './support.ts';
 
@@ -14,6 +14,33 @@ const COOKIE_KEYS = ['name', 'value', 'url', 'domain', 'path', 'expires', 'httpO
 const SAME_SITE = ['Strict', 'Lax', 'None'] as const;
 /** The latest `expires` Playwright takes: the end of the year 9999, in seconds. */
 const MAX_EXPIRES = 253_402_300_799;
+
+/** Resolves a cookie URL under the harness's URL rule; only http(s) holds cookies. */
+export function resolveCookieUrl(url: string, resolveUrl: (url: string) => string): string {
+  const target = resolveUrl(url);
+  if (!/^https?:/.test(target)) {
+    throw new ConfigurationError('POLICY_DENIED', `cookie URL must be http(s): ${target}`);
+  }
+  return target;
+}
+
+/** The absolute URLs `browser.cookies` filters by, or `undefined` for no filter. */
+export function resolveCookieUrls(urls: unknown, resolveUrl: (url: string) => string): string[] | undefined {
+  if (urls === undefined) return undefined;
+  const list: readonly unknown[] = Array.isArray(urls) ? urls : [urls];
+  return list.map((url) => {
+    if (typeof url !== 'string') {
+      throw new TestError('INVALID_ARGUMENT', `browser.cookies takes a URL or an array of URLs, got ${describe(url)}`);
+    }
+    return resolveCookieUrl(url, resolveUrl);
+  });
+}
+
+/** The step label of a `browser.cookies` call: the URLs as the test wrote them. */
+export function cookieUrlsLabel(urls?: unknown): string {
+  if (typeof urls === 'string') return urls;
+  return Array.isArray(urls) ? urls.filter((url) => typeof url === 'string').join(', ') : '';
+}
 
 /** Throws `INVALID_ARGUMENT` naming the first field the `Cookie` type does not allow. */
 export function validateCookies(cookies: unknown): asserts cookies is readonly Cookie[] {

@@ -15,7 +15,6 @@
 import type { Download, Route } from 'playwright-core';
 import type { ActionOptions, Expectable, JsonValue, Locator, Screen, TextMatch, WebResponse } from '@e2e-dev/core';
 import {
-  ConfigurationError,
   Deadline,
   describePattern,
   EngineError,
@@ -37,7 +36,7 @@ import {
   type OperationContext,
 } from '@e2e-dev/core/engine';
 import { classifyInputError } from './actions.ts';
-import { validateCookies } from './cookies.ts';
+import { cookieUrlsLabel, resolveCookieUrl, resolveCookieUrls, validateCookies } from './cookies.ts';
 import type { AttemptTab } from './attempt-session.ts';
 import type { DialogHandler } from './dialogs.ts';
 import { saveDownloadsTo, saveFromBrowser, saveLocally } from './downloads.ts';
@@ -314,8 +313,12 @@ export interface Browser extends Expectable<BrowserExpectation> {
     pattern: string | RegExp | RouteMatcher,
     options?: { timeout?: number },
   ): Promise<WebResponse>;
-  /** Returns cookies visible to the current context. */
-  cookies(): Promise<Cookie[]>;
+  /**
+   * Returns every cookie of the browser, or only those a request to `urls`
+   * (one URL or several) would carry. A relative URL resolves against the
+   * base URL.
+   */
+  cookies(urls?: string | readonly string[]): Promise<Cookie[]>;
   /** Sets cookies after URL validation. */
   setCookies(cookies: readonly Cookie[]): Promise<void>;
   /** Removes matching cookies only; without filters removes every cookie, preserving other storage. */
@@ -837,9 +840,12 @@ export function createBrowserFixture(surface: PlaywrightSurface, context: Engine
         return webResponse(response, read);
       });
     },
-    cookies: () =>
-      surface.guard(context.operation(), 'cookies', async () => {
-        const cookies = await surface.requireContext().cookies();
+    cookies(urls) {
+      const targets = resolveCookieUrls(urls, context.app.resolveUrl);
+      return surface.guard(context.operation(), 'cookies', async () => {
+        // The driver reads an empty list as no filter; a list that came out
+        // empty must not widen to every site's cookies.
+        const cookies = targets?.length === 0 ? [] : await surface.requireContext().cookies(targets);
         return cookies.map(
           (cookie): Cookie => ({
             name: cookie.name,
@@ -852,7 +858,8 @@ export function createBrowserFixture(surface: PlaywrightSurface, context: Engine
             ...(cookie.sameSite !== undefined ? { sameSite: cookie.sameSite } : {}),
           }),
         );
-      }),
+      });
+    },
     setCookies(cookies) {
       validateCookies(cookies);
       const scheme = new URL(baseHref()).protocol === 'https:' ? 'https' : 'http';
@@ -862,12 +869,10 @@ export function createBrowserFixture(surface: PlaywrightSurface, context: Engine
       // cookie is set on the URL the rule resolved, so a relative one lands
       // on the base URL the way `goto` would.
       const targets = cookies.map((cookie) => {
-        const target = context.app.resolveUrl(
+        const target = resolveCookieUrl(
           cookie.url === undefined ? `${scheme}://${cookie.domain.replace(/^\./, '')}` : cookie.url,
+          context.app.resolveUrl,
         );
-        if (!/^https?:/.test(target)) {
-          throw new ConfigurationError('POLICY_DENIED', `cookie URL must be http(s): ${target}`);
-        }
         return cookie.url === undefined
           ? { domain: cookie.domain, path: cookie.path ?? '/' }
           : { url: target };
@@ -986,7 +991,7 @@ export function createBrowserFixture(surface: PlaywrightSurface, context: Engine
     unroute: { ...action, label: patternLabel },
     unrouteAll: action,
     waitForResponse: { ...action, timeout: (_pattern, options) => options?.timeout, label: patternLabel },
-    cookies: action,
+    cookies: { ...action, label: cookieUrlsLabel },
     setCookies: action,
     clearCookies: action,
     setViewport: action,

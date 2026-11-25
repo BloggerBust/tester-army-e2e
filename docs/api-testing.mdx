@@ -51,8 +51,8 @@ matcher passes.
 ## Signed-in requests
 
 `request` does not send the browser's cookies. To call the API as the user
-the test signed in, send your app's session cookie in a header. `browser`
-needs a web target:
+the test signed in, send the cookies the browser holds for that URL in a
+header. `browser` needs a web target:
 
 ```ts title="tests/orders-api.e2e.ts"
 import { expect } from 'e2e';
@@ -61,19 +61,16 @@ import { test } from '@e2e-dev/web';
 test('lists my orders', async ({ app, browser, request }) => {
   await app.open('/sign-in');
   // ...sign in through the UI...
-  // The domain your app sets the cookie on: its host, or `.example.com` for `Domain=example.com`.
-  const domain = new URL(app.baseUrl).hostname;
-  const session = (await browser.cookies()).find((c) => c.name === 'session' && c.domain === domain);
-  if (session === undefined) throw new Error('not signed in');
-  const headers = { cookie: `${session.name}=${session.value}` };
+  const cookies = await browser.cookies('/api/orders');
+  const headers = { cookie: cookies.map((c) => `${c.name}=${c.value}`).join('; ') };
   expect(await request.get('/api/orders', { headers })).toBeOK();
 });
 ```
 
-`browser.cookies()` returns every cookie of the browser context, those of
-other sites included, such as a sign-in provider's. Pick your app's session
-cookie by its name and the exact domain your app sets it on, and send it
-only with paths on your app.
+[`browser.cookies(url)`](/reference/web#cookies) returns only the cookies
+the browser would send to that URL, so another site's, such as a sign-in
+provider's, stay out of the header. Without a URL it returns every cookie
+of the browser.
 
 ## Without a browser
 

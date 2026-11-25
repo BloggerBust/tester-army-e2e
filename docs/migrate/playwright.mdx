@@ -172,10 +172,10 @@ run only in a browser, so a test that uses it declares
 | `page.evaluate(fn, arg)` | `browser.evaluate(fn, arg)`, JSON in and out |
 | `page.webmcp.tools()`, `page.webmcp.callTool(name, input)` | the same on `browser.webmcp`, with `web({ webmcp: true })` in place of the launch argument or preferences; the main frame only, see [WebMCP](/reference/web#webmcp) |
 | `page.addInitScript()`, `page.emulateMedia({ colorScheme, reducedMotion })` | `browser.addInitScript()` or `web({ initScripts })`; `browser.emulateMedia()` |
-| `context.addCookies()`, `cookies()`, `clearCookies()` | `browser.setCookies()`, `browser.cookies()`, `browser.clearCookies()` |
+| `context.addCookies()`, `cookies(urls)`, `clearCookies()` | `browser.setCookies()`, `browser.cookies(urls)`, `browser.clearCookies()` |
 | `context.setOffline(true)` | [`browser.setNetwork('offline')`](/reference/web#setnetwork), `'online'` to go back |
 | The `request` fixture: `get()`, `post()`, `put()`, `patch()`, `delete()`, `head()`, `fetch()` | the same on [`request`](/reference/request): `{ json }` for `data` (it refuses an `undefined` value or a `Date`), the query in the URL for `params`, `{ redirect: 'manual' }` for `maxRedirects: 0`, `status` and `headers` as properties. It keeps no cookies between calls: pass a token or session cookie in `headers` |
-| `page.request`, which shares the page's cookies | `request` with a `cookie` header from `browser.cookies()`, see [Signed-in requests](/api-testing#signed-in-requests) |
+| `page.request`, which shares the page's cookies | `request` with a `cookie` header from `browser.cookies(url)`, see [Signed-in requests](/api-testing#signed-in-requests) |
 
 </Accordion>
 <Accordion title="Test structure">

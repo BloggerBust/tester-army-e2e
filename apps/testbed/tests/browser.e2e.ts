@@ -50,6 +50,27 @@ test.describe('browser fixture', { platforms: ['web'], tags: ['browser'] }, () =
     const theme = (await browser.cookies()).find((cookie) => cookie.name === 'theme');
     expect(theme?.value).toBe('dark');
   });
+
+  test('cookies(url) returns only the cookies a request to the URL carries', async ({ app, browser }) => {
+    const { hostname } = new URL(app.baseUrl);
+    await browser.setCookies([
+      { name: 'everywhere', value: '1', url: app.baseUrl },
+      { name: 'scoped', value: '1', domain: hostname, path: '/browser' },
+      { name: 'elsewhere', value: '1', domain: 'other.example', path: '/' },
+      { name: 'encrypted', value: '1', domain: 'shop.example', path: '/', secure: true },
+      { name: 'shared', value: '1', domain: '.shop.example', path: '/' },
+    ]);
+    const names = async (urls?: string | string[]) => (await browser.cookies(urls)).map((cookie) => cookie.name).toSorted();
+
+    expect(await names(app.baseUrl)).toEqual(['everywhere']);
+    expect(await names('/browser')).toEqual(['everywhere', 'scoped']);
+    expect(await names('/browsers')).toEqual(['everywhere']);
+    expect(await names('http://shop.example/')).toEqual(['shared']);
+    expect(await names('https://shop.example/')).toEqual(['encrypted', 'shared']);
+    expect(await names('http://api.shop.example/')).toEqual(['shared']);
+    expect(await names(['http://other.example/', '/browser'])).toEqual(['elsewhere', 'everywhere', 'scoped']);
+    expect(await names()).toEqual(['elsewhere', 'encrypted', 'everywhere', 'scoped', 'shared']);
+  });
 });
 
 test('offline fails the page\'s requests and navigations until the test goes back online', { platforms: ['web'], tags: ['browser'] }, async ({ app, screen, browser }) => {
