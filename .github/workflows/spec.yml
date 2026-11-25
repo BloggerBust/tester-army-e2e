@@ -117,6 +117,9 @@ jobs:
       matrix:
         # The newest release of each line, and the floors in engines.node.
         node: [22, 24, 26, 22.22.3, 24.8.0]
+        # `pnpm test` in two halves of about seven minutes each: one job for
+        # all of it ran within a minute of the timeout on every Node.js.
+        suite: [runner, packages]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: pnpm/action-setup@9fd676a19091d4595eefd76e4bd31c97133911f1 # v4.2.0
@@ -135,7 +138,7 @@ jobs:
         with:
           only-shell: false
       - name: Unit and integration tests
-        run: pnpm test
+        run: pnpm run build && pnpm run test:${{ matrix.suite }}
 
   # The built CLI on Bun with no Node.js on its PATH
   # (packages/e2e/tests/integration/bun-runtime.test.ts): the floor
