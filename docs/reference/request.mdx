@@ -104,8 +104,8 @@ engine's [`browser.waitForResponse`](/reference/web#waitforresponse) and
 - `text()` decodes the body as UTF-8. `json()` parses it, `unknown` unless
   you name a type. Nothing checks that type: use
   [`toMatchSchema`](/reference/expect#matching-a-schema) to check it.
-- Check the status with the value matchers:
-  `expect(response.status).toBe(201)`.
+- Check a 2xx status with [`toBeOK`](/reference/expect#tobeok), or an exact
+  one with the value matchers: `expect(response.status).toBe(201)`.
 
 ## URLs
 

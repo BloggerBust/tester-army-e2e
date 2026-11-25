@@ -464,6 +464,7 @@ still change, use [Polling a value](#polling-a-value).
 | [`toBeGreaterThan` and others](#numeric-comparisons) | Numeric bound holds |
 | [`toBeCloseTo`](#tobecloseto) | Within `10 ** -digits / 2` |
 | [`toMatchSchema`](#matching-a-schema) | Standard Schema validation |
+| [`toBeOK`](#tobeok) | Response status is 2xx |
 
 A matcher that cannot evaluate its value fails as `ASSERTION_FAILED`, like a
 mismatch. Examples are `toContain` on a number, or `toHaveLength` on a value
@@ -623,6 +624,34 @@ expect(users.map((user) => user.name)).toContain('Ada');
 - A matcher returns before anything could await it, so a schema that
   validates asynchronously (an async refinement) is `INVALID_ARGUMENT`.
 - Negated, it passes when the value does not match and returns nothing.
+
+#### `toBeOK`
+
+Requires a [`WebResponse`](/reference/request#webresponse) whose status is
+2xx, from 200 to 299. It takes what `request`, `browser.waitForResponse`, and
+`route.fetch()` return.
+
+```ts
+const created = await request.post('/api/orders', { json: { sku: 'A1' } });
+expect(created).toBeOK();
+// ASSERTION_FAILED: expected a 2xx status, got 404 from https://shop.test/api/orders
+```
+
+- The failure names the status and the origin and path of `response.url`,
+  the URL of the response being checked. For `request` that is the URL after
+  redirects. Path segments show; the credentials, query, and fragment do not.
+  A relative URL, one that does not parse, or one that is not `http` or
+  `https` is left out. The body is never read.
+- A status number and other types that are not `WebResponse` fail to
+  compile, and so does `WebResponse | undefined` under `strictNullChecks`. A
+  value typed `any` compiles. In a generic helper, type the parameter as
+  `WebResponse`: `R extends WebResponse` does not compile.
+- At run time, an object with a numeric `status` and a string `url` is
+  checked as a response. A value with either field missing or of another
+  type fails as `ASSERTION_FAILED`, negated too. A `status` or `url` getter
+  that throws raises its own error.
+- To wait for a 2xx status, poll the call:
+  `await expect.poll(() => request.get('/api/jobs/7')).toBeOK()`.
 
 #### Failure messages
 
@@ -1175,6 +1204,12 @@ export interface ValueExpectation<T> {
    * A schema that validates asynchronously is `INVALID_ARGUMENT`.
    */
   toMatchSchema<Schema extends StandardSchemaV1>(schema: Schema): StandardSchemaV1.InferOutput<Schema>;
+  /**
+   * Requires a `WebResponse` whose status is 2xx (200 to 299), as `request`,
+   * `waitForResponse`, and `route.fetch()` return it. The failure names the
+   * status and the URL's origin and path; the body is never read.
+   */
+  toBeOK(...valueIsNotAResponse: [T] extends [WebResponse] ? [] : [never]): void;
 }
 
 /** `expect(value).not`: every value matcher inverted, none returning a value; `Back` is what `.not` returns to. */

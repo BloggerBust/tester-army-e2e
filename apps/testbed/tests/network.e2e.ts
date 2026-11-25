@@ -8,6 +8,7 @@ test('observes the first navigation response', { platforms: ['web'], tags: ['net
   ]);
   expect(response.url).toMatch(/\/network$/);
   expect(response.status).toBe(200);
+  expect(response).toBeOK();
   expect(response.headers['content-type']).toContain('text/html');
   expect(await response.text()).toContain('<title>Network</title>');
   await expect(screen.getByRole('heading', 'Network')).toBeVisible();
@@ -22,9 +23,12 @@ test('calls the API at a path joined onto app.baseUrl', { tags: ['network'] }, a
 test('calls the API through the request fixture', { tags: ['network'] }, async ({ request }) => {
   const response = await request.get('/api/users');
   expect(response.status).toBe(200);
+  expect(response).toBeOK();
   expect(response.headers['content-type']).toBe('application/json');
   expect(await response.json()).toEqual([{ name: 'Ada' }, { name: 'Grace' }, { name: 'Margaret' }]);
-  expect((await request.get('/api/missing')).status).toBe(404);
+  const missing = await request.get('/api/missing');
+  expect(missing.status).toBe(404);
+  expect(missing).not.toBeOK();
 });
 
 test.describe('network', { platforms: ['web'], tags: ['network'] }, () => {

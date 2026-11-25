@@ -32,6 +32,7 @@ const MATCHERS = {
   toBeLessThanOrEqual: true,
   toBeCloseTo: true,
   toMatchSchema: true,
+  toBeOK: true,
 } satisfies Record<ValueMatcherName, true>;
 
 type Matcher = (this: ValueExpectation<unknown>, ...args: unknown[]) => unknown;

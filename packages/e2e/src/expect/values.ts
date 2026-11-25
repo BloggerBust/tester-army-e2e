@@ -9,7 +9,8 @@ import { testPattern } from '@e2e-dev/core/lib/internal/regexp';
 import { describeIssue, requireStandardSchema } from '@e2e-dev/core/lib/internal/standard-schema';
 import { runningSuiteHook } from '@e2e-dev/core/lib/internal/test-timeout';
 import { toTextPattern } from '@e2e-dev/core/lib/internal/text';
-import type { AsymmetricMatcher, NegatedValueExpectation, PassOptions, PropertyPath, StandardSchemaV1, ValueExpectation } from '@e2e-dev/core/lib/types';
+import { printableUrl } from '@e2e-dev/core/lib/internal/urls';
+import type { AsymmetricMatcher, NegatedValueExpectation, PassOptions, PropertyPath, StandardSchemaV1, ValueExpectation, WebResponse } from '@e2e-dev/core/lib/types';
 import { withMessage } from './heading.ts';
 import { checkOptions, retry } from './retry.ts';
 
@@ -306,6 +307,23 @@ class ValueExpectationImpl<T> implements ValueExpectation<T> {
     return (this.negated || result.issues !== undefined ? undefined : result.value) as StandardSchemaV1.InferOutput<Schema>;
   }
 
+  /**
+   * A status from 200 to 299, with `status` and `url` read once each. A value
+   * that is not a response fails negated too, like the number matchers, and
+   * the message names only its kind: a look-alike object may hold a URL with
+   * a token, or getters.
+   */
+  toBeOK(): void {
+    const fields = responseFields(this.actual);
+    if (fields === undefined) this.fail(`toBeOK requires a response, got ${kindOf(this.actual)}`);
+    const { status, url } = fields;
+    this.check(
+      status >= 200 && status <= 299,
+      () => `expected a 2xx status, got ${status}${responseSource(url)}`,
+      () => `expected a status outside 2xx, got ${status}${responseSource(url)}`,
+    );
+  }
+
   /** The one body of the four ordering matchers: a number on the left, a phrase for the message. */
   private compareNumber(name: string, expected: number, holds: (actual: number) => boolean, phrase: string): void {
     const actual = this.actual as unknown;
@@ -316,6 +334,31 @@ class ValueExpectationImpl<T> implements ValueExpectation<T> {
       () => `expected ${actual} not to be ${phrase} ${expected}`,
     );
   }
+}
+
+/**
+ * The two fields toBeOK reads of a `WebResponse`, each read once, `url` only
+ * after `status` is a number; `undefined` when either is missing or mistyped.
+ */
+function responseFields(value: unknown): Pick<WebResponse, 'status' | 'url'> | undefined {
+  if (typeof value !== 'object' || value === null) return undefined;
+  const { status } = value as { status?: unknown };
+  if (typeof status !== 'number') return undefined;
+  const { url } = value as { url?: unknown };
+  return typeof url === 'string' ? { status, url } : undefined;
+}
+
+/** A value's kind for a message that must not print the value itself. */
+function kindOf(value: unknown): string {
+  if (value === null || value === undefined) return String(value);
+  if (typeof value === 'object') return 'an object without a numeric status and a string url';
+  return `a ${typeof value}`;
+}
+
+/** ` from <origin><path>` of an http(s) URL, never its credentials, query, or fragment; nothing for any other URL. */
+function responseSource(url: string): string {
+  const protocol = URL.canParse(url) ? new URL(url).protocol : undefined;
+  return protocol === 'http:' || protocol === 'https:' ? ` from ${printableUrl(url)}` : '';
 }
 
 /**

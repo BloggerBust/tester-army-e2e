@@ -9,5 +9,5 @@ test('lists my orders', async ({ app, browser, request }) => {
   const session = (await browser.cookies()).find((c) => c.name === 'session' && c.domain === domain);
   if (session === undefined) throw new Error('not signed in');
   const headers = { cookie: `${session.name}=${session.value}` };
-  expect((await request.get('/api/orders', { headers })).status).toBe(200);
+  expect(await request.get('/api/orders', { headers })).toBeOK();
 });
