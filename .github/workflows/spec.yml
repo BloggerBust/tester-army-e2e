@@ -42,30 +42,44 @@ jobs:
       - uses: ./.github/actions/workspace-install
         with:
           agent-device-version: ${{ inputs.agent-device-version }}
+      # One arm or the other, never both: a compatibility dispatch runs the whole
+      # gate in one step, and a push or pull request runs the same checks as
+      # separate steps, so CI names the one that failed.
       - name: Full nightly check
         if: ${{ inputs.agent-device-version != '' }}
         run: pnpm check
       - name: Lint
+        if: ${{ inputs.agent-device-version == '' }}
         run: pnpm lint
       - name: Dead code (fallow)
+        if: ${{ inputs.agent-device-version == '' }}
         run: pnpm check:dead-code
       - name: Typecheck packages
+        if: ${{ inputs.agent-device-version == '' }}
         run: pnpm typecheck
       - name: Error code reference
+        if: ${{ inputs.agent-device-version == '' }}
         run: pnpm docs:check-errors
       - name: Peer ranges on the runner
+        if: ${{ inputs.agent-device-version == '' }}
         run: pnpm check:peer-ranges
       - name: Changeset bumps on 0.x packages
+        if: ${{ inputs.agent-device-version == '' }}
         run: pnpm check:changeset-bumps
       - name: Examples registry (examples/examples.json)
+        if: ${{ inputs.agent-device-version == '' }}
         run: pnpm check:examples
       - name: Benchmark scenario coverage
+        if: ${{ inputs.agent-device-version == '' }}
         run: pnpm check:benchmark-coverage
       - name: No install scripts in published dependency trees
+        if: ${{ inputs.agent-device-version == '' }}
         run: pnpm check:install-scripts
       - name: Plugin package matches its sources
+        if: ${{ inputs.agent-device-version == '' }}
         run: pnpm plugins:check
       - name: MCP Registry entry matches the runner
+        if: ${{ inputs.agent-device-version == '' }}
         run: pnpm mcp-server:check
       # The registry rejects an invalid entry only at publish, from a release
       # tag that can no longer change.
