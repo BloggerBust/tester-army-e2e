@@ -49,7 +49,7 @@ import {
   ConfigurationError,
   TestError,
 } from '@e2e-dev/core/engine';
-import { isAppNotRunning, isSnapshotPresentationFailure, isUnreadableCapture, ORIGIN_UNKNOWN_BOUNDS, ORIGIN_WARNING, runCommand, staleOr } from './errors.ts';
+import { isAppNotRunning, isSnapshotPresentationFailure, isUnreadableCapture, ORIGIN_UNKNOWN_BOUNDS, ORIGIN_WARNING, refusedSwipePath, runCommand, staleOr } from './errors.ts';
 import { pointerInteraction, DEFAULT_LONG_PRESS_MS, MAX_TAP_COUNT } from './actions.ts';
 import { resolveExpression } from './locate.ts';
 import { launchArgumentList, launchArgumentsForOpen } from './launch-arguments.ts';
@@ -1716,7 +1716,11 @@ export class AgentDeviceSurface {
   async performAt(point: ViewportPoint, action: PointerAction, operation: OperationContext, input: InputBudget): Promise<void> {
     const settle = operation.origin === 'test' ? {} : this.settleOptions;
     const before = this.latestScreen;
-    await this.command(`${action.kind} at point`, (client) => pointerInteraction(client, point, action, settle, gestureStabilization(operation), input), operation.signal);
+    const label = `${action.kind} at point`;
+    await this.command(label, (client) => pointerInteraction(client, point, action, settle, gestureStabilization(operation), input).catch(async (cause: unknown) => {
+      if (action.kind !== 'swipeTo') throw cause;
+      throw await refusedSwipePath(cause, label, action.durationMs !== undefined, () => this.viewport(operation, input));
+    }), operation.signal);
     if (action.kind === 'swipeTo') this.noteGesture(operation);
     this.markAction(before);
   }

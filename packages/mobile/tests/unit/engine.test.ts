@@ -4879,6 +4879,38 @@ describe('deterministic actions', () => {
     expect(h.fake.methods()).not.toContain('interactions.swipe');
   });
 
+  it('fails a point swipe agent-device refuses as off its viewport as NOT_ACTIONABLE, naming duration only when the keyboard cut an untimed swipe', async () => {
+    const h = harness({ settle: false, transition: 0 });
+    await openAttempt(h);
+    const refuse = (viewport: { width: number; height: number }, point: { x: number; y: number }) => (): never => {
+      throw new AppError('INVALID_ARGS', `Gesture point (${point.x}, ${point.y}) is outside the usable area of the ${viewport.width}x${viewport.height} viewport`, {
+        reason: 'GESTURE_TRAJECTORY_OUT_OF_BOUNDS',
+        viewport: { x: 0, y: 0, ...viewport },
+        sample: { offsetMs: 100, point },
+        hint: 'Use the coordinate units snapshot reports: points on Apple platforms, not screenshot pixels.',
+      });
+    };
+    const swipe = (durationMs?: number) =>
+      h.engine.performAt!({ x: 201, y: 261 }, { kind: 'swipeTo', target: { x: 201, y: 610 }, ...(durationMs === undefined ? {} : { durationMs }) }, test());
+    const refusedWith = async (respond: () => never, durationMs: number | undefined, hint: RegExp) => {
+      h.fake.respond('interactions.swipe', respond);
+      h.fake.respond('interactions.pan', respond);
+      const failure = swipe(durationMs);
+      await expect(failure).rejects.toMatchObject({ code: 'NOT_ACTIONABLE', retryable: false });
+      await expect(failure).rejects.toThrow(hint);
+    };
+    const keyboardHint = /Hint: Nothing was sent\. The open soft keyboard cuts the 844-point screen .*pass duration to send the path as given, across the keyboard\.$/;
+    const ownHint = /viewport Hint: Use the coordinate units/;
+
+    // No observation before the swipe: the screen is read when the refusal needs it.
+    await refusedWith(refuse({ width: 390, height: 500 }, { x: 201, y: 610 }), undefined, keyboardHint);
+    await refusedWith(refuse({ width: 390, height: 500 }, { x: 201, y: 610 }), 100, ownHint);
+    await refusedWith(refuse({ width: 390, height: 500 }, { x: 0, y: 400 }), undefined, ownHint);
+    await refusedWith(refuse({ width: 390, height: 500 }, { x: 603, y: 1800 }), undefined, ownHint);
+    await refusedWith(refuse({ width: 390, height: 844 }, { x: 201, y: 5000 }), undefined, ownHint);
+    await refusedWith(refuse({ width: 844, height: 390 }, { x: 201, y: 610 }), undefined, ownHint);
+  });
+
   it('refuses the agent node swipe on a capture without the window origin', async () => {
     const h = harness({ settle: false, transition: 0 });
     await openAttempt(h);
