@@ -8,3 +8,5 @@ void (web() satisfies EngineHandle<WebFixtures>);
 declare const handle: EngineHandle<WebFixtures>;
 void (handle satisfies WebEngine);
 void (handle satisfies EntryWebEngine);
+void (web().platform satisfies 'web' | undefined);
+void (web().isolation satisfies 'attempt' | undefined);

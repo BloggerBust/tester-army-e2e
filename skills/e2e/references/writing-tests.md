@@ -193,16 +193,35 @@ takes `({}, use)`. A test sets up the `test.extend` fixtures its body and its
 (same `extend` call or an earlier one, any order; a cycle is
 `COLLECTION_ERROR`). A fixture nothing names does not run: one that exists
 for its side effect takes `[fn, { auto: true }]`, set up for every test, or
-`[fn, { scope: 'worker', auto: true }]`, once per worker. A name the target
-has no fixture for fails the run at collection with the file and line; a test
-skipped on that target (`platforms`, `test.skipIf`) is not
-checked there. An `afterEach` that names a fixture whose setup failed is
-skipped. A fixture named like one the `test` already has, built-in ones
-included, extends it (`app: async ({ app }, use) => { await app.open('/x');
+`[fn, { scope: 'worker', auto: true }]`, once per worker.
+
+If you name a fixture that isn't on any target in the config, the run fails
+at collection.
+
+You can use `device` in the same test on web and iOS. On web, `device` is
+`undefined`. If you override `device`, your override is called on web too,
+with `device` set to `undefined`.
+
+To type fixtures across targets:
+
+1. Use `as const satisfies E2EConfig` on the config object, not a type
+   annotation, to keep the inferred engine types.
+2. Import the config type with `import type config from '../e2e.config.ts'`.
+3. Pass `typeof config` as the third type argument of `test.extend`:
+   `base.extend<{}, {}, typeof config>()`.
+
+Check `platform` or the fixture value to narrow the fixture type. With
+`platforms` on a test, it's narrowed too. On a `describe`, it isn't.
+
+An `afterEach` that names a fixture whose setup failed is skipped. A fixture
+named like one the `test` already has, built-in ones included, extends it
+(`app: async ({ app }, use) => { await app.open('/x');
 await use(app); }`, no type argument): inside it the name is the previous
 value, everyone else gets what it passes to `use`, and it keeps that
-fixture's type, scope, and `auto` (`device` on mobile: once per worker,
-`beforeAll` gets it; a different `scope` or `auto` is `COLLECTION_ERROR`). A worker
+fixture's type. Its scope and `auto` are the ones its options set, else a
+test fixture set up on demand, even when it extends a worker fixture (for a
+`device` override that runs once per worker and reaches `beforeAll`, pass
+`{ scope: 'worker' }`). A worker
 fixture (`[fn, { scope: 'worker' }]`, second type argument of `extend`) is
 set up once per worker and target by the first test or suite hook that names
 it, torn down when the worker ends, and sees worker fixtures only. Declare it in a module the test files import: a test

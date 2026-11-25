@@ -80,6 +80,7 @@ function makeTarget(name: string, index: number): ResolvedTarget {
     },
     trace: { mode: 'off', source: 'default' },
     video: { mode: 'off', source: 'default' },
+    fixtureScopes: new Map(),
   };
 }
 

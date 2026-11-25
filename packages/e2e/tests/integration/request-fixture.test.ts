@@ -507,20 +507,18 @@ test('the action timeout', async ({ request }) => {
     expect(resultByTitle(outcome, 'the action timeout').attempts[0]!.error?.message).toContain('GET /api/slow exceeded its timeout of 300ms');
   });
 
-  it('refuses a worker-scoped project fixture named request at collection', async () => {
+  it('runs a worker-scoped project fixture named request in place of the built-in', async () => {
     const support = `import { test as base } from 'e2e';
 export const test = base.extend<{}, { request: { hello(): string } }>({
   request: [async ({}, use) => { await use({ hello: () => 'mine' }); }, { scope: 'worker' }],
 });
 `;
     const file = `import { test } from './support.ts';
-test('uses it', async ({ request }) => { void request; });
+test('uses it', async ({ request }) => { if (request.hello() !== 'mine') throw new Error('got the built-in'); });
 `;
     const { outcome } = await runFixture({ 'tests/support.ts': support, 'tests/api.e2e.ts': file }, { config: onApi() });
-    expect(outcome.report.run.errors).toEqual([expect.objectContaining({
-      code: 'COLLECTION_ERROR',
-      message: expect.stringContaining('fixture "request" is declared with scope \'worker\', but it extends the built-in "request", a test fixture'),
-    })]);
+    expect(outcome.report.run.errors).toEqual([]);
+    expect(resultByTitle(outcome, 'uses it').status).toBe('passed');
   });
 
   it('cuts a step label to what the report admits, and sends the whole URL', async () => {

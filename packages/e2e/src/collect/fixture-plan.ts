@@ -1,7 +1,7 @@
 /**
  * Which fixtures a piece of test code needs, and in what order: the ones its
  * functions name, the ones those fixtures name in turn, and the `auto` ones.
- * Planning runs no fixture, so the rules it enforces (a name the target has,
+ * Planning runs no fixture, so the rules it enforces (a name some target has,
  * a suite hook or worker fixture that reads worker fixtures only, no cycle)
  * fail at collection, and again in the worker before anything is set up.
  */
@@ -38,7 +38,7 @@ export type FixtureInputs = ReadonlyMap<string, FixtureDefinition | undefined>;
 /** One fixture a plan sets up. */
 export interface PlannedFixture {
   readonly definition: FixtureDefinition;
-  /** The scope it has on the target: the one it declares, or the one of the fixture it extends. */
+  /** The scope it declares, else `test`. */
   readonly scope: FixtureScope;
   /** Whether it names a built-in that needs an attempt on the engine, itself or through a fixture it names. */
   readonly usesEngine: boolean;
@@ -73,8 +73,6 @@ class Planner {
   /** Every fixture visited, with what each name its function reads resolved to. */
   readonly inputs = new Map<FixtureDefinition, FixtureInputs>();
   private readonly state = new Map<FixtureDefinition, 'visiting' | 'done'>();
-  private readonly scopes = new Map<FixtureDefinition, PlannedScope>();
-  private readonly autos = new Map<FixtureDefinition, boolean>();
 
   constructor(
     private readonly chain: readonly FixtureDefinition[],
@@ -91,52 +89,14 @@ class Planner {
     return before.findLast((definition) => definition.name === name);
   }
 
-  /**
-   * The scope of `definition`: the one it declares, else the one of the
-   * fixture it extends (an earlier one of its name, or a built-in), else
-   * `test`. A declared scope that differs from the extended fixture's is an
-   * error naming both.
-   */
-  scopeOf(definition: FixtureDefinition): PlannedScope {
-    const known = this.scopes.get(definition);
-    if (known !== undefined) return known;
-    const { name } = definition;
-    const base = this.declared(name, definition);
-    const extended = base === undefined ? this.builtIns.scope(name) : this.scopeOf(base);
-    if (definition.scope !== undefined && extended !== undefined && extended !== 'unresolved' && extended !== definition.scope) {
-      const what = base === undefined ? `the built-in "${name}"` : `the fixture "${name}" of an earlier test.extend()`;
-      throw new FixtureUseError(
-        `fixture "${name}" is declared with scope '${definition.scope}', but it extends ${what}, a ${extended} fixture${this.onTarget()}: a fixture that extends another keeps its scope`,
-        definition.source,
-      );
-    }
-    const scope = definition.scope ?? extended ?? 'test';
-    this.scopes.set(definition, scope);
-    return scope;
+  /** The scope of `definition`: the one it declares, else `test`, even when it extends another fixture. */
+  scopeOf(definition: FixtureDefinition): FixtureScope {
+    return definition.scope ?? 'test';
   }
 
-  /**
-   * Whether `definition` is set up without being named: what it declares,
-   * else what the fixture it extends is (a built-in never is), else not. A
-   * declared `auto` that differs from the extended fixture's is an error
-   * naming both.
-   */
+  /** Whether `definition` is set up without being named: what it declares, else not, even when it extends another fixture. */
   autoOf(definition: FixtureDefinition): boolean {
-    const known = this.autos.get(definition);
-    if (known !== undefined) return known;
-    const { name } = definition;
-    const base = this.declared(name, definition);
-    const extended = base === undefined ? (this.builtIns.names.includes(name) ? false : undefined) : this.autoOf(base);
-    if (definition.auto !== undefined && extended !== undefined && extended !== definition.auto) {
-      const what = base === undefined ? `the built-in "${name}"` : `the fixture "${name}" of an earlier test.extend()`;
-      throw new FixtureUseError(
-        `fixture "${name}" is declared with auto: ${definition.auto}, but it extends ${what}, ${extended ? 'an auto fixture' : 'not an auto fixture'}${this.onTarget()}: a fixture that extends another keeps its auto`,
-        definition.source,
-      );
-    }
-    const auto = definition.auto ?? extended ?? false;
-    this.autos.set(definition, auto);
-    return auto;
+    return definition.auto ?? false;
   }
 
   private onTarget(): string {
@@ -182,7 +142,7 @@ class Planner {
     this.state.set(definition, 'visiting');
     this.autoOf(definition);
     const scope = this.scopeOf(definition);
-    const what = describeFixture(definition.name, scope === 'unresolved' ? definition.scope : scope);
+    const what = describeFixture(definition.name, scope);
     const inputs = new Map<string, FixtureDefinition | undefined>();
     for (const name of definition.names) {
       const dependency = this.resolve(name, what, definition.source, scope, definition);
@@ -197,9 +157,8 @@ class Planner {
 /**
  * Checks the fixtures one `test.extend()` call added (`added`, the end of
  * `chain`) as far as they can be before a target is known: each function
- * destructures its first parameter, no two fixtures need each other, a
- * fixture that extends another keeps its scope and its `auto`, and a worker
- * fixture names no fixture known to be a test fixture.
+ * destructures its first parameter, no two fixtures need each other, and a
+ * worker fixture names no fixture known to be a test fixture.
  */
 export function checkDeclaredFixtures(chain: readonly FixtureDefinition[], added: readonly FixtureDefinition[]): void {
   const planner = new Planner(chain, DECLARED_BUILT_INS);
@@ -219,9 +178,8 @@ interface PlanRequest {
  * Plans the fixtures of `chain` that `users` need on `target`: the ones they
  * name, the ones those name, and the `auto` ones (a suite hook sets up no
  * test fixture, `auto` or not). Throws a `FixtureUseError`, before anything
- * is set up, for a name the target has no fixture for, a test fixture named
- * by a suite hook or a worker fixture, a cycle, and a fixture whose declared
- * scope or `auto` is not the one of the fixture it extends.
+ * is set up, for a name no target in the config has a fixture for, a test
+ * fixture named by a suite hook or a worker fixture, and a cycle.
  */
 function planFixtures(request: PlanRequest): FixturePlan {
   const { target, chain, scope, users } = request;
@@ -254,7 +212,7 @@ function planFixtures(request: PlanRequest): FixturePlan {
     // `reachesEngine` stops at the first name that reaches the engine, so it cannot be what orders the rest.
     for (const dependency of own.values()) if (dependency !== undefined) place(dependency);
     const usesEngine = reachesEngine(own);
-    const planned: PlannedFixture = { definition, scope: planner.scopeOf(definition) === 'worker' ? 'worker' : 'test', usesEngine, inputs: own };
+    const planned: PlannedFixture = { definition, scope: planner.scopeOf(definition), usesEngine, inputs: own };
     placed.set(definition, planned);
     order.push(planned);
     return planned;

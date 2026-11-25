@@ -452,9 +452,13 @@ export const test = base.extend<{ device: Device }>(); // types only
   or web surface without a global `declare module` augmentation.
 - With definitions, it adds fixtures of your own. See
   [Your own fixtures](#your-own-fixtures).
-- The first type argument types test fixtures. The second types
-  [worker fixtures](#worker-fixtures), which `beforeAll` and `afterAll` see
-  too. `@e2e-dev/mobile` types `device`, `app`, and `screen` there.
+- The type arguments, in order:
+  1. Test fixtures.
+  2. [Worker fixtures](#worker-fixtures), which are available in `beforeAll`
+     and `afterAll`. `device`, `app`, and `screen` from `@e2e-dev/mobile` are
+     typed here.
+  3. The config's type (`typeof config`), for the fixtures of every target.
+     See [Engine fixtures across targets](#engine-fixtures-across-targets).
 
 #### `describe`
 
@@ -880,6 +884,9 @@ with [`isolation`](/reference/engine#fixture-isolation).
 describes each core one. Every other fixture is one of
 [your own](#your-own-fixtures).
 
+An engine fixture is `undefined` on a target whose engine doesn't have it.
+See [Engine fixtures across targets](#engine-fixtures-across-targets).
+
 A test body, a hook, and a fixture function name the fixtures they use by
 destructuring their first parameter: `async ({ app, screen }) => {}`. e2e
 reads the names from the function's source. A [`test.each`](#test-each) or
@@ -887,7 +894,7 @@ reads the names from the function's source. A [`test.each`](#test-each) or
 
 | Throws | When |
 | --- | --- |
-| `COLLECTION_ERROR` | A test that runs on a target, or one of its hooks, names a fixture the target does not have. No test runs. Declare `platforms` or `test.skipIf` to skip such tests on that target instead. |
+| `COLLECTION_ERROR` | A test that runs on a target, or one of its hooks, names a fixture that isn't on any target in the config. No test runs. |
 | `COLLECTION_ERROR` | A test body, a hook, or a fixture function takes the whole object (`async (fixtures) => {}`), a rest property (`{ app, ...rest }`), or a computed property, or is a bound function (`fn.bind()`), whose parameters cannot be read. |
 
 <Note>
@@ -961,7 +968,7 @@ checked against that target's fixtures.
 | A value that is not a plain object of functions or `[fn, { scope, auto }]` pairs, a scope other than `'test'` or `'worker'`, an `auto` that is not a boolean, an option other than `scope` and `auto`, or an empty name | At import, `COLLECTION_ERROR` naming the fixture |
 | A function that does not destructure its first parameter, takes a rest or computed property there, or is a bound function | At import, `COLLECTION_ERROR` naming the fixture |
 | Fixtures that name each other in a cycle | At import, `COLLECTION_ERROR` naming the cycle |
-| A name the target has no fixture for, in a test that runs there, its hooks, or a fixture they need | At collection, `COLLECTION_ERROR` |
+| A name that isn't a fixture on any target in the config, in a test that runs, its hooks, or a fixture they need | At collection, `COLLECTION_ERROR` |
 | A `scope` or an `auto` that differs from that of the [fixture it extends](#extending-a-fixture) | At import when it is the same on every engine, else at collection, `COLLECTION_ERROR` naming both |
 | A fixture that names one a later `extend` declares | At collection, `COLLECTION_ERROR` |
 | A definition that returns without calling `use` | The attempt, in `beforeEach`, `TEST_SETUP_FAILED` |
@@ -1017,6 +1024,47 @@ export const test = base.extend<{}, { database: Database }>({
   Declare worker fixtures in a module the file imports.
 - `extend({ ... })` without type arguments infers test fixtures only.
 
+#### Engine fixtures across targets
+
+On web, `device` is `undefined`, so a test with `device` can be run there too.
+On web, the scope of `device` is:
+
+- `worker` if `isolation: 'worker'` is set on every engine with the fixture.
+- `test` otherwise.
+
+The fixtures of every target are typed by the third type argument of
+[`test.extend`](#test-extend):
+
+```ts
+import { test as base } from 'e2e';
+import type config from '../e2e.config.ts';
+
+export const test = base.extend<{}, {}, typeof config>();
+
+test('signs out', async ({ app, platform, device }) => {
+  if (platform === 'ios') {
+    await device.clearKeychain();
+  }
+
+  await app.clearState();
+});
+```
+
+- The fixtures are typed as a union with one member per target, told apart
+  by `platform`. Each member has the fixtures of the target's engine. A
+  fixture that only other targets have is typed as `undefined`.
+- A target's engine fixtures, `app`, and `screen` are worker fixtures if
+  `isolation: 'worker'` is set on its engine, and test fixtures otherwise.
+- If a target's platform type is `string`, as on a target without an
+  engine when `as const` isn't used on the config object, fixtures aren't
+  narrowed by a `platform` check. Check the fixture instead
+  (`device !== undefined`).
+- With `platforms` on a test, its fixtures are typed for the targets that
+  run it. With `platforms: ['ios']`, `device` is typed as `Device`. On a
+  `describe`, `platforms` doesn't change the types.
+- With a type annotation such as `const config: E2EConfig`, the engine types
+  are lost. To keep them, use `as const satisfies E2EConfig` instead.
+
 #### Extending a fixture
 
 A definition named like a fixture the `test` already has extends that fixture.
@@ -1036,18 +1084,17 @@ export const test = base.extend({
   replaces the fixture.
 - Tests, hooks, and other fixtures that name the fixture get the value passed
   to `use`. What the runner does with a built-in fixture does not change.
-- It is set up when the fixture it extends would be: on demand, for code that
-  names the fixture, or for every test when it extends an `auto` fixture. An
-  `auto` in the options must be the `auto` of the fixture it extends.
-- It keeps the scope of the fixture it extends on the target, as the
-  [built-in fixtures](#fixtures) table gives it. `device` is a worker fixture,
-  so its override runs one time per worker and `beforeAll` gets it. A `scope`
-  in the options must be that scope.
+- Its scope and `auto` come from its options, like any other fixture. Without
+  options, it's a test fixture that's set up for code that names it, even if
+  the fixture it extends is a worker fixture or `auto`.
+- To run a `device` override one time per worker and use it in `beforeAll`,
+  pass `{ scope: 'worker' }`. Like any worker fixture, it can't use test
+  fixtures, so it fails on a target where the fixture it extends is a test
+  fixture, such as `app` on web.
 - It keeps the type. Define it with no type argument: the type arguments of
   `extend` are for new fixtures.
-- On a target that has no fixture of that name, nothing fails until code that
-  runs there names it. Then the run fails at collection: the target has no
-  such fixture.
+- If only some targets have the fixture, the function is still called on the
+  other targets, with `undefined` under the fixture's name.
 
 ## Types
 
@@ -1071,8 +1118,15 @@ export interface DescribeAPI extends DescribeRegistrar {
 export interface TestRegistrar<Fixtures = TestFixtures & WorkerFixtures> {
   /** Registers one test synchronously during module evaluation. */
   (title: string, fn: TestFn<Fixtures>): TestCase;
-  /** Registers one configured test synchronously during module evaluation. */
-  (title: string, options: TestOptions, fn: TestFn<Fixtures>): TestCase;
+  /**
+   * Registers one configured test synchronously during module evaluation.
+   * Its fixtures are typed for the targets its `platforms` option keeps.
+   */
+  <const Platform extends string = string>(
+    title: string,
+    options: TestOptions & { readonly platforms?: readonly Platform[] },
+    fn: TestFn<SelectedFixtures<Fixtures, Platform>>,
+  ): TestCase;
 }
 
 /**
@@ -1181,13 +1235,16 @@ export interface TestAPI<Fixtures = TestFixtures, Worker = WorkerFixtures> exten
    *
    *   export const test = base.extend<{ device: Device }>();
    */
-  extend<Extra = {}, ExtraWorker = {}>(): TestAPI<Fixtures & Extra, Worker & ExtraWorker>;
+  extend<Extra = {}, ExtraWorker = {}, Config = unknown>(): TestAPI<
+    ConfigBase<Fixtures, Config> & Extra & ConfigFixtures<Config, 'test'>,
+    ConfigBase<Worker, Config> & ExtraWorker & ConfigFixtures<Config, 'worker'>
+  >;
   /**
    * Returns a new `test` whose registrations extend fixtures it already
    * has, built-in ones included. Inside the function the fixture's own name
    * is the fixture it extends; the value it hands to `use` is what tests,
-   * hooks, and other fixtures receive under that name. It keeps the type and
-   * the scope of the fixture it extends:
+   * hooks, and other fixtures receive under that name. It keeps the type of
+   * the fixture it extends. Its scope is the one it declares, else `test`:
    *
    *   export const test = base.extend({
    *     app: async ({ app }, use) => {
@@ -1196,7 +1253,9 @@ export interface TestAPI<Fixtures = TestFixtures, Worker = WorkerFixtures> exten
    *     },
    *   });
    */
-  extend(overrides: FixtureOverrides<Fixtures & Worker, Worker>): TestAPI<Fixtures, Worker>;
+  extend<const Overrides extends FixtureOverrides<Fixtures & Worker, Worker>>(
+    overrides: Overrides,
+  ): TestAPI<Fixtures & PickEach<Worker, TestOverrides<Overrides>>, OmitEach<Worker, TestOverrides<Overrides>>>;
   /**
    * Returns a new `test` whose registrations carry these fixture
    * definitions on top of the ones it already had. Each attempt sets up the
@@ -1231,9 +1290,17 @@ export interface TestAPI<Fixtures = TestFixtures, Worker = WorkerFixtures> exten
    * (`[fn, { scope: 'worker', auto: true }]`). A suite hook sets up the auto
    * worker fixtures of its chain, never a test fixture.
    */
-  extend<Extra = {}, ExtraWorker = {}>(
-    fixtures: FixtureDefinitions<Fixtures & Worker, Extra, Worker, ExtraWorker>,
-  ): TestAPI<Fixtures & Extra, Worker & ExtraWorker>;
+  extend<Extra = {}, ExtraWorker = {}, Config = unknown>(
+    fixtures: FixtureDefinitions<
+      ConfigBase<Fixtures, Config> & ConfigBase<Worker, Config> & ConfigFixtures<Config, 'test'> & ConfigFixtures<Config, 'worker'>,
+      Extra,
+      ConfigBase<Worker, Config> & ConfigFixtures<Config, 'worker'>,
+      ExtraWorker
+    >,
+  ): TestAPI<
+    ConfigBase<Fixtures, Config> & Extra & ConfigFixtures<Config, 'test'>,
+    ConfigBase<Worker, Config> & ExtraWorker & ConfigFixtures<Config, 'worker'>
+  >;
   /** Declares a group synchronously; `describe.fail` declares one whose tests are expected to fail. */
   describe: DescribeAPI;
   /** Registers a test-attempt setup hook: it runs after the test's fixtures are set up. */
@@ -1407,9 +1474,10 @@ export type WorkerFixtureDefinition<Worker, Value> = readonly [
  *
  * A name the base already has is not a new fixture, so declaring it in
  * `Extra` or `ExtraWorker` is a type error. Defined beside them, it extends
- * that fixture, a built-in one included (`FixtureOverrides`): inside its
- * function its own name is the fixture it extends, and it keeps that
- * fixture's type and scope:
+ * that fixture, a built-in one included: inside its function its own name is
+ * the fixture it extends, and it keeps that fixture's type. The override of
+ * a worker fixture is declared with `scope: 'worker'` here, since the
+ * fixtures this call returns keep it a worker fixture:
  *
  *   base.extend({ app: async ({ app }, use) => { await app.open('/'); await use(app); } })
  */
@@ -1424,23 +1492,40 @@ export type FixtureDefinitions<Base, Extra, Worker = {}, ExtraWorker = {}> = {
   readonly [K in keyof NoInfer<ExtraWorker>]: K extends keyof Base | keyof Extra
     ? never
     : WorkerFixtureDefinition<Worker & NoInfer<ExtraWorker>, NoInfer<ExtraWorker>[K]>;
-} & FixtureOverrides<Base & NoInfer<Extra> & NoInfer<ExtraWorker>, Worker & NoInfer<ExtraWorker>, Base, Worker>;
+} & {
+  readonly [K in Extract<keyof Base, PropertyKey>]?: K extends keyof Worker
+    ? WorkerFixtureDefinition<Worker & NoInfer<ExtraWorker>, Base[K]>
+    : TestFixtureDefinition<Base & NoInfer<Extra> & NoInfer<ExtraWorker>, Base[K]>;
+};
 /**
  * Fixtures that extend ones the base already has, each optional. `Sees` and
  * `WorkerSees` are what an override's function receives: the base's
  * fixtures, and the ones declared beside it.
  */
 export type FixtureOverrides<Sees, WorkerSees, Base = Sees, Worker = WorkerSees> = {
-  readonly [K in keyof Base]?: FixtureOverride<Base, Worker, K, Sees, WorkerSees>;
+  readonly [K in Extract<keyof Base, PropertyKey>]?: FixtureOverride<Base, Worker, K, Sees, WorkerSees>;
 };
 /**
  * A fixture that extends `K`, one the base already has: it hands over the
- * same type and keeps the scope, so the override of a worker fixture
- * receives worker fixtures (`WorkerSees`) only.
+ * same type. Its scope is the one it declares, else `test`, and only the
+ * override of a worker fixture can be a worker fixture.
+ *
+ * The override of a worker fixture with options receives worker fixtures
+ * (`WorkerSees`) only, whatever its scope: TypeScript can't type the
+ * function of a tuple by the `scope` beside it. A function without options
+ * is a test fixture, so it receives every fixture (`Sees`).
  */
 export type FixtureOverride<Base, Worker, K extends keyof Base, Sees, WorkerSees> = K extends keyof Worker
-  ? FixtureFn<WorkerSees, Base[K]> | WorkerFixtureDefinition<WorkerSees, Base[K]>
+  ? FixtureFn<Sees, Base[K]> | readonly [FixtureFn<WorkerSees, Base[K]>, { readonly scope?: FixtureScope; readonly auto?: boolean }]
   : TestFixtureDefinition<Sees, Base[K]>;
+/** The names in `Overrides` that are test fixtures: every override not declared with `scope: 'worker'`. */
+export type TestOverrides<Overrides> = {
+  [K in keyof Overrides]-?: Overrides[K] extends readonly [unknown, { readonly scope: 'worker' }] ? never : K;
+}[keyof Overrides];
+/** `Worker` without the fixtures in `Names`, one target at a time. */
+export type OmitEach<Worker, Names extends PropertyKey> = Worker extends unknown ? Omit<Worker, Names> : never;
+/** The fixtures in `Names` that `Worker` has, and `platform`, one target at a time. */
+export type PickEach<Worker, Names extends PropertyKey> = Worker extends unknown ? Pick<Worker, Extract<Names | 'platform', keyof Worker>> : never;
 ```
 
 ### Function types

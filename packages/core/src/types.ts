@@ -13,7 +13,7 @@ import type { StepCacheInfo } from './run/steps.ts';
 import type { EngineHandle } from './engine/index.ts';
 import type { KeyModifier, Momentum, ScrollDirection, SelectOption, ViewportPoint } from './engine/contract.ts';
 import type { CacheStore } from './cache/store.ts';
-import type { FixtureDefinitions, FixtureOverrides, WorkerFixtures } from './types/fixtures.ts';
+import type { ConfigBase, ConfigFixtures, FixtureDefinitions, FixtureOverrides, OmitEach, PickEach, SelectedFixtures, TestOverrides, WorkerFixtures } from './types/fixtures.ts';
 
 export type { KeyModifier, Momentum, ScrollDirection, SelectOption } from './engine/contract.ts';
 export type { CacheReadResult, CacheStore } from './cache/store.ts';
@@ -945,8 +945,15 @@ export interface DescribeAPI extends DescribeRegistrar {
 export interface TestRegistrar<Fixtures = TestFixtures & WorkerFixtures> {
   /** Registers one test synchronously during module evaluation. */
   (title: string, fn: TestFn<Fixtures>): TestCase;
-  /** Registers one configured test synchronously during module evaluation. */
-  (title: string, options: TestOptions, fn: TestFn<Fixtures>): TestCase;
+  /**
+   * Registers one configured test synchronously during module evaluation.
+   * Its fixtures are typed for the targets its `platforms` option keeps.
+   */
+  <const Platform extends string = string>(
+    title: string,
+    options: TestOptions & { readonly platforms?: readonly Platform[] },
+    fn: TestFn<SelectedFixtures<Fixtures, Platform>>,
+  ): TestCase;
 }
 
 /**
@@ -1096,13 +1103,16 @@ export interface TestAPI<Fixtures = TestFixtures, Worker = WorkerFixtures> exten
    *
    *   export const test = base.extend<{ device: Device }>();
    */
-  extend<Extra = {}, ExtraWorker = {}>(): TestAPI<Fixtures & Extra, Worker & ExtraWorker>;
+  extend<Extra = {}, ExtraWorker = {}, Config = unknown>(): TestAPI<
+    ConfigBase<Fixtures, Config> & Extra & ConfigFixtures<Config, 'test'>,
+    ConfigBase<Worker, Config> & ExtraWorker & ConfigFixtures<Config, 'worker'>
+  >;
   /**
    * Returns a new `test` whose registrations extend fixtures it already
    * has, built-in ones included. Inside the function the fixture's own name
    * is the fixture it extends; the value it hands to `use` is what tests,
-   * hooks, and other fixtures receive under that name. It keeps the type and
-   * the scope of the fixture it extends:
+   * hooks, and other fixtures receive under that name. It keeps the type of
+   * the fixture it extends. Its scope is the one it declares, else `test`:
    *
    *   export const test = base.extend({
    *     app: async ({ app }, use) => {
@@ -1111,7 +1121,9 @@ export interface TestAPI<Fixtures = TestFixtures, Worker = WorkerFixtures> exten
    *     },
    *   });
    */
-  extend(overrides: FixtureOverrides<Fixtures & Worker, Worker>): TestAPI<Fixtures, Worker>;
+  extend<const Overrides extends FixtureOverrides<Fixtures & Worker, Worker>>(
+    overrides: Overrides,
+  ): TestAPI<Fixtures & PickEach<Worker, TestOverrides<Overrides>>, OmitEach<Worker, TestOverrides<Overrides>>>;
   /**
    * Returns a new `test` whose registrations carry these fixture
    * definitions on top of the ones it already had. Each attempt sets up the
@@ -1146,9 +1158,17 @@ export interface TestAPI<Fixtures = TestFixtures, Worker = WorkerFixtures> exten
    * (`[fn, { scope: 'worker', auto: true }]`). A suite hook sets up the auto
    * worker fixtures of its chain, never a test fixture.
    */
-  extend<Extra = {}, ExtraWorker = {}>(
-    fixtures: FixtureDefinitions<Fixtures & Worker, Extra, Worker, ExtraWorker>,
-  ): TestAPI<Fixtures & Extra, Worker & ExtraWorker>;
+  extend<Extra = {}, ExtraWorker = {}, Config = unknown>(
+    fixtures: FixtureDefinitions<
+      ConfigBase<Fixtures, Config> & ConfigBase<Worker, Config> & ConfigFixtures<Config, 'test'> & ConfigFixtures<Config, 'worker'>,
+      Extra,
+      ConfigBase<Worker, Config> & ConfigFixtures<Config, 'worker'>,
+      ExtraWorker
+    >,
+  ): TestAPI<
+    ConfigBase<Fixtures, Config> & Extra & ConfigFixtures<Config, 'test'>,
+    ConfigBase<Worker, Config> & ExtraWorker & ConfigFixtures<Config, 'worker'>
+  >;
   /** Declares a group synchronously; `describe.fail` declares one whose tests are expected to fail. */
   describe: DescribeAPI;
   /** Registers a test-attempt setup hook: it runs after the test's fixtures are set up. */

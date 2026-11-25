@@ -11,7 +11,7 @@ import { obj } from '../internal/objects.ts';
 import { isSecret } from '../secrets.ts';
 import { ENGINE_SPI_VERSION, KNOWN_LOCATOR_ACTION_KINDS, POINTER_ACTION_KINDS } from './contract.ts';
 import type { Secret } from '../types.ts';
-import type { Engine, EngineCapability, EngineFixtureContext, EngineHandle } from './index.ts';
+import type { Engine, EngineCapability, EngineFixtureContext, EngineHandle, EngineIsolation } from './index.ts';
 
 /** Every key an engine may declare; anything else is rejected at config load. */
 const KNOWN_KEYS = [
@@ -193,6 +193,14 @@ type EngineSpec<Fixtures extends object> = Fixtures extends object
   : never;
 
 /**
+ * The spec fields a literal `Platform` or a `'worker'` `Isolation` needs,
+ * since an omitted `platform` is `undefined` at runtime and an omitted
+ * `isolation` is `'attempt'`.
+ */
+type DeclaredLiterals<Platform extends string, Isolation extends EngineIsolation> = (string extends Platform ? {} : { readonly platform: Platform }) &
+  ([Isolation] extends ['worker'] ? { readonly isolation: 'worker' } : {});
+
+/**
  * Validates an engine and computes its capability set.
  *
  * The handle is assembled member by member from the known keys, reading
@@ -202,7 +210,11 @@ type EngineSpec<Fixtures extends object> = Fixtures extends object
  * requires a factory returning each one it names beside `screen`, `app`, and
  * `platform`, and nothing checks them at runtime.
  */
-export function defineEngine<Fixtures extends object = {}>(declared: EngineSpec<Fixtures>): EngineHandle<Fixtures> {
+export function defineEngine<
+  Fixtures extends object = {},
+  Platform extends string = string,
+  Isolation extends EngineIsolation = EngineIsolation,
+>(declared: EngineSpec<Fixtures> & { readonly platform?: Platform; readonly isolation?: Isolation } & DeclaredLiterals<Platform, Isolation>): EngineHandle<Fixtures, Platform, Isolation> {
   const spec = declared as Engine;
   if (typeof spec !== 'object' || spec === null) {
     throw new ConfigurationError('INVALID_CONFIG', 'defineEngine requires an engine object');
@@ -373,7 +385,7 @@ export function defineEngine<Fixtures extends object = {}>(declared: EngineSpec<
     ...handle,
     [engineBrand]: true as const,
     capabilities,
-  }) as unknown as EngineHandle<Fixtures>;
+  }) as unknown as EngineHandle<Fixtures, Platform, Isolation>;
 }
 
 /** True for a defineEngine-branded handle, across realms. */

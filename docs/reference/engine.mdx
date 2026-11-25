@@ -70,14 +70,26 @@ Validates an engine spec, freezes it, computes its
 ```ts
 import { defineEngine, isEngineHandle, type EngineHandle } from 'e2e/engine';
 
-export function defineEngine<Fixtures extends object = {}>(spec: Engine): EngineHandle<Fixtures>;
-// With a fixture beside screen, app, and platform, `spec.fixtures` must hold
-// a factory returning each one Fixtures names.
+export function defineEngine<
+  Fixtures extends object = {},
+  Platform extends string = string,
+  Isolation extends EngineIsolation = EngineIsolation,
+>(spec: Engine & { readonly platform?: Platform; readonly isolation?: Isolation }): EngineHandle<Fixtures, Platform, Isolation>;
+// With a fixture beside screen, app, and platform, `spec.fixtures` must have
+// a factory returning each one Fixtures names. If Platform is a literal
+// such as 'ios', `spec.platform` must be that value. If Isolation is
+// 'worker', `spec.isolation` must be 'worker'.
 export function isEngineHandle(value: unknown): value is EngineHandle;
 
 /** A validated engine: branded, frozen, capabilities computed. */
-export interface EngineHandle<Fixtures extends object = {}> extends Engine {
+export interface EngineHandle<
+  Fixtures extends object = {},
+  Platform extends string = string,
+  Isolation extends EngineIsolation = EngineIsolation,
+> extends Engine {
   readonly capabilities: ReadonlySet<EngineCapability>;
+  readonly platform?: Platform;
+  readonly isolation?: Isolation;
 }
 ```
 
@@ -91,9 +103,21 @@ none, since every session holds them. Nothing checks it at runtime. With it, `la
 without a hand-written argument: return `defineEngine<{ device: Device }>(...)`
 from the factory.
 
+`Platform` and `Isolation` are literal types for the spec's `platform` and
+`isolation`, such as `'ios'` and `'worker'`. They're needed to tell targets
+apart when [a config's fixtures are typed](/reference/test#engine-fixtures-across-targets).
+If you pass `Fixtures`, pass all three to keep the literals:
+`defineEngine<{ device: Device }, 'ios', 'worker'>(...)`. Then set the same
+`platform` in the spec, and `isolation: 'worker'` for `'worker'`.
+
 Return your own interface from the factory, as `KioskEngine` does above. A
 config that infers its type then names your package. A bare `EngineHandle` can
 fail with TS2883 in a pnpm project that sets `declaration: true`.
+
+To keep the literal types on your interface, give it `Platform` and
+`Isolation` parameters with defaults of `string` and `EngineIsolation`, like
+`WebEngine` and `MobileEngine`. Then put the literals in the factory's
+return type: `web(): WebEngine<'web', 'attempt'>`.
 
 `defineEngine` throws `INVALID_CONFIG` when the spec breaks one of these
 rules:

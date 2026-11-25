@@ -50,9 +50,9 @@ export type LaunchPermissions = Readonly<Partial<Record<DevicePermission, Permis
  * `undefined`, so values read straight from `process.env` need no
  * conditional spread.
  */
-export interface MobileOptions {
+export interface MobileOptions<Platform extends MobilePlatform = MobilePlatform> {
   /** Platform the target's device runs. */
-  readonly platform: MobilePlatform;
+  readonly platform: Platform;
   /**
    * Device to use: a simulator or emulator by name, simulator UDID, or
    * emulator serial (`emulator-5554`), or a connected phone by name. A list

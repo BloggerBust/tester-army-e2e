@@ -8,7 +8,7 @@ import { isEngineHandle } from '../engine/index.ts';
 import { protocolEngine, type EngineClientHandle } from '../engine/protocol/client.ts';
 import { ConfigurationError } from '../internal/errors.ts';
 import type { ResolvedRecording } from '../internal/recording-modes.ts';
-import type { Target } from '../types.ts';
+import type { FixtureScope, Target } from '../types.ts';
 import { checkTargetApp, digestTargetApp, resolveTargetApp, TARGET_KEYS, unknownTargetKey, type ResolvedApp, type TargetAppDeclaration } from './app.ts';
 import { isRecord } from './command.ts';
 import { describeValue } from './validate.ts';
@@ -34,6 +34,12 @@ export interface ResolvedTarget {
   readonly trace: ResolvedRecording;
   /** Which attempts on the target record a video: `--video`, else the target's `video`, else the config's, else `off`. A test's own `video` wins over it. */
   readonly video: ResolvedRecording;
+  /**
+   * Engine fixture scopes shared by all targets in the config. On a target
+   * without the fixture, the scope is `worker` if `isolation: 'worker'` is
+   * set on every engine with the fixture, and `test` otherwise.
+   */
+  readonly fixtureScopes: ReadonlyMap<string, FixtureScope>;
 }
 
 /** A safe artifact path segment: the filename alphabet, and never `.` or `..`, which would name a directory's self or parent. */
@@ -61,7 +67,8 @@ export function resolveTargets(
   }
   const seen = new Set<string>();
   const defaulted = new Set<string>();
-  return (declared as readonly unknown[]).map((entry, index): ResolvedTarget => {
+  const fixtureScopes = new Map<string, FixtureScope>();
+  const targets = (declared as readonly unknown[]).map((entry, index): ResolvedTarget => {
     if (!isRecord(entry)) throw new ConfigurationError('INVALID_CONFIG', `targets[${index}] must be an object, got ${describeValue(entry)}`);
     const target = entry as Target;
     // Errors raised before the name settles point at the entry itself.
@@ -104,8 +111,17 @@ export function resolveTargets(
       app: resolveTargetApp(name, declaredApp, projectRoot),
       declaredApp,
       ...recordings(target, where),
+      fixtureScopes,
     };
   });
+
+  for (const { engine } of targets) {
+    for (const fixture of Object.keys(engine?.fixtures ?? {})) {
+      if (fixtureScopes.get(fixture) !== 'test') fixtureScopes.set(fixture, engine?.isolation === 'worker' ? 'worker' : 'test');
+    }
+  }
+
+  return targets;
 }
 
 /**

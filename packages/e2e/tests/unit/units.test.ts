@@ -54,6 +54,7 @@ const target: ResolvedTarget = {
   declaredApp: EMPTY_DECLARED,
   trace: { mode: 'off', source: 'default' },
   video: { mode: 'off', source: 'default' },
+  fixtureScopes: new Map(),
 };
 
 function makeTest(

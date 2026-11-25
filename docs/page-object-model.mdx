@@ -73,14 +73,16 @@ test('rejects a wrong password', async ({ app, signInPage }) => {
 
 ## Keep it portable
 
-A page object that uses only `screen` runs on web and mobile targets alike.
-When it needs `browser` (keyboard, CSS selectors, `evaluate`) or `device`,
-it runs on that platform only.
+Use `screen` for page objects you share across web and mobile targets.
+For browser APIs such as keyboard input, CSS selectors, or `evaluate`, use
+`browser`. Use `device` for device APIs.
 
-A fixture that names `browser` or `device` makes every test that uses it
-need it. On another target, the run fails at collection with
-`COLLECTION_ERROR`. Give those tests `platforms: ['web']` to skip them
-there instead. A test that doesn't name the fixture stays portable.
+A page object fixture built on `browser` or `device` is still set up on every
+target. On a target without it, `browser` or `device` is `undefined`, so you
+get a `TypeError` when you call one of its methods.
+
+To run the tests with a `browser` page object on web only, set
+`platforms: ['web']` on them. Tests without it are run on every target.
 
 ## Where agent goals fit
 

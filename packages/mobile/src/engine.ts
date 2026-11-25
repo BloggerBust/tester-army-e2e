@@ -8,7 +8,7 @@
 
 import { createRequire } from 'node:module';
 import { createAgentDeviceClient } from 'agent-device';
-import { ConfigurationError, defineEngine, obj, type EngineAppCheckInfo, type EngineAppDeclaration, type EngineHandle } from '@e2e-dev/core/engine';
+import { ConfigurationError, defineEngine, obj, type EngineAppCheckInfo, type EngineAppDeclaration, type EngineHandle, type EngineIsolation } from '@e2e-dev/core/engine';
 import { createDeviceFixture } from './device.ts';
 import type { ClientFactory, MobileOptions, MobilePlatform } from './options.ts';
 import { assertLaunchArgumentsFor } from './launch-arguments.ts';
@@ -24,11 +24,12 @@ const surfaces = new WeakMap<EngineHandle, AgentDeviceSurface>();
  * names this package: a project sees `@e2e-dev/core` only through its
  * dependencies, and TypeScript cannot write that path in a declaration.
  */
-export interface MobileEngine extends EngineHandle<MobileFixtures> {}
+export interface MobileEngine<Platform extends string = string, Isolation extends EngineIsolation = EngineIsolation>
+  extends EngineHandle<MobileFixtures, Platform, Isolation> {}
 
 /** Assembles the manifest for one surface. Exported for tests that script the client. */
-export function buildEngine(surface: AgentDeviceSurface): MobileEngine {
-  const handle = defineEngine<MobileFixtures>({
+export function buildEngine<Platform extends MobilePlatform>(surface: AgentDeviceSurface<Platform>): MobileEngine<Platform, 'worker'> {
+  const handle = defineEngine<MobileFixtures, Platform, 'worker'>({
     name: 'mobile',
     version: ownVersion(),
     spiVersion: 1,
@@ -88,7 +89,7 @@ export function buildEngine(surface: AgentDeviceSurface): MobileEngine {
 }
 
 /** Creates one agent-device engine: one device session per worker; a test launches the pinned app with `app.open()`. */
-export function mobile(options: MobileOptions): MobileEngine {
+export function mobile<Platform extends MobilePlatform>(options: MobileOptions<Platform>): MobileEngine<Platform, 'worker'> {
   // The type requires it; `e2e mcp`'s `open_session {engine}` calls this with the JSON an agent wrote.
   const platform: unknown = (options as Partial<MobileOptions> | undefined)?.platform;
   if (platform !== 'ios' && platform !== 'android') {

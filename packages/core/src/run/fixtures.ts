@@ -286,9 +286,10 @@ type CoreFixtureValues = AttemptFixtures['fixtures'];
 
 /**
  * What the built-in fixtures of a target are read from: its name, its
- * platform, and its engine's name, fixtures, and isolation.
+ * platform, its engine's name, fixtures, and isolation, and the fixture
+ * scopes of every target.
  */
-export type BuiltInTarget = Pick<ResolvedTarget, 'name' | 'platform'> & {
+export type BuiltInTarget = Pick<ResolvedTarget, 'name' | 'platform' | 'fixtureScopes'> & {
   readonly engine?: Pick<NonNullable<ResolvedTarget['engine']>, 'name' | 'isolation' | 'fixtures'> | undefined;
 };
 
@@ -360,14 +361,15 @@ function needsAttempt(name: string): boolean {
 export interface BuiltInFixtures {
   /** The target the fixtures are of, for an error to name; undefined before one is known. */
   readonly targetName: string | undefined;
-  /** Every built-in fixture name: the core ones, then the engine's. */
+  /** Every built-in fixture name: the core ones, the engine's, then the ones only other targets have. */
   readonly names: readonly string[];
   /**
    * How long `name` lives: one test attempt or the worker. The engine's own
    * fixtures, `app`, and `screen` live as long as the state behind them,
    * which the engine declares (`isolation`), so before a target is known
    * they are `unresolved`, as is any name an engine might contribute.
-   * Undefined when the target has no built-in fixture of that name.
+   * A fixture only other targets have takes its scope from them.
+   * Undefined when no target has a built-in fixture of that name.
    */
   scope(name: string): FixtureScope | 'unresolved' | undefined;
   /** Whether reading `name` takes an attempt on the engine: every built-in but the ones the target alone decides. */
@@ -384,12 +386,12 @@ export function builtInFixtures(target: BuiltInTarget): BuiltInFixtures {
   const engineScope: FixtureScope = target.engine?.isolation === 'worker' ? 'worker' : 'test';
   return {
     targetName: target.name,
-    names: [...Object.keys(CORE_FIXTURES), ...contributed],
+    names: [...new Set([...Object.keys(CORE_FIXTURES), ...contributed, ...target.fixtureScopes.keys()])],
     scope(name) {
-      const scope = coreFixture(name)?.scope ?? (contributed.includes(name) ? 'engine' : undefined);
+      const scope = coreFixture(name)?.scope ?? (contributed.includes(name) ? 'engine' : target.fixtureScopes.get(name));
       return scope === 'engine' ? engineScope : scope;
     },
-    needsAttempt,
+    needsAttempt: (name) => (contributed.includes(name) || !target.fixtureScopes.has(name)) && needsAttempt(name),
     attemptless(name) {
       const fixture = coreFixture(name);
       return fixture !== undefined && 'ofTarget' in fixture ? fixture.ofTarget(target) : undefined;
@@ -438,14 +440,15 @@ function unknownFixtureMessage(target: BuiltInTarget, property: string, availabl
 }
 
 /**
- * Reaching for a fixture the target's engine does not contribute fails at
- * the first touch with the earliest honest error: the engine's name and what
- * it does declare, instead of a TypeError three lines later.
+ * Reaching for a fixture that isn't on any target in the config fails at the
+ * first touch with the earliest honest error: the engine's name and what it
+ * does declare, instead of a TypeError three lines later.
  */
 function gateUnknownFixtures<T extends object>(fixtures: T, environment: AttemptEnvironment): T {
+  const { fixtureScopes } = environment.target;
   return new Proxy(fixtures, {
     get(target, property, receiver) {
-      if (typeof property !== 'string' || property in target || PROBED_KEYS.has(property)) {
+      if (typeof property !== 'string' || property in target || PROBED_KEYS.has(property) || fixtureScopes.has(property)) {
         return Reflect.get(target, property, receiver) as unknown;
       }
       throw new ConfigurationError(

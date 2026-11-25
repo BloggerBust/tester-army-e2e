@@ -67,7 +67,7 @@ import {
   type ProjectedSnapshot,
 } from './nodes.ts';
 import { keyboardDragStart, keyboardShownIn, type KeyboardUnknown } from './keyboard.ts';
-import { DEVICE_PERMISSIONS, type AgentDeviceClient, type ClientFactory, type DevicePermission, type LaunchPermissions, type MobileOptions, type PermissionState } from './options.ts';
+import { DEVICE_PERMISSIONS, type AgentDeviceClient, type ClientFactory, type DevicePermission, type LaunchPermissions, type MobileOptions, type MobilePlatform, type PermissionState } from './options.ts';
 import { maskPng } from './png.ts';
 import { mobileDoctor } from './doctor.ts';
 import { deviceLabel, deviceSelection, pinnedApp, type DeviceSelection, type SlotBinding } from './bindings.ts';
@@ -495,7 +495,7 @@ export interface BoundDevice {
   readonly deviceName: string;
 }
 
-export class AgentDeviceSurface {
+export class AgentDeviceSurface<Platform extends MobilePlatform = MobilePlatform> {
   private client: AgentDeviceClient | undefined;
   private attempt: Attempt | undefined;
   /** Retained across attempt cleanup until a stop or native session reset is confirmed. */
@@ -558,7 +558,7 @@ export class AgentDeviceSurface {
   private knownViewport: ViewportSize | undefined;
 
   constructor(
-    readonly options: MobileOptions,
+    readonly options: MobileOptions<Platform>,
     private readonly createClient: ClientFactory,
   ) {
     rejectUnknownKeys('mobile()', options, MOBILE_OPTION_KEYS);

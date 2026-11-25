@@ -105,16 +105,72 @@ hooks that name it get the value you pass to `use`:
 ```ts title="tests/fixtures.ts"
 export const test = base.extend({
   device: async ({ device }, use) => {
-    await device.setPermission('camera', 'deny');
+    await device?.setPermission('camera', 'deny');
     await use(device);
   },
 });
 ```
 
-The fixture keeps the [scope of the built-in fixture](/reference/test#fixtures).
-On a mobile target `device` is a worker fixture, so this one runs one time
-per worker and `beforeAll` gets it. See
+This override is a test fixture, so it runs for each test that uses `device`.
+To run it one time per worker and use it in `beforeAll`, define it as
+`[fn, { scope: 'worker' }]`. See
 [Extending a fixture](/reference/test#extending-a-fixture).
+
+## Run one test on web and mobile
+
+You can run the same test on targets whose engines have different fixtures.
+For example, in a config with web and iOS targets, `device` is `undefined` on
+web.
+
+```ts title="e2e.config.ts"
+import type { E2EConfig } from 'e2e';
+import { mobile } from '@e2e-dev/mobile';
+import { web } from '@e2e-dev/web';
+
+export default {
+  targets: [
+    { engine: web(), app: { url: 'http://localhost:3000' } },
+    { engine: mobile({ platform: 'ios' }), app: { bundleId: 'com.example.app' } },
+  ],
+} as const satisfies E2EConfig;
+```
+
+Use `as const satisfies E2EConfig` instead of a type annotation such as
+`const config: E2EConfig`. With the annotation, the engine types are lost.
+
+Pass `typeof config` as the third type argument of `test.extend`. Check
+`platform === 'ios'` to narrow `device` to `Device`:
+
+```ts title="tests/fixtures.ts"
+import { test as base } from 'e2e';
+import type config from '../e2e.config.ts';
+
+export const test = base.extend<{ signedOut: void }, {}, typeof config>({
+  /** Signs the app out. On iOS, the keychain is cleared first, since `app.clearState()` doesn't clear it. */
+  signedOut: async ({ app, platform, device }, use) => {
+    if (platform === 'ios') {
+      await device.clearKeychain();
+    }
+
+    await app.clearState();
+    await use();
+  },
+});
+```
+
+With `platforms` on a test, its fixtures are typed for the targets that run
+it:
+
+```ts title="tests/menu.e2e.ts"
+import { test } from './fixtures.ts';
+
+test('closes the menu with Escape', { platforms: ['web'] }, async ({ browser }) => {
+  await browser.keyboard.press('Escape');
+});
+```
+
+If you [extend `device`](#extend-a-built-in-fixture), your override is called
+on web too, with `device` set to `undefined`.
 
 ## Share a fixture across a worker
 

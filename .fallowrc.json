@@ -30,6 +30,7 @@
     "packages/web/tests/types/engine.ts",
     "packages/mobile/tests/types/options.ts",
     "packages/mobile/tests/types/engine.ts",
+    "packages/desktop/tests/types/engine.ts",
     "packages/browser-run/tests/types/options.ts",
     "packages/moli/tests/types/options.ts",
     "packages/decision/tests/types/options.ts",

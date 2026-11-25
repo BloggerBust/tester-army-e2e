@@ -959,10 +959,16 @@ export type EngineIsolation = 'attempt' | 'worker';
  * `@e2e-dev/core` types a session without a hand-written argument. It is a type
  * only: no handle carries a value under `engineFixtures`.
  */
-export interface EngineHandle<Fixtures extends object = {}> extends Engine {
+export interface EngineHandle<
+  Fixtures extends object = {},
+  Platform extends string = string,
+  Isolation extends EngineIsolation = EngineIsolation,
+> extends Engine {
   readonly [engineBrand]: true;
   readonly capabilities: ReadonlySet<EngineCapability>;
   readonly [engineFixtures]?: Fixtures;
+  readonly platform?: Platform;
+  readonly isolation?: Isolation;
 }
 
 export { defineEngine, isEngineHandle } from './manifest.ts';

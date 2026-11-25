@@ -1,4 +1,4 @@
-/** `test.extend()` fixtures named like a built-in extend it: user code gets the override, with the built-in's scope on the target. */
+/** `test.extend()` fixtures named like a built-in extend it: user code gets the override, with the scope the override declares. */
 
 import { describe, expect, it } from 'vitest';
 import { createFakeEngine, FAKE_APP } from '../helpers/fake-engine.ts';
@@ -18,6 +18,20 @@ export const test = base.extend<{ gadget: Gadget }>().extend({
     await use({ poke: async (what: string) => 'wrapped ' + await gadget.poke(what) });
     log('teardown:gadget:' + await gadget.poke('teardown'));
   },
+});
+`;
+
+/** `SUPPORT` with the override declared as a worker fixture. */
+const WORKER_SUPPORT = `import { test as base } from 'e2e';
+import { log } from './log.ts';
+
+type Gadget = { poke(what: string): Promise<string> };
+export const test = base.extend<{}, { gadget: Gadget }>().extend({
+  gadget: [async ({ gadget, platform }, use) => {
+    log('setup:gadget:' + await gadget.poke('override on ' + platform));
+    await use({ poke: async (what: string) => 'wrapped ' + await gadget.poke(what) });
+    log('teardown:gadget:' + await gadget.poke('teardown'));
+  }, { scope: 'worker' }],
 });
 `;
 
@@ -100,7 +114,7 @@ test.describe('device suite', () => {
       const log = hookLog('override-worker-scope');
       const fake = createFakeEngine({ fixtures: true, isolation: 'worker' });
       const { outcome, project } = await runProject(
-        { 'tests/log.ts': LOG_MODULE, 'tests/support.ts': SUPPORT, 'tests/device.e2e.ts': file },
+        { 'tests/log.ts': LOG_MODULE, 'tests/support.ts': WORKER_SUPPORT, 'tests/device.e2e.ts': file },
         { config: engineConfig(fake.engine) },
       );
       try {
@@ -128,17 +142,17 @@ test.describe('device suite', () => {
   );
 
   it(
-    'lets a worker fixture name an extended app on an engine whose state outlives a test',
+    'lets a worker fixture name an app override declared with scope \'worker\' on an engine whose state outlives a test',
     async () => {
       const support = `import { test as base } from 'e2e';
 import { log } from './log.ts';
 
 export const test = base
   .extend({
-    app: async ({ app }, use) => {
+    app: [async ({ app }, use) => {
       log('setup:app');
       await use(app);
-    },
+    }, { scope: 'worker' }],
   })
   .extend<{}, { seeded: string }>({
     seeded: [async ({ app }, use) => {
@@ -171,7 +185,7 @@ test('one', ({ seeded }) => log('body:' + seeded));
   );
 
   it(
-    'keeps an extended fixture auto, and refuses an override that says otherwise',
+    'sets an override of an auto fixture up for every test only if it declares auto',
     async () => {
       const support = (options: string) => `import { test as base } from 'e2e';
 import { log } from './log.ts';
@@ -198,33 +212,60 @@ test('names nothing', () => log('body'));
 test('names it', ({ seed }) => log('body:' + seed));
 `;
       const log = hookLog('override-auto');
-      const inherited = await runProject(
+      const onDemand = await runProject(
         { 'tests/log.ts': LOG_MODULE, 'tests/support.ts': support(override), 'tests/a.e2e.ts': file },
         { config: engineConfig(createFakeEngine().engine) },
       );
       try {
-        assertValidReport(inherited.outcome.report);
-        expect(inherited.outcome.report.run.errors).toEqual([]);
-        // Each runs once per test: the override because it is auto like the fixture it extends, the base through it.
-        expect(log.lines()).toEqual(['setup:seed', 'setup:override:seeded', 'body', 'setup:seed', 'setup:override:seeded', 'body:seeded!']);
+        assertValidReport(onDemand.outcome.report);
+        expect(onDemand.outcome.report.run.errors).toEqual([]);
+        // The override is set up only for the test that names it, and the base through it.
+        expect(log.lines()).toEqual(['body', 'setup:seed', 'setup:override:seeded', 'body:seeded!']);
       } finally {
-        inherited.project.cleanup();
+        onDemand.project.cleanup();
       }
-      const refused = await runProject(
-        { 'tests/log.ts': LOG_MODULE, 'tests/support.ts': support(`[${override}, { auto: false }]`), 'tests/a.e2e.ts': file },
+      const autoLog = hookLog('override-auto-declared');
+      const auto = await runProject(
+        { 'tests/log.ts': LOG_MODULE, 'tests/support.ts': support(`[${override}, { auto: true }]`), 'tests/a.e2e.ts': file },
         { config: engineConfig(createFakeEngine().engine) },
       );
       try {
-        expect(refused.outcome.report.run.errors.map(({ code, message }) => ({ code, message }))).toEqual([
-          {
-            code: 'COLLECTION_ERROR',
-            message: expect.stringMatching(
-              /^tests\/support\.ts:\d+: fixture "seed" is declared with auto: false, but it extends the fixture "seed" of an earlier test\.extend\(\), an auto fixture: a fixture that extends another keeps its auto$/,
-            ),
-          },
-        ]);
+        assertValidReport(auto.outcome.report);
+        expect(auto.outcome.report.run.errors).toEqual([]);
+        expect(autoLog.lines()).toEqual(['setup:seed', 'setup:override:seeded', 'body', 'setup:seed', 'setup:override:seeded', 'body:seeded!']);
       } finally {
-        refused.project.cleanup();
+        auto.project.cleanup();
+      }
+    },
+    120_000,
+  );
+
+  it.each([
+    ['an auto fixture', `[async ({}, use) => { await use('mine'); }, { auto: true }]`],
+    ['a fixture declared with scope \'test\'', `[async ({}, use) => { await use('mine'); }, { scope: 'test' }]`],
+    ['a fixture that names app', `async ({ app }, use) => { void app; await use('mine'); }`],
+  ])(
+    'runs %s named like another target\'s worker fixture on a target without it',
+    async (_kind, definition) => {
+      const support = `import { test as base } from 'e2e';\n\nexport const test = base.extend({ gadget: ${definition} } as never);\n`;
+      const file = `import { test } from './support.ts';\ntest('plain only', { platforms: ['plain'] }, async ({ gadget }) => { if (gadget !== 'mine') throw new Error(String(gadget)); });\n`;
+      const { outcome, project } = await runProject(
+        { 'tests/support.ts': support, 'tests/a.e2e.ts': file },
+        {
+          config: {
+            targets: [
+              { name: 'plain', platform: 'plain', engine: createFakeEngine().engine, app: FAKE_APP },
+              { name: 'fake', platform: 'fake', engine: createFakeEngine({ fixtures: true, isolation: 'worker' }).engine, app: FAKE_APP },
+            ],
+          },
+        },
+      );
+      try {
+        assertValidReport(outcome.report);
+        expect(outcome.report.run.errors).toEqual([]);
+        expect(outcome.results.map((result) => `${result.target.name}: ${result.status}`).toSorted()).toEqual(['fake: skipped', 'plain: passed']);
+      } finally {
+        project.cleanup();
       }
     },
     120_000,
@@ -274,7 +315,7 @@ test('gadget only', { platforms: ['fake'] }, async ({ gadget }) => log('body:' +
   );
 
   it(
-    'refuses a declared scope that is not the built-in\'s on the target, naming both, before anything runs',
+    'refuses a worker-scoped override of a built-in that is a test fixture on the target, before anything runs',
     async () => {
       const support = `import { test as base } from 'e2e';
 
@@ -290,7 +331,7 @@ export const test = base.extend({
           {
             code: 'COLLECTION_ERROR',
             message: expect.stringMatching(
-              /^tests\/support\.ts:\d+: fixture "gadget" is declared with scope 'worker', but it extends the built-in "gadget", a test fixture on target "fake": a fixture that extends another keeps its scope$/,
+              /^tests\/support\.ts:\d+: worker fixture "gadget" names "gadget", a test fixture on target "fake": beforeAll, afterAll, and worker fixtures see worker fixtures only/,
             ),
           },
         ]);

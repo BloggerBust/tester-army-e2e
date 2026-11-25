@@ -29,7 +29,7 @@ describe('agent tool pack', () => {
     const androidFake = createFakeClient({ 'apps.open': () => ({ appName: 'Clock' }) });
     const ios = buildEngine(new AgentDeviceSurface({ platform: 'ios' }, () => iosFake.client));
     const android = buildEngine(new AgentDeviceSurface({ platform: 'android', device: 'emulator-5554' }, () => androidFake.client));
-    const init = (engine: typeof ios, targetName: string) =>
+    const init = (engine: typeof ios | typeof android, targetName: string) =>
       engine.init!({
         runId: 'r',
         targetName,

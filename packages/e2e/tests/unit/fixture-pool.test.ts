@@ -9,7 +9,7 @@ import type { FixtureScope } from '@e2e-dev/core/lib/types';
 
 /** A web-like target, whose attempts are isolated, or a device-like one, whose state outlives them. */
 function toyTarget(isolation: 'attempt' | 'worker' = 'attempt'): BuiltInTarget {
-  return { name: 'toy', platform: 'toy', engine: { name: 'toy', isolation, fixtures: { gadget: () => ({}) } } };
+  return { name: 'toy', platform: 'toy', engine: { name: 'toy', isolation, fixtures: { gadget: () => ({}) } }, fixtureScopes: new Map() };
 }
 
 type Fixtures = Record<string, unknown>;
@@ -369,11 +369,11 @@ describe('fixtures that extend a built-in', () => {
     expect(await bound.body()).toEqual({ app: 'mine' });
   });
 
-  it("takes the built-in's scope on the target: a worker fixture where the engine's state outlives a test", async () => {
+  it("runs an override declared with scope 'worker' once per worker, where the engine's state outlives a test", async () => {
     const log: string[] = [];
     const target = toyTarget('worker');
     const pool = new WorkerFixturePool(target);
-    const chain = [wrapping(log, 'gadget', 'override')];
+    const chain = [wrapping(log, 'gadget', 'override', { scope: 'worker' })];
     const gadgetOf = (id: string) => ({ gadget: { id: () => id }, platform: 'toy' });
     const read = (fixtures: Fixtures): string => (fixtures['gadget'] as { wraps: { id(): string } }).wraps.id();
 
@@ -400,43 +400,46 @@ describe('fixtures that extend a built-in', () => {
     expect(bound.teardowns()).toEqual([]);
     expect(log).toEqual(['setup:override']);
     expect(pool.close().map(({ name, usesEngine }) => ({ name, usesEngine }))).toEqual([{ name: 'gadget', usesEngine: true }]);
-    // On an engine that isolates each attempt the same definition is a test fixture, which a suite hook cannot name.
-    expect(plannedScope(planAttempt(toyTarget(), testNaming(chain, ['gadget']), []), chain[0]!)).toBe('test');
-    expect(() => planSuiteHook(toyTarget(), suiteHook(chain, ['gadget']))).toThrow(planError('beforeAll hook names "gadget", a test fixture on target "toy"'));
+    // On an engine that isolates each attempt, the built-in is a test fixture, which a worker fixture cannot name.
+    expect(() => planAttempt(toyTarget(), testNaming(chain, ['gadget']), [])).toThrow(planError('worker fixture "gadget" names "gadget", a test fixture on target "toy"'));
   });
 
-  it('refuses a declared scope that is not the scope of the fixture it extends, naming both', () => {
-    const worker = [wrapping([], 'app', 'override', { scope: 'worker' })];
-    expect(() => planAttempt(toyTarget(), testNaming(worker, ['app']), [])).toThrow(
-      planError(`fixture "app" is declared with scope 'worker', but it extends the built-in "app", a test fixture on target "toy": a fixture that extends another keeps its scope`),
-    );
-    expect(plannedScope(planAttempt(toyTarget('worker'), testNaming(worker, ['app']), []), worker[0]!)).toBe('worker');
-    const test = [wrapping([], 'gadget', 'override', { scope: 'test' })];
-    expect(() => planAttempt(toyTarget('worker'), testNaming(test, ['gadget']), [])).toThrow(planError(`declared with scope 'test', but it extends the built-in "gadget", a worker fixture on target "toy"`));
-    // A core fixture whose scope no engine changes is refused where it is declared.
-    const agent = [wrapping([], 'agent', 'override', { scope: 'worker' })];
-    expect(() => checkDeclaredFixtures(agent, agent)).toThrow(planError(`fixture "agent" is declared with scope 'worker', but it extends the built-in "agent", a test fixture: a fixture that extends another keeps its scope`));
-    const chained = [wrapping([], 'app', 'first', { scope: 'test' }), wrapping([], 'app', 'second', { scope: 'worker', layer: 1 })];
-    expect(() => checkDeclaredFixtures(chained, [chained[1]!])).toThrow(planError(`but it extends the fixture "app" of an earlier test.extend(), a test fixture`));
-    // Unused on a target where it could not be, it fails nothing.
-    expect(planAttempt(toyTarget(), testNaming(worker, []), []).order).toEqual([]);
-  });
-
-  it('lets a worker fixture name an extended app, whose scope follows the engine', () => {
-    const chain = [
-      wrapping([], 'app', 'first'),
-      wrapping([], 'app', 'second', { scope: undefined, layer: 1 }),
-      logged([], 'seeded', 'S', { scope: 'worker', layer: 2, uses: ['app'] }),
-    ];
-    // Before a target is known an extended `app` is no more a test fixture than the built-in one.
-    expect(() => checkDeclaredFixtures(chain, chain)).not.toThrow();
-    expect(plannedNames(planAttempt(toyTarget('worker'), testNaming(chain, ['seeded']), []))).toEqual(['app', 'app', 'seeded']);
-    expect(() => planAttempt(toyTarget(), testNaming(chain, ['seeded']), [])).toThrow(planError('worker fixture "seeded" names "app", a test fixture on target "toy"'));
-  });
-
-  it('sets an auto fixture and its override up once each: the override because it inherits auto, the base through it', async () => {
+  it('makes an override a test fixture unless it declares a scope, even where the built-in is a worker fixture', async () => {
     const log: string[] = [];
-    const chain = [logged(log, 'seed', 'base', { scope: undefined, auto: true }), wrapping(log, 'seed', 'override', { scope: undefined, auto: undefined, layer: 1 })];
+    const chain = [wrapping(log, 'gadget', 'override')];
+    const target = toyTarget('worker');
+    expect(plannedScope(planAttempt(target, testNaming(chain, ['gadget']), []), chain[0]!)).toBe('test');
+    expect(() => planSuiteHook(target, suiteHook(chain, ['gadget']))).toThrow(planError('beforeAll hook names "gadget", a test fixture on target "toy"'));
+    const test = [wrapping(log, 'gadget', 'override', { scope: 'test' })];
+    expect(plannedScope(planAttempt(target, testNaming(test, ['gadget']), []), test[0]!)).toBe('test');
+    // An override of an earlier fixture of the chain takes no scope from it either.
+    const chained = [wrapping([], 'app', 'first', { scope: 'test' }), wrapping([], 'app', 'second', { scope: 'worker', layer: 1 })];
+    expect(() => checkDeclaredFixtures(chained, [chained[1]!])).toThrow(planError('worker fixture "app" names "app", a test fixture'));
+
+    const bound = attempt(chain, ['gadget'], { target, builtIns: { gadget: 'original', platform: 'toy' } });
+    await bound.setUp();
+    expect(await bound.body()).toEqual({ gadget: { wraps: 'original', by: 'override' } });
+    for (const teardown of bound.teardowns()) await teardown.run();
+    expect(log).toEqual(['setup:override', 'teardown:override']);
+  });
+
+  it('lets a worker fixture name an extended app only through a worker-scoped override', () => {
+    const chain = [
+      wrapping([], 'app', 'first', { scope: 'worker' }),
+      logged([], 'seeded', 'S', { scope: 'worker', layer: 1, uses: ['app'] }),
+    ];
+    expect(() => checkDeclaredFixtures(chain, chain)).not.toThrow();
+    expect(plannedNames(planAttempt(toyTarget('worker'), testNaming(chain, ['seeded']), []))).toEqual(['app', 'seeded']);
+    expect(() => planAttempt(toyTarget(), testNaming(chain, ['seeded']), [])).toThrow(planError('worker fixture "app" names "app", a test fixture on target "toy"'));
+    const testScoped = [wrapping([], 'app', 'first'), logged([], 'seeded', 'S', { scope: 'worker', layer: 1, uses: ['app'] })];
+    expect(() => planAttempt(toyTarget('worker'), testNaming(testScoped, ['seeded']), [])).toThrow(planError('worker fixture "seeded" names "app", a test fixture on target "toy"'));
+  });
+
+  it('sets an auto fixture up through an override that names it, and the override only if it declares auto', async () => {
+    const log: string[] = [];
+    const named = [logged(log, 'seed', 'base', { scope: undefined, auto: true }), wrapping(log, 'seed', 'override', { scope: undefined, auto: undefined, layer: 1 })];
+    expect(planAttempt(toyTarget(), testNaming(named, []), []).order).toEqual([]);
+    const chain = [logged(log, 'seed', 'base', { scope: undefined, auto: true }), wrapping(log, 'seed', 'override', { scope: undefined, auto: true, layer: 1 })];
     const bound = attempt(chain, []);
     await bound.setUp();
     expect(log).toEqual(['setup:seed', 'setup:override']);
@@ -446,7 +449,7 @@ describe('fixtures that extend a built-in', () => {
 
   it('does not set up an auto fixture that an override replaces without naming it', async () => {
     const log: string[] = [];
-    const chain = [logged(log, 'seed', 'base', { scope: undefined, auto: true }), logged(log, 'seed', 'replacement', { scope: undefined, auto: undefined, layer: 1 })];
+    const chain = [logged(log, 'seed', 'base', { scope: undefined, auto: true }), logged(log, 'seed', 'replacement', { scope: undefined, auto: true, layer: 1 })];
     const bound = attempt(chain, []);
     await bound.setUp();
     // One setup, the replacement's: `logged` logs the fixture's name, which both share.
@@ -454,22 +457,10 @@ describe('fixtures that extend a built-in', () => {
     expect(planAttempt(toyTarget(), testNaming(chain, []), []).order.map((planned) => planned.definition)).toEqual([chain[1]]);
   });
 
-  it('refuses a declared auto that is not the auto of the fixture it extends, naming both', () => {
-    const base = logged([], 'seed', 'base', { scope: undefined, auto: true });
-    const quiet = [base, wrapping([], 'seed', 'override', { scope: undefined, auto: false, layer: 1 })];
-    expect(() => checkDeclaredFixtures(quiet, [quiet[1]!])).toThrow(
-      planError('fixture "seed" is declared with auto: false, but it extends the fixture "seed" of an earlier test.extend(), an auto fixture: a fixture that extends another keeps its auto'),
-    );
-    // A built-in fixture is set up on demand, so its override is too.
+  it('makes an override of a built-in auto when it declares auto', () => {
     const eager = [wrapping([], 'app', 'override', { scope: undefined, auto: true })];
-    expect(() => checkDeclaredFixtures(eager, eager)).toThrow(planError('fixture "app" is declared with auto: true, but it extends the built-in "app", not an auto fixture: a fixture that extends another keeps its auto'));
-    const gadget = [wrapping([], 'gadget', 'override', { scope: undefined, auto: true })];
-    // An engine's fixture is known as one only on a target.
-    expect(() => checkDeclaredFixtures(gadget, gadget)).not.toThrow();
-    expect(() => planAttempt(toyTarget(), testNaming(gadget, []), [])).toThrow(planError('fixture "gadget" is declared with auto: true, but it extends the built-in "gadget", not an auto fixture on target "toy"'));
-    // Saying the same auto again is fine.
-    const same = [base, wrapping([], 'seed', 'override', { scope: undefined, auto: true, layer: 1 })];
-    expect(() => checkDeclaredFixtures(same, [same[1]!])).not.toThrow();
+    expect(() => checkDeclaredFixtures(eager, eager)).not.toThrow();
+    expect(planAttempt(toyTarget(), testNaming(eager, []), []).order.map((planned) => planned.definition)).toEqual(eager);
   });
 
   it('fails on a target that lacks the built-in only when code there names it', () => {

@@ -8,6 +8,10 @@ void (mobile({ platform: 'ios' }) satisfies EngineHandle<MobileFixtures>);
 declare const handle: EngineHandle<MobileFixtures>;
 void (handle satisfies MobileEngine);
 void (handle satisfies EntryMobileEngine);
+void (mobile({ platform: 'ios' }).platform satisfies 'ios' | undefined);
+void (mobile({ platform: 'android' }).isolation satisfies 'worker' | undefined);
+// @ts-expect-error an iOS handle isn't an Android one
+void (mobile({ platform: 'ios' }).platform satisfies 'android' | undefined);
 
 declare const device: Device;
 declare const entryDevice: EntryDevice;
