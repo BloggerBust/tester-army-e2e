@@ -85,7 +85,9 @@ app: {
 ```
 
 - Os argumentos de inicialização são os argumentos do processo no iOS e os
-  argumentos de `am start` no Android.
+  argumentos de `am start` no Android. Um objeto nomeia cada argumento,
+  então `{ e2e: true }` vira `-e2e YES` no iOS e `--ez e2e true` no Android.
+  Veja [a referência](/reference/mobile#launch-arguments-and-permissions).
 - As permissões são definidas antes da inicialização, então nenhum prompt do
   sistema aparece. `app.clearState()` as redefine junto com os dados e depois
   as define de novo.
@@ -124,12 +126,15 @@ por idioma:
 }
 ```
 
+- Como lista, a mesma inicialização é
+  `['-AppleLanguages', '(fr)', '-AppleLocale', 'fr_FR']`.
 - O app precisa incluir o idioma. Se não incluir, o iOS mostra o idioma de
   desenvolvimento do app.
-- O Android não tem argumento de inicialização para o idioma. Em um
-  dispositivo hospedado, defina `language` e `locale` em `browserstack()` ou
-  `testmu()`. Em um dispositivo local, defina o idioma do dispositivo antes da
-  execução.
+- O Android não tem argumento de inicialização para o idioma.
+  `AppleLanguages` ou `AppleLocale` em um objeto, em um alvo Android, faz a
+  configuração falhar ao carregar. Em um dispositivo hospedado, defina
+  `language` e `locale` em `browserstack()` ou `testmu()`. Em um dispositivo
+  local, defina o idioma do dispositivo antes da execução.
 
 ### Builds de desenvolvimento do Expo
 
@@ -427,6 +432,18 @@ test('the list and the detail split across the fold', async ({ agent, app, devic
   await device.fold('half-open');
   await agent.assert('the list and the detail sit on either side of the fold', { vision: true });
 });
+```
+
+Um agente dobra o dispositivo com a ferramenta `fold` de `foldTools`.
+Adicione-a às ferramentas do agente para que `agent.act`, `e2e explore` e o
+servidor MCP possam dobrar e desdobrar o dispositivo. A posição em que o
+agente deixa o dispositivo também passa para uma nova tentativa e para o
+próximo teste, então mantenha o `afterEach` que dobra de volta:
+
+```ts
+import { foldTools, mobileTools } from '@e2e-dev/mobile/tools';
+
+tools: { ...mobileTools(iphoneDuo), ...foldTools(iphoneDuo) },
 ```
 </Accordion>
 

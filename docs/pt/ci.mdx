@@ -27,7 +27,7 @@ um dispositivo, roda os testes e faz upload de `.e2e/`.
     Faça o build de um app Expo com o Expo Build e depois rode testes de iOS e Android nele.
   </Card>
   <Card title="Bitrise" icon="/images/integrations/bitrise.svg" href="/ci/bitrise">
-    Workflows de iOS e Android com os passos do Bitrise para simuladores e emuladores.
+    Workflows de iOS e Android com os steps do Bitrise para simuladores e emuladores.
   </Card>
   <Card title="Codemagic" icon="/images/integrations/codemagic.svg" href="/ci/codemagic">
     Workflows de iOS e Android em instâncias Mac mini e Linux.
@@ -168,9 +168,9 @@ Estas regras valem em todo serviço:
   `--target android` no Linux com KVM. Os Macs hospedados usam Apple Silicon,
   que não consegue aninhar virtualização, então o emulador Android não inicia
   neles.
-- **Faça o boot do dispositivo em um passo próprio.** Sem nenhum
+- **Faça o boot do dispositivo em um step próprio.** Sem nenhum
   dispositivo inicializado, a engine pede ao agent-device que faça o boot
-  de um, mas um runner Linux novo não tem imagem de emulador. Um passo
+  de um, mas um runner Linux novo não tem imagem de emulador. Um step
   separado também diferencia um boot que falhou de um teste que falhou.
 - **Fixe o runtime do iOS.** Um simulador escolhido pelo nome (`iPhone 17`)
   roda o iOS padrão da imagem, e a árvore de acessibilidade muda entre
@@ -193,7 +193,10 @@ Estas regras valem em todo serviço:
 
 Todo código de saída diferente de zero faz o job falhar, inclusive quando um
 passo do agente falha. Para bloquear merges quando uma execução falha, torne
-o job do e2e uma verificação obrigatória.
+o job do e2e uma verificação obrigatória. Uma verificação que conta só os
+testes que falharam em um relatório de testes, como uma montada a partir do
+`ctrf.json`, não vê um erro no nível da execução, então mantenha o código de
+saída como critério para bloquear o merge.
 [Depurar uma execução](/debugging#read-the-failure) lista cada código de
 saída e se rodar o job de novo pode ajudar.
 
@@ -237,7 +240,7 @@ e depois roda os demais, dos mais longos para os mais curtos, na ordem dada por
 `<output>/timings.json` (`.e2e/timings.json` por padrão): alguns KB que uma
 execução atualiza quando rodou pelo menos um arquivo inteiro. Um checkout
 novo na CI não tem esse arquivo, então restaure-o do cache da sua CI antes da
-execução e salve-o depois. O passo está em
+execução e salve-o depois. O step está em
 [GitHub Actions](/ci/github-actions#cache-the-timings-history).
 
 - O arquivo serve só de orientação. Um arquivo ausente, corrompido ou
@@ -284,7 +287,7 @@ inclua o índice do shard. Cada relatório registra seu shard como
 ## Reexecutando falhas
 
 `--last-failed` roda só os testes que não passaram na execução anterior,
-lidos do `report.json` no diretório de saída. Rode-o no mesmo passo da
+lidos do `report.json` no diretório de saída. Rode-o no mesmo step da
 primeira execução:
 
 ```yaml

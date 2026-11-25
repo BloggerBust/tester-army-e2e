@@ -304,6 +304,7 @@ retenção zero de dados não podem usá-los.
 | O agente embutido não tem modelo | `MODEL_UNAVAILABLE` | Defina `agents.<name>.model`. |
 | O GitHub Copilot não disponibiliza o modelo para a sua conta | `MODEL_UNAVAILABLE` | Escolha um id que o seu plano disponibilize. Veja [Escolha um modelo](/subscriptions#pick-a-model). |
 | Um provedor que lê a chave ao carregar a configuração não encontra nenhuma | `CONFIG_LOAD_FAILED` | Defina a chave. |
+| A variável da chave do modelo não está definida | `MODEL_PROVIDER_FAILED` | Defina a variável que a mensagem cita, como `AI_GATEWAY_API_KEY`. Só os passos que chamam o modelo falham. Os passos `agent.act` gravados e os testes sem chamada ao agente continuam rodando. |
 | A autenticação falha na primeira chamada ao modelo | `MODEL_PROVIDER_FAILED` | Verifique a chave de API do provedor ou rode `npx e2e login` para uma assinatura. Com o Vercel OIDC, a mensagem cita apenas `AI_GATEWAY_API_KEY`. Verifique `vercel login` e `.vercel/project.json`. |
 | O pacote `ai` está faltando | `MODEL_UNAVAILABLE` | Instale `ai`. Veja [Escolha um gateway ou um provedor](#pick-a-gateway-or-a-provider). |
 | O segundo turno de um passo falha com `Item with id 'rs_…' not found` | `MODEL_PROVIDER_FAILED` | Deixe `store` desativado em `providerOptions`, que é o padrão, ou chame a OpenAI diretamente em vez de por um gateway. |

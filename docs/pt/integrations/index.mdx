@@ -1,0 +1,59 @@
+---
+title: Navegadores e dispositivos hospedados
+sidebarTitle: Visão geral
+description: Integrações oficiais com serviços de navegadores e dispositivos hospedados, um pacote por serviço.
+"og:image": "https://e2e.com/docs/images/og/integrations/index.png?v=324a20a30f"
+"twitter:image": "https://e2e.com/docs/images/og/integrations/index.png?v=324a20a30f"
+---
+
+Uma integração oficial é um pacote que dá a um alvo o `browser` ou o `device`
+dele a partir de um serviço hospedado, pela interface de provedor da engine.
+Só o `browser` ou o `device` do alvo na configuração muda.
+
+<CardGroup cols={2}>
+  <Card title="Cloudflare Browser Run" icon="/images/integrations/cloudflare.svg" href="/integrations/browser-run">
+    `@e2e-dev/browser-run`: Chromium hospedado para alvos web, por worker ou por teste.
+  </Card>
+  <Card title="Kernel" icon="/images/integrations/kernel.svg" href="/integrations/kernel">
+    `@e2e-dev/kernel`: Chromium hospedado para alvos web, um navegador por worker ou por teste.
+  </Card>
+  <Card title="Notte" icon="/images/integrations/notte.svg" href="/integrations/notte">
+    `@e2e-dev/notte`: navegadores em nuvem do Notte para alvos web, uma sessão por tentativa de teste.
+  </Card>
+  <Card title="Lightpanda" icon="/images/integrations/lightpanda.svg" href="/integrations/lightpanda">
+    `@e2e-dev/lightpanda`: o navegador headless de código aberto, iniciado por slot de worker na sua própria máquina, sem Chromium.
+  </Card>
+  <Card title="Moli" icon="/images/integrations/moli.png" href="/integrations/moli">
+    `@e2e-dev/moli`: navegadores Moli locais com layout e capturas de tela sob demanda, iniciados por slot de worker.
+  </Card>
+  <Card title="Expo Simulators" icon="/images/integrations/expo.svg" href="/integrations/eas">
+    `@e2e-dev/eas`: simuladores iOS e emuladores Android hospedados para alvos mobile.
+  </Card>
+  <Card title="smol machines" icon="/images/integrations/smol.png" href="/integrations/smol">
+    `@e2e-dev/smol`: microVMs de Chromium no seu computador, cada teste em uma branch de um navegador aquecido.
+  </Card>
+  <Card title="Limrun" icon="/images/integrations/limrun.svg" href="/integrations/limrun">
+    `@e2e-dev/limrun`: simuladores iOS e emuladores Android hospedados, com instalação do app e limpeza dos dispositivos.
+  </Card>
+  <Card title="TestMu AI" icon="/images/integrations/testmu.svg" href="/integrations/testmu">
+    `@e2e-dev/testmu`: emuladores Android, simuladores iOS e dispositivos reais hospedados para alvos mobile, e Chrome e Edge para alvos web.
+  </Card>
+  <Card title="BrowserStack" icon="/images/integrations/browserstack.svg" href="/integrations/browserstack">
+    `@e2e-dev/browserstack`: dispositivos Android e iOS reais do BrowserStack App Automate para alvos mobile.
+  </Card>
+  <Card title="E2B" icon="/images/integrations/e2b.svg" href="/integrations/e2b">
+    `@e2e-dev/e2b`: sandboxes Android 16 para alvos mobile, e sandboxes Chromium para alvos web.
+  </Card>
+  <Card title="Revyl" icon="/images/integrations/revyl.svg" href="/integrations/revyl">
+    `@e2e-dev/revyl`: simuladores iOS e emuladores Android hospedados para alvos mobile, com o app instalado a partir de uma URL `https`.
+  </Card>
+</CardGroup>
+
+## Use um serviço sem integração
+
+Para qualquer outro serviço, escreva um pequeno provedor no seu projeto: um
+[`BrowserProvider`](/browser#hosted-browsers) para a engine web ou um
+[`DeviceProvider`](/mobile#hosted-devices) para a engine mobile.
+
+Para rodar o e2e em um serviço de CI como GitHub Actions, Expo Workflows ou
+Norrix, veja [Integração contínua](/ci).

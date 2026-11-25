@@ -1,0 +1,224 @@
+---
+title: Comentários em pull requests
+sidebarTitle: Comentários em PRs do GitHub
+description: O reporter @e2e-dev/github publica um comentário por execução a partir do GitHub Actions e o mantém atualizado.
+"og:image": "https://e2e.com/docs/images/og/github.png?v=be9fcc65d9"
+"twitter:image": "https://e2e.com/docs/images/og/github.png?v=be9fcc65d9"
+---
+
+`@e2e-dev/github` é um reporter que publica os resultados dos testes como um
+comentário no pull request a partir do GitHub Actions e os escreve no resumo
+do job. Uma reexecução atualiza o mesmo comentário.
+
+## Configuração
+
+<CodeGroup>
+```bash npm
+npm install --save-dev @e2e-dev/github
+```
+
+```bash pnpm
+pnpm add -D @e2e-dev/github
+```
+
+```bash bun
+bun add -d @e2e-dev/github
+```
+</CodeGroup>
+
+```ts title="e2e.config.ts"
+import type { E2EConfig } from 'e2e';
+import { web } from '@e2e-dev/web';
+import { github } from '@e2e-dev/github';
+
+export default {
+  targets: [{ engine: web(), app: { url: 'http://localhost:3000' } }],
+  reporters: ['list', github()],
+} satisfies E2EConfig;
+```
+
+Dê ao workflow a permissão `pull-requests: write`. Passe o `GITHUB_TOKEN` ao
+step dos testes:
+
+```yaml title=".github/workflows/e2e.yml"
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  e2e:
+    steps:
+      # ...checkout, install, browsers
+      - name: Run e2e
+        run: npx e2e run --reporter list,junit
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+      - name: Upload artifacts
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: e2e-artifacts
+          path: .e2e/results
+```
+
+Faça upload dos artefatos também quando uma nova tentativa passa: os links de
+evidências de cada falha abrem a seção Artifacts da execução. Mantenha
+`path: .e2e/results` para que o download tenha os mesmos diretórios por teste
+que o relatório.
+
+Os links para o código-fonte partem do diretório mais próximo com `.git`
+dentro de `GITHUB_WORKSPACE`. Um projeto abaixo dele, como
+`packages/e2e-tests`, recebe links sob esse caminho. O `actions/checkout` com
+um input `path` também funciona.
+
+## O comentário
+
+```markdown expandable
+### 🔴 e2e: 1 failed, 1 flaky, 3 passed, 1 skipped
+9 agent steps · 4 replayed from cache · 31 model calls · 128k tokens (62% cached) · $0.31
+
+**🔴 billing › upgrades to Pro**  
+[tests/billing.e2e.ts:12](https://github.com/acme/shop/blob/1a2b3c/tests/billing.e2e.ts#L12)
+
+**ASSERTION_FAILED** at step 4 of 6: `agent.act` "Pick the Pro plan and pay", after 38.0s and 12 model calls
+
+> expected heading "Your cart" to be visible
+> The Pay button opened a page that still shows the Free plan.
+
+- Failed the same way on both attempts: **ASSERTION_FAILED** at step 4.
+- Turn 9: `tap({"target":"n41"})` → Screen changed: /checkout/plan. New: #n50 heading "Free plan"
+- Screen: `/checkout/plan`
+
+Evidence: [screenshot](https://github.com/acme/shop/actions/runs/123#artifacts), [video](https://github.com/acme/shop/actions/runs/123#artifacts)
+
+<details>
+<summary>⚠️ 1 flaky test passed on a retry</summary>
+
+**⚠️ invite a member by email**  
+[tests/team.e2e.ts:21](https://github.com/acme/shop/blob/1a2b3c/tests/team.e2e.ts#L21)
+
+**STEP_TIMEOUT** at step 3 of 3: `agent.waitFor` "the invitation email", after 30.0s
+
+> the invitation email took too long
+
+Evidence: [screenshot](https://github.com/acme/shop/actions/runs/123#artifacts)
+</details>
+
+<details>
+<summary>All 6 tests in 5 files</summary>
+
+| | Test | Agent | Time |
+| --- | --- | --- | --- |
+| 🔴 | **tests/billing.e2e.ts** · 1 failed | 3 steps · 19 calls | 41.2s |
+| 🔴 | billing › upgrades to Pro | 3 steps · 19 calls | 41.2s |
+| ⚠️ | **tests/team.e2e.ts** · 1 flaky | 1 step | 6.4s |
+| ⚠️ | invite a member by email (1 failed attempt first) | 1 step | 6.4s |
+...
+</details>
+
+<sub>Tested by [e2e](https://e2e.com) 0.13.0 · 2m 15s · web · [run artifacts](https://github.com/acme/shop/actions/runs/123#artifacts)</sub>
+```
+
+Erros no nível da execução, quando existem, vêm antes das falhas. A lista de
+testes só tem uma coluna de agente quando a execução usou o agente.
+
+Uma execução cujos [filtros de testes](/filters) deixaram testes de fora diz
+isso no título, como `e2e: 7 passed, 35 left out by filters`, para que ela
+nunca pareça a suíte inteira. Acima da lista de testes, uma linha indica a
+mudança que os filtros avaliaram, como `12 files changed since abc1234`,
+depois uma linha por filtro diz o que ele manteve, e uma tabela recolhida
+lista cada teste que ele deixou de fora, com o motivo. Quando nenhum filtro
+rodou, como quando nenhum arquivo mudou, uma linha diz por quê.
+
+O reporter encurta um relatório grande para caber no limite de tamanho de um
+comentário do GitHub. Texto do app que o GitHub transformaria em uma menção,
+um link para uma issue ou uma URL aparece como código, então uma tela que
+mostra `@someone` não notifica ninguém. O reporter embutido `markdown` escreve
+o mesmo resumo em `.e2e/summary.md`.
+
+## Reexecutando os testes que falharam
+
+Uma reexecução com `--last-failed` atualiza o comentário como uma só execução
+junto com a primeira rodada, cobrindo a suíte inteira:
+
+```yaml
+      - name: Run e2e
+        run: npx e2e run || npx e2e run --last-failed
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+```
+
+| Primeira rodada | Reexecução | O comentário mostra |
+| --- | --- | --- |
+| falhou | passou | instável |
+| falhou | falhou | falhou |
+| foi interrompida | passou | passou |
+| qualquer outro resultado | não rodou | o resultado da primeira rodada |
+
+O comentário mantém as linhas de filtro e os testes deixados de fora da
+primeira rodada. Uma segunda reexecução é incorporada do mesmo jeito, então os
+resultados da primeira rodada continuam no comentário.
+
+O comentário continua vermelho enquanto a reexecução tiver deixado de fora
+algo que devia ter rodado: um teste que falhou, um teste que `--max-failures`
+ou `--max-duration` deixou sem rodar, ou um `beforeAll` ou `afterAll` com
+falha cujos testes outro filtro deixou de fora. Ele mostra ⏹️ quando a
+reexecução deixou de fora um teste que a primeira rodada nunca terminou. O
+código de saída da própria reexecução conta só o que ela rodou. As evidências
+de cada tentativa apontam para os arquivos dela.
+
+## Jobs em matriz
+
+O reporter encontra o comentário dele pelo projeto, pelo workflow e pelo job,
+que os jobs de uma matriz compartilham. Dê a cada entrada da matriz uma `key`
+própria:
+
+```ts
+reporters: ['list', github({ key: process.env.MATRIX_BROWSER })],
+```
+
+Defina `MATRIX_BROWSER: ${{ matrix.browser }}` no `env` do step. A chave
+aparece no título, como `e2e chromium: 77 passed`. Mantenha-a estável entre
+execuções para que uma reexecução atualize o comentário existente.
+
+## Explorações
+
+Uma execução do [`e2e explore`](/explore) publica um comentário próprio, então
+um job pode rodar os testes e depois explorar. Dê à exploração um `--output`
+próprio, como `npx e2e explore --output .e2e-explore`, e faça upload desse
+diretório também. Caso contrário, ela substitui os resultados da execução dos
+testes, e os links de evidências no comentário dessa execução quebram.
+
+## Quando nada é publicado
+
+O reporter nunca muda o status nem o código de saída da execução. Quando não
+consegue publicar, uma linha abaixo do resumo dá o motivo:
+
+```
+       GitHub  not posted: set GITHUB_TOKEN in the step's env (GITHUB_TOKEN: ${{ github.token }}); written to the job summary
+```
+
+| Situação | O que acontece |
+| --- | --- |
+| Fora do GitHub Actions | Nada é escrito. A linha diz isso. |
+| Uma execução de `push`, `schedule` ou `workflow_dispatch` | O resumo do job é escrito. Não há pull request para comentar. |
+| Nenhum `GITHUB_TOKEN` no `env` do step | O resumo do job é escrito. A linha mostra o que adicionar. O reporter também lê `GH_TOKEN`. |
+| Um evento `pull_request` vindo de um fork | O token é somente leitura, então a publicação falha. A linha diz por quê. |
+| Um evento `issue_comment` | Na conversa de um pull request, o comentário não tem links para o código-fonte, porque o commit do checkout está na branch padrão. |
+| Falta `pull-requests: write` | A publicação falha, e o reporter nomeia a permissão. |
+| Limite de taxa da API do GitHub | A publicação é interrompida e informa a limitação. Espere o reset do limite ou o `Retry-After` antes de rodar o job de novo. |
+
+O reporter lê o token quando a execução termina, e o relatório não o inclui.
+No GitHub Enterprise Server, o reporter usa `GITHUB_SERVER_URL` e
+`GITHUB_API_URL`.
+
+## Próximos passos
+
+<CardGroup cols={2}>
+  <Card title="GitHub Actions" icon="/images/integrations/github-actions.svg" href="/ci/github-actions">
+    O workflow completo: instalação, navegadores, cache e artefatos.
+  </Card>
+  <Card title="Depurar uma execução" icon="magnifying-glass" href="/debugging">
+    Leia a página de trace para a qual cada falha aponta.
+  </Card>
+</CardGroup>

@@ -1,0 +1,173 @@
+---
+title: Expo Workflows
+description: Faça o build de um app Expo com o Expo Build e rode testes de iOS e Android nele em um workflow do Expo.
+"og:image": "https://e2e.com/docs/images/og/ci/eas-workflows.png?v=cd6a51d2ed"
+"twitter:image": "https://e2e.com/docs/images/og/ci/eas-workflows.png?v=cd6a51d2ed"
+---
+
+import { SetupPrompt } from '../../snippets/setup-prompt-card.jsx';
+
+export const setupPrompt = `Adicione um workflow do Expo que faça o build deste app Expo e rode os testes do e2e dele no iOS e no Android. Documentação: \`https://e2e.com/docs/ci/eas-workflows.md\` e \`https://e2e.com/docs/ci.md\`
+
+1. Leia as duas páginas.
+2. Adicione o perfil de build \`e2e\` ao \`eas.json\`.
+3. Adicione \`.eas/workflows/e2e.yml\` e adapte-o aos alvos e à versão do Node deste projeto.
+4. Peça que eu adicione a chave do modelo como uma variável de ambiente secreta do Expo, e defina \`environment:\` em cada job de teste com o ambiente dessa variável.
+5. Depois que eu iniciar o workflow, leia os logs dos jobs e corrija os erros até os dois jobs passarem.`;
+
+Em um workflow do Expo, um job `build` gera o `.app` para simulador ou o
+`.apk`. Depois, um job personalizado baixa o build, faz o boot de um
+dispositivo e roda a suíte. Os jobs seguem as regras de
+[Jobs mobile](/ci#mobile-jobs).
+
+<Note>
+Esta página trata do Expo Workflows, o serviço de CI. Para rodar testes em
+simuladores e emuladores hospedados pelo Expo, veja
+[Expo Simulators](/integrations/eas).
+</Note>
+
+<SetupPrompt>
+
+<Prompt description={setupPrompt} children={setupPrompt} actions={["copy", "cursor"]} />
+
+</SetupPrompt>
+
+## Perfil de build
+
+Adicione um perfil de build que não precisa de credenciais:
+
+```json title="eas.json"
+{
+  "build": {
+    "e2e": {
+      "withoutCredentials": true,
+      "ios": { "simulator": true },
+      "android": { "buildType": "apk" }
+    }
+  }
+}
+```
+
+## Workflow
+
+O job Android precisa de um runner Linux `nested-virtualization`, a única
+máquina do Expo que consegue rodar o emulador. Use jobs personalizados, como
+abaixo. O tipo de job embutido `maestro` roda fluxos do Maestro, não o e2e.
+
+```yaml title=".eas/workflows/e2e.yml" expandable
+name: e2e
+
+on:
+  pull_request:
+    branches: ['*']
+  push:
+    branches: [main]
+
+defaults:
+  tools:
+    node: '24'
+
+jobs:
+  build_ios:
+    type: build
+    params:
+      platform: ios
+      profile: e2e
+
+  build_android:
+    type: build
+    params:
+      platform: android
+      profile: e2e
+
+  e2e_ios:
+    needs: [build_ios]
+    runs_on: macos-medium
+    environment: preview
+    env:
+      CI: '1'
+    steps:
+      - uses: eas/checkout
+      - uses: eas/install_node_modules
+      - uses: eas/download_build
+        id: download_build
+        with:
+          build_id: ${{ needs.build_ios.outputs.build_id }}
+          extensions: [app]
+      - name: Boot a simulator and install the app
+        run: |
+          UDID=$(xcrun simctl create e2e "iPhone 17" com.apple.CoreSimulator.SimRuntime.iOS-26-5)
+          xcrun simctl bootstatus "$UDID" -b
+          xcrun simctl install "$UDID" "${{ steps.download_build.outputs.artifact_path }}"
+      - name: Run e2e
+        run: npx e2e run --target ios --reporter list,junit
+      - uses: eas/upload_artifact
+        if: ${{ always() }}
+        with:
+          type: other
+          name: e2e-ios
+          path: .e2e
+
+  e2e_android:
+    needs: [build_android]
+    runs_on: linux-medium-nested-virtualization
+    environment: preview
+    env:
+      CI: '1'
+    steps:
+      - uses: eas/checkout
+      - uses: eas/install_node_modules
+      - uses: eas/download_build
+        id: download_build
+        with:
+          build_id: ${{ needs.build_android.outputs.build_id }}
+          extensions: [apk]
+      - uses: eas/start_android_emulator
+        with:
+          system_image_package: system-images;android-35;google_apis;x86_64
+      - name: Install the app
+        run: adb install -r "${{ steps.download_build.outputs.artifact_path }}"
+      - name: Run e2e
+        run: npx e2e run --target android --reporter list,junit
+      - uses: eas/upload_artifact
+        if: ${{ always() }}
+        with:
+          type: other
+          name: e2e-android
+          path: .e2e
+```
+
+`CI: '1'` ativa os [padrões da CI](/ci#what-ci-changes) em um runner que não
+define `CI`. `eas/start_android_emulator` é uma função do Expo Build,
+documentada em [builds personalizados](https://docs.expo.dev/custom-builds/schema/),
+não na página de sintaxe do Workflows. Ela usa o `sdkmanager` para baixar a
+imagem do sistema que você indicar.
+
+## Chave do modelo
+
+Guarde a chave do modelo, como `AI_GATEWAY_API_KEY`, em uma
+[variável de ambiente do Expo](https://docs.expo.dev/eas/environment-variables/)
+com visibilidade secreta. Defina `environment:` em cada job, porque um job
+personalizado lê `production` por padrão.
+
+Todo job que lê o ambiente consegue ler a chave, inclusive um que roda um pull
+request não confiável. Veja
+[Credenciais do modelo](/ci#model-credentials).
+
+## Faça o build com menos frequência
+
+Um job `fingerprint` com `get-build` e `repack` reaproveita o último build
+nativo e empacota só o JavaScript. O
+[template de Expo Workflows do agent-device](https://github.com/callstackincubator/eas-agent-device/blob/main/.eas/workflows/agent-qa-mobile.yml)
+faz isso nas duas plataformas.
+
+## Próximos passos
+
+<CardGroup cols={2}>
+  <Card title="Integração contínua" icon="rotate" href="/ci">
+    Padrões da CI, sharding, reexecuções e códigos de saída.
+  </Card>
+  <Card title="Expo Simulators" icon="/images/integrations/expo.svg" href="/integrations/eas">
+    Rode a suíte em dispositivos hospedados pelo Expo, sem Mac nem SDK do Android.
+  </Card>
+</CardGroup>

@@ -1,0 +1,139 @@
+---
+title: Norrix
+description: Faça o build de um app NativeScript com o Norrix e rode a suíte e2e do app em um simulador ou emulador do Norrix.
+---
+
+import { SetupPrompt } from '../../snippets/setup-prompt-card.jsx';
+
+export const setupPrompt = `Adicione uma suíte e2e a este app NativeScript e rode-a no Norrix. Documentação: \`https://e2e.com/docs/ci/norrix.md\` e \`https://e2e.com/docs/mobile.md\`
+
+1. Leia as duas páginas.
+2. Crie \`e2e/\` com o próprio \`package.json\`, \`e2e.config.ts\` e um primeiro teste. Defina \`bundleId\` como o id que está em \`nativescript.config.ts\`.
+3. Adicione um \`testID\` a cada elemento que o teste verifica.
+4. Peça que eu guarde a chave do modelo com \`norrix env set\`, com escopo neste projeto.
+5. Peça que eu rode \`norrix build ios debug --simulator\` e avise você quando ele terminar com sucesso. Depois rode \`norrix test ios --runner e2e --wait\` e corrija os erros até a suíte passar.`;
+
+O [Norrix](https://norrix.net) faz o build de apps NativeScript na nuvem.
+`norrix test` roda uma suíte e2e contra um build para simulador ou emulador
+em uma máquina do Norrix. O Norrix instala as dependências da suíte,
+instala o build em um dispositivo inicializado e roda `e2e run` para os
+alvos da plataforma do build. Testes E2E exigem uma organização Norrix
+Enterprise.
+
+<Note>
+O guia [E2E Testing](https://docs.norrix.net/guides/e2e-testing/) do
+Norrix leva um app NativeScript de nenhum teste a uma suíte que roda
+localmente, no Norrix e na CI. A
+[referência do `norrix test`](https://docs.norrix.net/cli/test/) lista todas
+as flags.
+</Note>
+
+<SetupPrompt>
+
+<Prompt description={setupPrompt} children={setupPrompt} actions={["copy", "cursor"]} />
+
+</SetupPrompt>
+
+## Suíte
+
+Mantenha a suíte em um diretório próprio, geralmente `e2e/`, com o próprio
+`package.json` e `e2e.config.ts`. O Norrix a instala sem as dependências do
+seu app:
+
+```text
+my-app/
+├── app/
+├── nativescript.config.ts
+└── e2e/
+    ├── package.json      # e2e, @e2e-dev/mobile, ai, and your provider package if not the gateway
+    ├── e2e.config.ts
+    └── tests/
+```
+
+```ts title="e2e/e2e.config.ts"
+import type { E2EConfig } from 'e2e';
+import { gateway } from 'ai';
+import { mobile } from '@e2e-dev/mobile';
+
+export default {
+  agents: { default: { model: gateway('openai/gpt-6-luna-fast') } },
+  targets: [
+    { name: 'ios', engine: mobile({ platform: 'ios' }), app: { bundleId: 'org.example.myapp' } },
+    { name: 'android', engine: mobile({ platform: 'android' }), app: { bundleId: 'org.example.myapp' } },
+  ],
+  workers: 1,
+} satisfies E2EConfig;
+```
+
+- O Norrix define o `app.appPath` de cada alvo como o build dele. Deixe
+  `device` fora de `mobile()` para usar o simulador ou emulador que o Norrix
+  inicializou.
+- Dê um `testID` aos elementos que os seus testes verificam e encontre-os
+  com `getByTestId`. Veja
+  [Test ids por framework](/mobile#test-ids-by-framework).
+- O Norrix mantém o [cache de replay](/cache) entre execuções, por
+  organização, projeto e plataforma, e escreve nele, embora o padrão da CI
+  seja somente leitura. Uma configuração com `cache: 'off'` ou um `store`
+  personalizado mantém a própria configuração de cache.
+
+## Rode no Norrix
+
+No diretório do app, faça o build para um simulador:
+
+```bash
+norrix build ios debug --simulator
+```
+
+`norrix build` retorna assim que o build começa. Espere até
+`norrix build-status <id>` informar `success` e depois rode a suíte:
+
+```bash
+norrix test ios --runner e2e --wait
+```
+
+Para Android, faça o build com `norrix build android debug --emulator` e
+rode `norrix test android --runner e2e --wait`. `--wait` sai com código
+diferente de zero quando a execução falha, é cancelada ou esgota o tempo
+limite.
+
+| Flag | O que faz |
+| --- | --- |
+| `--suite-dir <path>` | O diretório da suíte, quando não é `.` nem `./e2e` |
+| `--target <name>` | Um alvo do `e2e.config.ts`. Padrão: todos os alvos da plataforma do build |
+| `--tests`, `--grep`, `--tag` | Roda alguns arquivos de teste, os testes cujo título corresponde ou os testes com uma tag |
+| `--junit-output <dir>` | Baixa o `junit.xml` para o diretório. Implica `--wait` |
+| `--build <id>`, `-n` | Testa um build sem prompts interativos, para a CI |
+
+O **View Report** do dashboard mostra o relatório e um vídeo de cada
+tentativa que falhou. Para um workflow do GitHub Actions que espera o
+build, veja [Run in CI](https://docs.norrix.net/guides/e2e-testing/#run-in-ci)
+no guia do Norrix.
+
+## Chave do modelo
+
+Guarde a chave do seu provedor, como `AI_GATEWAY_API_KEY`, como uma
+variável de ambiente do Norrix. Testes que nunca usam `agent` não precisam
+de nenhuma:
+
+```bash
+norrix env set AI_GATEWAY_API_KEY "$AI_GATEWAY_API_KEY" --project my-app
+```
+
+Toda suíte que roda no escopo de uma variável pode lê-la, e sem
+`--project` isso inclui toda suíte que a organização roda. Rode ali só
+código em que você confia. Veja [Credenciais do modelo](/ci#model-credentials).
+
+As variáveis de ambiente do Norrix também preenchem os
+[segredos e credenciais](/authentication) da configuração, por meio de
+`E2E_SECRET_<NAME>` e `E2E_USER_<NAME>_PASSWORD`.
+
+## Próximos passos
+
+<CardGroup cols={2}>
+  <Card title="Mobile" icon="mobile-screen" href="/mobile">
+    Escreva testes de dispositivo e defina test ids em cada framework de UI.
+  </Card>
+  <Card title="Integração contínua" icon="rotate" href="/ci">
+    Padrões da CI, sharding, reexecuções e códigos de saída.
+  </Card>
+</CardGroup>

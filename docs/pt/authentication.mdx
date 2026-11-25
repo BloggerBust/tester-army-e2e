@@ -5,11 +5,19 @@ description: Faça login uma vez, reutilize a sessão entre os testes e passe se
 "twitter:image": "https://e2e.com/docs/images/og/authentication.png?v=6e061842b8"
 ---
 
+import { Video } from '../snippets/video.jsx';
+
 Um teste de preparação faz login uma vez e salva uma sessão nomeada. Outros
 testes restauram essa sessão e já começam autenticados. Senhas e outros
 segredos são referências: o runner digita o valor e mostra `<secret:name>` no
 lugar dele na entrada do modelo e nos relatórios, com
 [algumas limitações](/reference/security#where-redaction-stops).
+
+<Video>
+  <video src="/images/authentication.mp4" aria-label="A configuração declara credenciais de admin, um teste de preparação faz login e salva a sessão admin, e uma execução com interface visível abre a página de clientes já autenticada. 15 testes passam em 12 segundos." muted loop playsInline controls />
+
+  Um teste de preparação faz login. Todo teste que indica `session: 'admin'` já começa autenticado.
+</Video>
 
 <a id="sign-in-once-in-a-setup-test" />
 

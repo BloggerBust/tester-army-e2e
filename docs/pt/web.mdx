@@ -19,7 +19,8 @@ app: { url: process.env.APP_URL ?? 'http://localhost:3000' },
 ```
 
 Uma URL sem esquema usa HTTPS, ou HTTP para um host de loopback. HTTP simples
-funciona apenas em um host de loopback.
+funciona apenas em um host de loopback. Uma URL `file:` abre
+[um arquivo do disco](/reference/config#a-file-as-the-app), sem servidor.
 
 ### Deixe o runner iniciá-lo
 

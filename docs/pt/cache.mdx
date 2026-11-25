@@ -222,6 +222,16 @@ gravação acompanha o app até um deploy de preview que compartilha o
   do mesmo tipo dentro da mesma linha, item de lista ou grupo com nome. Um
   controle conhecido só por um test id gerado é encontrado pelo padrão do id
   da mesma forma, ou quando era o único com esse padrão.
+- Um controle cujo test id mudou é encontrado pelo papel e pelo nome, a
+  menos que outro controle os compartilhasse quando o passo foi gravado.
+  Nesse caso, o que sobrou poderia ser o outro, e o replay é interrompido.
+  Um passo gravado por um test id único antes dessa regra é reproduzido como
+  antes até ser gravado de novo. Uma ação feita a partir da mesma observação
+  que uma ação anterior do passo, a qual pode ter mudado os gêmeos, também
+  volta a ser reproduzida como antes quando for gravada com essa regra; uma
+  gravação feita antes dessa regra passa o replay para o agente uma vez, ou
+  falha com `REPLAY_STALE` no modo `--strict-cache`, até o passo ser gravado
+  de novo.
 </Accordion>
 
 ## Por que um passo não foi reproduzido
@@ -252,7 +262,7 @@ resultado já aparecia antes de o replay agir.
 | `truncated` | A gravação atingiu um limite, veja [abaixo](#limits-and-gaps). | Divida o passo, ou passe o segredo como um `Secret`. |
 | `wrong-context` | O app estava em uma rota diferente da que tinha quando o passo foi gravado. Veja [Como um replay funciona](#how-a-replay-works). | Abra a mesma tela antes do passo. |
 | `target-not-found` | Um controle gravado não apareceu em 15 segundos, ou ele não tem nome nem um contêiner com nome que o diferencie dos gêmeos dele. | A UI mudou: a próxima execução que passar o grava de novo. Para um controle sem nome, dê a ele um rótulo ou coloque-o em uma linha ou grupo com nome. |
-| `target-ambiguous` | O número de controles correspondentes mudou. | Dê nomes distintos aos controles repetidos ou use dados de teste únicos. |
+| `target-ambiguous` | O número de controles correspondentes mudou, ou o controle que o passo usou sumiu e sobrou um gêmeo com o mesmo papel e nome. Quando há menos controles do que os gravados, mesmo que seja um só gêmeo, o replay os procura por até 15 segundos antes, já que um formulário ainda pode estar sendo renderizado; quando a contagem volta, ele usa o controle na posição gravada. Com dois ou mais onde o passo viu um, o replay é interrompido na hora. | Dê nomes distintos aos controles repetidos ou use dados de teste únicos. |
 | `gap` | Uma ação não pode ser reproduzida, veja [abaixo](#limits-and-gaps). | O agente faz essa parte ao vivo. Coloque valores estáveis em `params`. |
 | `action-failed` | O app rejeitou uma ação reproduzida. | Verifique o app. |
 | `action-uncertain` | Uma ação reproduzida falhou, e não se sabe se ela teve efeito. O agente é instruído a verificar antes de agir de novo. | Verifique o app. |
