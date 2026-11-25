@@ -1,0 +1,351 @@
+---
+title: इंजन प्रोटोकॉल
+description: किसी इंजन को दूसरी प्रोसेस, दूसरी मशीन, या दूसरी भाषा में चलाएँ।
+---
+
+इंजन प्रोटोकॉल [इंजन कॉन्ट्रैक्ट](/reference/engine) को JSON-RPC मैसेज के रूप
+में दिखाता है। रनर हर इंजन को इसी के ज़रिए चलाता है। किसी इंजन को दूसरी प्रोसेस,
+मशीन, या भाषा में चलाने के लिए [इंजन सर्वर](/engine-servers) देखें।
+
+```ts title="e2e.config.ts"
+import type { E2EConfig } from 'e2e';
+import { connectEngine, spawnTransport } from 'e2e/engine';
+
+export default {
+  targets: [
+    {
+      name: 'kiosk',
+      engine: connectEngine({
+        manifest: { name: 'kiosk', version: '1.0.0', spiVersion: 1, platform: 'kiosk', methods: ['engine/observe'] },
+        transport: spawnTransport({ command: './kiosk-engine' }),
+        resolveLocators: true,
+      }),
+    },
+  ],
+} satisfies E2EConfig;
+```
+
+## रेफ़रेंस
+
+| फ़ंक्शन | रिटर्न |
+| --- | --- |
+| [`connectEngine`](#connectengine) | `EngineHandle` |
+| [`serveEngine`](#serveengine) | `Promise<void>` |
+| [`describeEngine`](#describeengine) | `EngineManifest` |
+| [`spawnTransport`](#spawntransport) | `EngineTransport` |
+| [`socketTransport`](#sockettransport) | `EngineTransport` |
+| [`loopbackTransport`](#loopbacktransport) | `EngineTransport` |
+
+### `connectEngine`
+
+इंजन सर्वर को इंजन हैंडल में बदलता है, जो टारगेट के `engine` में पास होता है।
+
+```ts
+export function connectEngine(options: ConnectEngineOptions): EngineHandle;
+
+export interface ConnectEngineOptions {
+  /** What the server is; the server's manifest from `initialize` must match it. */
+  readonly manifest: EngineManifest;
+  /** How to reach the server. */
+  readonly transport: EngineTransport;
+  /** Engine options the server receives in `initialize`, as JSON. */
+  readonly initializationOptions?: JsonValue;
+  /** The `secrets.get()` handles the server may resolve. */
+  readonly secrets?: readonly Secret[];
+  /** Fixtures that run on the client, beside the test. */
+  readonly fixtures?: Engine['fixtures'];
+  /** Checks the target's app at config load, on the client. */
+  readonly validateApp?: Engine['validateApp'];
+  /** Answers locators on the client from observations, for a server without `engine/locate`. */
+  readonly resolveLocators?: boolean;
+  /** Session hooks the client answers instead of the server. */
+  readonly session?: EngineSession;
+}
+```
+
+रनर कोई भी सर्वर चलने से पहले कॉन्फ़िग लोड पर मैनिफ़ेस्ट पढ़ता है। जिस सर्वर का
+मैनिफ़ेस्ट इससे अलग हो, उसका पहला कनेक्शन फ़ेल हो जाता है।
+
+हैंडल वहीं अपने कनेक्शन खोलता है जहाँ हार्नेस इंजन को कॉल करता है। रनर में हर
+टारगेट के लिए एक कनेक्शन `prepare` से `finish` तक रहता है, और तभी खुलता है जब
+सर्वर `lifecycle/prepare` या `lifecycle/finish` का जवाब दे। हर वर्कर में एक
+कनेक्शन `init` से `dispose` तक रहता है। `e2e doctor` सिर्फ़ `lifecycle/doctor`
+के लिए हर टारगेट पर एक `doctor` कनेक्शन खोलता है और उसके बाद बंद कर देता है।
+ट्रांसपोर्ट इसके लिए सर्वर शुरू कर सकता है, जैसे `spawnTransport` करता है, लेकिन
+उसे कोई मशीन प्रोविज़न नहीं करनी चाहिए, न डिवाइस लीज़ करना चाहिए, न ऐप इंस्टॉल
+करना चाहिए। doctor सिग्नल पर कनेक्शन बंद होने से पहले सर्वर को जवाब देने के लिए
+5 सेकंड मिलते हैं। `init`..`dispose` के बाहर कोई ऑपरेशन कॉल `INVALID_STATE` से
+फ़ेल होती है। जिस वर्कर ने कभी `init` नहीं चलाया उसका कोई कनेक्शन नहीं होता,
+इसलिए सर्वर को उसके लिए `lifecycle/dispose` नहीं मिलता। दो कनेक्शन स्टेट शेयर
+करेंगे या नहीं, यह सर्वर की पसंद है: स्पॉन हुए सर्वर को हर कनेक्शन के लिए अलग
+प्रोसेस मिलती है, और लूपबैक या सॉकेट सर्वर सबको एक ही इंजन से सर्व कर सकता है।
+
+`resolveLocators` के साथ हर `locate` ऑब्ज़र्व करता है और
+[`resolveExpression`](/reference/engine#resolveexpression) से एक्सप्रेशन
+रिज़ॉल्व करता है। `fixtures`, `validateApp`, `secrets`, और `session` हुक क्लाइंट
+पर चलते हैं; `session` हुक सर्वर के उसी नाम वाले मेथड की जगह लेता है।
+[होस्ट का काम क्लाइंट पर रखें](/engine-servers#keep-host-work-on-the-client)
+देखें।
+
+<Warning>
+`lifecycle/prepare`, `lifecycle/init`, `lifecycle/finish`, और `lifecycle/doctor`
+में रन का एनवायरनमेंट जाता है, मॉडल key और `E2E_SECRET_*` वैल्यू समेत, और
+`attempt/resolveSecret` प्लेनटेक्स्ट में जवाब देता है। सिर्फ़ उसी सर्वर से
+कनेक्ट करें जिस पर आप भरोसा करते हैं: `socketTransport` एन्क्रिप्ट नहीं करता।
+</Warning>
+
+| क्या थ्रो होता है | कब |
+| --- | --- |
+| `INVALID_CONFIG` | मैनिफ़ेस्ट गलत है: अनजान मेथड, कोई मेथड दो बार लिस्टेड, या ऐसे मेंबर जिन्हें `defineEngine` मना करता है, जैसे `keyboard/press` के बिना `keyboard/type`, `actions` के बिना `engine/perform`, या `engine/observe` के बिना `engine/perform`। |
+| `ENGINE_FAILURE` | सर्वर का मैनिफ़ेस्ट अलग है, या कॉल के बीच कनेक्शन बंद हो गया। मैसेज में ट्रांसपोर्ट के डायग्नोस्टिक्स होते हैं, जैसे सर्वर की आखिरी stderr लाइनें। |
+
+### `serveEngine`
+
+`defineEngine` से बने इंजन को एक कनेक्शन पर सर्व करता है, जब तक क्लाइंट `exit` न
+भेजे या स्ट्रीम बंद न हो जाएँ।
+
+```ts
+export function serveEngine(
+  engine: EngineHandle | ((initializationOptions: unknown) => EngineHandle | Promise<EngineHandle>),
+  streams?: MessageStreams, // default: process.stdin and process.stdout
+): Promise<void>;
+```
+
+सर्वर की अपनी लॉगिंग stderr पर रखें: stdout पर प्रोटोकॉल चलता है।
+[TypeScript इंजन सर्व करें](/engine-servers#serve-a-typescript-engine) देखें।
+
+### `describeEngine`
+
+वह मैनिफ़ेस्ट लौटाता है जिसे `serveEngine` किसी इंजन हैंडल के लिए अनाउंस करता
+है: उसके स्टैटिक मेंबर, वे मेथड जिनका उसके डिक्लेयर्ड मेंबर जवाब देते हैं, और
+`lifecycle/startAttempt` और `lifecycle/endAttempt`, जिनका `serveEngine` हमेशा
+जवाब देता है। कहीं और सर्व होने वाले TypeScript इंजन का मैनिफ़ेस्ट डिक्लेयर
+करने के लिए इसे इस्तेमाल करें।
+
+```ts
+export function describeEngine(engine: EngineHandle): EngineManifest;
+```
+
+### `spawnTransport`
+
+हर कनेक्शन के लिए सर्वर को चाइल्ड प्रोसेस की तरह शुरू करता है और उसके stdin व
+stdout से बात करता है, जैसे कोई एडिटर लैंग्वेज सर्वर शुरू करता है।
+
+```ts
+export function spawnTransport(options: {
+  readonly command: string;
+  readonly args?: readonly string[];
+  /** Added to the worker's environment. */
+  readonly env?: Readonly<Record<string, string>>;
+  readonly cwd?: string; // default: the project root
+}): EngineTransport;
+```
+
+कनेक्शन बंद करने पर stdin बंद होता है, `SIGTERM` जाता है, और क्लीनअप बजट खत्म
+होने पर `SIGKILL`। जब सर्वर का stdout बंद हो जाए, तो सर्वर के बाहर निकलने और
+उसका stderr बंद होने पर, या 2 सेकंड बाद, कनेक्शन बंद हो जाता है। एरर बताता है कि
+ट्रांसपोर्ट ने तब तक क्या देखा: एग्ज़िट कोड या सिग्नल, और आखिरी stderr लाइनें।
+
+### `socketTransport`
+
+इस मशीन या किसी दूसरी मशीन पर TCP पोर्ट पर पहले से सुन रहे सर्वर से कनेक्ट करता
+है। कनेक्शन बंद करने पर सॉकेट बंद होता है; सर्वर चलता रहता है।
+
+```ts
+export function socketTransport(options: { readonly host: string; readonly port: number }): EngineTransport;
+```
+
+### `loopbackTransport`
+
+इसी प्रोसेस में इन-मेमोरी स्ट्रीम पर इंजन सर्व करता है। हर कॉल तब भी प्रोटोकॉल
+से होकर गुज़रती है और किसी भी दूसरे ट्रांसपोर्ट की तरह सीरियलाइज़ होती है।
+
+```ts
+export function loopbackTransport(engine: EngineHandle): EngineTransport;
+```
+
+## मैसेज
+
+बेस प्रोटोकॉल
+[Language Server Protocol](https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#baseProtocol)
+वाला है: UTF-8 में JSON-RPC 2.0 मैसेज, हर एक के पहले `Content-Length` हेडर और
+एक खाली लाइन। दोनों तरफ़ से रिक्वेस्ट और नोटिफ़िकेशन भेजे जा सकते हैं।
+
+### लाइफ़साइकिल
+
+कनेक्शन LSP कनेक्शन की तरह ही खुलता और बंद होता है।
+
+| मैसेज | दिशा | पैराम | नतीजा |
+| --- | --- | --- | --- |
+| `initialize` | रिक्वेस्ट, क्लाइंट से सर्वर | `{ protocolVersion: 1, clientInfo, role, initializationOptions? }` | `{ protocolVersion: 1, manifest }` |
+| `initialized` | नोटिफ़िकेशन, क्लाइंट से सर्वर | `{}` | - |
+| `shutdown` | रिक्वेस्ट, क्लाइंट से सर्वर | - | `null` |
+| `exit` | नोटिफ़िकेशन, क्लाइंट से सर्वर | - | - |
+
+दोनों पक्ष `1` के अलावा कोई भी `protocolVersion` मना कर देते हैं। `shutdown` के
+बाद यह अपने सिग्नल वैसे ही छोड़ देता है। जब कनेक्शन `shutdown` के बिना बंद हो,
+तो वह अपने सारे सिग्नल अबॉर्ट कर देता है।
+
+### मैनिफ़ेस्ट
+
+इसका JSON Schema `e2e` पैकेज में `schema/engine-manifest-v1.schema.json` के रूप
+में आता है।
+
+```ts
+export interface EngineManifest {
+  readonly name: string;
+  readonly version: string;
+  readonly spiVersion: 1;
+  readonly platform?: string;
+  readonly workers?: number;
+  /** The engine methods the server answers; one left out is a capability the engine lacks. */
+  readonly methods: readonly EngineMethod[];
+  /** Required with `engine/perform`. */
+  readonly actions?: readonly LocatorActionKind[];
+  /** Required with `engine/performAt`. */
+  readonly pointerActions?: readonly PointerActionKind[];
+  readonly tapModifiers?: boolean;
+  /** Requires `lifecycle/prepare`: `prepare` binds the device `e2e run --device` names. */
+  readonly selectsDevice?: boolean;
+  /** The engine reads the object form of `app.launchArguments` from `EngineAppInfo.launchArgumentValues`. */
+  readonly launchArgumentValues?: boolean;
+  /** The engine opens an app whose `url` is a `file:` URL, read from the disk of the machine the harness runs on. */
+  readonly fileApps?: boolean;
+  /** See `Engine.isolation`; left out for `attempt`. */
+  readonly isolation?: 'worker';
+}
+```
+
+### इंजन मेथड
+
+हर मेथड इंजन का एक मेंबर है, जो क्लाइंट से सर्वर की रिक्वेस्ट होती है। इसके
+पैराम मेंबर के आर्ग्युमेंट के नाम से होते हैं, और हर `OperationContext`
+`operation` के नाम से जाता है। `ENGINE_METHODS` इनकी लिस्ट देता है।
+
+| मेथड | पैराम | नतीजा |
+| --- | --- | --- |
+| `engine/observe` | `{ operation, options? }` | `EngineSnapshot` |
+| `engine/readStyle` | `{ ref, properties, operation }` | `ComputedStyleValues` |
+| `engine/viewportIntersection` | `{ ref, operation }` | `ViewportIntersection`; जब प्लेटफ़ॉर्म इसे माप न सके तो `ratio` छोड़ दें, कभी `null` न भेजें |
+| `engine/locate` | `{ expression, operation }` | `SemanticNode[]` |
+| `engine/perform` | `{ ref, action, operation }` | `null` |
+| `engine/performAt` | `{ point, action, operation }` | `null` |
+| `keyboard/type` | `{ text, options: { replace }, operation }` | `null` |
+| `keyboard/press` | `{ key, operation }` | `null` |
+| `keyboard/dismiss` | `{ operation }` | `null` |
+| `state/capture` | `{ operation }` | `EngineState` |
+| `state/restore` | `{ state, operation }` | `null` |
+| `artifacts/screenshot` | `{ label?, operation }` | `{ path }` या `{ data, mediaType }` |
+| `artifacts/startVideo` | `{ operation }` | `null` |
+| `artifacts/stopVideo` | `{ operation }` | `VideoSegment[]` |
+| `session/open` | `{ url, operation }` | `null` |
+| `session/openLink` | `{ url, operation }` | `null` |
+| `session/back`, `session/restart`, `session/reset` | `{ operation }` | `null` |
+| `session/resize` | `{ size: { width, height }, operation }` | `null` |
+| `session/switchTab` | `{ index, operation }` | `null` |
+| `session/closeTab` | `{ index, operation }` | `null` |
+| `lifecycle/prepare` | `log` के बिना `EnginePrepareInfo` | `EnginePrepareResult` या `null` |
+| `lifecycle/finish` | `log` के बिना `EngineFinishInfo` | `null` |
+| `lifecycle/doctor` | `log` के बिना `EngineDoctorInfo` | `EngineDoctorCheck[]` |
+| `lifecycle/init` | `log` के बिना `EngineInitInfo` | `null` |
+| `lifecycle/startAttempt` | `{ attemptId, artifactsDir, signal, screens }` | `null` |
+| `lifecycle/settleAttempt`, `lifecycle/endAttempt` | `{ signal, timeoutMs }` | `null` |
+| `lifecycle/dispose` | `{ signal, timeoutMs, reuseSignal? }` | `null` |
+
+जब सर्वर अटेम्प्ट की आर्टिफ़ैक्ट डायरेक्टरी में लिख न सके (जैसे डिवाइस पर चल रहा
+सर्वर), तब `artifacts/screenshot` `{ data, mediaType: 'image/png' }` लौटाता है,
+जहाँ इमेज base64 में होती है। क्लाइंट इसे `screenshots/` के अंदर लिख देता है।
+ऑब्ज़र्वेशन के पिक्सल भी इसी तरह जाते हैं: `pixels.data` base64 होता है।
+`engine/perform` में फ़ाइल पेलोड बफ़र भी base64 की तरह जाते हैं; इंजन को वे
+`Uint8Array` बाइट्स के रूप में मिलते हैं।
+
+`lifecycle/startAttempt` में `screens` बताता है कि अटेम्प्ट ट्रेस रख रहा है या
+नहीं, और सर्वर `attempt/screen` तभी भेज सकता है।
+
+### सर्वर से क्लाइंट
+
+इंजन हार्नेस को जो कॉलबैक भेजता है, वह सर्वर-से-क्लाइंट मैसेज के रूप में जाता
+है। हर `attempt/*` मैसेज में उसका `attemptId` होता है; जो अटेम्प्ट पहले ही खत्म
+हो चुका हो, क्लाइंट उसका मैसेज छोड़ देता है।
+
+| मैसेज | प्रकार | पैराम |
+| --- | --- | --- |
+| `engine/log` | नोटिफ़िकेशन | `{ line }`, `prepare`, `init`, या `finish` से |
+| `attempt/appLog` | नोटिफ़िकेशन | `{ attemptId, entry }` |
+| `attempt/navigation` | नोटिफ़िकेशन | `{ attemptId, line }` |
+| `attempt/environment` | नोटिफ़िकेशन | `{ attemptId, facts }` |
+| `attempt/screen` | नोटिफ़िकेशन | `{ attemptId, snapshot }` |
+| `attempt/resolveSecret` | रिक्वेस्ट | `{ attemptId, name, derivation? }`, नतीजा `{ value }` |
+
+`derivation` होने पर, जवाब देने से पहले क्लाइंट `attempt/deriveSecret`
+`{ derivation, plaintext }` से वापस पूछता है। सर्वर `{ values }` लौटाता है, यानी
+वे रूप जो इंजन उस वैल्यू से निकालता है (जैसे बेसिक-ऑथ हेडर), और क्लाइंट उन्हें
+सीक्रेट के नाम के तहत छिपा देता है।
+
+### सिग्नल
+
+`AbortSignal` वायर पर `{ id, aborted?, reason? }` के रूप में जाता है। क्लाइंट हर
+सिग्नल के लिए एक id बनाता है और अबॉर्ट होने पर `{ id, reason? }` के साथ
+`$/abort` भेजता है। भेजते वक्त पहले से अबॉर्ट सिग्नल में `aborted: true` होता
+है। जब हार्नेस अपने किसी एरर (जैसे टेस्ट टाइमआउट) से अबॉर्ट करता है, तो `reason`
+अबॉर्ट कारण को JSON-RPC एरर ऑब्जेक्ट के रूप में रखता है, ठीक फ़ेल हुए मेथड के
+[एरर](#errors) की तरह एनकोड किया हुआ। सर्वर उसी एरर से अपना सिग्नल अबॉर्ट करता
+है, इसलिए जो इंजन `signal.reason` को रीथ्रो करे वह वही उठाता है जो इन-प्रोसेस में
+उठाता। `reason` के बिना सिग्नल प्लेटफ़ॉर्म के `AbortError` से अबॉर्ट होता है।
+सिग्नल अबॉर्ट होते ही सर्वर उसका id भूल जाता है, और `lifecycle/endAttempt` सेटल
+होने पर अटेम्प्ट के दौरान पहली बार देखे गए हर id को भूल जाता है। उसके बाद वही id
+फिर भेजा जाए तो वह नया सिग्नल माना जाता है।
+
+### एरर
+
+फ़ेल हुआ इंजन मेथड JSON-RPC एरर कोड `-32000` और `data` में e2e एरर के साथ जवाब
+देता है, ताकि हार्नेस रिमोट फ़ेलियर को ठीक लोकल फ़ेलियर की तरह कैटेगरी वाले करे:
+
+| `data` | इंजन ने क्या थ्रो किया |
+| --- | --- |
+| `{ type: 'engine', code, retryable }` | एक [`EngineError`](/reference/engine#engineerror)। सिर्फ़ `NODE_STALE` और `FRAME_NOT_FOUND` रीट्राई करने लायक हो सकते हैं। |
+| `{ type: 'e2e', category, code, retryable, details? }` | एक रनर एरर, जैसे `TestError` या `ConfigurationError`। |
+
+कोई भी दूसरा एरर कोड सिर्फ़ मैसेज रखता है। हार्नेस उसे इन्फ़्रास्ट्रक्चर फ़ेलियर
+मानता है, जैसे लोकल इंजन से आने वाले सादे `Error` को। हर एरर के `data` में
+`stack`, `errno` (Node एरर कोड जैसे `ECONNREFUSED`), और इसी शेप का `cause` एरर
+ऑब्जेक्ट भी हो सकता है, ताकि रिपोर्ट दिखाए कि इंजन कहाँ फ़ेल हुआ।
+
+## टाइप
+
+ट्रांसपोर्ट एक कनेक्शन की बाइट स्ट्रीम खोलता है।
+[ट्रांसपोर्ट लिखें](/engine-servers#write-a-transport) देखें।
+
+```ts
+export interface EngineTransport {
+  /** For error messages: the command, or the address. */
+  readonly label: string;
+  open(context: TransportContext): Promise<TransportConnection>;
+}
+
+export interface TransportContext {
+  readonly role: 'run' | 'worker' | 'doctor';
+  readonly env: Readonly<Record<string, string | undefined>>;
+  /** The project root. */
+  readonly cwd: string;
+  readonly signal: AbortSignal;
+  /** The target's app, from `prepare`, `init`, or `doctor`: what a transport installs, since a server elsewhere cannot read the project's files. */
+  readonly app?: EngineAppInfo;
+}
+
+export interface TransportConnection {
+  readonly input: Readable;
+  readonly output: Writable;
+  /** Releases the process or socket, within `timeoutMs`. */
+  close(timeoutMs: number): Promise<void>;
+  /** What went wrong, for an error message. */
+  diagnostics?(): string;
+}
+```
+
+## संबंधित
+
+[इंजन](/engines) इंजन बनाने के तरीकों की तुलना करता है।
+[`e2e/engine`](/reference/engine) वह कॉन्ट्रैक्ट है जिसे हर मैसेज लेकर चलता है।
+[इंजन सर्वर](/engine-servers) और [इंजन लिखें](/writing-an-engine) इसे बनाने की
+पूरी प्रक्रिया बताते हैं।

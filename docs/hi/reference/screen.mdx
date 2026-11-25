@@ -1,0 +1,1542 @@
+---
+title: screen और Locator
+description: क्वेरी, रिफ़ाइनमेंट, एक्शन, और रीड।
+"og:image": "https://e2e.com/docs/images/og/reference/screen.png?v=1b21c45d37"
+"twitter:image": "https://e2e.com/docs/images/og/reference/screen.png?v=1b21c45d37"
+---
+
+`screen` फ़िक्स्चर लोकेटर बनाता है। `Locator` एक क्वेरी स्टोर करता है और जब कोई
+एक्शन, रीड, या असर्शन चलता है तब उसे रिज़ॉल्व करता है। हर क्वेरी लोकेटर पर भी
+चलती है, उसके सबट्री तक सीमित रहकर।
+
+```ts title="tests/invoices.e2e.ts"
+import { expect, test } from 'e2e';
+
+test('void an invoice', async ({ app, screen }) => {
+  await app.open('/invoices');
+  const row = screen.getByRole('listitem').filter({ hasText: 'Invoice 42' });
+  await row.getByRole('button', 'Void').tap();
+  await expect(row.getByText('Voided')).toBeVisible();
+});
+```
+
+## रेफ़रेंस
+
+### क्वेरी
+
+| मेथड | रिटर्न |
+| --- | --- |
+| [`getByRole`](#getbyrole) | `Locator` |
+| [`getByLabel`](#getbylabel) | `Locator` |
+| [`getByPlaceholder`](#getbyplaceholder) | `Locator` |
+| [`getByText`](#getbytext) | `Locator` |
+| [`getByDisplayValue`](#getbydisplayvalue) | `Locator` |
+| [`getByTestId`](#getbytestid) | `Locator` |
+
+हर क्वेरी सिंक्रोनस तरीके से एक `Locator` लौटाती है और खुद कोई काम नहीं करती।
+जिस ऑप्शन key को क्वेरी नहीं लेती (`{ nam: 'Save' }`), वह मान्य key के नाम
+बताते हुए `INVALID_LOCATOR` थ्रो करती है।
+
+`getByRole` के नाम के रूप में, या `getByLabel`, `getByPlaceholder`, `getByText`,
+या `getByDisplayValue` में पास की गई स्ट्रिंग व्हाइटस्पेस नॉर्मलाइज़ेशन के बाद
+पूरे टेक्स्ट से केस-सेंसिटिव मैच करती है: `getByRole('button', 'Save')`
+`Save changes` से मैच नहीं होता। `{ exact: false }` इसे केस-इनसेंसिटिव सबस्ट्रिंग मैच
+बना देता है, और `RegExp` जैसा लिखा है वैसा मैच करता है।
+
+हर क्वेरी `visible: true` स्वीकार करती है; [छिपे डुप्लिकेट](#hidden-duplicates)
+देखें।
+
+#### `getByRole`
+
+नोड को [रोल](#types) से मैच करता है, और चाहें तो ऐक्सेसिबल नाम और स्टेट तक सीमित
+करता है।
+
+```ts
+/** Creates a lazy role query. An alias such as `img` is rewritten to its role. */
+getByRole(role: Role | RoleAlias, options?: RoleOptions): Locator;
+/** Creates a lazy role query narrowed to an accessible name: `getByRole('button', 'Sign in')`. */
+getByRole(role: Role | RoleAlias, name: TextMatch, options?: Omit<RoleOptions, 'name'>): Locator;
+```
+
+```ts
+screen.getByRole('button', 'Save');
+screen.getByRole('button', 'Save', { exact: false });
+screen.getByRole('button', { name: 'Save', disabled: true }); // the object form
+screen.getByRole('heading', /welcome/i, { level: 1 });
+```
+
+ऐक्सेसिबल नाम (स्ट्रिंग या `RegExp`) दूसरे स्थान पर आता है, और बाकी ऑप्शन उसके
+बाद। ऑब्जेक्ट रूप `{ name: 'Save' }` वही क्वेरी है। ऑप्शन [`RoleOptions`](#types)
+में हैं।
+
+<Note>
+रोल क्वेरी कभी उस नोड से मैच नहीं होती जो ऐक्सेसिबिलिटी ट्री से छिपा हो: जो
+रेंडर न हो, या `aria-hidden` के नीचे हो। बाकी क्वेरी प्रकारों पर `visible: true`
+सिर्फ़ रेंडर होने वाले नोड रखता है (वही जाँच जो `toBeVisible()` करता है), इसलिए
+जो `aria-hidden` नोड तब भी पेंट हो वह दिखने वाला गिना जाता है।
+[छिपे डुप्लिकेट](#hidden-duplicates) देखें।
+</Note>
+
+##### `img` उपनाम
+
+`img` एक उपनाम है, रोल नहीं ([`RoleAlias`](#types))। `getByRole('img', { name })`
+वही क्वेरी बनाता है जो `getByRole('image', { name })` बनाता है, ताकि Playwright
+से पोर्ट किया टेस्ट अपनी स्पेलिंग बनाए रखे। वेब पर `image` alt टेक्स्ट वाले
+`<img>` और `role="img"` वाले किसी भी एलिमेंट को कवर करता है। `<img alt="">`
+सजावट माना जाता है और कुछ मैच नहीं करता, जब तक उस पर `title`, `tabindex`, या
+कोई ग्लोबल ARIA ऐट्रिब्यूट न हो: तब वह `image` होता है।
+
+##### वेब पर रोल
+
+वेब इंजन HTML-AAM की तरह HTML से रोल निकालता है:
+
+- `<progress>` `progressbar` है, `<meter>` `meter`, `<hr>` `separator`।
+- `<fieldset>` और `<details>` `group` हैं।
+- `<input type="number">` `spinbutton` है। `<input type="file">` `button` है,
+  जैसे Chrome और Playwright इसे पढ़ते हैं।
+- `<select size="3">` `listbox` है, `multiple` वाले की तरह। `<datalist>` का नाम
+  लेने वाला `<input list>` `combobox` है।
+- `role="grid"` टेबल का `<td>` `gridcell` है।
+- `<thead>` और `<tbody>` `rowgroup` हैं।
+- `<th scope="row">` `rowheader` है। टेक्स्ट या चाइल्ड वाले डेटा सेल के बगल का
+  बिना-स्कोप वाला `<th>` भी `rowheader` होता है; सिर्फ़ हेडर वाली रो `columnheader`
+  बनी रहती हैं। एक-रो टेबल में अकेले बिना-स्कोप हेडर का कोई हेडर रोल नहीं होता,
+  लेकिन स्पष्ट `scope="col"` या `scope="colgroup"` `columnheader` बनाए रखता है।
+- `<figure>` `figure` है, `<article>` `article`।
+- `<header>` और `<footer>` सिर्फ़ सेक्शनिंग कंटेंट या सेक्शनिंग रोल वाले एलिमेंट
+  (`article`, `complementary`, `main`, `navigation`, `region`) के बाहर ही
+  `banner` और `contentinfo` होते हैं।
+- `<form>` और `<section>` तभी `form` और `region` होते हैं जब उन पर `aria-label`,
+  `aria-labelledby`, या `title` हो।
+- `<menu>` `list` है; सिर्फ़ `role="menu"` `menu` होता है।
+- फ़ोकसेबल एलिमेंट या `aria-label` जैसे ग्लोबल ARIA ऐट्रिब्यूट वाले एलिमेंट पर
+  `role="presentation"` और `role="none"` अनदेखे होते हैं, जैसा `getByRole` उन्हें
+  पढ़ता है: `<button role="none">` तब भी `button` है।
+
+नाम भी यही नियम मानते हैं:
+
+- `<legend>`, `<figcaption>`, या `<caption>` अपने फ़ील्डसेट, फ़िगर, या टेबल को
+  नाम देता है, इसलिए `toHaveAccessibleName` वही पढ़ता है जो
+  `getByRole('group', { name })` ने मैच किया।
+- जिस रोल को accname कंटेंट से नाम देता है (बटन, लिंक, हेडिंग, टैब, मेन्यू
+  आइटम, ऑप्शन, चेकबॉक्स, रेडियो, स्विच, सेल, रो या कॉलम हेडर, रो, ट्री आइटम,
+  टूलटिप), वह अपना नाम अपने डिसेंडेंट से लेता है, कस्टम एलिमेंट के शैडो ट्री
+  समेत। इसलिए `<div role="checkbox">` पर `getByRole('checkbox', { name })` और
+  `toHaveAccessibleName(name)` मेल खाते हैं। जिस डिसेंडेंट का अपना ऐसा रोल हो जो
+  टेक्स्ट या स्ट्रक्चर नहीं है (`status` बैज, ट्री आइटम का चाइल्ड `group`, `img`),
+  वह सिर्फ़ अपना लेबल या `title` जोड़ता है: `Inbox <span role="status">3</span>`
+  रखने वाला टैब `Inbox` होता है।
+- बिना `value` वाला `<input type="submit">` या `type="reset"` `Submit` या
+  `Reset` पढ़ा जाता है।
+
+##### डिवाइस पर रोल
+
+डिवाइस इंजन अपने प्लेटफ़ॉर्म टाइप को मैप करता है: टैब बार या सेगमेंटेड कंट्रोल
+`tablist` है, प्रोग्रेस इंडिकेटर `progressbar`, स्टेपर `spinbutton`। वह किसी भी
+दूसरे टाइप को वैसा ही रखता है, इसलिए जिस रोल का नेटिव विजेट न हो (जैसे `tooltip`
+या `figure`), वह फ़ोन पर कुछ मैच नहीं करता।
+
+##### एडिटिंग होस्ट
+
+`contenteditable` एडिटिंग होस्ट, वह रूट जिसमें TipTap, ProseMirror, Lexical, या
+Slate एडिटर रेंडर होता है, `textbox` होता है।
+
+- इसकी वैल्यू रेंडर किया हुआ टेक्स्ट होती है। फ़ोकस होने पर इसका `selection`
+  इसके अंदर सिलेक्ट किया गया टेक्स्ट होता है। वैल्यू स्पेस और न्यूलाइन बनाए रखती
+  है, इसलिए `toHaveValue` और `inputValue()` `white-space: pre-wrap` एडिटर को
+  टेक्स्टएरिया की तरह पढ़ते हैं।
+- खाली एडिटर `''` पढ़ा जाता है: वह भी जिसमें सिर्फ़ `<p><br></p>` हो या वह
+  ज़ीरो-विड्थ नो-ब्रेक स्पेस जिससे एडिटर खाली लाइन पैड करता है। वह पैडिंग कभी
+  वैल्यू का हिस्सा नहीं होती।
+- इसका नाम इसके `aria-label`, `aria-placeholder`, या एडिटर के पेंट किए
+  `data-placeholder` से आता है। इसके अंदर के ब्लॉक कंटेंट होते हैं, टेक्स्टबॉक्स
+  नहीं।
+- टैग से फ़र्क नहीं पड़ता: `<article contenteditable>` एडिटर है, आर्टिकल नहीं।
+  एडिटेबल बनाया गया नेटिव कंट्रोल या ड्रॉ की गई सतह अपना रोल बनाए रखती है।
+- ब्लॉक के `data-placeholder` (TipTap, ProseMirror) से मिला नाम एडिटर में कंटेंट
+  आते ही हट जाता है, जैसे पेंट किया हिंट हटता है। उसके बाद होस्ट बिना नाम वाला
+  `textbox` होता है। होस्ट के अपने `aria-label`, `aria-labelledby`,
+  `aria-placeholder`, या `data-placeholder` (Quill) से मिला नाम बना रहता है।
+
+`getByRole` Playwright के रोल सेलेक्टर से रिज़ॉल्व होता है, जिसमें ऐसा नियम नहीं
+है। इसलिए `getByRole` एडिटर को तभी ढूँढता है जब होस्ट पर `role="textbox"` हो;
+`getByLabel` और `getByTestId` दोनों ही मामलों में उस तक पहुँचते हैं। टेस्ट को
+प्लेसहोल्डर के बजाय लेबल या टेस्ट id पर एंकर करें।
+
+#### `getByLabel`
+
+```ts
+/** Creates a lazy accessible-label query. */
+getByLabel(text: TextMatch, options?: TextMatchOptions): Locator;
+```
+
+```ts
+await screen.getByLabel('Email').fill('ada@example.test');
+```
+
+#### `getByPlaceholder`
+
+```ts
+/** Creates a lazy placeholder query. */
+getByPlaceholder(text: TextMatch, options?: TextMatchOptions): Locator;
+```
+
+```ts
+await screen.getByPlaceholder('Search memory...').fill('launch');
+```
+
+#### `getByText`
+
+```ts
+/** Creates a lazy visible-text query. */
+getByText(text: TextMatch, options?: TextMatchOptions): Locator;
+```
+
+```ts
+screen.getByText('Welcome back', { exact: false });
+```
+
+##### दोहराया गया टेक्स्ट
+
+`getByText` सबसे अंदरूनी मैचिंग नोड लौटाता है, इसलिए अपने चाइल्ड का टेक्स्ट
+दोहराने वाला कंटेनर एक ही बार गिना जाता है। ब्राउज़र यह नेटिव रूप से करते हैं।
+डिवाइस पर इंजन यही नियम लागू करता है, क्योंकि iOS React Native के `Text` को एक
+होस्ट व्यू और उसी लेबल वाले `StaticText` चाइल्ड के रूप में रिपोर्ट करता है। दो
+ऐसे मैच जो एक-दूसरे के अंदर नहीं हैं, वे `LOCATOR_AMBIGUOUS` ही रहते हैं।
+
+#### `getByDisplayValue`
+
+कंट्रोल को उनकी दिखने वाली वैल्यू से मैच करता है।
+
+```ts
+/** Creates a lazy displayed-value query. */
+getByDisplayValue(value: TextMatch, options?: TextMatchOptions): Locator;
+```
+
+```ts
+await screen.getByDisplayValue('ada@example.test').clear();
+```
+
+<Note>
+वेब इंजन में `getByDisplayValue` लोकेटर किसी चाइल्ड क्वेरी या `has` फ़िल्टर का
+स्कोप नहीं बन सकता; दोनों `UNSUPPORTED_CAPABILITY` से फ़ेल होते हैं। Playwright
+में कंट्रोल की मौजूदा वैल्यू के लिए कोई सेलेक्टर नहीं है, इसलिए इंजन कैंडिडेट को
+बाद में फ़िल्टर करता है।
+</Note>
+
+#### `getByTestId`
+
+नोड के `testId` से मैच करता है।
+
+```ts
+/** Creates a lazy test-id query: a string matches the whole id, case-sensitive; a RegExp tests it. An engine may also match an id without its platform's namespacing. */
+getByTestId(id: TextMatch, options?: { visible?: boolean }): Locator;
+```
+
+```ts
+screen.getByTestId('todo-3');
+screen.getByTestId(/total-budgeted$/);
+```
+
+- वेब पर `testId` इंजन के टेस्ट-id ऐट्रिब्यूट की वैल्यू होती है
+  (`web({ testIdAttribute })`, डिफ़ॉल्ट `data-testid`)।
+- डिवाइस पर यह ऐक्सेसिबिलिटी आइडेंटिफ़ायर या रिसोर्स id होता है। नेमस्पेसिंग के
+  लिए मोबाइल इंजन का [Android रिसोर्स id](/reference/mobile#capabilities) देखें।
+- `visible` एकमात्र ऑप्शन है।
+
+#### छिपे डुप्लिकेट
+
+हर क्वेरी `visible: true` लेती है, जो ठीक-एक-मैच नियम चलने से पहले उन नोड को
+हटा देता है जिन्हें प्लेटफ़ॉर्म छिपा बताता है। फ़्रेमवर्क अक्सर डॉक्यूमेंट में
+कंटेंट की छिपी कॉपी रखते हैं (जैसे बंद ड्रॉअर या इनएक्टिव टैब पैनल), और
+`visible` के बिना दोनों कॉपी मैच हो जाती हैं।
+
+```ts
+await browser.reload();
+// Two "No memories yet" nodes exist for a moment; one is display:none.
+await expect(screen.getByText('No memories yet', { visible: true })).toBeVisible();
+await screen.getByPlaceholder('Search memory...', { visible: true }).fill('launch');
+await screen.getByTestId('memory-list', { visible: true }).getByRole('listitem').first().tap();
+```
+
+`visible` वही विज़िबिलिटी जाँच इस्तेमाल करता है जो `toBeVisible()`,
+`isVisible()`, और `waitFor()` करते हैं: क्या रेंडर होता है, जैसा Playwright इसे
+पढ़ता है।
+
+- छिपा हुआ: `display: none`, `visibility: hidden`, बिना साइज़ वाला बॉक्स, बंद
+  `<details>` की बॉडी (शैडो और स्लॉटेड कंटेंट समेत), और
+  `content-visibility: hidden` के नीचे का कंटेंट।
+- छिपा हुआ नहीं: बंद `<details>` की बॉडी जिसे पेज का CSS `::details-content` से
+  दिखाता है, और ऐसे एलिमेंट पर लगा `content-visibility: hidden` जिसका बॉक्स इसे
+  स्किप नहीं करता (`display: contents`, इनलाइन एलिमेंट, टेबल, टेबल रो, ruby)।
+  इनलाइन `<svg>`, `<button>`, या `<fieldset>` अपना खुद का बॉक्स बनाते हैं,
+  इसलिए उनके नीचे का कंटेंट तब भी छिपा पढ़ा जाता है।
+- छिपा हुआ नहीं: `aria-hidden`, क्योंकि उससे मार्क किया सजावटी स्पिनर तब भी पेंट
+  होता है, इसलिए उस पर `toBeHidden()` उसके हटने तक इंतज़ार करता है।
+- छिपे पैरेंट के नीचे `visibility: visible` सेट करने वाला चाइल्ड दिखने वाला होता
+  है।
+- वेब पर `visibility: hidden` वाले `display: contents` एलिमेंट के सीधे नीचे का
+  टेक्स्ट छिपा माना जाता है, जबकि Playwright उसे दिखने वाला कहता है।
+- वेब पर छिपे `<iframe>` के अंदर सब कुछ छिपा होता है, क्रॉस-ऑरिजिन फ़्रेम समेत।
+- यह स्कोप, `filter`, `first`, `last`, और `nth` के साथ चलता है:
+  `getByText('Save', { visible: true }).first()` पहला दिखने वाला मैच है।
+
+इसे `browser.locator('p:visible')` पर तरजीह दें, जो टेस्ट को CSS से बाँध देता
+है।
+
+### रिफ़ाइनमेंट
+
+| मेथड | रिटर्न |
+| --- | --- |
+| [`filter`](#filter) | `Locator` |
+| [`or`](#or) | `Locator` |
+| [`first`](#first) | `Locator` |
+| [`last`](#last) | `Locator` |
+| [`nth`](#nth) | `Locator` |
+
+रिफ़ाइनमेंट ऐप को क्वेरी किए बिना नया लोकेटर लौटाता है।
+
+#### `filter`
+
+```ts
+/** Adds deterministic locator filters. */
+filter(options: { hasText?: TextMatch; hasNotText?: TextMatch; has?: Locator; hasNot?: Locator }): Locator;
+```
+
+```ts
+const row = screen.getByRole('listitem').filter({ hasText: 'Invoice 42', hasNotText: 'Paid' });
+await row.getByRole('button', 'Void').tap();
+```
+
+- स्ट्रिंग वाला `hasText` मैच और उसके डिसेंडेंट पर केस-इनसेंसिटिव सबस्ट्रिंग मैच
+  करता है, क्वेरी टेक्स्ट के उलट जो ठीक मैच करता है। ज़्यादा सख्त मैच के लिए
+  `RegExp` पास करें।
+- `hasNotText` उन्हीं सबस्ट्रिंग या `RegExp` नियमों से उस सबट्री टेक्स्ट वाले मैच
+  बाहर कर देता है।
+- `has` वही मैच रखता है जिसका सबट्री अंदरूनी लोकेटर को रिज़ॉल्व करे।
+- `hasNot` वह मैच हटा देता है जिसका सबट्री अंदरूनी लोकेटर को रिज़ॉल्व करे। यह
+  `has` वाले ही स्कोपिंग नियम मानता है।
+
+| क्या थ्रो होता है | कब |
+| --- | --- |
+| `INVALID_LOCATOR` | `hasText`, `hasNotText`, `has`, या `hasNot` में से कुछ भी नहीं दिया गया। |
+| `INVALID_LOCATOR` | कोई भी दूसरी key, इनके साथ होने पर भी: `visible` यहाँ फ़िल्टर नहीं है। |
+| `INVALID_LOCATOR` | `has` या `hasNot` रनर लोकेटर नहीं है, या किसी दूसरे टारगेट की स्क्रीन से बना है। |
+
+#### `or`
+
+```ts
+/** Matches either locator, preserving document order without duplicate nodes. */
+or(other: Locator): Locator;
+```
+
+`a.or(b)` डॉक्यूमेंट क्रम में बिना डुप्लिकेट के किसी भी ब्रांच को एक बार मैच
+करता है। यह सख्त रहता है: जब दोनों अलग-अलग नोड मैच करें, तो एक्शन
+`LOCATOR_AMBIGUOUS` थ्रो करता है। दोनों में से कोई भी चले तो `first()` जोड़ें।
+दोनों लोकेटर एक ही स्क्रीन और अटेम्प्ट के होने चाहिए। वेब पर दोनों की लिटरल
+फ़्रेम-सेलेक्टर चेन एक जैसी होनी चाहिए; डिस्प्ले-वैल्यू ब्रांच जोड़ी नहीं जा
+सकतीं।
+
+| क्या थ्रो होता है | कब |
+| --- | --- |
+| `INVALID_LOCATOR` | `other` रनर लोकेटर नहीं है, या किसी दूसरी स्क्रीन या अटेम्प्ट का है। |
+| `UNSUPPORTED_CAPABILITY` | वेब ब्रांच की फ़्रेम-सेलेक्टर चेन अलग हैं, या कोई ब्रांच डिस्प्ले-वैल्यू क्वेरी है। |
+
+#### `first`
+
+```ts
+/** Selects the first current match. */
+first(): Locator;
+```
+
+```ts
+await screen.getByRole('listitem').first().tap();
+```
+
+#### `last`
+
+```ts
+/** Selects the last current match. */
+last(): Locator;
+```
+
+```ts
+await screen.getByRole('listitem').last().tap();
+```
+
+#### `nth`
+
+```ts
+/** Selects one zero-based current match. */
+nth(index: number): Locator;
+```
+
+```ts
+await screen.getByRole('row').nth(2).getByRole('checkbox').check();
+```
+
+| क्या थ्रो होता है | कब |
+| --- | --- |
+| `INVALID_LOCATOR` | नेगेटिव या नॉन-इंटीजर इंडेक्स। |
+
+### स्क्रीन एक्शन
+
+| मेथड | रिटर्न |
+| --- | --- |
+| [`screen.tapAt`](#screen-tapat) | `Promise<void>` |
+| [`screen.doubleTapAt`](#screen-doubletapat) | `Promise<void>` |
+| [`screen.swipe`](#screen-swipe) | `Promise<void>` |
+| [`screen.scrollUntilVisible`](#screen-scrolluntilvisible) | `Promise<void>` |
+
+`tapAt`, `doubleTapAt`, और `swipe` व्यूपोर्ट पर काम करते हैं।
+
+#### `screen.tapAt`
+
+इसे कैनवास पर किसी पिन या ऐसे कंट्रोल के लिए इस्तेमाल करें जिसे ट्री लिस्ट नहीं
+करता।
+
+```ts
+/** Taps a viewport point, in pixels or percentages, with no node behind it. */
+tapAt(point: ScreenPoint, options?: ActionOptions): Promise<void>;
+```
+
+```ts
+const map = (await screen.getByRole('image', 'Map').boundingBox())!;
+await screen.tapAt({ x: map.x + 360, y: map.y + 70 });
+
+await screen.tapAt({ x: '50%', y: '50%' });
+```
+
+- हर कोऑर्डिनेट CSS पिक्सल में (वही स्पेस जो `boundingBox()` बताता है) या
+  `'0%'` से `'100%'` तक व्यूपोर्ट का प्रतिशत होता है, जो सबसे करीबी पिक्सल पर
+  राउंड होता है (`'100%'` आखिरी पिक्सल है)। दोनों मिलाए जा सकते हैं:
+  `{ x: '50%', y: 120 }`।
+- प्रतिशत अपने साइज़ के लिए स्क्रीन को एक बार पढ़ता है।
+- कुछ भी रिज़ॉल्व या वेट नहीं होता; पेज तय करता है कि टैप किस पर पड़ा।
+- `config.actionTimeout` इस्तेमाल करता है।
+- जब ट्री कंट्रोल को लिस्ट करे तो लोकेटर को तरजीह दें, क्योंकि लेआउट के साथ
+  पॉइंट खिसक जाता है। किसी नोड के अंदर के पॉइंट के लिए `tap({ position })` खुद
+  नोड का बॉक्स पढ़ लेता है।
+
+| क्या थ्रो होता है | कब |
+| --- | --- |
+| `INVALID_ARGUMENT` | नेगेटिव या नॉन-फ़ाइनाइट कोऑर्डिनेट, या ऐसी स्ट्रिंग जो `'0%'` से `'100%'` का प्रतिशत न हो। |
+| `UNSUPPORTED_CAPABILITY` | इंजन अपने पॉइंटर एक्शन में `tap` लिस्ट नहीं करता। |
+
+<Note>
+`tapAt` स्कोप्ड नहीं होता: लोकेटर पर भी यह व्यूपोर्ट पॉइंट पर ही टैप करता है।
+</Note>
+
+#### `screen.doubleTapAt`
+
+जब ट्री टारगेट को लिस्ट न करे, तो व्यूपोर्ट पॉइंट पर डबल-टैप करने के लिए इसे
+इस्तेमाल करें।
+
+```ts
+/** Double-taps a viewport point, in pixels or percentages, with no node behind it. */
+doubleTapAt(point: ScreenPoint, options?: ActionOptions): Promise<void>;
+```
+
+```ts
+await screen.doubleTapAt({ x: 120, y: 240 }, { timeout: 1_000 });
+```
+
+- [`tapAt`](#screen-tapat) की तरह पिक्सल या प्रतिशत में `ScreenPoint` लेता है।
+- पेज या डिवाइस तय करता है कि जेस्चर किसे मिले। वेब पर यह प्राइमरी-बटन
+  डबल-क्लिक भेजता है।
+- डिवाइस पर यह उस पॉइंट पर दो प्रेस भेजता है, ठीक जैसे नोड पर `doubleTap()`
+  करता है। iOS पर इनकी टाइमिंग के लिए
+  [डिवाइस की ज्ञात सीमाएँ](/mobile#known-device-limitations) देखें।
+- डिफ़ॉल्ट `config.actionTimeout` होता है।
+
+| क्या थ्रो होता है | कब |
+| --- | --- |
+| `INVALID_ARGUMENT` | नेगेटिव या नॉन-फ़ाइनाइट कोऑर्डिनेट, ऐसी स्ट्रिंग जो `'0%'` से `'100%'` का प्रतिशत न हो, या अनजान ऑप्शन। |
+| `UNSUPPORTED_CAPABILITY` | इंजन अपने पॉइंटर एक्शन में `doubleTap` लिस्ट नहीं करता। |
+
+<Note>
+`doubleTapAt` स्कोप्ड नहीं होता: लोकेटर पर भी यह व्यूपोर्ट पॉइंट पर ही डबल-टैप
+करता है।
+</Note>
+
+#### `screen.swipe`
+
+```ts
+/** Performs a viewport-level swipe: in a direction, or along a path from one point to another. */
+swipe(options: SwipeOptions | SwipePathOptions): Promise<void>;
+```
+
+```ts
+await screen.swipe({ direction: 'up', momentum: 'fast' });
+
+const row = (await screen.getByText('Design review').boundingBox())!;
+await screen.swipe({
+  from: { x: row.x + row.width - 10, y: row.y + row.height / 2 },
+  to: { x: row.x + 10, y: row.y + row.height / 2 },
+  duration: 300,
+});
+
+await screen.swipe({ from: { x: '50%', y: '80%' }, to: { x: '50%', y: '20%' } });
+```
+
+`{ direction, momentum? }` स्क्रीन पर स्क्रॉल जेस्चर है:
+
+- `direction` वह दिशा है जिसमें कंटेंट स्क्रॉल होता है, उंगली की दिशा नहीं:
+  `'down'` नीचे का हिस्सा दिखाता है।
+- `momentum` इसकी झटके की ताकत है, डिफ़ॉल्ट `'none'`। `'none'` आधी सतह का सादा
+  ड्रैग है, `'slow'` छोटा फ़्लिंग, `'fast'` लंबा फ़्लिंग। हर एक कितनी दूर जाएगा,
+  यह इंजन तय करता है।
+
+`{ from, to, duration? }` दो व्यूपोर्ट पॉइंट के बीच पाथ पर स्वाइप है: डिवाइस पर
+टच स्वाइप, डॉक्यूमेंट प्लेटफ़ॉर्म पर पॉइंटर ड्रैग। इसे रो एक्शन दिखाने, शीट
+हटाने, या कॉलम के बीच कार्ड ड्रैग करने के लिए इस्तेमाल करें।
+
+- `from` और `to` [`tapAt`](#screen-tapat) की तरह पिक्सल या प्रतिशत में
+  `ScreenPoint` हैं।
+- `duration` जेस्चर का समय है, 16 से 10000 ms तक इंटीजर। छोड़ने पर इंजन का
+  डिफ़ॉल्ट लागू होता है।
+
+`config.actionTimeout` इस्तेमाल करता है और `timeout` ऑप्शन नहीं लेता।
+
+| क्या थ्रो होता है | कब |
+| --- | --- |
+| `ACTION_FAILED` | जेस्चर रिजेक्ट हो गया। |
+| `INVALID_ARGUMENT` | दोनों रूपों का मेल, रेंज से बाहर `duration`, प्लेन से बाहर या `'0%'` से `'100%'` का प्रतिशत न होने वाला कोऑर्डिनेट, या `timeout` key। |
+| `UNSUPPORTED_CAPABILITY` | इंजन अपने एक्शन में `swipe` (दिशा के लिए) या पॉइंटर एक्शन में `swipeTo` (पाथ के लिए) लिस्ट नहीं करता। |
+
+#### `screen.scrollUntilVisible`
+
+```ts
+/**
+ * Scrolls until a locator resolves visibly or times out: the viewport on
+ * `screen`, the node itself on a locator. `momentum` is the stride of each
+ * step, `slow` unless told otherwise.
+ */
+scrollUntilVisible(
+  target: Locator,
+  options?: { direction?: ScrollDirection; momentum?: Momentum; timeout?: number },
+): Promise<void>;
+```
+
+```ts
+await screen.scrollUntilVisible(screen.getByRole('button', 'Accept'));
+await screen.getByTestId('feed').scrollUntilVisible(row);
+```
+
+| ऑप्शन | टाइप | डिफ़ॉल्ट |
+| --- | --- | --- |
+| `target` | `Locator` | - |
+| `options.direction` | `ScrollDirection` | `'down'` |
+| `options.momentum` | `Momentum` | `'slow'` |
+| `options.timeout` | `number` | `30000` |
+
+- `momentum` [`screen.swipe`](#screen-swipe) की तरह परिभाषित है। लंबा कदम तेज़
+  होता है, लेकिन उसे टारगेट को बिना दिखे सतह के पार नहीं ले जाना चाहिए, जैसा
+  वर्चुअलाइज़्ड लिस्ट में हो सकता है।
+- `timeout` इसका अपना डिफ़ॉल्ट है, `config.actionTimeout` नहीं। यह हर स्वाइप
+  समेत पूरे स्क्रॉल की सीमा तय करता है।
+- लोकेटर पर हर कदम उसी नोड को स्वाइप करता है। इसलिए जो फ़ीड या टेबल खुद स्क्रॉल
+  कंटेनर हो, वह पहले पॉइंटर हॉवर किए बिना ही पेज हो जाती है।
+- यह पहले ऐसे मैच पर रुकता है जो छिपा न हो। डिवाइस पर सॉफ़्ट कीबोर्ड के नीचे का
+  नोड छिपा माना जाता है, इसलिए स्क्रॉल जारी रहता है
+  ([मोबाइल विज़िबिलिटी](/reference/mobile#visibility))।
+
+| क्या थ्रो होता है | कब |
+| --- | --- |
+| `INVALID_LOCATOR` | `target` रनर लोकेटर नहीं है, या किसी दूसरे टारगेट की स्क्रीन से बना है। |
+| `INVALID_ARGUMENT` | ऐसा ऑप्शन जिसे यह नहीं लेता। |
+| `LOCATOR_NOT_FOUND` | पहले डेडलाइन खत्म हो जाए, बीच में कटा स्वाइप समेत। |
+
+### स्क्रीन रीड
+
+| मेथड | रिटर्न |
+| --- | --- |
+| [`screen.tree`](#screen-tree) | `Promise<string>` |
+| [`screen.debug`](#screen-debug) | `Promise<void>` |
+| [`screen.pause`](#screen-pause) | `Promise<void>` |
+
+`tree` और `debug` बिना इंतज़ार किए पूरी स्क्रीन को एक बार पढ़ते हैं, और हर इंजन
+पर चलते हैं। वे एक स्टेप के रूप में चलते हैं। लोकेटर पर ये नहीं होते, और फ़्रेम
+`INVALID_ARGUMENT` थ्रो करता है।
+
+#### `screen.tree`
+
+स्क्रीन को वैसे ही लौटाता है जैसे एजेंट उसे पढ़ता है। लोकेटर लिखने के लिए इसे
+इस्तेमाल करें।
+
+```ts
+/**
+ * Reads the whole screen once, without waiting, as the agent reads it: one
+ * node per line, `#id role "name" text="…" [states]`, children indented,
+ * secrets redacted.
+ */
+tree(options?: ActionOptions): Promise<string>;
+```
+
+```text
+#n29 textbox "New todo"
+#n30 button "Add"
+ #n35 listitem "Milk Delete Milk" testid="todo"
+  #n36 checkbox "Milk" [checked]
+```
+
+- `config.actionTimeout` इस्तेमाल करता है।
+- टेक्स्ट का फ़ॉर्मेट और साइज़ लिमिट ट्रेस के [फ़ेलियर पर स्क्रीन](/debugging#traces)
+  जैसा ही है।
+
+| क्या थ्रो होता है | कब |
+| --- | --- |
+| `INVALID_ARGUMENT` | फ़्रेम पर कॉल किया गया, या ऐसे ऑप्शन के साथ जिसे यह नहीं लेता। |
+
+#### `screen.debug`
+
+[`screen.tree()`](#screen-tree) को टेस्ट के [कंसोल आउटपुट](/debugging#console-output)
+पर प्रिंट करता है।
+
+```ts
+/** Prints `tree()` to the test's output. */
+debug(options?: ActionOptions): Promise<void>;
+```
+
+```ts
+await screen.debug();
+```
+
+#### `screen.pause`
+
+इस लाइन पर ऐप खुले रहते टेस्ट रुक जाता है, जब तक उसे आगे न बढ़ाया जाए। कीबोर्ड
+के बटन और कमांड के लिए [टेस्ट पॉज़ करें](/debugging#pause-a-test) देखें।
+[MCP से जुड़ने](/reference/mcp#attaching-to-a-held-test) के लिए पॉज़ ID इस्तेमाल
+करें।
+
+```ts
+/**
+ * Pauses the test at this line, with the app open, until it is resumed with
+ * Enter in the terminal or with `e2e run --step next` from another shell in
+ * the same directory. In `e2e run`, the test is paused each time the line
+ * runs. Paused time doesn't count toward the test's timeout. Call it with
+ * `await` on `screen`, between steps in fixture setup, a `beforeEach` hook,
+ * or the test body. Anywhere else, or with `CI` set, the test isn't paused
+ * and the call fails.
+ */
+pause(): Promise<void>;
+```
+
+```ts
+await screen.pause();
+```
+
+- टेस्ट हर अटेम्प्ट पर रुकता है, रीट्राई और सेटअप टेस्ट समेत।
+- `--step` रन में `n`, `a`, या `e2e run --step rest` के बाद भी टेस्ट
+  `screen.pause()` पर रुकता है।
+- रुका हुआ समय किसी भी टाइमआउट में नहीं गिना जाता।
+- [MCP](/mcp-server) के `open_session {test}` से खुले सेशन में, `@e2e-dev/core`
+  या `openHost` के प्रोग्राम में, या `e2e/runner` के `run()` में टेस्ट पॉज़ नहीं
+  होता। `CI` सेट होने पर `run()` में टेस्ट तब भी `e2e run` की तरह
+  `PAUSE_UNAVAILABLE` से फ़ेल होता है।
+- `e2e run --watch` में पॉज़ पर `q` दबाने या `e2e run --step stop` चलाने से
+  सिर्फ़ मौजूदा रन कैंसल होता है।
+- लोकेटर पर यह नहीं होता।
+
+| क्या थ्रो होता है | कब |
+| --- | --- |
+| `PAUSE_UNAVAILABLE` | `CI` सेट है। कमिट करने से पहले यह कॉल हटाएँ, या टर्मिनल में `e2e run` से टेस्ट चलाएँ। जहाँ पॉज़ की इजाज़त नहीं है वहाँ इसकी जगह नीचे वाला एरर आता है। |
+| `INVALID_ARGUMENT` | लोकेटर या फ़्रेम पर, [`afterEach`](/reference/test#aftereach) हुक में, फ़िक्स्चर टियरडाउन में, या बॉडी लौटने के बाद चलने वाले बिना-await कोड में कॉल किया गया। इसे फ़िक्स्चर सेटअप, `beforeEach` हुक, या टेस्ट बॉडी में स्टेप के बीच `screen` पर कॉल करें। |
+| `ACTION_FAILED` | एजेंट स्टेप के अंदर कॉल किया गया, जैसे [`onAction`](/reference/agent#agent-act) हुक या [कस्टम एक्ज़ीक्यूटर](/executors) में। स्टेप पॉज़ के मैसेज के साथ फ़ेल होता है और टेस्ट पॉज़ नहीं होता। बिल्ट-इन एजेंट पर [प्रोजेक्ट टूल](/tools) में मनाही फ़ेल टूल रिज़ल्ट बनकर मॉडल के पास जाती है और स्टेप चलता रहता है। इसे स्टेप के बीच कॉल करें। |
+| `ASSERTION_FAILED` | [`expect.poll`](/reference/expect#polling-a-value) के रीड के अंदर कॉल किया गया। पोल टाइमआउट होने तक रीड रीट्राई होता है। इसे रीड के बाहर कॉल करें। |
+| `STEP_NOT_AWAITED` | बिना `await` वाला `screen.pause()` इंतज़ार कर रहा था और टेस्ट बॉडी लौट आई। टेस्ट पॉज़ की लाइन पर फ़ेल होता है। कॉल के आगे `await` लगाएँ। |
+| `RUNNER_BUSY` | रन के पास टर्मिनल नहीं है, और डायरेक्टरी में दूसरा रन पहले से `e2e run --step` से कंट्रोल हो रहा है। उस रन को `e2e run --step stop` से बंद करें, या यह टेस्ट टर्मिनल में चलाएँ। दूसरा रन बंद होते ही इस रन के अगले `screen.pause()` पर टेस्ट पॉज़ होगा। |
+
+### लोकेटर एक्शन
+
+| मेथड | रिटर्न |
+| --- | --- |
+| [`tap`](#tap) | `Promise<void>` |
+| [`click`](#tap) | `Promise<void>` |
+| [`doubleTap`](#doubletap) | `Promise<void>` |
+| [`dblclick`](#doubletap) | `Promise<void>` |
+| [`secondaryTap`](#secondarytap) | `Promise<void>` |
+| [`longPress`](#longpress) | `Promise<void>` |
+| [`fill`](#fill) | `Promise<void>` |
+| [`pressSequentially`](#presssequentially) | `Promise<void>` |
+| [`clear`](#clear) | `Promise<void>` |
+| [`press`](#press) | `Promise<void>` |
+| [`check`](#check) | `Promise<void>` |
+| [`uncheck`](#uncheck) | `Promise<void>` |
+| [`selectOption`](#selectoption) | `Promise<void>` |
+| [`focus`](#focus) | `Promise<void>` |
+| [`blur`](#blur) | `Promise<void>` |
+| [`hover`](#hover) | `Promise<void>` |
+| [`setInputFiles`](#setinputfiles) | `Promise<void>` |
+| [`dragTo`](#dragto) | `Promise<void>` |
+| [`scrollIntoView`](#scrollintoview) | `Promise<void>` |
+| [`swipe`](#swipe) | `Promise<void>` |
+
+हर एक्शन एक नोड रिज़ॉल्व करता है, एक्शनेबिलिटी का इंतज़ार करता है, और एक ऑपरेशन
+चलाता है। टाइमआउट [`config.actionTimeout`](/reference/config#actiontimeout) होता
+है, और हर एक्शन इसे ओवरराइड करने के लिए `{ timeout }` लेता है: `0` टेस्ट टाइमआउट
+(या `afterEach` में `cleanupTimeout`) तक इंतज़ार करता है। एक्शन सिर्फ़ वही ऑप्शन
+लेता है जो उसके सिग्नेचर में हैं।
+
+| क्या थ्रो होता है | कब |
+| --- | --- |
+| `UNSUPPORTED_CAPABILITY` | इंजन एक्शन के काइंड को `actions` में लिस्ट नहीं करता; इंजन तक पहुँचने से पहले ही थ्रो होता है। |
+| `INVALID_ARGUMENT` | ऐसी ऑप्शन key जिसे एक्शन नहीं लेता (Playwright के `trial`, `force`, या `noWaitAfter` समेत), या नेगेटिव, `NaN`, या अनंत `timeout`। नोड रिज़ॉल्व होने से पहले ही थ्रो होता है, इसलिए कंट्रोल छुआ नहीं जाता। |
+| `LOCATOR_NOT_FOUND` | टाइमआउट से पहले कोई मैच नहीं मिला। |
+| `LOCATOR_AMBIGUOUS` | एक से ज़्यादा मैच। |
+| `ACTION_FAILED` | एक्शन शायद पहले ही कमिट हो चुका है; इसे कभी दोहराया नहीं जाता। |
+
+#### `tap`
+
+```ts
+/** Taps exactly one matching actionable node, `count` times in a row; with `position`, taps that point of its box once it is in view, with no other actionability check. */
+tap(options?: TapOptions): Promise<void>;
+/** Alias of tap. */
+click(options?: TapOptions): Promise<void>;
+```
+
+```ts
+await screen.getByRole('button', 'Save').tap({ timeout: 10_000 });
+await screen.getByRole('image', 'Seat map').tap({ position: { x: 120, y: 48 } });
+await row.click({ modifiers: ['Shift'] });
+await screen.getByText('Shipping address').tap({ count: 3 });
+```
+
+ऑप्शन [`TapOptions`](#types) में हैं:
+
+- `count`: लगातार कितने टैप, पॉज़िटिव सेफ़ इंटीजर, डिफ़ॉल्ट 1। ब्राउज़र में
+  क्लिक एक मल्टी-क्लिक के रूप में आते हैं, इसलिए ट्रिपल क्लिक पैराग्राफ़ सिलेक्ट
+  करता है। डिवाइस पर ये `doubleTap` की लय में `count` प्रेस होते हैं। `count: 2`
+  [`doubleTap()`](#doubletap) जैसा ही एक्शन है। तीन या ज़्यादा के लिए ऐसा इंजन
+  चाहिए जो `multiTap` एक्शन लिस्ट करे; ब्राउज़र और मोबाइल दोनों इंजन करते हैं।
+- `modifiers`: ब्राउज़र इंजन इन्हें दबाए रखता है।
+- `position`: नोड के ऊपरी-बाएँ कोने से उसके बॉर्डर के अंदर CSS पिक्सल में
+  ऑफ़सेट। जब इंजन `scrollIntoView` लिस्ट करता है तो पहले नोड को व्यूपोर्ट में
+  लाता है। फिर नोड का बॉक्स पढ़कर उस पॉइंट पर पॉइंटर डिस्पैच करता है। जेस्चर के
+  पीछे कोई नोड नहीं होता, इसलिए प्लेटफ़ॉर्म की बाकी एक्शनेबिलिटी जाँचें (इनेबल्ड,
+  ढका न होना) नहीं चलतीं।
+
+| क्या थ्रो होता है | कब |
+| --- | --- |
+| `INVALID_ARGUMENT` | अनजान या दोहराया गया मॉडिफ़ायर, `position` के साथ `modifiers`, पॉज़िटिव सेफ़ इंटीजर न होने वाला `count`, या `position` के साथ 1 से बड़ा `count`। |
+| `UNSUPPORTED_CAPABILITY` | जो इंजन `tapModifiers` डिक्लेयर न करे (जैसे मोबाइल इंजन), उस पर `modifiers`; एक्शन से पहले ही थ्रो होता है। |
+| `UNSUPPORTED_CAPABILITY` | बिना `multiTap` एक्शन वाले इंजन पर 3 या ज़्यादा `count`, या इंजन की लिमिट (मोबाइल इंजन पर 200) से ज़्यादा; एक्शन से पहले ही थ्रो होता है। |
+| `UNSUPPORTED_CAPABILITY` | बिना `tap` पॉइंटर एक्शन वाले इंजन पर `position`। |
+| `ACTION_FAILED` | ऐसे नोड पर `position` जिसे ब्राउज़र इंजन व्यूपोर्ट में नहीं ला सकता; उसका स्क्रॉल विज़िबिलिटी का इंतज़ार करता है। बाकी इंजन अपनी रिपोर्ट के हिसाब से फ़ेल होते हैं। |
+| `LOCATOR_NOT_FOUND` | ऐसे नोड पर `position` जो रिज़ॉल्व तो होता है लेकिन टाइमआउट में कभी दिखने वाला बॉक्स नहीं दिखाता। |
+
+#### `doubleTap`
+
+```ts
+/** Double-taps exactly one matching actionable node. */
+doubleTap(options?: ClickOptions): Promise<void>;
+/** Alias of doubleTap. */
+dblclick(options?: ClickOptions): Promise<void>;
+```
+
+```ts
+await screen.getByRole('cell', 'Q3 budget').doubleTap();
+```
+
+[`tap`](#tap) के नियमों और एरर के साथ `timeout` और `modifiers` लेता है।
+
+#### `secondaryTap`
+
+```ts
+/** Secondary-taps exactly one matching actionable node: a right click, a two-finger tap. */
+secondaryTap(options?: ClickOptions): Promise<void>;
+```
+
+```ts
+await screen.getByRole('row', /Invoice 42/).secondaryTap();
+```
+
+[`tap`](#tap) के नियमों और एरर के साथ `timeout` और `modifiers` लेता है।
+
+#### `longPress`
+
+```ts
+/** Long-presses exactly one matching actionable node. */
+longPress(options?: LongPressOptions): Promise<void>;
+```
+
+```ts
+await screen.getByText('Design review').longPress({ duration: 800 });
+```
+
+- `duration` दबाए रखने का समय है, 100 से 10000 ms तक इंटीजर। बाकी कुछ भी
+  `INVALID_ARGUMENT` है।
+- इसके बिना इंजन का डिफ़ॉल्ट लागू होता है: ब्राउज़र इंजन पर 500 ms, मोबाइल इंजन
+  पर एक सेकंड (React Native `Pressable` के `delayLongPress` के पार)।
+
+#### `fill`
+
+इनपुट का मौजूदा कंटेंट बदलता है।
+
+```ts
+/** Fills exactly one input. Secret values are never logged. */
+fill(value: string | Secret, options?: ActionOptions): Promise<void>;
+```
+
+```ts
+await screen.getByLabel('Email').fill('ada@example.test');
+await screen.getByLabel('Password').fill(credentials.user('member').password);
+```
+
+`Secret` कॉल से ठीक पहले होस्ट पर रिज़ॉल्व होता है और कभी लॉग, रिपोर्ट, या मॉडल
+को नहीं भेजा जाता।
+
+<Note>
+`fill` सीधे वैल्यू सेट करता है और कोई कीबोर्ड इवेंट नहीं चलाता। `keydown` या
+`keyup` से जुड़ा ऑटोकम्प्लीट, सर्च-ऐज़-यू-टाइप बॉक्स, या मास्क्ड इनपुट इस पर
+प्रतिक्रिया नहीं देता। उनके लिए [`pressSequentially`](#presssequentially) इस्तेमाल
+करें।
+</Note>
+
+#### `pressSequentially`
+
+इंजन के कीबोर्ड से टाइप करता है और मौजूदा कंटेंट में आगे जोड़ता है।
+
+```ts
+/**
+ * Focuses exactly one input and types `text` through the keyboard, one
+ * character at a time, so the app receives key events. A `Secret` is
+ * refused; it goes through `fill`.
+ */
+pressSequentially(text: string, options?: PressSequentiallyOptions): Promise<void>;
+```
+
+```ts
+await screen.getByLabel('City').pressSequentially('War', { delay: 50 });
+```
+
+- `delay` कैरेक्टर के बीच उतने मिलीसेकंड इंतज़ार करता है, और हर कैरेक्टर अपनी
+  कीबोर्ड कॉल में जाता है। इसके बिना पूरा टेक्स्ट एक ही कॉल में जाता है।
+- फ़ोकस, रुकावटें, और कीस्ट्रोक एक ही एक्शन डेडलाइन शेयर करते हैं: डेडलाइन पर
+  रुकावट कट जाती है और उसके बाद कोई कैरेक्टर नहीं भेजा जाता।
+- यह [कीबोर्ड कॉन्ट्रैक्ट](/reference/engine#engine) पर निर्भर है: `type` को
+  टेक्स्ट वैसे ही देना चाहिए जैसे कोई इंसान टाइप करे, ताकि जहाँ प्लेटफ़ॉर्म में
+  कीबोर्ड इवेंट हों वहाँ वे ऐप तक पहुँचें।
+- `fill` की तरह स्टेप लोकेटर रिकॉर्ड करता है, टेक्स्ट नहीं।
+
+| क्या थ्रो होता है | कब |
+| --- | --- |
+| `ACTION_FAILED` | टेक्स्ट के बीच में डेडलाइन खत्म हो गई; एरर बताता है कि कितने कैरेक्टर टाइप हुए। |
+| `UNSUPPORTED_CAPABILITY` | इंजन में `focus` एक्शन या `keyboard` क्षमता नहीं है; कोई भी नोड रिज़ॉल्व होने से पहले थ्रो होता है। |
+| `INVALID_ARGUMENT` | रनटाइम पर `Secret` (कंपाइल टाइम पर टाइप एरर): सीक्रेट `fill` से भरा जाता है, कीस्ट्रोक से टाइप नहीं होता। |
+
+#### `clear`
+
+```ts
+/** Clears exactly one input. */
+clear(options?: ActionOptions): Promise<void>;
+```
+
+```ts
+await screen.getByLabel('Search').clear();
+```
+
+#### `press`
+
+```ts
+/** Sends one key to exactly one node. */
+press(key: string, options?: ActionOptions): Promise<void>;
+```
+
+```ts
+await screen.getByRole('textbox', 'Search').press('Enter');
+await screen.getByRole('textbox', 'Notes').press('ControlOrMeta+a');
+```
+
+कीबोर्ड का बटन शून्य या ज़्यादा मॉडिफ़ायर और एक बटन को `+` से जोड़कर बनता है,
+जैसा [की ग्रामर](/reference/engine#keys) में लिस्ट है। `Shift++` `+` दबाता है।
+
+| क्या थ्रो होता है | कब |
+| --- | --- |
+| `UNSUPPORTED_CAPABILITY` | ऐसा बटन जो प्लेटफ़ॉर्म में नहीं है। |
+
+#### `check`
+
+```ts
+/** Checks exactly one node. */
+check(options?: ActionOptions): Promise<void>;
+```
+
+```ts
+await screen.getByRole('checkbox', 'Remember me').check();
+```
+
+वेब इंजन पर, अपने खुद के लेबल के नीचे छिपे चेकबॉक्स या रेडियो (जैसे Element Plus
+में) पर उस लेबल के ज़रिए क्लिक होता है। क्लिक वाले पॉइंट के ऊपर कोई और चीज़ हो तो
+तब भी `ACTION_FAILED` आता है।
+
+#### `uncheck`
+
+```ts
+/** Unchecks exactly one node. */
+uncheck(options?: ActionOptions): Promise<void>;
+```
+
+```ts
+await screen.getByRole('checkbox', 'Remember me').uncheck();
+```
+
+| क्या थ्रो होता है | कब |
+| --- | --- |
+| `ACTION_FAILED` | चेक्ड नेटिव रेडियो बटन, जिसे उसके ग्रुप का दूसरा रेडियो ही अनचेक कर सकता है। |
+
+#### `selectOption`
+
+```ts
+/** Selects one option from exactly one control. */
+selectOption(value: SelectOption, options?: ActionOptions): Promise<void>;
+```
+
+```ts
+await screen.getByLabel('Plan').selectOption('Pro');
+await screen.getByLabel('Plan').selectOption({ label: 'Pro' });
+await screen.getByLabel('Plan').selectOption({ value: 'pro' });
+```
+
+लेबल स्ट्रिंग पास करें, या ऐसा ऑब्जेक्ट जिसमें `label`, `value` (वैल्यू ऐट्रिब्यूट
+जो फ़ॉर्म सबमिट करता है), या `index` (शून्य-आधारित) में से ठीक एक हो।
+
+| क्या थ्रो होता है | कब |
+| --- | --- |
+| `INVALID_ARGUMENT` | एक कॉल में एक से ज़्यादा ऑप्शन: ऐरे, या इन key में से एक से ज़्यादा वाला ऑब्जेक्ट। नेगेटिव या दशमलव `index` भी। इंजन के चलने से पहले थ्रो होता है। |
+
+#### `focus`
+
+```ts
+/** Focuses exactly one node. */
+focus(options?: ActionOptions): Promise<void>;
+```
+
+```ts
+await screen.getByLabel('Email').focus();
+```
+
+#### `blur`
+
+```ts
+/** Removes focus from exactly one node if it is focused. */
+blur(options?: ActionOptions): Promise<void>;
+```
+
+सिर्फ़ वेब। अगर मैच हुए नोड पर पहले से फ़ोकस नहीं है, तो इसका कोई असर नहीं होता।
+
+```ts
+await screen.getByLabel('Email').blur();
+```
+
+#### `hover`
+
+```ts
+/** Hovers over exactly one matching actionable node. */
+hover(options?: ActionOptions): Promise<void>;
+```
+
+```ts
+await screen.getByRole('button', 'Account').hover();
+```
+
+#### `setInputFiles`
+
+```ts
+/** Sets the files of exactly one file input, or of a control that opens a file chooser; paths resolve from the project root, payloads supply bytes in memory, and an empty array clears the input. */
+setInputFiles(files: string | readonly string[] | FilePayload | readonly FilePayload[], options?: ActionOptions): Promise<void>;
+```
+
+```ts
+await screen.getByLabel('Receipt').setInputFiles('fixtures/receipt.pdf');
+await screen.getByLabel('Receipt').setInputFiles({
+  name: 'receipt.txt', mimeType: 'text/plain', buffer: Buffer.from('Receipt total: 12.00'),
+});
+await screen.getByLabel('Receipt').setInputFiles([]);
+```
+
+सिर्फ़ वेब। सिर्फ़ `FilePayload` की फ़ील्ड वाला प्लेन ऑब्जेक्ट पास करें:
+`name: string`, `mimeType: string`, और `buffer: Buffer`। एक पेलोड या पेलोड का
+ऐरे पास करें; एक ऐरे में पाथ और पेलोड न मिलाएँ। कुल पेलोड साइज़ 50 MiB से कम
+होना चाहिए। बड़ी फ़ाइलों के लिए पाथ इस्तेमाल करें अगर टारगेट उस साइज़ की फ़ाइल
+ट्रांसफ़र सपोर्ट करता हो। खाली ऐरे इनपुट साफ़ करता है और `input` और `change`
+चलाता है। फ़ाइल चूज़र खोलने वाला बटन भी यही इनपुट स्वीकार करता है।
+
+| क्या थ्रो होता है | कब |
+| --- | --- |
+| `INVALID_ARGUMENT` | खाली या गायब पाथ, ऐसी डायरेक्टरी का पाथ जिसे रनर सर्च न कर सके, इनवैलिड पेलोड, मिले हुए पाथ और पेलोड, या कुल 50 MiB या ज़्यादा के पेलोड। |
+| `UNSUPPORTED_CAPABILITY` | डिवाइस पर, या ऐसे इंजन पर पेलोड जो `setInputFilePayloads` डिक्लेयर न करे। |
+| `ACTION_FAILED` | ऐसा बटन जो कोई फ़ाइल चूज़र नहीं खोलता। |
+
+#### `dragTo`
+
+```ts
+/** Drags exactly one node to exactly one target. */
+dragTo(target: Locator, options?: ActionOptions): Promise<void>;
+```
+
+```ts
+await screen.getByText('Design review').dragTo(screen.getByRole('region', 'Done'));
+```
+
+| क्या थ्रो होता है | कब |
+| --- | --- |
+| `INVALID_LOCATOR` | `target` रनर लोकेटर नहीं है, या किसी दूसरे टारगेट की स्क्रीन से बना है। |
+
+#### `scrollIntoView`
+
+```ts
+/** Scrolls exactly one node into view. */
+scrollIntoView(options?: ActionOptions): Promise<void>;
+```
+
+```ts
+await screen.getByRole('contentinfo').scrollIntoView();
+```
+
+#### `swipe`
+
+```ts
+/** Performs a swipe scoped to exactly one node. */
+swipe(options: SwipeOptions & ActionOptions): Promise<void>;
+```
+
+```ts
+await screen.getByTestId('feed').swipe({ direction: 'down', momentum: 'slow' });
+```
+
+यह [`screen.swipe`](#screen-swipe) की तरह `{ direction, momentum? }` लेता है,
+और साथ में `timeout` भी (जिसे `screen.swipe` मना करता है)। इसका `{ from, to }`
+रूप नहीं है।
+
+### लोकेटर रीड
+
+| मेथड | रिटर्न |
+| --- | --- |
+| [`textContent`](#textcontent) | `Promise<string \| null>` |
+| [`inputValue`](#inputvalue) | `Promise<string>` |
+| [`getAttribute`](#getattribute) | `Promise<string \| null>` |
+| [`isVisible`](#isvisible) | `Promise<boolean>` |
+| [`isHidden`](#ishidden) | `Promise<boolean>` |
+| [`isEnabled`](#isenabled) | `Promise<boolean>` |
+| [`isDisabled`](#isdisabled) | `Promise<boolean>` |
+| [`isChecked`](#ischecked) | `Promise<boolean>` |
+| [`boundingBox`](#boundingbox) | `Promise<{ x, y, width, height } \| null>` |
+| [`screenshot`](#screenshot) | `Promise<string>` |
+| [`count`](#count) | `Promise<number>` |
+| [`all`](#all) | `Promise<Locator[]>` |
+| [`allTextContents`](#alltextcontents) | `Promise<string[]>` |
+| [`waitFor`](#waitfor) | `Promise<void>` |
+
+रीड [मैच नियम](#match-rules) मानते हैं। `count`, `all`, और `allTextContents`
+स्नैपशॉट लेते हैं और इंतज़ार नहीं करते।
+
+सिक्योर फ़ील्ड पर `textContent`, `inputValue`, `getAttribute`, और
+`allTextContents` `POLICY_DENIED` थ्रो करते हैं, जैसे मिलते-जुलते
+[`expect` मैचर](/reference/expect#secure-fields) करते हैं। वहाँ `isEnabled`,
+`isDisabled`, `isChecked`, और `boundingBox` की इजाज़त है, और `screenshot` फ़ील्ड
+को मास्क करता है।
+
+#### `textContent`
+
+नोड का रेंडर किया हुआ टेक्स्ट पढ़ता है, जहाँ व्हाइटस्पेस सिंगल स्पेस में बदल
+जाता है।
+
+```ts
+/** Reads normalized text once a match exists, without retrying for a particular value. */
+textContent(): Promise<string | null>;
+```
+
+```ts
+const message = await screen.getByRole('alert').textContent();
+```
+
+- वेब पर यह वही है जो `innerText` पढ़ता है, DOM का `textContent` नहीं: CSS
+  `text-transform` लागू होता है, `display: none` डिसेंडेंट छूट जाते हैं, और
+  `<br>` स्पेस पढ़ा जाता है।
+- जो नोड खुद रेंडर न हो (जैसे `display: none` वाला), वह `innerText` की तरह अपना
+  DOM टेक्स्ट पढ़ता है।
+
+#### `inputValue`
+
+```ts
+/** Reads the current input value. */
+inputValue(): Promise<string>;
+```
+
+```ts
+const email = await screen.getByLabel('Email').inputValue();
+```
+
+चेकबॉक्स या रेडियो पर `inputValue()` और `toHaveValue` उसका value ऐट्रिब्यूट
+पढ़ते हैं (न होने पर `on`), चाहे उसका चेक्ड स्टेट कुछ भी हो। स्टेट पढ़ने के लिए
+`isChecked()` इस्तेमाल करें।
+
+| क्या थ्रो होता है | कब |
+| --- | --- |
+| `ACTION_FAILED` | बिना वैल्यू वाला नोड, जैसे हेडिंग या बटन। खाली फ़ील्ड `""` पढ़ी जाती है। |
+
+#### `getAttribute`
+
+```ts
+/** Reads one attribute. */
+getAttribute(name: string): Promise<string | null>;
+```
+
+```ts
+const href = await screen.getByRole('link', 'Docs').getAttribute('href');
+```
+
+#### `isVisible`
+
+```ts
+/** Reads current visibility. */
+isVisible(): Promise<boolean>;
+```
+
+```ts
+const open = await screen.getByRole('dialog').isVisible();
+```
+
+- शून्य मैच पर, और ऐसे `frameLocator` पर जिसका फ़्रेम डॉक्यूमेंट में न हो,
+  `false`।
+- `visible: true` वाली ही विज़िबिलिटी जाँच इस्तेमाल करता है
+  ([छिपे डुप्लिकेट](#hidden-duplicates) देखें)।
+
+| क्या थ्रो होता है | कब |
+| --- | --- |
+| `LOCATOR_AMBIGUOUS` | एक से ज़्यादा मैच। |
+
+#### `isHidden`
+
+```ts
+/** Reads current hidden or absent state, the negation of `isVisible`. */
+isHidden(): Promise<boolean>;
+```
+
+```ts
+const gone = await screen.getByTestId('spinner').isHidden();
+```
+
+इसकी स्ट्रिक्टनेस `isVisible` जैसी ही है: शून्य मैच पर `true`।
+
+| क्या थ्रो होता है | कब |
+| --- | --- |
+| `LOCATOR_AMBIGUOUS` | एक से ज़्यादा मैच। |
+
+#### `isEnabled`
+
+```ts
+/** Reads current enabled state. */
+isEnabled(): Promise<boolean>;
+```
+
+```ts
+const ready = await screen.getByRole('button', 'Pay').isEnabled();
+```
+
+#### `isDisabled`
+
+```ts
+/** Reads current disabled state, the negation of `isEnabled`. */
+isDisabled(): Promise<boolean>;
+```
+
+```ts
+const blocked = await screen.getByRole('button', 'Pay').isDisabled();
+```
+
+इसकी स्ट्रिक्टनेस `isEnabled` जैसी ही है।
+
+| क्या थ्रो होता है | कब |
+| --- | --- |
+| `LOCATOR_NOT_FOUND` | शून्य मैच। |
+| `LOCATOR_AMBIGUOUS` | एक से ज़्यादा मैच। |
+
+#### `isChecked`
+
+```ts
+/** Reads current checked state. */
+isChecked(): Promise<boolean>;
+```
+
+```ts
+const remembered = await screen.getByRole('checkbox', 'Remember me').isChecked();
+```
+
+बिना रिपोर्ट किए स्टेट वाला चेकेबल रोल (जैसे बिना `aria-checked` वाला ARIA
+स्विच) `false` पढ़ा जाता है।
+
+| क्या थ्रो होता है | कब |
+| --- | --- |
+| `ACTION_FAILED` | बिना चेक्ड स्टेट वाला नोड, जैसे बटन या हेडिंग। |
+
+#### `boundingBox`
+
+```ts
+/** Reads the current viewport-relative rectangle. */
+boundingBox(): Promise<{ x: number; y: number; width: number; height: number } | null>;
+```
+
+```ts
+const map = (await screen.getByRole('image', 'Map').boundingBox())!;
+```
+
+बॉक्स CSS पिक्सल में होता है, और डिवाइस पर पॉइंट में (Android पर फ़िज़िकल पिक्सल)।
+जो नोड कोई बॉक्स लेआउट न करे (उस पर या किसी पैरेंट पर `display: none`), उसके लिए
+यह `null` होता है। `visibility: hidden` वाला नोड अपना बॉक्स बनाए रखता है।
+
+#### `screenshot`
+
+```ts
+/**
+ * Captures a redacted screenshot of the one match and returns its absolute
+ * path. The match is scrolled into view first; one larger than the viewport
+ * keeps the part inside it.
+ */
+screenshot(label?: string): Promise<string>;
+```
+
+```ts
+const card = await screen.getByTestId('order-summary').screenshot('summary');
+```
+
+- यह फ़ाइल वही है जो [`app.screenshot`](/reference/app#screenshot) सेव करता है,
+  मैच के बॉक्स पर काटी हुई: `screenshots/` के अंदर अटेम्प्ट आर्टिफ़ैक्ट, उसी
+  मास्किंग और पिक्सल डेंसिटी के साथ।
+- `label` स्टेप के नाम और फ़ाइल के नाम में जुड़ता है।
+- यह मैच के दिखने, और कैप्चर के दौरान उसके बॉक्स और व्यूपोर्ट के स्थिर रहने का
+  इंतज़ार करता है। पेज जिस मैच को व्यूपोर्ट से बाहर खिसका दे उसे वापस स्क्रॉल
+  किया जाता है।
+- इंजन का स्क्रीनशॉट व्यूपोर्ट का PNG होना चाहिए, जैसे वेब, मोबाइल, और डेस्कटॉप
+  इंजन का होता है।
+- `list` रिपोर्टर फ़ाइल का नाम अपनी `Screenshots` रो में दिखाता है।
+
+| क्या थ्रो होता है | कब |
+| --- | --- |
+| `INVALID_ARGUMENT` | ऐसा `label` जो स्ट्रिंग न हो। |
+| `LOCATOR_NOT_FOUND` | एक्शन टाइमआउट में कोई दिखता मैच न मिले, मैच लगातार हिलता रहे, या ऐसे इंजन पर व्यूपोर्ट के बाहर हो जो उस तक स्क्रॉल न कर सके। |
+| `LOCATOR_AMBIGUOUS` | एक से ज़्यादा मैच। |
+| `ACTION_FAILED`, `ENGINE_FAILURE` | स्क्रॉल या कैप्चर फ़ेल या टाइमआउट हो गया, जैसे वेब पर लगातार एनीमेट होने वाला मैच। |
+| `UNSUPPORTED_CAPABILITY` | इंजन स्क्रीनशॉट नहीं लेता, या PNG के अलावा कुछ लिखता है। |
+| `POLICY_DENIED` | iOS और Android पर स्क्रीन पर किसी सिक्योर फ़ील्ड के मास्क करने लायक बाउंड्स न मिलें। |
+
+#### `count`
+
+```ts
+/** Counts current matches without auto-waiting. */
+count(): Promise<number>;
+```
+
+```ts
+const rows = await screen.getByRole('row').count();
+```
+
+शून्य मैच पर, और ऐसे `frameLocator` पर जिसका फ़्रेम डॉक्यूमेंट में न हो, `0`।
+
+#### `all`
+
+क्वेरी को एक बार रिज़ॉल्व करता है, ताकि लूप हर रो पर काम कर सके।
+
+```ts
+/** One `nth(i)` locator per current match, without auto-waiting; empty when nothing matches. */
+all(): Promise<Locator[]>;
+```
+
+```ts
+for (const row of await screen.getByRole('row').all()) {
+  await row.getByRole('checkbox').check();
+}
+```
+
+- यह न इंतज़ार करता है न ठीक-एक नियम लगाता है: शून्य मैच पर खाली ऐरे मिलता है,
+  `count()` वाला ही स्नैपशॉट नियम। डॉक्यूमेंट में न होने वाले फ़्रेम का
+  `frameLocator` यहाँ शून्य मैच गिना जाता है, जबकि एक्शन या असर्शन उसके लिए पोल
+  करते हैं।
+- `all()` का लौटाया हर लोकेटर इस्तेमाल होने पर फिर रिज़ॉल्व होता है। लूप के नीचे
+  लिस्ट बदल जाए तो बाद का `nth(i)` किसी दूसरी रो या खाली जगह पर जा सकता है। लूप
+  के बाद लिस्ट पर असर्शन लगाएँ।
+
+#### `allTextContents`
+
+```ts
+/** Reads the normalized text of every current match, without auto-waiting; empty when nothing matches. */
+allTextContents(): Promise<string[]>;
+```
+
+```ts
+expect(await screen.getByRole('listitem').allTextContents()).toEqual(['Alpha', 'Beta']);
+```
+
+- टेक्स्ट [`textContent`](#textcontent) की तरह पढ़ा जाता है।
+- यह न इंतज़ार करता है न ठीक-एक नियम लगाता है: [`all`](#all) की तरह शून्य मैच पर
+  खाली ऐरे।
+- टेक्स्ट जाँचने के लिए लूप के बजाय [`toHaveText([...])`](/reference/expect#locator-matchers)
+  इस्तेमाल करें।
+
+#### `waitFor`
+
+```ts
+/**
+ * Waits for the requested locator state, `visible` by default: `attached`
+ * for one match, visible or not; `detached` for none; `hidden` for none or
+ * a hidden one.
+ */
+waitFor(options?: { state?: 'attached' | 'detached' | 'visible' | 'hidden'; timeout?: number }): Promise<void>;
+```
+
+```ts
+await screen.getByTestId('spinner').waitFor({ state: 'hidden' }); // default state: 'visible'
+```
+
+| स्टेट | किसका इंतज़ार करता है |
+| --- | --- |
+| `'visible'` (डिफ़ॉल्ट) | एक दिखने वाला मैच। |
+| `'attached'` | एक मैच, छिपा हो या दिख रहा हो। |
+| `'detached'` | कोई मैच नहीं। |
+| `'hidden'` | छिपा हुआ मैच, या कोई नहीं। |
+
+`timeout` का डिफ़ॉल्ट `config.actionTimeout` होता है।
+
+| क्या थ्रो होता है | कब |
+| --- | --- |
+| `LOCATOR_NOT_FOUND` | टाइमआउट खत्म हो जाए। |
+| `LOCATOR_AMBIGUOUS` | हर स्टेट में, एक से ज़्यादा मैच। |
+| `INVALID_ARGUMENT` | कोई दूसरा स्टेट, या `state` और `timeout` के अलावा कोई ऑप्शन key; कुछ भी रिज़ॉल्व होने से पहले थ्रो होता है। |
+
+## मैच नियम
+
+ज़्यादातर ऑपरेशन को ठीक एक मैच चाहिए। रीड एक्शन की तरह अपने एक मैच के लिए
+एक्शन टाइमआउट तक पोल करता है। फिर वह बदलने का इंतज़ार किए बिना मौजूदा वैल्यू
+लौटा देता है। किसी वैल्यू का इंतज़ार करने के लिए [`expect`](/reference/expect)
+इस्तेमाल करें।
+
+इंजन जिस नोड को पुराना पड़ चुका बताए वह उसी टाइमआउट में फिर रिज़ॉल्व होता है:
+जैसे नेविगेशन से टकराया रिज़ॉल्व, या पढ़ते समय ऐप से बदला गया मैच।
+
+| ऑपरेशन | शून्य मैच | कई मैच |
+| --- | --- | --- |
+| एक्शन | टाइमआउट तक पोल, फिर `LOCATOR_NOT_FOUND` | `LOCATOR_AMBIGUOUS` |
+| रीड | टाइमआउट तक पोल, फिर `LOCATOR_NOT_FOUND` | `LOCATOR_AMBIGUOUS` |
+| `count()`, `all()`, `allTextContents()` | `0`, `[]`, `[]` | गिनती, हर मैच के लिए एक लोकेटर, हर मैच के लिए एक टेक्स्ट |
+| `isVisible()`, `isHidden()` | `false`, `true` | `LOCATOR_AMBIGUOUS` |
+| असर्शन | टाइमआउट तक पोल, फिर `ASSERTION_FAILED` | `LOCATOR_AMBIGUOUS` |
+| डॉक्यूमेंट में न होने वाले फ़्रेम के नीचे इनमें से कोई भी | `count()`, `all()`, `allTextContents()`, `isVisible()`, और `isHidden()` के लिए शून्य मैच जैसा; एक्शन और रीड टाइमआउट तक फ़्रेम के लिए पोल करते हैं फिर `LOCATOR_NOT_FOUND`; असर्शन में `ASSERTION_FAILED` | कई फ़्रेम मैच होने पर `LOCATOR_AMBIGUOUS` |
+
+## टाइप
+
+```ts
+/**
+ * The closed role vocabulary; an unsupported role is a type error. Every
+ * engine maps its platform's element types onto these names, so a role query
+ * reads the same against a browser and a device. A role the platform has no
+ * widget for matches nothing there; it is never a type error.
+ */
+export type Role =
+  | 'button'
+  | 'link'
+  | 'textbox'
+  | 'searchbox'
+  | 'combobox'
+  | 'listbox'
+  | 'option'
+  | 'checkbox'
+  | 'radio'
+  | 'radiogroup'
+  | 'switch'
+  | 'slider'
+  | 'spinbutton'
+  | 'progressbar'
+  | 'meter'
+  | 'image'
+  | 'heading'
+  | 'tab'
+  | 'tablist'
+  | 'tabpanel'
+  | 'menu'
+  | 'menubar'
+  | 'menuitem'
+  | 'menuitemcheckbox'
+  | 'menuitemradio'
+  | 'toolbar'
+  | 'tooltip'
+  | 'tree'
+  | 'treeitem'
+  | 'list'
+  | 'listitem'
+  | 'table'
+  | 'grid'
+  | 'row'
+  | 'rowgroup'
+  | 'rowheader'
+  | 'cell'
+  | 'gridcell'
+  | 'columnheader'
+  | 'separator'
+  | 'group'
+  | 'article'
+  | 'figure'
+  | 'form'
+  | 'status'
+  | 'alert'
+  | 'dialog'
+  | 'alertdialog'
+  | 'main'
+  | 'navigation'
+  | 'banner'
+  | 'contentinfo'
+  | 'complementary'
+  | 'region';
+
+/**
+ * Spellings `getByRole` accepts beside the vocabulary and rewrites to a `Role`
+ * before the query is built: `img` is the ARIA name of `image`. An alias never
+ * reaches an engine, the replay cache, or a report; a `Role` is what they see.
+ */
+export type RoleAlias = 'img';
+
+/** A string matches exactly; a RegExp uses its own source and flags. */
+export type TextMatch = string | RegExp;
+
+export interface TextMatchOptions {
+  /** Exact match, the default. `false` is case-insensitive substring matching; a RegExp ignores it. */
+  exact?: boolean;
+  /**
+   * When true, nodes the platform reports as hidden are excluded before the
+   * exactly-one rule is applied, so a visible node with a hidden twin (a
+   * prerendered copy kept after navigation, a closed drawer) still resolves.
+   * Omitted or false keeps every match, hidden ones included.
+   */
+  visible?: boolean;
+}
+
+/**
+ * Role query options. A role query never matches a node hidden from the
+ * accessibility tree, on every engine; `visible` (inherited) is the one knob
+ * that narrows the other query kinds, to the nodes `toBeVisible()` accepts.
+ */
+export interface RoleOptions extends TextMatchOptions {
+  /** Accessible name filter. */
+  name?: TextMatch;
+  /** Requires the checked state. */
+  checked?: boolean;
+  /** Requires the disabled state. */
+  disabled?: boolean;
+  /** Requires the selected state. */
+  selected?: boolean;
+  /** Requires the expanded state. */
+  expanded?: boolean;
+  /** Requires the pressed state of a toggle button. */
+  pressed?: boolean;
+  /** Requires a heading level, 1 through 6. */
+  level?: number;
+}
+
+export interface ActionOptions {
+  /** Deadline in milliseconds; defaults to `config.actionTimeout`. */
+  timeout?: number;
+}
+
+/** `longPress` options: the hold time in milliseconds, 100 through 10000, default the engine's own. */
+export interface LongPressOptions extends ActionOptions {
+  /** Hold time in milliseconds, 100 through 10000; unset, the engine's default. */
+  duration?: number;
+}
+
+/** `pressSequentially` options: an optional pause between characters. */
+export interface PressSequentiallyOptions extends ActionOptions {
+  /** Milliseconds to wait between characters; omitted types the whole text in one call. */
+  delay?: number;
+}
+
+export interface SwipeOptions {
+  /** Swipe direction. */
+  direction: ScrollDirection;
+  /** Fling strength; default `none`. The three values are defined under screen.swipe. */
+  momentum?: Momentum;
+  from?: never;
+  to?: never;
+  duration?: never;
+}
+
+/** A swipe along a path between two viewport points: a touch swipe on a device, a pointer drag on a document platform. */
+export interface SwipePathOptions {
+  /** Where the finger goes down. */
+  from: ScreenPoint;
+  /** Where it lifts. */
+  to: ScreenPoint;
+  /** Gesture duration, an integer from 16 through 10000 ms; omitted = the engine's default. */
+  duration?: number;
+  direction?: never;
+  momentum?: never;
+}
+
+/**
+ * A point in CSS pixels. For `tap({ position })` the origin is the node's own
+ * top-left corner, inside its border on a document platform. A `Point` is
+ * also a `ScreenPoint`, whose origin is the viewport's top-left corner, the
+ * space `boundingBox()` reports in.
+ */
+export type Point = ViewportPoint; // { x: number; y: number }
+
+/** CSS pixels, or a percentage of the viewport's width (`x`) or height (`y`), `'0%'` through `'100%'`. */
+export type ScreenCoordinate = number | `${number}%`;
+
+/** A viewport point in pixels, percentages, or both: `{ x: '50%', y: 120 }`. */
+export interface ScreenPoint {
+  readonly x: ScreenCoordinate;
+  readonly y: ScreenCoordinate;
+}
+
+/** `tap`, `click`, `doubleTap`, `dblclick`, and `secondaryTap` options: the action timeout and the keys held for the click. */
+export interface ClickOptions extends ActionOptions {
+  /**
+   * Keys held while the pointer clicks, as a Shift-click extends a selection:
+   * `Shift`, `Control`, `Alt`, `Meta`, or `ControlOrMeta` (Control on Windows
+   * and Linux, Meta on macOS). Needs an engine that declares `tapModifiers`,
+   * `UNSUPPORTED_CAPABILITY` otherwise.
+   */
+  modifiers?: readonly KeyModifier[];
+}
+
+/** A modifier key, for `modifiers` and the `press` key grammar. */
+export type KeyModifier = 'Shift' | 'Control' | 'Alt' | 'Meta' | 'ControlOrMeta';
+
+/** `tap` and `click` options. */
+export interface TapOptions extends ClickOptions {
+  /**
+   * Where to tap, relative to the node's top-left corner, inside its border
+   * on a document platform. Without it the platform picks a point of the
+   * node, usually its center, behind its own actionability checks; with it
+   * the pointer is dispatched at that point once the node is in view and has
+   * a box, which needs the engine's `tap` pointer action.
+   */
+  position?: Point;
+  /**
+   * How many taps in a row, a positive safe integer, default 1. `2` is the
+   * same as `doubleTap()`; 3 or more needs an engine that declares the
+   * `multiTap` action, `UNSUPPORTED_CAPABILITY` otherwise. A count above the
+   * engine's own limit (200 on the mobile engine) is also
+   * `UNSUPPORTED_CAPABILITY`. A count above 1 is not combined with `position`.
+   */
+  count?: number;
+}
+
+/** One option of a select: its label (a bare string too), its `value` attribute, or its zero-based index. */
+export type SelectOption =
+  | string
+  | { label: string; value?: never; index?: never }
+  | { value: string; label?: never; index?: never }
+  | { index: number; label?: never; value?: never };
+
+/** A swipe or scroll direction. */
+export type ScrollDirection = 'up' | 'down' | 'left' | 'right';
+
+/** Fling strength of a swipe; defined under screen.swipe. */
+export type Momentum = 'none' | 'slow' | 'fast';
+```
+
+## संबंधित
+
+[`expect`](/reference/expect) लोकेटर के स्टेट का इंतज़ार करता है।
+[`browser`](/reference/web) फ़िक्स्चर CSS लोकेटर और फ़्रेम जोड़ता है।

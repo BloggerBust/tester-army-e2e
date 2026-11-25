@@ -1,0 +1,893 @@
+---
+title: रिपोर्टर
+description: कस्टम रिपोर्टर से रन इवेंट पाएँ और नतीजे पब्लिश करें।
+"og:image": "https://e2e.com/docs/images/og/reference/reporters.png?v=6f74d2a2a5"
+"twitter:image": "https://e2e.com/docs/images/og/reference/reporters.png?v=6f74d2a2a5"
+---
+
+रिपोर्टर को रन के इवेंट उसी वक्त मिलते हैं जब वे होते हैं, और रिपोर्ट लिखे जाने
+पर पूरा हो चुका रन भी मिलता है। `e2e.config.ts` में `reporters` बिल्ट-इन रिपोर्टर
+को id से और कस्टम रिपोर्टर ऑब्जेक्ट को साथ-साथ लिस्ट करता है।
+
+```ts title="e2e.config.ts"
+import type { E2EConfig } from 'e2e';
+import { web } from '@e2e-dev/web';
+import { github } from '@e2e-dev/github';
+
+export default {
+  targets: [{ engine: web(), app: { url: 'http://localhost:3000' } }],
+  reporters: ['list', 'junit', github()],
+} satisfies E2EConfig;
+```
+
+किसी बिल्ट-इन रिपोर्टर को ऑप्शन देने के लिए id की जगह `e2e/reporters` से उसकी
+फ़ैक्टरी कॉल करें: `junit({ outputFile: 'reports/junit.xml' })`। id का मतलब है
+बिना ऑप्शन के उसकी फ़ैक्टरी कॉल होना।
+
+बिल्ट-इन रिपोर्टर सिर्फ़ [`Reporter`](#custom-reporters) कॉन्ट्रैक्ट इस्तेमाल
+करते हैं, इसलिए आपका अपना रिपोर्टर भी वह सब कर सकता है जो वे करते हैं।
+
+## रेफ़रेंस
+
+### बिल्ट-इन रिपोर्टर
+
+| रिपोर्टर | विवरण |
+| --- | --- |
+| [`list`](#list) | टर्मिनल प्रोग्रेस और रन समरी |
+| [`dot`](#dot) | कॉम्पैक्ट प्रोग्रेस और रन समरी |
+| [`line`](#line) | एक प्रोग्रेस रो और रन समरी |
+| [`json`](#json) | stdout पर रिपोर्ट डॉक्यूमेंट |
+| [`junit`](#junit) | `<output>/junit.xml` लिखता है |
+| [`markdown`](#markdown) | `<output>/summary.md` लिखता है |
+| [`ctrf`](#ctrf) | `<output>/ctrf.json` लिखता है |
+| [`github()`](#github) | पुल रिक्वेस्ट कमेंट और जॉब समरी |
+| [`htmlReporter()`](#htmlreporter) | `<output>/report.html` लिखता है |
+
+| क्या थ्रो होता है | कब |
+| --- | --- |
+| `INVALID_CONFIG` | `reporters` ऐरे नहीं है। |
+| `INVALID_CONFIG` | `list`, `dot`, `line`, `json`, `junit`, `markdown`, या `ctrf` के अलावा कोई id। |
+| `INVALID_CONFIG` | कॉल न की गई फ़ैक्टरी, जैसे `junit()` के बजाय `junit`। |
+| `INVALID_CONFIG` | ऐसी एंट्री जो न id हो न `name` और कम से कम एक हुक वाला ऑब्जेक्ट। |
+| `INVALID_CONFIG` | एक से ज़्यादा [इंटरैक्टिव](#interactive) रिपोर्टर, जैसे `list` और `dot`। |
+| `INVALID_CONFIG` | `json` के साथ `stream: 'stdout'` वाला `list`, `dot`, या `line`। |
+
+#### `list`
+
+टर्मिनल प्रोग्रेस, फ़ेलियर, और रन समरी दिखाता है।
+
+```ts
+reporters: ['list'], // default
+```
+
+- `list({ stream })` तय करता है कि यह किस टर्मिनल स्ट्रीम पर प्रिंट करे:
+  `'stdout'` या `'stderr'`। इसके बिना `list` stdout पर प्रिंट करता है, या
+  `json` के साथ होने पर stderr पर।
+- यह [इंटरैक्टिव](#interactive) है। यह वही इवेंट रेंडर करता है जो
+  [`onEvent`](#onevent) को मिलते हैं, साथ में वह जो आपका कोड प्रिंट करता है
+  ([आउटपुट](#output)) और वह टेस्ट जो [पॉज़](#pauses) पर रुका है।
+- TTY पर लाइव व्यू चल रहे टेस्ट दिखाता है। जब stdout टर्मिनल न हो (पाइप्ड,
+  रीडायरेक्टेड, ज़्यादातर CI), तो हर टेस्ट खत्म होते ही प्रिंट होता है।
+- इसका [`onSummary`](#onsummary) अपनी समरी के नीचे हर रिपोर्टर की समरी रो प्रिंट
+  करता है।
+- आउटपुट हर फ़ेल टेस्ट के लिए एक `Failed` रो पर खत्म होता है: उसकी फ़ाइल और
+  लाइन, उसके एरर की पहली लाइन, और अगर लिखा गया हो तो उसका ट्रेस पेज, ताकि
+  `e2e run | tail` भी बता सके कि क्या टूटा।
+
+#### `dot`
+
+हर चुना गया टेस्ट खत्म होने पर एक कैरेक्टर प्रिंट करता है।
+
+```ts
+reporters: ['dot'],
+```
+
+| पास | फ़्लेकी | फ़ेल | टाइमआउट | इंटरप्टेड | स्किप्ड |
+| --- | --- | --- | --- | --- | --- |
+| `.` | `~` | `F` | `T` | `I` | `-` |
+
+80 निशानों के बाद लाइन रैप होती है। रंग टर्मिनल सेटिंग के हिसाब से होते हैं;
+`NO_COLOR` उन्हें बंद कर देता है। रन हेडर, फ़ेलियर डिटेल और लोकेशन, समरी, और
+स्टेप प्रॉम्प्ट `list` जैसा ही फ़ॉर्मेट इस्तेमाल करते हैं।
+
+यह डिफ़ॉल्ट रूप से stdout पर प्रिंट करता है; `dot({ stream: 'stderr' })` इसे
+बदलता है। `json` के साथ (जैसे `--reporter dot,json`), `dot` अपना पूरा आउटपुट
+stderr पर भेजता है, ताकि stdout में सिर्फ़ JSON रिपोर्ट रहे।
+
+Playwright के उलट, e2e ASCII निशान इस्तेमाल करता है और रीट्राई के बाद सिर्फ़
+आखिरी नतीजा प्रिंट करता है, हर रीट्राई अटेम्प्ट के लिए अलग निशान नहीं।
+
+#### `line`
+
+एक ही रो में प्रोग्रेस दिखाता है और हर फ़ेलियर होते ही उसे प्रिंट करता है।
+
+```ts
+reporters: ['line'],
+```
+
+```text
+[3/12] |web| tests/cart.e2e.ts > adds an item (running)
+```
+
+- TTY पर यह रो उस टेस्ट का नाम दिखाती है जो सबसे आखिर में शुरू या खत्म हुआ। जब
+  stdout टर्मिनल न हो (पाइप्ड, रीडायरेक्टेड, ज़्यादातर CI), तो हर टेस्ट खत्म
+  होने पर अपनी रो प्रिंट करता है।
+- `[3/12]` उन चुने गए टेस्ट को गिनता है जिनका रीट्राई के बाद अंतिम नतीजा आ गया
+  है। जब रन अपने टेस्ट जानने से पहले ही रुक जाए तो कुल संख्या `?` होती है।
+- फ़ेल या टाइमआउट होने वाला टेस्ट अपनी फ़ेलियर डिटेल तुरंत प्रिंट करता है, अंत में
+  `Failed Tests` के नीचे नहीं। उनमें ट्रेस पेज का नाम नहीं होता क्योंकि वह रन
+  खत्म होने पर लिखा जाता है: अंत की `Failed` रो में उसका नाम आता है।
+- रन हेडर, समरी, और स्टेप प्रॉम्प्ट `list` जैसा फ़ॉर्मेट इस्तेमाल करते हैं, और
+  आपका कोड जो प्रिंट करता है वह भी।
+
+यह डिफ़ॉल्ट रूप से stdout पर प्रिंट करता है; `line({ stream: 'stderr' })` इसे
+बदलता है। `json` के साथ (जैसे `--reporter line,json`), `line` अपना पूरा आउटपुट
+stderr पर भेजता है, ताकि stdout में सिर्फ़ JSON रिपोर्ट रहे।
+
+Playwright के उलट, e2e टेस्ट को तब गिनता है जब उसका अंतिम नतीजा आता है (हर
+अटेम्प्ट शुरू होने पर नहीं), और रो में स्टेप का नाम नहीं होता।
+
+#### `json`
+
+रिपोर्ट डॉक्यूमेंट को stdout पर प्रिंट करता है।
+
+```ts
+reporters: ['json'],
+```
+
+यह [इंटरैक्टिव](#interactive) नहीं है। इसके साथ `list`, `dot`, या `line` न हो,
+तो आपका कोड जो प्रिंट करता है वह stderr पर जाता है।
+
+#### `junit`
+
+रिपोर्ट के बगल में `junit.xml` लिखता है।
+
+```ts
+reporters: ['list', 'junit'],
+```
+
+- `e2e/reporters` से `junit({ outputFile: 'reports/junit.xml' })` इसे प्रोजेक्ट
+  रूट के सापेक्ष किसी दूसरी जगह लिखता है। डिफ़ॉल्ट: [आउटपुट डायरेक्टरी](/reference/config#output)
+  में `junit.xml`।
+- इसका [`reportFiles`](#reportfiles) `run.report` को एक फ़ाइल और एक `JUnit` रो
+  के रूप में रेंडर करता है। यह रिपोर्टर का सबसे छोटा पूरा उदाहरण है, और जब रिपोर्ट
+  न लिखी गई हो तो यह कुछ नहीं लिखता।
+- जब कोई टेस्ट जो फ़ेल हुआ, टाइमआउट हुआ, सिर्फ़ रीट्राई पर पास हुआ, या
+  [`test.fail`](/reference/test#fail) की उम्मीद के मुताबिक फ़ेल हुआ, उसने फ़ेलियर
+  स्क्रीनशॉट रिकॉर्ड किया हो, तो उसका `<testcase>` इसे
+  `<system-out>[[ATTACHMENT|<path>]]</system-out>` के रूप में लिंक करता है, जिसे
+  GitLab CI पाइपलाइन टेस्ट रिपोर्ट में दिखाता है। पाथ `$CI_PROJECT_DIR` के सापेक्ष
+  होता है, या वह सेट न हो तो प्रोजेक्ट रूट के सापेक्ष; इसके बाहर के स्क्रीनशॉट को
+  लिंक नहीं मिलता।
+
+#### `markdown`
+
+रिपोर्ट के बगल में `summary.md` लिखता है।
+
+```ts
+reporters: ['list', 'markdown'],
+```
+
+यह `summary.md` के साथ वही करता है जो `junit` करता है,
+[`renderMarkdownReport`](#rendermarkdownreport) के ज़रिए, और वही `outputFile`
+लेता है: `markdown({ outputFile: 'reports/summary.md' })`।
+
+<a id="rendermarkdownreport" />
+
+##### `renderMarkdownReport`
+
+रिपोर्ट को उसी Markdown पेज के रूप में रेंडर करता है जो `markdown` रिपोर्टर
+लिखता है, ताकि आपका अपना रिपोर्टर वही पेज कहीं और पोस्ट कर सके।
+
+```ts
+import { renderMarkdownReport, type Reporter } from 'e2e';
+
+const reporter: Reporter = {
+  name: 'wiki',
+  async onRunFinished(run) {
+    const page = renderMarkdownReport(run.report, { traces: run.traces });
+    await fetch('https://wiki.example.test/runs', { method: 'POST', body: page });
+  },
+};
+```
+
+- `traces` हर ब्लॉक को रिज़ल्ट id से उसके ट्रेस पेज पर लिंक करता है।
+- GitHub Actions के लिए [`@e2e-dev/github`](/github) वही रिपोर्टर है।
+
+#### `ctrf`
+
+रिपोर्ट के बगल में `ctrf.json` लिखता है,
+[Common Test Report Format](https://ctrf.io) 0.3.0 में। कोई भी CTRF टूल इसे पढ़
+सकता है: टेस्ट रिपोर्ट एक्शन, चैट नोटिफ़ायर, डैशबोर्ड।
+
+```ts
+reporters: ['list', 'ctrf'],
+```
+
+- यह `junit` वाला ही `outputFile` लेता है:
+  `ctrf({ outputFile: 'reports/ctrf.json' })`। जब रिपोर्ट न लिखी गई हो तो यह
+  कुछ नहीं लिखता, इसलिए टेस्ट से पहले ही रुकने वाला रन पिछली `ctrf.json` को वहीं
+  छोड़ देता है, जैसे `junit.xml` को छोड़ता है।
+- `junit.xml` के हर `<testcase>` के लिए एक CTRF टेस्ट, इसके `run` सूट को छोड़कर।
+  इसका `name` टेस्ट फ़ाइल से शुरू होता है, और `testId` रिज़ल्ट id है, जो हर रन
+  में वही रहती है। `name` फ़ाइल और टाइटल को ` > ` से जोड़ता है, इसलिए जिस टाइटल
+  में ` > ` हो वह दूसरे टेस्ट जैसा दिख सकता है; `testId` उन्हें हमेशा अलग पहचानता
+  है।
+- `filePath` और `line` बताते हैं कि टेस्ट कहाँ डिक्लेयर है, जो टेस्ट फ़ाइल से
+  इंपोर्ट किया गया मॉड्यूल होता है जब वह मॉड्यूल उसे डिक्लेयर करे। `suite` टेस्ट
+  फ़ाइल से शुरू होता है, और `summary.suites` टेस्ट फ़ाइलों को गिनता है।
+- हर टेस्ट एक अटेम्प्ट दिखाता है: वह आखिरी अटेम्प्ट जो अपने फ़ैसले तक पहुँचा।
+  उससे पहले के अटेम्प्ट `retryAttempts` में होते हैं, और उसके बाद रन ने जो रीट्राई
+  काटा वह सिर्फ़ `extra` में गिना जाता है। जो टेस्ट पहले फ़ेल हुआ और फिर पास हुआ,
+  उसमें `flaky: true` होता है।
+- [सीरियल ग्रुप](/reference/test#serial) में, ग्रुप रीट्राई होने पर टेस्ट दोबारा
+  चलता है, इसलिए हर बार पास होने पर भी उसमें `retries` होता है; जो टूल `retries`
+  को फ़्लेकीनेस मानता है वह इसे फ़्लेकी गिनेगा, जबकि `flaky` अनसेट रहता है।
+  रीट्राई में स्किप हुआ टेस्ट उस स्किप अटेम्प्ट को दिखाता है: कोई टाइमिंग या
+  अटैचमेंट नहीं, और जो अटेम्प्ट उसने चलाए वे उसके `retryAttempts` होते हैं। जो
+  टूल `retries + 1` रन गिनता है वह स्किप अटेम्प्ट को भी गिनेगा।
+- `status` CTRF का `passed`, `failed`, `skipped`, या `other` होता है। `rawStatus`
+  e2e का अपना स्टेटस रखता है: `timed-out` `failed` बनता है, `interrupted`
+  `other`।
+- रन एरर (जैसे फ़ेल हुआ `afterAll`) `results.errors` में जाते हैं और कभी टेस्ट के
+  रूप में नहीं गिने जाते। सिर्फ़ फ़ेल टेस्ट गिनने वाला टूल ऐसे रन को हरा मानेगा,
+  इसलिए [जॉब को एग्ज़िट कोड पर गेट करें](/ci#gate-pull-requests)।
+- अटैचमेंट स्क्रीनशॉट, वीडियो, और लॉग (जैसे फ़ेलियर पर स्क्रीन) को होस्टेड URL से
+  लिंक करते हैं, वरना आर्टिफ़ैक्ट स्टोर के `http(s)` रेफ़रेंस से, वरना प्रोजेक्ट
+  रूट (`$CI_PROJECT_DIR` सेट हो तो उससे) के सापेक्ष पाथ से। इसके बाहर की फ़ाइल और
+  हर डाउनलोड छोड़ दिया जाता है। सीरियल ग्रुप का टेस्ट सिर्फ़ अपनी फ़ाइलें और ग्रुप
+  की वे फ़ाइलें (जैसे उसका वीडियो) लिस्ट करता है जो किसी एक टेस्ट की नहीं हैं।
+  टेस्ट ने `launch()` से जो दूसरा सेशन खोला उसका वीडियो ग्रुप का गिना जाता है।
+  कटे हुए रीट्राई या ऐसे ग्रुप अटेम्प्ट की फ़ाइलें जिनमें कोई टेस्ट नहीं चला,
+  सिर्फ़ `report.json` में रहती हैं।
+- रिपोर्ट से कॉपी किया हर टेक्स्ट दोबारा रन के सीक्रेट रेडैक्शन से गुज़रता है।
+  जिस लिंक को रेडैक्शन बदल दे, उसे छोड़ दिया जाता है।
+- जिस डेटा के लिए CTRF में फ़ील्ड नहीं है (जैसे हर स्टेप का e2e स्टेटस और रन के
+  मॉडल टोकन और लागत), वह हर `extra` की `e2e-inc.e2e` key के अंदर रहता है।
+
+#### `github()`
+
+`@e2e-dev/github` GitHub Actions से रन को एक पुल रिक्वेस्ट कमेंट के रूप में पोस्ट
+करता है, रीरन पर उसे अपडेट रखता है, और वही टेक्स्ट जॉब समरी में लिखता है।
+
+```ts
+import { github } from '@e2e-dev/github';
+
+const reporter = github({ key: 'chromium' });
+```
+
+- जब वर्कफ़्लो, जॉब, और प्रोजेक्ट एक जैसे हों (जैसे मैट्रिक्स में), तो `key` एक
+  जॉब के कमेंट को दूसरे से अलग पहचानती है। इसके बिना एक जॉब के मैट्रिक्स रेप्लिका
+  एक ही कमेंट शेयर करते हैं, और आखिरी खत्म होने वाला जीतता है। कभी भी रन id
+  इस्तेमाल न करें: रीरन को पुराना कमेंट ढूँढना होता है। यह key कमेंट की हेडलाइन
+  में भी नाम देती है: `e2e chromium: 77 passed`।
+- यह टोकन, इवेंट, और रिपॉज़िटरी रन खत्म होने पर पढ़ता है, कॉन्फ़िग लोड पर कभी
+  नहीं।
+- `--last-failed` के साथ यह हर रन को एक ही कमेंट में दिखाने के लिए रीरन को
+  [`lastRun`](#onrunfinished) में फ़ोल्ड करता है।
+- सेटअप और परमिशन [पुल रिक्वेस्ट कमेंट](/github) पर हैं।
+
+#### `htmlReporter()`
+
+`@e2e-dev/html-reporter` रन को एक ऐसे पेज के रूप में लिखता है जिसे आप ब्राउज़र
+में खोल सकते हैं: फ़ाइल के हिसाब से टेस्ट, स्टेटस टैब और सर्च बॉक्स, और हर टेस्ट
+के अटेम्प्ट, एरर, स्टेप, स्क्रीनशॉट, और वीडियो।
+
+```ts
+import { htmlReporter } from '@e2e-dev/html-reporter';
+
+const reporter = htmlReporter({ media: 'embed' });
+```
+
+- इसका [`reportFiles`](#reportfiles) रिपोर्ट डॉक्यूमेंट एम्बेड करके रिपोर्ट के
+  बगल में `report.html` लिखता है। यह पेज बिना सर्वर के डिस्क से खुलता है, या
+  [`npx e2e report`](/reference/cli#e2e-report) से।
+- जो रन रिपोर्ट नहीं लिखता, वह यह पेज भी नहीं लिखता, इसलिए पिछले रन का पेज बना
+  रहता है, जैसे `junit.xml`। [आउटपुट](/reference/cli#output) देखें।
+- `media` तय करता है कि स्क्रीनशॉट, वीडियो, और डाउनलोड का क्या होगा:
+
+  | `media` | पेज | इसे शेयर करने के लिए |
+  |---|---|---|
+  | `'link'` (डिफ़ॉल्ट) | `<output>/results/` से रिलेटिव पाथ से लिंक करता है | आउटपुट डायरेक्टरी को एक साथ रखें, एक CI आर्टिफ़ैक्ट की तरह |
+  | `'embed'` | उन्हें अंदर रख लेता है, ताकि एक ही फ़ाइल पूरी रिपोर्ट हो | फ़ाइल भेज दें; डिवाइस वीडियो इसे हर मिनट दर्जनों मेगाबाइट का बना देते हैं |
+  | `'none'` | उन्हें छोड़ देता है और सिर्फ़ टेक्स्ट दिखाता है | फ़ाइल भेज दें |
+
+  डाउनलोड लिंक फ़ाइल को खोलने के बजाय सेव करता है। जिस डाउनलोड को रनर सीक्रेट के
+  लिए स्कैन न कर सके (जैसे PDF या zip), वह एम्बेडेड पेज से बाहर रहता है, और
+  होस्टेड ब्राउज़र या डिवाइस सर्विस का वीडियो उसी के लिंक के रूप में रहता है।
+- `outputFile` पेज को प्रोजेक्ट रूट के सापेक्ष किसी दूसरी जगह रखता है (प्रोजेक्ट
+  रूट से चलाते समय वह पाथ `e2e report <path>` को पास करें)।
+- पेज सिर्फ़ वही रन दिखाता है जिसने इसे लिखा: `--last-failed` के बाद सिर्फ़ रीरन
+  के टेस्ट (बिना आगे ले जाए गए फ़ेलियर के), और `e2e explore` में बिना फ़ाइंडिंग
+  के एक्सप्लोरेशन।
+- टेस्ट ट्री की तरह दिखते हैं: हर फ़ाइल, उसके describe ब्लॉक, फिर उनके टेस्ट,
+  फ़ेलियर सबसे ऊपर। फ़ाइल के पाथ पर क्लिक करने से उसके टेस्ट फ़ोल्ड हो जाते हैं।
+- जिस रन ने एक से ज़्यादा टारगेट चुने हों, उसमें स्टेटस टैब के ऊपर टारगेट टैब
+  मिलते हैं। एक चुनने पर सिर्फ़ उसके टेस्ट और गिनती दिखती है; URL उस पसंद को
+  रखता है, इसलिए फ़िल्टर किया व्यू लिंक के रूप में भी काम करता है।
+- हर स्टेप दिखाता है कि वह अटेम्प्ट के वीडियो में कहाँ शुरू होता है; समय चुनने पर
+  वीडियो वहीं से चलता है, और वीडियो जिस स्टेप पर हो वह हाइलाइट रहता है। वीडियो की
+  टाइमलाइन हर स्टेप की शुरुआत मार्क करती है, और स्पीड बटन 0.25× से 4× तक जाता है;
+  पाँच सेकंड से छोटी रिकॉर्डिंग धीमी गति से शुरू होती है। फ़ोन की रिकॉर्डिंग स्टेप
+  के ऊपर नहीं, उनके बगल में दिखती है।
+- जो फ़ेल असर्शन उम्मीद के मुताबिक और मिली हुई वैल्यू रिपोर्ट करता है (जैसे लोकेटर
+  असर्शन), वह अलग होने वाले कैरेक्टर को मार्क करके दिखाता है। जब टेस्ट फ़ाइल
+  प्रोजेक्ट में हो, तो फ़ेलियर फ़ेल हुई कॉल के आसपास का कोड दिखाता है, और हर स्टेप
+  उसे चलाने वाले कोड पर खुलता है। पेज इसके लिए हर स्टेप के आसपास टेस्ट फ़ाइलों की
+  कुछ लाइनें रख लेता है, इसलिए शेयर की गई रिपोर्ट में भी वे दिखती हैं।
+- फ़ेल अटेम्प्ट के एरर पर **copy prompt** कोडिंग एजेंट के लिए फ़ेलियर कॉपी करता
+  है: एरर, स्टेप, फ़ेल स्टेप ने क्या किया, और उसके ट्रेस पेज, स्क्रीन ट्री,
+  स्क्रीनशॉट, और वीडियो में से जो भी मौजूद हों उनके प्रोजेक्ट रूट के सापेक्ष पाथ।
+- एजेंट स्टेप अपना ब्यौरा, किए गए एक्शन, मॉडल, टोकन और लागत, कैश से रीप्ले हुआ या
+  नहीं, और आखिरी टर्न दिखाते हैं।
+- पेज सिस्टम की लाइट या डार्क थीम मानता है। ऊपर सूरज और चाँद के आइकन किसी एक को
+  रोककर रखते हैं, और ब्राउज़र यह पसंद हर खोली जाने वाली रिपोर्ट के लिए याद रखता है।
+
+### कस्टम रिपोर्टर
+
+रिपोर्टर ऑब्जेक्ट में एक `name` और कम से कम एक हुक होता है। हर हुक उन सभी
+रिपोर्टर को जाता है जिनमें वह मौजूद हो। लाइव प्रोग्रेस के लिए `onEvent`, रिपोर्ट
+के बगल में फ़ाइलें लिखने के लिए `reportFiles`, और फ़ाइनल रिपोर्ट कहीं भेजने के
+लिए `onRunFinished` इस्तेमाल करें।
+
+```ts title="e2e.config.ts"
+import type { E2EConfig, Reporter } from 'e2e';
+import { web } from '@e2e-dev/web';
+
+const upload: Reporter = {
+  name: 'upload',
+  async onRunFinished(run) {
+    const response = await fetch('https://example.test/runs', {
+      method: 'POST',
+      body: JSON.stringify(run.report),
+    });
+    const { url } = (await response.json()) as { url: string };
+    return [{ label: 'Results', text: url }];
+  },
+};
+
+export default {
+  targets: [{ engine: web(), app: { url: 'localhost:3000' } }],
+  reporters: ['list', upload],
+} satisfies E2EConfig;
+```
+
+| मेंबर | टाइप |
+| --- | --- |
+| [`name`](#name) | `string` |
+| [`interactive`](#interactive) | `boolean` |
+| [`onEvent`](#onevent) | `(event: RunEvent) => void` |
+| [`reportFiles`](#reportfiles) | `(run, signal) => ReportFile[]` |
+| [`onRunFinished`](#onrunfinished) | `(run, signal) => Promise<…>` |
+| [`onSummary`](#onsummary) | `(rows, run) => void` |
+
+```ts
+interface Reporter {
+  readonly name: string;
+  readonly interactive?: boolean;
+  onEvent?(event: RunEvent): void;
+  reportFiles?(run: FinishedRun, signal: AbortSignal): readonly ReportFile[] | Promise<readonly ReportFile[]>;
+  onRunFinished?(run: FinishedRun, signal: AbortSignal): Promise<ReporterSummary | void>;
+  onSummary?(rows: ReporterSummary, run: FinishedRun): void;
+}
+```
+
+जब रिकॉर्डिंग में यह जानकारी हो, तो कैश्ड स्टेप `report.json` और ट्रेस पेज पर
+`cache.recordedBy: { provider, model }` दिखाते हैं। पुरानी रिकॉर्डिंग में यह नहीं
+होता। कंसोल `replayed · recorded with provider/model` तभी प्रिंट करता है जब वह
+पहचान कॉन्फ़िगर मॉडल से अलग हो। मल्टी-एजेंट रन और ऐसे पिन किए गए एजेंट के लिए
+जिनका मॉडल रन हेडर में नहीं है, यह चुप रहता है।
+
+#### `name`
+
+डायग्नोस्टिक्स में रिपोर्टर का लेबल। ज़रूरी है और खाली नहीं हो सकता। यह किसी
+बिल्ट-इन के नाम से मेल खा सकता है: `json` नाम वाला रिपोर्टर तब भी आपका ही रहता
+है, और `--reporter` कभी उसकी जगह नहीं लेता।
+
+```ts
+name: 'upload',
+```
+
+#### `interactive`
+
+जब रिपोर्टर टर्मिनल में इंसान को रन दिखा रहा हो (जैसे [`list`](#list),
+[`dot`](#dot), और [`line`](#line)), तब इसे सेट करें। फिर रनर खुद कोई
+[आउटपुट](#output), रन एरर, या [पॉज़](#pauses) प्रिंट नहीं करता।
+
+```ts
+interactive: true, // default: false
+```
+
+- `output`, `run-error`, `paused`, और `resumed` [इवेंट](#events) हैंडल करें। जो
+  रन जल्दी रुक जाए (जैसे `NO_TESTS` पर), वह सिर्फ़ वही प्रिंट करता है जो रिपोर्टर
+  प्रिंट करे।
+- इसके हुक सीधे `process.stdout` या `process.stderr` पर लिखते हैं। रनर उस आउटपुट
+  को रेडैक्ट नहीं करता, इसलिए सिर्फ़ वही प्रिंट करें जो इवेंट और रिपोर्ट में है: वे
+  पहले से रेडैक्टेड होते हैं।
+- `json` के साथ, यह जो stdout पर लिखता है वह stderr पर प्रिंट होता है।
+- बिना इंटरैक्टिव रिपोर्टर के, रनर आउटपुट, रन एरर, और पॉज़ stderr पर प्रिंट करता
+  है। यह stdout पर कभी नहीं लिखता, ताकि stdout में सिर्फ़ वही रहे जो कोई रिपोर्टर
+  वहाँ प्रिंट करे, जैसे `json` रिपोर्ट।
+- कोई भी दूसरा रिपोर्टर [`onSummary`](#onsummary) के बाहर जो प्रिंट करता है वह
+  आपके कोड का आउटपुट गिना जाता है: रेडैक्ट होकर बाकी आउटपुट की तरह दिखता है।
+- एक बार इंटरैक्टिव रिपोर्टर का `onEvent` थ्रो या रिजेक्ट कर दे, तो बाकी रन के लिए
+  रनर उसकी जगह प्रिंट करता है।
+- दूसरा Ctrl-C कभी भी इसके `onRunFinished` को नहीं रोकता: इसका आउटपुट लोकल होता
+  है।
+- ज़्यादा से ज़्यादा एक रिपोर्टर इंटरैक्टिव हो सकता है।
+- [`e2e/runner`](/reference/runner) के ज़रिए एम्बेड किया गया रन हर इंटरैक्टिव
+  रिपोर्टर को छोड़ देता है, और आपका कोड जो प्रिंट करता है वह अपनी स्ट्रीम पर रहता
+  है।
+
+#### `onEvent`
+
+हर रन इवेंट को उसके होते ही सादे JSON के रूप में पाता है।
+
+```ts
+onEvent(event) {
+  switch (event.type) {
+    case 'test-finished':
+      console.log(event.result.test.title, event.result.status);
+      break;
+    default:
+  }
+},
+```
+
+[इवेंट](#events) में इनकी लिस्ट है।
+
+<Note>
+`onEvent` एकमात्र लाइव हुक है। इसे ब्लॉक या थ्रो नहीं करना चाहिए। धीमा काम
+`onRunFinished` में करें। थ्रो करने पर रिपोर्टर बाकी रन के लिए क्वारंटीन हो जाता
+है और stderr पर रिपोर्टर का नाम, इवेंट टाइप, और एरर बताते हुए एक लाइन प्रिंट होती
+है। रन के नतीजे पर कोई असर नहीं पड़ता।
+</Note>
+
+#### `reportFiles`
+
+खत्म हो चुके रन के लिए लिखने वाली फ़ाइलें लौटाता है। रनर हर एक को उसकी डायरेक्टरी
+बनाकर एटॉमिक तरीके से लिखता है।
+
+```ts
+reportFiles: (run) => [{ path: 'reports/status.txt', content: run.report.run.status, label: 'Status' }],
+```
+
+```ts
+interface ReportFile {
+  readonly path: string;    // absolute, or from the project root
+  readonly content: string;
+  readonly label?: string;  // the summary row's label; its text is the path
+  readonly note?: string;   // printed after the path, such as `(one file, 2.1 MB)`
+}
+```
+
+- इसमें `onRunFinished` जैसी ही एक मिनट की डेडलाइन और `signal` होता है। दूसरे
+  Ctrl-C के बाद इसके पास 5 सेकंड बचते हैं, ताकि नई रिपोर्ट के बगल में पिछले रन की
+  फ़ाइल शायद ही कभी छूटे।
+- `report.json` के पाथ पर फ़ाइल, न लिखी जा सकने वाली फ़ाइल, या ऐसी रिटर्न वैल्यू
+  जो फ़ाइलों की लिस्ट न हो, stderr पर एक लाइन बनती है।
+
+#### `onRunFinished`
+
+रिपोर्ट और हर रिपोर्ट फ़ाइल लिखे जाने और टर्मिनल समरी प्रिंट होने के बाद, पूरे हो
+चुके रन और एक `AbortSignal` के साथ चलता है।
+
+```ts
+async onRunFinished(run, signal) {
+  await fetch('https://example.test/runs', { method: 'POST', body: JSON.stringify(run.report), signal });
+  return [{ label: 'Results', text: 'https://example.test/runs/0192c' }];
+},
+```
+
+```ts
+interface FinishedRun {
+  readonly report: Report;                 // the report-1 document, as written
+  readonly status: RunStatus;              // report.run.status
+  readonly exitCode: RunExitCode;
+  readonly projectRoot: string;            // what the terminal shows paths relative to
+  readonly reportPath: string | undefined; // absent when the run stopped before its tests or the write failed
+  readonly outputDir: string;              // the output directory, .e2e by default
+  readonly artifactsRoot: string;          // what the report's artifact paths are relative to
+  readonly aiTracePath: string | undefined;
+  readonly traces: ReadonlyMap<string, string>;      // result id -> its trace page, from the project root
+  readonly lastRun?: Report;               // with --last-failed, the runs before this one, folded into one
+  redact(text: string): string;            // masks the config's fixed secret values (not provider-resolved ones) in text from outside the report
+}
+
+type ReporterSummary = readonly { label: string; text: string }[];
+```
+
+- सभी रिपोर्टर एक साथ चलते हैं, हर एक के पास एक मिनट की डेडलाइन होती है।
+- टाइमआउट, एक्सेप्शन, या इनवैलिड रिटर्न वैल्यू stderr पर रिपोर्ट होती है। रन का
+  स्टेटस, एग्ज़िट कोड, और रिपोर्ट नहीं बदलते।
+- एक Ctrl-C तब भी रिपोर्टर को पूरा होने देता है। दूसरा Ctrl-C [इंटरैक्टिव](#interactive)
+  रिपोर्टर को छोड़कर बाकी का इंतज़ार बंद कर देता है।
+- बजट खत्म होने या रन को ज़बरदस्ती रोकने पर `signal` अबॉर्ट होता है।
+- रनर `onRunFinished` कॉल करने से पहले ट्रेस पेज (`results/<test>/trace.md`) लिख
+  देता है।
+
+<Note>
+हर रिक्वेस्ट और टाइमर को `signal` दें। छोड़े गए रिपोर्टर का इंतज़ार किए बिना CLI
+बाहर निकल जाता है, जिससे उसका बचा काम बीच में कट जाता है;
+[`e2e/runner`](/reference/runner) में वह काम आपकी प्रोसेस को चालू बनाए रखता है।
+</Note>
+
+##### समरी रो
+
+रिपोर्टर जो रो लौटाता है, और उसकी लेबल्ड रिपोर्ट फ़ाइलों की रो, हर
+[`onSummary`](#onsummary) तक पहुँचती हैं। `list`, `dot`, और `line` उन्हें अपनी
+समरी के नीचे अपने ही लेआउट में प्रिंट करते हैं। `json` रिपोर्टर इन्हें नहीं रखता।
+
+```
+   Test Files  2 passed (2)
+        Tests  6 passed (6)
+     Start at  14:02:11
+     Duration  8.41s
+
+        JUnit  .e2e/junit.xml
+      Results  https://example.test/runs/0192c…
+```
+
+##### आर्टिफ़ैक्ट
+
+- रिपोर्ट में आर्टिफ़ैक्ट पाथ `artifactsRoot` के सापेक्ष POSIX पाथ होते हैं।
+- `path`, `size`, और `sha256` ऑप्शनल हैं: जिस आर्टिफ़ैक्ट की फ़ाइल कभी बनी ही नहीं,
+  या जिसे रेडैक्शन ने रोक लिया, वह इनके बिना दर्ज होता है। पढ़ने से पहले `path`
+  जाँच लें।
+- होस्टेड सर्विस के रखे वीडियो में `path` की जगह `http(s)` `url` होता है।
+
+##### `--last-failed` के साथ रीरन
+
+- रीरन की अपनी रिपोर्ट छोड़े गए टेस्ट को अनसिलेक्टेड दिखाती है। जो रिपोर्टर एक ही
+  जगह को अपडेट रखता है (जैसे `@e2e-dev/github` पुल रिक्वेस्ट कमेंट रखता है), वह
+  सभी रन को एक साथ दिखाने के लिए `foldLastRun(run.report, run.lastRun)` से रीरन
+  को `lastRun` में फ़ोल्ड करता है।
+- `lastRun` में इससे पहले के रन पहले से एक साथ फ़ोल्ड होते हैं, इसलिए दूसरे रीरन
+  को भी पहले रन के पास दिखते हैं। रनर इस रन को शामिल करते हुए यही फ़ोल्ड रिपोर्ट
+  के बगल में `report-with-reruns.json` में लिखता है।
+- जो टेस्ट रीरन को चलाना था लेकिन किसी दूसरे फ़िल्टर ने बाहर कर दिया, वह रीरन के
+  `run.carried` में होता है। इसमें टेस्ट का आखिरी नतीजा, वह सीरियल ग्रुप जिस पर
+  उसके अटेम्प्ट रहते हैं, और वह `beforeAll` या `afterAll` फ़ेलियर होता है जिसके
+  स्कोप में वह है, जिस भी पिछले रन ने उन्हें रिपोर्ट किया हो।
+- फ़ोल्ड अनसिलेक्टेड की जगह कैरी किया गया नतीजा दिखाता है और कैरी किए फ़ेलियर या
+  हुक एरर को अंतिम नतीजे में गिनता है।
+- दोनों रिपोर्ट जिन आर्टिफ़ैक्ट का नाम लेती हैं वे डिस्क पर `artifactsRoot` के
+  अंदर होते हैं।
+
+<a id="test-filters" />
+##### टेस्ट फ़िल्टर
+
+- जिस टेस्ट को [टेस्ट फ़िल्टर](/filters) ने बाहर किया, वह `skip.cause` `filtered`
+  और फ़िल्टर का नाम बताने वाले `skip.filter` के साथ अनसिलेक्टेड रिज़ल्ट होता है।
+- `run.filters` में कॉल हुए हर फ़िल्टर का एक रिकॉर्ड क्रम से होता है: `name`,
+  `candidates`, `excluded` (सीरियल ग्रुप से अपने मेंबर वापस लेने के बाद बचे
+  बाहर किए गए टेस्ट), `note` (1024 कैरेक्टर तक कटा हुआ; फ़ेल या टाइमआउट हुए
+  फ़िल्टर के लिए कारण बताने वाली चेतावनी), और `outcome` (तब सेट जब फ़िल्टर ने कुछ
+  बाहर न किया हो: थ्रो या इनवैलिड नतीजे पर `failed`, 5 मिनट से ज़्यादा चलने पर
+  `timed-out`)। जिस फ़िल्टर के लिए कोई टेस्ट न बचे वह कॉल नहीं होता और उसका कोई
+  रिकॉर्ड नहीं होता।
+- फ़िल्टर के फ़ैसले के बाद `run.changes` में वह बदलाव होता है जिसे उन्होंने परखा,
+  गिनती के रूप में: `base` (मर्ज बेस), `files`, और `skipped` (कोई फ़िल्टर क्यों
+  नहीं चला, जैसे `no files changed since abc1234`)। जब फ़िल्टर कॉन्फ़िगर हों और
+  रन ने `--changed-since` पास किया हो तो यह मौजूद होता है, सिवाय `e2e explore`,
+  `--watch` रीरन, और जब रन फ़िल्टर के फ़ैसले से पहले ही खत्म हो जाए। `--last-failed`
+  पर या परखने के लिए कोई टेस्ट न होने पर इसमें सिर्फ़ `skipped` होता है।
+- फ़िल्टर के फ़ैसले के दौरान आया फ़ेलियर (जैसे किसी कमिट का नाम न लेने वाले ref पर
+  `INVALID_CHANGED_SINCE`) `run.errors` में `phase` `filter` के साथ आता है। गलत
+  फ़ॉर्मेट वाले `changedSince` का `phase` `config` होता है।
+
+#### `onSummary`
+
+हर रिपोर्टर की समरी रो पाता है, पहले बिल्ट-इन और फिर `reporters` के क्रम में
+बाकी: पहले हर लेबल्ड रिपोर्ट फ़ाइल की रो, फिर जो उसके `onRunFinished` ने लौटाया।
+दूसरा आर्ग्युमेंट [पूरा हो चुका रन](#onrunfinished) होता है।
+
+```ts
+onSummary(rows) {
+  for (const row of rows) console.log(`${row.label}: ${row.text}`);
+},
+```
+
+यह सबसे आखिर में चलता है, हर `onRunFinished` के पूरा होने या छोड़े जाने के बाद,
+और दूसरे Ctrl-C के बाद भी।
+
+यहीं प्रिंट करें। जब तक रिपोर्टर [इंटरैक्टिव](#interactive) न हो, `onSummary` जो
+लिखता है वह रेडैक्ट होता है। यह उसी स्ट्रीम पर जाता है जिस पर लिखा गया (stdout
+समेत), ताकि रिपोर्टर वहाँ अपना खुद का डॉक्यूमेंट प्रिंट कर सके। `json` के साथ
+stdout में सिर्फ़ JSON रिपोर्ट रहती है, और किसी भी दूसरे रिपोर्टर का stdout
+आउटपुट stderr पर प्रिंट होता है।
+
+## इवेंट
+
+`onEvent` को इनमें से कोई एक तथ्य मिलता है। हर इवेंट में सीक्वेंस नंबर `seq` और
+ISO टाइमस्टैम्प `at` भी होता है।
+
+```ts
+type RunEventFact =
+  | { type: 'run-started'; runId; projectId; projectRoot; artifactsRoot; ci; targets; agents?; model?; judge?; stepping? }
+  | { type: 'plan'; total; files: { file; target; tests }[] } // deprecated
+  | { type: 'collected'; total; files: { file; target; tests }[]; repeatEach; tests: CollectedTestInfo[] }
+  | { type: 'notice'; target; message }
+  | { type: 'output'; target?; pair?; stream: 'stdout' | 'stderr'; text }
+  | { type: 'setup'; step: SetupStep; state: 'started' }
+  | { type: 'setup'; step: SetupStep; state: 'finished'; durationMs; outcome?: 'reused' | 'failed' | 'timed-out' }
+  | { type: 'run-hold'; heldMs: number; heldSince: number | null }
+  | { type: 'test-started'; testId; agent; repeat; title; file; serialId; target }
+  | { type: 'step'; testId; agent; repeat; target; progress: StepProgress }
+  | { type: 'paused'; testId; agent; repeat; target; titlePath; reason: 'step' | 'pause'; attachId; steps: PausedStep[]; keys: { key; does }[] }
+  | { type: 'resumed'; testId; agent; repeat; target }
+  | { type: 'test-finished'; result: RunEventResult }
+  | { type: 'serial-group'; group: SerialGroupRecord }
+  | { type: 'explore'; progress: ExploreProgress }
+  | { type: 'run-error'; error: SerializedError }
+  | { type: 'run-interrupted'; mode: 'graceful' | 'forced' }
+  | { type: 'run-stopped'; failures; limit }
+  | { type: 'run-finished'; status; exitCode; durationMs?; reportPath?; aiTracePath?; traces? };
+```
+
+- `run-started` सबसे पहले आता है। `run-finished` के बाद सिर्फ़ दो इवेंट आ सकते
+  हैं: `output` (जो कोई रिपोर्टर उसे हैंडल करते वक्त प्रिंट करे) और
+  `run-interrupted` (जब रिपोर्टर खत्म होते समय Ctrl-C आ जाए)।
+- `run-started` पर `targets` उन टारगेट के नाम देता है जिन्हें रन ने `--target` से
+  चुना (कॉन्फ़िग के क्रम में), या इसके बिना या `--target` में अनजान टारगेट होने
+  पर (जो रन को `UNKNOWN_TARGET` से फ़ेल करता है) हर कॉन्फ़िगर टारगेट। रिपोर्ट का
+  `run.targets` तब भी हर कॉन्फ़िगर टारगेट लिस्ट करता है।
+- `run-started` पर `judge` रन एजेंट का जज मॉडल है, जो तभी मौजूद होता है जब परख
+  `model` से अलग मॉडल इस्तेमाल करे। जब रन `--step` के लिए हर स्टेप रोकता है तो
+  `stepping` `true` होता है।
+- `setup` टेस्ट शुरू होने से पहले के काम को घेरता है। इसका `step.kind` `collect`,
+  `filter` (एक [टेस्ट फ़िल्टर](/filters), अपने `name` से), `prepare`, `service`,
+  या `app` होता है। `app` स्टेप का `url` वह URL है जिसे उसका रेडीनेस प्रोब पोल
+  करता है, फ़्री पोर्ट भरा हुआ और बिना userinfo या क्वेरी के। जब सर्विस या ऐप
+  कमांड पहले से अपने URL को सर्व कर रही प्रोसेस से जुड़ जाए तो `outcome`
+  `reused` होता है, फ़िल्टर के थ्रो या इनवैलिड नतीजा देने पर `failed`, और 5 मिनट से
+  ज़्यादा चलने पर `timed-out`।
+- `notice` `target` में बताता है कि उसकी लाइन किस बारे में है: कोई टारगेट, `app`,
+  `collect`, टेस्ट फ़िल्टर की प्रोग्रेस और समरी के लिए `filter`, या `run`।
+- टेस्ट कलेक्ट और सिलेक्ट होते ही, किसी के भी चलने से पहले `collected` आता है।
+  [कलेक्ट किए गए टेस्ट](#collected-tests) इसे समझाता है।
+- `plan` डेप्रिकेटेड है: `collected` पढ़ें, जो इसके बाद वही `total` और `files`
+  लेकर आता है। इसे 1 अप्रैल 2027 से पहले नहीं हटाया जाएगा।
+- [आउटपुट](#output) `output` को और [पॉज़](#pauses) `paused` और `resumed` को
+  समझाता है।
+- `run-hold` हर उस अंतराल की शुरुआत और अंत में आता है जब हर चल रहा वर्कर रुका
+  हो। `heldMs` उन पूरे हुए अंतरालों का कुल समय मिलीसेकंड में है जब हर चल रहा
+  वर्कर रुका था। `heldSince` मौजूदा अंतराल की शुरुआत Unix मिलीसेकंड में है, या जब
+  ऐसा कोई अंतराल खुला न हो तो `null`।
+- `run-finished` पर `durationMs` रिपोर्ट के `run.durationMs` से मेल खाता है।
+- `test-finished` में पूरा रिज़ल्ट रिकॉर्ड होता है, हर अटेम्प्ट के आर्टिफ़ैक्ट
+  समेत।
+- `explore` सिर्फ़ `e2e explore` रन में आता है: `started`, `planning`,
+  `step-started`, `step-finished`, `finding`, और `finished`। इन सबका रिकॉर्ड
+  रिपोर्ट में `run.explore` होता है।
+- हर रिपोर्टर को वही इवेंट ऑब्जेक्ट मिलता है। उसकी अपनी फ़ील्ड फ़्रीज़ होती हैं,
+  और उसके अंदर के रिकॉर्ड शेयर्ड होते हैं: जो बदलना हो उसकी कॉपी बना लें।
+- समय के साथ नए इवेंट टाइप जुड़ते हैं। जिन टाइप को आप जानते हैं उन्हें हैंडल करें
+  और बाकी को अनदेखा करें; `switch` की `default` ब्रांच खाली छोड़ दें।
+
+### कलेक्ट किए गए टेस्ट
+
+पहला टेस्ट शुरू होने से पहले `collected` रन के हर टेस्ट की लिस्ट देता है, ताकि
+रिपोर्टर शुरू में ही पूरा रन ड्रॉ कर सके।
+
+```ts
+interface CollectedTestInfo {
+  readonly testId: string;  // the `testId` of the test's events and results
+  readonly target: string;
+  readonly agent: string;
+  readonly file: string;    // from the project root, POSIX separators
+  readonly kind: 'test' | 'setup'; // `setup` saves a session for other tests
+  readonly title: string;
+  readonly titlePath: readonly string[]; // the describe titles, then the title
+  readonly tags: readonly string[];
+  readonly source?: { file: string; line: number; column: number }; // where it is declared
+  readonly serialId?: string; // its serial group
+  readonly disposition: 'run' | 'skip' | 'filtered';
+  readonly reason?: string; // why it is skipped or filtered
+}
+```
+
+- `tests` में सिलेक्शन के क्रम में हर टेस्ट, टारगेट, और एजेंट के लिए एक एंट्री
+  होती है। फ़िल्टर, `--grep`, या शार्ड से बाहर हुए टेस्ट `filtered` होते हैं।
+- चलने वाला `test` `repeatEach` बार चलता है: `--repeat-each` के बिना 1 बार।
+  `setup` टेस्ट एक बार चलता है।
+- `total` रन के कलेक्ट किए हर टेस्ट को गिनता है, और `files` हर फ़ाइल और टारगेट के
+  `run` और `skip` टेस्ट को, ताकि रिपोर्टर जान सके कि फ़ाइल के नतीजे कब पूरे हुए।
+  स्किप हुए `setup` टेस्ट को कोई नतीजा नहीं मिलता, इसलिए `files` उसे छोड़ देता है।
+  दोनों रिपीट होने वाले टेस्ट को हर रिपीट के लिए एक बार गिनते हैं, जबकि `tests`
+  उसे एक बार लिस्ट करता है।
+- इवेंट का `at` रन की शुरुआत है, जो रिपोर्ट का `startedAt` भी है।
+
+### टेस्ट और अटेम्प्ट
+
+- कई एजेंट पर पिन किया गया टेस्ट हर एजेंट के लिए एक बार शुरू और खत्म होता है,
+  इसलिए चल रहे स्टेट की key टेस्ट id, टारगेट, और एजेंट तीनों को मिलाकर रखें।
+- साधारण टेस्ट उस कॉम्बिनेशन के लिए एक बार `test-started` भेजते हैं। सीरियल
+  मेंबर हर उस ग्रुप अटेम्प्ट पर इसे भेजते हैं जिसमें वे चलते हैं।
+- रीट्राई को अलग पहचानने के लिए स्टेप प्रोग्रेस की [पहचान](#step-progress)
+  इस्तेमाल करें।
+- किसी भी स्टेप से पहले फ़ेल होने वाला अटेम्प्ट कोई स्टेप प्रोग्रेस नहीं भेजता और
+  सीधे अंतिम नतीजे में दिखता है।
+
+<Note>
+इवेंट बनने से पहले सीक्रेट रेडैक्ट हो जाते हैं। एरर मैसेज और स्किप कारणों से
+सिर्फ़ ANSI एस्केप और कंट्रोल कैरेक्टर (टैब, न्यूलाइन, और `\r\n` लाइन ब्रेक के
+`\r` को छोड़कर) हटाए जाते हैं, इसलिए उन्हें ऐसा टेक्स्ट मानकर चलें जिस पर आप भरोसा नहीं करते।
+</Note>
+
+### स्टेप प्रोग्रेस
+
+`phase` फ़ील्ड स्टेप प्रोग्रेस बताती है:
+
+- `start` और `end` स्टेप की शुरुआत और अंत दिखाते हैं।
+- `event` पूरा हो चुका मॉडल टर्न, टूल कॉल, या ऑब्ज़र्वेशन रिपोर्ट करता है।
+- `activity` शुरू हो रहा काम बताता है: `observe`, `action`, या `model`।
+- `replay` बताता है कि कैश से रीप्ले कब शुरू हुआ या कब कंट्रोल वापस एजेंट को
+  गया।
+
+```ts
+type StepProgress = (
+  | { phase: 'start'; kind: StepKind; api: string; label: string; source?: { file: string; line: number; column: number } }
+  | {
+      phase: 'end';
+      kind: StepKind;
+      api: string;
+      label: string;
+      status: 'passed' | 'failed' | 'blocked' | 'timed-out' | 'cancelled';
+      durationMs: number;
+      modelCalls: number;
+      error?: SerializedError;
+      explanation?: string;
+    }
+  | { phase: 'event'; api: string; event: StepEvent }
+  | { phase: 'activity'; api: string; activity: 'observe' | 'model' | 'action' }
+  | { phase: 'replay'; api: string; active: boolean }
+) & { identity?: StepProgressIdentity };
+```
+
+`start` फ़ेज़ का `source` टेस्ट फ़ाइल की वह लाइन है जिसने स्टेप कॉल किया: प्रोजेक्ट
+रूट से POSIX सेपरेटर वाला पाथ, और 1 से शुरू होने वाली लाइन और कॉलम। कॉल साइट प्रोजेक्ट के बाहर
+होने पर यह नहीं होता।
+
+`end` फ़ेज़ के `error` और `explanation` रेडैक्टेड होते हैं। इसका `status` बनाए
+रखें, `blocked` और `cancelled` समेत। हर नॉन-पास्ड स्टेप को प्रोडक्ट फ़ेलियर न
+मानें।
+
+रनर के भेजे हर स्टेप फ़ेज़ में `progress.identity` होता है:
+
+```ts
+{ attemptId: string; attemptIndex: number; stepId: string; stepIndex: number; actor?: string }
+```
+
+- ID फ़ाइनल रिपोर्ट से मेल खाते हैं। दोनों इंडेक्स शून्य से शुरू होते हैं।
+- रीट्राई को नया अटेम्प्ट ID और ऊँचा अटेम्प्ट इंडेक्स मिलता है; उसके स्टेप इंडेक्स
+  फिर शून्य से शुरू होते हैं।
+- सीरियल-ग्रुप के मेंबर ग्रुप का अटेम्प्ट ID और इंडेक्स शेयर करते हैं। हर मेंबर के
+  स्टेप ID अलग रहते हैं।
+- नेस्टेड स्टेप समेत start, activity, event, replay, और end फ़ेज़
+  मिलाने के लिए `stepId` इस्तेमाल करें।
+- जब स्टेप टेस्ट के अपने सेशन पर न चला हो (बल्कि ऐसे सेशन पर जिसे टेस्ट ने
+  [`launch()`](/core#open-a-host-inside-a-test) से खोला हो), तो `actor` उस सेशन
+  का नाम बताता है।
+- टाइप में `identity` ऑप्शनल है ताकि रिपोर्टर पुरानी स्ट्रीम भी स्वीकार कर सके।
+
+### आउटपुट
+
+`output` stdout या stderr पर एक राइट है, रेडैक्ट किया हुआ: `console.log` और
+बाकी। एक राइट लाइन के बीच में भी खत्म हो सकता है।
+
+```ts
+onEvent(event) {
+  if (event.type !== 'output') return;
+  socket.send(JSON.stringify({ source: event.target === undefined ? 'runner' : event.pair?.testId, stream: event.stream, text: event.text }));
+},
+```
+
+- टेस्ट के आउटपुट में `target` होता है। `pair` उस समय चल रहे टेस्ट का नाम बताता है
+  और दो टेस्ट के बीच `undefined` होता है।
+- बिना `target` वाला आउटपुट रन चलते समय रनर प्रोसेस से आता है: लोड होती टेस्ट
+  फ़ाइल, टेस्ट फ़िल्टर, कोई दूसरा रिपोर्टर।
+- जब तक कोई [इंटरैक्टिव](#interactive) रिपोर्टर न चल रहा हो, रनर आउटपुट को
+  stderr पर भी प्रिंट करता है। सिर्फ़ आउटपुट रिकॉर्ड करने वाला रिपोर्टर टर्मिनल को
+  चुप नहीं करता।
+- `output` इवेंट हैंडल करते समय, या वहाँ से शुरू किए गए काम से, रिपोर्टर जो प्रिंट
+  करता है वह कभी इवेंट बनकर वापस नहीं आता। रनर उसे रेडैक्ट करके खुद प्रिंट कर
+  देता है।
+
+### पॉज़
+
+`paused` बताता है कि टेस्ट किसी इंसान का इंतज़ार कर रहा है: जिन स्टेप को
+[`--step`](/debugging#step-through-a-test) रोकता है उनसे पहले (`reason: 'step'`),
+या [`screen.pause()`](/debugging#pause-a-test) पर (`reason: 'pause'`)। `resumed`
+बताता है कि वह टेस्ट फिर चल पड़ा है।
+
+```ts
+onEvent(event) {
+  if (event.type === 'paused') overlay.show(`Paused at ${event.steps[0].source?.file}:${event.steps[0].source?.line}`);
+  if (event.type === 'resumed') overlay.hide();
+},
+```
+
+```ts
+interface PausedStep {
+  readonly number: number; // its position in the trace; 0 for a pause
+  readonly api: string;
+  readonly label: string;
+  readonly source?: { file: string; line: number; column: number };
+}
+```
+
+- रिपोर्टर सिर्फ़ पॉज़ दिखाता है। कीबोर्ड के बटन और `e2e run --step` कमांड जो
+  इसका जवाब देते हैं, उन्हें रनर पढ़ता है।
+- `steps` में एक कॉल होती है, या एक साथ रोके गए हर स्टेप (जैसे एक `Promise.all`
+  में)।
+- `keys` बताता है कि कीबोर्ड अभी क्या करता है, उसी क्रम में जैसे प्रॉम्प्ट दिखाता
+  है, जैसे `{ key: 'enter', does: 'run this step' }`। जब कीबोर्ड न पढ़ा जा रहा हो
+  (जैसे [कमांड से स्टेप किए जाने वाले रन](/debugging#step-through-a-test-without-a-terminal)
+  में), यह खाली होता है।
+- इंतज़ार करने वाले टेस्ट एक बार में एक दिखते हैं। उसी टेस्ट के लिए दूसरा `paused`
+  पहले की जगह ले लेता है: कोई और स्टेप जुड़ गया, या कीबोर्ड के बटन बदल गए।
+- हर `paused` के बाद `resumed` आता है, तब भी जब टेस्ट या रन पहले खत्म हो जाए।
+- `titlePath` में पहले describe टाइटल और फिर टेस्ट टाइटल होता है,
+  [`collected`](#collected-tests) की तरह।
+- [MCP से जुड़ने](/reference/mcp#attaching-to-a-held-test) के लिए `attachId`
+  इस्तेमाल करें। अटेम्प्ट के सारे पॉज़ में यह वही रहता है।
+- जब तक कोई [इंटरैक्टिव](#interactive) रिपोर्टर न चल रहा हो, कीबोर्ड से जवाब पाने
+  वाला पॉज़ stderr पर भी एक लाइन में प्रिंट होता है।
+
+## `--reporter` रिपोर्टर ऑब्जेक्ट के साथ क्या करता है
+
+`--reporter` सिर्फ़ बिल्ट-इन रिपोर्टर को बदलता है; आपके अपने रिपोर्टर और पैकेज के
+रिपोर्टर तब भी चलते हैं। फ़्लैग जिस बिल्ट-इन का नाम ले, वह कॉन्फ़िग के दिए ऑप्शन
+बनाए रखता है।
+
+<CodeGroup>
+```bash npm
+npx e2e run --reporter list,junit
+```
+
+```bash pnpm
+pnpm exec e2e run --reporter list,junit
+```
+
+```bash bun
+bunx e2e run --reporter list,junit
+```
+</CodeGroup>
+
+- `reporters: ['list', junit({ outputFile: 'reports/junit.xml' })]` होने पर,
+  `--reporter junit` अकेला वही `junit` चलाता है और तब भी `reports/junit.xml` ही
+  लिखता है।
+- बिना [इंटरैक्टिव](#interactive) रिपोर्टर वाले कॉन्फ़िग में कोई रन व्यू नहीं होता।
+  रन एरर तब भी stderr पर `CODE: message` के रूप में प्रिंट होते हैं।
+- अपना खुद का इंटरैक्टिव रिपोर्टर रखने वाला कॉन्फ़िग `--reporter list`,
+  `--reporter dot`, और `--reporter line` को मना कर देता है: ज़्यादा से ज़्यादा एक
+  ही रिपोर्टर इंटरैक्टिव हो सकता है।
+
+## रिपोर्टर कहाँ चलता है
+
+हुक रनर प्रोसेस में चलते हैं। वर्कर भी कॉन्फ़िग लोड करते हैं, इसलिए रिपोर्टर बनाने
+का कोई साइड इफ़ेक्ट नहीं होना चाहिए। `--watch` एक ही रिपोर्टर को हर रन देता है,
+और हर रन अपने पहले इवेंट से शुरू होता है।
+
+- टोकन पढ़ना और रिक्वेस्ट शुरू करना हैंडलर के अंदर करें।
+- रिपोर्टर जोड़ने से [कैश्ड ट्रेस](/cache#what-must-match) इनवैलिड नहीं होते।
+
+## टाइप
+
+`Reporter`, `FinishedRun`, `ReportFile`, `ReporterSummary`, `Report`,
+`RunEvent`, `RunEventOf`, `CollectedTestInfo`, `PausedStep`, और `PausedKey` मेन
+एंट्रीपॉइंट से एक्सपोर्ट होते हैं, और `renderMarkdownReport(report, options)` भी।
+`e2e/reporters` से `list`, `dot`, `line`, `json`, `junit`, `markdown`, और `ctrf`
+एक्सपोर्ट होते हैं, साथ में `ListReporterOptions`, `DotReporterOptions`,
+`LineReporterOptions`, `JunitReporterOptions`, `MarkdownReporterOptions`, और
+`CtrfReporterOptions`।
+
+`foldLastRun(report, lastRun)` भी मेन एंट्रीपॉइंट से आता है और `--last-failed`
+रीरन को उससे पहले के रन में फ़ोल्ड करता है, जैसे `@e2e-dev/github` करता है।
+
+## संबंधित
+
+[पुल रिक्वेस्ट कमेंट](/github) `@e2e-dev/github` का सेटअप बताता है।
+[CLI रेफ़रेंस](/reference/cli#output) बताता है कि बिल्ट-इन रिपोर्टर क्या लिखते
+हैं।

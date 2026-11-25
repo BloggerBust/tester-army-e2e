@@ -1,0 +1,236 @@
+---
+title: request
+description: "request फ़िक्स्चर: टेस्ट से HTTP कॉल, हर एक रिपोर्ट में एक स्टेप।"
+---
+
+`request` फ़िक्स्चर टेस्ट से HTTP रिक्वेस्ट भेजता है। पाथ टारगेट के ऐप URL के
+सापेक्ष रिज़ॉल्व होता है। हर कॉल रिपोर्ट में एक स्टेप होती है, और पूरा रिस्पॉन्स
+बॉडी पढ़े जाने पर खत्म होती है।
+
+```ts title="tests/orders.e2e.ts"
+import { expect, test } from 'e2e';
+
+test('creates an order', async ({ request }) => {
+  const created = await request.post('/api/orders', { json: { sku: 'A1' } });
+  expect(created.status).toBe(201);
+  expect(await created.json()).toMatchObject({ sku: 'A1' });
+});
+```
+
+## रेफ़रेंस
+
+| मेथड | रिटर्न |
+| --- | --- |
+| [`fetch`](#fetch) | `Promise<WebResponse>` |
+| [`get`](#shorthands) | `Promise<WebResponse>` |
+| [`post`](#shorthands) | `Promise<WebResponse>` |
+| [`put`](#shorthands) | `Promise<WebResponse>` |
+| [`patch`](#shorthands) | `Promise<WebResponse>` |
+| [`delete`](#shorthands) | `Promise<WebResponse>` |
+| [`head`](#shorthands) | `Promise<WebResponse>` |
+
+हर मेथड एक URL और [ऑप्शन](#options) लेता है, और [`WebResponse`](#webresponse)
+लौटाता है।
+
+### `fetch`
+
+`options.method` में दिए गए मेथड से रिक्वेस्ट भेजता है, डिफ़ॉल्ट `GET` होता है।
+
+```ts
+const removed = await request.fetch('/api/orders/7', { method: 'DELETE' });
+```
+
+`CONNECT`, `TRACE`, और `TRACK` को छोड़कर कोई भी HTTP मेथड नाम चल सकता है,
+क्योंकि Node का `fetch` ये तीनों नहीं भेज सकता। e2e इसे अपर-केस करके भेजता है।
+
+### शॉर्टहैंड
+
+`get`, `post`, `put`, `patch`, `delete`, और `head` अपने नाम वाले मेथड से
+रिक्वेस्ट भेजते हैं।
+
+```ts
+const found = await request.get('/api/orders?reference=r1');
+```
+
+`GET` या `HEAD` रिक्वेस्ट में बॉडी नहीं होती।
+
+### ऑप्शन
+
+| ऑप्शन | टाइप | डिफ़ॉल्ट |
+| --- | --- | --- |
+| `headers` | `Record<string, string>` | - |
+| `json` | `unknown` | - |
+| `body` | `string` | - |
+| `timeout` | `number` | `actionTimeout` |
+| `redirect` | `'follow' \| 'manual' \| 'error'` | `'follow'` |
+| `method` | `string` | `'GET'` |
+
+- `json` को `JSON.stringify` से भेजा जाता है, और जब तक `headers` में कोई कंटेंट
+  टाइप सेट न हो, `content-type: application/json` लगता है। यह सिर्फ़ JSON-सेफ़
+  वैल्यू लेता है: प्लेन ऑब्जेक्ट, ऐरे, स्ट्रिंग, फ़ाइनाइट नंबर, बूलियन, और
+  `null`। जिसकी वैल्यू `undefined` हो ऐसी key, `Date`, और `secrets.get()` हैंडल
+  मना कर दिए जाते हैं, जबकि `JSON.stringify` उन्हें हटा या बदल देता।
+- `body` जैसा दिया गया है वैसा ही जाता है, और जब तक `headers` में सेट न हो,
+  `content-type: text/plain;charset=UTF-8` लगता है। `json` या `body` में से एक
+  ही पास करें, दोनों नहीं। फ़ॉर्म, मल्टीपार्ट, और बाइनरी बॉडी अभी सपोर्टेड नहीं
+  हैं।
+- `timeout` मिलीसेकंड में होता है, ज़्यादा से ज़्यादा 2147483647। `0` का मतलब
+  अपना कोई टाइमआउट नहीं है, तब सिर्फ़ चल रहे टेस्ट या हुक का बजट कॉल की सीमा तय
+  करता है।
+- `redirect` तय करता है कि रीडायरेक्ट कैसे हैंडल होंगे। `'follow'` उन्हें फ़ॉलो
+  करता है; `'manual'` 3xx रिस्पॉन्स को उसके `location` और `set-cookie` हेडर के
+  साथ वैसा ही लौटा देता है; `'error'` सर्वर के रीडायरेक्ट करने पर कॉल को
+  `ACTION_FAILED` से फ़ेल कर देता है।
+- `method` सिर्फ़ `fetch` का ऑप्शन है।
+
+### `WebResponse`
+
+रिस्पॉन्स, जिसकी बॉडी पहले से पढ़ी जा चुकी है। यह वही टाइप है जो वेब इंजन के
+[`browser.waitForResponse`](/reference/web#waitforresponse) और `route.fetch()`
+लौटाते हैं।
+
+| मेंबर | टाइप |
+| --- | --- |
+| `status` | `number` |
+| `url` | `string` |
+| `headers` | `Record<string, string>` |
+| `body()` | `Promise<Buffer>` |
+| `text()` | `Promise<string>` |
+| `json<T>()` | `Promise<T>` |
+
+- जब `redirect` की वैल्यू `'follow'` हो तो `url` रीडायरेक्ट के बाद का URL होता है,
+  और जब `redirect` की वैल्यू `'manual'` हो तो रिक्वेस्ट किया गया URL।
+- `headers` में नाम लोअर-केस में होते हैं। कई `set-cookie` वैल्यू `\n` से जुड़ी
+  होती हैं।
+- `text()` बॉडी को UTF-8 की तरह डिकोड करता है। `json()` इसे पार्स करता है, और
+  जब तक आप टाइप न दें यह `unknown` होता है। उस टाइप को कुछ भी जाँचता नहीं है:
+  जाँचने के लिए [`toMatchSchema`](/reference/expect#matching-a-schema) इस्तेमाल
+  करें।
+- स्टेटस को वैल्यू मैचर से जाँचें: `expect(response.status).toBe(201)`।
+
+## URL
+
+पाथ टारगेट के `app.url` के सापेक्ष उसी तरह रिज़ॉल्व होता है जैसे
+[`app.open`](/reference/app#open) करता है। कोई एब्सोल्यूट `http` या `https` URL
+किसी भी टारगेट पर सीधे बताए गए पते पर जाता है।
+
+- शुरू का `/` ऑरिजिन से चलता है। अगर `app.url` `https://example.com/shop` है,
+  तो `/api/orders` `https://example.com/api/orders` पर जाएगा। बेस पाथ बनाए रखने
+  के लिए ``request.get(`${app.baseUrl}/api/orders`)`` लिखें।
+- कॉल रनर की प्रोसेस में, रनर के नेटवर्क पर चलती है। जिस ऐप तक रनर नहीं पहुँच
+  सकता, जैसे किसी वर्चुअल मशीन के अंदर का ऐप जहाँ रनर सिर्फ़ ब्राउज़र चला रहा
+  हो, उस तक `request` भी नहीं पहुँच सकता।
+- वेब इंजन के `headers` और `basicAuth` ऑप्शन सिर्फ़ ब्राउज़र पर लागू होते हैं।
+  वही वैल्यू कॉल के `headers` में पास करें।
+
+| क्या थ्रो होता है | कब |
+| --- | --- |
+| `APP_URL_REQUIRED` | URL एक पाथ है और टारगेट में `app.url` डिक्लेयर नहीं है। |
+| `POLICY_DENIED` | URL गलत फ़ॉर्मेट में है, या उसकी स्कीम `http` या `https` के अलावा कुछ और है (`about:blank` समेत)। `json` में `Secret` देने पर भी। |
+| `INVALID_ARGUMENT` | URL खाली नहीं होने वाली स्ट्रिंग न हो या उसमें क्रेडेंशियल हों (`https://user:pass@...`), किसी ऑप्शन का टाइप गलत हो या वह ऐसा ऑप्शन हो जिसे `request` नहीं लेता (जैसे Playwright का `data` या `params`), `headers` प्लेन ऑब्जेक्ट न हो, हेडर का नाम या वैल्यू इनवैलिड हो, हेडर `content-length`, `host`, या `sec-fetch-mode` हो जिन्हें `fetch` खुद सेट करता है, हेडर `expect`, `keep-alive`, `transfer-encoding`, या `upgrade` हो जिन्हें `fetch` नहीं भेज सकता, `connection` हेडर `close` या `keep-alive` के अलावा कुछ और हो, `range` के साथ `accept-encoding` हो (जहाँ `fetch` `identity` जोड़ता है), `json` और `body` दोनों सेट हों, `json` JSON-सेफ़ न हो, `GET` या `HEAD` रिक्वेस्ट में बॉडी हो, `timeout` नेगेटिव या 2147483647 से बड़ा हो, `redirect` `'follow'`, `'manual'`, या `'error'` न हो, या मेथड मान्य HTTP मेथड नाम न हो या `CONNECT`, `TRACE`, या `TRACK` हो। |
+
+## स्टेप और टाइमआउट
+
+हर कॉल `resource` तरह का स्टेप होती है, जिसका लेबल मेथड और पाथ से बनता है:
+`POST /api/orders`। लेबल में क्वेरी स्ट्रिंग नहीं होती। किसी दूसरे ऑरिजिन का पाथ
+ऑरिजिन भी दिखाता है।
+
+जिन कॉल को ये जाँचें मना कर देती हैं, वे भी फ़ेल स्टेप के रूप में दर्ज होती हैं
+और उनका प्रॉमिस रिजेक्ट होता है; मेथड सीधे थ्रो नहीं करता। जब मेथड या URL ही मना
+हुआ हो, तो स्टेप पर कोई लेबल नहीं होता, और कोई भी एरर मैसेज URL या हेडर की
+वैल्यू नहीं दोहराता।
+
+कॉल अपने `timeout` (डिफ़ॉल्ट `actionTimeout`, जो डिफ़ॉल्ट रूप से 30000 ms है)
+और उसे चलाने वाले कोड के बजट से बंधी होती है: टेस्ट बॉडी में टेस्ट टाइमआउट, और
+`afterEach` हुक में क्लीनअप टाइमआउट। इनमें से कोई भी खत्म होने पर e2e रिक्वेस्ट
+अबॉर्ट कर देता है। समय खत्म होने पर टेस्ट अपने सामान्य टाइमआउट एरर से फ़ेल होता
+है।
+
+| क्या थ्रो होता है | कब |
+| --- | --- |
+| `ACTION_FAILED` | कॉल अपने `timeout` से आगे निकल गई, `redirect: 'error'` पर सर्वर ने रीडायरेक्ट किया, या नेटवर्क फ़ेल हो गया: सर्वर ने कनेक्शन मना कर दिया, या होस्ट रिज़ॉल्व नहीं हुआ। |
+
+e2e कॉल को रीट्राई नहीं करता। जब सर्वर `421 Misdirected Request` जवाब दे, तो
+Node का `fetch` खुद एक बार रिक्वेस्ट दोबारा भेजता है। किसी रीड को रीट्राई करने
+के लिए उसे [`expect.poll`](/reference/expect#polling-a-value) में रैप करें।
+
+## कुकी और स्कोप
+
+`request` ब्राउज़र की कुकी नहीं भेजता, और कॉल के बीच कोई कुकी नहीं रखता।
+`headers` में टोकन या अपने ऐप की सेशन कुकी पास करें, जैसा
+[साइन-इन की गई रिक्वेस्ट](/api-testing#signed-in-requests) में दिखाया गया है।
+URL में क्रेडेंशियल मना हैं।
+
+`request` एक टेस्ट फ़िक्स्चर है। यह टेस्ट बॉडी, `beforeEach`, और `afterEach` में
+मिलता है। `beforeAll`, `afterAll`, और वर्कर फ़िक्स्चर में यह नहीं मिलता।
+
+## टाइप
+
+```ts
+export interface APIRequest {
+  /** Sends a request with `options.method`, GET by default. */
+  fetch(url: string, options?: APIRequestFetchOptions): Promise<WebResponse>;
+  /** Sends a GET request. */
+  get(url: string, options?: APIRequestOptions): Promise<WebResponse>;
+  /** Sends a POST request. */
+  post(url: string, options?: APIRequestOptions): Promise<WebResponse>;
+  /** Sends a PUT request. */
+  put(url: string, options?: APIRequestOptions): Promise<WebResponse>;
+  /** Sends a PATCH request. */
+  patch(url: string, options?: APIRequestOptions): Promise<WebResponse>;
+  /** Sends a DELETE request. */
+  delete(url: string, options?: APIRequestOptions): Promise<WebResponse>;
+  /** Sends a HEAD request. */
+  head(url: string, options?: APIRequestOptions): Promise<WebResponse>;
+}
+
+/** What one `request` call sends beside its URL. */
+export interface APIRequestOptions {
+  /** Request headers. */
+  readonly headers?: Readonly<Record<string, string>>;
+  /** A body sent as JSON, with `content-type: application/json` unless `headers` sets one. Not with `body`. */
+  readonly json?: unknown;
+  /** A body sent as is. Not with `json`. */
+  readonly body?: string;
+  /** Timeout in milliseconds; defaults to `actionTimeout`. 0 sets none of its own, so only the running test's or hook's budget bounds the call. */
+  readonly timeout?: number;
+  /** How redirects are handled; `'follow'` by default. `'manual'` returns the 3xx response as is; `'error'` fails the call with `ACTION_FAILED`. */
+  readonly redirect?: 'follow' | 'manual' | 'error';
+}
+
+/** `request.fetch` options: the method beside the rest. */
+export interface APIRequestFetchOptions extends APIRequestOptions {
+  /** The HTTP method; GET by default. */
+  readonly method?: string;
+}
+
+/**
+ * An HTTP response: what `request` calls, the web engine's
+ * `browser.waitForResponse`, and `route.fetch()` return.
+ */
+export interface WebResponse {
+  /** Response URL. */
+  readonly url: string;
+  /** HTTP status. */
+  readonly status: number;
+  /** Response headers, lower-cased names; `request` and `route.fetch()` join several `set-cookie` values with `\n`, `waitForResponse` leaves cookie headers out. */
+  readonly headers: Readonly<Record<string, string>>;
+  /** Waits for the body and returns its bytes; rejects with `ACTION_FAILED` when the body could not be read. */
+  body(): Promise<Buffer>;
+  /** Waits for the body and parses it as JSON; rejects with `ACTION_FAILED` when the body could not be read. */
+  json<T = unknown>(): Promise<T>;
+  /** Waits for the body and reads it as text; rejects with `ACTION_FAILED` when the body could not be read. */
+  text(): Promise<string>;
+}
+```
+
+## संबंधित
+
+<CardGroup cols={2}>
+  <Card title="API" icon="plug" href="/api-testing">
+    UI टेस्ट वाली ही फ़ाइलों और रन में API टेस्ट लिखें।
+  </Card>
+  <Card title="expect" icon="circle-check" href="/reference/expect">
+    रिस्पॉन्स की फ़ील्ड और बॉडी के लिए वैल्यू मैचर।
+  </Card>
+</CardGroup>

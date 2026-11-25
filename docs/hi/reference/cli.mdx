@@ -1,0 +1,1538 @@
+---
+title: CLI
+description: कमांड्स, फ़्लैग्स, आउटपुट फ़ॉर्मेट्स, और एग्ज़िट कोड्स।
+"og:image": "https://e2e.com/docs/images/og/reference/cli.png?v=e0e03be674"
+"twitter:image": "https://e2e.com/docs/images/og/reference/cli.png?v=e0e03be674"
+---
+
+`e2e` कमांड प्रोजेक्ट स्कैफ़ोल्ड करती है, टेस्ट चलाती, लिस्ट करती, और एक्सप्लोर करती है,
+रीप्ले कैश, सब्सक्रिप्शन लॉगिन, और टेलीमेट्री संभालती है, और खुद को अपग्रेड करती है।
+हर कमांड `--help` लेती है।
+
+<CodeGroup>
+```bash npm
+npx e2e init                              # scaffold a project
+npx e2e run                               # run every test
+npx e2e run tests/signup.e2e.ts --headed  # one file, with a visible browser
+```
+
+```bash pnpm
+pnpm dlx e2e init                              # scaffold a project
+pnpm exec e2e run                              # run every test
+pnpm exec e2e run tests/signup.e2e.ts --headed # one file, with a visible browser
+```
+
+```bash bun
+bunx e2e init                              # scaffold a project
+bunx e2e run                               # run every test
+bunx e2e run tests/signup.e2e.ts --headed  # one file, with a visible browser
+```
+</CodeGroup>
+
+<Note>
+CLI के लिए Node.js 24.8 या नया (Node.js 22 पर 22.22.3 या नया), या [Bun](#bun) 1.4.3
+या नया चाहिए। कोई भी पैकेज मैनेजर इसे इंस्टॉल कर सकता है: npm, pnpm, Plug'n'Play के साथ
+या उसके बिना Yarn, या Bun। Node.js 24.8 से 24.11.0 पर Yarn Plug'n'Play के तहत `.cts`
+फ़ाइल लोड नहीं होती: Yarn का लोडर जो सोर्स आगे देता है उसे Node.js रिजेक्ट कर देता है।
+24.11.1 और बाद वाले इसे लोड करते हैं।
+</Note>
+
+## रेफ़रेंस
+
+### हेल्प और वर्ज़न
+
+| ऑप्शन | विवरण |
+| --- | --- |
+| `-h`, `--help` | जिस कमांड के बाद आए उसकी हेल्प प्रिंट करता है और 0 से बाहर निकलता है। `e2e help run` और `e2e run --help` एक ही हैं। |
+| `-v`, `--version` | इंस्टॉल `e2e` का वर्ज़न प्रिंट करता है और 0 से बाहर निकलता है। |
+
+```console
+$ npx e2e --version
+0.14.0
+```
+
+- टर्मिनल या CI पर आउटपुट रंगीन होता है, और पाइप करने पर या `NO_COLOR` सेट होने पर
+  सादा। `FORCE_COLOR` रंग बनाए रखता है।
+- बिना कमांड के `e2e` stderr पर हेल्प प्रिंट करता है और 2 से बाहर निकलता है।
+- 52 या ज़्यादा कॉलम चौड़े टर्मिनल पर `e2e --help` ब्लॉक कैरेक्टर में e2e लोगो के साथ
+  शुरू होता है। पाइप किए गए आउटपुट और संकरे टर्मिनल पर सिर्फ़ टेक्स्ट दिखता है।
+- जब npm पर नया `e2e` उपलब्ध हो, तो टर्मिनल पर चली कमांड के अंत में नया वर्ज़न, प्रोजेक्ट
+  के पैकेज मैनेजर के लिए [`e2e upgrade`](#e2e-upgrade) कमांड, और GitHub पर e2e को
+  स्टार करने का लिंक दिखता है। रजिस्ट्री दिन में एक बार चेक होती है। CI में, जब stderr
+  टर्मिनल न हो, `e2e mcp` और `e2e upgrade` के लिए, या `E2E_UPDATE_CHECK_DISABLED=1`,
+  `NO_UPDATE_NOTIFIER=1`, `E2E_TELEMETRY_DISABLED=1`, या `DO_NOT_TRACK=1` सेट होने पर
+  यह कुछ प्रिंट नहीं करता।
+
+### कमांड्स
+
+| कमांड | विवरण |
+| --- | --- |
+| [`e2e init`](#e2e-init) | प्रोजेक्ट स्कैफ़ोल्ड करता है |
+| [`e2e login`](#e2e-login) | मॉडल सब्सक्रिप्शन में साइन इन करता है |
+| [`e2e logout`](#e2e-logout) | सेव किया गया लॉगिन हटाता है |
+| [`e2e models`](#e2e-models) | सेव किए गए लॉगिन के मॉडल लिस्ट करता है |
+| [`e2e guide`](#e2e-guide) | एजेंट स्किल प्रिंट करता है |
+| [`e2e mcp`](#e2e-mcp) | MCP पर लाइव सेशन सर्व करता है |
+| [`e2e run`](#e2e-run) | टेस्ट चलाता है |
+| [`e2e explore`](#e2e-explore) | किसी लक्ष्य की ओर ऐप एक्सप्लोर करता है |
+| [`e2e list`](#e2e-list) | वे टेस्ट प्रिंट करता है जिन्हें रन चुनेगा |
+| [`e2e doctor`](#e2e-doctor) | जाँचता है कि रन शुरू हो सकता है या नहीं |
+| [`e2e cache`](#e2e-cache) | रीप्ले कैश देखता या साफ़ करता है |
+| [`e2e report`](#e2e-report) | ब्राउज़र में HTML रिपोर्ट खोलता है |
+| [`e2e upgrade`](#e2e-upgrade) | e2e और उसके पैकेज अपग्रेड करता है |
+| [`e2e feedback`](#e2e-feedback) | e2e टीम को फ़ीडबैक भेजता है |
+| [`e2e telemetry`](#e2e-telemetry) | यूसेज टेलीमेट्री दिखाता या बदलता है |
+
+जिस ऑप्शन का कोई डिफ़ॉल्ट न लिखा हो, वह देने पर ही चालू होता है।
+
+#### `e2e init`
+
+प्रोजेक्ट स्कैफ़ोल्ड करता है और `devDependencies` में `e2e` जोड़ता है। पहले से मौजूद
+कॉन्फ़िग और टेस्ट फ़ाइलों को यह छोड़ देता है।
+
+<CodeGroup>
+```bash npm
+npx e2e init --yes
+npx e2e init --yes --gateway openrouter --skills .agents/skills --mcp .mcp.json --install
+```
+
+```bash pnpm
+pnpm dlx e2e init --yes
+pnpm dlx e2e init --yes --gateway openrouter --skills .agents/skills --mcp .mcp.json --install
+```
+
+```bash bun
+bunx e2e init --yes
+bunx e2e init --yes --gateway openrouter --skills .agents/skills --mcp .mcp.json --install
+```
+</CodeGroup>
+
+| ऑप्शन | विवरण |
+| --- | --- |
+| `[directory]` | कहाँ स्कैफ़ोल्ड करना है; न होने पर बन जाती है। डिफ़ॉल्ट: वर्किंग डायरेक्टरी। |
+| `-y`, `--yes` | प्रॉम्प्ट्स छोड़ देता है। फ़्लैग में न दिया गया हर जवाब डिफ़ॉल्ट लेता है: Web इंजन, Vercel AI Gateway, दोनों जगहों पर स्किल और MCP कॉन्फ़िग, कोई CI पाइपलाइन नहीं, कोई इंस्टॉल नहीं। |
+| `--example [name]` | किसी उदाहरण ऐप से शुरू करता है: `with-vite`, `with-next`, `with-astro`, `with-angular`, `with-expo`, `with-swiftui`, `with-compose`, `with-kotlin-multiplatform`, `with-flutter`, या `with-maui`। `with-` प्रीफ़िक्स ऑप्शनल है। नाम न देने पर चुनने के लिए लिस्ट दिखाता है। [उदाहरण से शुरू करना](#starting-from-an-example) देखें। |
+| `--engine <ids>` | नए कॉन्फ़िग के लिए इंजन: `web`, `mobile`, या `none`। कॉमा से अलग या बार-बार; `web,mobile` दोनों के लिए टारगेट लिखता है। डिफ़ॉल्ट: पूछा जाता है। |
+| `--gateway <id>` | नए कॉन्फ़िग में एजेंट स्टेप्स के लिए मॉडल गेटवे: `vercel`, `openrouter`, `openai-compatible`, `chatgpt`, `copilot`, `opencode-console`, `grok`, या `none`। डिफ़ॉल्ट: पूछा जाता है। |
+| `--endpoint <url>` | `--gateway openai-compatible` का बेस URL, और इसे अपने आप चुन लेता है। HTTPS, या लूपबैक होस्ट पर HTTP। डिफ़ॉल्ट: पूछा जाता है; `--yes` के साथ `http://127.0.0.1:11434/v1`। |
+| `--skills <dirs>` | एजेंट स्किल कहाँ इंस्टॉल हो: `.agents/skills`, `.claude/skills`, या `none`। `.agents/skills` `AGENTS.md` में और `.claude/skills` `CLAUDE.md` में स्किल लाइन भी जोड़ता है; `none` दोनों फ़ाइलों को छोड़ देता है। कॉमा से अलग या बार-बार। डिफ़ॉल्ट: पूछा जाता है। |
+| `--mcp <files>` | MCP सर्वर कहाँ रजिस्टर हो: `.mcp.json`, `.cursor/mcp.json`, `.codex/config.toml`, या `none`। कॉमा से अलग या बार-बार। डिफ़ॉल्ट: पूछा जाता है। |
+| `--ci <id>` | टेस्ट्स के लिए CI पाइपलाइन, हर प्लेटफ़ॉर्म का एक जॉब: `github-actions`, `gitlab`, या `none`। [CI पाइपलाइन](#ci-pipeline) देखें। डिफ़ॉल्ट: पूछा जाता है; `--yes` के साथ `none`। |
+| `--install`, `--no-install` | डिपेंडेंसी इंस्टॉल करनी हैं या नहीं। डिफ़ॉल्ट: पूछा जाता है; `--yes` के साथ `--no-install`। |
+
+- कोई भी फ़्लैग अपने सवाल का जवाब दे देता है और उस प्रॉम्प्ट को छोड़ देता है।
+- `--engine`, `--gateway`, और `--endpoint` सिर्फ़ नए कॉन्फ़िग पर लागू होते हैं।
+  `--example` के साथ इन्हें देने पर यूसेज एरर आता है।
+
+| एग्ज़िट कोड | कब |
+| --- | --- |
+| 0 | स्कैफ़ोल्ड पूरा हो गया, या विज़र्ड कैंसल कर दिया गया। कैंसल करने पर फ़ाइलें बिना बदले रहती हैं और कॉपी किया उदाहरण हट जाता है। |
+| 2 | अनजान फ़्लैग वैल्यू। कुछ लिखने से पहले बाहर निकलता है और वैध वैल्यूज़ की लिस्ट देता है। |
+| 2 | इनवैलिड `package.json`। कुछ लिखने से पहले बाहर निकलता है। |
+| 2 | stdin और stdout पर टर्मिनल न होना, और `--yes` भी न देना। मैसेज उस फ़्लैग का नाम बताता है। |
+| 2 | `--yes` के साथ या बिना टर्मिनल के बिना नाम वाला `--example`। मैसेज नामों की लिस्ट देता है। |
+| 2 | ऐसी डायरेक्टरी के साथ `--example` जिसमें पहले से फ़ाइलें हों, या उदाहरण डाउनलोड फ़ेल हो गया हो। पीछे कुछ नहीं बचता। |
+| 2 | डिपेंडेंसी इंस्टॉलेशन फ़ेल हो गया। |
+| 130 | लोगो बनते समय या उदाहरण डाउनलोड होते समय Ctrl-C या SIGTERM, या डिपेंडेंसी इंस्टॉलेशन के दौरान SIGINT। अधूरा उदाहरण हटा दिया जाता है। |
+
+##### प्रॉम्प्ट्स
+
+52 या ज़्यादा कॉलम चौड़े टर्मिनल पर विज़र्ड e2e लोगो के साथ शुरू होता है, जो लगभग आधे
+सेकंड में ऊपर की पंक्तियों से ░ से █ तक भरता है। `--yes` के साथ, CI में, डंब टर्मिनल
+पर, या 7 से कम पंक्तियों वाले टर्मिनल पर यह तुरंत प्रिंट हो जाता है। पाइप किए गए आउटपुट
+और संकरे टर्मिनल पर यह नहीं दिखता।
+
+CI से बाहर के टर्मिनल पर, स्कैफ़ोल्ड पूरा होने के बाद GitHub पर e2e को स्टार करने का
+लिंक आता है, जब तक कि init सीधे उस कमांड पर न बढ़ जाए जिसके लिए उसे चलाया गया था।
+
+नए प्रोजेक्ट के लिए विज़र्ड ये सवाल पूछता है:
+
+- **इंजन।** एक, दोनों, या कोई नहीं चुनें। **Web** (Playwright, डिफ़ॉल्ट)
+  `@e2e-dev/web` जोड़ता है। **Mobile (iOS/Android)** `@e2e-dev/mobile` जोड़ता है,
+  macOS पर डिफ़ॉल्ट iOS और बाकी जगह Android लेता है, और Settings खोलता है। कोई नहीं
+  चुनने पर कोई इंजन नहीं जुड़ता, HTTP टेस्ट या आपके अपने इंजन के लिए।
+- **एजेंट स्टेप्स के लिए मॉडल प्रोवाइडर या सब्सक्रिप्शन:** Vercel AI Gateway,
+  OpenRouter, OpenAI-कम्पैटिबल या लोकल एंडपॉइंट, ChatGPT, GitHub Copilot, OpenCode
+  Console, SuperGrok, या **Skip for now** (उन टेस्ट्स के लिए जो सिर्फ़ लोकेटर इस्तेमाल
+  करते हैं)। विज़र्ड API key पूछे बिना कॉन्फ़िग और पैकेज लिख देता है। सब्सक्रिप्शन यूज़र
+  बाद में [`e2e login`](#e2e-login) से साइन इन करते हैं। [मॉडल](/models) और
+  [सब्सक्रिप्शन](/subscriptions) देखें।
+- **एजेंट स्किल कहाँ इंस्टॉल करें** ([e2e guide](#e2e-guide) देखें)।
+  `.agents/skills/` Codex, Cursor, Copilot, Gemini CLI, OpenCode, और Zed के लिए है;
+  `.claude/skills/` Claude Code के लिए। दोनों पहले से चुने रहते हैं।
+- **[MCP सर्वर](/reference/mcp) कहाँ रजिस्टर करें।** Claude Code के लिए `.mcp.json`,
+  Cursor के लिए `.cursor/mcp.json`, Codex के लिए `.codex/config.toml`। सभी पहले से
+  चुने रहते हैं। Codex ट्रस्टेड प्रोजेक्ट्स में कॉन्फ़िग लोड करता है; डिपेंडेंसी इंस्टॉल
+  करने के बाद नया सेशन शुरू करें।
+- वेब या मोबाइल इंजन वाले प्रोजेक्ट के लिए **CI पाइपलाइन**: GitHub Actions या GitLab
+  CI/CD, हर प्लेटफ़ॉर्म के लिए एक जॉब के साथ। विज़र्ड उस सर्विस को पहले से चुन लेता है
+  जिसकी ओर रिपॉज़िटरी का रिमोट, `.github/` फ़ोल्डर, या `.gitlab-ci.yml` इशारा करता है।
+  [CI पाइपलाइन](#ci-pipeline) देखें।
+
+Next.js ऐप में वेब टारगेट ऐप को खुद शुरू करता है। [Next.js ऐप्स](#nextjs-apps) देखें।
+
+फ़ाइल बदलाव कन्फ़र्म करने के बाद विज़र्ड पूछता है कि चुनी गई डिपेंडेंसी इंस्टॉल करनी हैं
+या नहीं। इंस्टॉलर प्रोजेक्ट के `packageManager` फ़ील्ड या लॉकफ़ाइल को मानता है, फिर चलाने
+वाले पैकेज मैनेजर को, फिर npm को।
+
+##### फ़ाइलें
+
+| क्या बनाता है | कंटेंट |
+| --- | --- |
+| `package.json` | न होने पर प्राइवेट ESM पैकेज के रूप में बनता है; वरना सिर्फ़ गायब डिपेंडेंसी और स्क्रिप्ट्स जुड़ती हैं। सिबलिंग पैकेज (`@e2e-dev/web`, `@e2e-dev/mobile`) को CLI के साथ रिलीज़ हुए वर्ज़न की कैरेट रेंज मिलती है, या CLI प्रीरिलीज़ होने पर ठीक वही वर्ज़न। पहले से न होने पर `e2e run` चलाने वाली `test:e2e` स्क्रिप्ट जोड़ता है |
+| `e2e.config.ts` | हर चुने गए इंजन के लिए एक टारगेट, उसके `app` में ऐप के साथ। Playwright `APP_URL` (डिफ़ॉल्ट `http://localhost:3000`) को `app.url` में पढ़ता है और कमेंट में `app.command` दिखाता है। Next.js ऐप में इसकी जगह यह `app.url` और `app.command` सेट करता है; [Next.js ऐप्स](#nextjs-apps) देखें। Mobile iOS पर `app: { bundleId: 'Settings' }` और Android पर `com.android.settings`, और `workers: 1` सेट करता है। गेटवे के साथ `agents.default` `{ model, system }` होता है |
+| `tests/example.e2e.ts` | सिर्फ़ नए कॉन्फ़िग के साथ। किसी भी पेज पर पास होने वाला ऐप-ओपन टेस्ट और एक कमेंट किया हुआ एजेंट टेस्ट। डिवाइस सेटअप में इसकी जगह Settings चेक मिलता है। दोनों इंजन होने पर इसकी जगह `tests/web.e2e.ts` और `tests/mobile.e2e.ts` बनते हैं, हर टेस्ट में अपने टारगेट का `platforms` सेट होता है ताकि दूसरा टारगेट उसे स्किप करे |
+| `.gitignore` | `node_modules/`, `.e2e/results/`, `.e2e/cache/`, `.e2e/sessions/`, `.e2e/report.json`, `.e2e/ai-trace.json`, `.e2e/timings.json`, `.e2e/junit.xml`, `.e2e/summary.md`, `.e2e/ctrf.json`, `.e2e/logs/`, और `.e2e/videos/` जोड़ता है। कैश कमिट करना आपकी मर्ज़ी पर है; [रीप्ले कैश कमिट करें](/cache#commit-the-replay-cache) देखें |
+| `.agents/skills/e2e/`, `.claude/skills/e2e/` | `SKILL.md` और हर `e2e guide` टॉपिक के लिए एक `references/<topic>.md`। दोनों चुनने पर Claude Code डायरेक्टरी उस कॉपी के लिए रिलेटिव सिमलिंक (`../../.agents/skills/e2e`) होती है, वही लेआउट जो `npx skills add` बनाता है |
+| `AGENTS.md`, `CLAUDE.md` | जब स्किल `.agents/skills/` में हो तो `AGENTS.md` में `End-to-end tests use e2e; read .agents/skills/e2e/SKILL.md before writing or running one.` जोड़ता है, और `.claude/skills/` में होने पर `CLAUDE.md` में `.claude/skills/e2e/SKILL.md` वाली वही लाइन। न होने पर फ़ाइल बन जाती है; पहले से मौजूद फ़ाइल का बाकी हिस्सा नहीं बदलता। `--skills none` के साथ दोनों में कुछ नहीं जुड़ता |
+| `.mcp.json`, `.cursor/mcp.json`, `.codex/config.toml` | बाकी सर्वर्स को बदले बिना `e2e mcp` रजिस्टर करता है |
+| `.github/workflows/e2e.yml`, `.gitlab-ci.yml` | `--ci` के साथ: टारगेट्स जिन प्लेटफ़ॉर्म पर चलते हैं उनमें से हर एक के लिए एक जॉब। सबफ़ोल्डर वाले प्रोजेक्ट के लिए भी यह रिपॉज़िटरी रूट पर बनता है। [CI पाइपलाइन](#ci-pipeline) देखें |
+
+<a id="nextjs-apps" />
+##### Next.js ऐप्स
+
+जब `package.json` के `dependencies` या `devDependencies` में `next` होता है, तो `init`
+इसे Next.js ऐप मानता है। तब वेब टारगेट प्रोजेक्ट के पैकेज मैनेजर से ऐप की अपनी स्क्रिप्ट्स
+चलाता है, और `init` लिखी गई कमांड्स और URL प्रिंट करता है:
+
+- `app.url` `http://localhost:<port>` होता है, जहाँ पोर्ट `dev` स्क्रिप्ट में `next`
+  कमांड के `--port` या `-p` फ़्लैग या `PORT=` वेरिएबल से लिया जाता है, वरना 3000। यह
+  कभी `127.0.0.1` नहीं होता, जो `next dev` पर
+  [हाइड्रेट नहीं होता](/frameworks/nextjs#fix-next-js-problems)।
+- लोकली, `app.command` `reuseExisting: true` के साथ `dev` स्क्रिप्ट चलाता है।
+- जब ऐप में उसी पोर्ट पर `build` और `start` स्क्रिप्ट भी हों, तो CI में `app.command`
+  प्रोडक्शन बिल्ड पर `start` चलाता है। `init` से बनी [CI पाइपलाइन](#ci-pipeline)
+  टेस्ट्स से पहले `build` चलाती है। वरना CI भी `dev` ही चलाता है।
+
+`dev` स्क्रिप्ट न होने पर, या पोर्ट तय संख्या न होने पर (जैसे `$PORT`) या स्क्रिप्ट की
+किसी दूसरी कमांड से सेट होने पर, टारगेट किसी भी दूसरे प्रोजेक्ट की तरह `APP_URL`
+पढ़ता है, और `init` बताता है कि क्या सेट करना है।
+
+<a id="ci-pipeline" />
+##### CI पाइपलाइन
+
+`--ci github-actions` या `--ci gitlab` एक पाइपलाइन लिखता है जिसमें कॉन्फ़िग के टारगेट्स
+जिन प्लेटफ़ॉर्म पर चलते हैं (वेब, iOS, Android) उनमें से हर एक के लिए एक जॉब होता है।
+वेब और मोबाइल दोनों टारगेट वाले कॉन्फ़िग के सभी जॉब एक ही फ़ाइल में आते हैं। हर जॉब
+डिपेंडेंसी इंस्टॉल करता है, `e2e run --target <its targets> --reporter list,junit`
+चलाता है, और `.e2e/report.json`, `.e2e/junit.xml`, और `.e2e/results/` को सहेजता है।
+
+<CodeGroup>
+```bash npm
+npx e2e init --yes --ci gitlab
+```
+
+```bash pnpm
+pnpm dlx e2e init --yes --ci gitlab
+```
+
+```bash bun
+bunx e2e init --yes --ci gitlab
+```
+</CodeGroup>
+
+| जॉब | GitHub Actions | GitLab CI/CD |
+| --- | --- | --- |
+| वेब | `ubuntu-latest`, Chromium के साथ | GitLab के रनर्स पर `node` इमेज, Chromium के साथ |
+| iOS | `macos-26`: ऐप बिल्ड करता है, पिन किए iOS रनटाइम पर इमेज का iPhone 17 Pro बूट करता है, ऐप इंस्टॉल करता है | सेल्फ़-मैनेज्ड Mac: पिन किए रनटाइम पर अपना सिम्युलेटर बनाता है |
+| Android | KVM के साथ `ubuntu-latest`: रिलीज़ APK बिल्ड करता है, API 36 एम्युलेटर पर चलाता है | KVM के साथ सेल्फ़-मैनेज्ड Linux रनर: `e2e` नाम का AVD बूट करता है |
+
+| सर्विस | फ़ाइल | कब चलता है | मॉडल की |
+| --- | --- | --- | --- |
+| GitHub Actions | `.github/workflows/e2e.yml` | पुल रिक्वेस्ट और `main` पर पुश होने पर | रिपॉज़िटरी सीक्रेट, रन स्टेप के `env` में पास |
+| GitLab CI/CD | `.gitlab-ci.yml` | मर्ज रिक्वेस्ट पाइपलाइन और डिफ़ॉल्ट ब्रांच पर। JUnit रिपोर्ट मर्ज रिक्वेस्ट में दिखती है | CI/CD वेरिएबल, जिसे GitLab जॉब को देता है |
+
+- `init` अपने लिखे नए कॉन्फ़िग से टारगेट पढ़ता है, या बदलाव कन्फ़र्म करने और इंस्टॉल के
+  बाद पहले से मौजूद कॉन्फ़िग को `e2e run` की तरह लोड करता है। जब मौजूदा कॉन्फ़िग फिर भी
+  लोड न हो, तो `init` कारण बताता है और `package.json` पर फ़ॉलबैक करता है: सिर्फ़ वेब
+  इंजन होने पर एक वेब जॉब सभी टारगेट चलाता है; मोबाइल इंजन होने पर कोई पाइपलाइन नहीं बनती।
+- वेब जॉब हर उस टारगेट को चलाता है जो iOS या Android न हो (HTTP टेस्ट समेत), और मोबाइल
+  टारगेट न होने पर सभी को।
+- मोबाइल जॉब ऐप बिल्ड करते हैं। Expo ऐप `expo run:ios` और `expo prebuild` और Gradle से
+  बिल्ड होता है। बेयर React Native ऐप अपने `ios/*.xcworkspace` को `xcodebuild`
+  (`Gemfile` होने पर Bundler के ज़रिए) से बिल्ड करता है और `android/gradlew` चलाता है।
+  किसी और ऐप को ऐसा बिल्ड स्टेप मिलता है जो तब तक फ़ेल होता है जब तक आप उसे बदल न दें,
+  और `init` एडिट करने वाली फ़ाइल का नाम बताता है।
+- मोबाइल जॉब अपने बूट किए डिवाइस का नाम `E2E_DEVICE` में देते हैं। जो टारगेट डिवाइस का
+  नाम देता है वह `mobile()` में `device: process.env.E2E_DEVICE` से इसे पढ़ता है, ताकि
+  रन उसी डिवाइस को चलाए। जो टारगेट कोई नाम नहीं देता वह बूट हुए डिवाइस को चलाता है।
+- GitLab के होस्टेड रनर सिम्युलेटर या एम्युलेटर नहीं चला सकते, इसलिए इसके मोबाइल जॉब के लिए
+  सेल्फ़-मैनेज्ड रनर चाहिए: उनके `tags` सेट करें।
+  [GitLab CI/CD](/ci/gitlab#ios-and-android) देखें।
+- फ़ाइल पैकेज में `templates/ci/` के अंदर दिए गए टेम्पलेट से शुरू होती है, जो रिपॉज़िटरी
+  रूट पर npm और Expo ऐप के लिए पूरी पाइपलाइन है। `init` इसे आपके प्रोजेक्ट के हिसाब से
+  भरता है और इसके कमेंट्स बचाए रखता है।
+- जॉब्स प्रोजेक्ट का पैकेज मैनेजर और `.nvmrc` या `.node-version` वाला Node वर्ज़न
+  (न होने पर 24) इस्तेमाल करते हैं। GitHub फ़ाइल पढ़ता है, इसलिए उसे ठीक वही वर्ज़न मिलता
+  है। GitLab वेब जॉब को फ़ाइल के मेजर वर्ज़न की `node` इमेज में चलाता है: `22.22.3` के
+  लिए `node:22`। GitHub actions कमिट से पिन होते हैं।
+- `init` जोड़ने वाले सीक्रेट या वेरिएबल का नाम (जैसे `AI_GATEWAY_API_KEY`) और उसे
+  जोड़ने वाली `gh` या `glab` कमांड बताता है।
+- सबफ़ोल्डर में रखे प्रोजेक्ट के लिए फ़ाइल रिपॉज़िटरी रूट पर जाती है और जॉब्स सबफ़ोल्डर में
+  चलते हैं।
+- जब कॉन्फ़िग Next.js प्रोडक्शन बिल्ड सर्व करता है (उसका `app.command` `start` स्क्रिप्ट
+  चलाता है), तो वेब जॉब `e2e run` से पहले `build` स्क्रिप्ट चलाता है।
+- जब कॉन्फ़िग में `app.command` न हो, तो `init` चेतावनी देता है क्योंकि रनर पर ऐप शुरू
+  करने के लिए और कुछ नहीं है। यह सब्सक्रिप्शन गेटवे (जिसका साइन-इन आपकी मशीन पर रहता है)
+  और आपकी मशीन के OpenAI-कम्पैटिबल `baseURL` के बारे में भी चेतावनी देता है: दोनों में
+  CI पर एजेंट स्टेप्स फ़ेल हो जाते हैं।
+- पहले से मौजूद पाइपलाइन फ़ाइल नहीं बदली जाती। मौजूदा `.gitlab-ci.yml` के बगल में `init`
+  `.gitlab/e2e.gitlab-ci.yml` लिखता है और जोड़ने के लिए `include:` लाइनें प्रिंट करता है।
+  जॉब्स `test` स्टेज में चलते हैं, और अगर आपके `stages:` में वह न हो तो `init` बताता है।
+  इनमें से किसी नाम (`e2e-web`, `e2e-ios`, `e2e-android`) वाले जॉब के बगल में हर जॉब के
+  नाम में `-run` जुड़ जाता है।
+- `init` कभी सिमलिंक किए गए `.github` या `.gitlab` फ़ोल्डर के पार नहीं लिखता। यह चेतावनी
+  देता है और कुछ नहीं लिखता।
+- जो वर्कफ़्लो या `.gitlab-ci.yml` पहले से `e2e run` चला रहा हो उसे कुछ नहीं मिलता, और
+  बिना वेब या मोबाइल इंजन वाले प्रोजेक्ट को भी नहीं।
+
+<a id="starting-from-an-example" />
+##### उदाहरण से शुरू करना
+
+`--example` [उदाहरण ऐप्स](https://github.com/e2e-inc/e2e/tree/main/examples) में से
+किसी एक को नई या खाली डायरेक्टरी में कॉपी करता है, फिर उसके e2e प्रोजेक्ट में विज़र्ड
+चलाता है। वेब या Expo ऐप के लिए वह खुद वही डायरेक्टरी होती है, और नेटिव ऐप के लिए उसका
+`e2e/` फ़ोल्डर। नाम न देने पर यह चुनने के लिए उदाहरणों की लिस्ट दिखाता है।
+
+<CodeGroup>
+```bash npm
+npx e2e init my-app --example with-expo
+```
+
+```bash pnpm
+pnpm dlx e2e init my-app --example with-expo
+```
+
+```bash bun
+bunx e2e init my-app --example with-expo
+```
+</CodeGroup>
+
+- CLI चल रहे CLI के `e2e@<version>` टैग से GitHub से उदाहरण डाउनलोड करता है। जब वह टैग
+  न मिले, तो यह `main` इस्तेमाल करता है और चेतावनी देता है।
+- जिस डायरेक्टरी में सिर्फ़ `.git`, `.DS_Store`, या `Thumbs.db` हों, वह खाली मानी जाती है।
+- उदाहरण का कॉन्फ़िग, टेस्ट, और स्क्रिप्ट्स वैसे ही रहते हैं। विज़र्ड सिर्फ़ स्किल, MCP
+  सर्वर, और इंस्टॉल के बारे में पूछता है, और गायब `.gitignore` एंट्रीज़ और `AGENTS.md`
+  और `CLAUDE.md` में स्किल लाइन जोड़ता है। नेटिव ऐप के लिए ये फ़ाइलें `e2e/` में जाती हैं,
+  इसलिए अपना कोडिंग एजेंट वहीं खोलें।
+- e2e प्रोजेक्ट के `package.json` को डायरेक्टरी का नाम मिलता है (नेटिव ऐप के बगल में
+  `-e2e` के साथ)। `e2e`, `@e2e-dev/web`, और `@e2e-dev/mobile` को वही रेंज मिलती हैं जो
+  `init` नए प्रोजेक्ट के लिए लिखता है।
+- अंत की `Next:` लाइन उदाहरण की टेस्ट स्क्रिप्ट का नाम बताती है। नेटिव ऐप को पहले बिल्ड
+  करना होता है; उसके `README.md` में तरीका लिखा है।
+
+##### init को दोबारा चलाना
+
+- पहले से मौजूद कॉन्फ़िग और टेस्ट फ़ाइलें बाइट-दर-बाइट वैसी ही रहती हैं। इंजन और गेटवे के
+  जवाब सिर्फ़ नए कॉन्फ़िग पर लागू होते हैं। मौजूदा कॉन्फ़िग के बगल में कोई उदाहरण टेस्ट
+  नहीं लिखा जाता, इसलिए जिसे आपने डिलीट किया वह डिलीट ही रहता है।
+- `package.json` और `.gitignore` में जो कमी हो वह फिर भी जुड़ जाती है: `e2e` डेव
+  डिपेंडेंसी, `test:e2e` स्क्रिप्ट, और इग्नोर एंट्रीज़। पहले से मौजूद डिपेंडेंसी,
+  स्क्रिप्ट्स, और एंट्रीज़ वैसी ही रहती हैं।
+- `init` मौजूदा कॉन्फ़िग के इम्पोर्ट्स पढ़ता है और `package.json` में जो पैकेज गायब हों
+  उन्हें नए प्रोजेक्ट वाली रेंज में जोड़ता है: `@e2e-dev/core` के साथ `@e2e-dev/web` और
+  `@e2e-dev/mobile`, `zod` के साथ `ai`, और `init` से दिए जाने वाले गेटवे के प्रोवाइडर
+  पैकेज। कॉन्फ़िग जो भी दूसरा पैकेज इम्पोर्ट करे (अकेला `zod` भी), उसे आप खुद जोड़ते हैं।
+  जिस इम्पोर्ट को `tsconfig.json` `paths` या `baseUrl` से प्रोजेक्ट फ़ाइल पर मैप करे वह
+  पैकेज नहीं होता।
+- ये रेंज उस `e2e` की होती हैं जो `init` चला रहा है। जब `package.json` कोई दूसरा `e2e`
+  डिक्लेयर करे (जैसे `npx e2e@latest init` के तहत कोई पुराना पिन किया वर्ज़न), तो `init`
+  गायब पैकेजों का नाम बताता है और कुछ जोड़ता नहीं। डिपेंडेंसी इंस्टॉल करके प्रोजेक्ट का
+  अपना `e2e init` चलाएँ, या उन्हें अपने `e2e` के अनुकूल वर्ज़न में जोड़ें। ठीक वर्ज़न और
+  `^` या `~` रेंज की तुलना चल रहे वर्ज़न से होती है; किसी और स्पेक (जैसे `workspace:*`)
+  की तुलना `node_modules` वाले `e2e` से।
+- जो कॉन्फ़िग पार्स न हो उसे चेतावनी मिलती है, और उसके पैकेज चेक नहीं होते।
+- MCP रजिस्ट्रेशन e2e सर्वर की अतिरिक्त सेटिंग्स (जैसे एनवायरनमेंट वेरिएबल और क्लाइंट
+  टाइमआउट) को बनाए रखता है, भले ही वह लॉन्च कमांड ठीक करे। अप-टू-डेट रजिस्ट्रेशन
+  बाइट-दर-बाइट वैसा ही रहता है।
+- स्किल डायरेक्टरी बन जाने के बाद, आगे के रन सिर्फ़ उन कॉपियों को रीफ़्रेश करते हैं जो
+  इंस्टॉल वर्ज़न से अलग हों। वे कभी ऐसी डायरेक्टरी नहीं जोड़ते जिसे प्रोजेक्ट ने न चुना हो।
+  इसकी जगह `--skills` और `--mcp` ठीक लोकेशन का नाम देते हैं और बाकियों को वैसा ही छोड़
+  देते हैं।
+- किसी पुराने वर्ज़न की `.claude/skills/e2e/` कॉपी तब सिमलिंक बन जाती है जब उसमें सिर्फ़
+  शिप की गई फ़ाइलें हों। दूसरी फ़ाइलों वाली कॉपी कॉपी ही रहती है और रीफ़्रेश होती है।
+- `init` कभी ऐसी स्किल डायरेक्टरी के पार नहीं लिखता जो कहीं और का सिमलिंक हो, या उसके
+  नीचे हो। `--yes` लिंक और उसके टारगेट के नाम के साथ चेतावनी देकर उसे छोड़ देता है।
+  इंटरैक्टिव रन उसे कॉपी से, या सही जगह जाने वाले लिंक से बदलने का ऑप्शन देता है।
+- एक बार इंस्टॉल स्किल फ़ाइल का नाम आ जाने के बाद `AGENTS.md` और `CLAUDE.md` वैसे ही रहते
+  हैं। यही बात उस `CLAUDE.md` पर भी लागू होती है जो उस लाइन वाले `AGENTS.md` का सिमलिंक
+  हो, या कोड ब्लॉक के बाहर अपनी अलग लाइन पर `@AGENTS.md` से उसे इम्पोर्ट करे। जब `init`
+  `AGENTS.md` न लिख सके, तो उस `CLAUDE.md` को अपनी अलग लाइन मिलती है। बाइट ऑर्डर मार्क
+  से शुरू होने वाली UTF-16 फ़ाइल को लाइन UTF-16 में मिलती है। `init` कभी सिमलिंक की गई
+  इंस्ट्रक्शंस फ़ाइल के पार नहीं लिखता: जिसके टारगेट में वह लाइन न हो उसे लिंक और टारगेट
+  के नाम के साथ चेतावनी देकर छोड़ दिया जाता है। फ़ाइल की जगह डायरेक्टरी होने, या ऐसी फ़ाइल
+  होने जिसे `init` पढ़ या लिख न सके, उसे भी चेतावनी के साथ छोड़ दिया जाता है।
+- जहाँ फ़ाइल जानी हो वहाँ डायरेक्टरी हो, या जहाँ डायरेक्टरी जानी हो वहाँ फ़ाइल हो, तो उस
+  एंट्री के नाम के साथ चेतावनी देकर उसे छोड़ दिया जाता है। `init` उसे ठीक करने के लिए कुछ
+  हटाता नहीं।
+- सिमलिंक से या लिंक्ड डायरेक्टरी के नीचे पहुँची MCP कॉन्फ़िग फ़ाइल को भी इसी चेतावनी के
+  साथ छोड़ दिया जाता है और नहीं बदला जाता, ताकि सर्वर वहाँ रजिस्टर न हो। सादा कॉन्फ़िग
+  हमेशा की तरह मर्ज होता है।
+
+#### `e2e login`
+
+किसी सब्सक्रिप्शन में साइन इन करता है और क्रेडेंशियल `$XDG_CONFIG_HOME/e2e/oauth.json`
+(डिफ़ॉल्ट `~/.config/e2e/oauth.json`) में सेव करता है। मॉडल कॉन्फ़िगरेशन के लिए
+[सब्सक्रिप्शन](/subscriptions) देखें।
+
+<CodeGroup>
+```bash npm
+npx e2e login openai              # ChatGPT, browser sign-in
+npx e2e login openai --device     # sign in with a device code
+npx e2e login github-copilot --from-gh  # use your GitHub CLI login
+npx e2e login github-copilot --client-id <id> [--enterprise-url <host>]
+npx e2e login opencode-console    # OpenCode Console, device code
+npx e2e login spacexsi            # SuperGrok, device code
+npx e2e login                     # choose a provider
+```
+
+```bash pnpm
+pnpm exec e2e login openai              # ChatGPT, browser sign-in
+pnpm exec e2e login openai --device     # sign in with a device code
+pnpm exec e2e login github-copilot --from-gh  # use your GitHub CLI login
+pnpm exec e2e login github-copilot --client-id <id> [--enterprise-url <host>]
+pnpm exec e2e login opencode-console    # OpenCode Console, device code
+pnpm exec e2e login spacexsi            # SuperGrok, device code
+pnpm exec e2e login                     # choose a provider
+```
+
+```bash bun
+bunx e2e login openai              # ChatGPT, browser sign-in
+bunx e2e login openai --device     # sign in with a device code
+bunx e2e login github-copilot --from-gh  # use your GitHub CLI login
+bunx e2e login github-copilot --client-id <id> [--enterprise-url <host>]
+bunx e2e login opencode-console    # OpenCode Console, device code
+bunx e2e login spacexsi            # SuperGrok, device code
+bunx e2e login                     # choose a provider
+```
+</CodeGroup>
+
+| ऑप्शन | विवरण |
+| --- | --- |
+| `[provider]` | सब्सक्रिप्शन: `openai`, `github-copilot`, `opencode-console`, या `spacexsi`। यहाँ और `logout` और `models` में `spacexai` और `grok`, `spacexsi` के एलियास हैं। डिफ़ॉल्ट: पिकर। |
+| `--device` | ChatGPT: ब्राउज़र खोलने के बजाय दूसरे डिवाइस पर डालने के लिए कोड दिखाता है। |
+| `--from-gh` | GitHub Copilot: साइन-इन हुए GitHub CLI के टोकन को दोबारा इस्तेमाल करता है। |
+| `--client-id <id>` | GitHub Copilot: आपके GitHub OAuth App की क्लाइंट id, जिसमें डिवाइस फ़्लो चालू हो। |
+| `--enterprise-url <host>` | GitHub Copilot: GitHub Enterprise होस्ट। |
+
+| एग्ज़िट कोड | कब |
+| --- | --- |
+| 1 | साइन-इन फ़ेल हो गया। |
+| 2 | अनजान प्रोवाइडर। |
+| 130 | साइन-इन कैंसल कर दिया गया। |
+
+#### `e2e logout`
+
+एक प्रोवाइडर का सेव किया गया लॉगिन हटाता है।
+
+<CodeGroup>
+```bash npm
+npx e2e logout           # pick one of the stored logins
+npx e2e logout openai    # forget one
+```
+
+```bash pnpm
+pnpm exec e2e logout           # pick one of the stored logins
+pnpm exec e2e logout openai    # forget one
+```
+
+```bash bun
+bunx e2e logout           # pick one of the stored logins
+bunx e2e logout openai    # forget one
+```
+</CodeGroup>
+
+| ऑप्शन | विवरण |
+| --- | --- |
+| `[provider]` | हटाने वाला लॉगिन: `openai`, `github-copilot`, `opencode-console`, या `spacexsi`। डिफ़ॉल्ट: सेव किए गए लॉगिन का पिकर। |
+
+#### `e2e models`
+
+वेंडर से पूछता है कि सेव किया गया लॉगिन कौन से मॉडल देता है और हर मॉडल की एक लाइन प्रिंट
+करता है। OpenCode Console के लिए, सेट होने पर `OPENCODE_API_KEY` से पूछता है।
+
+<CodeGroup>
+```bash npm
+npx e2e models           # every stored login
+npx e2e models openai    # one provider
+```
+
+```bash pnpm
+pnpm exec e2e models           # every stored login
+pnpm exec e2e models openai    # one provider
+```
+
+```bash bun
+bunx e2e models           # every stored login
+bunx e2e models openai    # one provider
+```
+</CodeGroup>
+
+| ऑप्शन | विवरण |
+| --- | --- |
+| `[provider]` | `openai`, `github-copilot`, `opencode-console`, या `spacexsi`। डिफ़ॉल्ट: हर सेव किया गया लॉगिन, और जब सिर्फ़ `OPENCODE_API_KEY` सेट हो तो OpenCode Console भी। |
+
+हर लाइन में होता है:
+
+- वह id जो `chatgpt()`, `copilot()`, `opencodeConsole()`, या `grok()` लेता है;
+- मॉडल के लिए वेंडर का नाम;
+- उसके नोट्स: रीज़निंग लेवल, विज़न, प्रीव्यू, हिडन; Copilot के लिए `not enabled` या
+  `no chat or responses` जब `copilot()` उसे कॉल न कर सके; OpenCode Console के लिए
+  इसे देने वाला प्लान, Zen या Go।
+
+लिस्ट किया गया मॉडल कोई Copilot अकाउंट इस्तेमाल कर सकता है या नहीं, यह सिर्फ़ कॉल करने
+पर ही पता चलता है।
+
+| एग्ज़िट कोड | कब |
+| --- | --- |
+| 1 | कोई क्रेडेंशियल नहीं, या बताए गए प्रोवाइडर का कोई क्रेडेंशियल नहीं। मैसेज साइन-इन कमांड बताता है। |
+| 1 | कई लॉगिन में से एक लिस्ट करने में फ़ेल हो गया। बाकी फिर भी प्रिंट होते हैं। |
+| 2 | अनजान प्रोवाइडर। |
+
+[मॉडल चुनें](/subscriptions#pick-a-model) देखें।
+
+#### `e2e guide`
+
+वही स्किल प्रिंट करता है जिसे `init` इंस्टॉल करता है; `npx skills add e2e-inc/e2e` भी
+वही स्किल इंस्टॉल करता है। [कोडिंग एजेंट्स](/coding-agents) देखें।
+
+<CodeGroup>
+```bash npm
+npx e2e guide            # the overview
+npx e2e guide setup      # one topic
+```
+
+```bash pnpm
+pnpm exec e2e guide            # the overview
+pnpm exec e2e guide setup      # one topic
+```
+
+```bash bun
+bunx e2e guide            # the overview
+bunx e2e guide setup      # one topic
+```
+</CodeGroup>
+
+| ऑप्शन | विवरण |
+| --- | --- |
+| `[topic]` | `setup`, `writing-tests`, `agent`, `running`, `explore`, `debugging`, `mcp`, या `bug-bash` में से कोई एक। डिफ़ॉल्ट: ओवरव्यू। अनजान टॉपिक 2 से बाहर निकलता है और वैध नाम बताता है। |
+
+गाइड stdout पर जाता है और उसका वर्ज़न बताने वाली एक लाइन stderr पर। वह वर्ज़न प्रोजेक्ट के
+हिसाब से होता है, क्योंकि कुछ भी इंस्टॉल न होने पर `npx e2e guide` लेटेस्ट रिलीज़
+डाउनलोड करता है और ग्लोबल इंस्टॉल का अपना वर्ज़न होता है:
+
+| प्रोजेक्ट | `guide` क्या प्रिंट करता है |
+| --- | --- |
+| चल रहे CLI से अलग e2e वर्ज़न इंस्टॉल है | इंस्टॉल किए गए वर्ज़न की गाइड और टॉपिक्स |
+| गाइड शिप होने से पहले का वर्ज़न इंस्टॉल है | CLI की गाइड, और बताता है कि इंस्टॉल वर्ज़न में कोई गाइड नहीं है |
+| ऐसा वर्ज़न या रेंज डिक्लेयर करता है जिसमें CLI नहीं आता, और कुछ इंस्टॉल नहीं है | CLI की गाइड, और वे कमांड्स जो प्रोजेक्ट की गाइड प्रिंट करेंगी |
+| ऐसा वर्ज़न इंस्टॉल है जो उसके `package.json` रेंज से बाहर है | जब रेंज में CLI आए तो CLI की गाइड, वरना इंस्टॉल वाली, और दोबारा इंस्टॉल करने को कहता है |
+
+रेंज को वैसे ही पढ़ा जाता है जैसे npm पढ़ता है। डिस्ट-टैग, वर्कस्पेस लिंक, या एलियास कोई
+वर्ज़न नहीं बताता, इसलिए लाइन कुछ नहीं जोड़ती। रेंज होने पर पहले इंस्टॉल करें: लॉकफ़ाइल
+रिलीज़ चुनती है, और `npx "e2e@^0.23.0" guide` रेंज में सबसे नया वर्ज़न प्रिंट करता है।
+
+```text
+Guide for e2e 0.24.0, but package.json declares e2e 0.23.0 and no installed copy was found. For the matching guide, run `npm install` and then `npm exec -- e2e guide`, or run `npx e2e@0.23.0 guide`.
+```
+
+#### `e2e mcp`
+
+stdio पर एक MCP सर्वर जो कोडिंग एजेंट को ऐप पर लाइव सेशन देता है।
+
+<CodeGroup>
+```bash npm
+npx e2e mcp [--config <path>] [--target <name>] [--headed] [--max-sessions <n>]
+```
+
+```bash pnpm
+pnpm exec e2e mcp [--config <path>] [--target <name>] [--headed] [--max-sessions <n>]
+```
+
+```bash bun
+bunx e2e mcp [--config <path>] [--target <name>] [--headed] [--max-sessions <n>]
+```
+</CodeGroup>
+
+| ऑप्शन | विवरण |
+| --- | --- |
+| `--config <path>` | जब तक `open_session` कोई और न बताए, हर सेशन यही कॉन्फ़िग लोड करता है। डिफ़ॉल्ट: सबसे क़रीबी `e2e.config.ts`, `.mts`, `.js`, या `.mjs`। |
+| `--target <name>` | वह टारगेट जिस पर हर सेशन खुलता है। डिफ़ॉल्ट: इकलौता टारगेट, या जिसे `open_session` बताए। |
+| `--headed` | जिन सेशंस का `open_session` `headed` सेट नहीं करता उनमें UI दिखाता है, जब इंजन इसे सपोर्ट करे। |
+| `--max-sessions <n>` | एक साथ खुलने वाले सेशन, हर एक अपने ब्राउज़र या डिवाइस के साथ, 1 से 16 तक। डिफ़ॉल्ट: 4। [Bun](#bun) पर 1। |
+
+[MCP सर्वर](/reference/mcp) पेज इन ऑप्शंस के अलावा टूल्स और सेशन नियमों को विस्तार से
+बताता है।
+
+#### `e2e run`
+
+कॉन्फ़िग से खोजे गए टेस्ट चलाता है और [आउटपुट डायरेक्टरी](/reference/config#output) के
+नीचे `report.json` लिखता है।
+
+<CodeGroup>
+```bash npm
+npx e2e run
+npx e2e run tests/signup.e2e.ts --tag smoke
+npx e2e run tests/signup.e2e.ts:12
+npx e2e run tests/agent
+npx e2e run 'tests/**/*.smoke.e2e.ts'
+npx e2e run --target web,webkit --tag smoke,billing --tag-mode all
+npx e2e run --tag smoke --exclude-tag slow
+npx e2e run --grep checkout --grep-invert '/refund/i'
+npx e2e run --last-failed
+npx e2e run --changed-since origin/main
+npx e2e run --shard 2/3
+npx e2e run --reporter json --workers 4 --retries 2
+npx e2e run --max-failures 3
+npx e2e run --repeat-each 5 --no-cache tests/checkout.e2e.ts
+npx e2e run --reporter list,junit
+```
+
+```bash pnpm
+pnpm exec e2e run
+pnpm exec e2e run tests/signup.e2e.ts --tag smoke
+pnpm exec e2e run tests/signup.e2e.ts:12
+pnpm exec e2e run tests/agent
+pnpm exec e2e run 'tests/**/*.smoke.e2e.ts'
+pnpm exec e2e run --target web,webkit --tag smoke,billing --tag-mode all
+pnpm exec e2e run --tag smoke --exclude-tag slow
+pnpm exec e2e run --grep checkout --grep-invert '/refund/i'
+pnpm exec e2e run --last-failed
+pnpm exec e2e run --changed-since origin/main
+pnpm exec e2e run --shard 2/3
+pnpm exec e2e run --reporter json --workers 4 --retries 2
+pnpm exec e2e run --max-failures 3
+pnpm exec e2e run --repeat-each 5 --no-cache tests/checkout.e2e.ts
+pnpm exec e2e run --reporter list,junit
+```
+
+```bash bun
+bunx e2e run
+bunx e2e run tests/signup.e2e.ts --tag smoke
+bunx e2e run tests/signup.e2e.ts:12
+bunx e2e run tests/agent
+bunx e2e run 'tests/**/*.smoke.e2e.ts'
+bunx e2e run --target web,webkit --tag smoke,billing --tag-mode all
+bunx e2e run --tag smoke --exclude-tag slow
+bunx e2e run --grep checkout --grep-invert '/refund/i'
+bunx e2e run --last-failed
+bunx e2e run --changed-since origin/main
+bunx e2e run --shard 2/3
+bunx e2e run --reporter json --workers 4 --retries 2
+bunx e2e run --max-failures 3
+bunx e2e run --repeat-each 5 --no-cache tests/checkout.e2e.ts
+bunx e2e run --reporter list,junit
+```
+</CodeGroup>
+
+<a id="positional-arguments" />
+
+##### पोज़िशनल आर्ग्युमेंट
+
+```bash
+e2e run [files...]
+```
+
+प्रोजेक्ट रूट के हिसाब से टेस्ट फ़ाइलें, डायरेक्टरीज़, या ग्लॉब:
+
+| पोज़िशनल | क्या चुनता है |
+| --- | --- |
+| फ़ाइल पाथ (`tests/signup.e2e.ts`) | वह फ़ाइल। |
+| डायरेक्टरी (`tests/agent`, `.`) | उसके नीचे मिली हर टेस्ट फ़ाइल। |
+| सीधा नाम (`signup.e2e.ts`, `agent/signup.e2e.ts`, `signup`) | हर वह खोजी गई फ़ाइल जिसका पाथ सेगमेंट बाउंड्री पर उस पर खत्म हो; पहले दोनों `tests/agent/signup.e2e.ts` चुनते हैं। बिना `/` या `.` के यह बिना एक्सटेंशन वाले फ़ाइल नाम से मैच करता है, इसलिए `signup` भी उसे चुन लेता है। |
+| इनमें से कोई भी `:line` के साथ (`tests/signup.e2e.ts:12`, `signup:12`) | सिर्फ़ वही टेस्ट जो हर बताई गई फ़ाइल की उस लाइन पर डिक्लेयर है: वह लाइन जहाँ उसका `test(` कॉल खुलता है, जैसा एडिटर या रिपोर्ट का `source` दिखाता है। |
+| कोट किया गया ग्लॉब (`'tests/**/*.smoke.e2e.ts'`) | उससे मैच होने वाली हर खोजी गई फ़ाइल, कॉन्फ़िग के `tests` ग्लॉब ग्रामर में: `*`, `?`, और पूरा `**` सेगमेंट। |
+
+- **लाइनें।** जो लाइन किसी सीरियल ग्रुप के एक मेंबर का नाम दे, वह पूरा ग्रुप चलाती है।
+  एक ही फ़ाइल की कई लाइनें जुड़ जाती हैं; बिना लाइन के फ़ाइल देने पर पूरी फ़ाइल चुनी जाती
+  है। जब बताई गई लाइन पर कोई टेस्ट डिक्लेयर न हो, तो `NO_TESTS` पोज़िशनल और उन लाइनों
+  के नंबर बताता है जहाँ फ़ाइल ने टेस्ट डिक्लेयर किए हैं। जो पोज़िशनल जैसा लिखा है वैसा
+  डिस्क पर मौजूद हो वह पाथ होता है, भले ही वह `:12` पर खत्म हो।
+- **ग्लॉब्स।** ब्रेसेस, कैरेक्टर क्लास, और एक्सटग्लॉब कुछ मैच न करने वाले पैटर्न नहीं,
+  बल्कि हिंट के साथ `INVALID_GLOB` होते हैं। कोई एक्सपैंशन नहीं होता, इसलिए हर केस
+  के लिए अलग ग्लॉब लिखें। `./`, `..`, अंत का `/`, और प्रोजेक्ट के अंदर का पूरा पाथ किसी
+  भी पोज़िशनल पाथ की तरह रिज़ॉल्व होते हैं। पहले से मौजूद फ़ाइल या डायरेक्टरी अपने पाथ से
+  चुनी जाती है, चाहे उसके नाम में कोई भी कैरेक्टर हों।
+- पोज़िशनल कॉन्फ़िग ग्लॉब्स और टैग, प्लेटफ़ॉर्म, और कैपेबिलिटी फ़िल्टर्स को और संकरा करते
+  हैं; वे उन्हें कभी बायपास नहीं करते। नाम और ग्लॉब हर OS पर केस-सेंसिटिव होते हैं।
+  प्रोजेक्ट रूट के बाहर का पाथ `COLLECTION_ERROR` होता है।
+- रनर हर खोजी गई टेस्ट फ़ाइल को इम्पोर्ट करता है (भले ही आपने कुछ ही चुनी हों), ताकि चुना
+  गया टेस्ट दूसरी फ़ाइल में मौजूद अपना सेशन सेटअप पा सके। बाकी सामान्य टेस्ट अनसेलेक्टेड
+  रहते हैं। कलेक्शन एरर तब रन फ़ेल करता है जब वह किसी चुनी हुई फ़ाइल में हो, या बिना
+  पोज़िशनल वाले रन की किसी भी फ़ाइल में। जो फ़ाइल पोज़िशनल से बाहर रह गई हो और इम्पोर्ट
+  या टेस्ट रजिस्टर न हो पाए, उसे नोटिस के साथ छोड़ दिया जाता है। इसलिए कहीं और आधी लिखी
+  फ़ाइल `npx e2e run tests/login.e2e.ts` को नहीं रोकती। अगर फिर किसी चुने टेस्ट के सेशन
+  का सेटअप टेस्ट न मिले, तो एरर उस फ़ाइल का नाम बताता है जहाँ सेटअप हो सकता है।
+- `-` से शुरू होने वाला पोज़िशनल जो किसी फ़ाइल का नाम न हो, वह यूसेज एरर है, एग्ज़िट 2।
+  `pnpm test:e2e -- --headed` यही करता है: `--` e2e तक पहुँचता है, जो वरना `--headed`
+  को फ़ाइल मान लेता। मैसेज सीधा रूप बताता है, `pnpm exec e2e run --headed`। npm के लिए
+  यह `npm exec -- e2e run --headed` है; npm को फ़्लैग्स आगे भेजने के लिए बाइनरी से पहले
+  सेपरेटर चाहिए।
+- जब चलाने को कुछ न बचे, तो `NO_TESTS` कारण बताता है: ग्लॉब्स से कोई फ़ाइल मैच नहीं हुई
+  (`tests/login.test.ts` जैसे मिलते-जुलते नामों के साथ), पोज़िशनल से कुछ मैच नहीं हुआ
+  (सबसे क़रीबी पाथ के साथ), मैच हुई फ़ाइल ने कोई टेस्ट रजिस्टर नहीं किया, या हर टेस्ट
+  फ़िल्टर होकर बाहर हो गया।
+
+<a id="flags" />
+
+##### फ़्लैग्स
+
+**सिलेक्शन**
+
+| ऑप्शन | विवरण |
+| --- | --- |
+| `--config <path>` | सीधा कॉन्फ़िग पाथ। डिफ़ॉल्ट: सबसे क़रीबी `e2e.config.ts`, `.mts`, `.js`, या `.mjs` ([लोडिंग](/reference/config#loading) देखें)। फ़ाइल न मिलने पर `CONFIG_NOT_FOUND`। |
+| `--target <ids>` | नाम से टारगेट, कॉमा से अलग या बार-बार। डिफ़ॉल्ट: हर कॉन्फ़िगर किया टारगेट। सिर्फ़ चुने गए टारगेट्स की ऐप कमांड्स शुरू होती हैं। अनजान ID पर `UNKNOWN_TARGET`। |
+| `--tag <tags>` | सिर्फ़ इन टैग्स वाले टेस्ट, कॉमा से अलग या बार-बार: इनमें से कोई एक, या `--tag-mode all` के साथ सभी। |
+| `--tag-mode <mode>` | कई टैग्स कैसे जुड़ते हैं: `any` या `all`। डिफ़ॉल्ट: `any`। |
+| `--exclude-tag <tags>` | इनमें से किसी भी टैग वाले टेस्ट बाहर कर देता है, कॉमा से अलग या बार-बार, चाहे `--tag` या पोज़िशनल ने कुछ भी चुना हो। किसी भी मेंबर के चुने जाने पर सीरियल ग्रुप फिर भी पूरा चलता है; फ़्लो को बाहर करने के लिए सीरियल `describe` को टैग करें। |
+| `--grep <pattern>` | सिर्फ़ वे टेस्ट जिनका टाइटल किसी रेगुलर एक्सप्रेशन से मैच करे; बार-बार दिया जा सकता है। टाइटल describe टाइटल्स और टेस्ट टाइटल को एक स्पेस से जोड़कर बनता है (`checkout pays`), फ़ाइल या टैग्स के बिना। सीधा पैटर्न केस-सेंसिटिव होता है; `'/pattern/i'` फ़्लैग्स जोड़ता है। कंपाइल न होने वाला पैटर्न यूसेज एरर है, एग्ज़िट 2। |
+| `--grep-invert <pattern>` | उन टेस्ट्स को बाहर करता है जिनका टाइटल किसी रेगुलर एक्सप्रेशन से मैच करे; `--grep` वाले टेक्स्ट और रूप के साथ बार-बार। दोनों देने पर रन वह रखता है जो `--grep` से मैच हो और `--grep-invert` से न हो। |
+| `--changed-since <ref>` | रेफ़ के बाद हुए बदलाव पर कॉन्फ़िगर किए गए [टेस्ट फ़िल्टर](/filters) चलाता है: रेफ़ और `HEAD` के मर्ज बेस से अलग हर फ़ाइल, अनकमिटेड और अनट्रैक्ड फ़ाइलें समेत। हर टारगेट उन टेस्ट्स की फ़ाइलें पहले शुरू करता है जिन्हें फ़िल्टर सबसे ज़्यादा संभावना वाला स्कोर दें। इसके बिना कोई फ़िल्टर नहीं चलता। कोई फ़िल्टर कॉन्फ़िगर न होने पर चेतावनी बताती है कि हर टेस्ट चल रहा है। |
+| `--last-failed` | सिर्फ़ वे टेस्ट जो पिछले रन में पास नहीं हुए; इन टेबल्स के बाद की लिस्ट बताती है कौन से। |
+| `--shard <index/total>` | चुने गए टेस्ट्स का एक लगातार हिस्सा चलाता है, जैसे `2/3`, बाकी हर फ़्लैग के बाद काटकर। हिस्सों में ज़्यादा से ज़्यादा एक टेस्ट का फ़र्क होता है। सीरियल ग्रुप एक गिना जाता है और कभी बँटता नहीं। हर शार्ड सिर्फ़ वे सेटअप टेस्ट लाता है जिनकी उसके अपने टेस्ट्स को ज़रूरत है। स्किप हुए टेस्ट नहीं काटे जाते: उनसे ठीक पहले का टेस्ट चलाने वाला शार्ड (वरना पहला शार्ड) उन्हें रिपोर्ट करता है, ताकि सिर्फ़ एक ही शार्ड करे। हर शार्ड अलग इंडेक्स के साथ वही कमांड चलाता है। क्रम रिपोर्ट का क्रम होता है, इसलिए सूट हर मशीन पर एक ही तरह शार्ड होता है। बिना टेस्ट वाला शार्ड `--pass-with-no-tests` के बिना `NO_TESTS` होता है। रिपोर्ट शार्ड को `run.shard` के रूप में दर्ज करती है, और दूसरे शार्ड को गए हर टेस्ट को `skip.otherShard` मार्क करती है। `--last-failed` के साथ कट पिछले रन में पास न हुए टेस्ट्स को बाँटता है। [शार्डिंग](/ci#sharding) देखें। |
+| `--pass-with-no-tests` | कुछ भी न चुने जाने पर `NO_TESTS` की जगह 0 से बाहर निकलता है। जिसमें चलाने को कुछ न हो वह रन कोई इंजन प्रिपेयर नहीं करता और कोई ऐप या सर्विस कमांड शुरू नहीं करता। |
+
+**एक्ज़ीक्यूशन**
+
+| ऑप्शन | विवरण |
+| --- | --- |
+| `--headed` | जब इंजन सपोर्ट करे, तो दिखने वाला UI। |
+| `--device <name>` | इस रन के लिए चुने गए मोबाइल टारगेट के `device` ऑप्शन की जगह इस्तेमाल होने वाला सिम्युलेटर, एम्युलेटर, या फ़ोन: डिवाइस नाम, सिम्युलेटर UDID, या एम्युलेटर सीरियल (`emulator-5554`)। यह उसी एक चुने हुए टारगेट पर लागू होता है जो डिवाइस ले सके; बाकी चुने टारगेट (`web()`, या ऐसा टारगेट जिसके डिवाइस प्रोवाइडर लीज़ पर देता है) कॉन्फ़िगर किए हिसाब से ही चलते हैं। डिवाइस ले सकने वाले कई टारगेट चुने हों, तो `--target` से एक चुनें, वरना रन `TARGET_REQUIRED` से फ़ेल होता है। कोई भी न ले सके, तो `UNSUPPORTED_CAPABILITY`। `e2e login --device` एक अलग फ़्लैग है। |
+| `--agent <names>` | अनपिन टेस्ट्स को हर चुने गए एजेंट के लिए एक बार चलाता है, कॉमा से अलग या बार-बार। डिफ़ॉल्ट: `default`। `{ agent }` वाले टेस्ट के लिए, ओवरलैप होने पर साझा नाम चुनता है, वरना टेस्ट के अपने एजेंट रखता है। अनजान नाम पर `INVALID_CONFIG`। |
+| `--retries <n>` | `config.retries` की जगह लेता है; 0-10 का इंटीजर। डिफ़ॉल्ट: कॉन्फ़िग। |
+| `--workers <n>` | `config.workers` की जगह लेता है; 1-1024 का इंटीजर। डिफ़ॉल्ट: कॉन्फ़िग। |
+| `--action-timeout <ms>` | इस रन के लिए [`actionTimeout`](/reference/config#actiontimeout) की जगह लेता है; 1-2147483647 का इंटीजर, बाकी कुछ भी यूसेज एरर (एग्ज़िट 2)। डिफ़ॉल्ट: कॉन्फ़िग, वरना `30000`। कॉल का अपना `timeout` फिर भी जीतता है। टेस्ट लिखते समय `5000` जैसी छोटी वैल्यू रखने से गलत लोकेटर 30 s के बजाय 5 s में `LOCATOR_NOT_FOUND` से फ़ेल होता है। |
+| `--assertion-timeout <ms>` | इस रन के लिए [`assertionTimeout`](/reference/config#assertiontimeout) की जगह लेता है; 1-2147483647 का इंटीजर, बाकी कुछ भी यूसेज एरर (एग्ज़िट 2)। डिफ़ॉल्ट: कॉन्फ़िग, वरना `5000`। मैचर का अपना `timeout` फिर भी जीतता है। |
+| `--max-failures <n>` | इतने टेस्ट (कम से कम 1) फ़ेल या टाइमआउट होते ही रन रोक देता है। आगे कुछ डिस्पैच नहीं होता, और दूसरे वर्कर्स पर चल रहे टेस्ट `interrupted` पर खत्म होते हैं। शुरू न हुए टेस्ट (सीमा तक पहुँचने वाले टेस्ट की फ़ाइल का बाकी हिस्सा भी) `failure-limit` कारण और `run stopped after 3 failures (--max-failures 3)` के साथ स्किप हो जाते हैं। एग्ज़िट कोड 1 (फ़ेलियर का अपना कोड) से बाहर निकलता है, 130 से नहीं। |
+| `--max-duration <ms>` | एक रन के लिए [`maxDuration`](/reference/config#maxduration) को ओवरराइड करता है; 1-2147483647 का इंटीजर। डिफ़ॉल्ट: कॉन्फ़िग। 130 नहीं, 1 से बाहर निकलता है। |
+| `--repeat-each <n>` | हर चुने हुए टेस्ट को इतनी बार चलाता है, कम से कम 1। डिफ़ॉल्ट: `1`। हर रन अपना अलग रिज़ल्ट होता है, `repeat` 0 से `n - 1` और अपनी अलग `id` के साथ। list रिपोर्टर बाद वाले रन्स को `(repeat #1)`, `(repeat #2)` टाइटल देता है और उनके आर्टिफ़ैक्ट `repeat-<n>` डायरेक्टरी में रखता है। सेटअप टेस्ट एक बार चलते हैं। रीप्ले कैश चालू होने पर पहला रन रिकॉर्ड करता है और बाकी रीप्ले होते हैं; हर बार मॉडल कॉल करने के लिए `--no-cache` जोड़ें। `list` समरी में `Repeats` रो (`1 of 2 tests passed all 5 runs`) और हर उस टेस्ट के लिए एक लाइन जुड़ती है जो हर रन में पास न हुआ हो, जिसमें फ़ेल रन्स के नाम होते हैं। `markdown` पेज में भी यही गिनती होती है। |
+| `--no-cache` | इस रन के लिए रीप्ले कैश बंद कर देता है, चाहे `config.cache` कुछ भी कहे। |
+| `--strict-cache` | इस रन के लिए `cache.strict` चालू कर देता है। जिस स्टेप की रिकॉर्डिंग है लेकिन अब रीप्ले नहीं हो पाती, वह एजेंट को सौंपने के बजाय `REPLAY_STALE` से फ़ेल होता है। रीट्राई भी रीप्ले होते हैं, और रन कभी कैश में नहीं लिखता। [पुरानी पड़ चुकी रिकॉर्डिंग पर फ़ेल करें](/cache#fail-on-a-stale-recording) देखें। |
+| `-u`, `--update-snapshots` | [`toHaveScreenshot`](/reference/expect#screenshot-matchers) को जो सेव स्क्रीनशॉट गायब या अलग मिलें उन्हें लिखता है, और मैचर पास करता है। इसके बिना गायब स्क्रीनशॉट लिखा जाता है और फ़ेल होता है; CI में वह सिर्फ़ रिज़ल्ट्स से अटैच होता है। |
+| `-w`, `--watch` | चलता है, फिर टेस्ट फ़ाइल या कॉन्फ़िग बदलने पर, या कीबोर्ड का बटन दबाने पर फिर चलता है। [वॉच मोड](#watch-mode) देखें। |
+| `--step` | पहला स्टेप चलाता है, फिर हर अगले स्टेप को प्रॉम्प्ट पर कीबोर्ड का बटन दबाने तक रोके रखता है: Enter उसे चलाता है, `s` स्क्रीन दिखाता है, `l` ऐप लॉग, `n` टेस्ट का बाकी हिस्सा चलाता है, `a` रन का बाकी हिस्सा, `h` कीबोर्ड के बटन दिखाता है, `q` एग्ज़िट 130 के साथ रोकता है। रुका हुआ समय किसी टाइमआउट में नहीं गिना जाता। बिना टर्मिनल के रन बैकग्राउंड में चलता रहता है और हर कमांड अगले रुके स्टेप पर उसकी स्क्रीन के साथ लौटती है: `--step next` उसे चलाता है, `--step rest` बाकी हिस्सा चलाता है, `--step stop` रन खत्म करता है। `--step next`, `rest`, और `stop` [`screen.pause()`](/debugging#pause-a-test) पर रुके टेस्ट को भी आगे बढ़ाते या रोकते हैं। एक वर्कर पर चलता है; CI में, `--watch` के साथ, और 1 से ज़्यादा `--workers` के साथ मना है (एग्ज़िट 2); json रिपोर्टर के साथ इसके लिए टर्मिनल चाहिए। [स्टेप बाई स्टेप टेस्ट चलाना](/debugging#step-through-a-test) और [बिना टर्मिनल के](/debugging#step-through-a-test-without-a-terminal) देखें। |
+
+**आउटपुट**
+
+| ऑप्शन | विवरण |
+| --- | --- |
+| `--reporter <ids>` | `config.reporters` के बिल्ट-इन रिपोर्टर्स की जगह लेता है, कॉमा से अलग: `list`, `dot`, `line`, `json`, `junit`, `markdown`, `ctrf`। डिफ़ॉल्ट: कॉन्फ़िग। कॉन्फ़िग में कॉन्फ़िगर किया गया बिल्ट-इन (जैसे `junit({ outputFile })`) अपने ऑप्शन बनाए रखता है। `json` के साथ `list`, `dot`, और `line` stderr पर प्रिंट करते हैं। `list`, `dot`, और `line` में से किन्हीं दो को साथ देने पर `INVALID_CONFIG` आता है। कॉन्फ़िग के [बाकी रिपोर्टर](/reference/reporters) चलते रहते हैं। |
+| `--output <dir>` | कॉन्फ़िग के [`output`](/reference/config#output) के ऊपर इस रन की रिज़ल्ट डायरेक्टरी: रिपोर्ट, रिपोर्टर फ़ाइलें, AI ट्रेस, `results/`, और `sessions/`। डिफ़ॉल्ट: कॉन्फ़िग, वरना `.e2e`। प्रोजेक्ट रूट से रिज़ॉल्व होती है, और उसके अंदर की डायरेक्टरी होनी चाहिए, खुद रूट नहीं; वह और बाकी डायरेक्टरीज़ जिनका मालिक रन नहीं बन सकता (वहाँ सूचीबद्ध) `INVALID_CONFIG` होती हैं। टेस्ट शुरू होते ही `results/` साफ़ हो जाती है; `--last-failed` रीरन पिछले रिपोर्ट की फ़ाइलें रखता है। |
+| `--cache-dir <dir>` | [`E2E_CACHE_DIR`](/reference/environment#replay-cache) और [`cache.dir`](/reference/config#cache) के ऊपर इस रन की रीप्ले कैश डायरेक्टरी। डिफ़ॉल्ट: `E2E_CACHE_DIR`, वरना `cache.dir`, वरना `.e2e/cache`। प्रोजेक्ट रूट से रिज़ॉल्व होती है; `~` या शुरू का `~/` होम डायरेक्टरी होता है। कैश मोड कॉन्फ़िगर किया हुआ ही रहता है। कस्टम `cache.store` के साथ यह `INVALID_CONFIG` है। |
+| `--timings <file>` | `<output>/timings.json` के ऊपर, रन खत्म होने पर अपडेट होने वाली [टाइमिंग हिस्ट्री](/ci#cache-the-timings-history)। एक से ज़्यादा वर्कर होने पर बिना रिकॉर्ड टाइम वाली फ़ाइलें पहले शुरू होती हैं, फिर बाकी सबसे लंबी पहले। प्रोजेक्ट रूट से रिज़ॉल्व होती है। गायब या इनवैलिड फ़ाइल का मतलब कोई हिस्ट्री नहीं, कभी एरर नहीं। |
+| `--debug` | रन के बाद stderr पर फ़ेज़ टाइमिंग और एजेंट स्टेप टेबल; [डीबग आउटपुट](#debug-output) देखें। |
+| `--ai-trace` | हर मॉडल कॉल को `<output>/ai-trace.json` में रिकॉर्ड करता है; [आउटपुट](#output) देखें। |
+| `--trace [mode]` | कौन से टेस्ट ट्रेस पेज (`<output>/results/<test>/trace.md`) रखते हैं: `off`, `on`, `retain-on-failure`, `on-first-retry`, या `on-all-retries`। डिफ़ॉल्ट: कॉन्फ़िग। `--trace off` बिना अपने `trace` वाले टेस्ट के लिए कुछ नहीं लिखता। [trace](/reference/config#trace) देखें। |
+| `--video [mode]` | `--trace` वाले मोड्स के साथ, कौन से अटेम्प्ट वीडियो रिकॉर्ड करते हैं (ब्राउज़र इंजन पर WebM, डिवाइस इंजन पर MP4)। डिफ़ॉल्ट: कॉन्फ़िग। सिर्फ़ उन्हीं टारगेट्स को वीडियो मिलता है जिनका इंजन रिकॉर्ड कर सके; रन बाकियों का नाम एक नोटिस में बताता है। [video](/reference/config#video) देखें। |
+
+`--trace` और `--video` कॉन्फ़िग और हर टारगेट की वैल्यू से ऊपर लागू होते हैं; टेस्ट का
+अपना `trace` या `video` फिर भी जीतता है। सीधा फ़्लैग `on` होता है: सीधा `--trace` हर
+टेस्ट के लिए पेज रखता है। वैल्यू ऑप्शनल और ग्रीडी है: `--trace tests/a.e2e.ts` फ़ाइल
+को मोड की तरह पढ़ता है और फ़ेल हो जाता है। `--trace=<mode>` लिखें, या टेस्ट फ़ाइलें फ़्लैग
+से पहले रखें।
+
+हटाया जा चुका `--artifacts <dir>` उस `--output` के नाम के साथ फ़ेल होता है जिस पर वह
+मैप होता है: `--artifacts out/artifacts` का मतलब `--output out` है, और जिस डायरेक्टरी
+का पैरेंट प्रोजेक्ट रूट या उसके बाहर हो वह `--output .e2e` पर मैप होती है।
+
+`--last-failed` वे टेस्ट चुनता है जो पिछले रन में पास नहीं हुए थे। यह उन्हें उस
+`report.json` से पढ़ता है जिसे यह रन ओवरराइट करता है, `<output>/report.json`
+(`--output`, वरना कॉन्फ़िग का [`output`](/reference/config#output)):
+
+- वे टेस्ट जो फ़ेल हुए, टाइमआउट हुए, या इंटरप्ट हुए।
+- वे टेस्ट जो इसलिए स्किप हुए क्योंकि कोई सेटअप, सीरियल में पिछला टेस्ट, हुक, या वर्कर
+  फ़ेल हो गया, या `--max-failures` या `--max-duration` ने पहले ही रन रोक दिया।
+- उस टारगेट पर, फ़ेल हुए `beforeAll` या `afterAll` के describe या फ़ाइल में चुने गए हर
+  टेस्ट; सेटअप के लिए, वे टेस्ट जो उसका सेशन इस्तेमाल करते हैं। जो रीरन हुक को फिर चलाए
+  वह हुक के फिर फ़ेल होने पर उसे फिर रिपोर्ट करता है। जो रीरन उसके स्कोप का कोई भी टेस्ट
+  हुक फ़ेल हुए बिना चला ले, वह उसे हल कर देता है।
+- जिस टेस्ट को कोई और फ़िल्टर (`--grep`, `--tag`, `--target`, `--agent`, पोज़िशनल)
+  रीरन से बाहर रख दे, वह बकाया रहता है। रीरन की रिपोर्ट उसका आखिरी रिज़ल्ट और जिस हुक
+  फ़ेलियर के स्कोप में वह है उसे `run.carried` में रखती है। अगला `--last-failed` उसे
+  फिर चुनता है, और जब तक वह पास न हो जाए [`@e2e-dev/github`](/github) पेज लाल बना रहता
+  है (पिछले रन में इंटरप्ट हुए टेस्ट के लिए ⏹️)। रीरन का अपना एग्ज़िट कोड और समरी सिर्फ़
+  उसी को गिनते हैं जो उसने चलाया।
+- रीरन पिछले रन्स के बताए गए आर्टिफ़ैक्ट्स बनाए रखता है और अपने आर्टिफ़ैक्ट हर टेस्ट के
+  `rerun-<n>/` के नीचे लिखता है, ताकि कोई अटेम्प्ट पहले वाले की फ़ाइलें ओवरराइट न करे।
+- अपनी रिपोर्ट के बगल में रीरन `report-with-reruns.json` लिखता है: पहला रन और उसके बाद
+  के हर रीरन को एक report-1 डॉक्यूमेंट के रूप में, `report.json` वाली ही रन id के साथ।
+  यह पहले रन के पास हुए टेस्ट और सभी रन्स में हर टेस्ट के अटेम्प्ट्स रखता है, इसलिए जो
+  टेस्ट पहले फ़ेल होकर फिर पास हुआ वह `flaky` होता है। अगर कोई टेस्ट सीरियल ग्रुप का
+  मेंबर बन जाए, तो पहले की अकेली फ़ेलियर फिर भी बाद के पास को `flaky` बनाती है। हिस्ट्री
+  उस अकेले अटेम्प्ट को छोड़ देती है। जिन टेस्ट्स के हटने की पुष्टि कलेक्शन कर दे, हिस्ट्री
+  उन्हें हटा देती है। अगर शार्डेड रन का रीरन किसी दूसरे शार्ड को दिए टेस्ट तक पहुँचे और वह
+  फ़ेल हो, तो हिस्ट्री रन एरर दिखाती है और टेस्ट को शार्ड के टोटल से बाहर रखती है। बिना
+  `--last-failed` वाला रन हिस्ट्री फ़ाइल हटा देता है।
+- टेस्ट को हर टारगेट और एजेंट के हिसाब से नाम दिया जाता है।
+- रिपोर्ट न होने पर `NO_LAST_RUN` आता है। जब पिछले रन में कुछ फ़ेल न हुआ हो, तो यह कुछ
+  नहीं चुनता: `--pass-with-no-tests` के बिना `NO_TESTS`।
+
+रेंज से बाहर `--retries` और `--workers` कुछ भी शुरू होने से पहले `INVALID_CONFIG` से
+फ़ेल होते हैं, ठीक कॉन्फ़िग वैल्यू की तरह। `--target`, `--tag`, `--exclude-tag`, और
+`--agent` हर नाम को एक बार लेते हैं। खाली वैल्यू (`--tag ''`, या अनसेट वेरिएबल के साथ
+`--tag "$TAGS"`) यूसेज एरर (एग्ज़िट 2) है, कभी बड़ा सिलेक्शन नहीं। खाली `--reporter` भी
+वही यूसेज एरर है, कभी बिना रिपोर्टर वाला रन नहीं।
+
+फ़िल्टर सिर्फ़ सिलेक्शन को संकरा करते हैं, और हर एक पिछले के बाद लागू होता है: पोज़िशनल,
+फिर `.only`, `--tag`, `--exclude-tag`, `--grep`, `--grep-invert`, `--last-failed`,
+फिर प्लेटफ़ॉर्म और कैपेबिलिटी नियम, फिर `--shard`। जब ये चलाने को कुछ न छोड़ें, तो
+`NO_TESTS` हर फ़िल्टर से हटाए गए टेस्ट्स की गिनती और टैग्स और पैटर्न्स के नाम बताता
+है। यह हर ऐसे टैग को मार्क करता है जिसे कोई टेस्ट डिक्लेयर नहीं करता और सबसे क़रीबी
+डिक्लेयर टैग का नाम बताता है। `--changed-since` के साथ, कॉन्फ़िगर किए गए
+[टेस्ट फ़िल्टर](/filters) सबसे अंत में चलते हैं।
+
+<a id="debug-output" />
+
+##### डीबग आउटपुट
+
+`--debug` stderr में दो टेबल जोड़ता है। फ़ेज़ टाइमिंग रनर और हर वर्कर में जोड़कर निकाली
+जाती है। एजेंट स्टेप टेबल हर एजेंट स्टेप को चलने के क्रम में दिखाती है: उसका हर फ़ेज़ का
+बँटवारा, मॉडल कॉल, टोकन, और जब प्रोवाइडर बताए तब लागत।
+
+```console
+$ npx e2e run --debug
+...
+[e2e debug] phase timings (wall 14.2s)
+  phase               count   total     avg     max
+  scheduler               1   11.8s   11.8s   11.8s
+  test.body               6   10.1s   1.7s    3.9s
+  session.launch          6    1.1s   183ms   410ms
+  engine.prepare          1   612ms   612ms   612ms
+  collect                 1   420ms   420ms   420ms
+  config.load             1   118ms   118ms   118ms
+  realm.import            1    96ms    96ms    96ms
+  session.close           6    88ms    15ms    31ms
+  engine.init             1    74ms    74ms    74ms
+
+[e2e debug] agent steps (execution order, model openai/gpt-6-luna-fast, total $0.0312)
+  step                                   total   model  observe  action  calls  tokens in/out  cached       cost
+  act "add a todo named groceries"       3.9s    2.8s    410ms   620ms      3  9412/388       61% (5740)   $0.0198
+  assert "the list shows groceries"      1.2s    1.1s     88ms     0ms      1  3120/41        0% (0)       $0.0114
+```
+
+`cached` इनपुट टोकन का वह हिस्सा है जिसे प्रोवाइडर ने अपने प्रॉम्प्ट कैश से दिया, और जब
+वह बँटवारा न बताए तो `-`। रिपोर्ट हर स्टेप पर (`model.cacheReadTokens`,
+`model.cacheWriteTokens`) और हर रन पर (`usage.modelCachedTokens`) यही दर्ज करती है।
+
+<a id="output" />
+
+##### आउटपुट
+
+| रिपोर्टर | क्या लिखता है |
+| --- | --- |
+| `list` | टर्मिनल प्रोग्रेस, कोड फ़्रेम के साथ फ़ेलियर, और रन समरी। TTY पर लाइव प्रोग्रेस में मौजूदा एजेंट स्टेप, मॉडल टर्न, टूल कॉल, और रीज़निंग के अंश दिखते हैं; जब stdout टर्मिनल न हो (पाइप्ड, रीडायरेक्टेड, ज़्यादातर CI), तो हर टेस्ट पूरा होते ही प्रिंट होता है। आउटपुट के अंत में हर फ़ेल टेस्ट की फ़ाइल और लाइन, पहली एरर लाइन, और अगर लिखा गया हो तो ट्रेस पेज दिखता है। अनट्रस्टेड फ़ील्ड 8 KiB पर कैप होते हैं और कंट्रोल कैरेक्टर हटा दिए जाते हैं। |
+| `dot` | हर चुने हुए टेस्ट रिज़ल्ट के लिए एक निशान, उसके बाद फ़ेलियर की जानकारी और रन समरी। निशान, रंग, और रैपिंग के लिए [`dot`](/reference/reporters#dot) देखें। `dot,json` के साथ सारा टर्मिनल आउटपुट stderr पर जाता है। |
+| `line` | प्रोग्रेस की एक पंक्ति, जो TTY पर अपनी जगह अपडेट होती है और बाकी जगह हर पूरे हुए टेस्ट पर प्रिंट होती है। फ़ेलियर होते ही प्रिंट होता है, और उसके बाद रन समरी आती है। [`line`](/reference/reporters#line) देखें। `line,json` के साथ सारा टर्मिनल आउटपुट stderr पर जाता है। |
+| `json` | रिपोर्ट डॉक्यूमेंट stdout पर, और वहाँ और कुछ नहीं, ताकि `e2e run --reporter json \| jq` काम करे। यह वही `<output>/report.json` डॉक्यूमेंट है, जिसे पैकेज में `schema/report-v1.schema.json` परिभाषित करता है। इसका शेप सिर्फ़ `schemaVersion` फ़ील्ड (आज `report-1`) के साथ बदलता है। |
+| `junit` | रिपोर्ट के बगल में `junit.xml`। हर फ़ाइल के लिए एक `<testsuite>`, हर टेस्ट-टारगेट जोड़ी के लिए `title > path [target]` नाम का एक `<testcase>`। टेस्ट-क्लास एरर `<failure>` होता है, बाकी कोई भी `<error>`, स्किप अपने कारण के साथ `<skipped>`। इंटरप्ट हुआ टेस्ट किसी नतीजे पर नहीं पहुँचा, इसलिए वह `<skipped>` होता है जिसका मैसेज `interrupted:` से शुरू होता है। जिस टेस्ट को [टेस्ट फ़िल्टर](/filters) ने छोड़ा वह `<skipped>` होता है जिसका मैसेज `left out by filter <name>:` से शुरू होता है; जिन दूसरे टेस्ट्स को रन ने नहीं चुना वे लिस्ट में नहीं आते। रन-लेवल एरर एक `run` सूट बनाते हैं। |
+| `markdown` | रिपोर्ट के बगल में `summary.md`: गिनती, लागत, एरर, और फ़ेलियर की जानकारी, हर एक में अगर ट्रेस पेज रखा गया हो तो उसका नाम। एक्सप्लोरेशन रन फ़ाइंडिंग्स दिखाते हैं। [`@e2e-dev/github`](/github) पुल रिक्वेस्ट कमेंट्स के लिए यही समरी इस्तेमाल करता है। |
+| `ctrf` | रिपोर्ट के बगल में `ctrf.json`, [Common Test Report Format](https://ctrf.io) 0.3.0 में: `run` सूट के बाहर हर `junit` टेस्ट केस के लिए एक टेस्ट, उसके पहले के अटेम्प्ट्स, स्टेप्स, और अटैचमेंट्स के साथ। रन-लेवल एरर `results.errors` में रहते हैं और कभी टेस्ट नहीं गिने जाते। [`ctrf`](/reference/reporters#ctrf) देखें। |
+
+जो भी रन अपने टेस्ट्स तक पहुँचता है, वह [आउटपुट डायरेक्टरी](/reference/config#output)
+(डिफ़ॉल्ट `.e2e`) के नीचे ये लिखता है:
+
+- स्क्रिप्ट्स के लिए `report.json`, चाहे रिपोर्टर कोई भी हों;
+- वे ट्रेस पेज जिन्हें इसका [`trace`](/reference/config#trace) मोड रखता है, `results/`
+  के नीचे हर टेस्ट की डायरेक्टरी में;
+- रिपोर्ट के बगल में रिपोर्टर्स की फ़ाइलें।
+
+जो रन अपने टेस्ट्स से पहले ही रुक जाए वह इनमें से कुछ नहीं लिखता और पिछले रन की फ़ाइलें
+वैसी ही रहने देता है। इसमें कॉन्फ़िग या कलेक्शन एरर, `NO_TESTS`, `NO_LAST_RUN`,
+`UNSUPPORTED_ARTIFACT`, ऐप कमांड का शुरू न हो पाना, और इंटरप्ट आते हैं। इसके एरर
+टर्मिनल पर और एग्ज़िट कोड में आते हैं। `junit.xml`, `summary.md`, या `ctrf.json` का न
+लिखा जा पाना stderr पर एक लाइन होता है, कभी रन एरर नहीं।
+
+`list`, `dot`, और `line` रिपोर्टर रन एरर को `Run Errors` के नीचे प्रिंट करते हैं। इनमें
+से किसी एक या किसी और [इंटरैक्टिव](/reference/reporters#interactive) रिपोर्टर के बिना,
+हर रन एरर stderr पर `CODE: message` के रूप में प्रिंट होता है, `json` के साथ भी।
+
+रिपोर्ट में `run.summary` रिज़ल्ट्स की गिनती रखता है:
+
+- `discovered` हर वह टेस्ट-टारगेट जोड़ी है जिसे रनर ने इकट्ठा किया, और `selected` वे जो
+  इस रन ने चुनीं। छूटी हुई जोड़ियाँ `results` में `selected: false` के रूप में रहती हैं,
+  लेकिन किसी दूसरी गिनती में नहीं।
+- `passed`, `failed` (टाइमआउट समेत), `interrupted`, `flaky`, और `skipped` चुने गए
+  रिज़ल्ट्स को गिनते हैं और जोड़कर `selected` बनते हैं।
+- `interrupted` वह टेस्ट है जिसे रन ने उसके नतीजे से पहले रोक दिया (सिग्नल,
+  `--max-failures`, `--max-duration`, या `MODEL_UNAVAILABLE` जैसा रन-लेवल एरर),
+  यह कभी फ़ेलियर नहीं होता।
+- `executed` वे चुने गए रिज़ल्ट्स हैं जिनका कम से कम एक अटेम्प्ट चला। सीरियल मेंबर तब
+  चला गिना जाता है जब उसके ग्रुप का कोई अटेम्प्ट उस तक पहुँचा: उसकी बॉडी शुरू हुई (भले
+  ही बॉडी ने `test.skip()` या `test.fixme()` कॉल किया हो), या अटेम्प्ट उस पर फ़ेल हुआ
+  (जैसे लॉन्च पर)। जो मेंबर फ़ेल हुए हुक, फ़ेल हुए पिछले मेंबर, या रन इंटरप्ट के कारण
+  शुरू ही न हो सका, वह इसमें नहीं गिना जाता।
+
+`--ai-trace` के साथ रन `<output>/ai-trace.json` भी लिखता है, जो AI SDK devtools
+डेटाबेस है। इसमें हर मॉडल राउंड ट्रिप की एक एंट्री होती है: ठीक वही प्रॉम्प्ट, टूल
+डेफ़िनिशन, रिस्पॉन्स, यूसेज, और प्रोवाइडर मेटाडेटा। इसमें ऑब्ज़र्वेशन के सीक्रेट पहले से छिपाए हुए
+होते हैं, और इनलाइन इमेज और फ़ाइल बाइट्स बाइट गिनती बन जाते हैं। इसे
+[unbox-ai](https://github.com/e2e-inc/unbox-ai) से खोलें:
+`npx unbox-ai runs .e2e/ai-trace.json` इसके रन्स लिस्ट करता है।
+[रन डीबग करना](/debugging#agent-steps) देखें। [टेस्ट फ़िल्टर](/filters) के मॉडल कॉल
+रिकॉर्ड नहीं होते।
+
+<a id="watch-mode" />
+
+##### वॉच मोड
+
+`--watch` सिलेक्शन चलाता है, समरी प्रिंट करता है, और बाहर निकलने के बजाय इंतज़ार करता है।
+
+<CodeGroup>
+```bash npm
+npx e2e run --watch
+npx e2e run --watch tests/checkout.e2e.ts --headed
+```
+
+```bash pnpm
+pnpm exec e2e run --watch
+pnpm exec e2e run --watch tests/checkout.e2e.ts --headed
+```
+
+```bash bun
+bunx e2e run --watch
+bunx e2e run --watch tests/checkout.e2e.ts --headed
+```
+</CodeGroup>
+
+- सेव की गई टेस्ट फ़ाइल (जो कॉन्फ़िग के [`tests`](/reference/config#top-level) ग्लॉब्स
+  से मैच करे) पोज़िशनल की जगह अकेले और पूरी दोबारा चलती है।
+- टेस्ट्स के पास की सेव की गई सोर्स फ़ाइल (हेल्पर या फ़िक्स्चर: ग्लॉब्स की डायरेक्टरीज़ के
+  नीचे या कॉन्फ़िग के बगल की `.ts`, `.js`, या `.json`) या सेव किया गया कॉन्फ़िग पूरे
+  सिलेक्शन को दोबारा चलाता है।
+- दोनों कमांड लाइन के बाकी फ़िल्टर और `p` और `t` फ़िल्टर बनाए रखते हैं।
+- रन के दौरान हुए बदलाव उसके पूरा होने का इंतज़ार करते हैं और फिर साथ चलते हैं। पहले रन
+  के दौरान सिर्फ़ कॉन्फ़िग और उसकी डायरेक्टरी वॉच होती है, क्योंकि टेस्ट डायरेक्टरीज़
+  कॉन्फ़िग से आती हैं।
+- टर्मिनल पर हर रीरन से पहले स्क्रीन साफ़ होती है, और एक बैनर ट्रिगर का नाम बताता है।
+- हर रीरन प्रोजेक्ट की फ़ाइलों को नए सिरे से पढ़ता है, उन हेल्पर्स समेत जिन्हें टेस्ट
+  इम्पोर्ट करता है।
+
+टर्मिनल पर vitest की तरह कीबोर्ड के बटन इसे चलाते हैं:
+
+| बटन | क्या चलाता है |
+| --- | --- |
+| `a`, `enter` | `p` और `t` फ़िल्टर साफ़ करके कमांड लाइन के चुने हर टेस्ट को |
+| `r` | `p` और `t` फ़िल्टर के तहत सिलेक्शन को फिर से |
+| `f` | पिछले रन में पास न हुए टेस्ट्स को, `--last-failed` की तरह इसकी रिपोर्ट से पढ़कर, वे जहाँ भी हों; पोज़िशनल और `p` फ़िल्टर इसे सीमित नहीं करते |
+| `u` | `--update-snapshots` के साथ मौजूदा सिलेक्शन |
+| `p` | अगले रन्स के लिए पोज़िशनल (फ़ाइल, सीधा नाम, ग्लॉब) पूछता है; खाली छोड़ने पर साफ़ हो जाता है |
+| `t` | `--grep` की तरह टाइटल पैटर्न पूछता है; खाली छोड़ने पर साफ़ हो जाता है |
+| `h` | बटन की लिस्ट दिखाता है |
+| `q` | बाहर निकलता है |
+
+- रन के दौरान इनमें से कोई भी बटन (और space या `c`) उसे इंटरप्ट की तरह कैंसल कर देता है।
+  दूसरी बार दबाने पर फ़ोर्स कैंसल होता है, और सेशन फिर इंतज़ार करने लगता है।
+- Ctrl-C या Ctrl-D रन को इंटरप्ट करके सेशन बंद कर देता है, `p` या `t` प्रॉम्प्ट के अंदर
+  से भी। प्रॉम्प्ट के बाहर Escape भी यही करता है, और प्रॉम्प्ट के अंदर सिर्फ़ प्रॉम्प्ट बंद
+  करता है। Ctrl-Z हमेशा की तरह प्रोसेस सस्पेंड करता है।
+- हर रीरन एक पूरा रन होता है: कॉन्फ़िग लोड होते ही यह `report.json` और रिपोर्टर फ़ाइलें
+  लिखता है, और जब तक चलाने को कुछ न हो, ऐप कमांड शुरू और बंद करता है। रीरन्स के बीच डेव
+  सर्वर चालू रखने के लिए उसे खुद शुरू करें और कमांड पर
+  [`reuseExisting`](/reference/config#command) सेट करें।
+- `--last-failed` और टेस्ट फ़िल्टर सिर्फ़ पहले रन पर लागू होते हैं, इसलिए रीरन कभी फ़िल्टर
+  के मॉडल को कॉल नहीं करता; जो रीरन कुछ न चुने वह खाली पास हो जाता है।
+- बाहर निकलने पर एग्ज़िट कोड आखिरी पूरे हुए रन का होता है।
+- stdin पर टर्मिनल न होने पर सिर्फ़ फ़ाइल बदलाव ही रीरन कराते हैं।
+
+<Note>
+`--watch` CI के लिए नहीं है: जो प्रोसेस अपने आप बंद न हो वह जॉब को अटका देता है, इसलिए
+`CI` सेट होने पर इसे मना किया जाता है। `--reporter json` के साथ भी यह मना है, और जब
+कॉन्फ़िग के `reporters` में `json` हो तो पहले रन के बाद एग्ज़िट 2 से बाहर निकलता है।
+</Note>
+
+##### सिग्नल्स
+
+सिग्नल्स चरणबद्ध तरीके से बढ़ते हैं।
+
+1. पहला `SIGINT` या `SIGTERM` इंटरप्ट करता है। चल रहा टेस्ट `interrupted` पर खत्म होता
+   है; इसके `afterEach` हुक और सेशन क्लोज़ क्लीनअप बजट के अंदर चलते हैं, और हर वर्कर
+   अपना इंजन डिस्पोज़ करता है। शुरू न हुए टेस्ट `infrastructure-unavailable` कारण और
+   `run interrupted before execution` के साथ स्किप हो जाते हैं। इससे रिपोर्ट में हर तय
+   टेस्ट रहता है, और `--last-failed` इंटरप्ट और अनस्टार्टेड टेस्ट्स को दोबारा चलाता है।
+   रनर रिपोर्ट लिखता है और 130 से बाहर निकलता है। किसी भी टेस्ट के शुरू होने से पहले
+   इंटरप्ट (कलेक्शन, इंजन `prepare`, या ऐप स्टार्टअप के दौरान) कोई रिपोर्ट नहीं लिखता
+   और पिछली रिपोर्ट वैसी ही छोड़ देता है।
+2. दूसरा सिग्नल फ़ोर्स करता है। वर्कर तुरंत अपने इंजन डिस्पोज़ करते हैं और क्लीनअप बजट
+   खत्म होने पर किल हो जाते हैं। रिपोर्ट फिर भी लिखी जाती है, और `junit`, `markdown`,
+   और `ctrf` रिपोर्टर चालू होने पर `junit.xml`, `summary.md`, और `ctrf.json` भी; कस्टम
+   रिपोर्टर का `onRunFinished` छोड़ दिया जाता है।
+3. तीसरा सिग्नल रन से शुरू किए गए हर ऐप कमांड के प्रोसेस ग्रुप को किल करके तुरंत
+   बाहर निकल जाता है। `reuseExisting` से जुड़े प्रोसेस को नहीं छुआ जाता।
+
+जिस वर्कर का रनर गायब हो जाए, वह अपना इंजन डिस्पोज़ करके क्लीनअप बजट के अंदर बाहर निकल
+जाता है।
+
+#### `e2e explore`
+
+बिना टेस्ट फ़ाइल वाला रन। एजेंट को एक लक्ष्य मिलता है, वह एक बार में एक एक्सप्लोरेशन
+स्टेप प्लान करता है, अपने `report_finding` टूल से बग्स रिपोर्ट करता है, और एक आकलन के
+साथ खत्म करता है। [बिना टेस्ट के एक्सप्लोर करना](/explore) देखें।
+
+<CodeGroup>
+```bash npm
+npx e2e explore
+npx e2e explore 'Explore the checkout flow like a first-time buyer and report anything off'
+npx e2e explore --target web --max-steps 4 --headed
+npx e2e explore 'Hunt for broken forms and dead links' --agent thorough --video
+```
+
+```bash pnpm
+pnpm exec e2e explore
+pnpm exec e2e explore 'Explore the checkout flow like a first-time buyer and report anything off'
+pnpm exec e2e explore --target web --max-steps 4 --headed
+pnpm exec e2e explore 'Hunt for broken forms and dead links' --agent thorough --video
+```
+
+```bash bun
+bunx e2e explore
+bunx e2e explore 'Explore the checkout flow like a first-time buyer and report anything off'
+bunx e2e explore --target web --max-steps 4 --headed
+bunx e2e explore 'Hunt for broken forms and dead links' --agent thorough --video
+```
+</CodeGroup>
+
+| ऑप्शन | विवरण |
+| --- | --- |
+| `[goal]` | एक वाक्य में क्या एक्सप्लोर करना है। डिफ़ॉल्ट: `Explore the app and find bugs`। |
+| `--config <path>` | सीधा कॉन्फ़िग पाथ, `run` वाले एरर के साथ। डिफ़ॉल्ट: खोजा हुआ। जब कोई कॉन्फ़िग न मिले और stdin और stdout दोनों टर्मिनल हों, तो पहले वर्किंग डायरेक्टरी में [`e2e init`](#e2e-init) विज़र्ड चलता है। जब हाथ से करने को कुछ न बचा हो (डिपेंडेंसी इंस्टॉल हों, मॉडल की key सेट या साइन-इन पूरा हो, और वेब टारगेट हो जो एक्सप्लोर करने वाला URL बताए), तो तुरंत एक्सप्लोरेशन शुरू हो जाता है। वरना init बचे हुए स्टेप्स और जैसी टाइप की गई थी वैसी `e2e explore` कमांड दिखाकर खत्म होता है। बिना टर्मिनल के कॉन्फ़िग न मिलने पर `CONFIG_NOT_FOUND`। |
+| `--target <id>` | एक्सप्लोर करने वाला एक टारगेट। डिफ़ॉल्ट: पहला कॉन्फ़िगर किया टारगेट; कई टारगेट और कोई फ़्लैग न होने पर पहला एक्सप्लोर करता है और stderr पर बताता है। अनजान नाम पर `UNKNOWN_TARGET`। |
+| `--agent <name>` | किस कॉन्फ़िगर किए एजेंट के रूप में एक्सप्लोर करना है। डिफ़ॉल्ट: `default`। इसका मॉडल, `system`, टूल, और कॉन्टेक्स्ट दोबारा इस्तेमाल होते हैं। बिल्ट-इन एजेंट एक नोटिस के साथ कस्टम `StepExecutor` की जगह लेता है। बिना मॉडल वाली एंट्री (कस्टम एक्ज़ीक्यूटर की भी) कुछ शुरू होने से पहले `MODEL_UNAVAILABLE` देती है। अनजान नाम पर `INVALID_CONFIG`। |
+| `--session <name>` | साइन-इन होकर शुरू करता है। कॉन्फ़िग की टेस्ट फ़ाइलों में इस सेशन को डिक्लेयर करने वाला सेटअप टेस्ट पहले चलता है। एक्सप्लोरेशन उसकी सेव की चीज़ों को `{ session }` वाले टेस्ट की तरह रिस्टोर करता है। कोई और टेस्ट नहीं चलता। ऐसा नाम जिसे कोई सेटअप टेस्ट डिक्लेयर न करे, कोई भी ऐप प्रोसेस शुरू होने से पहले डिक्लेयर किए नामों के साथ `COLLECTION_ERROR` देता है। [साइन-इन होकर शुरू करें](/explore#start-signed-in) देखें। |
+| `--changed-since <ref>` | रेफ़ और HEAD के मर्ज बेस से हुए बदलाव को एक्सप्लोर करता है। प्लानर उसके कमिट मैसेज और कमिटेड डिफ़ पढ़ता है, और GitHub Actions `pull_request` जॉब या GitLab मर्ज रिक्वेस्ट पाइपलाइन में पुल रिक्वेस्ट का टाइटल और डिस्क्रिप्शन भी। कोई लक्ष्य न देने पर लक्ष्य `Explore what this change affects and find bugs in it` होता है, और प्लानर ऐसे बदलाव को स्किप कर सकता है जो किसी यूज़र को न दिखे; रन `skipped` पर खत्म होकर पास होता है। खाली रेफ़, `-` से शुरू होने वाला रेफ़, या ऐसा रेफ़ जिससे git माप न सके, `INVALID_CHANGED_SINCE` होता है। रिपोर्ट बदलाव को `run.explore.change` में दर्ज करती है। [पुल रिक्वेस्ट का बदलाव एक्सप्लोर करें](/explore#explore-a-pull-requests-change) और मॉडल क्या पढ़ता है इसके लिए [सिक्योरिटी](/reference/security#mcp-and-explore) देखें। |
+| `--max-steps <n>` | ज़्यादा से ज़्यादा एक्सप्लोरेशन स्टेप्स, 1-100 का इंटीजर। डिफ़ॉल्ट: `8`। रेंज से बाहर होने पर एग्ज़िट 2। |
+| `--timeout <ms>` | रन की कुल समय-सीमा, 180000-7200000 का इंटीजर। डिफ़ॉल्ट: `600000`। आखिरी मिनट क्लोज़िंग आकलन के लिए रखा जाता है। रेंज से बाहर होने पर एग्ज़िट 2। |
+| `--headed` | जब इंजन सपोर्ट करे, तो दिखने वाला UI माँगता है। |
+| `--reporter <ids>` | `run` जैसा। डिफ़ॉल्ट: रिज़ॉल्व हुई कॉन्फ़िग वैल्यू। `list` अपनी समरी के नीचे एक्सप्लोरेशन रो प्रिंट करता है, `json` रिपोर्ट में रिकॉर्ड रखता है, और `markdown` फ़ाइंडिंग्स `<output>/summary.md` में लिखता है। |
+| `--output <dir>` | `run` जैसा। डिफ़ॉल्ट: कॉन्फ़िग, वरना `.e2e`। फ़ाइंडिंग का सबूत स्क्रीनशॉट `<output>/results` के नीचे अटेम्प्ट आर्टिफ़ैक्ट होता है। |
+| `--debug` | `run` जैसा: फ़ेज़ टाइमिंग और एजेंट स्टेप टेबल। |
+| `--ai-trace` | `run` जैसा। |
+| `--trace [mode]` | `run` जैसा: एक्सप्लोरेशन का ट्रेस पेज। डिफ़ॉल्ट: कॉन्फ़िग। |
+| `--video [mode]` | `run` जैसा: पूरे एक्सप्लोरेशन का एक वीडियो (ब्राउज़र इंजन पर WebM, डिवाइस इंजन पर MP4)। डिफ़ॉल्ट: कॉन्फ़िग। जो इंजन रिकॉर्ड न कर सके वह नोटिस प्रिंट करता है। |
+
+`--trace` और `--video` के लिए सीधा फ़्लैग `on` होता है, और `retain-on-failure` पेज या
+वीडियो तभी रखता है जब एक्सप्लोरेशन पास न हुआ हो। एक्सप्लोरेशन एक ही अटेम्प्ट होता है,
+इसलिए रीट्राई मोड कुछ रिकॉर्ड नहीं करता, और प्लान के समय नोटिस `--trace on` (या
+`--video on`) पास करने को कहता है। लक्ष्य को फ़्लैग से पहले रखें, या `--trace=<mode>`
+या `--video=<mode>` लिखें।
+
+##### रिपोर्ट
+
+- रन का एक रिज़ल्ट होता है, वर्चुअल फ़ाइल `explore` के नीचे, जिसका टाइटल लक्ष्य होता है।
+- एक्सप्लोरेशन पहले ऐप खोलता है: टारगेट का `app.url`, या डिवाइस पर नया लॉन्च किया गया
+  [पिन किया ऐप](/mobile#point-at-your-app)। यह कोई बिल्ड इंस्टॉल नहीं करता, इसलिए लोकल
+  डिवाइस टारगेट को `app.bundleId` चाहिए।
+- `--session` के साथ रिपोर्ट में सेटअप टेस्ट का रिज़ल्ट भी रहता है। यह प्रोजेक्ट के बाकी
+  टेस्ट्स को `filtered` कारण के साथ स्किप दिखाता है, ठीक वैसे जैसे `run` पोज़िशनल से
+  बाहर की फ़ाइलों के टेस्ट्स को दिखाता है।
+- कॉन्फ़िग कुछ भी कहे, एक्सप्लोरेशन रीप्ले कैश बंद करके और ज़ीरो रीट्राई के साथ चलता है।
+  `--session` का सेटअप टेस्ट वैसे ही चलता है जैसे `run` के लिए चलता, कॉन्फ़िग के एजेंट,
+  कैश, और रीट्राई के साथ।
+- `<output>/report.json` में `run.explore` जुड़ता है: लक्ष्य, बजट, रन क्यों खत्म हुआ
+  (`finished`, `skipped`, `step-limit`, `time`, `stuck`, या `aborted`), आकलन,
+  `--changed-since` के साथ बदलाव (`base` और `files`), स्टेप्स, और फ़ाइंडिंग्स।
+- आर्टिफ़ैक्ट लक्ष्य के पहले शब्दों और लक्ष्य, टारगेट, और एजेंट के डाइजेस्ट से बनी डायरेक्टरी
+  में जाते हैं, जैसे `<output>/results/explore-check-the-cart-totals-1a2b3c4d5e6f7a8b/`।
+  उसी टारगेट और एजेंट पर उसी लक्ष्य का रीरन उसी डायरेक्टरी में लिखता है।
+
+##### स्टेप बजट
+
+हर स्टेप का अपना बजट होता है: 40 एक्शन और 40 मॉडल कॉल, जब तक एजेंट `maxSteps` या
+`maxModelCalls` (1 से 100) सेट न करे। जो स्टेप अपने एक्शन या समय बजट तक पहुँच जाए वह
+टाइम-बॉक्स हो जाता है, और उसकी फ़ाइंडिंग्स फिर भी गिनी जाती हैं। एक फ़ेल स्टेप रन खत्म
+नहीं करता। बिना किसी नई फ़ाइंडिंग के लगातार तीन फ़ेल या ब्लॉक हुए स्टेप रन खत्म कर देते
+हैं (`stuck`)।
+
+##### फ़ाइंडिंग्स
+
+- `issue` किस्म की फ़ाइंडिंग फ़ंक्शनल बग होती है; `warning` कॉस्मेटिक होती है।
+- गंभीरता `trivial` (1) से `critical` (5) तक होती है। रिपोर्ट वार्निंग्स से पहले इश्यू
+  दिखाती है, सबसे गंभीर पहले।
+- हर फ़ाइंडिंग में उसकी लोकेशन, उम्मीद के मुताबिक और देखा गया व्यवहार, रीप्रोड्यूस करने के स्टेप,
+  और जब कैप्चर अलाउ हो और सफल हो तो स्क्रीनशॉट होता है।
+
+##### नतीजे
+
+| नतीजा | रन स्टेटस | एग्ज़िट कोड |
+| --- | --- | --- |
+| स्टेप चले, कोई `issue` फ़ाइंडिंग नहीं, और हर स्टेप ब्लॉक नहीं हुआ | passed | 0 |
+| कम से कम एक `issue` फ़ाइंडिंग | failed | 1 |
+| कोई स्टेप नहीं चला और कुछ नहीं मिला, जब तक प्लानर ने बदलाव स्किप न किया हो | blocked | 1 |
+| `--changed-since` के साथ प्लानर ने ऐसा बदलाव स्किप किया जो यूज़र को नहीं दिखता | passed | 0 |
+| हर स्टेप ब्लॉक हो गया, बिना किसी `issue` फ़ाइंडिंग के | blocked | 1, 2, या 3, पहले ब्लॉकर के हिसाब से |
+| कॉन्फ़िग, इंजन, या मॉडल प्रोवाइडर एरर | error | 2 या 3 |
+| Ctrl-C | | 130 |
+
+#### `e2e list`
+
+एक ड्राई रन: `list` ठीक `run` की तरह टेस्ट चुनता है, हर टेस्ट-टारगेट जोड़ी के लिए एक
+लाइन प्रिंट करता है, और बाहर निकल जाता है। यह कोई ऐप प्रोसेस, इंजन, या वर्कर शुरू नहीं
+करता, और कुछ लिखता नहीं।
+
+<CodeGroup>
+```bash npm
+npx e2e list
+npx e2e list tests/signup.e2e.ts
+npx e2e list --tag smoke --target web
+npx e2e list --grep checkout --exclude-tag slow
+npx e2e list --reporter json
+npx e2e list --changed-since origin/main
+```
+
+```bash pnpm
+pnpm exec e2e list
+pnpm exec e2e list tests/signup.e2e.ts
+pnpm exec e2e list --tag smoke --target web
+pnpm exec e2e list --grep checkout --exclude-tag slow
+pnpm exec e2e list --reporter json
+pnpm exec e2e list --changed-since origin/main
+```
+
+```bash bun
+bunx e2e list
+bunx e2e list tests/signup.e2e.ts
+bunx e2e list --tag smoke --target web
+bunx e2e list --grep checkout --exclude-tag slow
+bunx e2e list --reporter json
+bunx e2e list --changed-since origin/main
+```
+</CodeGroup>
+
+| ऑप्शन | विवरण |
+| --- | --- |
+| `[files...]` | [`run`](#positional-arguments) जैसा। |
+| `--config`, `--target`, `--tag`, `--tag-mode`, `--exclude-tag`, `--grep`, `--grep-invert`, `--changed-since`, `--last-failed`, `--shard`, `--pass-with-no-tests` | [`run`](#flags) जैसा। `--last-failed` कॉन्फ़िग के [`output`](/reference/config#output) के नीचे `report.json` पढ़ता है। कॉन्फ़िगर किए गए [टेस्ट फ़िल्टर](/filters) `run` की तरह चलते हैं, और उनकी लाइनें stderr पर जाती हैं। |
+| `--reporter <id>` | `list` या `json`। डिफ़ॉल्ट: `list`। |
+
+| रिपोर्टर | क्या लिखता है |
+| --- | --- |
+| `list` | सिलेक्शन के क्रम में हर जोड़ी की एक लाइन: `file › title [target]`, जिसमें describe पाथ ` › ` से जुड़ा होता है (`tests/billing.e2e.ts › checkout › pays [web]`), फिर हर डिक्लेयर टैग `#tag` के रूप में (`tests/billing.e2e.ts › checkout › pays [web] #smoke #billing`)। स्किप हुआ टेस्ट अपनी लाइन रखता है और अंत में `(skipped: <reason>)` जुड़ता है, और टेस्ट फ़िल्टर से बाहर हुए टेस्ट के अंत में `(left out by <filter>: <reason>)`। सेटअप टेस्ट भी बाकी टेस्ट्स की तरह लिस्ट होते हैं। |
+| `json` | stdout पर `{ "pairs": [...] }`। हर जोड़ी में `id`, `file`, `title`, `titlePath`, `kind` (`test` या `setup`), `tags` (टेस्ट से डिक्लेयर टैग्स, न होने पर `[]`), डिक्लेरेशन ज्ञात होने पर `source`, सेशन लेने पर `session`, `sessions`, सीरियल ग्रुप में होने पर `serialId`, `target`, `agent`, `disposition` (`run`, `skip`, या टेस्ट फ़िल्टर से बाहर होने पर `filtered`), स्किप या बाहर होने पर `reason`, और फ़िल्टर से बाहर होने पर `filter` (टेस्ट फ़िल्टर का नाम) होता है। |
+
+सिलेक्शन फ़्लैग से हटी जोड़ियाँ लिस्ट नहीं होतीं। [`e2e/runner` से `list`](/reference/runner)
+इन-प्रोसेस वही सिलेक्शन चलाता है और हटाई गई जोड़ियाँ भी लौटाता है।
+
+#### `e2e doctor`
+
+कुछ शुरू किए बिना जाँचता है कि `e2e run` यहाँ शुरू हो सकता है या नहीं। यह कॉन्फ़िग लोड
+करता है, हर टारगेट के इंजन चेक चलाता है, और बताता है कि हर एजेंट किस मॉडल पर रिज़ॉल्व
+हुआ। यह कोई ऐप, इंजन सेशन, या वर्कर शुरू नहीं करता (सिर्फ़ ऐसे इंजन का सर्वर शुरू करता
+है जो अपने अलग प्रोसेस में चलता हो), और जब तक आप `--check-model` न दें, कोई मॉडल कॉल
+नहीं करता।
+
+<CodeGroup>
+```bash npm
+npx e2e doctor
+npx e2e doctor --json
+npx e2e doctor --check-model
+npx e2e doctor --target web --headed
+```
+
+```bash pnpm
+pnpm exec e2e doctor
+pnpm exec e2e doctor --json
+pnpm exec e2e doctor --check-model
+pnpm exec e2e doctor --target web --headed
+```
+
+```bash bun
+bunx e2e doctor
+bunx e2e doctor --json
+bunx e2e doctor --check-model
+bunx e2e doctor --target web --headed
+```
+</CodeGroup>
+
+| ऑप्शन | विवरण |
+| --- | --- |
+| `--config <path>` | [`run`](#flags) जैसा। |
+| `--target <ids>` | सिर्फ़ इन्हीं टारगेट्स की जाँच करता है। [`run`](#flags) जैसा। |
+| `--headed` | हेडेड रन की ज़रूरतें जाँचता है, जैसे हेडलेस शेल के बजाय पूरा Chromium बिल्ड। |
+| `--check-model` | हर एजेंट के मॉडल और (अलग मॉडल होने पर) उसके जज को एक छोटे प्रॉम्प्ट और एजेंट के प्रोवाइडर ऑप्शंस के साथ एक बार कॉल करता है। जो एजेंट एक ही मॉडल, बराबर प्रोवाइडर ऑप्शन, और `maxInputTokens` शेयर करते हैं वे एक ही कॉल शेयर करते हैं। माँगा गया JSON न होने वाला जवाब या मना करना भी जवाब ही गिना जाता है। |
+| `--json` | हर चेक की एक लाइन की जगह `doctor-1` रिपोर्ट प्रिंट करता है। |
+
+| चेक | स्टेटस |
+| --- | --- |
+| `node` | `pass`: Node.js या Bun वर्ज़न। अनसपोर्टेड रनटाइम पर `--json` फिर भी `node` को `fail` के साथ रिपोर्ट प्रिंट करता है। |
+| `config` | `path` और `targets` (`name`, `platform`, `engine`) के साथ `pass`, या `CONFIG_*` या `UNKNOWN_TARGET` कोड के साथ `fail`। फ़ेल हुआ `config` आखिरी चेक होता है। |
+| `target` के साथ इंजन चेक | टारगेट का इंजन जो रिपोर्ट करे, जैसे वेब इंजन का `browser`: इंस्टॉल होने पर `pass`, पहले रन में डाउनलोड होने वाला हो तो `warn`, Linux पर इंस्टॉल chromium या firefox की सिस्टम लाइब्रेरी न मिलने पर `fail` (मैसेज उनके नाम और [`--with-deps` इंस्टॉल](/reference/web#installing-browsers) बताता है), ब्राउज़र प्रोवाइडर या `connect` के साथ `skip`; या मोबाइल इंजन के agent-device चेक (`agent-device`, `toolchain`, `ios-runner-cache`, हर कॉन्फ़िगर डिवाइस के लिए `device`, `target-app`) और `app-path` (डिवाइस प्रोवाइडर के लिए सिर्फ़ `device`, `skip` के रूप में)। जो इंजन कुछ रिपोर्ट न करे वह कोई चेक नहीं जोड़ता। इंजन में `doctor` हुक न होने पर `engine` `skip` होता है, और हुक थ्रो करे, टाइमआउट हो, या गलत फ़ॉर्मेट का चेक लौटाए तो `fail`। |
+| `agent` के साथ `model` | `provider` और `modelId` के रूप में `model` और `judge`, वही नाम जो AI SDK इंस्टेंस रिपोर्ट करता है। [`e2e login`](/subscriptions) वाले मॉडल के लिए सेव किए लॉगिन या प्रोवाइडर के API key वेरिएबल से `pass` या `fail`, और जब एजेंट के मॉडल एक लॉगिन पढ़ें तो `login` सेट रहता है। ऐसे Vercel AI Gateway या OpenRouter मॉडल के लिए `warn` जिसका key वेरिएबल सेट न हो (`AI_GATEWAY_API_KEY` या `VERCEL_OIDC_TOKEN`; `OPENROUTER_API_KEY`): मॉडल कॉल करने वाले एजेंट स्टेप्स `MODEL_PROVIDER_FAILED` से फ़ेल होंगे, जब तक मॉडल को key किसी और तरीके से न मिले (जैसे बनाते समय पास की गई key या लिंक्ड Vercel प्रोजेक्ट)। किसी और मॉडल के लिए `unknown`, क्योंकि मॉडल अपना क्रेडेंशियल खुद पढ़ता है। `--check-model` के साथ हर मॉडल जवाब दे तो `pass`, वरना एरर कोड के साथ `fail`, और एजेंट में दोनों होने पर मैसेज के पहले `model:` या `judge:` लगता है। एजेंट में मॉडल न होने पर `skip`। जब कस्टम एक्ज़ीक्यूटर अपना एजेंट लाए और कोई मॉडल या जज डिक्लेयर न करे तो `executor` के साथ `unknown`; जो भी मॉडल वह डिक्लेयर करे उसे एजेंट के मॉडल की तरह चेक किया जाता है। |
+
+डिफ़ॉल्ट रूप से doctor हर चेक की एक लाइन प्रिंट करता है: निशान, चेक id, ब्रैकेट में टारगेट
+या एजेंट, और विवरण। आखिरी लाइन बताती है कि रन शुरू हो सकता है या नहीं, और वार्निंग्स की
+गिनती देती है।
+
+`--json` के साथ यह stdout पर `doctor-1` रिपोर्ट प्रिंट करता है:
+`{ "schemaVersion": "doctor-1", "version", "ok", "checks": [...] }`। हर चेक में `id`,
+`status` (`pass`, `warn`, `fail`, `skip`, या `unknown`), और लागू होने पर `target`,
+`agent`, `code`, `message`, और ऊपर की टेबल के फ़ील्ड होते हैं। JSON Schema पैकेज में
+`schema/doctor-v1.schema.json` के रूप में शिप होता है।
+
+| एग्ज़िट कोड | कब |
+| --- | --- |
+| 0 | कोई चेक फ़ेल नहीं हुआ। `warn`, `skip`, और `unknown` कभी फ़ेल नहीं करते। |
+| 2 | कम से कम एक चेक फ़ेल हुआ। |
+| 130 | Ctrl-C या SIGTERM से इंटरप्ट किया गया। चेक रुक जाते हैं और रिपोर्ट प्रिंट होती है: बीच में रुका चेक `CANCELLED` के साथ `fail` होता है, और उसके बाद के चेक छोड़ दिए जाते हैं। तीसरा Ctrl-C तुरंत बाहर निकाल देता है। |
+
+#### `e2e cache`
+
+रीप्ले कैश देखता या साफ़ करता है। हर सबकमांड खोजा हुआ कॉन्फ़िग या `--config <path>`
+लोड करती है, वही डायरेक्टरी पढ़ती है जो रन पढ़ता, और खाली स्टोर पर 0 से बाहर निकलती है।
+
+<CodeGroup>
+```bash npm
+npx e2e cache ls
+npx e2e cache stats
+npx e2e cache clear
+npx e2e cache ls --config packages/web/e2e.config.ts
+```
+
+```bash pnpm
+pnpm exec e2e cache ls
+pnpm exec e2e cache stats
+pnpm exec e2e cache clear
+pnpm exec e2e cache ls --config packages/web/e2e.config.ts
+```
+
+```bash bun
+bunx e2e cache ls
+bunx e2e cache stats
+bunx e2e cache clear
+bunx e2e cache ls --config packages/web/e2e.config.ts
+```
+</CodeGroup>
+
+| कमांड | क्या प्रिंट करती है |
+| --- | --- |
+| `e2e cache ls` | हर एंट्री की एक पंक्ति: किस टेस्ट और टारगेट के लिए रिकॉर्ड हुई, उसके निर्देश डाइजेस्ट के पहले 12 कैरेक्टर, उसकी उम्र, और रीप्ले कितने एक्शन चलाएगा (अगर रिकॉर्डिंग एक्शन सीमा तक पहुँची हो तो `(truncated)`)। पंक्तियाँ टेस्ट और फिर टारगेट के हिसाब से समूहित होती हैं, सबसे पुरानी पहले। |
+| `e2e cache stats` | स्टोर डायरेक्टरी, पढ़ी जा सकने वाली एंट्रीज़ की संख्या, उनका कुल साइज़, और अगर हों तो न पढ़ी जा सकने वाली फ़ाइलों की संख्या। |
+| `e2e cache clear` | हर कैश फ़ाइल डिलीट करती है, फिर उसमें और कुछ न बचा हो तो डायरेक्टरी भी, और बताती है कि कितनी फ़ाइलें हटीं। |
+
+| ऑप्शन | विवरण |
+| --- | --- |
+| `--config <path>` | सीधा कॉन्फ़िग पाथ। डिफ़ॉल्ट: सबसे क़रीबी `e2e.config.ts`, `.mts`, `.js`, या `.mjs` ([लोडिंग](/reference/config#loading) देखें)। |
+| `--cache-dir <dir>` | स्टोर डायरेक्टरी। डिफ़ॉल्ट: `E2E_CACHE_DIR`, वरना `cache.dir`, वरना `.e2e/cache/`। |
+
+```text
+TEST                             TARGET  INSTRUCTION   AGE  ACTIONS
+tests/billing.e2e.ts::upgrades   web     4f1c0a9d3b62  2h   4
+tests/signup.e2e.ts::signs%20up  web     9ab7715ce004  3d   7 (truncated)
+```
+
+- प्रोवेनेंस जुड़ने से पहले रिकॉर्ड हुई एंट्री उन कॉलम में `-` प्रिंट करती है और फिर भी
+  रीप्ले होती है।
+- जिस फ़ाइल को स्टोर न पढ़ सके (कटी हुई, 1 MiB सीमा से बड़ी, या नए स्कीमा की), उसे
+  stderr पर अलग गिना जाता है, रन उसे मिस मानता है, और `clear` उसे हटा देता है।
+- जो फ़ाइलें रनर ने नहीं लिखीं उन्हें छोड़ दिया जाता है।
+
+<Note>
+ये कमांड्स सिर्फ़ फ़ाइल स्टोर पढ़ती हैं। कस्टम `cache.store` होने पर ये 2 से बाहर निकलती
+हैं और यही बताती हैं।
+</Note>
+
+#### `e2e upgrade`
+
+`e2e` को लेटेस्ट रिलीज़, किसी डिस्ट-टैग, या एक वर्ज़न पर अपग्रेड करता है। यह उसी
+`package.json` के `@e2e-dev/*` पैकेजों को भी आगे बढ़ाता है और प्रोजेक्ट के पैकेज मैनेजर
+से उन्हें इंस्टॉल करता है। `e2e update` यही कमांड है।
+
+<Note>
+`npx e2e` इंस्टॉल किया हुआ वर्ज़न चलाता है। जब उस वर्ज़न में अभी `upgrade` कमांड न हो, तो
+एक बार `npx e2e@latest upgrade` चलाएँ।
+</Note>
+
+<CodeGroup>
+```bash npm
+npx e2e upgrade             # the latest release
+npx e2e upgrade 0.21.0      # one version
+npx e2e upgrade nightly     # a dist-tag
+npx e2e update --dry-run    # show the plan, change nothing
+```
+
+```bash pnpm
+pnpm exec e2e upgrade             # the latest release
+pnpm exec e2e upgrade 0.21.0      # one version
+pnpm exec e2e upgrade nightly     # a dist-tag
+pnpm exec e2e update --dry-run    # show the plan, change nothing
+```
+
+```bash bun
+bunx e2e upgrade             # the latest release
+bunx e2e upgrade 0.21.0      # one version
+bunx e2e upgrade nightly     # a dist-tag
+bunx e2e update --dry-run    # show the plan, change nothing
+```
+</CodeGroup>
+
+```console
+$ npx e2e upgrade
+Upgrading with npm:
+  e2e              0.19.0 → 0.21.2
+  @e2e-dev/web     0.13.0 → 0.15.2
+  @e2e-dev/kernel  0.1.2 → 0.2.1
+package.json: "e2e": "^0.21.2", "@e2e-dev/web": "^0.15.2", "@e2e-dev/kernel": "^0.2.1"
+$ npm install
+...
+Upgraded: e2e 0.21.2, @e2e-dev/web 0.15.2, @e2e-dev/kernel 0.2.1
+Release notes: https://github.com/e2e-inc/e2e/releases/tag/e2e%400.21.2
+Updated the agent skill in .agents/skills/e2e/ (12 files)
+```
+
+| ऑप्शन | विवरण |
+| --- | --- |
+| `[version]` | `0.22.0` जैसा वर्ज़न, या `latest` या `nightly` जैसा डिस्ट-टैग। रेंज मना हैं। डिफ़ॉल्ट: `latest`। |
+| `--dry-run` | वर्ज़न, नए स्पेक, इंस्टॉल कमांड, और अपडेट होने वाली स्किल कॉपियाँ प्रिंट करता है, और कुछ बदलता नहीं। |
+
+- **प्रोजेक्ट।** वर्किंग डायरेक्टरी से ऊपर की तरफ़ सबसे क़रीबी `package.json` जिसमें
+  `e2e` हो।
+- **टर्मिनल पर।** नया `e2e` इंस्टॉल होने के बाद e2e लोगो और GitHub पर e2e को स्टार करने
+  का लिंक आता है। CI या पाइप किए आउटपुट में नहीं।
+- **सिबलिंग वर्ज़न।** हर `@e2e-dev/*` पैकेज को उसी डिस्ट-टैग (तय वर्ज़न के लिए
+  `latest`) का रिलीज़ मिलता है, जब उस रिलीज़ की पीयर रेंज नए वर्ज़न्स को मान ले। वरना
+  उसे अपना सबसे नया रिलीज़ मिलता है जो मान ले। कोई भी न माने तो कमांड 2 से बाहर निकलती
+  है। डेप्रिकेटेड रिलीज़ कभी नहीं चुना जाता, और प्रीरिलीज़ तभी जब `e2e` को भी प्रीरिलीज़
+  मिले। इंटीग्रेशन उस इंजन के हिसाब से चलता है जिसमें वह जुड़ता है।
+- **जुड़ा हुआ पीयर।** ऐसा `@e2e-dev/*` पैकेज जिस पर वे रिलीज़ पीयर करते हैं (जैसे किसी
+  इंजन के लिए `@e2e-dev/core`), अगर `package.json` में न हो तो उस पैकेज के बगल में जोड़
+  दिया जाता है। Yarn ऐसा पीयर इंस्टॉल नहीं करता जो प्रोजेक्ट में लिस्ट न हो। उसे वही
+  वर्ज़न मिलता है जिस पर नया `e2e` निर्भर करता है।
+- **पैकेज मैनेजर।** वह जिसका नाम प्रोजेक्ट की लॉकफ़ाइल या `packageManager` फ़ील्ड में है,
+  या pnpm वर्कस्पेस रूट पर pnpm। जिस वर्कस्पेस मेंबर में दोनों न हों वह अपने वर्कस्पेस रूट
+  का मैनेजर इस्तेमाल करता है। जिस प्रोजेक्ट को कोई वर्कस्पेस लिस्ट न करे उसके ऊपर की लॉकफ़ाइल
+  नहीं गिनी जाती।
+- **इंस्टॉल।** नए स्पेक `package.json` में उसी सेक्शन में जाते हैं जहाँ वे थे, फिर एक
+  `install` सबको साथ रिज़ॉल्व करता है। pnpm को `--no-frozen-lockfile` और Yarn को
+  `YARN_ENABLE_IMMUTABLE_INSTALLS=false` मिलता है, ताकि CI में भी लॉकफ़ाइल बदल सके।
+  Ctrl-C पैकेज मैनेजर तक पहुँचता है; कमांड उसके रुकने का इंतज़ार करती है।
+- **फ़ेल हुआ इंस्टॉल।** `package.json` और जो भी लॉकफ़ाइल इंस्टॉल ने बदली वह पहले जैसी हो
+  जाती है। अगले इंस्टॉल तक `node_modules` में कुछ नए वर्ज़न रह सकते हैं।
+- **सेव की गई रेंज।** सिर्फ़ उसी पैकेज को नया स्पेक मिलता है जिसका इंस्टॉल वर्ज़न बदले:
+  तय वर्ज़न या प्रीरिलीज़ ठीक उसी पर पिन होता है, और डिस्ट-टैग पुराने स्पेक का `^` या
+  `~` बनाए रखता है। इंस्टॉल 0.21.3 के ऊपर `e2e upgrade 0.21.3` लिखा हुआ `^0.21.3` वैसा
+  ही छोड़ देता है।
+- **जिन्हें नहीं छुआ जाता।** `workspace:`, `file:`, `link:`, `catalog:`, पाथ, या git
+  URL से जुड़ा पैकेज, और ऐसा `@e2e-dev/*` पैकेज जो रजिस्ट्री में न हो। जब खुद `e2e` लिंक
+  किया हुआ हो, तो कमांड 2 से बाहर निकलती है।
+- **कुछ करने को न हो।** जब हर इंस्टॉल वर्ज़न पहले से मैच करे, तो कमांड कुछ इंस्टॉल नहीं
+  करती। `node_modules` न होने पर (जैसे Yarn Plug'n'Play में), यह `package.json` के
+  स्पेक्स की तुलना करती है।
+- **रजिस्ट्री।** पैकेज मैनेजर से सेट होने पर `npm_config_registry`, वरना
+  `https://registry.npmjs.org/`।
+- **एजेंट स्किल।** इंस्टॉल के बाद, और जब सब पहले से अप-टू-डेट हो, तब `.agents/skills/e2e`
+  या `.claude/skills/e2e` की कॉपी इंस्टॉल वर्ज़न के हिसाब से अपडेट हो जाती है।
+  `.agents/skills` कॉपी की तरफ़ जाने वाला `.claude/skills/e2e` सिमलिंक उसी के साथ
+  चलता है। जो फ़ाइलें नई स्किल अब नहीं भेजती वे बनी रहती हैं। प्रोजेक्ट के बाहर की कॉपी
+  पर जाने वाले सिमलिंक के पार कुछ नहीं लिखा जाता, और `node_modules` न होने पर (जैसे Yarn
+  Plug'n'Play में) कमांड इसकी जगह `e2e init` का नाम बताती है।
+
+| एग्ज़िट कोड | कब |
+| --- | --- |
+| 0 | पैकेज इंस्टॉल हो गए, पहले से टारगेट पर थे, या `--dry-run` ने प्लान प्रिंट किया। |
+| 2 | रेंज, अनजान वर्ज़न या डिस्ट-टैग, ऐसा कोई `package.json` न मिलना जिसमें `e2e` हो, लिंक्ड `e2e`, ऐसा सिबलिंग जिसका कोई अनुकूल रिलीज़ न हो, या फ़ेल हुआ इंस्टॉल। |
+| 3 | रजिस्ट्री रिक्वेस्ट फ़ेल हुई या एरर स्टेटस से जवाब दिया, या ऐसा मेटाडेटा भेजा जिसे कमांड पढ़ न सकी। |
+| 130 | इंस्टॉल के दौरान Ctrl-C या SIGTERM। `package.json` और लॉकफ़ाइल पहले जैसे हो जाते हैं। |
+
+#### `e2e feedback`
+
+खुद e2e के बारे में e2e टीम को एक रिपोर्ट भेजता है: कुछ टूट गया, डॉक्स या स्किल ने भटकाया,
+या कोई कैपेबिलिटी गायब है। जब कोडिंग एजेंट को टेस्ट हो रहे ऐप में नहीं बल्कि e2e में
+दिक्कत आए, तो वह एक रिपोर्ट भेज सकता है। पहले वह यूज़र को `--dry-run` आउटपुट दिखाकर
+उनकी सहमति लेता है।
+
+<CodeGroup>
+```bash npm
+npx e2e feedback --type bug -m "list ignores --grep" --command "e2e list --grep checkout" \
+  --repro "e2e list --grep checkout lists every test"
+npx e2e feedback --type docs -m "The mcp topic never says how to close a session"
+npx e2e feedback --type feature -m "Need a way to set the viewport per test" --dry-run
+```
+
+```bash pnpm
+pnpm exec e2e feedback --type bug -m "list ignores --grep" --command "e2e list --grep checkout" \
+  --repro "e2e list --grep checkout lists every test"
+pnpm exec e2e feedback --type docs -m "The mcp topic never says how to close a session"
+pnpm exec e2e feedback --type feature -m "Need a way to set the viewport per test" --dry-run
+```
+
+```bash bun
+bunx e2e feedback --type bug -m "list ignores --grep" --command "e2e list --grep checkout" \
+  --repro "e2e list --grep checkout lists every test"
+bunx e2e feedback --type docs -m "The mcp topic never says how to close a session"
+bunx e2e feedback --type feature -m "Need a way to set the viewport per test" --dry-run
+```
+</CodeGroup>
+
+| ऑप्शन | विवरण |
+| --- | --- |
+| `-m`, `--message <text>` | ज़रूरी। समस्या पर एक या दो वाक्य। |
+| `--type <type>` | `bug`, `docs`, `feature`, या `other`। डिफ़ॉल्ट: `other`। |
+| `--task <text>` | आप क्या करने की कोशिश कर रहे थे। |
+| `--expected <text>` | आप क्या होने की उम्मीद कर रहे थे। |
+| `--actual <text>` | इसके बजाय क्या हुआ, एरर मैसेज के साथ। |
+| `--error-code <code>` | इसमें शामिल e2e एरर कोड, जैसे `LOCATOR_AMBIGUOUS`। |
+| `--repro <text>` | बग के लिए: वे स्टेप्स जिनसे यह हर बार रीप्रोड्यूस हो, ऐप के कंटेंट के बिना। |
+| `--approach <text>` | आपने क्या आज़माया, वर्कअराउंड समेत। |
+| `--command <text>` | इसमें शामिल e2e कमांड या API। |
+| `--agent <text>` | इसे भेजने वाला कोडिंग एजेंट और मॉडल। |
+| `--allow-outdated` | नया e2e रिलीज़ उपलब्ध होने पर भी भेजता है। |
+| `--dry-run` | जो इवेंट भेजा जाता उसे प्रिंट करता है और कुछ नहीं भेजता। |
+
+`--message` ज़्यादा से ज़्यादा 2000 कैरेक्टर, `--command` और `--agent` 200, और
+`--task`, `--expected`, `--actual`, `--repro`, और `--approach` 1500 कैरेक्टर लेते हैं।
+
+- **बग के लिए `--repro` ज़रूरी है।** इसके बिना कमांड कुछ नहीं भेजती और इसकी जगह पहले से
+  भरा हुआ [GitHub issue](https://github.com/e2e-inc/e2e/issues/new?template=bug_report.yml)
+  लिंक प्रिंट करती है, जहाँ e2e टीम रीप्रोडक्शन माँग सकती है। एक छोटा रीप्रो जोड़ें और
+  खुद सबमिट करें।
+- **पुराने रिलीज़ मना हैं।** भेजने से पहले कमांड npm रजिस्ट्री से लेटेस्ट e2e रिलीज़ पूछती
+  है। आपका वर्ज़न पुराना होने पर यह 2 से बाहर निकलती है और कुछ नहीं भेजती, क्योंकि हो सकता
+  है समस्या पहले ही ठीक हो चुकी हो। [`e2e upgrade`](#e2e-upgrade) से अपग्रेड करें, जाँचें
+  कि दिक्कत अभी भी है, और दोबारा भेजें, या `--allow-outdated` पास करें। ऑप्ट-आउट वेरिएबल
+  सेट होने पर कमांड यह जाँच छोड़ देती है।
+- **यह कहाँ जाता है।** एक `e2e_feedback` इवेंट, उसी PostHog प्रोजेक्ट पर जहाँ
+  [टेलीमेट्री](/telemetry#feedback) जाती है, उन गुमनाम मशीन तथ्यों के साथ जो हर
+  टेलीमेट्री इवेंट में होते हैं।
+- **ऑप्ट-आउट करना।** फ़ीडबैक तभी भेजा जाता है जब आप कमांड चलाते हैं, इसलिए सेव किया गया
+  `e2e telemetry disable` इसे नहीं रोकता। `E2E_TELEMETRY_DISABLED=1` और `DO_NOT_TRACK=1`
+  रोकते हैं: दोनों में से कोई भी सेट होने पर कमांड कुछ नहीं भेजती, और जो रिपोर्ट भेजी जाती
+  वह 2 से बाहर निकलती है। इसलिए ऑप्ट-आउट कर चुका CI जॉब या फ़्लीट कुछ नहीं भेजता, भले ही
+  एजेंट इसे चलाए। `--dry-run`, `E2E_TELEMETRY_DEBUG=1` (`--dry-run` की तरह इवेंट
+  प्रिंट करता है), और बिना `--repro` वाला बग वैसे भी कुछ नहीं भेजते, इसलिए वे 0 से बाहर
+  निकलते हैं।
+
+| एग्ज़िट कोड | कब |
+| --- | --- |
+| 0 | PostHog ने इवेंट स्वीकार किया, और कमांड ने रेफ़रेंस id प्रिंट की। `--dry-run`, `E2E_TELEMETRY_DEBUG=1`, और बिना `--repro` वाला `--type bug` भी: इनमें से कोई कुछ नहीं भेजता, इसलिए ऑप्ट-आउट वेरिएबल सेट होने पर भी 0 से बाहर निकलते हैं। आउटडेटेड-रिलीज़ चेक पहले चलता है, इसलिए जब तक `--allow-outdated` या ऑप्ट-आउट वेरिएबल सेट न हो, पुराना इंस्टॉल इन पर भी 2 से बाहर निकलता है। |
+| 2 | खाली या बहुत लंबी टेक्स्ट वैल्यू, न `--allow-outdated` न ऑप्ट-आउट वेरिएबल के साथ पुराना रिलीज़, या `E2E_TELEMETRY_DISABLED=1` या `DO_NOT_TRACK=1` सेट रहते हुए भेजी जाने वाली रिपोर्ट। |
+| 3 | PostHog ने इवेंट कन्फ़र्म नहीं किया। रिपोर्ट फिर भी पहुँच गई हो सकती है, इसलिए मैसेज उसकी रेफ़रेंस id बताता है। |
+
+<Warning>
+भेजने से पहले, हर उस एनवायरनमेंट वेरिएबल की वैल्यू जिसके नाम में `KEY`, `TOKEN`,
+`SECRET`, `PASS`, `_PWD`, `CREDENTIAL`, `AUTH`, `COOKIE`, या `PRIVATE` हो (जब वह 6 या
+ज़्यादा कैरेक्टर की हो) `<secret:NAME>` बन जाती है। कॉन्फ़िग सीक्रेट की यही न्यूनतम लंबाई
+है; इससे छोटी वैल्यू आम शब्दों को भी बदल देती। Bearer टोकन, URL क्रेडेंशियल, प्राइवेट
+keys, JWT, और आम API key पैटर्न `<redacted>` बन जाते हैं। ऐप का डेटा, पेज कंटेंट, या
+टेस्ट फ़ाइलें पेस्ट न करें।
+</Warning>
+
+#### `e2e telemetry`
+
+दिखाता है कि गुमनाम यूसेज टेलीमेट्री चालू है या नहीं, और इसे बदलता है।
+[टेलीमेट्री](/telemetry) में भेजी जाने वाली हर प्रॉपर्टी की सूची है।
+
+<CodeGroup>
+```bash npm
+npx e2e telemetry
+npx e2e telemetry disable
+E2E_TELEMETRY_DEBUG=1 npx e2e run
+```
+
+```bash pnpm
+pnpm exec e2e telemetry
+pnpm exec e2e telemetry disable
+E2E_TELEMETRY_DEBUG=1 pnpm exec e2e run
+```
+
+```bash bun
+bunx e2e telemetry
+bunx e2e telemetry disable
+E2E_TELEMETRY_DEBUG=1 bunx e2e run
+```
+</CodeGroup>
+
+| कमांड | असर |
+| --- | --- |
+| `e2e telemetry`, `e2e telemetry status` | `Status: enabled` प्रिंट करता है, या कारण के साथ `Status: disabled`: सेट किया वेरिएबल, सेव की गई पसंद, या ऐसी प्रेफ़रेंस डायरेक्टरी जिसमें लिखा न जा सके। `status` डिफ़ॉल्ट है। |
+| `e2e telemetry disable` | `~/.config/e2e/telemetry.json` (सेट होने पर `$XDG_CONFIG_HOME/e2e/`, Windows पर `%APPDATA%\e2e\`) में ऑप्ट-आउट सेव करता है और स्टेटस प्रिंट करता है। |
+| `e2e telemetry enable` | ऑप्ट-इन सेव करता है और स्टेटस प्रिंट करता है। एनवायरनमेंट में सेट वेरिएबल फिर भी भारी पड़ता है, और स्टेटस यही बताता है। |
+
+- `E2E_TELEMETRY_DISABLED=1` और `DO_NOT_TRACK=1` फ़ाइल को छुए बिना टेलीमेट्री बंद कर
+  देते हैं।
+- `E2E_TELEMETRY_DEBUG=1` हर इवेंट stderr पर प्रिंट करता है और कुछ नहीं भेजता।
+- `e2e init` और `e2e telemetry` के अलावा किसी मशीन पर पहली कमांड एक बार नोटिस प्रिंट करती
+  है। CI में कुछ प्रिंट नहीं होता और कोई फ़ाइल नहीं लिखी जाती।
+
+#### `e2e report`
+
+[`htmlReporter()`](/reference/reporters#htmlreporter) की लिखी HTML रिपोर्ट को डिफ़ॉल्ट
+ब्राउज़र में खोलता है (डिफ़ॉल्ट `<output>/report.html`)। पढ़ी जा सकने वाली रिपोर्ट फ़ाइल
+न मिलने पर या `[path]` और `--output` दोनों साथ देने पर `2` से बाहर निकलता है।
+
+<CodeGroup>
+```bash npm
+npx e2e report
+npx e2e report out/custom.html
+npx e2e report --output out
+```
+
+```bash pnpm
+pnpm exec e2e report
+pnpm exec e2e report out/custom.html
+pnpm exec e2e report --output out
+```
+
+```bash bun
+bunx e2e report
+bunx e2e report out/custom.html
+bunx e2e report --output out
+```
+</CodeGroup>
+
+| आर्ग्युमेंट या फ़्लैग | मतलब |
+| --- | --- |
+| `[path]` | HTML फ़ाइल या वह डायरेक्टरी जिसमें `report.html` हो (डिफ़ॉल्ट: `<output>/report.html`; `--output` के साथ नहीं दिया जा सकता) |
+| `--config <path>` | कॉन्फ़िग फ़ाइल (डिफ़ॉल्ट: सबसे क़रीबी `e2e.config.ts`, `.mts`, `.js`, या `.mjs`) |
+| `--output <dir>` | रिज़ल्ट डायरेक्टरी जिसमें `report.html` हो (डिफ़ॉल्ट: कॉन्फ़िग में `output`, वरना `.e2e`) |
+
+- अगर [`htmlReporter({ outputFile })`](/reference/reporters#htmlreporter) पेज कहीं और
+  लिखता है, तो वह पाथ `[path]` के रूप में पास करें: `e2e report` सिर्फ़
+  `<output>/report.html` चेक करता है।
+
+## एग्ज़िट कोड्स
+
+| कोड | मतलब |
+| ---: | --- |
+| 0 | चुने गए सभी टेस्ट पास हुए, फ़्लेकी रहे, या साफ़-साफ़ स्किप किए गए |
+| 1 | अंतिम टेस्ट या सेटअप फ़ेलियर, या टेस्ट टाइमआउट |
+| 2 | CLI, कॉन्फ़िग, कलेक्शन, डिपेंडेंसी, क्रेडेंशियल, मॉडल-कॉन्फ़िग, या पॉलिसी एरर |
+| 3 | इंजन, ऐप प्रोसेस, मॉडल प्रोवाइडर, आर्टिफ़ैक्ट, या क्लीनअप इन्फ़्रास्ट्रक्चर फ़ेलियर; `e2e feedback` जो भेजा न जा सका; `e2e upgrade` जो रजिस्ट्री तक न पहुँच सका |
+| 4 | आंतरिक रनर इनवैरिएंट या अनहैंडल्ड रनर एरर |
+| 130 | यूज़र या CI सिग्नल से, `--step` या `screen.pause()` प्रॉम्प्ट पर `q` दबाने से, या `e2e run --step stop` से इंटरप्ट हुआ |
+
+- मिले-जुले रन के लिए प्राथमिकता `130 > 4 > 3 > 2 > 1 > 0` है। रिपोर्ट हर अलग रिज़ल्ट को
+  बचाए रखती है; प्राथमिकता सिर्फ़ प्रोसेस के एग्ज़िट कोड पर असर डालती है।
+- आर्ग्युमेंट पार्सिंग फ़ेलियर stderr पर एक लाइन के एरर के साथ एग्ज़िट 2 देते हैं।
+
+## डायग्नोस्टिक्स
+
+- किसी नाम को रिजेक्ट करने वाला मैसेज सबसे क़रीबी वैध नाम सुझाता है।
+- दूसरे रनर्स के कॉन्फ़िग की keys (`testDir`, `baseURL`, `webServer`, `projects`) बताती
+  हैं कि यहाँ वह सेटिंग कहाँ है।
+- कॉन्फ़िग या टेस्ट फ़ाइल में फ़ेल होने वाले `import` के अंत में प्रोजेक्ट के पैकेज मैनेजर के
+  लिए इंस्टॉल या ऐड कमांड, या पैकेज के एक्सपोर्ट किए गए सबपाथ दिखते हैं।
+- प्रोवाइडर से रिजेक्ट किया गया मॉडल क्रेडेंशियल उस वेरिएबल का नाम बताता है जिसे
+  प्रोवाइडर पढ़ता है।
+
+## Bun
+
+Bun 1.4.3 या नए पर CLI बिना Node.js के चलता है। जब Node.js इंस्टॉल हो, तो `bunx e2e` और
+`bun run` CLI के `node` शीबैंग को मानकर इसे Node.js पर चलाते हैं। `bunx --bun e2e` और
+`bun --bun run` इसे Bun पर चलाते हैं। Node.js न होने पर ये सभी इसे Bun पर चलाते हैं। वेब
+इंजन Bun पर चलता है। `@e2e-dev/mobile`, `@e2e-dev/desktop`, और इंटीग्रेशंस अभी Bun पर
+जाँचे नहीं गए हैं।
+
+Bun कॉन्फ़िग और टेस्ट फ़ाइलों को अपने TypeScript सपोर्ट से कंपाइल करता है। जहाँ यह
+Node.js से अलग है:
+
+- डायरेक्टरी पर मैप होने वाला `#` इम्पोर्ट उसका इंडेक्स लोड नहीं करता। इम्पोर्ट को सीधे
+  फ़ाइल पर मैप करें।
+- `.cts` फ़ाइल में लेगेसी डेकोरेटर लोड होने में फ़ेल होता है। क्लास को `.ts` फ़ाइल में ले
+  जाएँ।
+- `e2e run --watch` और `e2e mcp` `tsconfig.json` एक ही बार पढ़ते हैं, और कंप्यूटेड पाथ से
+  `import()` या `require()` की गई फ़ाइल को भी एक ही बार लोड करते हैं। इनमें से किसी को
+  एडिट करने पर, या ऐसी फ़ाइल जोड़ने पर जो इम्पोर्ट को नहीं मिली थी, इन्हें रीस्टार्ट करें।
+- `e2e mcp` एक बार में एक सेशन खोलता है और `--max-sessions` को नज़रअंदाज़ करता है।
+- [`e2e/runner`](/reference/runner) के लिए Node.js चाहिए।
+- `executable: 'node'` वाले ऐप `command` को Node.js चाहिए, जब तक `bun run` या `bunx` ने
+  CLI शुरू न किया हो। वे `PATH` पर एक `node` रखते हैं जो Bun चलाता है।
+- जो टेस्ट कोई हेल्पर `await` के बाद डिक्लेयर करता है, वह हेल्पर की लाइन रिपोर्ट करता है।

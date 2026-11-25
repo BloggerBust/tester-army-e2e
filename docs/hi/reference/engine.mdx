@@ -1,0 +1,2686 @@
+---
+title: e2e/engine
+description: ऑब्ज़र्वेशन, एक्शन, लाइफ़साइकिल हुक्स, और फ़िक्स्चर्स के साथ इंजन बनाएँ।
+"og:image": "https://e2e.com/docs/images/og/reference/engine.png?v=d82cf186db"
+"twitter:image": "https://e2e.com/docs/images/og/reference/engine.png?v=d82cf186db"
+---
+
+`e2e/engine` वह कॉन्ट्रैक्ट है जिसे कोई इंजन यूज़र इंटरफ़ेस (जैसे ब्राउज़र या सिम्युलेटर)
+चलाने के लिए लागू करता है। इंजन नोड्स, लोकेटर, एक्शन, और एरर के साझा टाइप लागू करता है।
+`defineEngine` इम्प्लीमेंटेशन को जाँचता और फ़्रीज़ करता है, उसकी कैपेबिलिटीज़ निकालता है,
+और कॉन्फ़िग में `targets` के लिए एक हैंडल लौटाता है। रनर इसे अपने अलग प्रोसेस में
+[इंजन प्रोटोकॉल](/reference/engine-protocol) पर चलाता है; [इंजन](/engines) देखें। UI
+के बाहर के रिसोर्स (जैसे API या डेटाबेस) के लिए `test.extend` फ़िक्स्चर इस्तेमाल करें।
+`@e2e-dev/core/engine` यही मॉड्यूल है: पब्लिश किया गया इंजन इसे वहीं से इम्पोर्ट करता है
+और `@e2e-dev/core` पर पीयर करता है, ताकि वह रनर और [@e2e-dev/core](/core) दोनों के
+तहत चल सके।
+
+यह स्केच मानकर चलता है कि प्लेटफ़ॉर्म के लिए एक `connect` अडैप्टर है:
+
+```ts title="src/index.ts"
+import { defineEngine, resolveExpression, type EngineHandle } from 'e2e/engine';
+import { connect } from './client.ts';
+
+export interface KioskEngine extends EngineHandle {}
+
+export function kiosk(options: { host: string }): KioskEngine {
+  const client = connect(options.host);
+  return defineEngine({
+    name: 'kiosk',
+    version: '1.0.0',
+    spiVersion: 1,
+    platform: 'kiosk',
+    async observe() {
+      const screen = await client.snapshot();
+      return {
+        root: { ref: { id: 'root', revision: '' }, role: 'window', children: screen.nodes },
+        viewport: screen.viewport,
+      };
+    },
+    async locate(expression) {
+      const screen = await client.snapshot();
+      return resolveExpression(expression, screen.nodes);
+    },
+    actions: ['tap'],
+    async perform(ref) {
+      await client.tap(ref.id);
+    },
+  });
+}
+```
+
+```ts title="e2e.config.ts"
+import type { E2EConfig } from 'e2e';
+import { kiosk } from './src/index.ts';
+
+export default {
+  targets: [{ name: 'kiosk', engine: kiosk({ host: 'kiosk.local' }) }],
+} satisfies E2EConfig;
+```
+
+## रेफ़रेंस
+
+### defineEngine
+
+इंजन स्पेक को जाँचता है, उसे फ़्रीज़ करता है, उसकी [कैपेबिलिटीज़](#capabilities) निकालता
+है, और एक ब्रांडेड हैंडल लौटाता है। `isEngineHandle` ऐसे हैंडल को किसी भी दूसरी वैल्यू से
+अलग पहचानता है।
+
+```ts
+import { defineEngine, isEngineHandle, type EngineHandle } from 'e2e/engine';
+
+export function defineEngine<Fixtures extends object = {}>(spec: Engine): EngineHandle<Fixtures>;
+// With a fixture beside screen, app, and platform, `spec.fixtures` must hold
+// a factory returning each one Fixtures names.
+export function isEngineHandle(value: unknown): value is EngineHandle;
+
+/** A validated engine: branded, frozen, capabilities computed. */
+export interface EngineHandle<Fixtures extends object = {}> extends Engine {
+  readonly capabilities: ReadonlySet<EngineCapability>;
+}
+```
+
+हैंडल पर हर फ़ंक्शन उसी स्पेक से बाइंड होता है जिससे वह आया है, इसलिए क्लास इंस्टेंस भी
+ऑब्जेक्ट लिटरल जितना ही वैध है।
+
+`Fixtures` उन फ़िक्स्चर्स का टाइप बताता है जो इंजन के [`fixtures`](#contributed-fixtures)
+देते हैं, जैसे `{ browser: Browser }`। कंपाइलर को इसमें बताए गए हर फ़िक्स्चर के लिए
+`fixtures` में एक फ़ैक्ट्री चाहिए होती है जो वही फ़िक्स्चर लौटाए; `screen`, `app`, और
+`platform` के लिए किसी फ़ैक्ट्री की ज़रूरत नहीं, क्योंकि हर सेशन में ये होते हैं। रनटाइम
+पर कुछ भी इसे चेक नहीं करता। इसके साथ [`@e2e-dev/core`](/core) से `launch` बिना हाथ से
+लिखे आर्ग्युमेंट के सेशन के फ़िक्स्चर्स को टाइप कर देता है: फ़ैक्ट्री से
+`defineEngine<{ device: Device }>(...)` लौटाएँ।
+
+ऊपर `KioskEngine` की तरह फ़ैक्ट्री से अपना इंटरफ़ेस लौटाएँ। तब जो कॉन्फ़िग अपना टाइप
+इनफ़र करता है वह आपके पैकेज का नाम लेता है। `declaration: true` सेट करने वाले pnpm
+प्रोजेक्ट में सीधा `EngineHandle` TS2883 से फ़ेल हो सकता है।
+
+जब स्पेक इनमें से कोई नियम तोड़े, तो `defineEngine` `INVALID_CONFIG` थ्रो करता है:
+
+| मेंबर | कब रिजेक्ट होता है |
+| --- | --- |
+| स्पेक | यह ऑब्जेक्ट न हो। |
+| `name` | गायब या खाली हो। |
+| `version` | गायब या खाली हो। |
+| `spiVersion` | `1` के अलावा कुछ भी। |
+| `platform` | खाली हो। |
+| `workers` | धनात्मक सुरक्षित इंटीजर न हो। |
+| `observe`, `readStyle`, `viewportIntersection`, `locate`, `perform`, `performAt`, `prepare`, `finish`, `doctor`, `init`, `startAttempt`, `settleAttempt`, `endAttempt`, `dispose`, `validateApp` | फ़ंक्शन न हो। |
+| कोई और टॉप-लेवल की | ऑब्जेक्ट लिटरल पर, `app` समेत: ऐप को टारगेट पर डिक्लेयर करें और `validateApp` में चेक करें। क्लास इंस्टेंस के अपने फ़ील्ड चेक नहीं होते। |
+| `readStyle`, `perform`, `locate`, `performAt`, `keyboard` | `observe` के बिना डिक्लेयर किए गए हों। |
+| `viewportIntersection` | `locate` के बिना डिक्लेयर किया गया हो। |
+| `perform`, `actions` | एक बिना दूसरे के हो। ऐसी `actions` लिस्ट जो खाली हो, किसी काइंड को दोहराए, या `KNOWN_LOCATOR_ACTION_KINDS` से बाहर का नाम दे। |
+| `performAt`, `pointerActions` | एक बिना दूसरे के हो। ऐसी `pointerActions` लिस्ट जो खाली हो, किसी काइंड को दोहराए, या `POINTER_ACTION_KINDS` से बाहर का नाम दे। |
+| `tapModifiers` | बूलियन न हो, या `perform` के बिना `true` हो। |
+| `selectsDevice` | बूलियन न हो, या `prepare` के बिना `true` हो। |
+| `launchArgumentValues` | बूलियन न हो। |
+| `fileApps` | बूलियन न हो। |
+| `isolation` | `'attempt'` या `'worker'` के अलावा कुछ भी। |
+| `keyboard`, `state`, `artifacts`, `session` | अनजान key या नॉन-फ़ंक्शन मेंबर। `type` और `press` के बिना `keyboard`; `capture` और `restore` दोनों के बिना `state`; `screenshot` के बिना `artifacts`; `stopVideo` के बिना `startVideo`, या इसका उल्टा। |
+| `secrets` | `secrets.get()` हैंडल्स का ऐरे न हो। |
+| `fixtures` | ऑब्जेक्ट न हो, ऐसा फ़िक्स्चर जो फ़ैक्ट्री फ़ंक्शन न हो, या ऐसा फ़िक्स्चर नाम जो लोअर-कैमल आइडेंटिफ़ायर न हो या `agent`, `app`, `screen`, `platform`, `request`, या `session` को शैडो करे। |
+
+<Note>
+`artifacts.startTrace` और `artifacts.stopTrace` कॉन्ट्रैक्ट से हटा दिए गए हैं। उनके
+हटने से पहले पब्लिश हुआ जो इंजन उन्हें डिक्लेयर करता है वह फिर भी वैलिडेशन पास कर जाता है;
+रनर उन्हें कभी कॉल नहीं करता।
+</Note>
+
+### Engine
+
+एक टारगेट की बॉडी। `name`, `version`, और `spiVersion` को छोड़कर हर मेंबर ऑप्शनल है;
+इंजन जो मेंबर लागू करता है वे उसकी [कैपेबिलिटीज़](#capabilities) तय करते हैं।
+
+| मेंबर | टाइप |
+| --- | --- |
+| `name` | `string` |
+| `version` | `string` |
+| `spiVersion` | `1` |
+| `platform` | `string` |
+| `workers` | `number` |
+| [`observe`](#observation) | मेथड |
+| [`readStyle`](#rendered-node-properties) | मेथड |
+| [`viewportIntersection`](#viewport-intersection) | मेथड |
+| [`perform`, `actions`](#actions) | मेथड, काइंड्स |
+| [`locate`](#capabilities) | मेथड |
+| [`performAt`, `pointerActions`](#pointer-actions) | मेथड, काइंड्स |
+| [`tapModifiers`](#capabilities) | `boolean` |
+| [`selectsDevice`](#capabilities) | `boolean` |
+| [`launchArgumentValues`](#engineappinfo) | `boolean` |
+| [`fileApps`](#capabilities) | `boolean` |
+| [`keyboard`](#keyboard) | `EngineKeyboard` |
+| [`fixtures`](#contributed-fixtures) | फ़ैक्ट्रीज़ |
+| [`isolation`](#fixture-isolation) | `'attempt' \| 'worker'` |
+| [`state`](#state) | `EngineStateCapability` |
+| [`artifacts`](#artifacts) | `EngineArtifacts` |
+| [`validateApp`](#app) | मेथड |
+| [`secrets`](#startattempt) | `Secret[]` |
+| [`session`](#session) | `EngineSession` |
+| [`prepare`, `finish`, `doctor`, `init`, `startAttempt`, `settleAttempt`, `endAttempt`, `dispose`](#lifecycle) | हुक्स |
+
+```ts
+/** The body of one target: typed, model-free, capability-graded. */
+export interface Engine {
+  /** Engine name, for diagnostics. */
+  readonly name: string;
+  /**
+   * Required implementation version, recorded in reports and sessions.
+   * A saved session never restores across engine versions; a cached trace
+   * replays across them and re-finds its nodes.
+   */
+  readonly version: string;
+  /**
+   * Contract version literal. Additive optional members never bump it;
+   * changed required semantics do.
+   */
+  readonly spiVersion: EngineSpiVersion;
+  /**
+   * Platform label this engine drives (`web`, `ios`, `android`, or a label of
+   * the engine's own). Tests filter on it through `platforms` and tool packs
+   * are scoped by it; the harness attaches no meaning to any value. A target
+   * inherits it; a target that names a platform of its own must agree with it.
+   */
+  readonly platform?: string;
+  /**
+   * Maximum workers for this target, such as the number of devices in a
+   * pool. The scheduler applies this cap even when `config.workers` is
+   * higher. Omit when the engine has no concurrency limit.
+   */
+  readonly workers?: number;
+  /** capability: observation. */
+  observe?(context: OperationContext, options?: EngineObserveOptions): Promise<EngineSnapshot>;
+  /** capability: computed-style, requires observation. Read-only rendered properties of an observation ref. */
+  readStyle?(ref: NodeRef, properties: readonly ComputedStyleProperty[], context: OperationContext): Promise<ComputedStyleValues>;
+  /** capability: viewport-intersection, requires location. How much of a located node is inside the viewport. */
+  viewportIntersection?(ref: NodeRef, context: OperationContext): Promise<ViewportIntersection>;
+  /**
+   * Performs one action on a ref from the newest observation or `locate`,
+   * with the platform's actionability checks. Both agent tools and locator
+   * actions call this method. A `swipe` on the observation root swipes the
+   * viewport.
+   *
+   * For safe trace replay, throw a retryable
+   * `NODE_STALE`-coded error when a ref no longer binds, and an
+   * `ACTION_MAY_HAVE_COMMITTED`-coded error when input may have reached the
+   * app. The runner never repeats an action that may have committed.
+   */
+  perform?(ref: NodeRef, action: LocatorAction, context: OperationContext): Promise<void>;
+  /**
+   * The action kinds `perform` honors, required with it. The harness offers
+   * the agent and the `screen` tier exactly these: a kind left out is never
+   * presented as a tool that can only decline, and `screen`/`Locator` methods
+   * for it fail with `UNSUPPORTED_CAPABILITY` before reaching the engine.
+   * `perform` still throws `UNSUPPORTED_CAPABILITY` for a declared kind one
+   * particular node cannot take (a `check` on a toggle whose state is unknown).
+   */
+  readonly actions?: readonly LocatorActionKind[];
+  /**
+   * capability: location - requires observation. Deterministic locator
+   * resolution for the `screen`/`expect` tier: resolve one expression to the
+   * nodes it currently matches. The harness owns polling, strictness, and
+   * staleness; an engine resolves once, immediately.
+   */
+  locate?(
+    expression: LocatorExpression,
+    context: OperationContext,
+  ): Promise<readonly SemanticNode[]>;
+  /**
+   * capability: pointer - requires observation. Performs one pointer action
+   * at a viewport point, in the CSS pixels of `SemanticNode.rect`, with no
+   * node behind it: the agent's `tap_at`, `hover_at`, and `drag_at` verbs land
+   * here with the point the model named in a screenshot (a shape on a canvas, a pin on
+   * a map, a control in a system sheet or one the tree lists), and so do a test's
+   * `screen.tapAt`, `screen.swipe({ from, to })`, and `tap({ position })`.
+   * Dispatch the pointer at the point as given; the harness has clamped an
+   * agent's point to the viewport and validated a test's. Throw
+   * `UNSUPPORTED_CAPABILITY` for a declared kind the surface cannot deliver
+   * at this particular point.
+   */
+  performAt?(point: ViewportPoint, action: PointerAction, context: OperationContext): Promise<void>;
+  /**
+   * The pointer action kinds `performAt` honors, required with it. The
+   * harness routes a point-addressed action to the engine only for a kind
+   * listed here; an undeclared kind fails with `UNSUPPORTED_CAPABILITY`
+   * before reaching the engine.
+   */
+  readonly pointerActions?: readonly PointerActionKind[];
+  /**
+   * The surface honors `modifiers` on the `tap`, `doubleTap`, `multiTap`,
+   * and `secondaryTap` actions `perform` receives. Without it the harness fails
+   * an action that carries modifiers with `UNSUPPORTED_CAPABILITY` before it
+   * reaches the engine.
+   */
+  readonly tapModifiers?: boolean;
+  /**
+   * `prepare` binds the target to the device `EnginePrepareInfo.device`
+   * names, for `e2e run --device`. Without it the runner refuses the flag
+   * for the target before anything is prepared.
+   */
+  readonly selectsDevice?: boolean;
+  /**
+   * The engine reads the object form of `app.launchArguments` from
+   * `EngineAppInfo.launchArgumentValues`. Without it the harness refuses an
+   * object at config load.
+   */
+  readonly launchArgumentValues?: boolean;
+  /**
+   * The engine opens an app whose `url` is a `file:` URL, reading the file
+   * from the disk of the machine the harness runs on. The harness checks
+   * every file navigation against that disk, so an engine whose surface
+   * may read another one must not declare this, or must refuse such a
+   * target in `validateApp` (`EngineAppCheckInfo.fileApp`). Without it the
+   * harness refuses a file `app.url` at config load.
+   */
+  readonly fileApps?: boolean;
+  /** capability: keyboard - requires observation. Input to whatever holds focus; see `EngineKeyboard`. */
+  readonly keyboard?: EngineKeyboard;
+  /**
+   * Named deterministic surfaces this engine contributes to TestFixtures
+   * (a device fixture, a document fixture - anything). Keys become fixture and
+   * capability names.
+   */
+  readonly fixtures?: Readonly<Record<string, EngineFixtureFactory>>;
+  /**
+   * How long the state behind this engine's `fixtures`, `app`, and `screen`
+   * lives; see `EngineIsolation`. Defaults to `attempt`.
+   */
+  readonly isolation?: EngineIsolation;
+  /** capability: state - opaque snapshot capture/restore for session reuse. */
+  readonly state?: EngineStateCapability;
+  /** capability: artifacts - screenshots under the attempt directory, and videos there or at a provider. */
+  readonly artifacts?: EngineArtifacts;
+  /**
+   * Checks the app a target declares against what this engine can drive, at
+   * config load, synchronously: throw `INVALID_CONFIG` naming
+   * `info.targetName` for a field the platform needs and the target left out
+   * (a URL, a bundle id) or one it cannot drive. The harness has already
+   * checked every field's shape.
+   */
+  validateApp?(app: EngineAppDeclaration, info: EngineAppCheckInfo): void;
+  /**
+   * The `secrets.get()` handles the engine's options hold, such as a
+   * basic-auth password. The config load checks each names a configured
+   * secret (`INVALID_CONFIG` otherwise), and only these resolve through
+   * `EngineAttemptContext.resolveSecret`. The handles carry names only, so
+   * no value reaches the config digest.
+   */
+  readonly secrets?: readonly Secret[];
+  /** Steering hooks: open, back, resize, restart, reset. */
+  readonly session?: EngineSession;
+  /**
+   * Runs once per target in the runner, after collection and before workers,
+   * app commands, and the run's clock start. A run with nothing to run (the
+   * test filters left nothing, or `--pass-with-no-tests` on an empty
+   * selection) prepares no target, and so calls no `finish`. Download
+   * dependencies or boot devices here; report progress through `info.log`.
+   * No launch timeout applies. A failure ends the run as an infrastructure
+   * error.
+   * The result can lower the target's worker cap, for example after
+   * discovering how many devices are available.
+   */
+  prepare?(info: EnginePrepareInfo): Promise<void | EnginePrepareResult>;
+  /**
+   * Once per run and target in the runner process, after every worker of the
+   * target is gone, on every exit path, whenever `prepare` was called.
+   * Release what `prepare` acquired for the run (a leased cloud device).
+   * Runs within the cleanup budget, never cancelled by an interrupt; a
+   * failure is a cleanup-phase run error.
+   */
+  finish?(info: EngineFinishInfo): Promise<void>;
+  /**
+   * Checks this machine for what a run on the target needs, for
+   * `e2e doctor`. Read-only and quick: never install, launch, lease, or
+   * start anything a check could instead look up, and never call `prepare`.
+   * A check that cannot tell reports nothing rather than guess. A throw is
+   * reported as one failed check of the target.
+   */
+  doctor?(info: EngineDoctorInfo): Promise<readonly EngineDoctorCheck[]>;
+  /**
+   * Once per worker, before the first step; boot devices here, not in a step
+   * budget. The same handle can be booted again after `dispose`: a config-held
+   * handle outlives an in-process worker, so init MUST work on a disposed
+   * engine as it does on a fresh one.
+   */
+  init?(info: EngineInitInfo): Promise<void>;
+  /** Before each attempt: set up per-test isolation. */
+  startAttempt?(context: EngineAttemptContext): Promise<void>;
+  /**
+   * After the body has settled, and again after teardown, before the verdict,
+   * within the cleanup budget: report a failure that landed on a path no step
+   * awaited (a callback the surface ran for the test: a request interceptor,
+   * a native dialog handler). Wait for one still running, then throw its
+   * error; the attempt fails with it the way a step would, an error already
+   * classified keeping its code. MUST report each failure once.
+   */
+  settleAttempt?(context: EngineCleanupContext): Promise<void>;
+  /**
+   * After each attempt, within the cleanup budget: tear that isolation down.
+   * MUST be idempotent, and safe to call after a failed `startAttempt`.
+   */
+  endAttempt?(context: EngineCleanupContext): Promise<void>;
+  /**
+   * Worker shutdown, within the cleanup budget; failure is a run error. Runs
+   * once `init` was called, even when it failed, so it MUST tolerate a
+   * partly initialized engine. A live
+   * `reuseSignal` permits preserving run-owned resources for a replacement,
+   * until that permission is revoked or this hook settles.
+   */
+  dispose?(context: EngineDisposeContext): Promise<void>;
+}
+```
+
+#### `OperationContext`
+
+```ts
+/** What every engine call carries: budget, ids, and who is acting. */
+export interface OperationContext {
+  /**
+   * Aborts when the attempt, or the hook running the call, ends. It does not
+   * abort at `timeoutMs`: bound each call by that budget yourself.
+   */
+  readonly signal: AbortSignal;
+  /**
+   * Remaining operation budget when the call starts. A waiting call's last
+   * locate or read can get more than its deadline leaves: as long as the
+   * slowest one it has seen.
+   */
+  readonly timeoutMs: number;
+  /** The run id. */
+  readonly runId: string;
+  /** The attempt id. */
+  readonly attemptId: string;
+  /**
+   * Who asked: a test's own deterministic step, or the agent acting on a
+   * screen it observed. A deterministic step verifies its outcome with
+   * `expect`, so an engine may act as soon as the target holds still; an
+   * agent reads the screen right after acting, so an engine may wait for the
+   * transition to end first.
+   */
+  readonly origin: 'test' | 'agent';
+}
+```
+
+### कैपेबिलिटीज़
+
+इंजन जो मेंबर लागू करता है, वे उसकी कैपेबिलिटीज़ तय करते हैं। जिस `screen`, `Locator`,
+या `app` कॉल को कोई गायब कैपेबिलिटी चाहिए हो, वह `UNSUPPORTED_CAPABILITY` से फ़ेल होता
+है। [टेस्ट API](#test-apis) में बताया गया है कि किसको कौन सा मेंबर चाहिए। दो कमियाँ अलग
+तरह खत्म होती हैं:
+
+- बिना `state` वाले इंजन पर `test.setup` सेशन इस्तेमाल करने वाला चुना हुआ टेस्ट सेटअप
+  चलने से पहले ही कलेक्शन एरर होता है।
+- बिना वीडियो रिकॉर्डिंग वाले इंजन पर `video` मोड नोटिस प्रिंट करता है और कोई वीडियो
+  रिकॉर्ड नहीं करता।
+
+| मेंबर | कैपेबिलिटी | ज़रूरत | क्या अनलॉक करता है |
+| --- | --- | --- | --- |
+| `observe` | `observation` | - | परख टियर, प्रॉम्प्ट स्नैपशॉट, ट्रेस रीप्ले, व्यूपोर्ट स्वाइप का रूट। |
+| `readStyle` | `computed-style` | `observe` | रीड-ओनली प्रोजेक्ट टूल्स के लिए अलाउ-लिस्टेड रेंडर्ड प्रॉपर्टीज़। |
+| `perform` + `actions` | `actions` | `observe` | डिक्लेयर किए गए काइंड्स के नोड एक्शन, प्लेटफ़ॉर्म एक्शनेबिलिटी चेक के साथ। |
+| `locate` | `location` | `observe` | `screen`, `Locator`, `expect(locator)`। |
+| `viewportIntersection` | `viewport-intersection` | `locate` | `expect(locator).toBeInViewport()`। |
+| `tapModifiers: true` | - | `perform` | `tap`, `doubleTap`, `multiTap`, और `secondaryTap` पर `modifiers`। |
+| `selectsDevice: true` | - | `prepare` | `e2e run --device`, वह डिवाइस जिसे `prepare` बाइंड करता है। |
+| `launchArgumentValues: true` | - | - | `EngineAppInfo.launchArgumentValues` में `app.launchArguments` का ऑब्जेक्ट रूप। |
+| `fileApps: true` | - | - | ऐसा टारगेट जिसका `app.url` `file:` URL हो। `validateApp` को `fileApp: true` बताया जाता है। |
+| `performAt` + `pointerActions` | `pointer` | `observe` | बिना किसी नोड के व्यूपोर्ट पॉइंट पर एक पॉइंटर एक्शन। |
+| `keyboard.{type,press,dismiss?}` | `keyboard` | `observe` | जो भी चीज़ फ़ोकस में हो उसमें इनपुट। |
+| `fixtures.<name>` | `<name>` | - | कंट्रीब्यूट किया हुआ फ़िक्स्चर। |
+| `state` | `state` | - | `test.setup` सेशन और `session:` ऑप्शन। |
+| `artifacts` | `artifacts` | - | स्क्रीनशॉट और वीडियो। |
+| `validateApp` | - | - | कॉन्फ़िग लोड पर टारगेट के `app` की जाँच। |
+| `session` | - | - | `app` के स्टियरिंग मेथड और एजेंट के `navigate`, `back`, `resize_viewport`, `switch_tab`, और `close_tab` वर्ब्स। |
+
+#### रेंडर्ड नोड प्रॉपर्टीज़
+
+`readStyle(ref, properties, context)` ऐप का स्टेट बदले बिना माँगी गई प्रॉपर्टीज़ की
+कंप्यूटेड CSS स्ट्रिंग्स लौटाता है। इसकी `computed-style` कैपेबिलिटी को `observe` चाहिए,
+और `ref` सबसे ताज़ा ऑब्ज़र्वेशन से आता है। हर माँगी गई प्रॉपर्टी के लिए एक स्ट्रिंग
+लौटाएँ। अगर नोड अब बाइंड न हो, तो रीट्राई करने लायक `NODE_STALE` थ्रो करें। टूल्स को
+लौटाने से पहले हार्नेस वैल्यूज़ छिपाता है।
+
+```ts
+export type ComputedStyleProperty =
+  | 'color' | 'background-color' | 'font-size' | 'font-weight' | 'font-style'
+  | 'text-align' | 'text-decoration-line' | 'display' | 'visibility' | 'opacity';
+
+export type ComputedStyleValues = Readonly<Partial<Record<ComputedStyleProperty, string>>>;
+```
+
+`COMPUTED_STYLE_PROPERTIES` अलाउ-लिस्ट को फ़्रोज़न ऐरे के रूप में एक्सपोर्ट करता है।
+`validateComputedStyleProperties(properties)` डुप्लिकेट हटाकर कॉपी लौटाता है और खाली
+लिस्ट या अलाउ-लिस्ट से बाहर की प्रॉपर्टी पर `INVALID_ARGUMENT` थ्रो करता है। पेज एक्सेस
+से पहले इसे कॉल करें। `ToolContext.read` के लिए
+[प्रोजेक्ट टूल्स](/tools#read-a-nodes-computed-style) देखें।
+
+#### व्यूपोर्ट इंटरसेक्शन
+
+`viewportIntersection(ref, context)` स्क्रॉल किए या ऐप का स्टेट बदले बिना
+[`toBeInViewport`](/reference/expect#tobeinviewport) के लिए मापता है कि लोकेट हुए नोड
+का कितना हिस्सा व्यूपोर्ट के अंदर है। बॉक्स को व्यूपोर्ट और हर क्लिप करने वाले ऐन्सेस्टर
+(जैसे स्क्रॉल कंटेनर, `overflow: hidden`, या फ़्रेम) से क्लिप करें।
+
+```ts
+export interface ViewportIntersection {
+  /** Whether a positive area of the box is inside; false for a node with no box or an empty one. */
+  readonly intersects: boolean;
+  /** The inside area's share of the whole box, from 0 to 1; absent where the platform reports only the visible part of a box. */
+  readonly ratio?: number;
+}
+```
+
+जब प्लेटफ़ॉर्म बॉक्स का सिर्फ़ दिखने वाला हिस्सा ही रिपोर्ट करे (जैसा डिवाइस करता है), तो
+`ratio` छोड़ दें। तब `ratio > 0` के साथ `toBeInViewport` उस हिस्से को पूरा बॉक्स मानने
+के बजाय `UNSUPPORTED_CAPABILITY` से फ़ेल होता है। अगर नोड अब बाइंड न हो तो रीट्राई करने
+लायक `NODE_STALE` थ्रो करें, और अगर प्लेटफ़ॉर्म नोड की बाउंड्स या स्क्रीन पोज़िशन न बता
+सके तो `UNSUPPORTED_CAPABILITY`। `ratio` ठीक तभी `0` से बड़ा होता है जब `intersects`
+`true` हो। इस शेप से बाहर के जवाब पर हार्नेस स्टेप को `ENGINE_FAILURE` से फ़ेल कर देता है।
+
+#### एजेंट वर्ब्स
+
+एजेंट मॉडल को सिर्फ़ वही वर्ब्स देता है जिन्हें इंजन के डिक्लेरेशन अनलॉक करते हैं।
+अंडिक्लेयर्ड वर्ब टूलसेट में नहीं होता।
+
+| वर्ब | क्या चाहिए |
+| --- | --- |
+| `tap` | `actions` में `tap` काइंड |
+| `double_tap` | `doubleTap` |
+| `long_press` | `longPress` |
+| `right_click` | `secondaryTap` |
+| `hover` | `hover` |
+| `type` | `fill`; बिना टारगेट के, `keyboard` |
+| `type_secret` | `fill` |
+| `press` | `press`; बिना टारगेट के, `keyboard` |
+| `select` | `selectOption` |
+| `check` | `check` और `uncheck` दोनों, क्योंकि यह स्टेट फ़्लिप करने के बजाय सेट करता है |
+| `scroll`, `scroll_to({ text })` | `swipe` |
+| `scroll_to({ target })` | `scrollIntoView` |
+| `drag` | `dragTo` |
+| `upload` | `setInputFiles` |
+| `navigate` | `session.open` |
+| `back` | `session.back` |
+| `resize_viewport` | `session.resize` |
+| `switch_tab` | `session.switchTab` |
+| `close_tab` | `session.closeTab` |
+| `tap_at`, `hover_at` | `actions` या `pointerActions` में `tap` या `hover` काइंड |
+| `drag_at` | `actions` या `pointerActions` में `dragTo` काइंड |
+| `type_at` | `fill` या `keyboard` |
+| `press_at` | `press` या `keyboard` |
+| `select_at` | `selectOption` |
+| `dismiss_keyboard` | `keyboard.dismiss` |
+
+- `clear` और `focus` कोई वर्ब अनलॉक नहीं करते।
+- `tap_at` और `hover_at` `performAt` (`tap` और `hover` पॉइंटर काइंड) के ज़रिए जाते हैं।
+  उस काइंड के बिना, जब पॉइंट ट्री में शामिल किसी नोड पर पड़े, तो वे `perform` से जाते हैं।
+- `drag_at` `dragTo` पॉइंटर काइंड और दूसरे पॉइंट को `target` बनाकर `performAt` से जाता
+  है। उस काइंड के बिना, जब उसके दोनों पॉइंट दो अलग लिस्टेड नोड्स पर पड़ें, तो वह `perform`
+  से जाता है।
+- जब पॉइंट ट्री में शामिल किसी नोड पर पड़े, तो `type_at`, `press_at`, और `select_at`
+  `perform` से जाते हैं। बाकी जगह `type_at` और `press_at` `keyboard` पर फ़ॉलबैक करते हैं।
+
+#### टेस्ट API
+
+टेस्ट के लिए उपलब्ध APIs जिन्हें हर इंजन मेंबर चलाता है। अंडिक्लेयर्ड काइंड के लिए कोई
+`screen` या `Locator` मेथड, या `tapModifiers` के बिना `modifiers` वाला कॉल, इंजन तक
+पहुँचने से पहले ही `UNSUPPORTED_CAPABILITY` से फ़ेल हो जाता है।
+
+| API | क्या चाहिए |
+| --- | --- |
+| `screen`, `Locator`, `expect(locator)` | `locate` |
+| `screen` और `Locator` एक्शन | `perform`, हर एक सिर्फ़ `actions` में लिस्ट किए काइंड के लिए |
+| `screen.swipe()` | ऑब्ज़र्वेशन रूट पर `swipe` के साथ `perform` |
+| टैप पर `modifiers` (`row.click({ modifiers: ['Shift'] })`) | `tapModifiers: true`; क्लिक के दौरान वे बटन दबाए रखे जाते हैं |
+| `screen.tapAt`, `tap({ position })` | `tap` पॉइंटर काइंड के साथ `performAt` |
+| `screen.doubleTapAt` | `doubleTap` पॉइंटर काइंड के साथ `performAt` |
+| `screen.swipe({ from, to })` | `swipeTo` पॉइंटर काइंड के साथ `performAt` |
+| `locator.pressSequentially` | `focus` एक्शन और `keyboard`; हार्नेस पहले `focus` फिर `keyboard.type` जोड़ता है |
+| `test.setup` सेशन, `session:` ऑप्शन | `state` |
+| `app.screenshot()`, असर्शन सबूत, फ़ेलियर स्क्रीनशॉट | `artifacts` |
+| `locator.screenshot()` | `artifacts`, `observe` और `locate` के साथ; डिक्लेयर होने पर `scrollIntoView` एक्शन |
+| कॉन्फ़िग, टारगेट, टेस्ट, या `--video` से `off` के अलावा हर [`video` मोड](/reference/config#recording) | `artifacts` |
+| `app.open()` | `session.open`; बिना ऐप URL वाले टारगेट पर `session.restart`, या `app.linkBase` वाले टारगेट पर पाथ के लिए `session.openLink` |
+| `app.back()` | `session.back` |
+| `app.restart()` | `session.restart` |
+| `app.clearState()` | `session.reset` |
+
+#### `engine.capabilities`
+
+कैपेबिलिटी नामों का कंप्यूटेड `ReadonlySet`। सिलेक्शन, रिपोर्ट, और
+`UNSUPPORTED_CAPABILITY` मैसेज इसे पढ़ते हैं।
+
+```ts
+const engine = kiosk({ host: 'kiosk.local' });
+engine.capabilities.has('location'); // true: the engine implements locate
+```
+
+```ts
+/**
+ * Capability names: the closed harness capabilities plus one name per
+ * contributed fixture. `actions` is `perform`; `location` is `locate`; both
+ * require observation, because their refs live in the observation's id space.
+ * `pointer` is `performAt`, an action addressed by a viewport point rather
+ * than a node, and requires observation because the point is read off its
+ * pixels.
+ */
+export type EngineCapability =
+  | 'observation'
+  | 'computed-style'
+  | 'viewport-intersection'
+  | 'actions'
+  | 'location'
+  | 'pointer'
+  | 'keyboard'
+  | 'state'
+  | 'artifacts'
+  | (string & {});
+```
+
+#### कीबोर्ड
+
+```ts
+/**
+ * capability: keyboard - requires observation. Input to whatever holds focus,
+ * with no node behind it: the agent's `type` and `press` without a target, and
+ * the fallback of its point-addressed `type_at` and `press_at` when the point
+ * lands on nothing the tree lists (a field drawn on a canvas, an input a
+ * platform flattens out of its accessibility tree). Focus is the app's: the
+ * harness tapped first, or the model said the field already has it.
+ */
+export interface EngineKeyboard {
+  /**
+   * Types `text` into the focused field as a person typing would, through
+   * the platform's keyboard path: a browser dispatches the key events of each
+   * character, a device sends the text through its keyboard. Where the
+   * platform has key events the app must receive them; setting the value
+   * without keystrokes is not a compliant implementation, since
+   * `locator.pressSequentially` and the agent's `type` rely on the app
+   * reacting as it does to a user. With `replace`, clears the field first
+   * (select-all and delete on a keyboard surface; the platform's clear on a
+   * device). Throw `NOT_ACTIONABLE` when nothing that accepts text has focus,
+   * so the keystrokes are never silently discarded into the document body.
+   */
+  type(text: string, options: { readonly replace: boolean }, context: OperationContext): Promise<void>;
+  /**
+   * Sends one key of the contract grammar (`Enter`, `Escape`, `Tab`,
+   * `Shift+Tab`, a character) to whatever holds focus. The harness has
+   * already validated the key's shape; refuse with `UNSUPPORTED_CAPABILITY`
+   * a key the surface cannot deliver.
+   */
+  press(key: string, context: OperationContext): Promise<void>;
+  /** Hides an on-screen keyboard. Platforms without one leave it undefined. */
+  dismiss?(context: OperationContext): Promise<void>;
+}
+```
+
+### लाइफ़साइकिल
+
+वे हुक जिन्हें रनर वर्कर्स और अटेम्प्ट्स के आस-पास कॉल करता है। हर हुक ऑप्शनल है। ऊपर
+`Engine` डिक्लेरेशन का JSDoc हर हुक का कॉन्ट्रैक्ट बताता है।
+
+`init` और `startAttempt` `launchTimeout` के अंदर चलते हैं। `finish`, `settleAttempt`,
+`endAttempt`, और `dispose` `cleanupTimeout` के अंदर चलते हैं। `prepare` का कोई टाइमआउट
+नहीं होता। दोनों बजट [कॉन्फ़िग](/reference/config) से आते हैं।
+
+| हुक | कब चलता है |
+| --- | --- |
+| [`prepare(info)`](#prepare) | हर टारगेट के लिए एक बार, किसी भी वर्कर से पहले |
+| [`finish(info)`](#finish) | टारगेट के आखिरी वर्कर के जाने के बाद |
+| [`doctor(info)`](#doctor) | `e2e doctor` में हर टारगेट के लिए एक बार, रन में कभी नहीं |
+| [`init(info)`](#init) | हर वर्कर के लिए एक बार, उसके पहले स्टेप से पहले |
+| [`startAttempt(context)`](#startattempt) | हर अटेम्प्ट से पहले |
+| [`settleAttempt(context)`](#settleattempt) | बॉडी के बाद और टियरडाउन के बाद |
+| [`endAttempt(context)`](#endattempt) | हर अटेम्प्ट के बाद |
+| [`dispose(context)`](#dispose) | वर्कर बंद होते समय |
+
+#### `prepare`
+
+रनर प्रोसेस में हर टारगेट के लिए एक बार चलता है, कलेक्शन के बाद और वर्कर्स, ऐप कमांड्स,
+और रन की घड़ी शुरू होने से पहले।
+
+```ts
+async prepare(info) {
+  if (info.slots === 0) return; // nothing runs on this target
+  info.log('booting devices');
+  const devices = await pool.boot(info.slots, { signal: info.signal });
+  return { workers: devices.length, env: { KIOSK_DEVICES: devices.join(',') } };
+},
+```
+
+फ़ेलियर किसी भी टेस्ट से पहले रन को खत्म कर देता है:
+
+| क्या थ्रो हुआ | क्या बनता है |
+| --- | --- |
+| रनर एरर क्लास, जैसे किसी ऐसे ऑप्शन के लिए `ConfigurationError` जिसे इंजन पूरा न कर सके | वही कोड। |
+| `CANCELLED` कोड वाला `EngineError` | कैंसलेशन। |
+| कोई और `EngineError`, या सादा `Error` | इन्फ़्रास्ट्रक्चर `ENGINE_FAILURE`। |
+
+```ts
+/**
+ * What `prepare` learned that the run must honour. `workers` replaces the
+ * engine's declared cap for this target and run: the surfaces the engine
+ * actually provisioned, `1` to `info.slots`. Declared `workers` stays the
+ * static answer for engines that know it up front.
+ */
+export interface EnginePrepareResult {
+  /** Lowers the target's worker cap for this run, `1` to `info.slots`. */
+  readonly workers?: number;
+  /**
+   * Variables every worker of this target is spawned with, on top of the
+   * run's environment: how a runner-side `prepare` hands what it provisioned
+   * (a device pool it discovered) to each worker's `init`. The run's own
+   * variables win on a clash.
+   */
+  readonly env?: Readonly<Record<string, string>>;
+}
+
+/** Who holds a target, for the lifecycle hooks: `prepare`, `init`, `finish`. */
+export interface EngineHostIdentity {
+  /**
+   * Set when a `launch()` host holds the target: a token no other host has.
+   * Hosts name their targets alike, so an engine that names what it holds
+   * after the target (a device session) adds this to keep hosts apart.
+   */
+  readonly hostId?: string | undefined;
+}
+
+/**
+ * Facts handed to `prepare`, once per run and target in the runner process,
+ * before any worker exists.
+ */
+export interface EnginePrepareInfo extends EngineHostIdentity {
+  /** The run id. */
+  readonly runId: string;
+  /** The target being prepared. */
+  readonly targetName: string;
+  /** Directory relative paths in the config resolve against; see `EngineInitInfo.projectRoot`. */
+  readonly projectRoot: string;
+  /** The app the target declares, as `init` receives it: what a device installs or warms up here. */
+  readonly app: EngineAppInfo;
+  /**
+   * The worker slots the run will start for this target, `0` to `slots - 1`:
+   * the run's worker cap, the engine's declared `workers`, and the work units
+   * selected for the target, whichever is smallest; `0` when nothing runs on
+   * it while another target has work. A run with nothing to run prepares no
+   * target. Provision for exactly these slots (boot that many devices of a
+   * pool); `init` then finds them ready.
+   */
+  readonly slots: number;
+  /**
+   * The run's environment: what every worker is started with. A host may hand
+   * the run an environment other than the runner process's own, so anything
+   * provisioned here that a worker later looks up by environment (a browser
+   * cache location) must be resolved and spawned against this, not
+   * `process.env`.
+   */
+  readonly env: Readonly<Record<string, string | undefined>>;
+  /**
+   * Aborts on interrupt only. Provisioning has no budget: a first-run
+   * download is as long as the network makes it, and cutting it short would
+   * fail every test behind it.
+   */
+  readonly signal: AbortSignal;
+  /** Whether the run asked for a visible surface (`--headed`), as `EngineInitInfo` declares it. */
+  readonly headed: boolean;
+  /**
+   * The device `e2e run --device` names for this target, by name or id: the
+   * one to bind instead of the configured one. Only an engine that declares
+   * `selectsDevice` receives it.
+   */
+  readonly device?: string;
+  /**
+   * Reports one line of progress. The runner streams it as a `notice` run
+   * event, so it reaches the reporter and every host sink instead of being
+   * written to a worker's stderr underneath the live status block.
+   */
+  readonly log: (line: string) => void;
+}
+```
+
+#### `finish`
+
+टारगेट के हर वर्कर के जाने के बाद रनर प्रोसेस में हर रन और टारगेट के लिए एक बार चलता है।
+`prepare` ने रन के लिए जो कुछ लिया था उसे रिलीज़ करें।
+
+```ts
+async finish(info) {
+  await pool.release({ signal: info.signal });
+},
+```
+
+सभी प्रिपेयर किए गए टारगेट्स के `finish` हुक एक ही `cleanupTimeout` शेयर करते हैं।
+
+```ts
+/** Handed to `finish`, once per run and target after the last worker is gone, with the cleanup budget of one hook. */
+export interface EngineFinishInfo extends EngineCleanupContext, EngineHostIdentity {
+  /** The run id. */
+  readonly runId: string;
+  /** The target being finished. */
+  readonly targetName: string;
+  /** The run's environment, the same `prepare` saw. */
+  readonly env: Readonly<Record<string, string | undefined>>;
+  /** Reports one line of progress, streamed as a `notice` run event like `prepare`'s. */
+  readonly log: (line: string) => void;
+}
+```
+
+#### `doctor`
+
+जब [`e2e doctor`](/reference/cli#e2e-doctor) प्रोजेक्ट जाँचता है तो हर टारगेट के लिए
+एक बार चलता है, रन के दौरान कभी नहीं। बताएँ कि इस मशीन पर रन के लिए क्या चाहिए और वह है
+या नहीं। हर फ़ाइंडिंग टारगेट के नीचे एक चेक बनती है। इस हुक के बिना टारगेट को `skip`
+स्टेटस के साथ एक `engine` चेक मिलता है।
+
+```ts
+async doctor(info) {
+  const sdk = await findToolchain(info.env);
+  if (sdk === undefined) return [{ id: 'toolchain', status: 'fail', message: 'install the toolchain' }];
+  return [{ id: 'toolchain', status: 'pass', message: `toolchain ${sdk.version}` }];
+},
+```
+
+`e2e doctor` हुक को 30 सेकंड देता है, जिसमें प्रोटोकॉल इंजन का सर्वर शुरू करना भी शामिल
+है। थ्रो, टाइमआउट, ऐसी फ़ाइंडिंग जो `EngineDoctorCheck` न हो, या ऐसी id जिसे `e2e doctor`
+खुद इस्तेमाल करता है (`node`, `config`, `engine`, `model`), ये सब `fail` स्टेटस के साथ
+`engine` चेक बनते हैं।
+
+```ts
+/** Facts handed to `doctor`, once per target in the process `e2e doctor` runs in. */
+export interface EngineDoctorInfo {
+  /** The target being checked. */
+  readonly targetName: string;
+  /** Directory relative paths in the config resolve against; see `EngineInitInfo.projectRoot`. */
+  readonly projectRoot: string;
+  /** The app the target declares, as `prepare` receives it. */
+  readonly app: EngineAppInfo;
+  /** The environment a run would start with. */
+  readonly env: Readonly<Record<string, string | undefined>>;
+  /** Whether the run would show the surface (`--headed`), as `prepare` receives it. */
+  readonly headed: boolean;
+  /** Aborts 30 seconds in, when the checks fail as timed out, or when `e2e doctor` is interrupted; return within 5 seconds of it, when the connection closes. */
+  readonly signal: AbortSignal;
+  /** Reports one line of progress; `e2e doctor` prints it to stderr. */
+  readonly log: (line: string) => void;
+}
+
+/** One finding of `doctor`. */
+export interface EngineDoctorCheck {
+  /** What was checked, in kebab case: `browser`, `toolchain`. */
+  readonly id: string;
+  /**
+   * `pass`; `warn` for something a run handles on its own, slower (a
+   * first-run download); `fail` for something that stops a run; `skip` for
+   * a check that does not apply to this target.
+   */
+  readonly status: 'pass' | 'warn' | 'fail' | 'skip';
+  /** One line: what was found and, unless it passed, what to do. */
+  readonly message?: string;
+}
+```
+
+#### `init`
+
+हर वर्कर के लिए एक बार चलता है, पहले स्टेप से पहले। डिवाइस यहाँ बूट करें, किसी स्टेप के
+बजट में नहीं।
+
+```ts
+async init(info) {
+  const device = info.env.KIOSK_DEVICES?.split(',')[info.workerSlot];
+  info.log(`slot ${info.workerSlot}: ${device}`);
+},
+```
+
+`init` को कभी ऐप URL नहीं बताया जाता; URL सिर्फ़ `session.open` के ज़रिए आते हैं। फ़ेलियर
+एक इन्फ़्रास्ट्रक्चर एरर होता है।
+
+```ts
+/** Run identity and harness-resolved facts handed to `init`, once per worker before the first step. */
+export interface EngineInitInfo extends EngineHostIdentity {
+  /** The run id. */
+  readonly runId: string;
+  /** The target this worker serves. */
+  readonly targetName: string;
+  /**
+   * Directory relative paths in the config resolve against: the config file's
+   * directory, or the run's `cwd` for a programmatic config. An engine option
+   * naming a file (a build to install) resolves here, never against
+   * `process.cwd()`, which an in-process run does not change.
+   */
+  readonly projectRoot: string;
+  /** The app the target declares: the origin and site policy of its URL, and what a device launches. */
+  readonly app: EngineAppInfo;
+  /**
+   * This worker's environment: the run's, plus what this target's `prepare`
+   * returned in its result's `env`. Read what `prepare` provisioned from
+   * here, never from `process.env`: an in-process worker shares its process
+   * with the runner and every other target.
+   */
+  readonly env: Readonly<Record<string, string | undefined>>;
+  /** Whether the run asked for a visible surface (`--headed`). */
+  readonly headed: boolean;
+  /**
+   * This worker's 0-based slot among the target's workers: the lowest slot
+   * free when the worker was spawned, so a replacement worker takes over the
+   * slot of the one that exited. An engine with several devices hands each
+   * slot its own; `config.workers` bounds the slots a target can reach.
+   */
+  readonly workerSlot: number;
+  /** Aborts on interrupt and when init exceeds the launch timeout; init must stop promptly. */
+  readonly signal: AbortSignal;
+  /**
+   * Reports one line of progress. The runner streams it as a `notice` run
+   * event, prefixed with the target and worker slot, so it reaches the
+   * reporter and every host sink instead of being written to a worker's
+   * stderr underneath the live status block. This is where a fact that only
+   * exists once the worker is up belongs: the URL a hosted browser or device
+   * can be watched at, which simulator a slot got, a version it detected.
+   * Meant for `init` itself; a line logged later is still delivered while
+   * the worker lives and dropped once it has exited. The line is shown as is
+   * in reporters and host sinks, so keep tokens and other secrets out of it
+   * (a viewer URL without its credential).
+   */
+  readonly log: (line: string) => void;
+}
+```
+
+#### `startAttempt`
+
+हर अटेम्प्ट से पहले चलता है, वह पर-टेस्ट आइसोलेशन सेटअप करने के लिए जिसे
+[`endAttempt`](#endattempt) हटाता है।
+
+```ts
+async startAttempt(context) {
+  const password = await context.resolveSecret(options.password);
+  await client.openContext({ password, signal: context.signal });
+  context.environment({ device: 'Kiosk 2', os: 'KioskOS 4.1' });
+},
+```
+
+फ़ेलियर या टाइमआउट पर `context.signal` अबॉर्ट होता है और `endAttempt` चलता है।
+
+<Warning>
+`resolveSecret` से मिली वैल्यू की सुरक्षा सिर्फ़ टेक्स्ट तक होती है। रिपोर्ट, लॉग्स, और
+ऑब्ज़र्वेशन उसे छिपाते हैं और अटेम्प्ट के टेक्स्ट डाउनलोड दोबारा लिखे जाते हैं,
+लेकिन अगर कोई पेज उसे सिक्योर फ़ील्ड के बाहर दिखा दे तो वह स्क्रीनशॉट में मास्क नहीं
+होता।
+</Warning>
+
+```ts
+/**
+ * Per-attempt isolation context. An engine that must give each test a fresh
+ * surface (a fresh isolated context per test, a reset device) sets it up in
+ * `startAttempt` and tears it down in `endAttempt`.
+ */
+export interface EngineAttemptContext {
+  /** The attempt id. */
+  readonly attemptId: string;
+  /** Absolute directory every artifact of this attempt is written under. */
+  readonly artifactsDir: string;
+  /**
+   * The plaintext of a secret the engine declared in `secrets`, for an
+   * option the engine hands the app itself (basic-auth credentials). A
+   * provider runs again on every call. The value, and every value
+   * `options.derived` computes from it, join the attempt's redaction before
+   * this resolves, so reports, logs, and every observation redact them, and
+   * the attempt's text downloads are rewritten. The protection is
+   * text only: a page that shows the value outside a secure field is not
+   * masked in screenshots.
+   * A secret the engine did not declare is `SECRET_UNAVAILABLE`.
+   */
+  readonly resolveSecret: (secret: Secret, options?: ResolveSecretOptions) => Promise<string>;
+  /**
+   * Aborts with the attempt, and the moment `startAttempt` fails or exceeds
+   * the launch timeout: a hook still running then must stop, because the
+   * harness ends the attempt's isolation right behind it and may retry.
+   */
+  readonly signal: AbortSignal;
+  /**
+   * Reports something the app did on its own while the attempt ran: a
+   * console line, an uncaught exception, a request that failed. The harness
+   * redacts the text, keeps it with the step that was running (from an event
+   * callback outside any step, the step that started last; before the first
+   * step, with none), and shows it on the trace page. Call it from the moment `startAttempt` begins until
+   * `endAttempt`; entries past a per-attempt cap are dropped.
+   */
+  readonly appLog: (entry: AppLogEntry) => void;
+  /**
+   * Reports where the app went on its own, as one line (`navigated to
+   * /login`, `the app opened a new tab at /help`): a navigation the engine
+   * did not start, a tab, a frame. Shown under the step that was running.
+   */
+  readonly navigation: (line: string) => void;
+  /**
+   * Hands the harness a screen for the trace: the capture a `locate`
+   * matched against, or one read right after an action. A read after an
+   * action is on the action's path, so bound it and skip it where it is
+   * expensive; it never fails the action. The trace page shows how each
+   * step's screen changed. Refs in it are not valid for `perform`. Absent
+   * when the attempt keeps no trace.
+   */
+  readonly screen?: (snapshot: EngineSnapshot) => void;
+  /**
+   * What the attempt runs on, such as `{ browser: 'chromium 141.0' }` or
+   * `{ device: 'iPhone 16', os: 'iOS 26.0' }`, for the trace page. Later
+   * calls add to and overwrite earlier facts.
+   */
+  readonly environment: (facts: Readonly<Record<string, string>>) => void;
+}
+
+/** One line of what the app did during an attempt, as `EngineAttemptContext.appLog` takes it. */
+export interface AppLogEntry {
+  /**
+   * Where it came from: the app's `console`, an `error` nothing caught, the
+   * `network`, or the `system` the app runs on (a crash, an OS log).
+   */
+  readonly source: 'console' | 'error' | 'network' | 'system';
+  readonly level: 'error' | 'warning' | 'info';
+  /** One line, such as `GET /api/todos 500` or `TypeError: x is undefined`; the harness clips it. */
+  readonly text: string;
+}
+
+/** How `EngineAttemptContext.resolveSecret` treats what the engine makes of the value. */
+export interface ResolveSecretOptions {
+  /**
+   * The forms of the value the app sees instead of the value itself, for the
+   * same redaction under the secret's name: the base64 `user:password` an
+   * `Authorization: Basic` header carries, which a page echoing its request
+   * headers would otherwise show.
+   */
+  readonly derived?: (plaintext: string) => readonly string[] | Promise<readonly string[]>;
+}
+```
+
+#### `settleAttempt`
+
+बॉडी सेटल होने के बाद और टियरडाउन के बाद फिर से, नतीजे से पहले चलता है। यह उस पाथ पर
+आई फ़ेलियर रिपोर्ट करता है जिसका किसी स्टेप ने इंतज़ार नहीं किया था, जैसे रिक्वेस्ट
+इंटरसेप्टर या नेटिव डायलॉग हैंडलर।
+
+```ts
+async settleAttempt() {
+  const running = [...dialogHandlers];
+  dialogHandlers.clear();
+  await Promise.all(running); // rethrows a handler's failure
+},
+```
+
+#### `endAttempt`
+
+हर अटेम्प्ट के बाद चलता है और `startAttempt` ने जो सेटअप किया था उसे हटाता है। फ़ेलियर
+क्लीनअप को फ़ेल मार्क करता है; टेस्ट का अपना स्टेटस वही रहता है।
+
+```ts
+async endAttempt(context) {
+  await client.closeContext({ signal: context.signal });
+},
+```
+
+#### `dispose`
+
+हर वर्कर के लिए एक बार चलता है, तब भी जब `init` कभी न चला हो।
+
+`context.reuseSignal` न होने या अबॉर्ट होने पर फ़ाइनल क्लीनअप ज़रूरी होता है। लाइव
+सिग्नल रिप्लेसमेंट वर्कर के लिए रन के रिसोर्स बचाए रखने की परमिशन देता है। जो इंजन
+रिसोर्स बचाकर रखता है, उसे अपने हुक के सेटल होने तक इस परमिशन के हटने पर नज़र रखनी होती
+है। फ़ाइनल शटडाउन, फ़ोर्स इंटरप्ट, या पैरेंट डिस्कनेक्ट यह परमिशन हटा देते हैं। क्लीनअप
+बजट फिर भी `context.signal` और `context.timeoutMs` से ही चलता है।
+
+उस बजट के अंदर क्लीनअप बेस्ट-एफ़र्ट होता है। वर्कर के बाहर निकलने या रीयूज़ परमिशन के साथ
+डिस्पोज़ल सेटल होने के बाद रनर क्लीनअप की गारंटी नहीं देता।
+
+```ts
+async dispose(context) {
+  await client.shutdown({ signal: context.signal });
+},
+```
+
+```ts
+/**
+ * Budget of one cleanup hook (`settleAttempt`, `endAttempt`, `dispose`). `signal` aborts when
+ * the budget is exhausted, so a hook that cannot finish in time stops instead
+ * of running on into the next attempt's setup.
+ */
+export interface EngineCleanupContext {
+  /** Aborts when the cleanup budget is spent. */
+  readonly signal: AbortSignal;
+  /** Remaining cleanup budget when the call starts. */
+  readonly timeoutMs: number;
+}
+
+/** Cleanup of one worker, with optional permission to leave run-owned resources for a replacement. */
+export interface EngineDisposeContext extends EngineCleanupContext {
+  /**
+   * A live signal permits reusable resources owned by `prepare` and `finish`
+   * to survive this worker. Missing or aborted permission requires final
+   * cleanup. Observe revocation until disposal settles. This signal does
+   * not cancel cleanup, which remains bounded by `signal` and `timeoutMs`.
+   */
+  readonly reuseSignal?: AbortSignal;
+}
+```
+
+### ऑब्ज़र्वेशन
+
+`observe` टेस्ट हो रहे सरफ़ेस का एक ताज़ा सिमैंटिक स्नैपशॉट लौटाता है।
+
+| फ़ील्ड | टाइप |
+| --- | --- |
+| `location` | `string` |
+| `root` | `SemanticNode` |
+| `viewport` | `ViewportSize` |
+| [`truncated`](#truncated-trees) | `boolean` |
+| `keyboardVisible` | `boolean` |
+| `tabs` | `{ count, active }` |
+| [`treeUnavailable`](#pixel-fallback) | `true` |
+| `pixels` | `ObservationPixels` |
+| `maskedRegionCount` | `number` |
+
+जब एक से ज़्यादा टैब खुले हों तो `tabs` उनकी जानकारी देता है: `count`, और खुलने के क्रम
+में उस टैब का ज़ीरो-बेस्ड स्थान जिसे `root` पढ़ रहा है। हार्नेस हर स्क्रीन हेडर में टैब
+का नाम देता है और मॉडल को बताता है जब कोई टैब खुला हो या स्क्रीन किसी दूसरे टैब पर गई
+हो। एक टैब होने पर इसे छोड़ दें।
+
+सरफ़ेस को ठीक अभी जैसा है वैसा लौटाएँ। रनर रिविज़न बनाता है और उसे हर रेफ़ पर लगाता है।
+जब `pixels` मौजूद हों, तो यह जाँचता है कि `maskedRegionCount` हर `secure` नोड को कवर
+करता है। जिस इंजन से पिक्सल माँगे गए हों (`pixels: true`) और वह स्क्रीन के हर सिक्योर
+नोड को मास्क न कर सके, वह `pixels` छोड़ देता है और सिर्फ़ `maskedRegionCount` (जितने
+क्षेत्र वह मास्क कर सका) रिपोर्ट करता है। बिना `pixels` वाली गिनती हमेशा रोकी गई मानी
+जाती है, भले ही ट्री में कोई `secure` नोड न हो, क्योंकि अधूरा पढ़ा गया ट्री किसी को छोड़
+सकता है। तब `toHaveScreenshot` `POLICY_DENIED` से फ़ेल होता है, और एजेंट स्क्रीनशॉट का
+इंतज़ार करने के बजाय `MASKING_UNPROVEN` पढ़ता है। वैध खाली ट्री में बिना चाइल्ड वाला रूट
+हो सकता है और `pixels` शामिल हो सकते हैं।
+
+```ts
+/**
+ * One fresh semantic snapshot of the surface under test. The harness owns
+ * everything downstream: revision minting, secret redaction, and the
+ * observation byte budget apply to every engine equally.
+ */
+export interface EngineSnapshot {
+  /**
+   * Where the surface is, as an opaque address the platform understands: a
+   * URL on a document platform, the foreground screen or activity on a
+   * device, the front window on a desktop. The harness shows it to the model
+   * and to the report, anchors trace replay on it, and applies the origin
+   * policy to it only when it parses as a URL. Omit when the platform has no
+   * notion of a current location.
+   */
+  readonly location?: string;
+  /**
+   * The observation tree under one root the engine minted. The root's id MUST
+   * be stable for the surface across observations: `perform(root, swipe)` is
+   * the viewport swipe, and the harness addresses it from an earlier
+   * observation, possibly one taken before a `restart` or `reset`, so the
+   * root swipe MUST NOT depend on a live handle from that observation. A
+   * platform with several top-level elements (a device's windows) wraps them
+   * in a root of its own.
+   */
+  readonly root: SemanticNode;
+  /** The viewport `SemanticNode.rect` and `ViewportPoint` are measured in, in CSS pixels. */
+  readonly viewport: ViewportSize;
+  /**
+   * True when `root` leaves out nodes that are on the surface: the engine
+   * stopped reading at a node cap or a depth limit, or could not enter a
+   * child document. The harness tells the model the listing is incomplete
+   * and never calls such a screen unchanged. Omit or set false for a tree
+   * read whole.
+   */
+  readonly truncated?: boolean;
+  /**
+   * Whether an on-screen keyboard is showing, as the engine measured it apart
+   * from `root`. Set `false` when it measured none, and omit it only when the
+   * engine did not measure it.
+   */
+  readonly keyboardVisible?: boolean;
+  /**
+   * The tabs the surface has open, when it has more than one, such as a
+   * browser with a tab the app opened. Omit with one tab.
+   */
+  readonly tabs?: { readonly count: number; readonly active: number };
+  /** Semantic capture failed; only fresh, independently masked pixels are evidence. */
+  readonly treeUnavailable?: true;
+  /** Masked pixels, when requested and producible; omitted otherwise. */
+  readonly pixels?: ObservationPixels;
+  /**
+   * Regions masked in the screenshot; the harness checks it covers every secure
+   * node. An engine asked for pixels (`pixels: true`) that cannot mask every
+   * secure node on screen omits `pixels` and still reports the regions it
+   * could mask. A count with no `pixels` always reads as withheld, even when
+   * the tree holds no secure node, since a tree read only in part can leave
+   * one out: `toHaveScreenshot` fails with `POLICY_DENIED` and the agent reads
+   * `MASKING_UNPROVEN`, not a missing screenshot.
+   */
+  readonly maskedRegionCount?: number;
+}
+
+export interface EngineObserveOptions {
+  /** Requests masked viewport pixels for the same revision as the tree. */
+  readonly pixels?: boolean;
+  /** Permits independently masked pixels to replace a failed semantic capture. */
+  readonly pixelFallback?: boolean;
+  /** The pixels are compared against a stored screenshot: hold system chrome (a status bar's clock and battery) in a fixed state where the platform can. */
+  readonly comparable?: boolean;
+}
+```
+
+#### कटे हुए ट्री
+
+जब नोड सीमा या न पढ़े जा सकने वाले सबट्री के कारण कुछ कंटेंट छूट जाए, तो `truncated`
+सेट करें। ऊपर `truncated` का JSDoc बताता है कि रनर इसे कैसे संभालता है।
+
+#### पिक्सल फ़ॉलबैक
+
+जब सिमैंटिक कैप्चर टाइमआउट हो जाए, तो इंजन ट्री की जगह मास्क किए हुए पिक्सल लौटा सकता है,
+लेकिन तभी जब `pixelFallback` `true` हो और वह उस कैप्चर के बिना स्क्रीनशॉट मास्किंग
+साबित कर सके।
+
+```ts
+return {
+  treeUnavailable: true,
+  root: { ref: rootRef },
+  viewport,
+  pixels,
+};
+```
+
+- `treeUnavailable: true`, ताज़ा `pixels`, और ऐसा `root` लौटाएँ जिसमें सिर्फ़ उसका
+  स्थिर `ref` हो। वह रेफ़ व्यूपोर्ट एक्शन सपोर्ट करता है; वह कोई सिमैंटिक नोड सबूत नहीं
+  देता। पुराने नोड रेफ़ रिटायर कर दें।
+- यह फ़्लैग गायब सिमैंटिक सबूत और वैध खाली ट्री के बीच फ़र्क बताता है। इससे कभी यह न
+  मानें कि स्क्रीन पर कुछ नहीं है।
+- परमिशन, पिक्सल, या स्वतंत्र मास्किंग सबूत के बिना कैप्चर फ़ेलियर को आगे बढ़ा दें।
+  कैंसलेशन, पॉलिसी डिनायल, और हार्ड इंजन फ़ेलियर भी आगे बढ़ते हैं।
+- रनर `act` और `vision: true` या `'only'` वाली परख के लिए फ़ॉलबैक की परमिशन देता
+  है। यह स्क्रीनशॉट शामिल करता है, भले ही शुरुआती ऑब्ज़र्वेशन ने सिर्फ़ ट्री माँगा हो।
+- जो स्टेप सिमैंटिक सबूत खो दे, वह ट्रेस रीप्ले करके रिकॉर्ड या पूरा नहीं हो सकता।
+- जिन इंजन के मास्क उनके सिमैंटिक कैप्चर पर निर्भर करते हैं, वे यह फ़ॉलबैक नहीं दे सकते।
+
+`EngineSnapshot` एक एक्सटेंडेबल इंटरफ़ेस है, इसलिए TypeScript इन नियमों को लागू नहीं कर
+सकता। रनर रनटाइम पर इंजन बाउंड्री पर शेप चेक करता है:
+
+| थ्रो करता है | कब |
+| --- | --- |
+| `UNSUPPORTED_CAPABILITY` | अनुमत पिक्सल के बिना फ़ॉलबैक। |
+| `INVALID_STATE` | ऐसा फ़ॉलबैक जिसके रूट में सिमैंटिक फ़ील्ड हों। |
+
+### एक्शन
+
+`perform` किसी नोड पर एक `LocatorAction` करता है; `performAt` व्यूपोर्ट पॉइंट पर एक
+`PointerAction` करता है। इंजन `actions` और `pointerActions` में वे काइंड्स डिक्लेयर
+करता है जिन्हें वह पूरा करता है।
+
+| काइंड | फ़ील्ड | `actions` | `pointerActions` |
+| --- | --- | --- | --- |
+| `tap` | नोड पर `modifiers?` | हाँ | हाँ |
+| `doubleTap` | नोड पर `modifiers?` | हाँ | हाँ |
+| `multiTap` | `count` (3 या ज़्यादा), `modifiers?`; `tap({ count })` | हाँ | - |
+| `secondaryTap` | नोड पर `modifiers?` | हाँ | हाँ |
+| `longPress` | `durationMs?` | हाँ | हाँ |
+| `fill` | `value`, `sensitive` | हाँ | - |
+| `clear` | - | हाँ | - |
+| `press` | `key` | हाँ | - |
+| `check` | - | हाँ | - |
+| `uncheck` | - | हाँ | - |
+| `focus` | - | हाँ | - |
+| `blur` | - | हाँ | - |
+| `hover` | - | हाँ | हाँ |
+| `scrollIntoView` | - | हाँ | - |
+| `selectOption` | `value` | हाँ | - |
+| `setInputFiles` | `paths`; खाली इनपुट साफ़ करता है | हाँ | - |
+| `setInputFilePayloads` | `name`, `mimeType`, और `Uint8Array` `buffer` वाले `files`। खाली `files` ऐरे इनपुट साफ़ करता है। जब इंजन `setInputFiles` के बिना यह एक्शन डिक्लेयर करे, तो रनर साफ़ करने के लिए यही इस्तेमाल करता है। | हाँ | - |
+| `dragTo` | `target`: `NodeRef` या `ViewportPoint` | हाँ | हाँ |
+| `swipe` | `direction`, `momentum?` | हाँ | हाँ |
+| `swipeTo` | `target`, `durationMs?` | - | हाँ |
+
+ग्रामर बंद (सीमित) है। इसके बाहर जो भी हो वह एजेंट की तरफ़ का `defineTool` है।
+
+#### लोकेटर एक्शन
+
+```ts
+async perform(ref, action, context) {
+  switch (action.kind) {
+    case 'tap':
+      return client.tap(ref.id, { signal: context.signal });
+    case 'swipe':
+      return client.scroll(ref.id === rootId ? undefined : ref.id, action.direction);
+    default:
+      throw new EngineError('UNSUPPORTED_CAPABILITY', `kiosk cannot ${action.kind}`, { retryable: false });
+  }
+},
+```
+
+```ts
+/**
+ * One deterministic action `perform` carries out on a node. The `swipe`
+ * kind on the observation's root node is the viewport swipe: the agent's
+ * `scroll` verb and `screen.swipe()` both arrive as `perform(root, swipe)`,
+ * so a surface implements scrolling once.
+ *
+ * `press` takes one key in the `Key` grammar below.
+ */
+export type LocatorAction =
+  | {
+      readonly kind: 'tap' | 'doubleTap' | 'secondaryTap';
+      /** Keys held for the click; only an engine that declares `tapModifiers` receives it. */
+      readonly modifiers?: readonly KeyModifier[];
+    }
+  | {
+      /** `count` taps in a row (3 or more; 2 is `doubleTap`): one multi-click in a browser, presses at the device's cadence on a device. */
+      readonly kind: 'multiTap';
+      readonly count: number;
+      readonly modifiers?: readonly KeyModifier[];
+    }
+  | {
+      readonly kind:
+        | 'check'
+        | 'uncheck'
+        | 'clear'
+        | 'focus'
+        | 'blur'
+        | 'hover'
+        | 'scrollIntoView';
+    }
+  | { readonly kind: 'longPress'; readonly durationMs?: number }
+  | { readonly kind: 'fill'; readonly value: string; readonly sensitive: boolean }
+  | { readonly kind: 'press'; readonly key: Key }
+  | { readonly kind: 'selectOption'; readonly value: SelectOption }
+  | { readonly kind: 'setInputFiles'; readonly paths: readonly string[] }
+  | {
+      readonly kind: 'setInputFilePayloads';
+      /** In-memory files; an empty array clears the input. The protocol encodes bytes only on the wire. */
+      readonly files: readonly { readonly name: string; readonly mimeType: string; readonly buffer: Uint8Array }[];
+    }
+  | { readonly kind: 'dragTo'; readonly target: NodeRef }
+  | {
+      readonly kind: 'swipe';
+      readonly direction: ScrollDirection;
+      readonly momentum?: Momentum;
+    };
+
+/** Every action kind; what an engine declares in `actions`. */
+export type LocatorActionKind = LocatorAction['kind'];
+
+/** The locator action kinds of SPI v1. List newer kinds explicitly. Use KNOWN_LOCATOR_ACTION_KINDS to check an action kind. */
+export const LOCATOR_ACTION_KINDS = [
+  'tap',
+  'doubleTap',
+  'secondaryTap',
+  'longPress',
+  'fill',
+  'clear',
+  'press',
+  'check',
+  'uncheck',
+  'focus',
+  'hover',
+  'scrollIntoView',
+  'selectOption',
+  'setInputFiles',
+  'dragTo',
+  'swipe',
+] as const satisfies readonly LocatorActionKind[];
+
+/** Every action kind understood by this version of core. */
+export const KNOWN_LOCATOR_ACTION_KINDS = [...LOCATOR_ACTION_KINDS, 'blur', 'setInputFilePayloads', 'multiTap'] as const satisfies readonly LocatorActionKind[];
+```
+
+#### पॉइंटर एक्शन
+
+जब कोई सिमैंटिक नोड उपलब्ध न हो, तो पॉइंटर एक्शन व्यूपोर्ट कोऑर्डिनेट्स इस्तेमाल करते
+हैं।
+
+- `dragTo` किसी दूसरे पॉइंट पर खत्म होता है।
+- `swipe` दिए गए पॉइंट से स्क्रॉल जेस्चर शुरू करता है।
+- `swipeTo` इकलौता काइंड है जिसका कोई नोड रूप नहीं होता: पॉइंट से `target` तक उँगली का
+  रास्ता, डिवाइस पर टच स्वाइप और डॉक्यूमेंट प्लेटफ़ॉर्म पर पॉइंटर ड्रैग। यह `dragTo` से
+  अलग है, जहाँ प्लेटफ़ॉर्म ड्रैग करने से पहले होल्ड करता है।
+
+```ts
+export type PointerAction =
+  | { readonly kind: 'tap' | 'doubleTap' | 'secondaryTap' | 'hover' }
+  | { readonly kind: 'longPress'; readonly durationMs?: number }
+  | { readonly kind: 'dragTo'; readonly target: ViewportPoint }
+  | {
+      readonly kind: 'swipe';
+      readonly direction: ScrollDirection;
+      readonly momentum?: Momentum;
+    }
+  | {
+      readonly kind: 'swipeTo';
+      readonly target: ViewportPoint;
+      readonly durationMs?: number;
+    };
+
+/** Every pointer action kind; what an engine declares in `pointerActions`. */
+export type PointerActionKind = PointerAction['kind'];
+
+/** The closed list of pointer action kinds, in contract order; the type is derived from it. */
+export const POINTER_ACTION_KINDS = [
+  'tap',
+  'doubleTap',
+  'secondaryTap',
+  'longPress',
+  'hover',
+  'dragTo',
+  'swipe',
+  'swipeTo',
+] as const satisfies readonly PointerActionKind[];
+```
+
+#### कीबोर्ड के बटन
+
+`press` के कीबोर्ड बटन का ग्रामर, जो हर इंजन में साझा है, और उसका पार्सर।
+
+```ts
+parseKey('Control+a'); // { modifiers: ['Control'], key: { kind: 'char', char: 'a' } }
+parseKey('Shift+Tab'); // { modifiers: ['Shift'], key: { kind: 'named', name: 'Tab' } }
+parseKey('Ctrl+a'); // undefined: Ctrl is not a modifier of the grammar
+```
+
+```ts
+/**
+ * The key grammar of `press`, shared by every engine so a test's key names are
+ * portable: zero or more modifiers and one key, joined by `+`.
+ *
+ * - Modifiers: `Shift`, `Control`, `Alt`, `Meta`, `ControlOrMeta` (Control on
+ *   Windows and Linux, Meta on macOS).
+ * - Named keys: those in `KEY_NAMES` (`Enter`, `Escape`, `Tab`, `Backspace`,
+ *   `Delete`, `ArrowUp`..., `Home`, `End`, `PageUp`, `PageDown`, `Insert`,
+ *   `Space`, `F1`..`F12`).
+ * - Any single printable character (`a`, `A`, `1`, `$`), typed as itself.
+ *
+ * `Control+a`, `Shift+Tab`, `Enter`, `$`. A platform without a key maps it
+ * or throws `UNSUPPORTED_CAPABILITY`; it never reinterprets the spelling.
+ * `parseKey` is the one parser, exported so no engine carries its own.
+ */
+export type Key = string;
+
+export const KEY_MODIFIERS = ['Shift', 'Control', 'Alt', 'Meta', 'ControlOrMeta'] as const;
+
+export const KEY_NAMES = [
+  'Enter',
+  'Escape',
+  'Tab',
+  'Backspace',
+  'Delete',
+  'Insert',
+  'Space',
+  'ArrowUp',
+  'ArrowDown',
+  'ArrowLeft',
+  'ArrowRight',
+  'Home',
+  'End',
+  'PageUp',
+  'PageDown',
+  'F1',
+  'F2',
+  'F3',
+  'F4',
+  'F5',
+  'F6',
+  'F7',
+  'F8',
+  'F9',
+  'F10',
+  'F11',
+  'F12',
+] as const;
+
+/** One parsed `press` key: its modifiers and either a named key or a single character. */
+export interface ParsedKey {
+  /** Modifiers, in the order written. */
+  readonly modifiers: readonly KeyModifier[];
+  /** The key itself. */
+  readonly key: { readonly kind: 'named'; readonly name: KeyName } | { readonly kind: 'char'; readonly char: string };
+}
+
+export function parseKey(key: string): ParsedKey | undefined;
+```
+
+### ऐप
+
+टेस्ट हो रहा ऐप टारगेट पर डिक्लेयर होता है (`targets: [{ engine, app }]`,
+[टेस्ट हो रहा ऐप](/reference/config#the-app-under-test) देखें); इंजन सिर्फ़ उसे चलाता
+है। हार्नेस हर फ़ील्ड का शेप चेक करता है। फिर कॉन्फ़िग लोड पर वह डिक्लेरेशन को
+[`validateApp`](#validateapp) को सौंपता है।
+
+| टारगेट फ़ील्ड | इंजन तक इस रूप में पहुँचता है |
+| --- | --- |
+| `url` | सिर्फ़ `validateApp` में। हार्नेस इसे `session.open` के ज़रिए खोलता है। |
+| रन के पोर्ट पर `url` का ऑरिजिन | `prepare` और `init` में `info.app.origin` |
+| `url` की साइट | `prepare` और `init` में `info.app.site` |
+| `bundleId`, `appPath`, `launchArguments`, `permissions` | `validateApp`, और `prepare` और `init` में `info.app`, ठीक वैसे जैसे टारगेट ने डिक्लेयर किए हों; ऑब्जेक्ट के रूप में डिक्लेयर किए गए `launchArguments` `launchArgumentValues` के रूप में आते हैं |
+| `command`, `readyUrl` | कभी नहीं। रनर ऐप शुरू करता है। |
+
+`CommandConfig` `e2e` से एक्सपोर्ट होता है, `e2e/engine` से नहीं।
+
+#### `validateApp`
+
+कॉन्फ़िग लोड पर डिक्लेयर किए गए ऐप को सिंक्रोनस तरीके से चेक करता है।
+
+```ts
+validateApp(app, { targetName }) {
+  if (app.url === undefined) {
+    throw new ConfigurationError('INVALID_CONFIG', `target "${targetName}" needs app.url`);
+  }
+},
+```
+
+- यह इंजन से चलाए जाने वाले हर टारगेट के लिए चलता है, और जो टारगेट `app` डिक्लेयर
+  न करे उसके लिए `{}` के साथ।
+- `@e2e-dev/web` को `url` चाहिए होता है; `@e2e-dev/mobile` को `bundleId` या `appPath`
+  चाहिए होता है और वह `url` को मना कर देता है।
+
+| थ्रो करता है | कब |
+| --- | --- |
+| `INVALID_CONFIG` | प्लेटफ़ॉर्म को ज़रूरी कोई फ़ील्ड गायब हो, या ऐसा फ़ील्ड हो जिसे इंजन न चला सके। मैसेज में `info.targetName` का नाम दें। |
+
+```ts
+/**
+ * The app a target declares, as its engine reads it at config load: what it
+ * is and where it is served. `EngineAppInfo` (below) is what `prepare` and
+ * `init` receive; the declaration adds the URL, which a surface never gets.
+ */
+export type EngineAppDeclaration = EngineAppInfo & {
+  /** Base URL the target opens, as declared; see `TargetApp.url`. */
+  readonly url?: string;
+};
+
+/** Handed to `Engine.validateApp` beside the declaration. */
+export interface EngineAppCheckInfo {
+  /** The target declaring the app, for the message of a refusal. */
+  readonly targetName: string;
+}
+
+/** A permission's state when the app launches: held, refused, or not asked for yet, so the OS asks again. */
+export type AppPermissionState = 'grant' | 'deny' | 'reset';
+
+/** One value in the object form of `launchArguments`; the engine spells it for its platform. */
+export type LaunchArgumentValue = string | number | boolean | readonly string[];
+
+/** A target's launch arguments: the strings the launch command takes, or an object of argument name to value. */
+export type LaunchArguments = readonly string[] | Readonly<Record<string, LaunchArgumentValue | undefined>>;
+
+/** The object form after the shape check: the `undefined` entries are gone. */
+export type LaunchArgumentValues = Readonly<Record<string, LaunchArgumentValue>>;
+
+/** Launch arguments after the shape check: a list of strings, or the object form. */
+export type ResolvedLaunchArguments = readonly string[] | LaunchArgumentValues;
+```
+
+#### `EngineAppInfo`
+
+`EnginePrepareInfo.app` और `EngineInitInfo.app` के रूप में रिज़ॉल्व किया गया ऐप: URL का
+ऑरिजिन और साइट, और डिवाइस फ़ील्ड ठीक वैसे जैसे टारगेट ने डिक्लेयर किए। इंजन जो
+क्रेडेंशियल इंजेक्ट करे उसका स्कोप ठीक उसी ऑरिजिन तक रखें। ऑब्ज़र्व किए जाने वाले फ़्रेम्स
+पर [`sameSite`](#site-helpers) से साइट लागू करें।
+
+```ts
+if (new URL(request.url).origin === info.app.origin) request.headers.set('x-api-key', key);
+```
+
+```ts
+/**
+ * The app the harness resolved from the target's declaration, handed to
+ * `prepare` and `init`: the origin and site policy for the decisions only a
+ * surface can make (which requests carry injected credentials, which nested
+ * documents enter an observation), and what a device launches.
+ */
+export interface EngineAppInfo {
+  /**
+   * The app URL's origin on the run's port (`scheme://host:port`, as
+   * `URL.origin` serializes it): where injected request credentials go.
+   * Absent when the app has no URL or its URL is a file, and for a free port
+   * the run has not assigned (`e2e doctor`).
+   */
+  readonly origin?: string;
+  /**
+   * The app URL's registrable domain, as read by `siteOf`. Use `sameSite`
+   * to scope observed child frames. Absent when the app has no URL or its
+   * URL is a file. The
+   * runner passes navigation URLs separately through `session.open`.
+   */
+  readonly site?: string;
+  /** The installed app to launch, as the target declared it. */
+  readonly bundleId?: string;
+  /** The build to install, as the target declared it; relative to `projectRoot`. */
+  readonly appPath?: string;
+  /** Arguments every fresh launch passes the app, when the target declared them as a list of strings. */
+  readonly launchArguments?: readonly string[];
+  /**
+   * Arguments every fresh launch passes the app, when the target declared
+   * them as an object; only an engine that declares `launchArgumentValues`
+   * receives one.
+   */
+  readonly launchArgumentValues?: LaunchArgumentValues;
+  /** Permissions the app holds, by name; what each state means is the engine's (a device sets them before every fresh launch). */
+  readonly permissions?: Readonly<Record<string, AppPermissionState>>;
+}
+```
+
+टारगेट `app.launchArguments` को स्ट्रिंग्स की लिस्ट या ऑब्जेक्ट के रूप में डिक्लेयर करता
+है। लिस्ट `launchArguments` में आती है। ऑब्जेक्ट `launchArgumentValues` में आता है, और
+सिर्फ़ उसी इंजन पर जो `launchArgumentValues: true` डिक्लेयर करे; किसी और इंजन पर यह
+कॉन्फ़िग लोड पर `INVALID_CONFIG` से फ़ेल होता है। हार्नेस दोनों में से एक ही फ़ील्ड सेट
+करता है, कभी दोनों नहीं, इसलिए जो इंजन दोनों रूप लेता है वह जो मौजूद हो उसे पढ़ता है और
+ऑब्जेक्ट को अपने प्लेटफ़ॉर्म की लॉन्च कमांड के हिसाब से लिखता है। iOS या macOS इंजन इसे
+`appleUserDefaults` से लिखता है:
+
+```ts
+const launchArguments = info.app.launchArgumentValues ?? info.app.launchArguments;
+const args = launchArguments === undefined ? [] : appleUserDefaults(launchArguments);
+```
+
+किसी दूसरे प्लेटफ़ॉर्म का इंजन ऑब्जेक्ट को खुद बदलता है। Android पर `mobile()` हर एंट्री
+को उसकी वैल्यू के टाइप के `am start` एक्स्ट्रा के रूप में भेजता है, जैसे `--ez e2e true`
+या `--es locale fr_FR`।
+
+### सेशन
+
+यूनिवर्सल `app` फ़िक्स्चर और एजेंट के `navigate`, `back`, `resize_viewport`,
+`switch_tab`, और `close_tab` वर्ब्स के पीछे चलने वाले स्टियरिंग हुक्स।
+
+| हुक | किसके पीछे चलता है |
+| --- | --- |
+| `open(url)` | `app.open()`, एजेंट का `navigate` वर्ब, `restart` और `reset` के बाद दोबारा खोलना |
+| `openLink(url)` | `app.linkBase` वाले टारगेट पर `app.open(path)`: जुड़ा हुआ लिंक, स्कीम चेक के साथ, टेस्ट हो रहे ऐप में खुलता है। टारगेट `linkBase` तभी डिक्लेयर कर सकता है जब उसके इंजन में यह हुक हो। |
+| `back()` | `app.back()`, एजेंट का `back` वर्ब |
+| `resize(size)` | एजेंट का `resize_viewport` वर्ब; `size` CSS पिक्सल में `{ width, height }` होता है और अटेम्प्ट के बाकी समय के लिए बना रहता है |
+| `switchTab(index)` | एजेंट का `switch_tab` वर्ब; `index` टैब्स खुलने के क्रम में ज़ीरो-बेस्ड होता है, जैसा [`tabs`](#observation) गिनता है। बिना खुले टैब वाला इंडेक्स `ACTION_FAILED` होता है। |
+| `closeTab(index)` | एजेंट का `close_tab` वर्ब; `index` `switchTab` की तरह गिना जाता है। दिख रहे टैब को बंद करने पर कोई दूसरा टैब (जैसे उसे खोलने वाला टैब) दिखता है। बिना खुले टैब वाला इंडेक्स, या आखिरी खुला टैब, `ACTION_FAILED` होता है। |
+| `restart()` | `app.restart()` |
+| `reset()` | `app.clearState()` |
+
+```ts
+session: {
+  async back(context) { await client.back({ signal: context.signal }); },
+  async restart(context) { await client.relaunch(bundleId, { signal: context.signal }); },
+},
+```
+
+```ts
+/**
+ * Steering hooks behind the universal `app` fixture and the agent's
+ * `navigate` verb. The app itself is the target's `app`, handed over as data;
+ * node actions never live here, they are `perform`.
+ *
+ * `restart` and `reset` open nothing on an addressable surface: they end at
+ * a fresh surface with no location shown, and the harness reopens the app
+ * through `open` when the target has an address. A surface therefore never
+ * needs to know the app's URL, and an unreachable app after a restart is
+ * reported the same way as on first open. A surface without `open` (a
+ * device with a pinned app) relaunches the app inside `restart` and `reset`
+ * itself, since nothing else will.
+ */
+export interface EngineSession {
+  /**
+   * Opens one URL the harness already resolved against the base URL and the
+   * origin policy. Absent on a surface without addressable locations.
+   */
+  open?(url: string, context: OperationContext): Promise<void>;
+  /**
+   * Opens a link in the app under test, as a deep link or a universal link
+   * would: `app.open(path)` on a target that declares `app.linkBase` lands
+   * here with the link joined and its scheme checked. A device engine's hook;
+   * a target whose engine lacks it cannot declare `linkBase`.
+   */
+  openLink?(url: string, context: OperationContext): Promise<void>;
+  /** Navigates back once in the surface's history. */
+  back?(context: OperationContext): Promise<void>;
+  /** Sets the viewport to `size` in CSS pixels, for this page and every page the attempt opens after it. */
+  resize?(size: ViewportSize, context: OperationContext): Promise<void>;
+  /**
+   * Shows the open tab at `index`, zero-based in the order the tabs opened,
+   * as `EngineSnapshot.tabs` counts them: every observation and action after
+   * it reads and acts on that tab. An index with no open tab is an
+   * `ACTION_FAILED` the model reads. Declare it with `tabs` in snapshots.
+   */
+  switchTab?(index: number, context: OperationContext): Promise<void>;
+  /**
+   * Closes the open tab at `index`, counted as `switchTab` counts them. When
+   * it was the tab shown, the engine shows another, such as the tab that
+   * opened it. An index with no open tab, or the last open tab, is an
+   * `ACTION_FAILED` the model reads.
+   */
+  closeTab?(index: number, context: OperationContext): Promise<void>;
+  /** Recreates the execution context, keeping persisted state. */
+  restart?(context: OperationContext): Promise<void>;
+  /** Clears persisted client state and recreates the execution context. */
+  reset?(context: OperationContext): Promise<void>;
+}
+```
+
+### एरर
+
+इंजन एक तय सेट में से किसी एक कोड के साथ `EngineError` थ्रो करता है। रनर हर कोड को उस
+एरर पर मैप करता है जिसे टेस्ट देखता है।
+
+| कोड | रनर मैपिंग | रीट्राई करने लायक |
+| --- | --- | --- |
+| `NODE_STALE` | दोबारा रिज़ॉल्व, फिर `LOCATOR_NOT_FOUND` | हाँ |
+| `FRAME_NOT_FOUND` | दोबारा रिज़ॉल्व, फिर `LOCATOR_NOT_FOUND` | हाँ |
+| `FRAME_AMBIGUOUS` | `LOCATOR_AMBIGUOUS` | नहीं |
+| `NOT_ACTIONABLE`, `ACTION_MAY_HAVE_COMMITTED`, `OPERATION_TIMEOUT` | `ACTION_FAILED` | नहीं |
+| `CANCELLED` | इन्फ़्रास्ट्रक्चर `CANCELLED` | नहीं |
+| `UNSUPPORTED_CAPABILITY` | कॉन्फ़िगरेशन `UNSUPPORTED_CAPABILITY` | नहीं |
+| `INVALID_STATE` | `APP_NOT_OPEN` | नहीं |
+| `ENGINE_FAILURE`, कोई भी नॉन-`EngineError` | इन्फ़्रास्ट्रक्चर `ENGINE_FAILURE` | नहीं |
+
+#### `EngineError`
+
+```ts
+throw new EngineError('NODE_STALE', `node ${ref.id} is gone`, { retryable: true });
+```
+
+```ts
+export class EngineError extends Error {
+  constructor(code: EngineErrorCode, message: string, options: { retryable: boolean; cause?: unknown });
+  /** One of `ENGINE_ERROR_CODES`. */
+  readonly code: EngineErrorCode;
+  /** Whether the runner may re-resolve and retry; only `RETRYABLE_ENGINE_ERROR_CODES` can be. */
+  readonly retryable: boolean;
+}
+
+/** The closed engine error code set; the type is derived from it, so the two cannot drift. */
+export const ENGINE_ERROR_CODES = [
+  'NODE_STALE',
+  'FRAME_NOT_FOUND',
+  'FRAME_AMBIGUOUS',
+  'NOT_ACTIONABLE',
+  'ACTION_MAY_HAVE_COMMITTED',
+  'OPERATION_TIMEOUT',
+  'CANCELLED',
+  'UNSUPPORTED_CAPABILITY',
+  'INVALID_STATE',
+  'ENGINE_FAILURE',
+] as const;
+
+/** One of `ENGINE_ERROR_CODES`. */
+export type EngineErrorCode = (typeof ENGINE_ERROR_CODES)[number];
+
+/**
+ * The only codes that may be retryable: both describe a repeatable read. Any
+ * other retryable claim, from this module's class or a foreign copy of it, is
+ * coerced to a non-retryable `ENGINE_FAILURE`.
+ */
+export const RETRYABLE_ENGINE_ERROR_CODES: ReadonlySet<EngineErrorCode> = new Set([
+  'NODE_STALE',
+  'FRAME_NOT_FOUND',
+]);
+```
+
+#### डेडलाइन पर टाइमआउट
+
+जब किसी इंतज़ार करने वाले कॉल की डेडलाइन में 100 ms से कम (या उसके सबसे धीमे पूरे हुए
+लोकेट/रीड से कम) समय बचा हो, और पहले एक लोकेट या रीड पूरा हो चुका हो, तो उसके बाद किसी
+लोकेट या रीड पर आया `OPERATION_TIMEOUT` इंतज़ार को ऐसे खत्म करता है:
+
+| इंतज़ार करने वाला कॉल | किस एरर से फ़ेल होता है |
+| --- | --- |
+| एक्शन, `waitFor` | `LOCATOR_NOT_FOUND`, कारण के रूप में टाइमआउट के साथ |
+| असर्शन | `ASSERTION_FAILED`, कारण के रूप में टाइमआउट के साथ |
+
+अगर रीड कटने तक नेगेट किया गया असर्शन पर्याप्त देर तक सही बना रहा हो, तो वह वहाँ पास हो
+जाता है। [`pollCondition`](#pollcondition) इन्हीं नियमों से पोल करता है।
+
+#### रनर एरर क्लासेज़
+
+कंट्रीब्यूट किए गए फ़िक्स्चर मेथड से थ्रो किया गया `EngineError` ऊपर की टेबल से मैप
+होता है, इसलिए बंद हो चुके सेशन पर फ़िक्स्चर ठीक ऑब्ज़र्वेशन की तरह `APP_NOT_OPEN`
+रिपोर्ट करता है। मेथड उसी एंट्री से एक्सपोर्ट होने वाली रनर की अपनी एरर क्लासेज़ से भी
+स्टेप को फ़ेल कर सकता है।
+
+```ts
+throw new TestError('ASSERTION_FAILED', 'expected the receipt to print');
+```
+
+खुद `E2EError` एक्सपोर्ट नहीं होता; इन तीनों में से कोई एक बनाएँ।
+
+```ts
+/** The runner's error base: `category` sets the exit code, `code` names the cause. */
+declare class E2EError extends Error {
+  readonly category: 'test' | 'configuration' | 'infrastructure' | 'internal' | 'interrupted';
+  readonly code: string;
+  readonly retryable: boolean;
+}
+
+/** A test failure: ASSERTION_FAILED, INVALID_LOCATOR, ACTION_FAILED, ... */
+export class TestError extends E2EError {
+  constructor(code: string, message: string, options?: { retryable?: boolean; cause?: unknown });
+}
+/** POLICY_DENIED, APP_URL_REQUIRED, UNSUPPORTED_CAPABILITY, ... */
+export class ConfigurationError extends E2EError {
+  constructor(code: string, message: string, options?: { cause?: unknown });
+}
+/** The surface itself failed: BROWSER_INSTALL_FAILED, ... */
+export class InfrastructureError extends E2EError {
+  constructor(code: string, message: string, options?: { cause?: unknown });
+}
+```
+
+### साझा सिमैंटिक्स
+
+वे हेल्पर जो सभी इंजनों में व्यवहार एक जैसा रखते हैं। हर इंजन इन्हीं सिमैंटिक्स को दोहराता
+है; अपनी कॉपी रखने के बजाय इन्हें इम्पोर्ट करें।
+
+| एक्सपोर्ट | क्या लौटाता है |
+| --- | --- |
+| [`matchesText`, `toTextPattern`, `describePattern`](#text-patterns) | `boolean`, `TextPattern`, `string` |
+| [`resolveExpression`](#resolveexpression) | `SemanticNode[]` |
+| [`urlMatches`](#urlmatches) | `boolean` |
+| [`siteOf`, `sameSite`](#site-helpers) | `string`, `boolean` |
+| [`isRefusedLinkScheme`](#isrefusedlinkscheme) | `boolean` |
+| [`pollCondition`, `Deadline`](#pollcondition) | `Promise<void>`, `Deadline` |
+| [`validateJsonValue`](#validatejsonvalue) | `void` |
+| [`rejectUnknownKeys`](#rejectunknownkeys) | `void` |
+| [`checkLaunchArguments`](#checklauncharguments) | `ResolvedLaunchArguments \| undefined` |
+| [`appleUserDefaults`](#appleuserdefaults) | `readonly string[]` |
+| [`rejectUnknownOptions`](#rejectunknownoptions) | `void` |
+| [`obj`](#obj) | `WithoutUndefined<T>` |
+| [`raceAbort`, `withTimeout`, `withinCleanupBudget`](#timing-helpers) | `Promise<T>`, `Promise<T>`, `Promise<void>` |
+| [`isSecret`](#issecret) | `boolean` |
+| [`isProviderRecording`, `stopProviderRecording`](#provider-recordings) | `boolean`, `Promise<VideoSegment>` |
+
+#### टेक्स्ट पैटर्न
+
+`locate` और टेक्स्ट मैचर्स के लिए `TextPattern` मैचिंग।
+
+```ts
+export function toTextPattern(match: TextMatch, options?: { exact?: boolean }): TextPattern;
+export function matchesText(actual: string, pattern: TextPattern): boolean;
+export function describePattern(pattern: TextPattern): string;
+```
+
+```ts
+const pattern = toTextPattern(/total/i);
+matchesText('Order total', pattern); // true
+describePattern(pattern); // '/total/i'
+```
+
+| थ्रो करता है | कब |
+| --- | --- |
+| `INVALID_ARGUMENT` | `toTextPattern` को ऐसा `match` मिले जो न स्ट्रिंग हो न `RegExp`। |
+
+#### `resolveExpression`
+
+रेफ़रेंस `locate`। डॉक्यूमेंट के क्रम में एक सिमैंटिक ट्री पर `LocatorExpression` को
+रिज़ॉल्व करता है।
+
+```ts
+export function resolveExpression(
+  expression: LocatorExpression,
+  nodes: readonly SemanticNode[],
+  options?: ResolveExpressionOptions,
+): SemanticNode[];
+```
+
+```ts
+async locate(expression) {
+  const screen = await client.snapshot();
+  return resolveExpression(expression, screen.nodes);
+},
+```
+
+- जब कोई कंटेनर अपने चाइल्ड का टेक्स्ट दोहराता है, तो `text` और `label` सबसे अंदरूनी
+  मैच लौटाते हैं।
+- जिस इंजन का ट्री पूरी सच्चाई होता है (जैसे डिवाइस), वह इसे कॉल करता है; ब्राउज़र इंजन
+  इसे दोहराता है।
+- `selector` एक्सप्रेशन को `selector` ऑप्शन चाहिए।
+- `frame` एक्सप्रेशन `FRAME_NOT_FOUND` देता है।
+- `union` एक्सप्रेशन बिना डुप्लिकेट नोड्स के, डॉक्यूमेंट के क्रम में दोनों में से किसी भी
+  ब्रांच से मैच करता है।
+
+#### `urlMatches`
+
+उम्मीद के मुताबिक URL के मुकाबले मौजूदा URL की `toHaveURL` जैसी तुलना।
+
+```ts
+export function urlMatches(
+  current: string,
+  expected: string | RegExp,
+  baseHref: string,
+  ignoreCase?: boolean,
+): boolean;
+```
+
+```ts
+urlMatches('https://shop.test/cart', '/cart', 'https://shop.test/'); // true
+```
+
+`ignoreCase` लोकेटर मैचर्स की तरह ही काम करता है।
+
+| थ्रो करता है | कब |
+| --- | --- |
+| `INVALID_ARGUMENT` | `expected` न स्ट्रिंग हो न `RegExp`, ठीक `toTextPattern` की तरह। |
+
+#### साइट हेल्पर्स
+
+`siteOf` किसी होस्टनेम का रजिस्ट्रेबल डोमेन पढ़ता है, वही रूप जो `EngineAppInfo.site`
+लेता है। `sameSite` बताता है कि कोई URL किसी साइट पर है या नहीं।
+
+```ts
+export function siteOf(hostname: string): string;
+export function sameSite(url: string | URL, site: string): boolean;
+```
+
+#### `isRefusedLinkScheme`
+
+क्या किसी लिंक का स्कीम उन स्कीम्स में से है जिन्हें कोई ऐप लिंक नहीं ले सकता: `file:`,
+`data:`, `javascript:`, `view-source:`, `blob:`, या `filesystem:`। ऐप लिंक खोलने वाला
+इंजन (`session.openLink`) इन्हें `POLICY_DENIED` से मना करता है, ठीक वैसे जैसे
+`app.linkBase` के साथ `app.open` करता है।
+
+```ts
+export function isRefusedLinkScheme(protocol: string): boolean;
+```
+
+```ts
+if (isRefusedLinkScheme(new URL(link).protocol)) throw new ConfigurationError('POLICY_DENIED', 'refused link scheme');
+```
+
+#### `pollCondition`
+
+असर्शन पोलिंग और नेगेशन ग्रेस विंडो।
+
+```ts
+export function pollCondition(options: PollConditionOptions): Promise<void>;
+```
+
+```ts
+const deadline = new Deadline(context.timeouts.assertion);
+await pollCondition({
+  deadline,
+  signal: context.signal,
+  negated: false,
+  evaluate: async () => (await read(context.operation(deadline.remaining()))) === 'Paid',
+  onTimeout: (cause) => new TestError('ASSERTION_FAILED', 'status never became Paid', { cause }),
+});
+```
+
+- `evaluate` के हर रीड को `deadline` (`context.operation(deadline.remaining())`) से
+  बाँधें। एक्शन टाइमआउट पर चलने वाला रीड असर्शन के टाइमआउट से ज़्यादा चल सकता है।
+- यह शुरू से 0, 20, और 50 ms पर, फिर हर 100 ms के गुणज पर पढ़ता है। हर रीड पिछले रीड के
+  खत्म होने के कम से कम 10 ms और ज़्यादा से ज़्यादा 100 ms बाद शुरू होता है। एक्शन और
+  `waitFor` अपने नोड का इंतज़ार इसी तरह करते हैं।
+- `evaluate` से आया `OPERATION_TIMEOUT` [डेडलाइन पर टाइमआउट](#timeouts-at-a-deadline)
+  के नियमों के तहत पोल को खत्म करता है। `onTimeout(cause)` उसी के साथ फ़ेलियर बनाता है।
+
+#### `validateJsonValue`
+
+जाँचता है कि कोई वैल्यू सादा JSON है या नहीं।
+
+```ts
+export function validateJsonValue(value: unknown, label: string, rules?: JsonValueRules): void;
+```
+
+```ts
+validateJsonValue(result, 'kiosk.evaluate result', { maxDepth: 32 });
+```
+
+- टॉप-लेवल `undefined` पास हो जाता है।
+- `rules.onSecret` किसी `Secret` से आने वाले `POLICY_DENIED` की जगह अपना एरर देता है;
+  `rules.maxDepth` नेस्टिंग की सीमा तय करता है।
+
+| थ्रो करता है | कब |
+| --- | --- |
+| `INVALID_ARGUMENT` | असीमित संख्या, साइकिल, ऐसा ऑब्जेक्ट जो सादा ऑब्जेक्ट या ऐरे न हो, या अंदर कोई फ़ंक्शन, सिंबल, bigint, या `undefined`। मैसेज में `label` का नाम होता है। |
+| `POLICY_DENIED` | `Secret`, जब तक `rules.onSecret` अपना एरर न थ्रो करे। |
+
+#### `rejectUnknownKeys`
+
+`keys` के बाहर `value` की पहली अपनी की पर थ्रो करता है: वही जाँच जो रनर अपने कॉन्फ़िग
+ऑब्जेक्ट्स पर चलाता है, इंजन फ़ैक्ट्री के ऑप्शंस के लिए।
+
+```ts
+export function rejectUnknownKeys(
+  label: string,
+  value: object,
+  keys: readonly string[],
+  code?: 'INVALID_CONFIG' | 'INVALID_ARGUMENT', // default: 'INVALID_CONFIG'
+): void;
+```
+
+```ts
+rejectUnknownKeys('web()', options, ['browser', 'viewport']);
+// web() has unknown key "viewprt"; did you mean "viewport"?
+```
+
+- जब कोई टाइपिंग की गलती लगे तो मैसेज सबसे क़रीबी जानी-पहचानी key का नाम बताता है, वरना
+  सारी जानी-पहचानी keys।
+- टेस्ट से किसी फ़िक्स्चर मेथड को पास किए गए ऑब्जेक्ट के लिए `code` में
+  `'INVALID_ARGUMENT'` पास करें।
+
+#### `checkLaunchArguments`
+
+टारगेट के `app.launchArguments` पर रनर जो शेप चेक चलाता है, वह ऐसे लॉन्च के लिए जिसे
+टेस्ट खुद माँगे, जैसे `device.openApp(app, { launchArguments })`। हर `undefined`
+ऑब्जेक्ट प्रॉपर्टी हटाकर आर्ग्युमेंट लौटाता है, या थ्रो करता है; लिस्ट में `undefined`
+आइटम किसी भी दूसरे नॉन-स्ट्रिंग की तरह मना किया जाता है।
+
+```ts
+export function checkLaunchArguments(
+  label: string,
+  declared: unknown,
+  code?: 'INVALID_CONFIG' | 'INVALID_ARGUMENT', // default: 'INVALID_CONFIG'
+): ResolvedLaunchArguments | undefined;
+```
+
+```ts
+const launchArguments = checkLaunchArguments('device.openApp({ launchArguments })', options.launchArguments, 'INVALID_ARGUMENT');
+// device.openApp({ launchArguments }).env must be a string, number, boolean, or array of strings, got null
+```
+
+- लिस्ट में स्ट्रिंग्स होती हैं। ऑब्जेक्ट बिना वाइटस्पेस या कंट्रोल कैरेक्टर वाले नॉन-एम्प्टी
+  नाम को स्ट्रिंग, 2^53 से कम परिमाण की सीमित संख्या, बूलियन, या स्ट्रिंग्स की लिस्ट से
+  मैप करता है। कहीं भी NUL कैरेक्टर नहीं होता।
+- ऑब्जेक्ट का आर्ग्युमेंट नाम डैश से शुरू नहीं होता: `-AppleLocale` नहीं, `AppleLocale`
+  लिखें। इंजन डैश खुद जोड़ता है, इसलिए डैश वाला नाम फ़ेल होता है।
+- इस जाँच के बाद इंजन उसी `code` के साथ अपने प्लेटफ़ॉर्म के नियम जोड़ता है।
+
+#### `appleUserDefaults`
+
+लॉन्च आर्ग्युमेंट्स को iOS या macOS ऐप के प्रोसेस आर्ग्युमेंट्स के रूप में लिखता है।
+लिस्ट वैसी ही रहती है। ऑब्जेक्ट की हर एंट्री `-name value` बनती है, उस रूप में जिसे
+`NSUserDefaults` पढ़ता है। रिज़ल्ट को लॉन्च कमांड में पास करें।
+
+```ts
+export function appleUserDefaults(launchArguments: ResolvedLaunchArguments): readonly string[];
+```
+
+```ts
+appleUserDefaults({ AppleLanguages: ['fr', 'en-GB'], e2e: true, offset: -1, mode: '(draft)' });
+// ['-AppleLanguages', '(fr, en-GB)', '-e2e', 'YES', '-offset', '"-1"', '-mode', '"(draft)"']
+```
+
+- बूलियन `YES` या `NO` होता है। लिस्ट पुराने स्टाइल का plist ऐरे होती है।
+- स्ट्रिंग या संख्या बिना कोट्स के तभी रहती है जब उसमें सिर्फ़ अक्षर, अंक, और
+  `_ $ / : . -` हों और वह `-` या `//` से शुरू न हो। बाकी वैल्यू कोट्स में रखी जाती हैं,
+  `\` और `"` को एस्केप करके। यही नियम लिस्ट के हर आइटम पर लागू होता है, इसलिए
+  `{ cdn: ['//cdn.example'] }` `-cdn ("//cdn.example")` बनता है।
+
+#### `rejectUnknownOptions`
+
+जिस ऑप्शन key को कोई फ़िक्स्चर मेथड या मैचर नहीं लेता उसे मना करता है, ताकि JavaScript
+कॉलर का अनसपोर्टेड ऑप्शन डिफ़ॉल्ट पर चलने के बजाय फ़ेल हो।
+
+```ts
+export function rejectUnknownOptions(
+  api: string,
+  options: object | undefined,
+  known: readonly string[],
+  code?: 'INVALID_ARGUMENT' | 'INVALID_LOCATOR', // default: 'INVALID_ARGUMENT'
+): void;
+```
+
+```ts
+rejectUnknownOptions('kiosk.print', options, ['copies']);
+```
+
+- लोकेटर ऑप्शन के लिए `code` में `INVALID_LOCATOR` पास करें।
+- `options` सादा ऑब्जेक्ट या `undefined` होना चाहिए; क्लास इंस्टेंस या ऐरे मना हैं।
+- नॉन-एन्यूमेरेबल अपनी keys भी की मानी जाती हैं।
+
+#### `obj`
+
+`undefined` वैल्यू वाली keys हटाता है, ताकि ऑप्शनल इनपुट्स से बना रिज़ल्ट exact
+optional property types को पूरा करे।
+
+```ts
+obj({ a: 1, b: undefined, c: 3 }); // { a: 1, c: 3 }
+```
+
+#### टाइमिंग हेल्पर्स
+
+```ts
+export function raceAbort<T>(work: Promise<T> | (() => Promise<T>), signal: AbortSignal, label: string): Promise<T>;
+export function withTimeout<T>(promise: Promise<T>, timeoutMs: number, onTimeout: () => Error): Promise<T>;
+export function stepTimeout(timeout: unknown, api: string): number | undefined;
+export function withinCleanupBudget(
+  promise: Promise<unknown>,
+  budget: { readonly signal: AbortSignal; readonly timeoutMs: number },
+): Promise<void>;
+```
+
+```ts
+await raceAbort(() => client.tap(ref.id), context.signal, 'kiosk tap');
+const operation = context.operation(stepTimeout(options?.timeout, 'kiosk.print'));
+```
+
+- `signal` अबॉर्ट होने पर `raceAbort` इंतज़ार छोड़ देता है। डिस्पैच से पहले कैंसलेशन चेक
+  करने के लिए थंक पास करें।
+- `withTimeout` प्रॉमिस की रेस टाइमआउट के साथ कराता है और `onTimeout` जो एरर बनाए वह
+  थ्रो करता है।
+- `stepTimeout` कॉल के अपने `timeout` ऑप्शन को `context.operation` के बजट में बदलता है:
+  `0` टेस्ट टाइमआउट (या `afterEach` में `cleanupTimeout`) तक इंतज़ार करता है, और नेगेटिव,
+  `NaN`, या असीमित वैल्यू पर `INVALID_ARGUMENT` आता है।
+- `withinCleanupBudget` कभी रिजेक्ट नहीं होता। यह प्रॉमिस के सेटल होने (फ़ेलियर समेत),
+  `signal` के अबॉर्ट होने, या `timeoutMs` बीतने पर रिज़ॉल्व हो जाता है।
+
+#### `isSecret`
+
+`secrets.get()` हैंडल को स्ट्रिंग से अलग पहचानता है, ऐसे ऑप्शन के लिए जो दोनों में से कुछ
+भी ले सकता है।
+
+```ts
+const password = isSecret(options.password)
+  ? await context.resolveSecret(options.password)
+  : options.password;
+```
+
+### स्टेट
+
+`test.setup` सेशन और `session:` ऑप्शन के पीछे प्लेटफ़ॉर्म-न्यूट्रल स्टेट कैप्चर और रिस्टोर।
+
+| मेंबर | क्या करता है |
+| --- | --- |
+| `capture(context)` | सरफ़ेस के पर्सिस्टेड स्टेट को `EngineState` के रूप में कैप्चर करता है। |
+| `restore(state, context)` | सरफ़ेस के पूरे पर्सिस्टेड स्टेट को `state` से बदल देता है। |
+
+```ts
+state: {
+  async capture(context) {
+    return { format: 'kiosk-storage', version: 1, data: await client.exportStorage(context) };
+  },
+  async restore(state, context) {
+    await client.replaceStorage(state.data, context);
+  },
+},
+```
+
+<Warning>
+स्नैपशॉट क्रेडेंशियल होते हैं: कुकी, टोकन, और स्टोरेज जो टेस्ट हो रहे ऐप को ऑथेंटिकेट
+करते हैं। इंजन को खुद से स्नैपशॉट सेव, कैश, या लॉग नहीं करना चाहिए, एरर मैसेज में
+स्नैपशॉट का कंटेंट नहीं दोहराना चाहिए, और `restore` को मर्ज के बजाय हमेशा रिप्लेसमेंट की
+तरह करना चाहिए ताकि रिस्टोर किया सेशन अगले अटेम्प्ट में लीक न हो।
+</Warning>
+
+```ts
+/**
+ * An opaque, restorable snapshot of an engine's state. `data` is JSON the
+ * harness never inspects - a document platform's storage state, a device's app state, a
+ * desktop's window state all satisfy it identically. `format`/`version` let a
+ * engine reject a snapshot it can no longer read.
+ */
+export interface EngineState {
+  /** Engine-defined format name. */
+  readonly format: string;
+  /** Format version, for rejecting a snapshot the engine can no longer read. */
+  readonly version: number;
+  /** Opaque JSON the runner never inspects. */
+  readonly data: unknown;
+  /** Earliest moment the state is known to be invalid, if the engine knows one. */
+  readonly expiresAt?: string;
+}
+
+/**
+ * Platform-neutral state capture and restore. A setup test captures a
+ * snapshot; an ordinary test restores it at launch.
+ *
+ * Snapshots are credentials: cookies, tokens, and storage that authenticate
+ * the app under test. The duties split at the seam. The harness owns the
+ * snapshot from the moment `capture` returns: it encrypts it at rest with a
+ * per-run AES-256-GCM key that never touches disk, stores it under the run's
+ * private session directory, binds it to the run, target, engine, and app
+ * identity, and deletes it when the run ends; it never logs it, reports it,
+ * digests it, or sends it to a model. An engine MUST NOT persist, cache, or
+ * log a snapshot on its own, MUST NOT echo snapshot contents in an error
+ * message, and MUST treat `restore` as a replacement of the surface's whole
+ * persisted state, never a merge, so a restored session cannot leak into the
+ * next attempt.
+ */
+export interface EngineStateCapability {
+  /** Captures the surface's persisted state. */
+  capture(context: OperationContext): Promise<EngineState>;
+  /** Replaces the surface's persisted state with `state`. */
+  restore(state: EngineState, context: OperationContext): Promise<void>;
+}
+```
+
+### आर्टिफ़ैक्ट्स
+
+सबूत कैप्चर: अटेम्प्ट डायरेक्टरी के नीचे स्क्रीनशॉट, और वहाँ या किसी प्रोवाइडर पर वीडियो।
+
+| मेंबर | क्या लौटाता है |
+| --- | --- |
+| `screenshot(label, context)` | `Promise<string>` |
+| [`startVideo(context)`](#videos) | `Promise<void>` |
+| [`stopVideo(context)`](#videos) | `Promise<readonly VideoSegment[]>` |
+
+`screenshot` ज़रूरी है और अपनी लिखी फ़ाइल का पाथ लौटाता है।
+
+```ts
+artifacts: {
+  async screenshot(_label, context) {
+    // The label comes from test code, so it never becomes part of the path.
+    shots += 1;
+    const path = `screenshots/${String(shots).padStart(3, '0')}.png`;
+    await client.capture(join(artifactsDir, path), context);
+    return path;
+  },
+},
+```
+
+```ts
+/**
+ * Evidence capture. Paths are relative to the attempt artifact directory the
+ * engine received in `startAttempt`.
+ */
+export interface EngineArtifacts {
+  /** Captures a redacted screenshot; secure fields are masked at the source. */
+  screenshot(label: string | undefined, context: OperationContext): Promise<string>;
+  /**
+   * Starts recording the surface. Declared together with `stopVideo`. An
+   * attempt may start and stop more than once, never overlapping. A surface that has nothing to show yet (no page open) may
+   * defer the actual capture to the moment it does; the segments returned by
+   * `stopVideo` say when each one began.
+   */
+  startVideo?(context: OperationContext): Promise<void>;
+  /**
+   * Stops recording and returns every segment written, in order. One segment
+   * is the common case; a surface whose recording is bound to a page returns
+   * one per page the attempt showed (a restart or a state reset opens a new
+   * one). An attempt that never showed anything returns none.
+   */
+  stopVideo?(context: OperationContext): Promise<readonly VideoSegment[]>;
+}
+
+/**
+ * One recorded video of an attempt: a file the engine wrote into the attempt
+ * artifact directory, or a recording a hosted service keeps and links to.
+ */
+export type VideoSegment = VideoFile | VideoLink;
+
+/** A video file in the attempt artifact directory. */
+export interface VideoFile {
+  /** Path relative to the attempt artifact directory. */
+  readonly path: string;
+  /** When the segment started recording, as an ISO timestamp; its first frame is at or just after it. */
+  readonly startedAt: string;
+}
+
+/** A recording a hosted service keeps, by URL: the report links to it and the runner never downloads it. */
+export interface VideoLink {
+  /** `http(s)` URL of the recording. */
+  readonly url: string;
+  /** Media type of what the URL serves: `video/mp4`, or `text/html` for a player page. */
+  readonly mediaType: string;
+  /** When the recording started, as an ISO timestamp; its first frame is at or just after it. */
+  readonly startedAt: string;
+}
+```
+
+#### वीडियो
+
+रनर उस अटेम्प्ट के लिए `startVideo` कॉल करता है जिसका [वीडियो मोड](/reference/config#video)
+रिकॉर्ड करता है, और हर [`app.startRecording()`](/reference/app#startrecording) के लिए,
+इसलिए एक अटेम्प्ट कई बार शुरू और बंद कर सकता है। अगले स्टार्ट से पहले यह स्टॉप से
+लौटाई गई फ़ाइलों को मूव कर देता है, और जब रिकॉर्डिंग चल रही हो तो कभी नई शुरू नहीं करता।
+
+- `startVideo` `startAttempt` और किसी भी सेशन रिस्टोर के बाद, लॉन्च बजट के अंदर चलता है।
+- `stopVideo` `endAttempt` से पहले, क्लीनअप बजट के अंदर चलता है।
+- जब वीडियो मोड साफ़-साफ़ सेट हो, तो `startVideo` का फ़ेल होना लॉन्च को और `stopVideo` का
+  फ़ेल होना क्लीनअप को फ़ेल करता है। डिफ़ॉल्ट मोड में दोनों में से किसी का भी फ़ेल होना
+  चुपचाप वीडियो छोड़ देता है।
+- रनर तय करता है कि कौन सी रिकॉर्डिंग रखनी हैं और जिन फ़ाइलों को अटेम्प्ट नहीं रखता उन्हें
+  डिलीट कर देता है।
+
+#### प्रोवाइडर रिकॉर्डिंग
+
+जो इंजन किसी होस्टेड सर्विस से ब्राउज़र या डिवाइस लीज़ पर लेता है, वह अपने कैप्चर की जगह
+उस सर्विस से अटेम्प्ट रिकॉर्ड करा सकता है। [`BrowserProvider.record`](/browser#recording-on-the-provider)
+और [`DeviceProvider.record`](/mobile#hosted-devices) इसी तरह काम करते हैं। `e2e/engine`
+साझा शेप और `stopProviderRecording` एक्सपोर्ट करता है, ताकि हर इंजन प्रोवाइडर की
+रिकॉर्डिंग को एक ही तरीके से `VideoSegment` में बदले।
+
+```ts
+async stopVideo(context) {
+  if (recording === undefined) return [];
+  return [await stopProviderRecording(recording, { artifactsDir, provider: 'browser provider "kernel"', leaseId, signal: context.signal })];
+},
+```
+
+- `isProviderRecording(value)` बताता है कि प्रोवाइडर के `record` से जो वैल्यू आई वह
+  रिकॉर्डिंग है या नहीं: पार्स होने लायक `startedAt` और एक `stop`। इसे रखने से पहले चेक
+  करें, ताकि खराब रिकॉर्डिंग स्टॉप के बजाय स्टार्ट पर ही नाम के साथ फ़ेल हो।
+- `stopProviderRecording` अटेम्प्ट की `video` डायरेक्टरी बनाता है और उसके साथ `stop` कॉल
+  करता है। फ़ाइल उस डायरेक्टरी में मौजूद एक सीधा नाम होनी चाहिए; लिंक मीडिया टाइप के साथ
+  `http(s)` URL होना चाहिए।
+- यह `stopVideo` के लौटाने के लिए `{ path: 'video/<file>', startedAt }` या
+  `{ url, mediaType, startedAt }` लौटाता है।
+- टारगेट आर्ग्युमेंट का टाइप `ProviderRecordingTarget` के रूप में एक्सपोर्ट होता है।
+
+| थ्रो करता है | कब |
+| --- | --- |
+| `ENGINE_FAILURE` | `stop` थ्रो करे या कुछ और लौटाए। मैसेज में प्रोवाइडर और लीज़ का नाम होता है। |
+
+```ts
+/** Handed to a provider's `record`, once per attempt that records video. */
+export interface ProviderRecordContext {
+  readonly runId: string;
+  readonly targetName: string;
+  /** The attempt the recording covers. */
+  readonly attemptId: string;
+  /** The run's environment, the same the provider's `acquire` saw. */
+  readonly env: Readonly<Record<string, string | undefined>>;
+  /** Aborts when the attempt is cancelled or its launch budget is spent. */
+  readonly signal: AbortSignal;
+}
+
+/** A recording a provider's service makes of the browser or device it leased, as `record` started it. */
+export interface ProviderRecording {
+  /** When the recording started, as an ISO timestamp; its first frame is at or just after it. */
+  readonly startedAt: string;
+  stop(context: ProviderRecordingStopContext): Promise<ProviderRecordingResult>;
+}
+
+/** Handed to `ProviderRecording.stop`, once per recording. */
+export interface ProviderRecordingStopContext {
+  /** Absolute directory, already created, a recording written as a file goes into. */
+  readonly dir: string;
+  /** Aborts when the cleanup budget is spent. */
+  readonly signal: AbortSignal;
+}
+
+/**
+ * What a stopped recording became: a file the provider wrote into the
+ * directory it was given, by name, or a recording its service keeps, by
+ * `http(s)` URL and media type.
+ */
+export type ProviderRecordingResult =
+  | { readonly file: string }
+  | { readonly url: string; readonly mediaType: string };
+
+export function isProviderRecording(value: unknown): value is ProviderRecording;
+
+export function stopProviderRecording(
+  recording: ProviderRecording,
+  target: {
+    /** Absolute attempt artifact directory; a file recording goes into its `video` directory. */
+    readonly artifactsDir: string;
+    /** The provider as error messages name it: `browser provider "kernel"`. */
+    readonly provider: string;
+    /** The lease the recording covers, named in error messages. */
+    readonly leaseId: string;
+    readonly signal: AbortSignal;
+  },
+): Promise<VideoSegment>;
+```
+
+#### रेडैक्शन
+
+- वीडियो अनमास्क्ड होते हैं और उन पर `redaction: 'incomplete'` होता है।
+- इंजन जो `download` अटैच करता है वे ऐप के बाइट्स होते हैं। जब सेशन को कोई सीक्रेट वैल्यू
+  पता हो, तो रनर टेक्स्ट वाली फ़ाइल (`.txt`, `.csv`, `.json`, `.html`) को लेजर से
+  दोबारा लिखता है और उस पर `complete` लेबल लगाता है।
+- बाकी हर डाउनलोड अपने बाइट्स बनाए रखता है और उस पर `redaction: 'incomplete'` होता है।
+
+### कंट्रीब्यूटेड फ़िक्स्चर्स
+
+इंजन `fixtures` के ज़रिए टेस्ट फ़िक्स्चर्स में नाम वाले सरफ़ेस जोड़ता है। हर key एक
+फ़िक्स्चर और कैपेबिलिटी नाम बनती है। टेस्ट के लिए यह `app` और `screen` के साथ एक
+[बिल्ट-इन फ़िक्स्चर](/reference/test#fixtures) होता है।
+
+```ts title="src/index.ts"
+fixtures: {
+  printer: (context) =>
+    context.fixture(
+      'printer',
+      {
+        async print(text: string): Promise<void> {
+          await client.print(text, context.operation());
+        },
+      },
+      { print: { kind: 'resource', label: (text) => text } },
+    ),
+},
+```
+
+```ts title="tests/receipt.e2e.ts"
+import { test as base } from 'e2e';
+
+const test = base.extend<{ printer: { print(text: string): Promise<void> } }>();
+
+test('prints a receipt', { platforms: ['kiosk'] }, async ({ printer }) => {
+  await printer.print('Order 42');
+});
+```
+
+फ़ैक्ट्री हर अटेम्प्ट में एक बार `EngineFixtureContext` के साथ चलती है:
+
+| मेंबर | काम |
+| --- | --- |
+| `targetName` | वह टारगेट जिसे फ़िक्स्चर सर्व करता है। |
+| [`fixture(name, surface, operations)`](#declaring-operations) | डिक्लेयर करता है कि कौन से मेथड रिकॉर्ड होने वाले स्टेप हैं। |
+| `app` | रिज़ॉल्व किया गया ऐप, साथ में `resolveUrl(url)`। |
+| `timeouts` | `test`, `action`, और `assertion` बजट। |
+| `signal` | चल रहे फ़ेज़ का सिग्नल। इसे हर कॉल पर पढ़ें। |
+| `operation(timeoutMs?)` | पर-कॉल `OperationContext`। |
+| `attachArtifact(kind, relativePath)` | मौजूदा स्टेप की बनाई फ़ाइल रजिस्टर करता है। |
+| `attachViewport(viewport)` | मौजूदा स्टेप से सेट किया गया व्यूपोर्ट दर्ज करता है। |
+| `locator(expression)` | रॉ एक्सप्रेशन से पब्लिक लोकेटर बनाता है। |
+| `screen(scope)` | स्क्रीन स्कोप बनाता है। |
+| [`expectable(target, factory)`](#expectations) | `expect(fixture)` को मैचर्स लौटाने लायक बनाता है। |
+
+| थ्रो करता है | कब |
+| --- | --- |
+| `INVALID_CONFIG` | पहली बार टेस्ट के माँगने पर फ़ैक्ट्री सादा सरफ़ेस लौटाए, न कि `context.fixture` से डिक्लेयर किया हुआ। |
+| `APP_URL_REQUIRED` | बिना URL डिक्लेयर करने वाले टारगेट पर `app.resolveUrl`। |
+| `POLICY_DENIED` | `http:` और `https:` (`about:blank` छोड़कर) के अलावा किसी स्कीम के साथ `app.resolveUrl`। |
+
+```ts
+/**
+ * A contributed fixture: any record of async methods, sync accessors, and
+ * nested namespaces, declared through context.fixture so its metadata controls
+ * labels, deadlines and verification. The factory must return the declared
+ * surface; a plain one is rejected with INVALID_CONFIG.
+ */
+export type EngineFixtureFactory = (context: EngineFixtureContext) => object;
+
+/** Context handed to a contributed fixture factory, once per attempt. */
+export interface EngineFixtureContext {
+  /** The target the fixture serves. */
+  readonly targetName: string;
+  /** Records the declared operations before invoking them; undeclared accessors retain their identity. */
+  fixture<T extends object>(name: string, surface: T, operations: FixtureOperations<T>): T;
+  readonly app: EngineAppInfo & {
+    /**
+     * Resolves a navigation target against the base URL. Throws
+     * `APP_URL_REQUIRED` when the target declares no URL and `POLICY_DENIED`
+     * for any scheme but `http:` and `https:` (`about:blank` aside), so a
+     * fixture never re-implements the rule the harness owns.
+     */
+    resolveUrl(url: string): string;
+  };
+  /** Harness budgets, for fixtures that poll or navigate. */
+  readonly timeouts: {
+    readonly test: number;
+    readonly action: number;
+    readonly assertion: number;
+  };
+  /**
+   * The running phase's signal: the attempt's through `beforeEach` and the
+   * body, then a fresh one per `afterEach` hook so teardown can still drive
+   * the app after a body timeout. Read it per call; a fixture factory that
+   * captures it once keeps a signal that is dead by teardown.
+   */
+  readonly signal: AbortSignal;
+  /** Per-call operation budget: the action timeout (or an explicit one) plus the attempt signal. */
+  operation(timeoutMs?: number): OperationContext;
+  /** Registers a file the current step produced under the attempt artifact directory. */
+  attachArtifact(
+    kind: 'screenshot' | 'video' | 'download' | 'log',
+    relativePath: string,
+  ): void;
+  /** Records the viewport the current step established. */
+  attachViewport(viewport: { width: number; height: number; scale: number }): void;
+  /** Mints a public locator from a raw expression (a platform selector, say). */
+  locator(expression: LocatorExpression): Locator;
+  /** Mints a screen scope whose every query is wrapped by `scope` (a nested document, say). */
+  screen(scope: (expression: LocatorExpression) => LocatorExpression): Screen;
+  /**
+   * Attaches an expectation surface to a fixture object so `expect(fixture)`
+   * returns it. The harness records every matcher call as an assertion step
+   * named `expect.<matcher>`; the factory only decides what the matchers mean.
+   */
+  expectable<T extends object, E extends object>(target: T, factory: () => E): T & Expectable<E>;
+}
+```
+
+#### फ़िक्स्चर आइसोलेशन
+
+`isolation` डिक्लेयर करता है कि एक अटेम्प्ट जो करता है वह अगले के लिए बचा रहता है या
+नहीं। यह इंजन के बिल्ट-इन फ़िक्स्चर्स (जो वह कंट्रीब्यूट करता है, `app`, और `screen`) का
+स्कोप तय करता है।
+
+```ts
+defineEngine({ name: 'device', /* ... */ isolation: 'worker' });
+```
+
+| वैल्यू | मतलब | फ़िक्स्चर स्कोप |
+| --- | --- | --- |
+| `'attempt'` (डिफ़ॉल्ट) | `startAttempt` हर अटेम्प्ट को ताज़ा सरफ़ेस देता है, जैसे ब्राउज़र कॉन्टेक्स्ट। | टेस्ट फ़िक्स्चर। `beforeAll` और `afterAll` इन्हें नहीं पढ़ सकते। |
+| `'worker'` | अटेम्प्ट जो करता है वह बचा रहता है। डिवाइस परमिशन और इंस्टॉल ऐप्स बनाए रखता है। | [वर्कर फ़िक्स्चर](/reference/test#worker-fixtures)। `beforeAll`, `afterAll`, और वर्कर फ़िक्स्चर इन्हें पाते हैं। |
+
+`@e2e-dev/mobile` `'worker'` डिक्लेयर करता है। ऐसे इंजन पर:
+
+- सूट हुक्स का हर पास अपने छोटे अटेम्प्ट (`startAttempt`, फिर `endAttempt`) में चलता है।
+  वर्कर खत्म होने पर वर्कर फ़िक्स्चर्स के टियरडाउन भी ऐसे ही चलते हैं। `startAttempt` को
+  ऐसा बनाएँ कि वह कुछ लॉन्च न करे।
+- सीरियल ग्रुप में, या `e2e mcp` सेशन से चलाए जाने वाले टेस्ट में, हुक पहले से खुले
+  अटेम्प्ट पर चलते हैं। इंजन एक बार में एक अटेम्प्ट चलाता है।
+- जब अटेम्प्ट न खुल पाए, या रन इंटरप्ट हो गया हो, तो हुक उन बिल्ट-इन फ़िक्स्चर्स के बिना
+  चलते हैं। [`beforeAll`](/reference/test#beforeall) देखें।
+
+```ts
+/**
+ * What one attempt on an engine leaves for the next. `attempt`: nothing,
+ * `startAttempt` gives each attempt a fresh surface (a browser context), so
+ * the engine's fixtures, `app`, and `screen` are test fixtures, and a suite
+ * hook cannot use them. `worker`: what an attempt does stays (a device keeps
+ * permissions, keychain, and installed apps), so they are worker fixtures,
+ * which `beforeAll`, `afterAll`, and worker-scoped `test.extend()` fixtures
+ * see; a suite hook runs in a short attempt of its own for them.
+ */
+export type EngineIsolation = 'attempt' | 'worker';
+```
+
+#### ऑपरेशन डिक्लेयर करना
+
+`context.fixture(name, surface, operations)` डिक्लेयर करता है कि कौन से मेथड रिकॉर्ड
+होने वाले स्टेप हैं। हर ऑपरेशन में ये फ़ील्ड होते हैं:
+
+| फ़ील्ड | वैल्यूज़ | डिफ़ॉल्ट |
+| --- | --- | --- |
+| `kind` | `'resource'` या `'assertion'` | ज़रूरी |
+| `label` | `(...args) => string` | कोई नहीं |
+| `timeout` | मिलीसेकंड, आर्ग्युमेंट्स का फ़ंक्शन, या `false` जब मेथड अपनी डेडलाइन खुद संभाले | `actionTimeout` |
+| `verifies` | `boolean` | असर्शन के लिए `true` |
+
+- नेस्टेड मैप नेमस्पेस बताते हैं।
+- रिकॉर्डिंग ऑब्जेक्ट को उसी जगह डेकोरेट करती है, इसलिए हर फ़ैक्ट्री कॉल में नया सरफ़ेस
+  बनाएँ।
+- रनर डिक्लेयर किए मेथड को कॉल करने से पहले स्टेप खोलता है, ताकि सिंक्रोनस और असिंक्रोनस
+  काम के अटैचमेंट और फ़ेलियर एक ही स्टेप पर आएँ। स्टेप बंद होने के बाद आने वाला काम किसी
+  बाद वाले स्टेप से नहीं जुड़ सकता।
+- फ़िक्स्चर को `test.extend<{ name: Type }>()` से टाइप करें।
+
+```ts
+/** Explicit recording policy for one async fixture method. Arguments enter reports only through label. */
+export interface FixtureOperation<Args extends unknown[] = unknown[]> {
+  readonly kind: 'resource' | 'assertion';
+  readonly label?: (...args: Args) => string;
+  /** Action timeout by default; false when the method owns its assertion/navigation deadline. */
+  readonly timeout?: number | false | ((...args: Args) => number | undefined);
+  /** Assertions verify by default; waits may opt in as well. */
+  readonly verifies?: boolean;
+}
+
+/** Only declared async methods are recorded. Sync accessors pass through unchanged. */
+export type FixtureOperations<T extends object> = {
+  readonly [Key in keyof T]?: T[Key] extends (...args: infer Args) => Promise<unknown>
+    ? FixtureOperation<Args>
+    : T[Key] extends object ? FixtureOperations<T[Key]> : never;
+};
+```
+
+#### एक्सपेक्टेशंस
+
+`expectable` एक एक्सपेक्टेशन सरफ़ेस जोड़ता है ताकि `expect(fixture)` उसे लौटाए।
+`context.fixture('expect', matchers, operations)` से मैचर रिकॉर्डिंग डिक्लेयर करें।
+
+```ts
+const printer = context.expectable(surface, () =>
+  context.fixture('expect', matchers, { toHavePrinted: { kind: 'assertion' } }),
+);
+return context.fixture('printer', printer, { print: { kind: 'resource' } });
+```
+
+## टाइप
+
+### एक्सपोर्टेड नाम
+
+`EngineCleanupContext`, `EngineDisposeContext`, `OperationContext`,
+`TextPattern`, `SemanticQuery`, `LocatorExpression`,
+`NodeRef`, `SemanticNode`, `ViewportPoint`, `ViewportSize`,
+`ObservationPixels`, `LocatorAction`, `LocatorActionKind`, `PointerAction`,
+`PointerActionKind`, `ScrollDirection`, `Momentum`, `SelectOption`, `Key`,
+`KeyModifier`, `KeyName`, `ParsedKey`, `ENGINE_SPI_VERSION`,
+`LOCATOR_ACTION_KINDS`, `KNOWN_LOCATOR_ACTION_KINDS`, `POINTER_ACTION_KINDS`, `KEY_MODIFIERS`,
+`KEY_NAMES`, `parseKey`, `ENGINE_ERROR_CODES`, `RETRYABLE_ENGINE_ERROR_CODES`,
+`Secret`, `isSecret`, `TextMatch`, `JsonValue`, `JsonValueRules`,
+`ResolveExpressionOptions`, `PollConditionOptions`, `WithoutUndefined`,
+`FixtureOperation`, `EngineIsolation`, `OBSERVED_NAME_LIMIT`, और `OBSERVED_TEXT_LIMIT`
+`e2e/engine` से एक्सपोर्ट होते हैं। [इंजन प्रोटोकॉल](/reference/engine-protocol) के
+`connectEngine`, `serveEngine`, `describeEngine`, `spawnTransport`, `socketTransport`,
+`loopbackTransport`, `ENGINE_METHODS`, `ENGINE_PROTOCOL_VERSION`, और उनके टाइप भी
+एक्सपोर्ट होते हैं।
+
+### `SemanticNode`
+
+```ts
+/** One node of an observation tree. */
+export interface SemanticNode {
+  /** Node reference, valid against the observation it came from. */
+  readonly ref: NodeRef;
+  /** Semantic role. */
+  readonly role?: string;
+  /** Accessible name, cut at `OBSERVED_NAME_LIMIT`. */
+  readonly name?: string;
+  /** Visible text, cut at `OBSERVED_TEXT_LIMIT`. */
+  readonly text?: string;
+  /** Current input value; never reported for a secure field. */
+  readonly value?: string;
+  /**
+   * Text selected inside the node, for the focused field or editing host
+   * whose selection the platform reports; absent when the selection is
+   * collapsed, and never reported for a secure field. Cut at `OBSERVED_TEXT_LIMIT`.
+   */
+  readonly selection?: string;
+  /**
+   * The node's test id, when the platform gives it one: the value of the
+   * project's test-id attribute on a document platform, an accessibility
+   * identifier on iOS, a resource id on Android, an automation id on a
+   * desktop. The `testId` query resolves against this field, so the harness
+   * never knows where a platform keeps it. An engine may also match the id
+   * without its platform's namespacing.
+   */
+  readonly testId?: string;
+  /** What a field takes, deciding which secrets may fill it. */
+  readonly inputPurpose?: 'username' | 'password' | 'one-time-code' | 'generic-secret' | 'none';
+  /**
+   * Boolean states the platform reports. `pressed` is a toggle button's
+   * pressed state; `secure` marks a field whose value is never observed.
+   * `readonly` is present only on a node that has a read-only state, as
+   * Playwright's `getReadonly` decides on the web (an input, textarea, or
+   * select by its `readonly` attribute, an element whose ARIA role takes
+   * `aria-readonly` by that attribute, any other editing host `false`), and
+   * only where the platform knows, as Android does: absent means the node has
+   * no read-only state to read, not `false`. `empty` is whether the node
+   * holds nothing, as Playwright's `toBeEmpty` reads it on the web (an input or
+   * textarea by its raw value, any other element by its trimmed text content),
+   * and on a device a text field by its value, any other node by the text
+   * and values in its subtree. An engine reports it on the nodes `locate`
+   * returns, never in an observation, and never on a secure field: absent
+   * means the engine does not say.
+   */
+  readonly states?: Readonly<
+    Partial<
+      Record<
+        | 'checked'
+        | 'disabled'
+        | 'selected'
+        | 'expanded'
+        | 'pressed'
+        | 'focused'
+        | 'hidden'
+        | 'secure'
+        | 'readonly'
+        | 'empty',
+        boolean
+      >
+    >
+  >;
+  /** Heading level of a heading node (`1` through `6` on a document platform); absent elsewhere. */
+  readonly level?: number;
+  /** Platform attributes, what `getAttribute` reads. */
+  readonly attributes?: Readonly<Record<string, string>>;
+  /**
+   * The node's box in the top-level viewport's CSS pixels (`ViewportPoint`
+   * space), for every node, including those inside nested documents: an
+   * engine that measures a child document against its own viewport shifts
+   * the boxes by the boundary element's before reporting them.
+   */
+  readonly rect?: {
+    readonly x: number;
+    readonly y: number;
+    readonly width: number;
+    readonly height: number;
+  };
+  /**
+   * The point an offset into the node is measured from, in `rect`'s space,
+   * when it is not `rect`'s top-left corner: a document element's padding
+   * box, inside its border, or the corner of a box a frame clipped `rect`
+   * from. `tap({ position })` adds the offset to it.
+   */
+  readonly origin?: ViewportPoint;
+  /**
+   * Platform selector that addresses this node within its own document, when
+   * the platform has one. It is structural, not semantic: it survives the
+   * content changes that rename a node, and a runner may store it to re-find
+   * the node cheaply on a later run. It is never part of the node's identity,
+   * so whatever it resolves to is still checked before it is used.
+   *
+   * It SHOULD be anchored on an attribute naming the node or one of its
+   * ancestors, and SHOULD be absent rather than positional all the way to the
+   * document root: such a path is shifted by anything inserted above the node,
+   * so it does not survive to the later run it exists for.
+   */
+  readonly selector?: string;
+  /**
+   * Enclosing nested-document chain as selectors of each boundary node,
+   * outermost first. Absent for nodes in the main document.
+   */
+  readonly framePath?: readonly string[];
+  /** Child nodes. */
+  readonly children?: readonly SemanticNode[];
+}
+```
+
+### ऑब्ज़र्व्ड फ़ील्ड सीमाएँ
+
+| कॉन्स्टैंट | वैल्यू | किसे काटता है |
+| --- | --- | --- |
+| `OBSERVED_NAME_LIMIT` | 256 | `name` |
+| `OBSERVED_TEXT_LIMIT` | 512 | `text`, और कोई भी `value` या `selection` जिसे इंजन काटे |
+
+- जो इंजन ऑब्ज़र्व्ड फ़ील्ड काटता है, वह उसे ठीक उसकी सीमा पर काटता है। ठीक सीमा पर
+  खत्म होने वाला फ़ील्ड कटा हुआ हो सकता है; उससे छोटा, या उससे लंबा जिसे इंजन ने पूरा
+  छोड़ दिया, वह पूरा होता है।
+- शुरुआत रखें और अंत काटें: रनर किसी सीक्रेट के शुरुआती हिस्से को छिपाता है जिस पर
+  सीमा तक पहुँचा फ़ील्ड खत्म होता है, जिसे पूरे-वैल्यू का मैच नहीं देख सकता।
+- सिंगल-नोड रीड असीमित होते हैं और हमेशा पूरी वैल्यू लाते हैं।
+
+### क्वेरीज़
+
+`selector` एक्सप्रेशन काइंड प्लेटफ़ॉर्म-नेटिव सेलेक्टर स्ट्रिंग रखता है; `frame` क्वेरी को
+किसी नेस्टेड डॉक्यूमेंट के अंदर सीमित करता है।
+
+```ts
+/** The `screen` query kinds. */
+export type QueryKind = 'role' | 'label' | 'placeholder' | 'text' | 'displayValue' | 'testId';
+```
+
+`visible: true` वाली `SemanticQuery` को सिर्फ़ उन्हीं नोड्स से मैच करना चाहिए जिनका
+`states.hidden` `false` हो। वही प्रेडिकेट इस्तेमाल करें जिसे इंजन `SemanticNode` पर
+रिपोर्ट करता है, ताकि `getByText('x', { visible: true })` और `toBeVisible()` कभी आपस
+में अलग न हों। इसे वहाँ भी लागू करें जहाँ क्वेरी एक्सप्रेशन में कहीं भी हो, स्कोप, फ़िल्टर,
+या इंडेक्स के नीचे भी।
+
+## संबंधित
+
+[इंजन](/engines) इन्हें बनाने के तरीकों की तुलना करता है।
+[इंजन लिखना](/writing-an-engine) `defineEngine` के बारे में विस्तार से बताता है, और
+[इंजन सर्वर्स](/engine-servers) किसी दूसरे प्रोसेस, मशीन, या भाषा में इंजन चलाता है।
+`@e2e-dev/web` ([रेफ़रेंस](/reference/web)) और `@e2e-dev/mobile`
+([रेफ़रेंस](/reference/mobile)) इसी पब्लिक `defineEngine` के साथ इस कॉन्ट्रैक्ट को लागू
+करते हैं।

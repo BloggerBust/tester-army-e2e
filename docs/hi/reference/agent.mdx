@@ -1,0 +1,833 @@
+---
+title: agent
+description: एजेंट एक्शन चलाएँ, कंडीशन जाँचें, और स्ट्रक्चर्ड डेटा निकालें।
+"og:image": "https://e2e.com/docs/images/og/reference/agent.png?v=9a239b0466"
+"twitter:image": "https://e2e.com/docs/images/og/reference/agent.png?v=9a239b0466"
+---
+
+`agent` फ़िक्स्चर ऐप पर नेचुरल-लैंग्वेज स्टेप चलाता है: `act` ऐप से इंटरैक्ट
+करता है, `assert` मौजूदा स्क्रीन जाँचता है, `waitFor` किसी कंडीशन के पूरे होने
+का इंतज़ार करता है, और `extract` स्ट्रक्चर्ड डेटा पढ़ता है। हर कॉल का अपना
+टाइमआउट और मॉडल-कॉल बजट होता है।
+
+```ts title="tests/team.e2e.ts"
+import { test } from 'e2e';
+
+test('invite a teammate', async ({ agent }) => {
+  await agent.act('invite {email} as an editor', { params: { email: 'ada@example.test' } });
+  await agent.waitFor('the members list shows ada@example.test');
+  await agent.assert('ada@example.test is listed as an editor');
+});
+```
+
+बिल्ट-इन एजेंट को एक कॉन्फ़िगर किया हुआ मॉडल चाहिए। इसके बिना, `agent` फ़िक्स्चर
+पहली बार लेने पर रन-लेवल का एक `MODEL_UNAVAILABLE` रिकॉर्ड होता है और रन रुक
+जाता है (exit 2)। [कस्टम एक्ज़ीक्यूटर](/executors) बिना मॉडल के `act` और
+`assert` चला सकते हैं; `waitFor` और `extract` को तब भी मॉडल चाहिए।
+
+## रेफ़रेंस
+
+| मेथड | रिटर्न |
+| --- | --- |
+| [`agent.act`](#agent-act) | `Promise<ActResult>` |
+| [`agent.assert`](#agent-assert) | `Promise<void>` |
+| [`agent.waitFor`](#agent-waitfor) | `Promise<void>` |
+| [`agent.extract`](#agent-extract) | `Promise<InferOutput<Schema>>` |
+
+सिग्नेचर [टाइप](#types) में हैं। [बजट](#budgets) में हर मेथड का डिफ़ॉल्ट
+टाइमआउट, मॉडल कॉल, एक्शन स्टेप, और उन्हें कम करने के नियम दिए हैं। हर मेथड
+`agent` ऑप्शन लेता है: यह किसी कॉन्फ़िगर किए गए एजेंट (`agents.<name>`) का नाम
+है, जो टेस्ट के एजेंट की जगह सिर्फ़ उस एक कॉल को चलाता है।
+
+### agent.act
+
+एक तय सीमा के अंदर मल्टी-एक्शन फ़्लो की योजना बनाकर उसे चलाता है। पास होने वाला
+फ़ैसला `ActResult` के साथ रिज़ॉल्व होता है। फ़ेल या ब्लॉक्ड फ़ैसला एक
+[`AgentError`](#agenterror) थ्रो करता है, जिसके `code` और `blocked` फ़्लैग कारण
+बताते हैं।
+
+```ts
+await agent.act('invite {email} as an editor', { params: { email: 'ada@example.test' } });
+
+const member = credentials.user('member');
+const { summary, cache } = await agent.act('Sign in', {
+  params: { username: member.username, password: member.password },
+});
+```
+
+- NFC नॉर्मलाइज़ेशन के बाद `instruction` 1 से 8192 UTF-8 बाइट का होता है।
+- [`ActResult`](#types) में स्टेप की `summary`, खर्च हुए `modelCalls` और
+  `actions`, और `cache` होता है: यानी [रीप्ले कैश](/cache) ने इसमें कैसे हिस्सा
+  लिया।
+- एजेंट [एक्शन टूल](#action-tools) से काम करता है और
+  [पिक्सल टूल](#pixel-tools-screenshot-and-the-point-verbs) से खुद स्क्रीनशॉट
+  माँगता है।
+
+| ऑप्शन | टाइप | डिफ़ॉल्ट |
+| --- | --- | --- |
+| `params` | `AgentParams` | कोई नहीं |
+| `timeout` | `number` | `config.timeout`, 120000 |
+| `maxSteps` | `number` | `agents.<name>.maxSteps`, 25 |
+| `maxModelCalls` | `number` | `agents.<name>.maxModelCalls`, 25 |
+| `agent` | `string` | टेस्ट का एजेंट |
+| `onAction` | [`ActionHook`](#types) | कोई नहीं |
+| `onBeforeAction` | [`BeforeActionHook`](#types) | कोई नहीं |
+
+`params` की वैल्यू आपके कोड से आती हैं, मॉडल से नहीं। जो वैल्यू हर रन में
+बदलती है, उसे [`unique()`](#unique) में रैप करें। मॉडल को `Secret` का सिर्फ़
+नाम और मकसद दिखता है। उसे भरने से पहले रनर मॉडल की चुनी हुई फ़ील्ड जाँचता है:
+वह इनेबल्ड एडिटेबल इनपुट होनी चाहिए, और पासवर्ड के लिए पासवर्ड फ़ील्ड होनी
+चाहिए। `locator.fill` ऐसी कोई जाँच नहीं करता, क्योंकि फ़ील्ड आपके कोड ने चुनी
+है।
+
+`onAction` स्टेप के हर पूरे हुए एक्शन के बाद, स्क्रीन सेटल होने पर, और अगले
+एक्शन से पहले चलता है। इसमें वे एक्शन भी शामिल हैं जिन्हें [रीप्ले कैश](/cache)
+रीप्ले करता है। स्टेप इसके पूरा होने का इंतज़ार करता है, और इसका समय `timeout`
+में गिना जाता है। इसे सिर्फ़ देखने के लिए इस्तेमाल करें, ऐप चलाने के लिए नहीं।
+अगर यह थ्रो करता है, तो स्टेप ऐसे मैसेज के साथ फ़ेल होता है जो
+`agent.act onAction failed` से शुरू होता है। इसके अंदर की कोई जाँच स्टेप की रिकॉर्डिंग को
+कन्फ़र्म नहीं करती।
+
+```ts
+await agent.act('open settings and turn on dark mode', {
+  onAction: ({ index, action }) => app.screenshot(`${index} ${action}`),
+});
+```
+
+किसी एक्शन की डिटेल पढ़ने के लिए `event.action` पर नैरो करें: `tapAt` और
+`hoverAt` के लिए `point`, `dragAt` के लिए `from` और `to`। पॉइंट उसी कोऑर्डिनेट
+स्पेस में होते हैं जिसमें `screen.tapAt` और `boundingBox()` होते हैं, राउंड किए
+हुए और व्यूपोर्ट के अंदर क्लैम्प किए हुए। रीप्ले वे पॉइंट रिपोर्ट करता है जो वह
+मौजूदा स्क्रीन पर डिस्पैच करता है। मोबाइल इंजन में `hoverAt` या `dragAt` नहीं
+होते।
+
+```ts
+await agent.act('move the pin to Warsaw', {
+  onAction: (event) => {
+    if (event.action === 'dragAt') console.log(event.from, event.to);
+  },
+});
+```
+
+`onBeforeAction` हर एक्शन से पहले चलता है, रीप्ले किए गए एक्शन के लिए भी, और उसे
+वही `index` मिलता है जो उस एक्शन के `onAction` को मिलता है। इसे उस स्क्रीन को
+कैप्चर करने के लिए इस्तेमाल करें जिस पर एक्शन शुरू हुआ था। स्टेप इसका इंतज़ार
+करता है, और यह पहले स्क्रीन के सेटल होने का इंतज़ार नहीं करता। अगर यह थ्रो करता
+है, तो एक्शन चलने से पहले ही स्टेप फ़ेल हो जाता है, और मैसेज
+`agent.act onBeforeAction failed` से शुरू होता है। इसके बाद भी एक्शन फ़ेल हो सकता है, और तब
+`onAction` कॉल नहीं होता।
+
+```ts
+await agent.act('open settings and turn on dark mode', {
+  onBeforeAction: ({ index }) => app.screenshot(`before ${index}`),
+});
+```
+
+फ़ेल फ़ैसले का कोड `ACTION_FAILED` होता है, जब तक एक्ज़ीक्यूटर कोई ज़्यादा खास
+कोड न दे, जैसे `LOCATOR_NOT_FOUND` या `AUTHENTICATION_FAILED`। ब्लॉक्ड फ़ैसले का
+मतलब है कि स्टेप प्रोडक्ट फ़ैसले तक नहीं पहुँच पाया। इसमें इनमें से कोई एक कोड
+होता है:
+
+| किस वजह से ब्लॉक्ड | कोड |
+| --- | --- |
+| क्रेडेंशियल | `AUTH_CREDENTIAL_UNAVAILABLE`, `AUTH_CREDENTIAL_INVALID`, `SECRET_UNAVAILABLE` |
+| एनवायरनमेंट | `ENVIRONMENT_UNAVAILABLE`, `APP_UNREACHABLE`, `APP_ALREADY_RUNNING` |
+| सीड डेटा | `SEED_DATA_MISSING` |
+| टेस्ट सेटअप | `TEST_SETUP_FAILED`, `APP_NOT_OPEN`, `POLICY_DENIED` |
+| ऑटोमेशन | `MODEL_UNAVAILABLE`, `AUTOMATION_UNSUPPORTED`, `STEP_BUDGET_EXHAUSTED`, `STEP_TIMEOUT`, `CONTEXT_OVERFLOW`, `MODEL_REFUSED` |
+
+रनर खुद कब रुकता है, और कॉल पर होने वाली जाँचें:
+
+| क्या थ्रो होता है | कब |
+| --- | --- |
+| `STEP_BUDGET_EXHAUSTED`, `STEP_TIMEOUT` | बजट या डेडलाइन खत्म हो गई। |
+| `CANCELLED` | रनर ने स्टेप कैंसल कर दिया। |
+| `STEP_NO_CONCLUSION` | बिना किसी नतीजे के टर्न खत्म हो गए। |
+| `CONTEXT_OVERFLOW` | रिक्वेस्ट मॉडल की कॉन्टेक्स्ट विंडो से बड़ी हो गई। |
+| `MODEL_REFUSED` | मॉडल ने रिक्वेस्ट मानने से मना कर दिया। |
+| `MODEL_PROVIDER_FAILED` | रीट्राई के बाद भी प्रोवाइडर का ट्रांसपोर्ट फ़ेल रहा। |
+| `MODEL_OUTPUT_INVALID` | फ़ैसला ग्रामर के बाहर था। |
+| `REPLAY_STALE` | स्ट्रिक्ट कैश मोड में स्टेप की रिकॉर्डिंग अब रीप्ले नहीं होती। |
+| `INVALID_ARGUMENT` | गलत `instruction`, लिमिट से बड़े `params`, अनजान ऑप्शन, `onAction` या `onBeforeAction` का फ़ंक्शन न होना, या कॉन्फ़िगर लिमिट से बड़ा बजट। अनजान `agent` नाम स्टेप खुलने से पहले ही फ़ेल हो जाता है। |
+| `UNSUPPORTED_CAPABILITY` | `schema` या `vision`, जिन्हें `act` नहीं लेता। |
+
+### agent.assert
+
+डिफ़ॉल्ट रूप से बिना पोलिंग किए एक ताज़ा ऑब्ज़र्वेशन जाँचता है।
+
+```ts
+await agent.assert('the dashboard shows a trial badge');
+await agent.assert('the table lists {name}', { params: { name } });
+```
+
+- जज मॉडल को असर्शन, उसके `params`, मौजूदा ऑब्ज़र्वेशन उसकी लोकेशन के साथ, और
+  एजेंट का `context` दिखता है, पिछले स्टेप या `act` की समरी कभी नहीं दिखती। वह
+  `holds`, `fails`, या `inconclusive` जवाब देता है।
+- जब विषय एक से ज़्यादा जगह दिखे, जैसे समरी में टोटल और पे बटन पर टोटल, तो हर
+  जगह की बात मेल खानी चाहिए: एक भी जगह उलट बात हो तो असर्शन फ़ेल होता है। सिर्फ़
+  एक जगह परखने के लिए उसका नाम लिखें (`the order summary total is $42.00`)।
+- किसी एक आइटम के बारे में दावा, जैसे `a todo is marked done`, तब सही माना जाता
+  है जब कोई एक आइटम मैच करे।
+
+| ऑप्शन | टाइप | डिफ़ॉल्ट |
+| --- | --- | --- |
+| `explore` | `boolean` | `false` |
+| `maxSteps` | `number`, `explore` ज़रूरी है | min(10, कॉन्फ़िगर लिमिट) |
+| `maxModelCalls` | `number`, `explore` ज़रूरी है | min(6, कॉन्फ़िगर लिमिट) |
+| `params` | `AgentParams` | कोई नहीं |
+| `timeout` | `number` | `agents.<name>.judgmentTimeout`, 30000 |
+| `screenshot` | `boolean` | `true` |
+| `vision` | [`VisionMode`](#vision) | `false` |
+| `agent` | `string` | टेस्ट का एजेंट |
+
+`screenshot` तय करता है कि परख के बाद (पास हो या फ़ेल) सबूत के तौर पर स्क्रीनशॉट
+अटैच होगा या नहीं। `vision` तय करता है कि परख से पहले मॉडल को क्या दिखाया जाएगा।
+`screenshot: false` होने पर कोई सबूत कैप्चर नहीं होता।
+
+`params` [`agent.act`](#agent-act) के नियमों पर चलते हैं, और गलत `params` पर
+`INVALID_ARGUMENT` थ्रो होता है। `Secret` पैराम जज मॉडल तक सिर्फ़ अपने नाम से
+पहुँचता है, उसकी वैल्यू कभी नहीं जाती। स्क्रीन पर किसी सीक्रेट की वैल्यू जाँचने
+के लिए लोकेटर असर्शन इस्तेमाल करें।
+
+| क्या थ्रो होता है | कब |
+| --- | --- |
+| `ASSERTION_FAILED` | परख का नतीजा गलत निकला। |
+| `ASSERTION_INCONCLUSIVE` | स्क्रीन पर फ़ैसला करने के लिए पर्याप्त जानकारी नहीं थी। |
+
+दोनों में वजह का ब्यौरा और, इजाज़त होने पर, स्क्रीनशॉट का पाथ होता है। सिर्फ़
+ट्री देखकर मिली अनिर्णीत परख अपने मैसेज में एक विज़न हिंट जोड़ती है:
+
+- यह हिंट कहता है `pass vision: true when the answer is in pixels`। जब तक
+  अटेम्प्ट के किसी स्टेप को पिक्सल नहीं मिले होते, यह शर्त के साथ लिखा होता है
+  (`if the engine captures pixels, ...`)।
+- जब इंजन स्क्रीनशॉट कैप्चर डिक्लेयर नहीं करता, या पिछले किसी स्टेप की पिक्सल
+  रिक्वेस्ट डिग्रेड हो गई थी, तो कोई हिंट नहीं जुड़ता: तब `vision: true` कोई नया
+  सबूत नहीं जोड़ सकता।
+
+<Note>
+कस्टम `StepExecutor` असर्शन को खुद परखता है, और `assert` में बिना किसी विज़न
+हिंट के सिर्फ़ एक्ज़ीक्यूटर का ब्यौरा रहता है। यह `screenshot` ऑप्शन मानता है,
+क्योंकि वह सबूत रनर फ़ैसले के बाद लेता है। जब एक्ज़ीक्यूटर `vision: true`
+डिक्लेयर करता है, तो उसे `vision` `step.vision` के रूप में मिलता है; वरना
+`vision` पर `UNSUPPORTED_CAPABILITY` मिलता है। इसका बजट और टाइमआउट
+[बजट](#budgets) में देखें।
+</Note>
+
+#### व्यूपोर्ट एक्सप्लोरेशन
+
+`explore: true` के साथ `agent.assert` मौजूदा स्क्रीन स्क्रॉल करके कई व्यूपोर्ट
+से सबूत जोड़ सकता है। यह तब काम आता है जब कोई लिस्ट टैबलेट पर एक स्क्रीन में आ
+जाती है लेकिन फ़ोन पर स्क्रॉल करनी पड़ती है।
+
+```ts
+await agent.assert('Settings lists HOS Settings, Account, Language and Theme', {
+  explore: true,
+  maxSteps: 10,
+  maxModelCalls: 6,
+});
+```
+
+एक्सप्लोरेशन `observe`, `scroll`, `scroll_to`, और `mutates: false` डिक्लेयर किए
+गए प्रोजेक्ट टूल देता है। जब `vision` `true` या `'only'` हो, तो बिल्ट-इन
+एक्ज़ीक्यूटर `screenshot` भी देता है; डिफ़ॉल्ट सिर्फ़ ट्री है। बाकी एक्शन रिजेक्ट
+हो जाते हैं। एक्सप्लोरेशन जहाँ खत्म होता है, व्यूपोर्ट वहीं रहता है।
+
+डिफ़ॉल्ट 10 स्क्रॉल एक्शन और 6 मॉडल कॉल हैं, और दोनों चुने गए एजेंट की कॉन्फ़िगर
+लिमिट तक सीमित होते हैं। ओवरराइड 10/6 के डिफ़ॉल्ट से ज़्यादा हो सकते हैं, लेकिन
+कॉन्फ़िगर लिमिट से ऊपर नहीं। डेडलाइन डिफ़ॉल्ट रूप से `judgmentTimeout` होती है।
+`explore: true` के बिना `maxSteps` या `maxModelCalls` देने पर `INVALID_ARGUMENT`
+थ्रो होता है। बिल्ट-इन एक्ज़ीक्यूटर `agents.<name>.model` इस्तेमाल करता है, भले ही
+`judge` कॉन्फ़िगर किया गया हो।
+
+उलट बात मिलने पर `ASSERTION_FAILED` आता है; समय या एक्शन/मॉडल बजट के अंदर
+पर्याप्त सबूत न मिलने पर `ASSERTION_INCONCLUSIVE` आता है।
+
+समय के साथ बदलने वाली कंडीशन के लिए `waitFor` इस्तेमाल करें, और मौजूदा स्क्रीन
+पर कहीं और मौजूद कंटेंट के लिए `explore`।
+
+### agent.waitFor
+
+नेचुरल-लैंग्वेज कंडीशन को तब तक पोल करता है जब तक परख सही न हो जाए।
+
+```ts
+await agent.waitFor('the upload progress reports completion', { interval: 500 }); // default: 3000
+```
+
+- यह तुरंत ऑब्ज़र्व करके परखता है, और पहली सही परख पर पास हो जाता है।
+- गलत या अनिर्णीत परख के बाद यह बिना मॉडल कॉल किए हर 500 ms पर (या अगर
+  `interval` छोटा हो, तो हर `interval` पर) ऑब्ज़र्व करता है। यह दोबारा तभी परखता
+  है जब स्क्रीन या उसकी लोकेशन पिछली परख से बदल जाए, और `vision` होने पर पिक्सल
+  भी इसमें शामिल हैं। `vision: 'only'` में सिर्फ़ लोकेशन बदलना नहीं गिना जाता,
+  क्योंकि उस मोड में लोकेशन नहीं दिखाई जाती।
+- अगर बदलाव से पहले के `interval` में स्क्रीन नहीं बदली थी, या इंतज़ार शुरू होने
+  के बाद पहली बार बदली है, तो बदलाव दिखते ही तुरंत परख होती है। जब स्क्रीन
+  लगातार बदलती रहे (जैसे प्रोग्रेस काउंटर या घड़ी), तो पिछली परख के बाद हर
+  `interval` में ज़्यादा से ज़्यादा एक बार परख होती है।
+- परख [`agent.assert`](#agent-assert) के नियमों पर चलती है: एक से ज़्यादा जगह
+  दिखने वाली वैल्यू तभी सही मानी जाती है जब हर जगह मेल खाए।
+
+| ऑप्शन | टाइप | डिफ़ॉल्ट |
+| --- | --- | --- |
+| `params` | `AgentParams` | कोई नहीं |
+| `timeout` | `number` | `agents.<name>.judgmentTimeout`, 30000 |
+| `interval` | `number` | 3000 |
+| `maxModelCalls` | `number` | `agents.<name>.maxModelCalls`, 25 |
+| `vision` | [`VisionMode`](#vision) | `false` |
+| `agent` | `string` | टेस्ट का एजेंट |
+
+लगातार बदलती स्क्रीन पर दो परख के बीच कम से कम `interval` समय रहता है, जो 100 से
+60000 ms के बीच होता है। `params` [`agent.assert`](#agent-assert) की तरह काम
+करते हैं।
+
+| क्या थ्रो होता है | कब |
+| --- | --- |
+| `STEP_TIMEOUT` | डेडलाइन खत्म हो गई। |
+| `STEP_BUDGET_EXHAUSTED` | बजट खत्म हो गया। |
+| `INVALID_ARGUMENT` | रेंज से बाहर ऑप्शन, गलत `params`, या ऐसा ऑप्शन जो `waitFor` नहीं लेता। |
+
+`STEP_TIMEOUT` और `STEP_BUDGET_EXHAUSTED` में आखिरी परख जुड़ी होती है। अगर वह
+राउंड अनिर्णीत था, तो उनमें `agent.assert` जैसा ही विज़न हिंट जुड़ता है।
+
+### agent.extract
+
+एक ताज़ा ऑब्ज़र्वेशन से स्ट्रक्चर्ड आउटपुट पढ़ता है, उसे `schema` से वैलिडेट
+करता है, और वैलिडेटेड वैल्यू लौटाता है। यह ऐप पर कोई एक्शन नहीं करता।
+
+```ts
+import { z } from 'zod';
+
+const summary = await agent.extract('the workspace name and plan', {
+  schema: z.object({ name: z.string(), plan: z.string() }),
+});
+```
+
+- जब स्कीमा का JSON Schema प्रोजेक्शन होता है (zod में होता है), तो मॉडल को उसका
+  ढाँचा मिलता है: टाइप, फ़ील्ड, ज़रूरी फ़ील्ड, और मान्य लिटरल। `min`, `max`,
+  लेंथ, पैटर्न, और फ़ॉर्मेट जैसे वैल्यू नियम आपके स्कीमा के पास रहते हैं, जो मॉडल
+  की पढ़ी हुई वैल्यू को जाँचता है।
+- मॉडल कह सकता है कि स्क्रीन पर वह डेटा नहीं दिख रहा। इस पर `""` या `0` जैसा
+  प्लेसहोल्डर लौटाने के बजाय, क्या गायब था इसके ब्यौरे के साथ
+  `ASSERTION_INCONCLUSIVE` थ्रो होता है। डेटा न होने को सही जवाब मानने के लिए
+  इंस्ट्रक्शन और स्कीमा दोनों में यह बात लिखें
+  (`'the phone number, or null when none is shown'` के साथ `z.string().nullable()`)।
+
+| ऑप्शन | टाइप | डिफ़ॉल्ट |
+| --- | --- | --- |
+| `schema` | `StandardSchemaV1` | ज़रूरी |
+| `timeout` | `number` | `agents.<name>.judgmentTimeout`, 30000 |
+| `vision` | [`VisionMode`](#vision) | `false` |
+| `agent` | `string` | टेस्ट का एजेंट |
+
+| क्या थ्रो होता है | कब |
+| --- | --- |
+| `INVALID_ARGUMENT` | स्कीमा Standard Schema v1 नहीं है। |
+| `ASSERTION_INCONCLUSIVE` | स्क्रीन पर वह डेटा नहीं दिख रहा। |
+| `MODEL_OUTPUT_INVALID` | रिपेयर राउंड के बाद भी वैलिडेशन फ़ेल रहा। |
+
+## बजट
+
+मॉडल कॉल में हर मॉडल रिक्वेस्ट गिनी जाती है, रिपेयर राउंड भी। एक्शन स्टेप में
+कमिट हुए इंजन एक्शन गिने जाते हैं। बचा हुआ टेस्ट टाइमआउट हर टाइमआउट की ऊपरी
+सीमा तय करता है।
+
+| मेथड | मॉडल कॉल | एक्शन स्टेप | डिफ़ॉल्ट टाइमआउट |
+| --- | ---: | ---: | --- |
+| `act` | `agents.<name>.maxModelCalls`, 25 | `agents.<name>.maxSteps`, 25 | `config.timeout`, 120000 ms |
+| `waitFor` | `agents.<name>.maxModelCalls`, 25 | 0 | `agents.<name>.judgmentTimeout`, 30000 ms |
+| `extract` | 2 | 0 | `agents.<name>.judgmentTimeout`, 30000 ms |
+| बिना एक्सप्लोरेशन वाला `assert` | 2 | 0 | `agents.<name>.judgmentTimeout`, 30000 ms |
+| एक्सप्लोरेशन वाला `assert` | min(6, कॉन्फ़िगर लिमिट) | min(10, कॉन्फ़िगर लिमिट) | `agents.<name>.judgmentTimeout`, 30000 ms |
+
+- `actionTimeout` इंजन ऑपरेशन की सीमा तय करता है, मॉडल कॉल की नहीं।
+- हर कॉल के बजट (`maxSteps`, `maxModelCalls`) कॉन्फ़िगर लिमिट को सिर्फ़ कम कर
+  सकते हैं। वे पॉज़िटिव इंटीजर होने चाहिए और उन लिमिट से बड़े नहीं हो सकते;
+  बड़ा नंबर देने पर `INVALID_ARGUMENT` आता है।
+- सारे समय मिलीसेकंड में हैं।
+
+बिना एक्सप्लोरेशन वाली `assert` रो बिल्ट-इन एजेंट के लिए है। कस्टम `executor`
+बिना एक्सप्लोरेशन वाले असर्शन एजेंट के `maxSteps`, `maxModelCalls`, और डिफ़ॉल्ट
+डेडलाइन `config.timeout` के साथ चलाता है। एक्सप्लोरेशन वाले असर्शन हर एक्ज़ीक्यूटर
+के साथ कैप्ड डिफ़ॉल्ट और `judgmentTimeout` इस्तेमाल करते हैं। वहाँ `vision` और
+`screenshot` के लिए [`agent.assert`](#agent-assert) के नीचे वाला नोट देखें।
+
+## एक्शन टूल
+
+बिल्ट-इन एजेंट टारगेट के इंजन के डिक्लेयर किए हर वर्ब के लिए एक टूल देता है, और
+जो वर्ब इंजन डिक्लेयर नहीं करता उसके लिए कोई टूल नहीं देता। किसी नोड पर काम करने
+वाला टूल सबसे ताज़ा ऑब्ज़र्वेशन से उसका id लेता है। हर टूल बताता है कि स्क्रीन
+पर क्या बदला, और [रीप्ले कैश](/cache) के लिए रिकॉर्ड होता है (नोड होने पर उसके
+साथ)। जो इंजन `tapModifiers` डिक्लेयर करता है, वहाँ `tap`, `double_tap`, और
+`right_click` क्लिक के दौरान कीबोर्ड के बटन दबाए रखने के लिए `modifiers`
+(`Shift`, `Control`, `Alt`, `Meta`, `ControlOrMeta`) लेते हैं, जैसे Shift-click
+सिलेक्शन बढ़ाता है।
+
+| टूल | इंजन एक्शन | क्या करता है |
+| --- | --- | --- |
+| `tap({ target, modifiers? })` | `tap` | किसी एक नोड पर टैप या क्लिक करता है: बटन, लिंक, मेन्यू आइटम, टैब, चेकबॉक्स, रो, या फ़ील्ड के लिए। |
+| `double_tap({ target, modifiers? })` | `doubleTap` | किसी एक नोड पर डबल-क्लिक करता है, ऐसे आइटम के लिए जो दूसरे क्लिक पर खुलता या एडिट मोड में जाता है। |
+| `long_press({ target })` | `longPress` | किसी एक नोड को दबाकर रखता है, लॉन्ग-प्रेस मेन्यू या एक्शन के लिए। |
+| `right_click({ target, modifiers? })` | `secondaryTap` | कॉन्टेक्स्ट मेन्यू खोलने के लिए किसी एक नोड पर राइट-क्लिक करता है। |
+| `hover({ target })` | `hover` | बिना दबाए पॉइंटर को नोड पर ले जाता है: हॉवर मेन्यू, फ़्लाईआउट, टूलटिप, और माउस ले जाने पर दिखने वाले कंट्रोल के लिए। |
+| `type({ target?, value, replace? })` | `fill`; बिना `target` के `keyboard` | नोड की वैल्यू बदलता है; बिना टारगेट के, जिस पर फ़ोकस हो उसमें टाइप करता है। |
+| `type_secret({ target, name })` | `fill` | स्टेप के params में डिक्लेयर किया हुआ सीक्रेट भरता है। जिस स्टेप में कोई सीक्रेट डिक्लेयर न हो, वहाँ कुछ नहीं भरता। |
+| `press({ target?, key, times? })` | `press`; बिना `target` के `keyboard` | एक कॉल में 20 बार तक किसी नोड या फ़ोकस्ड कंट्रोल पर कीबोर्ड का एक बटन भेजता है। हर प्रेस एक एक्शन है; टारगेट के साथ पहला प्रेस नोड पर जाता है और बाकी जिस पर फ़ोकस हो उस पर, ताकि बार-बार `Tab` दबाने से आगे बढ़ा जा सके। |
+| `select({ target, value })` | `selectOption` | दिखने वाले लेबल से कोई ऑप्शन चुनता है। |
+| `check({ target, checked? })` | `check` और `uncheck` | चेकबॉक्स, स्विच, या रेडियो को किसी स्टेट पर सेट करता है (डिफ़ॉल्ट `true`)। जो कंट्रोल पहले से उस स्टेट में हो उसे नहीं छूता, जबकि टैप उसे पलट देता है। |
+| `scroll({ direction, target?, times? })` | `swipe` | व्यूपोर्ट या किसी एक स्क्रॉलेबल नोड को एक कॉल में 20 स्क्रीन तक स्क्रॉल करता है। |
+| `scroll_to({ target })` या `scroll_to({ text, direction?, target? })` | `scrollIntoView`; `text` के साथ `swipe` | सिर्फ़ `target` के साथ एक लिस्टेड नोड को व्यूपोर्ट में लाता है, ऐसे नोड के लिए जिसे ट्री स्क्रीन के ऊपर या नीचे दिखाता है। `text` के साथ लिस्ट (`target`, वरना व्यूपोर्ट) को `direction` (डिफ़ॉल्ट नीचे) में स्क्रीन-दर-स्क्रीन आगे बढ़ाता है जब तक वह टेक्स्ट दिखाने वाला नोड न दिखे, फिर इंजन कर सके तो उसे व्यूपोर्ट में लाता है। यह लंबी या विंडोड लिस्ट की किसी गहरी रो के लिए है जिसे ट्री ने अभी रेंडर नहीं किया है। नोड का लेबल ठीक वही टेक्स्ट होना चाहिए, या उसके दोनों तरफ़ किसी शब्द का हिस्सा नहीं होना चाहिए, ताकि `Row 12` कभी `Row 120` पर न रुके। जब `target` किसी लिस्ट को नाम दे, तो नोड उसी के अंदर होना चाहिए, ताकि कहीं और की वैसी ही हेडिंग पेजिंग न रोक दे। चाहे जितनी स्क्रीन चलें, यह एक एक्शन है, ज़्यादा से ज़्यादा 800 स्क्रीन तक; स्क्रीन रुक जाए या लिमिट पूरी हो जाए तो `LOCATOR_NOT_FOUND` आता है। हर रूप सिर्फ़ अपने एक्शन काइंड के साथ ही मिलता है। |
+| `drag({ target, to })` | `dragTo` | एक नोड को खींचकर दूसरे पर ड्रॉप करता है: रीऑर्डरिंग, कैनबन कॉलम, ड्रॉप ज़ोन। |
+| `upload({ target, files })` | `setInputFiles` | फ़ाइल इनपुट पर, या नेटिव फ़ाइल चूज़र खोलने वाले किसी दिखने वाले कंट्रोल पर फ़ाइलें अटैच करता है। पाथ प्रोजेक्ट के सापेक्ष होते हैं या किसी `sample:` फ़ाइल का नाम लेते हैं; नीचे पॉलिसी देखें। |
+| `navigate({ url })` | `session.open` | कोई URL या ऐप-सापेक्ष पाथ खोलता है। |
+| `back()` | `session.back` | एक कदम पीछे जाता है: वेब पेज पर ब्राउज़र हिस्ट्री, डिवाइस पर इन-ऐप बैक। |
+| `resize_viewport({ width, height })` | `session.resize` | दूसरे चौड़ाई पर लेआउट जाँचने के लिए व्यूपोर्ट का साइज़ CSS पिक्सल में हर तरफ़ 200 से 4096 तक सेट करता है। यह साइज़ अगले रीसाइज़ तक बना रहता है। `session.resize` वाले इंजन, जैसे वेब। |
+| `switch_tab({ tab })` | `session.switchTab` | दूसरा खुला टैब दिखाता है, खुलने के क्रम में 1 से नंबर दिया हुआ। `session.switchTab` वाले इंजन, जैसे वेब। |
+| `close_tab({ tab })` | `session.closeTab` | एक खुला टैब बंद करता है, नंबरिंग `switch_tab` जैसी ही। आखिरी खुला टैब खुला ही रहता है। `session.closeTab` वाले इंजन, जैसे वेब। |
+| `observe()` | | दोबारा देखता है और मॉडल को मिली पिछली स्क्रीन के बाद हुए बदलाव बताता है। |
+| `dismiss_keyboard()` | `keyboard.dismiss` | ऑन-स्क्रीन कीबोर्ड छिपाता है। सिर्फ़ डिवाइस इंजन। |
+
+`scroll_to({ text })` स्क्रीन साफ़ स्क्रॉल होने पर उसे एक बार पढ़ता है, वरना
+स्क्रीन रुकी हुई मानने से पहले उसे 1 सेकंड तक दोबारा पढ़ता है (उसी अंतराल पर
+जिस पर स्थिर स्क्रीन जाँची जाती है)। जो लिस्ट अंत पर पहुँचकर और आइटम जोड़ती है,
+उसकी पेजिंग चलती रहती है। बाकी टेक्स्ट के साथ बदलती हुई कोई एक टाइम वैल्यू
+(`12:05`) लिस्ट के हिलने में नहीं गिनी जाती। डिवाइस पर अगला ऑब्ज़र्वेशन दूसरे
+स्क्रॉल इफ़ेक्ट का इंतज़ार किए बिना स्थिरता जाँचता है। `scrollIntoView` वाले
+इंजन तब भी उस आखिरी एडजस्टमेंट का इंतज़ार करते हैं जो मैच हुए नोड को व्यूपोर्ट
+में लाता है। रीप्ले भी यही नियम मानता है।
+
+`upload` मॉडल का दिया पाथ लेता है, लेकिन फ़ैसला रनर करता है:
+
+- हर पाथ प्रोजेक्ट रूट के सापेक्ष रिज़ॉल्व होता है, `locator.setInputFiles` की
+  तरह।
+- प्रोजेक्ट के बाहर का पाथ (सिमलिंक से भी), या कोई छिपी हुई फ़ाइल या छिपी
+  डायरेक्टरी (जैसे `.env`, `.git`, या `.e2e`) के अंदर की फ़ाइल `POLICY_DENIED`
+  के साथ मना कर दी जाती है।
+- जो पाथ किसी सामान्य फ़ाइल की ओर न हो, वह `INVALID_ARGUMENT` देता है, एक आम
+  एक्शन फ़ेलियर जिसे मॉडल पढ़कर सुधार लेता है।
+- `sample:photo.png`, `sample:photo.jpg`, `sample:document.pdf`,
+  `sample:notes.txt`, `sample:table.csv`, और `sample:empty.txt` वे छोटी फ़ाइलें
+  हैं जो e2e के साथ आती हैं, ताकि प्रोजेक्ट में कोई फ़ाइल न होने पर भी एजेंट
+  अपलोड आज़मा सके। टूल इनकी लिस्ट दिखाता है।
+- हर मनाही और आखिरी मंज़ूरी स्टेप पर `upload.path` नाम का `policy` इवेंट बनती
+  है। जब तक हर पाथ पास न हो जाए, इंजन तक कुछ नहीं पहुँचता।
+
+ब्राउज़र और डिवाइस इंजन सहित कीबोर्ड वाले इंजन पर, `type` और `press` फ़ोकस्ड
+फ़ील्ड पर काम करने के लिए `target` छोड़ सकते हैं। तब `type` कैरेट पर टेक्स्ट
+डालता है; `replace: true` पहले साफ़ करता है। जब किसी एडिटेबल फ़ील्ड पर फ़ोकस न
+हो, तो ब्राउज़र इंजन टाइपिंग मना कर देता है। यह शैडो रूट और फ़्रेम के अंदर भी
+फ़ोकस्ड एलिमेंट जाँचता है, इसलिए वहाँ के किसी बटन पर फ़ोकस होने पर भी टाइपिंग
+मना हो जाती है। जब किसी एक्शन से ऑन-स्क्रीन कीबोर्ड बंद होता है, तो नतीजे में यह
+बात लिखी आती है। टच स्क्रीन पर वह टैप अक्सर कीबोर्ड बंद करने में ही चला जाता है,
+और मॉडल उस कंट्रोल पर फिर से एक्शन करता है।
+
+जब इंजन बताता है कि फ़ोकस्ड फ़ील्ड में टेक्स्ट सिलेक्टेड है, तो मॉडल को दिखने
+वाली स्क्रीन वैल्यू के बाद उसे `selection="..."` के रूप में दिखाती है। वेब इंजन
+इनपुट, टेक्स्टएरिया, और `contenteditable` एडिटर के लिए ऐसा करता है; सिक्योर
+फ़ील्ड में यह नहीं दिखता। जिस फ़ील्ड की वैल्यू या टेक्स्ट में कोई रजिस्टर्ड
+सीक्रेट हो, रनर उससे `selection` हटा देता है। लंबाई की सीमा पर कटी हुई फ़ील्ड से
+भी इसे हटा दिया जाता है जब सिलेक्शन दिखने वाले हिस्से में न हो। इससे किसी सीक्रेट
+के सिलेक्टेड कैरेक्टर कभी मॉडल तक नहीं पहुँचते। `Shift+ArrowLeft` का `press`
+दिखाता है कि क्या सिलेक्ट हुआ, और `times` इसे एक ही कॉल में दोहराता है। इसलिए
+एजेंट फ़ॉर्मेट या रिप्लेस करने से पहले एक और टर्न में ठीक अपने मनचाहे शब्द तक
+सिलेक्शन बढ़ा लेता है।
+
+टैप के वेरिएंट जानबूझकर `tap` का ऑप्शन नहीं बल्कि अलग टूल हैं। ऑप्शनल `kind` के
+रूप में देने पर मॉडल उसे आम बटनों पर भी भर देता था (जैसे Save पर डबल-क्लिक), और
+सबमिट बटन पर डबल-क्लिक दो बार सबमिट कर देता है। अलग टूल होने पर मॉडल को उसे
+चुनना पड़ता है, और हर टूल बताता है कि किस चीज़ पर साधारण टैप करना है।
+
+मोबाइल इंजन `hover`, `doubleTap`, `longPress`, `check`, `uncheck`, `dragTo`, और
+`session.back` डिक्लेयर करते हैं। इसलिए डिवाइस `hover`, `double_tap`,
+`long_press`, `check`, `drag`, और `back` देता है। वे `secondaryTap`,
+`selectOption`, `scrollIntoView`, या `setInputFiles` डिक्लेयर नहीं करते।
+
+वेब पर ऐप जो नया टैब खोलता है, वह बैकग्राउंड में रहता है। उसे खोलने वाले एक्शन
+का नतीजा कहता है
+`The app opened a new tab (tab 2 of 2). The screen still shows tab 1; use switch_tab to see it.`
+जब एक से ज़्यादा टैब खुले हों, तो हर स्क्रीन
+हेडर में टैब का नंबर दिखता है (`tab 1 of 2`)। `switch_tab` दूसरा टैब दिखाता है
+और उसकी पूरी स्क्रीन भेजता है। `close_tab` एक टैब बंद करता है; अगर वही टैब
+स्क्रीन पर था, तो स्क्रीन उसे खोलने वाले टैब पर लौटती है, या वह भी बंद हो तो सबसे
+हाल में दिखे टैब पर। दोनों कैश से उसी टैब नंबर पर रीप्ले होते हैं। टैब को उसका
+नंबर तब मिलता है जब उसका पहला पेज लोड होता है, इसलिए अगर एक एक्शन दो टैब खोले
+और अगले रन में उनके पेज उल्टे क्रम में लोड हों, तो दोनों के नंबर आपस में बदल
+जाते हैं।
+
+## पिक्सल टूल: स्क्रीनशॉट और पॉइंट वर्ब
+
+`act` सिमैंटिक ट्री पढ़ता है और ज़रूरत पड़ने पर स्क्रीनशॉट माँगता है; दोनों एक ही
+मॉडल पढ़ता है। जिस स्क्रीन पर कोई लिस्टेड इंटरैक्टिव नोड न हो, जैसे कैनवास, वह
+स्क्रीनशॉट के साथ खुलती है।
+
+बिल्ट-इन एजेंट ये टूल देता है:
+
+| टूल | क्या करता है |
+| --- | --- |
+| `screenshot()` | मास्क्ड व्यूपोर्ट स्क्रीनशॉट लौटाता है और उस स्टेप के हर अगले एक्शन के बाद एक ताज़ा स्क्रीनशॉट जोड़ता है। |
+| `tap_at({ x, y })` | दिए गए कोऑर्डिनेट पर टैप करता है। जो इंजन ऐसा नहीं कर सकता, उस पर उस पॉइंट के लिस्टेड कंट्रोल पर नोड id से टैप करता है। |
+| `hover_at({ x, y })` | पॉइंटर को दिए गए कोऑर्डिनेट पर ले जाता है। जो इंजन ऐसा नहीं कर सकता, उस पर उस पॉइंट के लिस्टेड कंट्रोल पर नोड id से हॉवर करता है। `hover` एक्शन या पॉइंटर काइंड ज़रूरी है। |
+| `drag_at({ x, y, to_x, to_y })` | एक पॉइंट से दूसरे पॉइंट तक ड्रैग करता है, कैनवास पर किसी शेप या मैप पर पिन के लिए। जो इंजन ऐसा नहीं कर सकता, उस पर दोनों पॉइंट दो अलग लिस्टेड कंट्रोल पर पड़ने पर नोड id से ड्रैग करता है। `dragTo` एक्शन या पॉइंटर काइंड ज़रूरी है। |
+| `type_at({ x, y, value, replace? })` | लिस्टेड इनपुट की वैल्यू बदलता है। अनलिस्टेड इनपुट के लिए, फ़ोकस करने को टैप करता है और `replace` सेट न होने पर कैरेट पर टाइप करता है। अनलिस्टेड इनपुट के लिए कीबोर्ड सपोर्ट ज़रूरी है। |
+| `press_at({ x, y, key })` | उस पॉइंट के कंट्रोल पर कीबोर्ड का एक बटन भेजता है। अगर कोई कंट्रोल लिस्टेड नहीं है, तो फ़ोकस करने के लिए टैप करता है और इंजन का कीबोर्ड इस्तेमाल करता है। |
+| `select_at({ x, y, value })` | उस पॉइंट के कंट्रोल में दिखने वाले लेबल से कोई ऑप्शन चुनता है। |
+
+- कोऑर्डिनेट सबसे ताज़ा स्क्रीनशॉट के हिसाब से होते हैं। किसी भी पॉइंट टूल के
+  इस्तेमाल से पहले मॉडल को स्क्रीनशॉट लेना होता है, और लिस्टेड कंट्रोल के लिए नोड
+  id को प्राथमिकता देनी चाहिए।
+- `type_at`, `press_at`, और `select_at` हर पॉइंट को ट्री से मिलाते हैं। लिस्टेड
+  कंट्रोल पर पड़ने वाले पॉइंट पर वही पॉलिसी जाँच और [रीप्ले कैश](/cache)
+  रिकॉर्डिंग लागू होती है जो id वाले एक्शन पर होती है। `tap_at` या `hover_at` का
+  पॉइंट अपने नीचे मौजूद नोड के अंदर रीप्ले होता है।
+- `tap_at` को ऐसा इंजन चाहिए जिसके `actions` या `pointerActions` में `tap` हो,
+  `hover_at` को `hover` वाला, और `drag_at` को `dragTo` वाला। पॉइंटर काइंड के
+  बिना पॉइंट किसी लिस्टेड कंट्रोल पर ही पड़ना चाहिए, और `drag_at` के दोनों पॉइंट
+  दो अलग लिस्टेड कंट्रोल पर। वरना कॉल `UNSUPPORTED_CAPABILITY` से फ़ेल हो जाती
+  है।
+- बेयर-पॉइंट टैप, हॉवर, या ड्रैग सिर्फ़ रिकॉर्ड किए गए साइज़ के व्यूपोर्ट पर, या
+  उसे रखने वाले लिस्टेड नोड के अंदर ठीक उसी जगह पर रीप्ले होता है। ड्रैग अपने
+  दोनों पॉइंट इसी तरह रखता है।
+- एक बार स्क्रीनशॉट चालू हो जाएँ, तो एक्शन के बाद वाला इंतज़ार पिक्सल बदलाव भी
+  पकड़ता है, कैनवास रीड्रॉ समेत।
+- स्क्रीनशॉट की बड़ी भुजा ज़्यादा से ज़्यादा 768 px होती है। पुरानी इमेज बैच में
+  हटाई जाती हैं और सबसे नई दो रखी जाती हैं।
+- जो स्टेप पिक्सल भेजता है, वह `visionInput: true` और `metrics.pixelBytes`
+  रिकॉर्ड करता है।
+
+अगर सिमैंटिक कैप्चर टाइमआउट हो जाए, तो स्वतंत्र रूप से मास्किंग साबित करने वाला
+इंजन साफ़ अनअवेलेबल-ट्री वॉर्निंग के साथ एक ताज़ा स्क्रीनशॉट लौटा सकता है। बिना
+सिमैंटिक्स वाले हर `act` ऑब्ज़र्वेशन में वह इमेज और वॉर्निंग होती है। तब पहले
+के नोड id इनवैलिड हो जाते हैं, और अगला सफल सिमैंटिक कैप्चर फिर से पूरा ट्री
+दिखाता है। स्क्रीनशॉट मौजूदा व्यूपोर्ट दिखाता है; ट्री न मिलना यह साबित नहीं
+करता कि कोई कंट्रोल या मैसेज मौजूद नहीं है।
+
+अगर सिमैंटिक कैप्चर फ़ेल हो जाए, तो ट्रेस रीप्ले रुक जाता है। बाद में ट्री वापस
+आ भी जाए, तब भी स्टेप नई ट्रेस एंट्री रिकॉर्ड नहीं कर सकता।
+
+## विज़न
+
+`assert`, `waitFor`, और `extract` `vision` लेते हैं; `act` अपने स्क्रीनशॉट
+[पिक्सल टूल](#pixel-tools-screenshot-and-the-point-verbs) से खुद माँगता है।
+स्क्रीनशॉट उसी मॉडल को जाता है जिसने उसे माँगा, इसलिए उसे इमेज स्वीकार करनी
+चाहिए: परख के लिए जज मॉडल (वरना `model`), और `act` के लिए `model`।
+
+```ts
+await agent.assert('no overlay covers the checkout form', { vision: 'only' }); // default: false
+```
+
+| `vision` | जज मॉडल को भेजा जाने वाला सबूत |
+| --- | --- |
+| `false`, डिफ़ॉल्ट | सिमैंटिक ट्री |
+| `true` | सिमैंटिक ट्री और मास्क्ड स्क्रीनशॉट |
+| `'only'` | सिर्फ़ मास्क्ड स्क्रीनशॉट, कोई ट्री या लोकेशन नहीं |
+
+विज़ुअल जाँच के लिए `'only'` इस्तेमाल करें, जैसे कोई ओवरले चेकआउट फ़ॉर्म को ढक
+तो नहीं रहा या चार्ट सही दिख रहा है या नहीं। स्क्रीनशॉट मौजूदा व्यूपोर्ट दिखाते
+हैं, इसलिए पहले ज़रूरी हिस्से तक स्क्रॉल कर लें।
+
+ब्राउज़र इंजन का सिमैंटिक ट्री [किसी दूसरी साइट के फ़्रेम](/browser#reach-into-an-iframe)
+का कंटेंट छोड़ देता है। उस कंटेंट को परखने के लिए `true` या `'only'` इस्तेमाल
+करें।
+
+पिक्सल रोक लिए जाते हैं, और सिर्फ़ ट्री भेजा जाता है, जब:
+
+- इंजन ने ऑब्ज़र्व की गई सिक्योर फ़ील्ड से कम हिस्से मास्क किए हों
+  (`MASKING_UNPROVEN`), या
+- इंजन पिक्सल कैप्चर न कर सकता हो (`UNSUPPORTED_CAPABILITY`)।
+
+`'only'` मोड में ये मामले इसकी जगह `POLICY_DENIED` से फ़ेल होते हैं।
+
+`vision: true` या `'only'` के साथ, अगर इंजन स्वतंत्र रूप से मास्किंग साबित करता
+है, तो रिकवरेबल सिमैंटिक-कैप्चर फ़ेलियर में ताज़ा स्क्रीनशॉट इस्तेमाल हो सकता
+है। `vision: false` के साथ कैप्चर फ़ेलियर किसी भी मॉडल कॉल से पहले ही परख रोक
+देता है: गायब ट्री के सहारे खाली स्क्रीन की परख नहीं हो सकती।
+
+अगर परख से पहले कैप्चर फ़ेल हो जाए, तो रिपोर्ट में शून्य मॉडल कॉल रिकॉर्ड होते
+हैं और `observationRevision` और `explanation` नहीं होते। स्टेप एरर कैप्चर फ़ेलियर
+बताता है। क्लोज़्ड ग्रामर जिसे रिजेक्ट करे वह जवाब स्टेप पर `schema` इवेंट बनता
+है और उसे एक रिपेयर राउंड मिलता है। अगर रिपेयर किया हुआ जवाब भी रिजेक्ट हो जाए,
+तो स्टेप `MODEL_OUTPUT_INVALID` से फ़ेल होता है, और उसका `explanation` वही
+रिजेक्शन होता है।
+
+## टाइप
+
+```ts
+export interface Agent {
+  /** Plans and executes a bounded multi-action flow; resolves with what the step did. */
+  act(instruction: string, options?: ActOptions): Promise<ActResult>;
+  /** Polls a natural-language condition until true or timed out. */
+  waitFor(condition: string, options?: WaitForOptions): Promise<void>;
+  /** Extracts and validates structured screen data. */
+  extract<Schema extends StandardSchemaV1>(
+    instruction: string,
+    options: ExtractOptions<Schema>,
+  ): Promise<StandardSchemaV1.InferOutput<Schema>>;
+  /** Judges a natural-language assertion against a fresh observation. */
+  assert(assertion: string, options?: AssertOptions): Promise<void>;
+}
+
+/**
+ * Parameters and budgets for one `act` call.
+ */
+export interface ActOptions extends AgentOption {
+  /**
+   * JSON-safe values the instruction refers to, at most 64 KiB and 32 levels
+   * deep. A `Secret` reaches the model by name only; the runner fills it. A
+   * value wrapped in `unique()` is different on every run, and the replay
+   * cache records a slot for it instead of the value.
+   */
+  params?: AgentParams;
+  /** Step deadline in milliseconds; defaults to `config.timeout`. */
+  timeout?: number;
+  /** Action budget; defaults to `agents.<name>.maxSteps` and can only lower it. */
+  maxSteps?: number;
+  /** Model-call budget; defaults to `agents.<name>.maxModelCalls` and can only lower it. */
+  maxModelCalls?: number;
+  /**
+   * Runs after each action the step completes, once the screen settles, and
+   * before the next one. Awaited, and its time counts toward `timeout`.
+   * Observe only: drive nothing from it. A throw fails the step.
+   */
+  onAction?: ActionHook;
+  /**
+   * Runs before each action, replayed ones included, and the step waits for
+   * it. Observe only: drive nothing from it. A throw fails the step before
+   * the action runs.
+   */
+  onBeforeAction?: BeforeActionHook;
+}
+
+/** The `onBeforeAction` hook of an `act` call. */
+export type BeforeActionHook = (event: BeforeActionEvent) => void | Promise<void>;
+
+/** The `onAction` hook of an `act` call. */
+export type ActionHook = (event: ActionEvent) => void | Promise<void>;
+
+/** The configured agent (`agents.<name>`) one call runs with, in place of the test's. */
+export interface AgentOption {
+  agent?: string;
+}
+
+/** `assert` options: one judgment, or opt-in bounded viewport exploration. */
+export interface AssertOptions extends VisionOption, AgentOption {
+  /** Look around by scrolling before judging; defaults to false. */
+  explore?: boolean;
+  /** Scroll budget; requires explore, defaults to min(10, configured maxSteps). */
+  maxSteps?: number;
+  /** Model-call budget; requires explore, defaults to min(6, configured maxModelCalls). */
+  maxModelCalls?: number;
+  /**
+   * Values the assertion refers to as `{name}`, with the same rules as `act`
+   * params. A `Secret` reaches the judge by name only, never its value.
+   */
+  params?: AgentParams;
+  /** Deadline in milliseconds; defaults to the agent's `judgmentTimeout`, 30000. */
+  timeout?: number;
+  /** Attach a redacted screenshot to the step; on by default. */
+  screenshot?: boolean;
+}
+
+/** `waitFor` options: a judgment on each screen change, at most once per `interval` while it keeps changing, until `timeout`. */
+export interface WaitForOptions extends VisionOption, AgentOption {
+  /**
+   * Values the condition refers to as `{name}`, with the same rules as `act`
+   * params. A `Secret` reaches the judge by name only, never its value.
+   */
+  params?: AgentParams;
+  /** Deadline in milliseconds; defaults to the agent's `judgmentTimeout`, 30000. */
+  timeout?: number;
+  /** Least time between two judgments of a screen that keeps changing, in milliseconds; 100 through 60000, default 3000. */
+  interval?: number;
+  /** Judgment budget; defaults to `agents.<name>.maxModelCalls` and can only lower it. */
+  maxModelCalls?: number;
+}
+
+/** `extract` options: one extraction plus one repair round, validated against `schema`. */
+export interface ExtractOptions<Schema extends StandardSchemaV1> extends VisionOption, AgentOption {
+  /** Any Standard Schema v1 validator; the output is validated against it, with one repair round. */
+  schema: Schema;
+  /** Deadline in milliseconds; defaults to the agent's `judgmentTimeout`, 30000. */
+  timeout?: number;
+}
+
+export interface VisionOption {
+  /** What the judge is shown; `false` by default. */
+  vision?: VisionMode;
+}
+
+/**
+ * Evidence for `assert`, `waitFor`, and `extract`.
+ *
+ * - `false`: the tree.
+ * - `true`: the tree and a screenshot, on every call.
+ * - `'only'`: the screenshot, and not the tree.
+ *
+ * When pixels cannot be safely captured, `true` falls back to the tree;
+ * `'only'` fails with `POLICY_DENIED`.
+ */
+export type VisionMode = boolean | 'only';
+
+/** What one passing `act` step did, as the report records it. */
+export interface ActResult {
+  /** The executor's one-line account of the step, or the replay's when the cache finished it. */
+  readonly summary: string;
+  /** How the replay cache took part; absent when caching is off for the step. */
+  readonly cache?: StepCacheInfo;
+  /** Model calls the step spent; 0 when a cached replay finished it. */
+  readonly modelCalls: number;
+  /** Grammar actions and mutating tool calls the step performed. */
+  readonly actions: number;
+}
+
+/** The name `onAction` reports a committed grammar action under, e.g. `tap`, `navigate`, or `dragAt`. */
+export type ActionName =
+  | 'tap' | 'doubleTap' | 'longPress' | 'secondaryTap' | 'hover' | 'scrollTo'
+  | 'type' | 'typeSecret' | 'press' | 'select' | 'check' | 'upload' | 'drag'
+  | 'scroll' | 'scrollUntil' | 'navigate' | 'back' | 'resize' | 'typeText'
+  | 'pressKey' | 'dismissKeyboard' | 'tapAt' | 'hoverAt' | 'dragAt';
+
+/**
+ * The fields `onAction` adds for an action, by action name; other actions add
+ * none. Points are in the same space as `screen.tapAt` and `boundingBox()`,
+ * rounded and clamped to the viewport.
+ */
+export interface ActionDetails {
+  /** The dispatched point. */
+  readonly tapAt: { readonly point: Point };
+  /** The dispatched point. Mobile engines have no `hoverAt`. */
+  readonly hoverAt: { readonly point: Point };
+  /** The dispatched start and end. Mobile engines have no `dragAt`. */
+  readonly dragAt: { readonly from: Point; readonly to: Point };
+}
+
+/** What every `onAction` event carries. */
+interface ActionEventBase {
+  /** 1-based position in the step's action budget; a failed attempt uses a number too. */
+  readonly index: number;
+  /** What the action did, secrets redacted. */
+  readonly summary: string;
+  /** `model` when the executor chose the action, `replay` when the cache replayed it. */
+  readonly source: 'model' | 'replay';
+}
+
+/**
+ * One completed action of an `act` step, as `onAction` receives it. Narrow on
+ * `action` to read its {@link ActionDetails}; a mutating project tool reads
+ * `tool:<name>`.
+ */
+export type ActionEvent = ActionEventBase &
+  (
+    | { readonly action: 'tapAt' | 'hoverAt'; readonly point: Point }
+    | { readonly action: 'dragAt'; readonly from: Point; readonly to: Point }
+    | { readonly action: Exclude<ActionName, keyof ActionDetails> | `tool:${string}` }
+  );
+
+/** One action of an `act` step about to run, as `onBeforeAction` receives it. */
+export interface BeforeActionEvent {
+  /** The same `index` the action's `onAction` event carries. */
+  readonly index: number;
+  /** `model` when the executor chose the action, `replay` when the cache replays it. */
+  readonly source: 'model' | 'replay';
+}
+
+/**
+ * How the replay cache took part in one agent step. `self-finalized` means
+ * the full trace replayed and the step passed with zero model calls;
+ * `agent-concluded` means a replayed prefix handed the step to the executor;
+ * `missed` means the executor ran the step from the top.
+ */
+export interface StepCacheInfo {
+  mode: 'self-finalized' | 'agent-concluded' | 'missed';
+  /** The miss or hand-off reason token; absent on `self-finalized`. */
+  reason?: TraceReplayMissReason | ReplayHandOffReason;
+  /**
+   * On a `gap` at a typed value: the rule that made the value this run's
+   * data rather than the flow's. Absent for a gap at a project tool.
+   */
+  derived?: DerivedReason;
+  /**
+   * Why a passing step that ran live was still not recorded, when the cause
+   * is the call itself: `param-collision` when a `unique()` value equals, is
+   * spelled inside, or is the encoded form of another param's value, so the
+   * recording could not tell which param a recorded input came from.
+   */
+  notRecorded?: 'param-collision';
+  replayedActions: number;
+  totalActions: number;
+  /** The step's cache key, which names its entry file (`<cache.dir>/<entry>.json` in the file store). */
+  entry?: string;
+  /**
+   * Why the replay missed or handed off, past what the reason token says:
+   * the recorded action it stopped at and what went wrong there, or the
+   * screen the recording started on against the one the step did.
+   */
+  detail?: string;
+  /** Configured model when the consulted entry was recorded; absent on older entries. */
+  recordedBy?: { readonly provider: string; readonly model: string };
+}
+
+type TraceReplayMissReason = 'retry' | 'no-entry' | 'invalid-entry' | 'truncated' | 'wrong-context';
+export type ReplayHandOffReason =
+  | 'gap'
+  | 'target-not-found'
+  | 'target-ambiguous'
+  | 'viewport-changed'
+  | 'action-failed'
+  | 'action-uncertain'
+  | 'end-mismatch';
+export type DerivedReason = 'pixels' | 'whole-node' | 'minted-token' | 'date';
+
+/** Values an `act` instruction refers to. */
+export type AgentParams = Readonly<Record<string, AgentParam>>;
+
+/** A JSON-safe value, a `Secret`, or a `Unique` string. */
+export type AgentParam =
+  | JsonPrimitive
+  | Secret
+  | Unique
+  | readonly AgentParam[]
+  | { readonly [key: string]: AgentParam };
+```
+
+हर `StepCacheInfo.reason` का मतलब
+[स्टेप रीप्ले क्यों नहीं हुआ](/cache#why-a-step-was-not-replayed) में बताया गया
+है।
+
+`Unique` वह है जो [`unique()`](#unique) लौटाता है।
+
+## unique
+
+ऐसे `act` पैराम को मार्क करता है जिसकी वैल्यू हर रन में बदलती है।
+[रीप्ले कैश](/cache) वैल्यू की जगह एक स्लॉट रिकॉर्ड करता है, और रीप्ले के समय इस
+रन की वैल्यू भर देता है।
+
+```ts
+await agent.act('create a company named {name}', {
+  params: { name: unique(`Acme ${Date.now()}`) },
+});
+```
+
+```ts
+import { unique } from 'e2e';
+
+/** A string param that differs on every run; the model sees `value`, the replay cache a slot. */
+export interface Unique {
+  readonly value: string;
+}
+
+/**
+ * Marks a value that is different on every run. Mark values the flow types
+ * or looks for, not choices that steer it: two runs whose `unique()` values
+ * differ replay the same recording.
+ */
+export function unique(value: string): Unique;
+```
+
+| क्या थ्रो होता है | कब |
+| --- | --- |
+| `INVALID_ARGUMENT` | वैल्यू स्ट्रिंग नहीं है, खाली या सिर्फ़ व्हाइटस्पेस है, या उसमें `{{param:` प्लेसहोल्डर टेक्स्ट है। |
+
+## AgentError
+
+हर फ़ेलियर एक `AgentError` होता है जिसमें एक क्लोज़्ड `code`, एक `explanation`,
+ऑप्शनल `screenshot` पाथ, और `blocked` फ़्लैग होता है। इसे `instanceof` से नहीं,
+`e2e` के `isAgentError(error)` से जाँचें। क्लास और सारे कोड
+[एरर](/reference/errors#agenterror) में हैं।

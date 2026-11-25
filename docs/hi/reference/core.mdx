@@ -1,0 +1,285 @@
+---
+title: "@e2e-dev/core"
+description: "launch, होस्ट, सेशन, सेव किया गया स्टेट, और createAgent: बिना टेस्ट रनर के ब्राउज़र या डिवाइस चलाने वाले प्रोग्राम का API।"
+---
+
+`@e2e-dev/core` ऐसे प्रोग्राम का API है जो बिना टेस्ट रनर के ब्राउज़र या डिवाइस
+चलाता है। `launch` एक होस्ट लौटाता है, होस्ट सेशन खोलता है, और `createAgent`
+सेशन के ऊपर एक एजेंट जोड़ता है। [गाइड](/core) में हर एक का इस्तेमाल दिखाया गया
+है।
+
+```ts title="prices.ts"
+import { launch } from '@e2e-dev/core';
+import { web } from '@e2e-dev/web/engine';
+
+await using shop = await launch(web(), { app: { url: 'https://shop.example.com' } });
+await using session = await shop.newSession();
+await session.app.open('/products/A-1001');
+console.log(await session.screen.getByTestId('sale-price').textContent());
+```
+
+## रेफ़रेंस
+
+### एंट्री पॉइंट
+
+| इंपोर्ट | कहाँ से |
+| --- | --- |
+| [`launch`](#launch), [`SessionState`](#sessionstate), `isE2EError` | `@e2e-dev/core` |
+| [`createAgent`](#createagent), `defineTool` | `@e2e-dev/core/agent` |
+| `web` | `@e2e-dev/web/engine` |
+| `mobile` | `@e2e-dev/mobile/engine` |
+| `desktop` | `@e2e-dev/desktop/engine` |
+| `defineEngine` | `@e2e-dev/core/engine` |
+
+`@e2e-dev/core/lib/*` प्राइवेट है। इसके मॉड्यूल किसी भी रिलीज़ में बदल सकते हैं।
+
+### लॉन्च करना
+
+| फ़ंक्शन | रिटर्न |
+| --- | --- |
+| [`launch`](#launch) | `Promise<Host>` |
+
+#### `launch`
+
+इंजन तैयार करता है और वह होस्ट लौटाता है जो उस पर सेशन खोलता है। `web()` का
+पहला लॉन्च ब्राउज़र डाउनलोड करता है।
+
+```ts
+const shop = await launch(web(), {
+  app: { url: 'https://shop.example.com' },
+  timeout: 10_000,
+  artifactsDir: 'artifacts',
+});
+```
+
+| ऑप्शन | टाइप | डिफ़ॉल्ट |
+| --- | --- | --- |
+| [`app`](#app) | `LaunchApp` | - |
+| `secrets` | `Record<string, string>` | - |
+| `headed` | `boolean` | `false` |
+| [`timeout`](#timeout) | `number` | ऑपरेशन के हिसाब से |
+| `signal` | `AbortSignal` | - |
+| `handleSignals` | `boolean` | `true` |
+| `artifactsDir` | `string` | अस्थायी डायरेक्टरी |
+| `cwd` | `string` | `process.cwd()` |
+| `env` | `NodeJS.ProcessEnv` | `process.env` |
+| `onNotice` | `(message: string) => void` | - |
+
+- `secrets`: नाम के हिसाब से वैल्यू, हर एक कम से कम 6 कैरेक्टर की।
+  [सीक्रेट पास करें](/core#pass-secrets) देखें।
+- `headed`: ब्राउज़र विंडो दिखाता है। डिवाइस इसे अनदेखा करता है।
+- `signal`: लॉन्च को, और होस्ट पर चल रहे हर सेशन और ऑपरेशन को कैंसल करता है।
+- `handleSignals`: SIGINT, SIGTERM, और SIGHUP पर होस्ट बंद करता है, फिर सिग्नल
+  को प्रोग्राम बंद करने देता है, जब तक प्रोग्राम खुद उस सिग्नल को न सुन रहा हो।
+- `artifactsDir`: `cwd` के सापेक्ष वह जगह जहाँ स्क्रीनशॉट, डाउनलोड, और रिकॉर्डिंग
+  जाते हैं। होस्ट बंद होने पर डिफ़ॉल्ट डायरेक्टरी डिलीट हो जाती है।
+- `cwd`: वह डायरेक्टरी जिससे अपलोड पाथ, `artifactsDir`, और एजेंट की कैश
+  डायरेक्टरी रिज़ॉल्व होती हैं।
+- `onNotice`: ऑपरेशन के बाहर की प्रोग्रेस, जैसे ब्राउज़र डाउनलोड या डिवाइस लीज़।
+
+| क्या थ्रो होता है | कब |
+| --- | --- |
+| `INVALID_ARGUMENT` | पहला आर्ग्युमेंट इंजन नहीं है, या कोई ऑप्शन या `app` key अनजान है। |
+| `INVALID_CONFIG` | इंजन ऐप को मना कर दे: बिना `app.url` के `web()`, या बिना `app.bundleId` और `app.appPath` के `mobile()`। |
+| `WORKER_PROTOCOL` | इस इंजन इंस्टेंस का मालिक कोई दूसरा होस्ट है। फ़ैक्टरी फिर से कॉल करें: `launch(web())`। |
+
+<a id="app" />
+
+##### `app`
+
+ब्राउज़र पर `app.open()` क्या खोलता है, या डिवाइस पर क्या लॉन्च करता है।
+
+| फ़ील्ड | किसके लिए | मतलब |
+| --- | --- | --- |
+| `url` | `web()` | ऐप का URL। `app.open(path)` इसी के सापेक्ष रिज़ॉल्व होता है। |
+| `bundleId` | `mobile()` | लॉन्च करने वाला इंस्टॉल्ड ऐप। |
+| `appPath` | `mobile()` | वह ऐप बिल्ड जिस पर प्रोग्राम चलता है, एक `.app` या `.apk`। [कॉन्फ़िग](/reference/config#apppath) देखें। |
+| `linkBase` | `mobile()` | वह बेस जिससे `app.open(path)` पाथ जोड़कर लिंक के रूप में खोलता है। [कॉन्फ़िग](/reference/config#linkbase) देखें। |
+| `identity` | दोनों | सेव स्टेट और रिकॉर्डिंग के लिए ऐप का नाम। डिफ़ॉल्ट: URL या बंडल id। |
+| `launchArguments` | `mobile()` | वे आर्ग्युमेंट जिनके साथ ऐप लॉन्च होता है, लिस्ट या ऑब्जेक्ट। [कॉन्फ़िग](/reference/config#launcharguments) देखें। |
+| `permissions` | दोनों | देने या मना करने वाली परमिशन। |
+
+<a id="timeout" />
+
+##### `timeout`
+
+एक ऑपरेशन का डिफ़ॉल्ट टाइमआउट, मिलीसेकंड में। इसके बिना:
+
+| ऑपरेशन | डिफ़ॉल्ट |
+| --- | --- |
+| कोई एक्शन, वेट, या रीड | 30000 |
+| `app.open()`, `app.restart()`, `app.clearState()` | 120000 |
+| कोई एजेंट स्टेप | 120000, या कॉल का अपना `timeout` |
+
+`timeout` पहली दो रो सेट करता है। सेशन की कोई डेडलाइन नहीं होती।
+
+### Host
+
+| मेंबर | रिटर्न |
+| --- | --- |
+| `platform` | `string` |
+| [`newSession`](#newsession) | `Promise<Session>` |
+| [`secret`](#secret) | `Secret` |
+| [`close`](#close) | `Promise<void>` |
+
+`platform` `web`, `ios`, `android`, या किसी कस्टम इंजन का अपना लेबल होता है।
+
+#### `newSession`
+
+एक सेशन खोलता है: एक अलग ब्राउज़र कॉन्टेक्स्ट, या डिवाइस पर ऐप। एक होस्ट एक समय
+पर एक ही सेशन रखता है।
+
+```ts
+const session = await shop.newSession({ state, signal: AbortSignal.timeout(60_000) });
+```
+
+| ऑप्शन | टाइप | डिफ़ॉल्ट |
+| --- | --- | --- |
+| `state` | [`SessionState`](#sessionstate) | - |
+| `signal` | `AbortSignal` | - |
+
+| क्या थ्रो होता है | कब |
+| --- | --- |
+| `WORKER_PROTOCOL` | होस्ट पर पहले से कोई सेशन खुला है, या होस्ट बंद हो चुका है। |
+| `SESSION_MISMATCH` | `state` किसी दूसरे इंजन, प्लेटफ़ॉर्म, या ऐप पर सेव हुआ था। |
+| `SESSION_EXPIRED` | `state` की एक्सपायरी बीत चुकी है। |
+
+#### `secret`
+
+`fill` या एजेंट के params के लिए `launch` को पास किए गए सीक्रेट का हैंडल लौटाता
+है। अनजान नाम पर `SECRET_UNAVAILABLE` थ्रो होता है।
+
+```ts
+await session.screen.getByLabel('Password').fill(shop.secret('SHOP_PASSWORD'));
+```
+
+#### `close`
+
+खुला हुआ सेशन बंद करता है, फिर इंजन। दूसरी कॉल कुछ नहीं करती। होस्ट डिस्पोज़ेबल
+भी है: `await using` इसे बंद कर देता है। अगर क्लीनअप फ़ेल हो, तो सारे फ़ेलियर का
+`AggregateError` थ्रो होता है।
+
+### Session
+
+| मेंबर | रिटर्न |
+| --- | --- |
+| `screen` | [`Screen`](/reference/screen) |
+| `app` | [`App`](/reference/app) |
+| `platform` | `string` |
+| `browser` | [`Browser`](/reference/web), `web()` के साथ |
+| `device` | [`Device`](/reference/mobile), `mobile()` के साथ |
+| [`saveState`](#savestate) | `Promise<SessionState>` |
+| [`setDefaultTimeout`](#setdefaulttimeout) | `void` |
+| `close` | `Promise<void>` |
+
+`close` सेशन खत्म करता है, जैसे `await using` करता है। उस समय चल रही कोई भी कॉल
+`CANCELLED` से फ़ेल हो जाती है। कोई एक्शन, वेट, या `app` या एजेंट कॉल मैसेज में
+अपना नाम बताती है: `the session closed while app.open "/" was running`। `close`
+के बाद हर ऑपरेशन `CANCELLED` से फ़ेल होता है।
+
+<Note>
+  हर कॉल को await करें। जिस कॉल को कोई await नहीं करता, वह सेशन बंद होने पर
+  अनहैंडल्ड रिजेक्ट होती है और Node.js वहीं प्रोग्राम बंद कर देता है।
+</Note>
+
+#### `saveState`
+
+सेशन की कुकी और स्टोरेज को मेमोरी में कैप्चर करता है। जिस इंजन के पास कैप्चर
+करने के लिए स्टेट न हो, जैसे `mobile()`, वह `UNSUPPORTED_CAPABILITY` थ्रो करता
+है।
+
+```ts
+const state = await session.saveState();
+```
+
+#### `setDefaultTimeout`
+
+अब से शुरू होने वाले ऑपरेशन का डिफ़ॉल्ट टाइमआउट मिलीसेकंड में सेट करता है:
+एक्शन, वेट, रीड, और ऐप ओपन और रीस्टार्ट।
+
+```ts
+session.setDefaultTimeout(5_000);
+```
+
+### SessionState
+
+| मेंबर | रिटर्न |
+| --- | --- |
+| `engine` | `string` |
+| `platform` | `string` |
+| [`export`](#export) | `Promise<Uint8Array>` |
+| [`SessionState.import`](#sessionstate-import) | `Promise<SessionState>` |
+
+#### `export`
+
+32-बाइट key (AES-256-GCM) से स्टेट को ऐसे बाइट्स में एन्क्रिप्ट करता है जिन्हें
+आप डिस्क पर लिख सकते हैं। प्लेनटेक्स्ट एक्सपोर्ट नहीं होता।
+
+```ts
+const bytes = await state.export({ key });
+```
+
+इन बाइट्स में इंजन, प्लेटफ़ॉर्म, और सीक्रेट के नाम साफ़ टेक्स्ट में होते हैं।
+कुकी, स्टोरेज, और सीक्रेट की वैल्यू एन्क्रिप्टेड होती हैं।
+
+#### `SessionState.import`
+
+उन बाइट्स को डिक्रिप्ट करता है जो `export` ने लिखे थे।
+
+```ts
+const state = await SessionState.import(bytes, { key });
+```
+
+| क्या थ्रो होता है | कब |
+| --- | --- |
+| `SESSION_INVALID` | दूसरी key, बदला हुआ बाइट, या ऐसे बाइट्स जिन्हें `export` ने नहीं लिखा। |
+| `SESSION_EXPIRED` | स्टेट की एक्सपायरी बीत चुकी है। |
+| `INVALID_ARGUMENT` | key 32 बाइट की नहीं है। |
+
+### Agent
+
+| फ़ंक्शन | रिटर्न |
+| --- | --- |
+| [`createAgent`](#createagent) | एक एजेंट |
+
+#### `createAgent`
+
+किसी एक सेशन के ऊपर एजेंट बनाता है। `assert`, `waitFor`, और `extract`
+[agent फ़िक्स्चर](/reference/agent) जैसे ही हैं। `act` में एक फ़र्क है: `cache`
+के साथ यह `cacheKey` लेता है।
+
+```ts
+const agent = createAgent(session, {
+  model: gateway('anthropic/claude-sonnet-5-5'),
+  cache: { dir: '.shop-bot/cache' },
+});
+const step = await agent.act('Add the item to the cart', { cacheKey: 'add-to-cart' });
+```
+
+| ऑप्शन | टाइप | डिफ़ॉल्ट |
+| --- | --- | --- |
+| `model`, `judge`, `context`, और बाकी | एक [`agents` एंट्री](/reference/config#agents) | - |
+| [`cache`](#cache) | `AgentCacheOptions` | कोई कैश नहीं |
+
+<a id="cache" />
+
+##### `cache`
+
+| फ़ील्ड | टाइप | डिफ़ॉल्ट |
+| --- | --- | --- |
+| `dir` | `string` | `.e2e/cache` |
+| `mode` | `'read-write' \| 'read-only'` | `'read-write'` |
+| `strict` | `boolean` | `false` |
+| `store` | [`CacheStore`](/cache) | फ़ाइल स्टोर |
+
+`cache` के साथ हर `act` या तो `{ cacheKey: '<name>' }` पास करता है, या लाइव
+चलने के लिए `{ cache: false }`। रिकॉर्डिंग कब सेव होती है, यह
+[रिकॉर्ड किए गए स्टेप रीप्ले करें](/core#replay-recorded-steps) में बताया गया है।
+
+## संबंधित
+
+- [@e2e-dev/core गाइड](/core)
+- [screen](/reference/screen), [app](/reference/app), और
+  [agent](/reference/agent): सेशन और एजेंट में क्या-क्या होता है।
+- [एरर](/reference/errors): हर एरर कोड।
+- [इंजन](/engines): अपना खुद का इंजन लिखें।

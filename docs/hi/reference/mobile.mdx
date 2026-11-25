@@ -1,0 +1,1549 @@
+---
+title: मोबाइल
+description: iOS और Android के लिए मोबाइल इंजन के ऑप्शन और device फ़िक्स्चर।
+"og:image": "https://e2e.com/docs/images/og/reference/mobile.png?v=3da450961d"
+"twitter:image": "https://e2e.com/docs/images/og/reference/mobile.png?v=3da450961d"
+---
+
+`@e2e-dev/mobile` iOS सिम्युलेटर, Android एम्युलेटर, और कनेक्टेड फ़ोन का इंजन है, जो
+[agent-device](https://github.com/callstack/agent-device) के ज़रिए चलता है। यह
+`device` फ़िक्स्चर देता है। `agent`, `app`, `screen`, और `expect` हर जगह की तरह ही काम
+करते हैं; इस पेज पर सिर्फ़ वे बातें हैं जो डिवाइस टारगेट के लिए खास हैं।
+
+```ts title="e2e.config.ts"
+import type { E2EConfig } from 'e2e';
+import { mobile } from '@e2e-dev/mobile';
+
+export default {
+  targets: [
+    { name: 'iphone', engine: mobile({ platform: 'ios' }), app: { bundleId: 'com.apple.Preferences' } },
+  ],
+} satisfies E2EConfig;
+```
+
+```ts title="tests/settings.e2e.ts"
+import { expect } from 'e2e';
+import { test } from '@e2e-dev/mobile';
+
+test('General opens in dark mode', async ({ app, device, screen }) => {
+  await device.setAppearance('dark');
+  await app.open();
+  await screen.getByText('General').tap();
+  await expect(screen.getByText('About')).toBeVisible();
+});
+```
+
+- `device` को सही टाइप के साथ पाने के लिए `@e2e-dev/mobile` से `test` इम्पोर्ट करें।
+  जो सूट वेब पर भी चलता है, उसमें `platforms: ['ios', 'android']` डिक्लेयर करें।
+- Settings उदाहरण के साथ पैकेज जोड़ने के लिए `e2e init` में **Mobile (iOS/Android)**
+  चुनें। iOS के लिए Xcode और सिम्युलेटर चाहिए; Android के लिए Android SDK और एम्युलेटर।
+- इस पैकेज में `agent-device` का सही वर्ज़न पहले से शामिल है; अलग से कुछ इंस्टॉल करने
+  की ज़रूरत नहीं है।
+
+## रेफ़रेंस
+
+### इंजन
+
+`mobile(options)` एक प्लेटफ़ॉर्म के लिए इंजन बनाता है। आप जितने प्लेटफ़ॉर्म टेस्ट करते
+हैं, हर एक के लिए अलग इंजन बनाएँ, और जिन टेस्ट में प्लेटफ़ॉर्म-खास लेबल या ऑपरेशन हों,
+उन पर `platforms: ['ios']` या `platforms: ['android']` लगाएँ।
+
+```ts title="e2e.config.ts"
+import type { E2EConfig } from 'e2e';
+import { mobile } from '@e2e-dev/mobile';
+import { mobileTools } from '@e2e-dev/mobile/tools';
+import { gateway } from 'ai';
+
+const iphone = mobile({ platform: 'ios' });
+const pixel = mobile({ platform: 'android' });
+
+export default {
+  targets: [
+    { name: 'iphone', engine: iphone, app: { bundleId: 'Settings' } },
+    { name: 'pixel', engine: pixel, app: { bundleId: 'com.android.settings' } },
+  ],
+  workers: 1,
+  agents: {
+    default: {
+      model: gateway('openai/gpt-6-luna-fast'),
+      tools: mobileTools(iphone, pixel),
+    },
+  },
+} satisfies E2EConfig;
+```
+
+`mobile()` `MobileOptions` लेता है: इंजन कौन से डिवाइस चलाता है और कैसे। टेस्ट हो रहा
+ऐप टारगेट का `app` होता है, इंजन ऑप्शन नहीं; [टेस्ट हो रहा ऐप](#the-app-under-test)
+देखें।
+
+| ऑप्शन | टाइप | डिफ़ॉल्ट |
+| --- | --- | --- |
+| [`platform`](#platform) | `'ios' \| 'android'` | ज़रूरी |
+| [`device`](#device-option) | `string \| readonly string[] \| DeviceProvider` | हर बूट हुआ डिवाइस |
+| [`session`](#session) | `string` | `e2e-<target name>`, `launch()` होस्ट के लिए `-<hostId>` के साथ |
+| [`snapshot`](#snapshot) | `'full' \| 'interactive'` | `'full'` |
+| [`settle`](#settle) | `number \| false` | `150` |
+| [`transition`](#transition) | `number` | `500` |
+| [`videoTouches`](#videotouches) | `boolean` | `true` |
+
+हर ऑप्शनल वैल्यू `undefined` भी लेती है, इसलिए सीधे `process.env` से पढ़ी गई वैल्यू के
+लिए कंडीशनल स्प्रेड नहीं लगाना पड़ता। नीचे हर एंट्री में उस मेंबर का डिक्लेरेशन दिया है।
+
+| थ्रो करता है | कब |
+| --- | --- |
+| `INVALID_CONFIG` | खाली `device` लिस्ट, खाली `device` नाम, या लिस्ट में खाली या नॉन-स्ट्रिंग एंट्री। |
+| `INVALID_CONFIG` | ऐसी `device` वैल्यू जो न स्ट्रिंग हो, न लिस्ट, न वैध प्रोवाइडर: बिना नॉन-एम्प्टी `name` वाला, `acquire()` या `release()` के बिना, या ऐसे `record` वाला प्रोवाइडर जो फ़ंक्शन न हो। |
+| `INVALID_CONFIG` | `platform` गायब हो या `'ios'` या `'android'` न हो; मैच केस-सेंसिटिव है। |
+| `INVALID_CONFIG` | दी गई `snapshot` वैल्यू `'full'` या `'interactive'` न हो, या दी गई `videoTouches` वैल्यू बूलियन न हो। |
+| `INVALID_CONFIG` | ऐसा ऑप्शन जो `mobile()` नहीं लेता, जैसे `mobile({ app })` और पुराने app ऑप्शन। टाइपिंग की गलती लगे तो मैसेज सबसे क़रीबी जाने-पहचाने ऑप्शन का नाम बताता है, वरना सारे ऑप्शन। |
+| `INVALID_CONFIG` | `settle` या `transition` मिलीसेकंड का नॉन-नेगेटिव इंटीजर न हो (`settle` `false` भी हो सकता है)। |
+
+#### `platform`
+
+```ts
+/** Platform the target's device runs. */
+readonly platform: MobilePlatform;
+```
+
+```ts
+mobile({ platform: 'android' });
+```
+
+- `'ios'` या `'android'`। ज़रूरी है।
+
+#### `device` ऑप्शन
+
+```ts
+/**
+ * Device to use: a simulator or emulator by name, simulator UDID, or
+ * emulator serial (`emulator-5554`), or a connected phone by name. A list
+ * is a pool: the engine declares one worker per entry and worker slot `n`
+ * drives the `n`th, so `workers` at or above the pool size runs the target's
+ * files across every device at once. Omitted, the pool is every booted device
+ * of the platform at `prepare` that no other agent-device session holds, as
+ * many as the run has slots. A paired iPhone or iPad that is reachable (USB or network) counts as booted and
+ * joins the pool. With none booted, agent-device boots a shut-down one: on
+ * iOS an iPhone over an iPad over an Apple TV, on Android a phone or tablet
+ * over a TV, then the newest OS, then name order (a stopped Android emulator
+ * reports no OS version, so the name decides). With every booted one held,
+ * `prepare` fails. A `DeviceProvider` leases hosted devices
+ * instead: one per worker slot at `prepare`, each driven through the daemon
+ * and client configuration the lease names. A replacement worker resumes a
+ * healthy agent-device session on the same lease. Forced worker shutdown
+ * can close the session. `device.closeApp()` ends the agent-device session,
+ * allowing another session to take the device. If agent-device has not
+ * confirmed a recording stop, the engine resets the recording before the
+ * next attempt. This reset also ends the session. The provider lease stays
+ * held until run end. At run end, the engine closes its sessions and the
+ * provider releases its leases.
+ */
+readonly device?: string | readonly string[] | DeviceProvider | undefined;
+```
+
+```ts
+mobile({ platform: 'ios' }); // default: every booted iOS device no other agent-device session holds
+mobile({ platform: 'ios', device: 'iPhone 17' });
+mobile({ platform: 'android', device: 'emulator-5554' });
+mobile({ platform: 'ios', device: ['iPhone 17', 'iPhone 17 Pro'] });
+```
+
+- दो वर्कर कभी एक ही डिवाइस को नहीं चलाते, बशर्ते हर `device` एंट्री अलग डिवाइस का नाम दे।
+- `device` न देने पर, अगर कोई दूसरा टूल अपने agent-device सेशन के ज़रिए किसी बूट हुए
+  सिम्युलेटर को पकड़े है तो उसे छोड़ दिया जाता है। जिस बूट हुए डिवाइस को कुछ भी नहीं
+  पकड़े है, जैसे जिसे आप खुद हाथ से चला रहे हैं, वह फिर भी पूल में रहता है: रन को उससे
+  दूर रखने के लिए डिवाइस का नाम दे दें।
+- इन्वेंटरी और वॉर्म-अप के बीच अगर कोई दूसरा agent-device सेशन (जैसे ठीक उसी पल खुला
+  कोई होस्ट) किसी बूट हुए डिवाइस को ले ले, तो उसकी जगह अगला खाली डिवाइस ले लिया जाता है।
+  कोई खाली न बचे, तो कई वर्कर वाला रन एक कम वर्कर के साथ आगे बढ़ता है। जो डिवाइस सिर्फ़
+  किसी छोटी agent-device कमांड (जैसे इंस्टॉल) में व्यस्त था, वह जुड़ा रहता है और उसका
+  वर्कर शुरू होने पर उसे फिर से आज़माता है। नाम से दिया गया डिवाइस या प्रोवाइडर की लीज़
+  कभी बदली नहीं जाती।
+- `DeviceProvider` कॉन्ट्रैक्ट और एक उदाहरण प्रोवाइडर [होस्टेड डिवाइस](/mobile#hosted-devices)
+  में हैं।
+
+```ts title="e2e.config.ts"
+import type { E2EConfig } from 'e2e';
+import { mobile } from '@e2e-dev/mobile';
+
+const iphones = mobile({
+  platform: 'ios',
+  device: ['iPhone 17', 'iPhone 17 Pro'],
+});
+
+export default {
+  targets: [{ name: 'ios', engine: iphones, app: { bundleId: 'com.example.app' } }],
+  workers: 2,
+} satisfies E2EConfig;
+```
+
+#### `session`
+
+```ts
+/**
+ * agent-device session name, before the worker slot: slot `n` drives its
+ * device under `<session>-<n>`, `e2e-<target name>-<n>` by default. One run
+ * per session at a time: concurrent runs on the same session interleave
+ * taps. Without this option a `launch()` host
+ * drives `e2e-<target name>-<host token>-<n>`, a session of its own.
+ */
+readonly session?: string | undefined;
+```
+
+```ts
+mobile({ platform: 'ios', session: 'checkout' }); // default: e2e-<target name>
+```
+
+#### `snapshot`
+
+```ts
+/**
+ * What an observation captures. `full` (default) includes static text, so
+ * judgments can read values; `interactive` keeps only actionable nodes and
+ * is cheaper on screens with long lists.
+ */
+readonly snapshot?: 'full' | 'interactive' | undefined;
+```
+
+```ts
+mobile({ platform: 'android', snapshot: 'interactive' }); // default: 'full'
+```
+
+#### `settle`
+
+```ts
+/**
+ * How long the UI must hold still after a tap, fill, screen scroll, or
+ * back before the agent observes again, in milliseconds; `false` skips the
+ * wait. The wait keeps that observation off a transition frame; the runner's
+ * own polling (`expect`, actions waiting for their node) covers the rest,
+ * so a short window suffices. Default 150.
+ * Every frame of a running animation changes the tree, so a 150 ms
+ * window still catches a transition in flight; raise it for slow devices
+ * or apps that settle in stages, or lower it to 0 to keep only the first
+ * re-observation. A test's steps do not settle, except `device.back()`:
+ * `expect` verifies their outcome, and `transition` covers a control that is
+ * still arriving.
+ */
+readonly settle?: number | false | undefined;
+```
+
+```ts
+mobile({ platform: 'ios', settle: 300 }); // default: 150
+```
+
+#### `transition`
+
+```ts
+/**
+ * Wait before acting on a control that just appeared or moved, in
+ * milliseconds. Default 500. Accessibility bounds cannot tell a sliding
+ * control from a landed one (iOS reports the final frame at once, Android
+ * the frame in flight), so the control is found again in a fresh snapshot
+ * once the wait is over and acted on where it landed. Unmoved controls are
+ * acted on immediately only when keyboard visibility is unchanged. Opening
+ * or closing the keyboard also uses the remaining budget. Screen swipes in
+ * tests wait out the remaining budget before scrolling. Raise it for slower
+ * transitions.
+ */
+readonly transition?: number | undefined;
+```
+
+```ts
+mobile({ platform: 'ios', transition: 800 }); // default: 500
+```
+
+अगर इंतज़ार के दौरान कंट्रोल बदल जाए, तो एक्शन करने से पहले अपने टाइमआउट के अंदर उसे
+फिर से ढूँढता है।
+
+[`device`](#device) के `back`, `home`, `shake`, `alert`, `dismissKeyboard`,
+`setOrientation`, और `fold` स्क्रीन बदल देते हैं, इसलिए वे इस बजट के लिए टैप की तरह ही
+एक्शन गिने जाते हैं। उनकी दिखाई गई स्क्रीन के साथ जो कंट्रोल आता है, उस पर अगला एक्शन
+लगने से पहले वह यह बजट पूरा होने का इंतज़ार करता है।
+
+`fill` और `clear` टाइप करने से पहले फ़ील्ड को दोबारा पढ़ते हैं। गायब फ़ील्ड, बदली हुई
+सिक्योरिटी स्टेट, या अधूरा कैप्चर बदलाव करने से पहले `NODE_STALE` लौटाते हैं, और फिर नए
+ऑब्ज़र्वेशन के बाद दोबारा कोशिश करते हैं। नॉन-इनपुट टारगेट `UNSUPPORTED_CAPABILITY`
+लौटाते हैं। iOS का `other` (उस एलिमेंट का टाइप जिसे प्लेटफ़ॉर्म ने क्लासिफ़ाई नहीं किया)
+में तब टाइप किया जाता है जब उसमें कोई वैल्यू या सिर्फ़ टेक्स्ट हो, क्योंकि कस्टम-ड्रॉ
+किए गए फ़ील्ड (Compose Multiplatform, Flutter) इसी तरह पढ़े जा सकते हैं।
+
+#### `videoTouches`
+
+```ts
+/**
+ * Whether a video recording draws agent-device's touch indicator where a
+ * test tapped. Default `true`. `false` records the plain screen, and skips
+ * the pass that draws the indicator once the recording stops: on a hosted
+ * daemon such as Expo Simulators' that pass can outlast the attempt's
+ * `cleanupTimeout`.
+ */
+readonly videoTouches?: boolean | undefined;
+```
+
+```ts
+mobile({ platform: 'ios', videoTouches: false }); // default: true
+```
+
+#### टेस्ट हो रहा ऐप
+
+ऐप टारगेट का `app` होता है: `bundleId`, `appPath`, `launchArguments`, `permissions`,
+`identity`, और `environment` के बारे में [टेस्ट हो रहा ऐप](/reference/config#the-app-under-test)
+में बताया गया है।
+
+```ts title="e2e.config.ts"
+export default {
+  targets: [{ name: 'ios', engine: mobile({ platform: 'ios' }), app: { appPath: './build/MyApp.app' } }],
+} satisfies E2EConfig;
+```
+
+- डिवाइस टारगेट को `app.bundleId` या `app.appPath` चाहिए होता है।
+- `app.open()` टारगेट के ऐप को नए सिरे से लॉन्च करता है। अटेम्प्ट अपने आप कुछ लॉन्च नहीं
+  करता, इसलिए टेस्ट वहीं से शुरू होता है जहाँ पिछले टेस्ट ने ऐप को छोड़ा था।
+- जब टारगेट [`app.linkBase`](/reference/config#linkbase) डिक्लेयर करता है, तो
+  `app.open(path)` उस पाथ को ऐप में लिंक के तौर पर खोलता है; इसके बिना `app.open` कोई
+  पाथ नहीं लेता और लिंक [`device.openLink`](#openlink) से जाता है।
+- `app.appPath` वह बिल्ड है जिस पर सूट चलता है। इंजन अपने आप कुछ इंस्टॉल नहीं करता:
+  जहाँ सूट कहे वहाँ [`device.installApp()`](#installapp) उसे इंस्टॉल करता है। डिवाइस
+  प्रोवाइडर इसे अपने लीज़ किए गए डिवाइस पर इंस्टॉल करता है।
+- `bundleId` न होने पर, इंस्टॉल हुआ बंडल id या पैकेज वही ऐप बन जाता है जिसे `app.open()`
+  लॉन्च करता है।
+- जब बिल्ड का पाथ हर रन में बदलता हो (जैसे उसमें वर्ज़न लिखा हो), तो `identity` डिक्लेयर
+  करें ताकि नाम बदलने पर भी रिकॉर्डिंग बची रहें।
+
+| थ्रो करता है | कब |
+| --- | --- |
+| `INVALID_CONFIG` | कॉन्फ़िग लोड पर: न `app.bundleId` हो न `app.appPath`; `app.url` दिया हो (अभी सपोर्ट नहीं है); `bundleId` में लिंक हो (टेस्ट लिंक `device.openLink` से खोलता है); अनजान परमिशन नाम; या Android टारगेट पर ऑब्जेक्ट में Apple लॉन्च आर्ग्युमेंट जैसे `AppleLocale` या ऐसी लिस्ट आइटम जिसे `am start` नहीं ले जा सकता। |
+| `UNSUPPORTED_CAPABILITY` | बिना `app.bundleId` वाले टारगेट पर उसका बिल्ड इंस्टॉल होने से पहले `app.open()`, `app.restart()`, या `app.clearState()` कॉल करना। |
+
+#### लॉन्च आर्ग्युमेंट और परमिशन
+
+`app.launchArguments` और `app.permissions` पिन किए गए ऐप के हर नए लॉन्च के साथ जाते हैं:
+`app.open()`, `app.restart()`, और `app.clearState()`, जो डेटा के साथ परमिशन भी रीसेट कर
+देता है।
+
+```ts title="e2e.config.ts"
+export default {
+  targets: [
+    {
+      name: 'pixel',
+      engine: mobile({ platform: 'android' }),
+      app: {
+        bundleId: 'com.example.app',
+        launchArguments: ['--ez', 'e2e', 'true'],
+        permissions: { camera: 'grant', notifications: 'deny' },
+      },
+    },
+  ],
+} satisfies E2EConfig;
+```
+
+- iOS ये आर्ग्युमेंट ऐप प्रोसेस (`ProcessInfo.processInfo.arguments`) को देता है।
+  Android इन्हें `am start` में जोड़ता है, इसलिए `['--ez', 'e2e', 'true']` एक बूलियन
+  इंटेंट एक्स्ट्रा बनता है।
+- ऑब्जेक्ट हर आर्ग्युमेंट को एक नाम देता है।
+  - iOS पर, हर एंट्री `-name value` बनती है, उस फ़ॉर्मेट में जिसे `NSUserDefaults` पढ़ता
+    है। ऐसी स्ट्रिंग जिसे पार्सर plist या कमेंट समझ सकता है, जैसे `(draft)`, `a b`, या
+    `//cdn`, उसे कोट्स में रखा जाता है। जो ऐप `ProcessInfo.processInfo.arguments` पढ़ता
+    है उसे यही फ़ॉर्मेट मिलता है, जिसमें `false` के लिए `NO` और कोट्स भी शामिल होते हैं।
+    अगर आपका ऐप `ProcessInfo.processInfo.arguments` पढ़ता है, तो इसकी जगह
+    `launchArguments` का लिस्ट फ़ॉर्मेट इस्तेमाल करें:
+
+    ```ts title="e2e.config.ts"
+    export default {
+      targets: [
+        {
+          name: 'iphone',
+          engine: mobile({ platform: 'ios' }),
+          app: {
+            bundleId: 'com.example.app',
+            launchArguments: ['-flag', 'false', '-title', 'a b'],
+          },
+        },
+      ],
+    } satisfies E2EConfig;
+    ```
+  - Android पर, हर एंट्री वैल्यू के टाइप का `am start` एक्स्ट्रा बनती है। ऐप इसे मैचिंग
+    `Intent` गेटर से पढ़ता है। `1.0` जैसी पूर्ण संख्या `int` होती है। Android Apple के
+    आर्ग्युमेंट नहीं पढ़ता, इसलिए Android टारगेट पर ऑब्जेक्ट में `AppleLanguages` या
+    `AppleLocale` देने पर `INVALID_CONFIG` आता है। स्ट्रिंग्स की लिस्ट `am start` को
+    बिना बदलाव के जाती है।
+- `am start` लिस्ट एक्स्ट्रा को हर उस कॉमा पर तोड़ता है जिसके पहले बैकस्लैश न हो, और उस
+  बैकस्लैश को बनाए रखता है। इसलिए Android पर ऑब्जेक्ट में दी गई लिस्ट तब `INVALID_CONFIG`
+  से फ़ेल होती है जब लिस्ट खाली हो, या कोई आइटम खाली हो, उसमें कॉमा हो, या वह बैकस्लैश
+  पर खत्म हो।
+
+| वैल्यू | iOS | Android |
+| --- | --- | --- |
+| `'fr_FR'` | `-name fr_FR` | `--es name fr_FR` |
+| `'(draft)'` | `-name "(draft)"` | `--es name (draft)` |
+| `true` | `-name YES` | `--ez name true` |
+| `3` | `-name 3` | `--ei name 3`, Java के `int` से बाहर `--el` |
+| `1.5` | `-name 1.5` | `--ef name 1.5` |
+| `-1` | `-name "-1"` | `--ei name -1` |
+| `['fr', 'de']` | `-name (fr, de)` | `--esa name fr,de` |
+
+- हर परमिशन `grant`, `deny`, या `reset` होती है। iOS पर `deny` एक रिकॉर्ड किया हुआ मना
+  होता है जहाँ ऐप को बिना प्रॉम्प्ट के मना कर दिया जाता है, और Android पर यह रिवोकेशन
+  होता है जहाँ ऐप के दोबारा माँगने पर OS फिर पूछता है।
+- ऐप शुरू होने से पहले नाम से उस पर परमिशन सेट की जाती हैं, पहले खोले बिना, क्योंकि iOS
+  चलते ऐप की परमिशन बदलने पर और Android परमिशन हटाने पर उसे बंद कर देता है।
+- वॉर्म-अप कोई लॉन्च आर्ग्युमेंट नहीं भेजता और किसी परमिशन को नहीं छूता।
+- [`device.openApp(app, { relaunch: true, launchArguments, permissions })`](#openapp)
+  किसी भी ऐप के एक लॉन्च के लिए यही काम करता है।
+
+| थ्रो करता है | कब |
+| --- | --- |
+| `INVALID_CONFIG` | `app.permissions` में: `DevicePermission` से बाहर का कोई परमिशन नाम (टाइपिंग की गलती लगे तो सबसे क़रीबी नाम बताता है), या `grant`, `deny`, या `reset` के अलावा कोई स्टेट। किसी भी डिवाइस कमांड से पहले फ़ेल होता है। |
+| `INVALID_ARGUMENT` | वही, `device.openApp` में। |
+
+#### बूट और प्रिपेयर
+
+डिवाइस `prepare` में बूट होते हैं, हर रन में एक बार और रन की घड़ी शुरू होने से पहले,
+ताकि CI पर कोल्ड बूट कभी `launchTimeout` में न गिना जाए।
+
+- [`device`](#device-option) बताता है कि `prepare` कौन से डिवाइस इस्तेमाल करता है और
+  इंजन कितने वर्कर डिक्लेयर करता है।
+- iOS पर, `prepare` हर डिवाइस पर agent-device के `prepare ios-runner` से ऑटोमेशन रनर
+  शुरू करता है, ताकि उसका पहला लॉन्च पहले टेस्ट से पहले ही हो जाए।
+- फिर दोनों प्लेटफ़ॉर्म पर, यह हर डिवाइस पर टारगेट का `app.bundleId` एक बार खोलता है। जो
+  बिल्ड सूट खुद इंस्टॉल करता है, वह पहले `app.open()` के साथ आता है, जो टेस्ट के कहने पर
+  उसे हर बार नए सिरे से रीलॉन्च करता है।
+- जो डिवाइस बूट न हो सके, या जो रनर व्यस्त हो, अटका हो, या अपने वॉचडॉग से आगे निकल गया
+  हो, वह रन को `prepare` में ही खत्म कर देता है।
+- किसी और वजह से शुरू न होने वाला रनर लॉग हो जाता है और पहले अटेम्प्ट पर छोड़ दिया जाता
+  है, और उस डिवाइस का ऐप वहाँ नहीं खोला जाता।
+
+हर डिवाइस एक लाइन में लॉग करता है कि उसके प्रिपेयर स्टेप्स में कितना समय लगा, फ़ेल हुए
+स्टेप समेत। एक कोल्ड iOS सिम्युलेटर:
+
+```text
+ℹ booting E93FA5E5-1592-43C7-9149-F1B5FE0AD5F5 (1 of 1)
+ℹ E93FA5E5-1592-43C7-9149-F1B5FE0AD5F5: boot 36.3s, iOS runner 61.6s, open dev.e2e.benchmark 9.2s
+```
+
+- `boot` डिवाइस का बूट है, जो पहले से चालू डिवाइस पर कुछ सेकंड का होता है।
+- `iOS runner` ऑटोमेशन रनर का स्टार्ट है, सिर्फ़ iOS पर।
+- `open <app>` ऐप को फ़ोरग्राउंड में लाता है और कोल्ड डिवाइस पर उसे लॉन्च करता है। जिस
+  डिवाइस पर ऊपर बताए अनुसार ओपन छोड़ा गया हो, वहाँ यह नहीं दिखता।
+
+सामान्य ऐप-ओपन फ़ेलियर अपनी अलग लाइन पर लॉग होता है, और रन चलता रहता है। वह लाइन डिवाइस
+की टाइमिंग लाइन से पहले प्रिंट होती है, जिसमें फ़ेल हुआ `open <app>` स्टेप फिर भी दिखता
+है:
+
+```text
+ℹ E93FA5E5-1592-43C7-9149-F1B5FE0AD5F5: dev.e2e.not.installed did not open (open dev.e2e.not.installed failed: Simulator device failed to launch dev.e2e.not.installed. Hint: The app bundle is not installed on this simulator. Run install before open.); the first attempt opens it
+```
+
+<Note>
+जब स्टेप इंतज़ार करना बंद कर दे या रन को रोका जाए, तो पेंडिंग टैप, डबल टैप, मल्टी-टैप,
+फ़ोकस, चेक या अनचेक कैंसल हो जाते हैं। इसमें कीबोर्ड टिप बंद करने वाला टैप भी शामिल है।
+
+डिवाइस को पहले से भेजा जा चुका इनपुट फिर भी पूरा हो सकता है। बाकी कमांड अपने कॉलर के
+टाइमआउट से ज़्यादा चल सकती हैं; अगला अटेम्प्ट उनके पूरा होने का इंतज़ार करता है।
+</Note>
+
+#### कैपेबिलिटीज़
+
+| कॉन्ट्रैक्ट मेंबर | डिवाइस पर |
+| --- | --- |
+| `observe` | रेक्ट्स के साथ ऐक्सेसिबिलिटी ट्री। एलिमेंट टाइप [रोल्स](#roles) में दी गई सूची के हिसाब से रोल पर मैप होते हैं; `Switch` या `CheckBox`, और Android का `RadioButton`, डिवाइस की बताई `checked` स्टेट रखते हैं, और `SecureTextField` या जिस Android फ़ील्ड को UIAutomator `password` मार्क करे वह सिक्योर `textbox` होता है। iOS फ़ील्ड अपने लेबल के बराबर वैल्यू रखता है (बिना लेबल वाले फ़ील्ड का नाम उसके टेक्स्ट से होता है); Android में टेक्स्ट व्यू के लेबल का उसकी वैल्यू के रूप में दोहराया जाना हटा दिया जाता है। ऐक्सेसिबिलिटी आइडेंटिफ़ायर (iOS) या रिसोर्स id (Android) नोड का `testId` बनता है। Android नोड का नाम ऐप के सेट किए कंटेंट डिस्क्रिप्शन (React Native का `accessibilityLabel`) से होता है, वरना उसके टेक्स्ट से, और उसका `text` वही होता है जो वह दिखाता है, इसलिए लेबल वाला टेक्स्ट व्यू या भरा हुआ फ़ील्ड लेबल से `getByLabel` और टेक्स्ट से `getByText` का जवाब देता है। फ़ील्ड का हिंट उसका `placeholder` ऐट्रिब्यूट होता है, चाहे दिख रहा हो या नहीं। Compose Multiplatform iOS पर कोई प्लेसहोल्डर रिपोर्ट नहीं करता: खाली फ़ील्ड जो टेक्स्ट ड्रॉ करता है उसे अपने लेबल में जोड़ देता है (`Name, Ada Lovelace`) और एक `StaticText` चाइल्ड रखता है, इसलिए वही टेक्स्ट फ़ील्ड का `placeholder` बनता है और उस चाइल्ड को छोड़ दिया जाता है। खाली फ़ील्ड की कोई वैल्यू नहीं होती: Android दिख रहे हिंट को मार्क करता है, और XCTest खाली iOS फ़ील्ड के प्लेसहोल्डर को उसकी वैल्यू के रूप में रिपोर्ट करता है, इसलिए जिस iOS फ़ील्ड की वैल्यू उसके प्लेसहोल्डर (ट्रिम की हुई) के बराबर हो वह खाली पढ़ा जाता है, भले ही ठीक प्लेसहोल्डर जैसा टेक्स्ट टाइप किया गया हो। एक Android बात agent-device की है, प्लेटफ़ॉर्म की नहीं: `rect` और हर पॉइंट स्क्रीन के फ़िज़िकल पिक्सल में होते हैं; वह जो डिस्प्ले डेंसिटी रिपोर्ट करता है वह अभी लागू नहीं होती। Android का स्टेटस बार और नेविगेशन बार, यानी स्क्रीन के किनारों पर पूरी चौड़ाई वाली `com.android.systemui` विंडो और उस किनारे की पट्टी में agent-device से अकेले रिपोर्ट किए गए संकरे स्टेटस आइकन (घड़ी, सिग्नल, बैटरी), इन्हें छोड़ दिया जाता है; नोटिफ़िकेशन शेड, सिस्टम डायलॉग, और किनारों से अंदर की तरफ़ आने वाले हेड्स-अप नोटिफ़िकेशन या दूसरे पॉपअप बने रहते हैं। माँगने पर पिक्सल मिलते हैं, जिनमें हर सिक्योर नोड की बाउंड्स काले रंग से ढकी होती हैं। |
+| `perform` | एडिटेबल फ़ील्ड पर `tap`, `doubleTap`, `multiTap`, `longPress`, `fill`, `clear`, `hover`, `check`, `uncheck`, `press` (`Enter`, `Space`, या एक कैरेक्टर), `swipe`, `dragTo`, और `focus`। `switch` या `checkbox` पर टैप उसके सबसे अंदरूनी कंट्रोल पर लगता है, क्योंकि UIKit सेटिंग्स रो को एक लेबल वाले स्विच के रूप में दिखाता है जिसमें असली टॉगल चाइल्ड होता है। `check` और `uncheck` को `checked` स्टेट चाहिए होती है। दोनों प्लेटफ़ॉर्म पर स्विच यह स्टेट रिपोर्ट करते हैं, और नेटिव Android `CheckBox` भी; React Native चेकबॉक्स या रेडियो यह तभी रिपोर्ट करता है जब ऐप `accessibilityState.checked` सेट करे। बिना स्टेट वाला कंट्रोल `UNSUPPORTED_CAPABILITY` देता है, इसलिए उस पर टैप करें। `doubleTap` दो प्रेस होते हैं, iOS पर 284 से 285 ms के अंतर पर (agent-device के XCTest टैप की यही गति है): agent-device का अपना डबल-टैप जेस्चर React Native के `Pressable` तक एक ही प्रेस के रूप में पहुँचता है। 300 ms या कम की विंडो वाला डिटेक्टर इस जोड़ी को दो सिंगल टैप पढ़ सकता है। `multiTap` `doubleTap` की ही गति से `count` प्रेस करता है, इसलिए वही छोटी-विंडो वाली बात यहाँ भी लागू होती है; agent-device की सीमा 200 से ऊपर का `count` किसी भी प्रेस से पहले `UNSUPPORTED_CAPABILITY` देता है। iOS पर लगभग 285 ms प्रति प्रेस के हिसाब से 200 प्रेस में लगभग एक मिनट लगता है, जो डिफ़ॉल्ट 30 s के एक्शन टाइमआउट से ज़्यादा है, इसलिए बड़े `count` के लिए ज़्यादा `timeout` पास करें। जब तक टेस्ट `duration` न दे, `longPress` एक सेकंड तक होल्ड करता है, जो React Native `Pressable` के 500 ms के `delayLongPress` और ऐप्स की लंबी सीमाओं से ज़्यादा है; agent-device का अपना डिफ़ॉल्ट होल्ड छोटा होता है और उन पर टैप गिना जाता है। `blur`, `selectOption`, `setInputFiles`, `scrollIntoView`, और `secondaryTap` डिक्लेयर नहीं हैं, न ही `tapModifiers`, इसलिए `modifiers` के साथ `tap`, `doubleTap`, या `multiTap` देने पर `UNSUPPORTED_CAPABILITY` आता है। किसी ऐसे नोड पर एक्शन जिसे नए स्नैपशॉट ने बदल दिया हो, किसी और एलिमेंट पर चलने के बजाय उस नोड को दोबारा ढूँढता है। |
+| `performAt` | स्क्रीन के सीधे पॉइंट पर `tap`, `doubleTap`, `longPress`, और `swipeTo`, ताकि `screen.tapAt`, `screen.doubleTapAt`, `tap({ position })`, `screen.swipe({ from, to })`, और एजेंट का `tap_at` ऐसे कंट्रोल तक पहुँच सकें जो ट्री में नहीं है। पॉइंट पर कोई `hover`, `secondaryTap`, या `dragTo` नहीं होता: टच में बिना नोड के ये नहीं होते, इसलिए `hover_at` को ट्री में शामिल कंट्रोल चाहिए। |
+| `keyboard` | फ़ोकस्ड फ़ील्ड में `type` और `press`, एजेंट का बिना टारगेट वाला `type` और `press` और `type_at` और `press_at` का फ़ॉलबैक, और `dismiss`, जो एजेंट का `dismiss_keyboard` है। |
+| `locate` | हर `screen` क्वेरी। टेक्स्ट और लेबल क्वेरी सबसे अंदरूनी मैच लौटाती हैं, क्योंकि डिवाइस दोनों को ट्री में ऊपर दोहराता है (React Native इनपुट एक होस्ट व्यू और उसके अंदर का फ़ील्ड होता है, दोनों पर लेबल होता है)। Android पर टेस्ट id क्वेरी (स्ट्रिंग या RegExp), जब स्क्रीन पर पूरी id से कुछ मैच न हो, तो `<package>:id/` प्रीफ़िक्स के बिना भी रिसोर्स id से मैच करती है (फ़्रेमवर्क के `android` को छोड़कर किसी भी पैकेज के लिए)। `screen.locator('id=…')` agent-device का सेलेक्टर है और पूरी id लेता है। |
+| `validateApp` | `app.bundleId` या `app.appPath` ज़रूरी है और अभी `app.url` को मना करता है, साथ में यह नोट देता है कि प्लेटफ़ॉर्म के डिवाइस से इस मशीन तक कैसे पहुँचा जाए। |
+| `session` | `back`, `restart`, `reset`, और `openLink` (`app.linkBase` वाले टारगेट पर `app.open(path)` के पीछे)। कोई `open` नहीं है: बिना पाथ के `app.open()` को `restart` से चलाया जाता है, यानी पिन किए गए ऐप का नया लॉन्च; एजेंट का `navigate` वर्ब उपलब्ध नहीं है, और `device.openLink(url)` डीप लिंक या वेब लिंक खोलता है। |
+| `artifacts` | `screenshots/NNN-<label>.png` के नीचे छिपाए गए सीक्रेट वाले स्क्रीनशॉट; जिस स्क्रीनशॉट में सीक्रेट छिपाए न जा सकें वह लिखे जाने के बजाय फ़ेल हो जाता है। जब अटेम्प्ट का [वीडियो मोड](/reference/config#video) रिकॉर्ड करता है, तो `video/video.mp4` के रूप में वीडियो, या डिवाइस प्रोवाइडर की अपनी रिकॉर्डिंग। |
+| `location` | `<bundle id> / <screen title>`, जो रीप्ले कैश का एंकर है। टाइटल iOS पर नेविगेशन बार का और Android पर टूलबार का होता है। |
+| `state` | डिक्लेयर नहीं है। `test.setup` और `session:` उपलब्ध नहीं हैं। |
+
+### डिवाइस
+
+`device` फ़िक्स्चर डिटर्मिनिस्टिक डिवाइस मैनेजमेंट के लिए है। टेस्ट इसे सीधे कॉल करके
+डिवाइस का स्टेट सेट या असर्ट करता है।
+
+```ts
+test('offline banner', { platforms: ['android'] }, async ({ app, device, screen }) => {
+  await app.open();
+  await device.setNetwork('offline');
+  await expect(screen.getByText('You are offline')).toBeVisible();
+  await device.setNetwork('online');
+});
+```
+
+| मेंबर | क्या लौटाता है |
+| --- | --- |
+| [`unstable_raw`](#unstable_raw) | `DeviceSession` |
+| [`locator`](#locator) | `Locator` |
+| [`setNetwork`](#setnetwork) | `Promise<void>` |
+| [`setAirplaneMode`](#setairplanemode) | `Promise<void>` |
+| [`setPermission`](#setpermission) | `Promise<void>` |
+| [`setLocation`](#setlocation) | `Promise<void>` |
+| [`clearLocation`](#clearlocation) | `Promise<void>` |
+| [`setAppearance`](#setappearance) | `Promise<void>` |
+| [`setOrientation`](#setorientation) | `Promise<void>` |
+| [`fold`](#fold) | `Promise<void>` |
+| [`setBiometrics`](#setbiometrics) | `Promise<void>` |
+| [`enrollBiometrics`](#enrollbiometrics) | `Promise<void>` |
+| [`installApp`](#installapp) | `Promise<InstalledApp>` |
+| [`uninstallApp`](#uninstallapp) | `Promise<boolean>` |
+| [`isAppInstalled`](#isappinstalled) | `Promise<boolean>` |
+| [`openApp`](#openapp) | `Promise<void>` |
+| [`openLink`](#openlink) | `Promise<void>` |
+| [`closeApp`](#closeapp) | `Promise<void>` |
+| [`clearKeychain`](#clearkeychain) | `Promise<void>` |
+| [`foregroundApp`](#foregroundapp) | `Promise<ForegroundApp>` |
+| [`viewport`](#viewport) | `Promise<ViewportSize>` |
+| [`home`](#home) | `Promise<void>` |
+| [`back`](#back) | `Promise<void>` |
+| [`pressRemote`](#pressremote) | `Promise<void>` |
+| [`shake`](#shake) | `Promise<void>` |
+| [`alert`](#alert) | `Promise<void>` |
+| [`dismissKeyboard`](#dismisskeyboard) | `Promise<void>` |
+| [`isKeyboardShown`](#iskeyboardshown) | `Promise<boolean>` |
+| [`clipboard`](#clipboard) | `Promise<string>` |
+| [`setClipboard`](#setclipboard) | `Promise<void>` |
+
+हर async मेथड `device.<method>` नाम का रिकॉर्ड किया हुआ स्टेप है, जो
+`config.actionTimeout` से बँधा होता है। `back`, `home`, `pressRemote`, `shake`,
+`alert`, `dismissKeyboard`, `setOrientation`, और `fold` [`transition`](#transition)
+बजट के लिए एक्शन गिने जाते हैं। नीचे हर एंट्री में उस मेंबर का डिक्लेरेशन है; ये जो
+टाइप इस्तेमाल करते हैं वे [टाइप](#device-fixture) में हैं।
+
+| थ्रो करता है | कब |
+| --- | --- |
+| `APP_NOT_OPEN` | सेशन खो गया। |
+| `ACTION_FAILED` | `actionTimeout` पूरा हो गया। |
+| `UNSUPPORTED_CAPABILITY` | प्लेटफ़ॉर्म यह कमांड नहीं चला सकता। |
+| `ENGINE_FAILURE` | बाकी कुछ भी, agent-device के मैसेज के साथ। जो टाइमआउट डिवाइस खुद रिपोर्ट करे (बूट, रनर का कनेक्ट होना), उसका टेक्स्ट और हिंट वहीं रहता है। व्यस्त या अटका हुआ iOS ऑटोमेशन रनर अपना नाम और रिकवरी बताता है ([ट्रबलशूटिंग](/mobile#troubleshooting) देखें)। |
+
+#### `unstable_raw`
+
+```ts
+/**
+ * The raw driver session this test drives, for what the methods here do
+ * not cover. Calls through `client` bypass e2e: they are not steps, so the
+ * report and trace leave them out, the agent's cache does not replay them,
+ * their arguments reach the driver unredacted, and nothing waits for the
+ * screen to settle after one. Unstable: it may change or go away in any
+ * release.
+ */
+readonly unstable_raw: DeviceSession;
+```
+
+```ts
+const { client, selection } = device.unstable_raw;
+await client.apps.list(selection);
+```
+
+`client` का टाइप `DeviceSessionClient` है, जो `@e2e-dev/mobile` से एक्सपोर्ट होता है।
+इसके ऑपरेशन अनस्टेबल हैं और किसी भी रिलीज़ में बदल सकते हैं। वर्कर के सेशन को डिस्पोज़
+करने के बाद `unstable_raw` या `client` पढ़ने पर `INVALID_STATE` थ्रो होता है।
+
+#### `locator`
+
+```ts
+/**
+ * A locator from an agent-device selector (`'id=SW_VERSION_SPECIFIER'`,
+ * `'role=text label="26.2"'`), for nodes the closed `screen` query
+ * vocabulary cannot name. Same polling and strictness as any locator.
+ */
+locator(selector: string): Locator;
+```
+
+```ts
+await expect(device.locator('role=navigation-bar id=About')).toBeVisible();
+await expect(device.locator('role=text label="iOS Version"')).toHaveText('iOS Version');
+await device.locator('id=SW_VERSION_SPECIFIER role=button').tap();
+```
+
+सेलेक्टर के टर्म और उनके नियम agent-device के हैं, वही जो `agent-device find ... list`
+लगाता है:
+
+- टर्म: `id`, `role`, `text`, `label`, `value`, `appname`, `windowtitle`, और फ़्लैग
+  `visible`, `hidden`, `editable`, `selected`, `focused`, `enabled`, `hittable`।
+- `role` agent-device का काइंड लेता है, वही रोल जो `agent-device snapshot` प्रिंट करता
+  है: `button`, `text`, `text-field`, `navigation-bar`, `scroll-area`, `switch`,
+  `image`। यह `getByRole` वाला रोल (`textbox`) नहीं है।
+- टेक्स्ट टर्म वाइटस्पेस समेटने के बाद केस-इनसेंसिटिव तुलना करते हैं।
+- `visible` का मतलब है कि नोड हिटेबल है या उसका फ़्रेम खाली नहीं है; `hidden` इसका उल्टा है।
+- `text` पहला नॉन-एम्प्टी लेबल, वैल्यू, या आइडेंटिफ़ायर पढ़ता है।
+
+<Note>
+कई नोड्स से मैच होने वाले सेलेक्टर पर एक्शन फ़ेल हो जाता है, जबकि agent-device का एक्शन
+अस्पष्ट `||` ऑल्टरनेटिव को छोड़ देता है।
+</Note>
+
+#### `setNetwork`
+
+```ts
+/**
+ * Switches an Android device's Wi-Fi. Cellular data stays on, so an
+ * emulator hands the app over to its cellular link; `setAirplaneMode(true)`
+ * cuts both. On iOS `offline` is `UNSUPPORTED_CAPABILITY`, since a
+ * simulator shares the Mac's network and simctl can only repaint its status
+ * bar; `online` sends nothing there, so a cleanup hook shared with Android
+ * passes.
+ */
+setNetwork(state: 'online' | 'offline'): Promise<void>;
+```
+
+```ts
+await device.setNetwork('offline');
+await device.setNetwork('online');
+```
+
+| थ्रो करता है | कब |
+| --- | --- |
+| `UNSUPPORTED_CAPABILITY` | iOS पर `offline`। |
+
+#### `setAirplaneMode`
+
+```ts
+/**
+ * Switches an Android device's airplane mode, Wi-Fi and cellular together;
+ * Android 11 or newer. On iOS, as for `setNetwork`, `true` is
+ * `UNSUPPORTED_CAPABILITY` and `false` sends nothing.
+ */
+setAirplaneMode(enabled: boolean): Promise<void>;
+```
+
+```ts
+await device.setAirplaneMode(true);
+```
+
+| थ्रो करता है | कब |
+| --- | --- |
+| `UNSUPPORTED_CAPABILITY` | iOS पर `true`। |
+
+#### `setPermission`
+
+```ts
+/**
+ * Grants, denies, or resets one permission for the pinned app, which need
+ * not be running. A change terminates a running app on iOS, a revoke one
+ * on Android, so it goes before the `app.open()` a test starts with.
+ */
+setPermission(permission: DevicePermission, state: PermissionState): Promise<void>;
+```
+
+```ts
+await device.setPermission('location', 'deny');
+await app.open();
+```
+
+- `permission` एक [`DevicePermission`](#device-fixture) है; `state` `grant`, `deny`,
+  या `reset` होता है।
+
+| थ्रो करता है | कब |
+| --- | --- |
+| `INVALID_ARGUMENT` | `DevicePermission` से बाहर का कोई परमिशन नाम (टाइपिंग की गलती लगे तो सबसे क़रीबी नाम बताता है), या `grant`, `deny`, या `reset` के अलावा कोई स्टेट। किसी भी डिवाइस कमांड से पहले फ़ेल होता है। |
+
+#### `setLocation`
+
+```ts
+/** Sets the simulated location, switching location services on first on Android. */
+setLocation(coordinates: { latitude: number; longitude: number }): Promise<void>;
+```
+
+```ts
+await device.setLocation({ latitude: 52.23, longitude: 21.01 });
+```
+
+#### `clearLocation`
+
+```ts
+/** Turns simulated location off; on Android that is location services off, until the next `setLocation`. */
+clearLocation(): Promise<void>;
+```
+
+```ts
+await device.clearLocation();
+```
+
+#### `setAppearance`
+
+```ts
+/** Sets the system appearance. */
+setAppearance(mode: 'light' | 'dark'): Promise<void>;
+```
+
+```ts
+await device.setAppearance('dark');
+```
+
+#### `setOrientation`
+
+```ts
+/** Rotates the device. */
+setOrientation(orientation: DeviceOrientation): Promise<void>;
+```
+
+```ts
+await device.setOrientation('landscape-left');
+```
+
+- `'portrait'`, `'portrait-upside-down'`, `'landscape-left'`, या `'landscape-right'`।
+
+#### `fold`
+
+```ts
+/**
+ * Puts a foldable simulator or emulator in a hinge pose. On the iPhone Duo
+ * it resolves once agent-device reads the angle back from CoreDevice at
+ * that pose, typically 10 to 16 seconds later; `closed` lights the outer
+ * display, `half-open` (a 130° book) and `open` light the inner one. On a
+ * foldable Android emulator it sets the emulator console posture and
+ * resolves once the guest commits the matching device state, within a few
+ * seconds; `half-open` is the profile's own angle there (90° on the Pixel
+ * folds), and a fold to the cover display dismisses the lock screen it
+ * raises. Either way the app window changes size, so the next observation
+ * reads a new screen. Any device without a hinge is `UNSUPPORTED_CAPABILITY`.
+ */
+fold(pose: FoldPose): Promise<void>;
+```
+
+```ts
+await device.fold('half-open');
+```
+
+| थ्रो करता है | कब |
+| --- | --- |
+| `UNSUPPORTED_CAPABILITY` | डिवाइस में हिंज नहीं है। |
+
+#### `setBiometrics`
+
+```ts
+/**
+ * Simulates one biometric attempt on the open app. `faceid` and `touchid`
+ * work on an iOS simulator; `fingerprint` works on an Android emulator and
+ * on a phone that exposes `cmd fingerprint`. Any other pair is
+ * `UNSUPPORTED_CAPABILITY`. An Android app's prompt reads the touch
+ * only once the device has a screen lock and an enrolled fingerprint,
+ * which `enrollBiometrics` cannot set up.
+ */
+setBiometrics(sensor: BiometricSensor, result: 'match' | 'nonmatch'): Promise<void>;
+```
+
+```ts
+await device.setBiometrics('faceid', 'nonmatch');
+```
+
+- `sensor` `'faceid'`, `'touchid'`, या `'fingerprint'` होता है।
+
+| थ्रो करता है | कब |
+| --- | --- |
+| `UNSUPPORTED_CAPABILITY` | iOS पर `fingerprint`, Android या असली iOS डिवाइस पर `faceid` या `touchid`, या बिना `cmd fingerprint` वाले Android फ़ोन पर `fingerprint`। |
+
+#### `enrollBiometrics`
+
+```ts
+/**
+ * Enrolls or unenrolls the simulator's Face ID or Touch ID. On Android or a
+ * physical iOS device it is `UNSUPPORTED_CAPABILITY`.
+ */
+enrollBiometrics(sensor: 'faceid' | 'touchid', enrolled: boolean): Promise<void>;
+```
+
+```ts
+await device.enrollBiometrics('touchid', true);
+```
+
+| थ्रो करता है | कब |
+| --- | --- |
+| `UNSUPPORTED_CAPABILITY` | Android या असली iOS डिवाइस पर कोई भी कॉल। |
+
+#### `installApp`
+
+```ts
+/**
+ * Installs a build (an iOS `.app` bundle or an Android `.apk`, resolved
+ * against the project root) on the device; without a path, the target's
+ * `app.appPath`. The engine installs nothing on its own, so a suite that runs
+ * against a build calls this once per device, in a fixture or a test.
+ * `reinstall: true` removes the app first so it starts with no data; a
+ * plain install replaces the binary and keeps its data. Resolves to the
+ * identity to `openApp` it by, which becomes the app `app.open()` launches
+ * when the target's build is installed and no `app.bundleId` is pinned.
+ */
+installApp(appPath?: string, options?: InstallAppOptions): Promise<InstalledApp>;
+```
+
+```ts
+await device.installApp(); // the target's app.appPath
+const { app } = await device.installApp('./build/MyApp.app', { reinstall: true });
+await device.openApp(app);
+```
+
+- इसे रन के बिल्ड के लिए, या अपग्रेड पाथ पर किसी दूसरे बिल्ड के लिए इस्तेमाल करें।
+- रिज़ॉल्व हुई id वह बंडल id या पैकेज होती है जिसे agent-device ने बिल्ड से पढ़ा, वरना
+  जो `app` पास किया गया था।
+
+| थ्रो करता है | कब |
+| --- | --- |
+| `APP_NOT_OPEN` | कोई पाथ नहीं दिया गया और टारगेट में `app.appPath` नहीं है; या `reinstall: true` के साथ कोई `app` नहीं दिया गया और कोई ऐप पिन नहीं है (न `app.bundleId`, न बिल्ड अभी इंस्टॉल हुआ है)। |
+| `ENGINE_FAILURE` | agent-device ने कोई id नहीं बताई और कोई `app` पास नहीं किया गया, ताकि फ़ाइल पाथ id की तरह काम न करे। [ट्रबलशूटिंग](/mobile#troubleshooting) देखें। |
+
+#### `uninstallApp`
+
+```ts
+/**
+ * Removes an app, by bundle id or package, from the device; without one,
+ * the pinned app. Resolves to whether it was installed, so removing an app
+ * id that is not there passes. Without `app.bundleId` on the target,
+ * removing the build `installApp` pinned unpins it: `app.open()` then
+ * needs another install.
+ */
+uninstallApp(app?: string): Promise<boolean>;
+```
+
+```ts
+expect(await device.uninstallApp()).toBe(true);
+expect(await device.isAppInstalled('com.example.app')).toBe(false);
+await device.installApp(); // a fresh install, for a first-launch flow
+```
+
+- स्क्रीन पर चल रहे ऐप को हटाने से डिवाइस होम स्क्रीन पर आ जाता है, और पहले से रिज़ॉल्व
+  किए गए लोकेटर किसी चीज़ की तरफ़ इशारा नहीं करते। उसे आगे टेस्ट करने के लिए
+  `device.installApp()` से दोबारा इंस्टॉल करें, फिर `device.openApp(app)` चलाएँ।
+- डिवाइस पर यह अनइंस्टॉल बाद में चलने वाले टेस्ट्स के लिए भी बना रहता है। टेस्ट खत्म
+  होने से पहले `finally` ब्लॉक में ऐप को फिर से इंस्टॉल कर दें, वरना उस डिवाइस पर इसे
+  खोलने वाला कोई भी बाद का टेस्ट `app.open()` पर फ़ेल हो जाएगा।
+
+| थ्रो करता है | कब |
+| --- | --- |
+| `APP_NOT_OPEN` | कोई `app` नहीं दिया गया और कोई पिन नहीं है (न `app.bundleId`, न बिल्ड अभी इंस्टॉल हुआ है)। |
+
+#### `isAppInstalled`
+
+```ts
+/**
+ * Whether an app, by bundle id or package, is on the device, system apps
+ * included (Android: launchable apps only); without one, the pinned app.
+ */
+isAppInstalled(app?: string): Promise<boolean>;
+```
+
+```ts
+expect(await device.isAppInstalled('com.example.companion')).toBe(true);
+```
+
+- ऐप का डिस्प्ले नाम, जैसा डिवाइस उसे दिखाता है, वह भी मैच करता है।
+
+| थ्रो करता है | कब |
+| --- | --- |
+| `APP_NOT_OPEN` | कोई `app` नहीं दिया गया और कोई पिन नहीं है। |
+
+#### `openApp`
+
+```ts
+/**
+ * Brings an app to the foreground by bundle id, package, or display name;
+ * `relaunch` restarts it fresh. `launchArguments` and `permissions` apply
+ * to this launch alone; the target's configured ones apply to a `relaunch`
+ * of the pinned app, and to no foreground-only open. A link is
+ * `INVALID_ARGUMENT` (`file:`, `data:`, `javascript:`, `view-source:`,
+ * `blob:`, and `filesystem:` are `POLICY_DENIED`): `openLink` opens one.
+ */
+openApp(app: string, options?: OpenAppOptions): Promise<void>;
+```
+
+```ts
+await device.openApp('Settings');
+await device.openApp('com.example.app', { relaunch: true, permissions: { camera: 'grant' } });
+await device.openApp('com.example.app', { relaunch: true, launchArguments: { AppleLocale: 'fr_FR' } });
+```
+
+- डिवाइस तक पहुँचने से पहले ही लिंक को मना कर दिया जाता है, क्योंकि agent-device किसी भी
+  `scheme:rest` स्ट्रिंग को URL की तरह खोल देता है।
+
+| थ्रो करता है | कब |
+| --- | --- |
+| `POLICY_DENIED` | `file:`, `data:`, `javascript:`, `view-source:`, `blob:`, या `filesystem:` लिंक। |
+| `INVALID_ARGUMENT` | कोई भी और लिंक (मैसेज `openLink` की तरफ़ इशारा करता है); इनवैलिड परमिशन नाम या स्टेट; या डिक्लेयर किए गए शेप से बाहर के `launchArguments`, या ऐसा आर्ग्युमेंट जिसे Android नहीं ले जा सकता ([लॉन्च आर्ग्युमेंट और परमिशन](#launch-arguments-and-permissions) देखें)। |
+
+#### `openLink`
+
+```ts
+/**
+ * Opens a deep link (`myapp://orders/42`) or a web link (`https://...`)
+ * into `app` (default: the pinned app), which the session observes
+ * afterwards. iOS launches the app for a web link and then opens the URL;
+ * a web link the app does not claim goes to Safari, and the next
+ * observation brings the app back. Android starts the link on that
+ * package. Without an app, Android lets the OS route the link; iOS needs
+ * one (`INVALID_ARGUMENT` without). `file:`, `data:`, `javascript:`,
+ * `view-source:`, `blob:`, and `filesystem:` links are `POLICY_DENIED`.
+ */
+openLink(url: string, options?: { app?: string }): Promise<void>;
+```
+
+```ts
+await device.openLink('myapp://orders/42');
+await expect(screen.getByText('Order #42')).toBeVisible();
+```
+
+- इसे मैजिक-लिंक साइन-इन और डीप-लिंक रूट्स के लिए इस्तेमाल करें।
+- ऐप न देने पर, Android लिंक को किसी वेरिफ़ाइड ऐप लिंक ओनर या ब्राउज़र को भेज देता है, और
+  सेशन उसी पैकेज का पीछा करता है जिसने उसे लिया।
+- डिवाइस लिंक किसी भी ऐप का कस्टम स्कीम इस्तेमाल कर सकता है, इसलिए यह नियम वेब की तरह
+  सिर्फ़ http(s) को अलाउ करने के बजाय नीचे दिए स्कीम को मना करता है।
+- रिपोर्ट में लिंक बिना उसके userinfo (`user:password@` या `token@`), क्वेरी, या
+  फ़्रैगमेंट के दिखता है, जहाँ लॉगिन या मैजिक लिंक का टोकन जाता है। जो स्ट्रिंग पार्स न
+  हो वह जैसी टाइप की गई वैसी नहीं, बल्कि `<link>` के रूप में दिखती है।
+- रीप्ले कैश उस लोकेशन पर एंकर करता है जहाँ लिंक खुलता है;
+  [डिवाइस पर रीप्ले कैश](#replay-cache-on-a-device) देखें।
+
+| थ्रो करता है | कब |
+| --- | --- |
+| `POLICY_DENIED` | `file:`, `data:`, `javascript:`, `view-source:`, `blob:`, या `filesystem:` लिंक। |
+| `INVALID_ARGUMENT` | iOS पर कोई ऐप न होना: बिना ऐप के खोलने पर ऑब्ज़र्व करने के लिए कोई ऐप सेशन नहीं बचता। |
+| `INVALID_ARGUMENT` | ऐसी स्ट्रिंग जो पूरे URL के रूप में पार्स न हो। मैसेज में इनपुट का कोई हिस्सा नहीं आता, क्योंकि उसकी क्वेरी, पाथ, या userinfo में मैजिक-लिंक टोकन हो सकता है। |
+
+#### `closeApp`
+
+```ts
+/**
+ * Terminates the session's app and ends the session, so the next
+ * `openApp` launches it fresh. Until then the screen is unobservable and
+ * `foregroundApp` is `APP_NOT_OPEN`.
+ */
+closeApp(): Promise<void>;
+```
+
+```ts
+await device.closeApp();
+await device.openApp('com.example.app'); // launches fresh, on its first screen
+```
+
+- अगले `openApp` से पहले कोई भी स्क्रीन क्वेरी भी `APP_NOT_OPEN` देती है।
+
+#### `clearKeychain`
+
+```ts
+/**
+ * Resets the simulator's keychain, every app's, since simctl has no
+ * per-app reset: what `app.clearState()` leaves behind (a session token, a
+ * Firebase sign-in). iOS simulator only; Android is
+ * `UNSUPPORTED_CAPABILITY`. Launch the app afterwards to see it signed out.
+ */
+clearKeychain(): Promise<void>;
+```
+
+```ts
+await device.clearKeychain();
+await app.open(); // see it signed out
+```
+
+| थ्रो करता है | कब |
+| --- | --- |
+| `UNSUPPORTED_CAPABILITY` | Android पर, किसी भी डिवाइस कमांड से पहले। |
+
+#### `foregroundApp`
+
+```ts
+/**
+ * The app the session is on. iOS answers from the session, not the
+ * device, so it names the app the session opened even after `home()`;
+ * Android reads the device's foreground activity. `APP_NOT_OPEN` once
+ * `closeApp` ended the session.
+ */
+foregroundApp(): Promise<ForegroundApp>;
+```
+
+```ts
+const { name, bundleId } = await device.foregroundApp();
+```
+
+- iOS पर, agent-device के `appstate` के पास डिवाइस-लेवल जवाब नहीं होता।
+
+| थ्रो करता है | कब |
+| --- | --- |
+| `APP_NOT_OPEN` | `closeApp` ने सेशन खत्म कर दिया। |
+
+#### `viewport`
+
+```ts
+/** Reads the screen size in the coordinate space of screen taps. */
+viewport(): Promise<ViewportSize>;
+```
+
+`screen.tapAt()` के कोऑर्डिनेट स्पेस में `{ width, height }` लौटाता है, हर कॉल पर ताज़ा
+पढ़कर। `ViewportSize` `@e2e-dev/mobile` से एक्सपोर्ट होता है।
+
+```ts
+const { width, height } = await device.viewport();
+await screen.tapAt({ x: width / 2, y: height / 2 });
+```
+
+| थ्रो करता है | कब |
+| --- | --- |
+| `ENGINE_FAILURE` | डिवाइस का स्क्रीन साइज़ पता नहीं चल सका। |
+
+#### `home`
+
+```ts
+/** Sends the device to its home screen. */
+home(): Promise<void>;
+```
+
+```ts
+await device.home();
+```
+
+#### `back`
+
+```ts
+/** Navigates back once (in-app back). */
+back(): Promise<void>;
+```
+
+```ts
+await device.back();
+```
+
+#### `pressRemote`
+
+```ts
+/**
+ * Presses one TV remote button: the D-pad's `'up'`, `'down'`, `'left'`,
+ * `'right'`, and `'select'`, `'back'`, `'menu'`, `'home'`, and the media
+ * keys such as `'play-pause'`. Android TV takes every button and an Apple
+ * TV the D-pad, `back`, `menu`, and `home`, where `back` and `menu` are the
+ * same Siri Remote button; any other button or device is
+ * `UNSUPPORTED_CAPABILITY`. A name outside the list is `INVALID_ARGUMENT`.
+ */
+pressRemote(key: RemoteKey): Promise<void>;
+```
+
+```ts
+await device.pressRemote('down');
+await device.pressRemote('select');
+await device.pressRemote('play-pause');
+```
+
+ज़्यादातर Android TV रिमोट में एक Play बटन होता है जो टॉगल करता है: वह `play-pause` है।
+`play` समर्पित Play बटन के लिए है।
+
+#### `shake`
+
+```ts
+/**
+ * Shakes the device once: the simulator's shake gesture on an iPhone or
+ * iPad simulator, a swing of the accelerometer on an Android phone or
+ * tablet emulator. `UNSUPPORTED_CAPABILITY` on a physical device and on a
+ * device a provider drives through its own backend. It resolves once the
+ * shake is sent, so assert on what the app shows next.
+ */
+shake(): Promise<void>;
+```
+
+```ts
+await device.shake();
+await expect(screen.getByText('Report a problem')).toBeVisible();
+```
+
+ऐप शेक को उसी तरह पढ़ता है जैसे असली डिवाइस पर पढ़ता है: React Native का डेव बिल्ड
+अपना डेव मेनू खोलता है, और शेक हैंडलर वाला ऐप उसे चलाता है।
+
+| थ्रो करता है | कब |
+| --- | --- |
+| `UNSUPPORTED_CAPABILITY` | यह ऐसा डिवाइस नहीं है जिसे agent-device शेक कर सके: असली डिवाइस, TV या वॉच टारगेट, या ऐसा डिवाइस जिसे प्रोवाइडर अपने बैकएंड से चलाता है (जैसे WebDriver सेशन या प्रोवाइडर का अपना iOS सिम्युलेटर)। |
+| `ENGINE_FAILURE` | Android एम्युलेटर के कंसोल ने शेक मना कर दिया, जैसा बिना एक्सेलेरोमीटर वाली इमेज में होता है। |
+
+#### `alert`
+
+```ts
+/** Accepts or dismisses the visible system alert. */
+alert(action: 'accept' | 'dismiss'): Promise<void>;
+```
+
+```ts
+await device.alert('accept');
+```
+
+#### `dismissKeyboard`
+
+```ts
+/**
+ * Dismisses the soft keyboard. Android hides it directly. iOS has no such
+ * call, on an iPhone or an iPad, so there it goes the way a user sends it
+ * away: a short drag that a scroll view turns into a dismissal, horizontal
+ * first and vertical second, stopping as soon as the keyboard is gone. Each
+ * drag starts at the point nearest the centre of the screen that no control
+ * in the captured accessibility tree covers, inside a scroll view when the
+ * screen has one, to avoid pressing a button or toggling a checkbox. A
+ * control the tree leaves out, such as pressable text, can still be hit. The
+ * simulator's "Speed up your typing" tip goes through its Continue button
+ * first. A screen with no clear point above the keyboard, a keyboard reported
+ * up with no frame and no keyboard element on screen (so no point is known
+ * to be above it), or a keyboard that outlives both drags, fails with
+ * `UNSUPPORTED_CAPABILITY`; the message names the alternatives (the app's
+ * own Done or close control, or pressing Enter on the field).
+ */
+dismissKeyboard(): Promise<void>;
+```
+
+```ts
+await device.dismissKeyboard();
+```
+
+| थ्रो करता है | कब |
+| --- | --- |
+| `UNSUPPORTED_CAPABILITY` | कीबोर्ड के ऊपर हर पॉइंट (स्क्रॉल व्यू में, जब स्क्रीन पर एक हो) किसी कंट्रोल पर है, agent-device बिना फ़्रेम और स्क्रीन पर बिना किसी कीबोर्ड एलिमेंट के कीबोर्ड को खुला बताता है, या दोनों ड्रैग के बाद भी कीबोर्ड बना रहता है। |
+
+#### `isKeyboardShown`
+
+```ts
+/**
+ * Whether the soft keyboard is on screen, from a capture (taken again,
+ * within the action timeout, while the keyboard is still moving): what
+ * agent-device reported for it (a visibility probe, a measured or derived
+ * keyboard frame, or proof that there is none), else the keyboard or a key
+ * drawn on screen in the accessibility tree (the suggestion strip alone,
+ * as with a hardware keyboard, is not one). Only agent-device's proof
+ * answers `false`. Fails when the capture cannot answer: `ENGINE_FAILURE`
+ * while the keyboard is moving or the tree is still incomplete,
+ * `UNSUPPORTED_CAPABILITY` when agent-device did not prove the keyboard
+ * absent and the tree lists none. It reads the screen as it is now, so
+ * right after an action that opens or closes the keyboard, poll it with
+ * `expect.poll`. A poll reads again after any error: an `ENGINE_FAILURE`
+ * clears once the keyboard settles, while an `UNSUPPORTED_CAPABILITY`
+ * that lasts (a provider that cannot read the keyboard at all) makes the
+ * poll wait out its whole timeout before it fails.
+ * Changes nothing on the device.
+ */
+isKeyboardShown(): Promise<boolean>;
+```
+
+```ts
+await screen.getByTestId('email-input').fill('jane@example.com');
+await device.dismissKeyboard();
+await expect.poll(() => device.isKeyboardShown()).toBe(false);
+```
+
+| थ्रो करता है | कब |
+| --- | --- |
+| `ENGINE_FAILURE` | agent-device ने कुछ मापा नहीं और जो ट्री लौटाया वह अधूरा या कटा हुआ था, या उसे कीबोर्ड एलिमेंट मिले लेकिन उनकी जगह रिजेक्ट हो गई और स्क्रीन पर कोई ड्रॉ नहीं है, जैसा कीबोर्ड के अंदर या बाहर स्लाइड होते समय होता है। इसे दोबारा पढ़ें; `expect.poll` यही करता है। |
+| `UNSUPPORTED_CAPABILITY` | ट्री में स्क्रीन पर कोई कीबोर्ड या बटन ड्रॉ नहीं दिखता (अकेली सजेशन स्ट्रिप इसकी गिनती में नहीं आती), और agent-device ने यह साबित नहीं किया कि कीबोर्ड नहीं है: जैसे इनपुट मेथड की विंडो के बिना Android कैप्चर, बिना कीबोर्ड प्रोब वाला WebDriver प्रोवाइडर, या कोई कीबोर्ड रीडिंग ही न होना। मैसेज कारण बताता है। जब यह बना रहता है, तो `expect.poll` फ़ेल होने से पहले अपना पूरा टाइमआउट इंतज़ार करता है। |
+
+#### `clipboard`
+
+```ts
+/** Reads the clipboard. */
+clipboard(): Promise<string>;
+```
+
+```ts
+const copied = await device.clipboard();
+```
+
+| थ्रो करता है | कब |
+| --- | --- |
+| `UNSUPPORTED_CAPABILITY` | Android बिल्ड में क्लिपबोर्ड सर्विस के लिए कोई शेल कमांड नहीं है। |
+
+#### `setClipboard`
+
+```ts
+/** Writes the clipboard. */
+setClipboard(text: string): Promise<void>;
+```
+
+```ts
+await device.setClipboard('SAVE20');
+```
+
+| थ्रो करता है | कब |
+| --- | --- |
+| `UNSUPPORTED_CAPABILITY` | Android बिल्ड में क्लिपबोर्ड सर्विस के लिए कोई शेल कमांड नहीं है। |
+
+### एजेंट टूल
+
+`@e2e-dev/mobile/tools` से `mobileTools(...engines)` किसी एजेंट के `tools` में डिवाइस
+टूल जोड़ता है।
+
+```ts
+tools: mobileTools(iphone, pixel),
+```
+
+- यह कम से कम एक इंजन लेता है। सभी डिवाइस इंजन एक ही कॉल में पास करें; टूल मौजूदा
+  अटेम्प्ट का इंजन इस्तेमाल करते हैं।
+
+| टूल | रीप्ले | काम |
+| --- | --- | --- |
+| `open_app` | gap | id से किसी ऐप को फ़ोरग्राउंड में लाता है, चाहें तो रीलॉन्च के साथ। बिना id के टारगेट के ऐप पर लौटता है। लिंक को मना किया जाता है, ठीक `device.openApp` की तरह। |
+| `swipe` | gap | लॉजिकल पिक्सल में दो पॉइंट्स के बीच फ़्री-फ़ॉर्म स्वाइप। |
+| `alert` | gap | सिस्टम अलर्ट को स्वीकार या डिसमिस करता है; लिस्ट में दिखने वाले बटन को प्राथमिकता दें, जिसका टैप रीप्ले होता है। |
+
+`tvTools(...engines)` Android TV या Apple TV चलाने वाले इंजन के लिए TV रिमोट जोड़ता है।
+यह अलग पैक है, इसलिए बिना TV वाले कॉन्फ़िग में रिमोट नहीं दिया जाता।
+
+```ts
+tools: { ...mobileTools(tv), ...tvTools(tv) },
+```
+
+टूल प्लेटफ़ॉर्म के हिसाब से दिए जाते हैं। जब कोई फ़ोन टारगेट TV वाले प्लेटफ़ॉर्म पर ही
+हो, तो `tvTools` को किसी [नेम्ड एजेंट](/reference/config#agents) पर रखें और TV टेस्ट्स
+पर उसे चुनें।
+
+| टूल | रीप्ले | काम |
+| --- | --- | --- |
+| `tv_remote` | gap | `key` से [रिमोट का बटन](#pressremote) दबाता है, एक कॉल में अधिकतम 20 `times` तक। |
+
+`foldTools(...engines)` फ़ोल्डेबल डिवाइस (iPhone Duo सिम्युलेटर या फ़ोल्डेबल Android
+एम्युलेटर) चलाने वाले इंजन के लिए हिंज जोड़ता है। इसे एजेंट के `tools` में रखने से
+`agent.act`, `e2e explore`, और MCP सर्वर का `call` डिवाइस को फ़ोल्ड कर सकते हैं।
+
+```ts
+tools: { ...mobileTools(iphoneDuo), ...foldTools(iphoneDuo) },
+```
+
+- `tvTools` की तरह ये टूल भी प्लेटफ़ॉर्म के हिसाब से दिए जाते हैं। जब बिना हिंज वाला
+  डिवाइस फ़ोल्डेबल वाले प्लेटफ़ॉर्म पर ही हो, तो `foldTools` को किसी
+  [नेम्ड एजेंट](/reference/config#agents) पर रखें और फ़ोल्डेबल टेस्ट्स पर उसे चुनें।
+- इंजन कभी पोज़ रीसेट नहीं करता, इसलिए एजेंट जो पोज़ छोड़ता है वह अगले टेस्ट में भी
+  जाता है। [`device.fold`](#fold) की तरह `afterEach` में वापस फ़ोल्ड कर दें।
+
+| टूल | रीप्ले | काम |
+| --- | --- | --- |
+| `fold` | gap | डिवाइस को किसी हिंज [`pose`](#fold) में रखता है: `closed`, `half-open`, या `open`। बिना हिंज वाला डिवाइस `UNSUPPORTED_CAPABILITY` से फ़ेल होता है। |
+
+| थ्रो करता है | कब |
+| --- | --- |
+| `INVALID_STATE` | ऐसा इंजन जिसे `mobile()` ने न लौटाया हो। कॉन्फ़िग में इससे लोड `CONFIG_LOAD_FAILED` के रूप में फ़ेल होता है, जिसके मैसेज में यही कारण होता है। |
+
+बिल्ट-इन एजेंट स्टेप के दौरान कोई टूल फ़ेल हो, तो वह मॉडल को कॉल के रिज़ल्ट के रूप में
+`Tool "<name>" failed: <message>` लौटाता है; स्टेप चलता रहता है। `open_app` तब
+`INVALID_STATE` से फ़ेल होता है जब वह कोई ऐप न बताए, टारगेट में `app.bundleId` न हो,
+और उसके `app.appPath` बिल्ड को अभी किसी ने इंस्टॉल न किया हो (न `device.installApp()`,
+न डिवाइस प्रोवाइडर इंस्टॉल); ऐसा ऐप नाम देने पर जो इंस्टॉल न हो या लिंक देने पर
+`INVALID_ARGUMENT` आता है; और मना किए गए स्कीम वाले लिंक पर `POLICY_DENIED`। कोई भी टूल
+तब `INVALID_STATE` से फ़ेल होता है जब कोई डिवाइस अटेम्प्ट न चल रहा हो, या एक वर्कर में कई
+डिवाइस अटेम्प्ट चल रहे हों।
+
+ग्रामर वर्ब्स के लिए किसी टूल पैक की ज़रूरत नहीं होती। इंजन के डिक्लेयर किए गए एक्शन
+एजेंट को ये देते हैं:
+
+- `tap`, `double_tap`, `long_press`, `hover`, `type`, `press`, `check`, `scroll`,
+  `drag`, `text` से `scroll_to` (लिस्ट को तब तक पेज करना जब तक उस टेक्स्ट वाली रो न दिख
+  जाए), `back`, और `dismiss_keyboard`।
+- पिक्सल टूल `screenshot`, `tap_at`, `hover_at` (सिर्फ़ लिस्टेड कंट्रोल पर), `drag_at`
+  (सिर्फ़ दो अलग लिस्टेड कंट्रोल्स के बीच), `type_at`, और `press_at`। पॉइंट एक्शन ऐसे
+  कंट्रोल पर भी टैप कर सकते हैं जो ऐक्सेसिबिलिटी ट्री में न हों।
+- `type_secret`, जो सिर्फ़ वही सीक्रेट भरता है जिसे स्टेप ने डिक्लेयर किया हो।
+
+डिवाइस पर `right_click`, `select`, नोड id से `scroll_to`, `upload`, या `navigate` नहीं
+होते, और `select_at` नहीं दिया जाता।
+
+<Note>
+जिन पिक्सल की मास्किंग इंजन साबित न कर सके उन्हें `MASKING_UNPROVEN` के साथ रोक दिया जाता
+है। ऐक्सेसिबिलिटी कैप्चर फ़ेल होना फिर भी ऑब्ज़र्वेशन को रोकता है। डिवाइस स्क्रीनशॉट मास्क
+उसी कैप्चर से आने वाली सिक्योर-फ़ील्ड बाउंड्स पर निर्भर करते हैं, इसलिए उनके बिना इंजन
+फ़ॉलबैक स्क्रीनशॉट को सुरक्षित साबित नहीं कर सकता।
+</Note>
+
+#### `unstable_deviceSession`
+
+`@e2e-dev/mobile/tools` से `unstable_deviceSession(...engines)` किसी कस्टम टूल को चल
+रहे अटेम्प्ट का `DeviceSession` देता है, वही ऑब्जेक्ट जिसे टेस्ट
+[`device.unstable_raw`](#unstable_raw) से पढ़ता है। इसका `client` इंजन के डीमन, लीज़,
+और पर-वर्कर सेशन से जुड़ा होता है, उन कैपेबिलिटीज़ के लिए जिन्हें e2e अभी रैप नहीं करता।
+इसके `client` का टाइप `DeviceSessionClient` है। नीचे का उदाहरण मानकर चलता है कि मौजूदा
+ड्राइवर `settings.update` को सपोर्ट करता है।
+
+```ts
+import { tool } from 'ai';
+import { z } from 'zod';
+import { defineTool } from 'e2e/agent';
+import { unstable_deviceSession } from '@e2e-dev/mobile/tools';
+
+const mobileData = defineTool(
+  tool({
+    description: 'Turn cellular mobile data on or off. Wi-Fi is not affected.',
+    inputSchema: z.object({ on: z.boolean() }),
+    execute: async ({ on }) => {
+      const { client, selection } = unstable_deviceSession(iphone, pixel);
+      await client.settings.update({ ...selection, setting: 'mobile-data', state: on ? 'on' : 'off' });
+      return on ? 'mobile data is on' : 'mobile data is off';
+    },
+  }),
+  { mutates: true, platforms: ['android'] },
+);
+
+tools: { ...mobileTools(iphone, pixel), mobileData },
+```
+
+- `mobileTools` की तरह कॉन्फ़िग में डिक्लेयर किए गए हर डिवाइस इंजन को पास करें। अटेम्प्ट के
+  बाहर यह `INVALID_STATE` थ्रो करता है।
+- कॉल में `selection` स्प्रेड करें ताकि वह सेशन में ऐप खुलने से पहले भी वर्कर के डिवाइस
+  तक पहुँचे, जैसा इंजन के अपने कॉल करते हैं।
+- क्लाइंट कॉल स्टेप नहीं होते: रिपोर्ट में टूल कॉल दिखता है, क्लाइंट ने क्या किया वह
+  नहीं, और कैश रीप्ले `mutates: true` वाले टूल को लाइव चलाता है।
+- `unstable_raw` की तरह क्लाइंट कॉल e2e के गार्ड्स को बायपास करते हैं। टूल जो स्नैपशॉट या
+  स्क्रीनशॉट लौटाए उसमें सीक्रेट छिपाए या मास्क नहीं किए जाते (सीक्रेट भरने के बाद भी), कॉल के बाद
+  स्क्रीन के सेटल होने का इंतज़ार नहीं होता, और जिस टूल के कॉल डिवाइस को बदलते हैं उसे
+  `mutates: true` डिक्लेयर करना ज़रूरी है।
+- `unstable_raw` की तरह यह किसी भी रिलीज़ में बदल सकता है।
+
+## रोल्स
+
+डिवाइस पर `getByRole` उस रोल से मैच करता है जिस पर हर एलिमेंट टाइप मैप होता है। जो टाइप
+लिस्ट में नहीं है वह अपना नाम लोअर कबाब केस (`picker-wheel`) में रखता है, इसलिए वह
+`getByRole` रोल से तभी मैच करता है जब वह नाम खुद एक रोल हो (`group`, `table`)। जिस नोड
+को प्लेटफ़ॉर्म एडिटेबल बताता है वह `textbox` होता है, जब तक वह पहले से `combobox` पर
+मैप न हो।
+
+| रोल | iOS | Android |
+| --- | --- | --- |
+| `button` | `Button` | `Button`, `ImageButton`, `MaterialButton` |
+| `link` | `Link` | |
+| `textbox` | `TextField`, `SearchField`, `TextView`, `SecureTextField` | `EditText`, `AutoCompleteTextView`, `TextInputEditText`, `SearchView` |
+| `combobox` | | `Spinner` |
+| `switch` | `Switch`, `Toggle` | `Switch`, `SwitchCompat`, `SwitchMaterial`, `ToggleButton` |
+| `checkbox` | `CheckBox` | `CheckBox`, `MaterialCheckBox` |
+| `radio` | `RadioButton` | `RadioButton` |
+| `radiogroup` | `RadioGroup` | `RadioGroup` |
+| `slider` | `Slider` | `SeekBar`, `Slider` |
+| `spinbutton` | `Stepper` | `NumberPicker` |
+| `progressbar` | `ProgressIndicator` | `ProgressBar` |
+| `status` | `ActivityIndicator` | |
+| `image` | `Image`, `ImageView` | `ImageView` |
+| `heading` | `Heading`, `Header` | हेडिंग के रूप में फ़्लैग किया गया व्यू |
+| `list` | | `RecyclerView`, `ListView`, `AbsListView` (React Native का `FlatList`), `GridView` |
+| `listitem` | `Cell`, `ListItem`, `TableCell`, `CollectionCell` | |
+| `row` | `TableRow` | |
+| `tablist` | `TabBar`, `TabGroup`, `SegmentedControl` | `TabLayout`, `TabWidget`, `BottomNavigationView` |
+| `tab` | `Tab`, `TabBarItem`, `TabBarButton`, और `TabBar` या `SegmentedControl` के अंदर का `Button` | `TabLayout$TabView`, `BottomNavigationItemView` |
+| `menu` | `Menu` | |
+| `menubar` | `MenuBar` | |
+| `menuitem` | `MenuItem`, `MenuBarItem`, `MenuButton` | |
+| `toolbar` | `Toolbar` | `Toolbar` |
+| `alert` | `Alert` | |
+| `dialog` | `Dialog`, `Sheet`, `ActionSheet` | |
+| `navigation` | `NavigationBar` | |
+| `group` | | `ScrollView`, `ViewGroup`, `View`, `ComposeView`, `ViewFactoryHolder`, `CardView`, और कोई भी और `*Layout` |
+
+जिस रोल के लिए प्लेटफ़ॉर्म के पास कोई टाइप नहीं होता, React Native उसे iOS पर
+ऐक्सेसिबिलिटी वैल्यू (`checkbox, unchecked`) और Android पर रोल डिस्क्रिप्शन
+(`Tab List`) में लिखता है। इनमें से किसी डिस्क्रिप्शन वाला नोड अपने टाइप के रोल की जगह
+वही रोल ले लेता है: `alert`, `checkbox`, `combo box`, `menu`, `menu bar`, `menu item`,
+`progress bar`, `radio button`, `radio group`, `scroll bar`, `spin button`, `switch`,
+`tab`, `tab list`, `timer`, और `tool bar`। `scroll bar` और `timer` से मिलने वाले
+`scrollbar` और `timer` रोल `getByRole` के रोल नहीं हैं। iOS पर सिर्फ़ `Other` में यह
+होता है, और रोल के बाद आने वाले स्टेट शब्द `checked` और `expanded` सेट करते हैं; उनके
+बाद जो बचता है सिर्फ़ वही नोड की वैल्यू होती है।
+
+iOS पर `StaticText` और `Text` और Android पर `TextView` `text` होते हैं, और Android
+`WebView` `document` होता है। इनमें से कोई `getByRole` रोल नहीं है: टेक्स्ट को
+`getByText` से ढूँढें।
+
+## विज़िबिलिटी
+
+डिवाइस नोड तब छिपा हुआ माना जाता है जब प्लेटफ़ॉर्म उसे स्क्रीन के बाहर बताए, या जब सॉफ़्ट
+कीबोर्ड उसके सेंटर को ढक ले। इसलिए `toBeVisible()`, `scrollUntilVisible`, और
+`getByRole` कीबोर्ड के नीचे छिपे फ़ील्ड के साथ ठीक वैसा ही बर्ताव करते हैं जैसे स्क्रॉल
+होकर स्क्रीन से बाहर गए फ़ील्ड के साथ। कीबोर्ड के अपने बटन, सजेशन बार, और डॉक दिखते रहते
+हैं, और फ़ोकस्ड फ़ील्ड भी।
+
+- कीबोर्ड का क्षेत्र वह फ़्रेम होता है जिसे agent-device मापता है। जब कैप्चर में फ़्रेम
+  न हो, तो यह क्षेत्र ट्री में कीबोर्ड के टॉप से लेकर स्क्रीन के निचले हिस्से तक माना जाता
+  है।
+- जिस कंटेनर का सेंटर कीबोर्ड के नीचे हो, वह तब तक दिखता हुआ माना जाता है जब तक उसका कोई
+  चाइल्ड कीबोर्ड के ऊपर दिख रहा हो।
+- किसी दूसरे व्यू के नीचे दबा नोड, जैसे कीबोर्ड के साथ ऊपर उठा फ़ुटर, छिपा हुआ नहीं माना
+  जाता। उस पर टैप करने पर जब agent-device को ऊपर वाला कवर मिलता है तो `ACTION_FAILED`
+  आता है, और मैसेज उस कवर का नाम बताता है। कीबोर्ड के नीचे टैप भी इसी तरह फ़ेल होता है।
+  कवर हटाएँ, या टारगेट को स्क्रॉल करके उससे साफ़ करें।
+
+## वीडियो रिकॉर्डिंग क्लीनअप
+
+पेंडिंग agent-device स्क्रीन-रिकॉर्डिंग स्टॉप को बाद के कॉलर्स और अटेम्प्ट क्लीनअप के साथ
+शेयर किया जाता है। किसी एक कॉलर का इंतज़ार कैंसल करने से स्टॉप दोहराया नहीं जाता और न ही
+उसका पूरा होना छोड़ा जाता है। अगर डिवाइस स्टॉप फ़ेल हो जाए, तो क्लीनअप उसे दोबारा कोशिश
+कर सकता है। कैंसल हुआ कॉलर फिर भी कैंसलेशन रिपोर्ट करता है।
+
+जो प्रोवाइडर रिकॉर्डिंग रुकने में फ़ेल हो जाए, वह अपने वर्कर के पास ही रहती है। इंजन
+अटेम्प्ट के अंत में, उस वर्कर पर अगले अटेम्प्ट से पहले, और वर्कर डिस्पोज़ होते समय उसे
+रोकने की दोबारा कोशिश करता है। पेंडिंग स्टॉप शेयर होता है। हर रीट्राई मूल अटेम्प्ट की
+वीडियो डायरेक्टरी इस्तेमाल करता है।
+
+अगला अटेम्प्ट तभी शुरू होता है जब प्रोवाइडर स्टॉप की पुष्टि कर दे। फ़ेल या कैंसल हुआ
+स्टॉप वेट उस अटेम्प्ट को शुरू होने से रोकता है। अगर लौटाया गया आर्टिफ़ैक्ट इनवैलिड हो, तो
+कन्फ़र्म हो चुके स्टॉप को दोहराया नहीं जाता। वर्कर रिप्लेसमेंट के दौरान अकेला फ़ेल हुआ
+प्रोवाइडर स्टॉप किसी सही-सलामत agent-device सेशन को बंद नहीं करता।
+
+रीट्राई से रिकवर हुई रिकॉर्डिंग रिपोर्ट में नहीं जोड़ी जाती: उसकी फ़ाइल मूल अटेम्प्ट की
+वीडियो डायरेक्टरी में रह सकती है, और लौटाया गया URL छोड़ दिया जाता है। जिस ज़रूरी वीडियो
+का पहला स्टॉप फ़ेल हुआ था, वह क्लीनअप फ़ेलियर ही बना रहता है।
+
+ये रिकॉर्डिंग हैंडल वर्कर के बंद होने के बाद नहीं बचते। रन के अंत में, इंजन अपने
+agent-device सेशन बंद करता है और प्रोवाइडर अपनी लीज़ रिलीज़ करता है। लीज़ रिलीज़ करते
+समय प्रोवाइडर को बची हुई किसी भी बाहरी रिकॉर्डिंग को साफ़ करना होता है। agent-device
+सेशन बंद करने से यह पक्का नहीं होता कि कोई भी क्लाउड रिकॉर्डिंग रुक गई है। फ़ेल हुआ
+प्रोवाइडर स्टॉप कॉलबैक यह कन्फ़र्म नहीं करता कि रिकॉर्डिंग रुक गई।
+
+## डिवाइस पर रीप्ले कैश
+
+रीप्ले कैश उस [`location`](#capabilities) पर एंकर करता है जिसे डिवाइस रिपोर्ट करता है,
+`<bundle id> / <screen title>`। `com.apple.Preferences / General` पर रिकॉर्ड हुआ स्टेप
+तभी रीप्ले होता है जब Settings फिर से General पर हो।
+
+```ts
+await app.open();
+await screen.getByText('General').tap();
+await agent.act('Open About and read the iOS version');
+```
+
+- कोई भी म्यूटेटिंग प्रोजेक्ट-टूल कॉल जैसे `open_app` रीप्ले को खत्म कर देता है।
+- `app.bundleId` डिक्लेयर करें और पहले `app.open()` कॉल करें, ताकि स्टेप्स एक ही स्क्रीन
+  पर शुरू हों।
+- स्टेप के अंदर ऐप बदलने के बजाय स्टेप्स के बीच `device` फ़िक्स्चर से ऐप बदलें।
+- [`device.openLink`](#openlink) के बाद रिकॉर्ड हुआ स्टेप तब रीप्ले होता है जब लिंक फिर
+  से उसी स्क्रीन पर खुले।
+
+## टाइप
+
+### इंजन ऑप्शन
+
+हर `MobileOptions` मेंबर को उसके JSDoc के साथ ऊपर [इंजन](#engine) एंट्री में डिक्लेयर
+किया गया है।
+
+```ts
+/** A permission's state: held, refused, or not asked for yet, so the OS asks again. */
+export type PermissionState = 'grant' | 'deny' | 'reset';
+
+/** Permissions an app holds when it launches, by name. */
+export type LaunchPermissions = Readonly<Partial<Record<DevicePermission, PermissionState>>>;
+```
+
+### डिवाइस फ़िक्स्चर
+
+हर `Device` मेंबर को उसके JSDoc के साथ ऊपर [डिवाइस](#device) एंट्री में डिक्लेयर किया
+गया है।
+
+```ts
+/** How `device.openApp` launches an app. */
+export interface OpenAppOptions {
+  /** Terminate the app first, so it starts fresh; without it a running app is brought forward as it is. */
+  readonly relaunch?: boolean;
+  /**
+   * Arguments this launch hands the app, a list or an object like
+   * `app.launchArguments`: its process arguments on iOS, `am start`
+   * arguments on Android. Replaces the target's `app.launchArguments` for a
+   * relaunch of the pinned app.
+   */
+  readonly launchArguments?: LaunchArguments;
+  /**
+   * Permissions the app holds before this launch, each granted, denied, or
+   * reset. Replaces the target's `app.permissions` for a relaunch of the
+   * pinned app.
+   */
+  readonly permissions?: LaunchPermissions;
+}
+
+/** Permissions agent-device can grant, deny, or reset on an app. */
+export type DevicePermission =
+  | 'camera'
+  | 'microphone'
+  | 'photos'
+  | 'contacts'
+  | 'notifications'
+  | 'calendar'
+  | 'location'
+  | 'reminders'
+  | 'motion'
+  | 'siri'
+  | 'media-library';
+
+/** A TV remote key `device.pressRemote` takes. */
+export type RemoteKey =
+  | 'up'
+  | 'down'
+  | 'left'
+  | 'right'
+  | 'select'
+  | 'back'
+  | 'menu'
+  | 'home'
+  | 'play'
+  | 'pause'
+  | 'play-pause'
+  | 'stop'
+  | 'rewind'
+  | 'fast-forward'
+  | 'next'
+  | 'previous';
+
+/** Orientations `setOrientation` accepts. */
+export type DeviceOrientation = 'portrait' | 'portrait-upside-down' | 'landscape-left' | 'landscape-right';
+
+/** Hinge poses `device.fold` accepts: `closed` lights the outer display, `half-open` and `open` the inner one. */
+export type FoldPose = 'closed' | 'half-open' | 'open';
+
+/** How `device.installApp` installs a build. */
+export interface InstallAppOptions {
+  /**
+   * Bundle id or package of the build. `reinstall` needs one: agent-device
+   * removes that app before installing. Defaults to the pinned app.
+   */
+  readonly app?: string;
+  /** Remove the installed app first so the build starts with no data. */
+  readonly reinstall?: boolean;
+}
+
+/** What an install put on the device, as agent-device identified it. */
+export interface InstalledApp {
+  /** The bundle id or package to open the app by. */
+  readonly app: string;
+  readonly bundleId?: string;
+}
+
+/** The app in the foreground, as `foregroundApp` reports it. */
+export interface ForegroundApp {
+  readonly name: string;
+  readonly bundleId?: string;
+}
+
+/** Sensors `setBiometrics` simulates. */
+export type BiometricSensor = 'faceid' | 'touchid' | 'fingerprint';
+
+/** The raw driver session behind `device`; see `Device.unstable_raw`. */
+export interface DeviceSession {
+  readonly platform: MobilePlatform;
+  /** The raw driver session name: `e2e-<target>-<worker slot>` (`e2e-<target>-<hostId>-<worker slot>` for a `launch()` host), or `<session>-<worker slot>` with the `session` option. */
+  readonly session: string;
+  /** The device id: a simulator UDID or an Android serial. */
+  readonly deviceId: string;
+  readonly deviceName: string;
+  /** The device selection the engine passes commands; spread it into a call that can run before `app.open()`. */
+  readonly selection: DeviceSelection;
+  /** The raw driver client, bound to this session. */
+  readonly client: DeviceSessionClient;
+}
+
+/** The fields agent-device commands select a device by: the platform, then one of a name, a simulator UDID, or an Android serial. */
+export interface DeviceSelection {
+  readonly platform: MobilePlatform;
+  readonly device?: string;
+  readonly udid?: string;
+  readonly serial?: string;
+}
+```
+
+### एक्सपोर्टेड टाइप
+
+`MobileEngine`, `MobileOptions`, `MobilePlatform`, `DevicePermission`, `LaunchPermissions`,
+`PermissionState`, `DeviceClientConfig`, `DeviceConnection`, `DeviceDaemon`,
+`DeviceProvider`, `DeviceLease`, `DeviceReleaseContext`, `DeviceRequest`,
+`Device`, `DeviceSession`, `DeviceSessionClient`, `DeviceSelection`, `DeviceOrientation`, `BiometricSensor`, `ForegroundApp`,
+`FoldPose`, `InstallAppOptions`, `InstalledApp`, और `OpenAppOptions` `@e2e-dev/mobile`
+से एक्सपोर्ट होते हैं। रनटाइम एक्सपोर्ट्स हैं `mobile`, और `device` फ़िक्स्चर के साथ टाइप
+किए गए `test`, `describe`, `beforeEach`, `afterEach`, `beforeAll`, और `afterAll`।
+डिवाइस टेस्ट्स के बीच अपना स्टेट बनाए रखता है, इसलिए `device`, `app`, और `screen`
+[वर्कर फ़िक्स्चर](/reference/test#worker-fixtures) हैं, और `beforeAll` और `afterAll` को
+मिलते हैं। `mobileTools`, `tvTools`, और `foldTools` `@e2e-dev/mobile/tools` से आते हैं।
+
+## संबंधित
+
+[मोबाइल](/mobile) गाइड सेटअप, होस्टेड डिवाइस, और ट्रबलशूटिंग को कवर करता है। पोर्टेबल
+लाइफ़साइकिल मेथड [`app`](/reference/app) पर हैं।

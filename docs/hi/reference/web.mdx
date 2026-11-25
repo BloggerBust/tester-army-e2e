@@ -1,0 +1,1570 @@
+---
+title: ब्राउज़र
+description: ब्राउज़र इंजन, उसके ऑप्शन, और इससे मिलने वाला `browser` फ़िक्स्चर।
+"og:image": "https://e2e.com/docs/images/og/reference/web.png?v=66fee465a4"
+"twitter:image": "https://e2e.com/docs/images/og/reference/web.png?v=66fee465a4"
+---
+
+`@e2e-dev/web` ब्राउज़र इंजन है। यह Playwright के ज़रिए Chromium, Firefox, और WebKit
+को चलाता है। वेब टारगेट इसे `web()` के साथ अपने इंजन के तौर पर चुनता है, और यह
+सिर्फ़ ब्राउज़र से जुड़े कामों के लिए बिल्ट-इन `browser` फ़िक्स्चर देता है।
+
+```ts title="e2e.config.ts"
+import type { E2EConfig } from 'e2e';
+import { web } from '@e2e-dev/web';
+
+export default {
+  targets: [{ engine: web(), app: { url: 'http://localhost:3000' } }],
+} satisfies E2EConfig;
+```
+
+`browser` को सही टाइप के साथ पाने के लिए इस पैकेज से `test` इम्पोर्ट करें:
+
+```ts title="tests/orders.e2e.ts"
+import { expect } from 'e2e';
+import { test } from '@e2e-dev/web';
+
+test('orders in dark mode', async ({ app, browser, screen }) => {
+  await browser.emulateMedia({ colorScheme: 'dark' });
+  await app.open('/orders');
+  await expect(browser).toHaveURL('/orders');
+  await expect(screen.getByRole('heading', { name: 'Orders' })).toBeVisible();
+});
+```
+
+## रेफ़रेंस
+
+### ऑप्शन
+
+`web(options)` तय करता है कि इंजन ऐप को कैसे चलाता है। खुद ऐप (उसका `url`,
+`environment`, `identity`, और उसे शुरू करने वाली कमांड) टारगेट का `app` होता है,
+जिसके बारे में [टेस्ट हो रहा ऐप](/reference/config#the-app-under-test) में बताया गया है।
+
+```ts
+web({ viewport: { width: 390, height: 844 }, locale: 'de-DE' });
+```
+
+| ऑप्शन | टाइप | डिफ़ॉल्ट |
+| --- | --- | --- |
+| [`browser`](#browser) | `BrowserName \| BrowserProvider` | `'chromium'` |
+| [`chromiumSandbox`](#chromiumsandbox) | `boolean` | `true`, Linux पर `false` |
+| [`viewport`](#viewport) | `ViewportSize \| null` | 1280 गुणा 720 |
+| [`deviceScaleFactor`](#devicescalefactor) | `number` | `1` |
+| [`screencast`](#screencast) | `WebScreencastOptions` | व्यूपोर्ट का साइज़ |
+| [`connect`](#connect) | `WebConnectOptions` | लोकली लॉन्च होता है |
+| [`headers`](#headers) | `Record<string, string>` | - |
+| [`basicAuth`](#basicauth) | `WebBasicAuth` | - |
+| [`credentialOrigins`](#credentialorigins) | `string[]` | - |
+| [`testIdAttribute`](#testidattribute) | `string` | `'data-testid'` |
+| [`userAgent`](#useragent) | `string` | ब्राउज़र का अपना |
+| [`locale`](#locale) | `string` | ब्राउज़र का अपना |
+| [`timezoneId`](#timezoneid) | `string` | मशीन का अपना |
+| [`colorScheme`](#media-emulation) | `'light' \| 'dark' \| 'no-preference'` | ब्राउज़र का अपना |
+| [`reducedMotion`](#media-emulation) | `'reduce' \| 'no-preference'` | ब्राउज़र का अपना |
+| [`initScripts`](#init-scripts) | `WebInitScript[]` | - |
+| [`webmcp`](#webmcp) | `boolean` | `false` |
+
+- `web()` टारगेट को `app.url` चाहिए होता है और यह डिवाइस की (`bundleId`,
+  `appPath`, `launchArguments`) को मना कर देता है। इसका `app.permissions` सिर्फ़
+  `'grant'` लेता है, उन नामों के लिए जिन्हें इसका ब्राउज़र ग्रांट करता है;
+  [`permissions`](/reference/config#permissions) देखें।
+- JSDoc के साथ पूरा डिक्लेरेशन नीचे टाइप सेक्शन में [`WebOptions`](#weboptions) में है।
+
+| थ्रो करता है | कब |
+| --- | --- |
+| `INVALID_CONFIG` | ऐसा ऑप्शन जो `web()` नहीं लेता (`url` या कोई और app key भी शामिल है), या `connect` या `basicAuth` के अंदर कोई अनजान key। अगर टाइपिंग की गलती लगे (`viewprt` की जगह `viewport`) तो मैसेज सबसे क़रीबी जानी-पहचानी key का नाम बताता है, वरना सारी keys बताता है। |
+| `INVALID_CONFIG` | किसी ऐसे टारगेट पर ब्राउज़र प्रोवाइडर, `connect`, `headers`, या `basicAuth` देना जिसका [`app.url` कोई फ़ाइल है](/reference/config#a-file-as-the-app)। |
+| `INVALID_CONFIG` | किसी [पर्सिस्टेंट कॉन्टेक्स्ट](#recovering-a-cdp-transport) (`connect.reconnectEndpoint`, या `scope: 'attempt'` वाला प्रोवाइडर) पर `headers`, `basicAuth`, `userAgent`, `locale`, `timezoneId`, या `deviceScaleFactor` देना। |
+
+#### `browser`
+
+लॉन्च करने वाला ब्राउज़र, या कोई प्रोवाइडर जो होस्टेड ब्राउज़र लीज़ पर देता है।
+
+```ts
+web({ browser: 'firefox' }); // default: 'chromium'
+```
+
+- `'chromium'`, `'firefox'`, या `'webkit'`।
+- इसकी जगह `BrowserProvider` होस्टेड ब्राउज़र लीज़ पर देता है: पूरे रन के लिए हर
+  वर्कर स्लॉट पर एक, या हर अटेम्प्ट के लिए एक ([`WebOptions`](#weboptions))।
+  इंजन हर एक को CDP पर chromium की तरह चलाता है, चाहे वह Chromium हो या कोई और
+  CDP सर्वर जैसे [Lightpanda](/integrations/lightpanda) या [Moli](/integrations/moli)।
+- `scope: 'attempt'` वाला प्रोवाइडर एक पर्सिस्टेंट कॉन्टेक्स्ट पर चलता है, जिसकी
+  सीमाएँ [CDP ट्रांसपोर्ट की रिकवरी](#recovering-a-cdp-transport) में बताई गई हैं।
+- `BrowserProvider` कॉन्ट्रैक्ट और एक उदाहरण प्रोवाइडर [होस्टेड ब्राउज़र](/browser#hosted-browsers) में हैं।
+
+| थ्रो करता है | कब |
+| --- | --- |
+| `INVALID_CONFIG` | `connect` के साथ `browser: provider` देना। |
+| `INVALID_CONFIG` | `'chromium'`, `'firefox'`, या `'webkit'` के अलावा कोई नाम, या ऐसी वैल्यू जो न नाम हो न प्रोवाइडर। |
+
+#### `chromiumSandbox`
+
+लोकली लॉन्च हुआ Chromium अपने OS सैंडबॉक्स के साथ चले या नहीं।
+
+```ts
+web({ chromiumSandbox: true }); // default: true on macOS and Windows, false on Linux
+```
+
+- एजेंट जिस पेज पर जाता है, वहाँ किसी रेंडरर एक्सप्लॉइट को रोकने में सैंडबॉक्स मदद
+  करता है; [सिक्योरिटी](/security) देखें।
+- Linux पर सैंडबॉक्स को unprivileged user namespaces चाहिए होते हैं, जिन्हें root,
+  ज़्यादातर कंटेनर, और Ubuntu 23.10+ ब्लॉक कर देते हैं। जो होस्ट इन्हें अलाउ करता है,
+  वहाँ `true` सेट करें।
+- `connect` या किसी प्रोवाइडर से जुड़े ब्राउज़र को उसका होस्ट लॉन्च करता है, और
+  Firefox और WebKit में ऐसा कोई ऑप्शन नहीं होता, इसलिए इनमें से कोई इसे नहीं पढ़ता।
+
+| थ्रो करता है | कब |
+| --- | --- |
+| `INVALID_CONFIG` | कॉन्फ़िग लोड होते समय बूलियन के अलावा कोई और वैल्यू। |
+| `ENGINE_FAILURE` | सैंडबॉक्स चालू है और इस होस्ट पर शुरू नहीं हो पा रहा। |
+
+#### `viewport`
+
+हर अटेम्प्ट के पेज का शुरुआती व्यूपोर्ट।
+
+```ts
+web({ viewport: { width: 390, height: 844 } }); // default: { width: 1280, height: 720 }
+```
+
+`null` कोई साइज़ एमुलेट नहीं करता, इसलिए पेज ब्राउज़र विंडो में भर जाता है
+([`WebOptions`](#weboptions))। [`browser.setViewport`](#setviewport) फिर भी
+कोई साइज़ फ़िक्स कर सकता है।
+
+| थ्रो करता है | कब |
+| --- | --- |
+| `INVALID_CONFIG` | ऐसी वैल्यू जो न `null` हो और न पूरे पिक्सल में `{ width, height }` हो जहाँ हर साइड कम से कम 1 हो, या साइज़ में कोई और key हो। |
+
+#### `deviceScaleFactor`
+
+हर अटेम्प्ट के पेज पर हर CSS पिक्सल के लिए डिवाइस पिक्सल, जैसा
+`window.devicePixelRatio` पढ़ता है।
+
+```ts
+web({ deviceScaleFactor: 2 }); // default: 1
+```
+
+- सेव किए गए स्क्रीनशॉट डिवाइस पिक्सल में होते हैं:
+  [`app.screenshot()`](/reference/app#screenshot), फ़ेल होने का स्क्रीनशॉट, और
+  `agent.assert` का स्क्रीनशॉट। 2 पर, 1280 गुणा 720 का व्यूपोर्ट 2560 गुणा 1440
+  की फ़ाइल बनाता है।
+- यह फ़ैक्टर उस इमेज को नहीं बदलता जिसे मॉडल पढ़ता है या जिसकी तुलना
+  [`toHaveScreenshot`](/reference/expect#tohavescreenshot) करता है।
+
+| थ्रो करता है | कब |
+| --- | --- |
+| `INVALID_CONFIG` | 0 से बड़ी संख्या के अलावा कोई वैल्यू, या `viewport: null` के साथ इसे देना। |
+
+#### `screencast`
+
+वीडियो रिकॉर्ड करने वाले अटेम्प्ट को इंजन का अपना स्क्रीनकास्ट कैसे रिकॉर्ड करता है।
+
+```ts
+web({ screencast: { size: { width: 800, height: 450 }, quality: 60 } });
+```
+
+- `size` पूरे पिक्सल में होता है, हर साइड कम से कम 1। `quality` एक इंटीजर है।
+- कौन से अटेम्प्ट रिकॉर्ड होंगे, यह कॉन्फ़िग का [`video`](/reference/config#video)
+  मोड तय करता है।
+
+```ts
+/** The engine's screencast of the page: the frame size and the JPEG quality of the frames it encodes. */
+export interface WebScreencastOptions {
+  /** Frame size in pixels; default the viewport's, or the window's under `viewport: null`. A smaller size makes a smaller file. */
+  readonly size?: ViewportSize;
+  /** JPEG quality of each captured frame, 0 through 100; Playwright's default when unset. */
+  readonly quality?: number;
+}
+```
+
+| थ्रो करता है | कब |
+| --- | --- |
+| `INVALID_CONFIG` | कॉन्फ़िग लोड पर कोई और `size` या `quality` वैल्यू, या कोई और key। पुरानी `web({ video })` स्पेलिंग भी मना है, और एरर में `screencast` का नाम आता है। |
+
+#### `connect`
+
+लोकली लॉन्च करने के बजाय CDP पर रिमोट ब्राउज़र से जुड़ता है।
+
+```ts
+web({ connect: { cdpEndpoint: async () => 'ws://127.0.0.1:9222' } });
+```
+
+`reconnectEndpoint` पर्सिस्टेंट कॉन्टेक्स्ट चालू करता है;
+[CDP ट्रांसपोर्ट की रिकवरी](#recovering-a-cdp-transport) देखें।
+
+CDP हैंडशेक को ऑथेंटिकेट करने के लिए कोई भी रिज़ॉल्वर `CdpTarget` के रूप में `{ endpoint, headers }` लौटा सकता है। ये हेडर `web({ headers })` से अलग हैं, जो ऐप को हेडर भेजता है।
+
+```ts
+interface WebConnectOptions {
+  cdpEndpoint(signal: AbortSignal): string | CdpTarget | Promise<string | CdpTarget>;
+  reconnectEndpoint?(signal: AbortSignal): string | CdpTarget | Promise<string | CdpTarget>;
+}
+```
+
+| थ्रो करता है | कब |
+| --- | --- |
+| `INVALID_CONFIG` | कॉन्फ़िग लोड पर `cdpEndpoint` के बिना `connect`, या `cdpEndpoint` को स्ट्रिंग के रूप में देना। `browser` प्रोवाइडर के साथ `connect` देना भी मना है। |
+
+<a id="recovering-a-cdp-transport" />
+
+##### CDP ट्रांसपोर्ट की रिकवरी
+
+`connect.reconnectEndpoint(signal)` CDP ट्रांसपोर्ट के डिस्कनेक्ट होने के बाद उसी
+रिमोट ब्राउज़र की रिकवरी चालू करता है। अलग-अलग कॉन्टेक्स्ट बनाए रखने के लिए इसे छोड़ दें।
+
+रिमोट ब्राउज़र:
+
+- हर अटेम्प्ट (रीट्राई समेत) को `cdpEndpoint` से अपना नया ब्राउज़र चाहिए होता है।
+  एक लंबा चलने वाला ब्राउज़र पूरे सूट को नहीं चला सकता।
+- रिमोट में सिर्फ़ उसका डिफ़ॉल्ट कॉन्टेक्स्ट होना चाहिए।
+- अटेम्प्ट खत्म होने पर होस्ट को ब्राउज़र डिलीट करना होता है। इंजन का क्लीनअप सिर्फ़
+  अपना कनेक्शन हटाता है और होस्ट के ब्राउज़र को बंद नहीं करता।
+- अटेम्प्ट का पहला पेज ब्राउज़र का अपना पहला टैब होता है, जिसे `about:blank` पर ले
+  जाया जाता है, उसके बगल में कोई दूसरा टैब नहीं खुलता। बाद में खुलने वाला पेज, जैसे
+  `app.restart` जो खोलता है, वह नया टैब होता है।
+
+रिकवरी कैसे चलती है:
+
+- डिस्कनेक्ट होने के बाद, अगला ऑपरेशन अपने टाइमआउट और अबॉर्ट सिग्नल के अंदर
+  `reconnectEndpoint` को एक बार कॉल करता है। रिज़ॉल्वर को मौजूदा ब्राउज़र का
+  एंडपॉइंट लौटाना होता है।
+- इंजन पर्सिस्टेंट डिफ़ॉल्ट कॉन्टेक्स्ट ID और एक्टिव टैब की टारगेट ID चेक करता है।
+  अगर ब्राउज़र डिफ़ॉल्ट कॉन्टेक्स्ट ID नहीं दिखाता, तो इंजन उसे मना कर देता है।
+  एक्टिव टैब गायब होने या कॉन्टेक्स्ट अलग होने पर अटेम्प्ट फ़ेल हो जाता है। मिलता-जुलता
+  URL किसी दूसरे टैब को उसकी जगह नहीं चुनता। अटेम्प्ट के बाकी टैब उनकी टारगेट ID
+  से ढूँढे जाते हैं; जो टैब जा चुका है उसे छोड़ दिया जाता है।
+- इंजन हर CDP बाइंडिंग पब्लिश करने से पहले सिक्योर-फ़ील्ड मास्किंग लगाता है।
+  असंगत Playwright वर्ज़न होने पर पिक्सल दिखाने के बजाय कनेक्शन फ़ेल हो जाता है।
+- मूल पेज के फ़्रेम में क्लोज़्ड शैडो DOM ट्रैकिंग हुक बने रहने चाहिए। ऐप को रीलोड
+  किए बिना पहले से मौजूद क्लोज़्ड रूट रिकवर नहीं हो सकते। मास्क क्वेरी किसी भी
+  अनट्रैक्ड डॉक्यूमेंट को रिजेक्ट कर देती हैं।
+- एंडपॉइंट रिज़ॉल्यूशन, CDP अटैचमेंट, सेटअप, और डिस्पैच एक ही टाइमआउट शेयर करते हैं।
+  किसी साथ चल रहे वेटर को कैंसल करने से वह ऑपरेशन कैंसल नहीं होता जिसने रिकवरी
+  शुरू की थी। रिकवरी के उस ओनर को कैंसल करने से साझा रिकवरी फ़ेल हो जाती है।
+
+| थ्रो करता है | कब |
+| --- | --- |
+| `ENGINE_FAILURE` | डिस्कनेक्ट रहने के दौरान कोई डॉक्यूमेंट क्लोज़्ड शैडो DOM हुक के बिना लोड हो गया। |
+| `OPERATION_TIMEOUT` | एंडपॉइंट रिज़ॉल्यूशन, अटैचमेंट, सेटअप, और डिस्पैच ने अपना साझा टाइमआउट पूरा खर्च कर दिया। |
+| `CANCELLED` | कॉलर या अटेम्प्ट ने कैंसल कर दिया। |
+
+क्या बचा रहता है:
+
+- रिकवरी पेज के अनसेव्ड स्टेट, स्टोरेज, और एजेंट लेजर को बचाए रखती है। डायलॉग और रूट हैंडलर फिर से जुड़ जाते हैं।
+- वीडियो रिकॉर्डिंग फिर से शुरू हो जाती है। डिस्कनेक्ट के दौरान छूटा हिस्सा चला जाता है।
+- जो ऑपरेशन पहले ही डिस्पैच हो चुके हैं, उन्हें कभी रीट्राई नहीं किया जाता।
+- रिकवरी पुराने नोड रेफ़रेंस साफ़ कर देती है। ऑब्ज़र्वेशन से आए `tapAt` और
+  `doubleTapAt` कॉल, ऑब्ज़र्वेशन-रूट स्वाइप, और फ़ोकस्ड इंजन कीबोर्ड इनपुट को फिर से
+  चलने से पहले नया इंजन ऑब्ज़र्वेशन चाहिए होता है।
+- रिकवरी से पहले शुरू हुई कोई ऑब्ज़र्वेशन या लोकेटर रीड कनेक्शन बदलने के बाद
+  रेफ़रेंस पब्लिश नहीं कर सकती। हर अटेम्प्ट की अपनी बाइंडिंग और रिकॉर्डिंग होती हैं,
+  इसलिए देर से होने वाला क्लीनअप किसी बाद के अटेम्प्ट को नहीं बदल सकता।
+- डिटर्मिनिस्टिक `browser.mouse` और `browser.keyboard` फ़िक्स्चर बिना एजेंट
+  ऑब्ज़र्वेशन के भी उपलब्ध रहते हैं। टेस्ट कोड अपने इनपुट का मालिक है और एक्शन से
+  पहले `browser.evaluate` से मौजूदा ज्योमेट्री और फ़ोकस पढ़ सकता है।
+- जो कोड `surfaceOf(engine)` इस्तेमाल करता है, उसे रिकवरी के बाद उसके एक्सेसर फिर से
+  पढ़ने चाहिए। उसने जो Playwright ऑब्जेक्ट रखे थे वे डिस्कनेक्ट हुए ट्रांसपोर्ट के हैं।
+
+`scope: 'attempt'` वाला `browser` प्रोवाइडर इसी पर्सिस्टेंट कॉन्टेक्स्ट पर और इन्हीं
+सीमाओं के साथ चलता है। लीज़ का `cdpEndpoint` अटेम्प्ट का ब्राउज़र देता है, और उसका
+`reconnectEndpoint` (वरना फिर से `cdpEndpoint`) उससे रीकनेक्ट करता है। प्रोवाइडर के
+कॉन्ट्रैक्ट के हिसाब से हर लीज़ ताज़ा होती है, इसलिए इंजन इसके कॉन्टेक्स्ट की तुलना
+पिछले अटेम्प्ट्स के कॉन्टेक्स्ट से नहीं करता। कोई होस्टेड सर्विस एक ही स्नैपशॉट से
+ब्राउज़र रिस्टोर कर सकती है, जिससे नए ब्राउज़र को वही कॉन्टेक्स्ट id मिल जाती है।
+
+फ़ाइलों के बीच एक ही साइन-इन को दोबारा इस्तेमाल करने के लिए अलग-अलग कॉन्टेक्स्ट बनाए
+रखें (`reconnectEndpoint` न दें, प्रोवाइडर का `scope: 'attempt'` न रखें) और
+[सेटअप टेस्ट में एक बार साइन इन करें](/authentication#reuse-authenticated-sessions)।
+इसे साझा ब्राउज़र नहीं, बल्कि सेव किया हुआ सेशन आगे ले जाता है।
+
+<Note>
+पर्सिस्टेंट कॉन्टेक्स्ट `headers`, `basicAuth`, `userAgent`, `locale`, `timezoneId`,
+`deviceScaleFactor` ([ऑप्शन](#options) देखें), `app.clearState`, या सेशन स्टेट
+कैप्चर और रिस्टोर को सपोर्ट नहीं करता। `app.clearState` करने पर
+`UNSUPPORTED_CAPABILITY` एरर आता है। `app.restart` उपलब्ध रहता है।
+</Note>
+
+#### `headers`
+
+ऐप के ऑरिजिन (`app.url` का स्कीम, होस्ट, और पोर्ट) से शुरू होने वाली हर रिक्वेस्ट में
+जोड़े जाने वाले हेडर। किसी दूसरे पोर्ट, सबडोमेन, या किसी और होस्ट से शुरू होने वाली
+रिक्वेस्ट को ये नहीं मिलते। रीडायरेक्ट में वे हेडर बने रहते हैं जिनके साथ रिक्वेस्ट शुरू
+हुई थी, चाहे वह किसी भी ऑरिजिन पर जाए।
+
+```ts
+web({ headers: { 'x-preview-token': process.env.PREVIEW_TOKEN ?? '' } });
+```
+
+- किसी अलाउड ऑरिजिन के लिए [कंटीन्यू](#route) की गई रिक्वेस्ट में भी ये बने रहते हैं।
+- `headers` और `basicAuth` के ज़रिए ही टेस्ट [प्रोटेक्टेड प्रीव्यू](/web#protected-previews)
+  तक पहुँचता है।
+- [रिक्वेस्ट क्रेडेंशियल](/reference/security#request-credentials) देखें।
+
+| थ्रो करता है | कब |
+| --- | --- |
+| `INVALID_CONFIG` | [`userAgent`](#useragent) के साथ `user-agent` एंट्री, या [`locale`](#locale) के साथ `accept-language` एंट्री देना। |
+
+<Note>
+`headers` रिक्वेस्ट रूटिंग चालू कर देता है, जिससे ब्राउज़र का HTTP कैश बंद हो जाता है
+और सर्विस वर्कर ब्लॉक हो जाते हैं।
+</Note>
+
+#### `basicAuth`
+
+HTTP बेसिक ऑथेंटिकेशन। ऐप के ऑरिजिन से `401` चैलेंज आने पर ब्राउज़र इन्हीं
+क्रेडेंशियल से जवाब देता है। किसी और ऑरिजिन से आए चैलेंज का जवाब नहीं दिया जाता, जब तक
+[`credentialOrigins`](#credentialorigins) में उसका नाम न हो।
+
+```ts
+import { secrets } from 'e2e';
+
+web({ basicAuth: { username: 'staging', password: secrets.get('staging-password') } });
+```
+
+`secrets.get(name)` वाला पासवर्ड हर अटेम्प्ट शुरू होने पर रिज़ॉल्व होता है और किसी भी
+कॉन्फ़िगर किए गए सीक्रेट की तरह छिपाया जाता है। इससे बनने वाला `Authorization` हेडर का
+base64 क्रेडेंशियल भी छिपाया जाता है।
+
+```ts
+/** HTTP basic authentication the browser answers a `401` challenge from the app's origin with. */
+export interface WebBasicAuth {
+  /** The user name; `:` is not allowed in one (RFC 7617). */
+  readonly username: string;
+  /** The password, or `secrets.get(name)` for one in `config.secrets`. */
+  readonly password: string | Secret;
+}
+```
+
+| थ्रो करता है | कब |
+| --- | --- |
+| `INVALID_CONFIG` | यूज़रनेम में `:` होना, या कोई अनजान key। |
+
+<Note>
+WebKit किसी क्रेडेंशियल को उसके स्कीम के डिफ़ॉल्ट पोर्ट (`https://staging.example.com`)
+या IPv6 होस्ट वाले ऑरिजिन तक सीमित नहीं कर सकता। जब ऐप का ऑरिजिन या
+`credentialOrigins` का कोई ऑरिजिन ऐसा होता है, तो WebKit किसी भी ऑरिजिन से आए `401`
+का जवाब दे देता है, जैसा Playwright डिफ़ॉल्ट रूप से करता है।
+</Note>
+
+<Warning>
+सीक्रेट प्रोटेक्शन सिर्फ़ टेक्स्ट पर लागू होता है। अगर कोई पेज पासवर्ड को स्क्रीन पर
+रेंडर कर दे, तो वह स्क्रीनशॉट या मॉडल के पिक्सल में मास्क नहीं होता
+([सिक्योरिटी नियम](/reference/security#secrets-in-engine-options))।
+</Warning>
+
+#### `credentialOrigins`
+
+ऐप के अपने ऑरिजिन के अलावा वे और ऑरिजिन जिन्हें [`headers`](#headers) और
+[`basicAuth`](#basicauth) मिलते हैं, जैसे उसी गेट के पीछे किसी दूसरे होस्ट पर चल रही
+API।
+
+```ts
+web({
+  headers: { 'x-preview-token': process.env.PREVIEW_TOKEN ?? '' },
+  credentialOrigins: ['https://api.staging.example.com'],
+});
+```
+
+हर ऑरिजिन का ठीक नाम लिखें। होस्ट में `*` और पोर्ट `0` किसी रिक्वेस्ट से मैच नहीं करते।
+
+| थ्रो करता है | कब |
+| --- | --- |
+| `INVALID_CONFIG` | `headers` या `basicAuth` न होना, ऐसी एंट्री जो बिना पाथ, क्वेरी, या फ़्रैगमेंट वाला `http:` या `https:` ऑरिजिन न हो, होस्ट में `*`, या पोर्ट `0`। |
+
+#### `testIdAttribute`
+
+वह ऐट्रिब्यूट जो एलिमेंट की टेस्ट id रखता है: जिसे `testId` क्वेरी
+(`screen.getByTestId`) रिज़ॉल्व करती है और `SemanticNode.testId` रिपोर्ट करता है।
+
+```ts
+web({ testIdAttribute: 'data-test' }); // default: 'data-testid'
+```
+
+#### `userAgent`
+
+वह `User-Agent` जो हर अटेम्प्ट का कॉन्टेक्स्ट भेजता है और `navigator.userAgent`
+रिपोर्ट करता है, ऐसे ऐप के लिए जो एजेंट स्ट्रिंग के किसी मार्कर से टेस्ट मोड में जाता है।
+
+```ts
+web({ userAgent: 'Mozilla/5.0 e2e' }); // default: the browser's own
+```
+
+#### `locale`
+
+वह लोकैल जिसमें हर अटेम्प्ट का कॉन्टेक्स्ट चलता है, एक BCP 47 टैग: जो
+`navigator.language`, `Intl` फ़ॉर्मेटिंग, और `Accept-Language` हेडर रिपोर्ट करते हैं।
+
+```ts
+web({ locale: 'de-DE' }); // default: the browser's own
+```
+
+#### `timezoneId`
+
+वह IANA टाइम ज़ोन जिसमें हर अटेम्प्ट का कॉन्टेक्स्ट चलता है: जिसके हिसाब से `Date` और
+`Intl` लोकल समय निकालते हैं।
+
+```ts
+web({ timezoneId: 'Europe/Berlin' }); // default: the machine's
+```
+
+#### मीडिया एमुलेशन
+
+`web({ colorScheme, reducedMotion })` वे मीडिया फ़ीचर सेट करता है जिन्हें हर अटेम्प्ट का
+हर पेज रिपोर्ट करता है, ठीक वैसे जैसे Playwright के इसी नाम वाले कॉन्टेक्स्ट ऑप्शन करते
+हैं। `browser.emulateMedia(media)` इन्हें एक अटेम्प्ट के लिए बदलता है।
+
+```ts
+web({ colorScheme: 'dark', reducedMotion: 'reduce' }); // default: the browser's own
+await browser.emulateMedia({ colorScheme: 'light' });
+```
+
+- पेज के `@media` नियम और `matchMedia` इन्हें पहले पेंट से ही पढ़ते हैं।
+- पर्सिस्टेंट कॉन्टेक्स्ट भी ये ऑप्शन लेता है: इंजन इन्हें हर खुलने वाले पेज पर सेट
+  करता है।
+- `emulateMedia` अटेम्प्ट के बाकी समय के लिए लागू रहता है, हर खुले टैब और उसके बाद
+  खुलने वाले हर टैब पर, `app.restart()` और `app.clearState()` के बाद भी।
+- यह पहले नेविगेशन से पहले भी काम करता है, ताकि अगला `app.open` इन्हीं के साथ लोड हो।
+- जिस फ़ीचर को इसमें छोड़ दिया जाए, उसकी वैल्यू वैसी ही रहती है।
+- ऐप खुद जो टैब खोलता है, उसे दिखते ही टेस्ट का बदलाव मिल जाता है (पर्सिस्टेंट
+  कॉन्टेक्स्ट पर भी), इसलिए लोड पर चलने वाली कोई स्क्रिप्ट फिर भी कॉन्फ़िगर की गई
+  वैल्यू पढ़ सकती है।
+
+```ts
+/** User preferences a page reads through `@media` rules and `matchMedia`. */
+export interface WebMedia {
+  /** `prefers-color-scheme`. */
+  readonly colorScheme?: 'light' | 'dark' | 'no-preference';
+  /** `prefers-reduced-motion`. */
+  readonly reducedMotion?: 'reduce' | 'no-preference';
+}
+```
+
+| थ्रो करता है | कब |
+| --- | --- |
+| `INVALID_CONFIG` | `web()` में `WebMedia` से बाहर का कोई फ़ीचर या वैल्यू। |
+| `INVALID_ARGUMENT` | `emulateMedia` में `WebMedia` से बाहर का कोई फ़ीचर या वैल्यू। |
+
+#### इनिट स्क्रिप्ट्स
+
+इनिट स्क्रिप्ट हर डॉक्यूमेंट में पेज की अपनी स्क्रिप्ट्स से पहले चलती है, हर टैब और
+फ़्रेम में। `web({ initScripts })` हर टेस्ट पर लागू होता है; `browser.addInitScript`
+टेस्ट के बाकी हिस्से के लिए एक स्क्रिप्ट जोड़ता है।
+
+```ts
+await browser.addInitScript((value) => { Math.random = () => value; }, 0.5);
+await app.open('/raffle');
+```
+
+- कोई फ़ंक्शन टेस्ट के वेरिएबल को क्लोज़ ओवर नहीं कर सकता। उसकी जगह JSON `arg` पास करें।
+- पेज खुलने के बाद जोड़ी गई स्क्रिप्ट अगले नेविगेशन या रीलोड से चलती है।
+- `browser.addInitScript` वही तीनों रूप लेता है, या अपने JSON `arg` के साथ एक फ़ंक्शन।
+  इसके ओवरलोड [`Browser`](#browser-interface) पर हैं।
+
+```ts
+/** JavaScript source, a file relative to the project root, or a function. */
+export type WebInitScript = string | { readonly path: string } | (() => unknown);
+```
+
+### browser फ़िक्स्चर
+
+`browser` पूरा ब्राउज़र है, जिसमें एक एक्टिव टैब दिखता है।
+
+- जो भी चीज़ पेज को पढ़ती है या उस पर एक्शन करती है, वह एक्टिव टैब पर चलती है:
+  `goto`, `reload`, `back`, `forward`, `url`, `title`, `waitForURL`, `locator`,
+  `frameLocator`, `evaluate`, `waitForResponse`, `waitForDownload`, `keyboard`,
+  `mouse`, `expect(browser)` के मैचर, और हर `screen` क्वेरी।
+- जो चीज़ें पूरे ब्राउज़र की हैं, वे हर टैब पर लागू होती हैं: `cookies`, `setCookies`,
+  `clearCookies`, `route`, `unroute`, `unrouteAll`, `onDialog`, और `addInitScript`।
+- `setViewport` एक्टिव टैब और उसके बाद खुलने वाले हर टैब का साइज़ सेट करता है।
+- [`emulateMedia`](#media-emulation) सभी खुले और आने वाले टैब पर मीडिया बदलता है।
+- ऐप `target="_blank"` लिंक या `window.open` से जो टैब खोलता है, वह बैकग्राउंड में
+  खुलता है: एक्टिव टैब वहीं रहता है जब तक `waitForPopup` या `activate` किसी दूसरे को
+  एक्टिव न बना दे। [टैब](#tabs) देखें।
+- `locator` और `frameLocator` को छोड़कर हर `browser` कॉल एक रिकॉर्ड किया हुआ
+  `browser.<method>` स्टेप होता है। ये दोनों पेज को छुए बिना लोकेटर बनाते हैं, और उस
+  पर होने वाला एक्शन या असर्शन स्टेप बनता है।
+- रिलेटिव URL टारगेट के `app.url` के हिसाब से रिज़ॉल्व होता है, वरना `APP_URL_REQUIRED`
+  आता है।
+- ऐसे सूट में जो दूसरे प्लेटफ़ॉर्म पर भी चलता है, `platforms: ['web']` डिक्लेयर करें।
+- `expect(browser)` वह `BrowserExpectation` लौटाता है जिसे इंजन जोड़ता है:
+  `toHaveURL`, `toHaveTitle`, और `toHaveClass`।
+  [ब्राउज़र मैचर](/reference/expect#browser-matchers) देखें।
+
+| मेंबर | क्या लौटाता है |
+| --- | --- |
+| [`goto`](#goto) | `Promise<void>` |
+| [`reload`](#reload-back-forward) | `Promise<void>` |
+| [`back`](#reload-back-forward) | `Promise<void>` |
+| [`forward`](#reload-back-forward) | `Promise<void>` |
+| [`url`](#url-title) | `Promise<string>` |
+| [`title`](#url-title) | `Promise<string>` |
+| [`waitForURL`](#waitforurl) | `Promise<void>` |
+| [`locator`](#locator) | `Locator` |
+| [`frameLocator`](#framelocator) | `FrameScreen` |
+| [`evaluate`](#evaluate) | `Promise<T>` |
+| [`addInitScript`](#init-scripts) | `Promise<void>` |
+| [`route`](#route) | `Promise<void>` |
+| [`unroute`](#unroute) | `Promise<void>` |
+| [`unrouteAll`](#unrouteall) | `Promise<void>` |
+| [`waitForResponse`](#waitforresponse) | `Promise<WebResponse>` |
+| [`cookies`](#cookies) | `Promise<Cookie[]>` |
+| [`setCookies`](#setcookies) | `Promise<void>` |
+| [`clearCookies`](#clearcookies) | `Promise<void>` |
+| [`setViewport`](#setviewport) | `Promise<void>` |
+| [`emulateMedia`](#media-emulation) | `Promise<void>` |
+| [`onDialog`](#ondialog) | `Promise<() => Promise<void>>` |
+| [`tabs`](#tabs) | `readonly BrowserTab[]` |
+| [`waitForPopup`](#tabs) | `Promise<BrowserTab>` |
+| [`newTab`](#tabs) | `Promise<BrowserTab>` |
+| [`waitForDownload`](#waitfordownload) | `Promise<{ path, absolutePath, … }>` |
+| [`waitForDownloads`](#waitfordownloads) | `Promise<{ path, absolutePath, … }[]>` |
+| [`keyboard`](#keyboard) | `{ press, down, up, type }` |
+| [`mouse`](#mouse) | `{ move, wheel, down, up }` |
+| [`webmcp`](#webmcp) | `{ tools, callTool }` |
+
+[कॉन्फ़िग](/reference/config) हर मेंबर का टाइम बजट तय करता है:
+
+- `goto`, `reload`, `back`, और `forward`: [`timeout`](/reference/config#timeout),
+  वही बजट जो `app.open()` इस्तेमाल करता है।
+- `waitForURL`: [`assertionTimeout`](/reference/config#assertiontimeout)।
+- बाकी हर मेंबर: [`actionTimeout`](/reference/config#actiontimeout)। `locator` और
+  `frameLocator` पेज को छूते नहीं हैं और कोई बजट नहीं लेते।
+
+`goto`, `reload`, `back`, `forward`, `waitForResponse`, `waitForPopup`,
+`waitForDownload`, और `waitForDownloads` पर `{ timeout }` ऑप्शन बजट को ओवरराइड करता
+है, जो टेस्ट डेडलाइन (`afterEach` में `cleanupTimeout`) तक सीमित रहता है; `0` उस
+डेडलाइन तक इंतज़ार करता है। `url`, `title`, `evaluate`, `addInitScript`, `route`,
+`unroute`, `unrouteAll`, `cookies`, `setCookies`, `clearCookies`, `setViewport`,
+`emulateMedia`, `onDialog`, `newTab`, `BrowserTab` के मेथड, `keyboard.*`, `mouse.*`,
+और `webmcp.*` कोई ओवरराइड नहीं लेते।
+
+#### `goto`
+
+एक्टिव टैब को किसी URL पर ले जाता है।
+
+```ts
+await browser.goto('/dashboard', { waitUntil: 'networkidle' }); // default: 'load'
+```
+
+`waitUntil` इनमें से एक होता है: `'load'`, `'domcontentloaded'`, या `'networkidle'`।
+
+| थ्रो करता है | कब |
+| --- | --- |
+| `POLICY_DENIED` | ऐसा URL जिसका स्कीम `http:` या `https:` न हो। `about:blank` अलाउ है। ऐसे टारगेट पर जिसका [`app.url` कोई फ़ाइल है](/reference/config#a-file-as-the-app), उस फ़ाइल की डायरेक्टरी के बाहर का `file:` URL, या किसी डायरेक्टरी का URL। |
+| `APP_URL_REQUIRED` | ऐसे टारगेट पर रिलेटिव URL जहाँ `app.url` डिक्लेयर नहीं है। |
+| `ACTION_FAILED` | नेविगेशन फ़ेल हो गया। |
+
+#### `reload`, `back`, `forward`
+
+`reload` मौजूदा डॉक्यूमेंट को रीलोड करता है। `back` और `forward` ब्राउज़र हिस्ट्री में
+एक कदम आगे या पीछे जाते हैं। तीनों डॉक्यूमेंट लोड होने का इंतज़ार करते हैं। बैक/फ़ॉरवर्ड
+कैश रिस्टोर पहले से लोड हुए डॉक्यूमेंट को दोबारा इस्तेमाल कर सकता है। ऐप के कंटेंट का
+इंतज़ार करने के लिए लोकेटर और असर्शन इस्तेमाल करें।
+
+```ts
+await browser.reload();
+await browser.back({ timeout: 10_000 });
+```
+
+| थ्रो करता है | कब |
+| --- | --- |
+| `ACTION_FAILED` | नेविगेशन फ़ेल हो गया। |
+
+#### `url`, `title`
+
+एक्टिव टैब का मौजूदा URL और टाइटल लौटाते हैं।
+
+```ts
+const url = await browser.url();
+const title = await browser.title();
+```
+
+#### `waitForURL`
+
+मौजूदा URL के मैच होने का इंतज़ार करता है। यह शुरू से 0, 20, और 50 ms पर, फिर हर
+100 ms पर URL पढ़ता है, वही पोलिंग जो `expect(browser).toHaveURL` करता है।
+
+```ts
+await browser.waitForURL('**/checkout');
+await browser.waitForURL(/\/orders\/\d+$/, { timeout: 15_000 });
+```
+
+- स्ट्रिंग एक ग्लॉब होती है, जिसे Playwright के URL ग्लॉब की तरह पढ़ा जाता है: `*` एक
+  पाथ सेगमेंट के अंदर मैच करता है, `**` `/` के पार जाता है, `{a,b}` दोनों में से किसी
+  से मैच करता है, और `\` अगले कैरेक्टर को एस्केप करता है। `?` लिटरल होता है, इसलिए
+  क्वेरी स्ट्रिंग जैसी लिखी है वैसी पढ़ी जाती है, और बिना वाइल्डकार्ड वाली स्ट्रिंग
+  ठीक उसी URL से मैच करती है। जब तक ग्लॉब `*` से शुरू न हो या `https://x.test/**` या
+  `about:blank` जैसा पूरा URL न हो, वह बेस URL के हिसाब से रिज़ॉल्व होता है, और रिज़ॉल्व
+  हुए ग्लॉब का स्कीम और होस्ट किसी भी लेटर केस में मैच करते हैं। ग्लॉब के पाथ और क्वेरी
+  में नॉन-ASCII टेक्स्ट और स्पेस उसी तरह मैच करते हैं जैसे ब्राउज़र उन्हें एनकोड करता है।
+  खाली स्ट्रिंग किसी भी URL से मैच करती है।
+- `expect(browser).toHaveURL` में `*` और `{` को उन्हीं के रूप में पढ़ा जाता है, जैसा
+  Playwright करता है; [`route`](#route), `unroute`, और `waitForResponse` भी इस वेट
+  की तरह वही ग्लॉब पढ़ते हैं।
+- `RegExp` पूरे URL की जाँच करता है।
+
+| थ्रो करता है | कब |
+| --- | --- |
+| `INVALID_ARGUMENT` | ऐसा पैटर्न जो स्ट्रिंग या `RegExp` न हो (जैसे कोई प्रेडिकेट फ़ंक्शन), ऐसा ग्लॉब जिसमें `{` के अंदर `{` हो या `{` या `}` बिना जोड़े के छूट जाए, या `timeout` के अलावा कोई और ऑप्शन जैसे Playwright का `waitUntil`। |
+| `ASSERTION_FAILED` | टाइमआउट से पहले URL मैच नहीं हुआ। |
+| `APP_URL_REQUIRED` | बिना `app.url` वाले टारगेट पर रिलेटिव पैटर्न। |
+
+#### `locator`
+
+Playwright सेलेक्टर से सिर्फ़ वेब पर चलने वाला लोकेटर बनाता है।
+
+```ts
+const conditions = browser.locator(
+  '[data-testid="row"] >> nth=2 >> [data-testid="conditions"] > div',
+);
+```
+
+- सेलेक्टर डिफ़ॉल्ट रूप से CSS होता है, `xpath=` या शुरू में `//` होने पर XPath होता है,
+  और `>>` चेन लेता है, इसलिए ऊपर का उदाहरण CSS को एक रो तक सीमित रखता है।
+- ऐसे एलिमेंट के लिए जिसके अंदर कोई दूसरा एलिमेंट हो, `filter({ has })` इस्तेमाल करें।
+
+| थ्रो करता है | कब |
+| --- | --- |
+| `INVALID_LOCATOR` | खाली सेलेक्टर, या आखिरी हिस्से से पहले `*` कैप्चर (`*css=article >> text=Hello`)। |
+
+<Note>
+हर `screen` क्वेरी अपने स्कोप और उसके नीचे पेज से जोड़े गए हर क्लोज़्ड शैडो रूट में
+खोजती है, Playwright के अपने रोल, नाम, टेक्स्ट, लेबल, और ऐट्रिब्यूट मैचिंग के साथ और हर
+नोड एक ही बार मिलता है। ऑब्ज़र्व हुए ट्री में क्लोज़्ड रूट के अंदर दिखने वाला कंट्रोल
+रिज़ॉल्व होता है और उस पर एक्शन और रीड दोनों चलते हैं। `locator`, `frameLocator`, और
+`filter({ hasText })` Playwright की पहुँच बनाए रखते हैं और क्लोज़्ड रूट पर रुक जाते हैं;
+पूरी जानकारी [ब्राउज़र गाइड](/browser#shadow-dom) में है।
+</Note>
+
+#### `frameLocator`
+
+एक iframe के अंदर स्क्रीन क्वेरी स्कोप बनाता है।
+
+```ts
+const payment = browser.frameLocator('#payment-frame');
+await payment.getByLabel('Card number').fill('4242424242424242');
+```
+
+यह एक `FrameScreen` लौटाता है, यानी ऐसा `Screen` जिसकी क्वेरी फ़्रेम के अंदर से जवाब
+देती हैं। फ़्रेम के `locator` का इस्तेमाल तभी करें जब कंट्रोल के पास कोई एक्सेसिबल नाम,
+लेबल, प्लेसहोल्डर, या टेस्ट id न हो। [ब्राउज़र गाइड](/browser#reach-into-an-iframe) में
+दिखाया गया है कि यह कब काम आता है।
+
+```ts
+export interface FrameScreen extends Screen {
+  /** Creates a web-only CSS or XPath locator inside this frame. */
+  locator(selector: string): Locator;
+  /** Creates a screen query scope inside an iframe nested in this frame. */
+  frameLocator(selector: string): FrameScreen;
+}
+```
+
+पेज पर और फ़्रेम के अंदर एरर एक जैसे हैं:
+
+| थ्रो करता है | कब |
+| --- | --- |
+| `INVALID_LOCATOR` | खाली सेलेक्टर, यहाँ या फ़्रेम के `locator` में। |
+| `LOCATOR_NOT_FOUND` | कोई फ़्रेम मैच नहीं हुआ। |
+| `LOCATOR_AMBIGUOUS` | कई फ़्रेम मैच हो गए। |
+
+#### `evaluate`
+
+पेज के अंदर ट्रस्टेड टेस्ट कोड चलाता है और उसका रिज़ल्ट लौटाता है।
+
+```ts
+const count = await browser.evaluate(() => document.querySelectorAll('li').length);
+const flag = await browser.evaluate(
+  (name: string) => window.localStorage.getItem(name),
+  'featureFlags',
+);
+const title = await browser.evaluate<string>('document.title');
+```
+
+- फ़ंक्शन पेज के अंदर चलता है और टेस्ट के वेरिएबल नहीं पढ़ सकता। e2e इसे इसके सोर्स से
+  सीरियलाइज़ करके पेज में इनलाइन करता है, इसलिए इसे अपनी बॉडी के बाहर की किसी चीज़ को
+  क्लोज़ ओवर नहीं करना चाहिए। बॉडी के अंदर बनाए गए हेल्पर काम करते हैं। बाहर की वैल्यू
+  `arg` के ज़रिए पास करें।
+- स्ट्रिंग को स्टेटमेंट की तरह नहीं, बल्कि एक सिंगल एक्सप्रेशन की तरह चलाया जाता है। अगर
+  वह किसी फ़ंक्शन में इवैल्यूएट हो, तो उस फ़ंक्शन को `arg` के साथ कॉल किया जाता है। वरना
+  उसकी वैल्यू ही रिज़ल्ट होती है।
+- दोनों में से किसी से भी प्रॉमिस आए, तो उसका इंतज़ार किया जाता है।
+
+| थ्रो करता है | कब |
+| --- | --- |
+| `INVALID_ARGUMENT` | `arg` या रिटर्न वैल्यू [`JsonValue`](#jsonvalue) नहीं है। कोई क्लास इंस्टेंस, जैसे `DOMRect` या कोई एलिमेंट, यह नहीं होता: `rect.toJSON()` या जो फ़ील्ड चाहिएँ वे लौटाएँ। |
+| `EVALUATE_FAILED` | चलाए गए कोड ने एरर थ्रो किया, या पेज ने कोई JavaScript बिल्ट-इन जैसे `Map` बदल दिया जिसकी इंजन को ज़रूरत होती है। एरर में मैसेज होता है। |
+| `ACTION_FAILED` | Playwright टाइमआउट। |
+| `ENGINE_FAILURE` | पेज बंद हो गया या कॉन्टेक्स्ट खो गया। |
+
+#### `route`
+
+अटेम्प्ट के स्कोप वाला नेटवर्क रूट जोड़ता है।
+
+```ts
+await browser.route('**/api/quote', async (route) => {
+  await route.fulfill({ json: { cents: 4200 } });
+});
+
+await browser.route({ method: 'POST', url: '**/api/orders' }, async (route) => {
+  await route.fulfill({ json: { id: 7 } });
+});
+```
+
+`route.fetch()` रूट का फ़ैसला किए बिना, एक्शन टाइमआउट के अंदर अपस्ट्रीम से
+`{ url, status, headers, body(), text(), json() }` लौटाता है, और अगर इसके ऑरिजिन को
+कॉन्फ़िगर किए गए हेडर मिलने हैं तो उन्हें साथ भेजता है। यह रीडायरेक्ट को फ़ॉलो नहीं करता,
+क्योंकि वे इसे नेविगेशन नियम से बाहर ले जा सकते हैं।
+
+- पैटर्न एक स्ट्रिंग या `RegExp` होता है, जिसे ठीक [`waitForURL`](#waitforurl) की तरह
+  पढ़ा जाता है: स्ट्रिंग Playwright के ग्रामर वाला ग्लॉब होती है (`?` लिटरल, `{a,b}`
+  दोनों में से कोई) जो बेस URL के हिसाब से रिज़ॉल्व होती है, इसलिए बिना वाइल्डकार्ड वाली
+  स्ट्रिंग ठीक उसी URL से मैच करती है। `unroute` और `waitForResponse` भी यही पैटर्न
+  लेते हैं।
+- `{ method, url }` पैटर्न को एक HTTP मेथड तक सीमित भी करता है। `method` केस-इनसेंसिटिव
+  होता है, `url` में ऊपर वाला स्ट्रिंग या `RegExp` ग्रामर ही रहता है, और `unroute` और
+  `waitForResponse` भी यही रूप लेते हैं।
+- जिस रूट का मेथड मैच नहीं करता, वह अपने से पहले रजिस्टर हुए रूट्स और फिर नेटवर्क को
+  रास्ता दे देता है, मानो उसका URL मैच ही न हुआ हो।
+- मेथड पैटर्न ठीक उसी मेथड से मैच करता है: `GET` रूट `HEAD` का जवाब नहीं देता।
+- रूट `app.restart()`, `app.clearState()`, और सेशन रिस्टोर के बाद भी बना रहता है।
+- रूट सबसे नए से पुराने के क्रम में चलते हैं।
+- हैंडलर को ठीक एक बार फ़ैसला करना होता है: `fulfill`, `continue`, `fallback`, या
+  `abort` से, जिनके बारे में नीचे `WebRoute` में बताया गया है।
+- `continue` का URL भी `goto` वाले नियम से ही गुज़रता है। `undefined` पर सेट किया गया
+  `continue` हेडर हटा दिया जाता है, रीडायरेक्ट पर भी।
+- `fulfill` की बॉडी स्ट्रिंग या बाइट्स (`Buffer`, `Uint8Array`) होती है, जिसे ज्यों का
+  त्यों भेजा जाता है।
+- कई कुकी सेट करने के लिए उन्हें एक `set-cookie` हेडर में `\n` से जोड़ें, जैसा
+  `route.fetch()` के हेडर उन्हें रिपोर्ट करते हैं। हेडर में किसी और लाइन ब्रेक को मना
+  किया जाता है।
+- जो हैंडलर एरर थ्रो करता है (जैसे रिक्वेस्ट पर फ़ेल हुआ `expect`), वह अगले स्टेप को उसी
+  एरर से फ़ेल कर देता है, या अगर आगे कोई स्टेप न हो तो अटेम्प्ट के अंत में अटेम्प्ट को।
+  जिस स्टेप को हैंडलर ने फ़ेल कराया (जैसे वह `goto` जिसकी रिक्वेस्ट उसने अबॉर्ट छोड़ी),
+  वह हैंडलर के एरर से फ़ेल होता है। जिस `goto` की रिक्वेस्ट हैंडलर ने जानबूझकर अबॉर्ट की,
+  वह `ACTION_FAILED` से फ़ेल होता है। उस समय चल रहे हैंडलर को पूरा होने के लिए क्लीनअप
+  बजट मिलता है। उस बजट के बाद वह जो भी थ्रो करे, उसे छोड़ दिया जाता है।
+
+| थ्रो करता है | कब |
+| --- | --- |
+| `INVALID_ARGUMENT` | ऐसा पैटर्न जो स्ट्रिंग, `RegExp`, या `{ method, url }` न हो; ऐसा ग्लॉब जिसमें `{` के अंदर `{` हो या `{` या `}` बिना जोड़े के छूट जाए; ऐसा `{ method, url }` पैटर्न जिसमें कोई key कम या ज़्यादा हो, मेथड HTTP मेथड न हो, या `url` स्ट्रिंग या `RegExp` न हो। इसके अलावा, कोई ऐसा ऑप्शन जो फ़ैसला नहीं लेता (जैसे Playwright का `abort(errorCode)`, या गलत स्पेलिंग वाली key जैसे `bodyy`), वह रिक्वेस्ट को अबॉर्ट कर देता है और अगले स्टेप को फ़ेल करता है। |
+| `APP_URL_REQUIRED` | बिना `app.url` वाले टारगेट पर रिलेटिव पैटर्न। |
+| `ACTION_FAILED` | हैंडलर ने दो बार फ़ैसला किया या बिल्कुल नहीं किया। |
+| `POLICY_DENIED` | मना किए गए स्कीम वाला `continue` URL। |
+| `CLEANUP_TIMEOUT` | हैंडलर क्लीनअप बजट से ज़्यादा देर तक चला। इससे अटेम्प्ट फ़ेल हो जाता है। |
+
+```ts
+/**
+ * One of `json`, `body`, or `path`, or none for an empty body. `path` names a
+ * file relative to the project root; its `Content-Type` follows its
+ * extension unless `contentType` or a `content-type` header sets one.
+ */
+export type RouteFulfillResponse = {
+  status?: number;
+  /** Response headers; `set-cookie` may join several cookies with `\n`, as `route.fetch()` reports them. */
+  headers?: Record<string, string>;
+  /** Sets the `Content-Type` response header. */
+  contentType?: string;
+} & (
+  | { json: JsonValue; body?: never; path?: never }
+  | { body: string | Uint8Array; json?: never; path?: never }
+  | { path: string; json?: never; body?: never }
+  | { body?: never; json?: never; path?: never }
+);
+
+/** What `continue` changes about the request before it goes to the network. */
+export interface RouteContinueOverrides {
+  /** Resolved against the base URL like `goto`; must keep the request's scheme. */
+  url?: string;
+  /** Request method. */
+  method?: string;
+  /** Replaces every request header; `undefined` drops one, and the configured `headers` for an allowed origin are added on top. */
+  headers?: Record<string, string | undefined>;
+  /** Request body. */
+  postData?: string;
+}
+
+/** A URL pattern narrowed to one HTTP method. */
+export interface RouteMatcher {
+  /** The HTTP method to match, case-insensitive: `'POST'` and `'post'` are the same. */
+  readonly method: string;
+  /**
+   * The URL pattern: a string using the same grammar as a plain `route`
+   * pattern, or a `RegExp`. `route` and `waitForResponse` match requests
+   * against it; `unroute` compares it structurally.
+   */
+  readonly url: string | RegExp;
+}
+
+export interface WebRoute {
+  /** The intercepted request. */
+  readonly request: {
+    readonly url: string;
+    readonly method: string;
+    readonly headers: Readonly<Record<string, string>>;
+    readonly postData?: string;
+  };
+  /** Reads upstream without deciding the route or following redirects. */
+  fetch(): Promise<WebResponse>;
+  /** Fulfills the intercepted request once. */
+  fulfill(response: RouteFulfillResponse): Promise<void>;
+  /** Sends the intercepted request to the network once, skipping every other route. */
+  continue(overrides?: RouteContinueOverrides): Promise<void>;
+  /** Hands the intercepted request to the route registered before this one, or the network when none matches. */
+  fallback(): Promise<void>;
+  /** Aborts the intercepted request once. */
+  abort(): Promise<void>;
+}
+```
+
+#### `unroute`
+
+उसी पैटर्न से रजिस्टर हुए रूट्स हटाता है: वही स्ट्रिंग, वही `RegExp` सोर्स और फ़्लैग,
+या वही मेथड और URL। यह URL मैच करने के बजाय पैटर्न की तुलना करता है, इसलिए
+`unroute('**/api/*')` `'**/api/orders'` के लिए रजिस्टर हुए रूट को नहीं हटाता।
+
+```ts
+await browser.unroute('**/api/quote');
+await browser.unroute({ method: 'POST', url: '**/api/orders' });
+```
+
+| थ्रो करता है | कब |
+| --- | --- |
+| `INVALID_ARGUMENT` | ऐसा पैटर्न जो स्ट्रिंग, `RegExp`, या `{ method, url }` न हो; ऐसा `{ method, url }` पैटर्न जिसमें कोई key कम या ज़्यादा हो, मेथड HTTP मेथड न हो, या `url` स्ट्रिंग या `RegExp` न हो। |
+
+#### `unrouteAll`
+
+ब्राउज़र फ़िक्स्चर से रजिस्टर हुए सभी रूट्स हटाता है, और कॉन्फ़िगर किए गए हेडर बचाए
+रखता है।
+
+```ts
+await browser.unrouteAll();
+```
+
+#### `waitForResponse`
+
+[`route`](#route) के पैटर्न सिंटैक्स में दिए पैटर्न से मैच होने वाले रिस्पॉन्स का इंतज़ार
+करता है।
+
+```ts
+const response = await browser.waitForResponse('**/api/orders');
+expect(response.status).toBe(201);
+```
+
+```ts
+const created = browser.waitForResponse({ method: 'POST', url: '**/api/orders' });
+await screen.getByRole('button', 'Place order').tap();
+expect((await created).status).toBe(201);
+```
+
+- `{ method, url }` पैटर्न सिर्फ़ उसी मेथड के रिस्पॉन्स से मैच करता है; किसी और मेथड के
+  रिस्पॉन्स निकल जाते हैं।
+- डेडलाइन मैच की समय-सीमा तय करती है: हेडर आते ही रिस्पॉन्स रिज़ॉल्व हो जाता है।
+- `body()`, `text()`, और `json()` बॉडी के लिए अपने अलग बजट पर इंतज़ार करते हैं, जो
+  टेस्ट डेडलाइन तक सीमित `config.actionTimeout` होता है।
+- `url`, `status`, और `headers` हमेशा पढ़े जा सकते हैं।
+- सचमुच खाली बॉडी `body()` से खाली `Buffer` और `text()` से `''` देती है; `json()` उसे
+  रिजेक्ट करता है।
+
+| थ्रो करता है | कब |
+| --- | --- |
+| `INVALID_ARGUMENT` | ऐसा पैटर्न जो स्ट्रिंग, `RegExp`, या `{ method, url }` न हो; ऐसा ग्लॉब जिसमें `{` के अंदर `{` हो या `{` या `}` बिना जोड़े के छूट जाए; ऐसा `{ method, url }` पैटर्न जिसमें कोई key कम या ज़्यादा हो, मेथड HTTP मेथड न हो, या `url` स्ट्रिंग या `RegExp` न हो। |
+| `APP_URL_REQUIRED` | बिना `app.url` वाले टारगेट पर रिलेटिव पैटर्न। |
+| `ACTION_FAILED` | डेडलाइन के अंदर कुछ मैच नहीं हुआ। `body()`, `text()`, और `json()` से: उनका बजट खत्म होने पर भी बॉडी स्ट्रीम हो रही हो, या ऐसी बॉडी जिसे ब्राउज़र पढ़ न सका (बताए गए `Content-Length` से पहले कनेक्शन रीसेट, पेज से अबॉर्ट की गई रिक्वेस्ट, या रीडायरेक्ट जिसकी बॉडी ब्राउज़र कभी नहीं रखता), खाली स्ट्रिंग देने के बजाय। |
+
+```ts
+/**
+ * An HTTP response: what `request` calls, the web engine's
+ * `browser.waitForResponse`, and `route.fetch()` return.
+ */
+export interface WebResponse {
+  /** Response URL. */
+  readonly url: string;
+  /** HTTP status. */
+  readonly status: number;
+  /** Response headers, lower-cased names; `request` and `route.fetch()` join several `set-cookie` values with `\n`, `waitForResponse` leaves cookie headers out. */
+  readonly headers: Readonly<Record<string, string>>;
+  /** Waits for the body and returns its bytes; rejects with `ACTION_FAILED` when the body could not be read. */
+  body(): Promise<Buffer>;
+  /** Waits for the body and parses it as JSON; rejects with `ACTION_FAILED` when the body could not be read. */
+  json<T = unknown>(): Promise<T>;
+  /** Waits for the body and reads it as text; rejects with `ACTION_FAILED` when the body could not be read. */
+  text(): Promise<string>;
+}
+```
+
+#### `cookies`
+
+मौजूदा कॉन्टेक्स्ट को दिखने वाली कुकी लौटाता है।
+
+```ts
+const cookies = await browser.cookies();
+```
+
+#### `setCookies`
+
+हर कुकी की जाँच करता है, फिर उन्हें सेट करता है।
+
+```ts
+await browser.setCookies([{ url: 'http://localhost:3000', name: 'tz', value: 'UTC' }]);
+```
+
+- रिलेटिव `url` बेस URL के हिसाब से रिज़ॉल्व होता है, जैसे `goto` करता है।
+- `domain` वाले रूप में स्कीम बेस URL से आता है, और शुरू का `.` हटा दिया जाता है।
+
+| थ्रो करता है | कब |
+| --- | --- |
+| `INVALID_ARGUMENT` | ऐरे न होना, या ऐसी कुकी जिसे `Cookie` टाइप अलाउ नहीं करता (गलत फ़ील्ड टाइप, `url` और `domain`/`path` दोनों न होना या दोनों एक साथ होना, ऐसा `domain` जो सीधा होस्ट न हो, ऐसा `expires` जो सेकंड में न हो, या कोई अनजान key)। कुछ भी सेट नहीं होता। |
+| `POLICY_DENIED` | पार्स न होने वाला टारगेट या मना किया गया स्कीम। कुछ भी सेट नहीं होता। |
+
+```ts
+export interface CookieFields {
+  /** Cookie name. */
+  name: string;
+  /** Cookie value. */
+  value: string;
+  /** Unix timestamp in whole seconds. */
+  expires?: number;
+  /** HttpOnly flag. */
+  httpOnly?: boolean;
+  /** Secure flag. */
+  secure?: boolean;
+  /** SameSite attribute. */
+  sameSite?: 'Strict' | 'Lax' | 'None';
+}
+
+/** `url`, or `domain` with an optional `path`, never both. */
+export type Cookie = CookieFields &
+  (
+    | { url: string; domain?: never; path?: never }
+    | { url?: never; domain: string; path?: string }
+  );
+```
+
+#### `clearCookies`
+
+`clearCookies({ name?, domain?, path? })` हर दिए गए फ़िल्टर से मैच होने वाली कुकी हटाता
+है। स्ट्रिंग ठीक-ठीक मैच करती है; RegExp फ़ील्ड पर मैच करता है। बिना किसी ऑप्शन के यह
+सारी कुकी हटा देता है। बाकी स्टोरेज बना रहता है।
+
+```ts
+await browser.clearCookies({ name: /^session/, path: '/' });
+```
+
+```ts
+export interface CookieFilter {
+  name?: string | RegExp;
+  domain?: string | RegExp;
+  path?: string | RegExp;
+}
+```
+
+#### `setViewport`
+
+व्यूपोर्ट का साइज़ सेट करता है और नया साइज़ रिपोर्ट में रिकॉर्ड करता है।
+
+```ts
+await browser.setViewport({ width: 390, height: 844 });
+await app.open('/');
+```
+
+- यह पहले नेविगेशन से पहले भी काम करता है, जैसे Playwright का `setViewportSize` करता
+  है। अगला `app.open` उसी साइज़ पर लोड होता है, इसलिए फ़ोन-साइज़ वाला टेस्ट पहले डेस्कटॉप
+  लेआउट रेंडर नहीं करता।
+- यह साइज़ अटेम्प्ट के बाकी समय के लिए बना रहता है, `app.restart()` और `app.clearState()`
+  के बाद भी।
+
+#### `onDialog`
+
+नेटिव डायलॉग के लिए अटेम्प्ट के स्कोप वाला हैंडलर रजिस्टर करता है और एक अनसब्सक्राइब फ़ंक्शन
+लौटाता है।
+
+```ts
+const off = await browser.onDialog('accept');
+await screen.getByRole('button', 'Delete').tap();
+await off();
+```
+
+- हैंडलर `'accept'`, `'dismiss'`, या एक फ़ंक्शन होता है जिसे `Dialog` मिलता है।
+- फ़ंक्शन हैंडलर को `accept` या `dismiss` कॉल करना होता है। जो दोनों में से कुछ न करे,
+  उसका डायलॉग डिसमिस कर दिया जाता है, ठीक वैसे जैसे बिना हैंडलर वाले डायलॉग के साथ
+  होता है।
+- जो हैंडलर एरर थ्रो करता है, वह अगले स्टेप को अपने एरर से फ़ेल कर देता है, या आगे कोई
+  स्टेप न हो तो अटेम्प्ट के अंत में अटेम्प्ट को। जो जवाब देने से पहले थ्रो करे, उसका
+  डायलॉग डिसमिस हो जाता है।
+
+एरर `onDialog` पर नहीं, बल्कि अगले स्टेप पर दिखते हैं:
+
+| थ्रो करता है | कब |
+| --- | --- |
+| `APP_NOT_OPEN` | फ़ंक्शन हैंडलर ने किसी भी तरह जवाब नहीं दिया, या किसी हैंडलर ने डायलॉग नहीं लिया। |
+| `ASSERTION_FAILED` | हैंडलर का `expect` फ़ेल हो गया। |
+| `ENGINE_FAILURE` | हैंडलर ने बिना श्रेणी वाला एरर थ्रो किया। |
+
+```ts
+/** A native dialog as a test's handler sees it. */
+export interface Dialog {
+  /** The native dialog kind, independent of its message. */
+  readonly type: 'alert' | 'confirm' | 'prompt' | 'beforeunload';
+  /** The dialog's text. */
+  readonly message: string;
+  /** Accepts the dialog once. */
+  accept(text?: string): Promise<void>;
+  /** Dismisses the dialog once. */
+  dismiss(): Promise<void>;
+}
+
+export type DialogHandler = 'accept' | 'dismiss' | ((dialog: Dialog) => void | Promise<void>);
+```
+
+#### टैब
+
+ऐप `target="_blank"` लिंक या `window.open` से जो टैब खोलता है, वह बैकग्राउंड में खुलता
+है। एक्टिव टैब वहीं रहता है, और `screen`, `expect`, और `browser` के पेज मेथड उसी पर
+चलते रहते हैं। `waitForPopup` उस टैब को एक्टिव बना देता है जिसे उसका ट्रिगर खोलता है।
+जब एक्टिव टैब बंद होता है, तो जिस टैब ने उसे खोला था वह फिर से एक्टिव हो जाता है, या
+अगर ओपनर भी बंद हो चुका हो तो वह खुला टैब जो सबसे हाल में एक्टिव था।
+
+```ts
+const popup = await browser.waitForPopup(() =>
+  screen.getByRole('button', 'Open verification tab').tap(),
+);
+const code = await screen.getByText(/^TAB-/).textContent();
+await popup.close(); // the opener is active again
+await screen.getByRole('textbox', 'Verification code').fill(code);
+```
+
+- `waitForPopup(trigger)` ट्रिगर चलाता है और उसके खोले हुए टैब के एक्टिव होते ही उसी
+  टैब के साथ रिज़ॉल्व होता है। यह इंतज़ार शुरू होने के बाद ऐप से खोले गए पहले टैब
+  को लेता है, जो किसी पहले एक्शन से खुला हुआ ऐसा टैब भी हो सकता है जिसका पेज अभी लोड
+  हुआ हो।
+- `tabs()` खुले टैब्स को उनके खुलने के क्रम में लौटाता है, पूरे अटेम्प्ट में एक टैब के
+  लिए वही `BrowserTab`। टैब अपना पहला पेज लोड होने के बाद लिस्ट में जुड़ता है, इसलिए
+  एक एक्शन से खुले दो टैब उस क्रम में दिखते हैं जिस क्रम में उनके पेज लोड होते हैं। जिस
+  टैब को कभी पेज नहीं मिलता वह लिस्ट में नहीं आता: जैसे डाउनलोड के लिए `target="_blank"`
+  लिंक, `mailto:` पता, या बिना कंटेंट वाला रिस्पॉन्स।
+- `tab.activate()` बाकी टैब्स को बंद किए बिना किसी टैब को एक्टिव बना देता है।
+  `tab.close()` उसे बंद करता है, और अगर वह एक्टिव था तो अगले टैब के एक्टिव होने तक
+  इंतज़ार करता है।
+- `newTab()` उसी ब्राउज़र कॉन्टेक्स्ट में (उन्हीं कुकी और स्टोरेज के साथ) एक खाली टैब
+  खोलता है और उसे एक्टिव बना देता है। उसे `goto` से नेविगेट करें।
+- जिस टैब का ओपनर उसके लोड होने से पहले ही बंद हो गया हो, वह भी Chromium पर लिस्ट में
+  आता है। जो पेज टेस्ट `surfaceOf(engine)` के ज़रिए खोलता है, वह लिस्ट में नहीं आता।
+- स्क्रीनकास्ट एक्टिव टैब को रिकॉर्ड करता है, हर बदलाव पर एक वीडियो सेगमेंट। जो टैब खुद
+  बंद हो जाए उसका कोई सेगमेंट नहीं बचता, क्योंकि रिकॉर्डिंग सेव होने से पहले ही उसका पेज
+  बंद हो जाता है। प्रोवाइडर की अपनी रिकॉर्डिंग हर टैब को कवर करती है।
+
+```ts
+/** One tab of the browser the attempt drives. */
+export interface BrowserTab {
+  url(): Promise<string>;
+  title(): Promise<string>;
+  /** Whether this is the active tab. */
+  isActive(): boolean;
+  isClosed(): boolean;
+  /** Makes this the active tab. */
+  activate(): Promise<void>;
+  /** Closes the tab; the tab that opened it becomes active when it was. */
+  close(): Promise<void>;
+}
+```
+
+| थ्रो करता है | कब |
+| --- | --- |
+| `ACTION_FAILED` | `waitForPopup`: समय पर कोई टैब नहीं खुला। जो ट्रिगर समय पर रिज़ॉल्व हो गया वह `no tab opened within <n>ms; the trigger resolved after <m>ms` से फ़ेल होता है, या अगर कोई टैब अभी अपना पहला पेज लोड कर रहा था तो `the tab the app opened did not load <url> within <n>ms` से। `activate`: टैब बंद हो चुका है। |
+
+#### `waitForDownload`
+
+ट्रिगर चलाता है और उससे शुरू हुए डाउनलोड का इंतज़ार करता है।
+
+```ts
+const file = await browser.waitForDownload(() =>
+  screen.getByRole('link', 'Export CSV').tap(),
+);
+```
+
+- यह फ़ाइल को `download` आर्टिफ़ैक्ट के रूप में रजिस्टर करता है और उसका रिलेटिव `path`,
+  रनर की तरफ़ का `absolutePath`, और `suggestedFilename` लौटाता है।
+- कंटेंट जाँचने के लिए फ़ाइल API के साथ `absolutePath` इस्तेमाल करें, होस्टेड ब्राउज़र
+  पर भी।
+- होस्टेड ब्राउज़र पर फ़ाइल प्रोवाइडर के [`downloads`](/browser#downloads-on-the-provider)
+  के ज़रिए वापस आती है।
+- इंतज़ार के समय में ट्रिगर का अपना समय भी शामिल होता है।
+
+| थ्रो करता है | कब |
+| --- | --- |
+| `ACTION_FAILED` | डाउनलोड समय पर पूरा नहीं हुआ। जो ट्रिगर समय पर रिज़ॉल्व हो गया लेकिन कोई डाउनलोड शुरू नहीं कर पाया, वह `no download started within <n>ms; the trigger resolved after <m>ms` से फ़ेल होता है। |
+
+अगर टाइमआउट पर भी ट्रिगर चल रहा हो तो वह स्टेप टाइमआउट से फ़ेल होता है। जो ट्रिगर थ्रो
+करे, वह अपने एरर से फ़ेल होता है।
+
+#### `waitForDownloads`
+
+`waitForDownloads(trigger, { count })` ट्रिगर को एक बार कॉल करता है और उसी टाइमआउट के
+अंदर शुरू होने के क्रम में `count` फ़ाइलें लौटाता है, हर एक अपने अलग आर्टिफ़ैक्ट के साथ।
+अगर समय पर कम डाउनलोड शुरू हों, तो एरर में दोनों गिनती लिखी होती हैं; अतिरिक्त डाउनलोड
+छोड़ दिए जाते हैं।
+
+#### `keyboard`
+
+व्यूपोर्ट स्तर का कीबोर्ड इनपुट, जो भी चीज़ फ़ोकस में हो उसके लिए।
+
+```ts
+await browser.keyboard.press('Escape');
+await browser.keyboard.type('hello');
+```
+
+- `type(text)` सिर्फ़ सादा टेक्स्ट टाइप करता है, कभी `Secret` नहीं।
+- जब टारगेट मौजूद हो, तो `locator.press` और `locator.fill` को प्राथमिकता दें।
+- [`Browser`](#browser-interface) में हर मेथड के बारे में बताया गया है।
+
+#### `mouse`
+
+टेस्ट कोड से व्यूपोर्ट स्तर का पॉइंटर इनपुट, एजेंट ऑब्ज़र्वेशन से स्वतंत्र।
+
+```ts
+await browser.mouse.move(120, 240);
+await browser.mouse.down();
+await browser.mouse.move(320, 240);
+await browser.mouse.up();
+```
+
+[`Browser`](#browser-interface) में हर मेथड के बारे में बताया गया है, `wheel` समेत।
+
+#### WebMCP
+
+[WebMCP](https://github.com/webmachinelearning/webmcp) एक एक्सपेरिमेंटल ब्राउज़र API
+है जिसके ज़रिए कोई पेज `document.modelContext` (Firefox में `navigator.modelContext`)
+पर टूल रजिस्टर करता है। `browser.webmcp` एक्टिव टैब के पेज से रजिस्टर किए गए टूल की
+लिस्ट देता है और बिना किसी मॉडल के टेस्ट कोड से उन्हें कॉल करता है।
+
+```ts title="e2e.config.ts"
+import type { E2EConfig } from 'e2e';
+import { web } from '@e2e-dev/web';
+
+export default {
+  targets: [{ engine: web({ webmcp: true }), app: { url: 'http://localhost:3000' } }],
+} satisfies E2EConfig;
+```
+
+```ts
+const tools = await browser.webmcp.tools();
+expect(tools.map((tool) => tool.name)).toContain('add');
+
+const result = await browser.webmcp.callTool('add', { a: 2, b: 40 });
+expect(result).toEqual({ content: [{ type: 'text', text: '42' }] });
+```
+
+- `web({ webmcp: true })` Chromium को `--enable-features=WebMCP` के साथ, या Firefox को
+  उसकी `dom.modelcontext` प्रेफ़रेंस के साथ लॉन्च करता है। यह डिफ़ॉल्ट रूप से बंद रहता
+  है, क्योंकि इसके चालू होने पर हर पेज को एक ऐसी API दिखती है जो ज़्यादातर ब्राउज़र में
+  अभी नहीं है। WebKit में WebMCP नहीं है। यह ऑप्शन सिर्फ़ उसी ब्राउज़र के लिए है जिसे
+  इंजन लॉन्च करता है: [`connect`](#connect) या किसी प्रोवाइडर से जुड़े ब्राउज़र को उस
+  आर्ग्युमेंट के साथ खुद शुरू करें।
+- पेज को सिक्योर कॉन्टेक्स्ट (`https:` या `localhost`) होना चाहिए, वरना उसमें
+  `document.modelContext` नहीं होता और दोनों कॉल `UNSUPPORTED_CAPABILITY` से फ़ेल हो
+  जाते हैं। इंजन खुद पेज से पूछता है, इसलिए `connect` या प्रोवाइडर से जुड़ा जो ब्राउज़र
+  बिना WebMCP के शुरू हुआ हो वह भी इसी तरह फ़ेल होता है।
+- `tools()` अभी रजिस्टर हुए टूल लौटाता है, हर एक में उसका `name`, `description`,
+  `inputSchema`, और पेज से दिए जाने पर `annotations` होते हैं। जो पेज कोई टूल
+  रजिस्टर न करे, वह खाली लिस्ट देता है। क्रम ब्राउज़र का अपना होता है और Chromium व
+  Firefox में अलग होता है।
+- `callTool(name, input)` उस वैल्यू से रिज़ॉल्व होता है जिससे टूल का `execute` रिज़ॉल्व
+  हुआ हो, आमतौर पर `content` ऐरे वाला एक ऑब्जेक्ट। `input` एक JSON ऑब्जेक्ट है; इसे छोड़
+  देने या `null` देने पर टूल को खाली ऑब्जेक्ट मिलता है। `isError: true` वाला रिज़ल्ट वैसा
+  का वैसा वापस आता है, और जो टूल बिना कुछ लौटाए रिज़ॉल्व हो वह `null` देता है।
+- ऑब्जेक्ट या ऐरे अपने JSON के रूप में वापस आता है, Chromium और Firefox दोनों में एक
+  जैसा: `undefined` छोड़ी गई प्रॉपर्टी इसमें नहीं होती, और अंदर का `Date` स्ट्रिंग बन
+  जाता है। जो टूल किसी और वैल्यू से रिज़ॉल्व हो वह अपना टेक्स्ट देता है, जिसे JSON होने
+  पर पार्स किया जाता है: `'42'` और `42` दोनों `42` देते हैं, और 2^53 से बड़ी संख्या के
+  अंक कट जाते हैं। खाली स्ट्रिंग Chromium में `'Operation succeeded'` देती है। वैल्यू को
+  ज्यों का त्यों रखने के लिए ऑब्जेक्ट से रिज़ॉल्व करें।
+- जो टूल पेज को किसी दूसरे URL पर भेज दे, वह जवाब आने से पहले ही कॉल खत्म कर देता है।
+  नया पेज लोड होते ही कॉल `ACTION_FAILED` से फ़ेल होता है, और मैसेज बताता है कि टूल चल
+  चुका हो सकता है। समय खत्म होने पर भी चल रहा टूल इसी तरह फ़ेल होता है।
+- दोनों एक्टिव टैब के मुख्य फ़्रेम पर काम करते हैं, उसके अंदर के फ़्रेम पर नहीं।
+- नाम, डिस्क्रिप्शन, स्कीमा, और रिज़ल्ट पेज से आते हैं, इसलिए उन्हें अनट्रस्टेड इनपुट
+  मानें।
+
+```ts
+/** A tool a page registered through WebMCP, as the page describes it. */
+export interface WebMcpTool {
+  readonly name: string;
+  readonly description: string;
+  /** JSON Schema of the tool's input, when the page gave one. */
+  readonly inputSchema?: JsonValue;
+  /** Hints the page gives about the tool. */
+  readonly annotations?: {
+    /** The tool changes no state. */
+    readonly readOnly?: boolean;
+    /** The tool's output may carry third-party content. */
+    readonly untrustedContent?: boolean;
+    /** The tool takes a consequential action, such as placing an order. */
+    readonly consequential?: boolean;
+  };
+}
+```
+
+| थ्रो करता है | कब |
+| --- | --- |
+| `UNSUPPORTED_CAPABILITY` | पेज में WebMCP नहीं है: ब्राउज़र इसके बिना चल रहा है, या पेज सिक्योर कॉन्टेक्स्ट नहीं है। मैसेज कारण और ठीक करने का तरीका बताता है। |
+| `ACTION_FAILED` | `callTool`: पेज पर उस नाम का कोई टूल रजिस्टर नहीं है (मैसेज रजिस्टर हुए टूल की लिस्ट देता है), टूल ने थ्रो किया या ऐसी चीज़ से रिज़ॉल्व हुआ जिसे JSON नहीं रख सकता (अंदर `BigInt`, या साइकिल), या पेज नेविगेट होने या समय खत्म होने की वजह से टूल के जवाब से पहले ही कॉल खत्म हो गया। |
+| `INVALID_ARGUMENT` | `callTool`: `name` नॉन-एम्प्टी स्ट्रिंग नहीं है, या `input` JSON ऑब्जेक्ट नहीं है। |
+| `INVALID_CONFIG` | `connect`, ब्राउज़र प्रोवाइडर, या WebKit के साथ `web({ webmcp: true })`। |
+
+## ब्राउज़र इंस्टॉल करना
+
+यह पैकेज `playwright-core` को ठीक एक वर्ज़न पर पिन करता है, ताकि इंजन हमेशा उसी
+Playwright पर चले जिस पर उसे टेस्ट किया गया है। जो ऐप खुद Playwright पर निर्भर करता है,
+उसकी अपनी कॉपी अलग रहती है। दोनों का ब्राउज़र कैश तभी साझा होता है जब उनके वर्ज़न मैच
+करें।
+
+गायब ब्राउज़र हर रन में एक बार डाउनलोड होता है, रन की घड़ी शुरू होने से पहले। CI या
+कंटेनर इमेज में ब्राउज़र को अलग स्टेप के तौर पर इंस्टॉल करने के लिए पैकेज की कमांड
+चलाएँ। यह इंजन के पिन किए गए Playwright के लिए ब्राउज़र इंस्टॉल करती है:
+
+<CodeGroup>
+```bash npm
+npx @e2e-dev/web install chromium --with-deps
+```
+
+```bash pnpm
+pnpm exec e2e-web install chromium --with-deps
+```
+
+```bash bun
+bunx @e2e-dev/web install chromium --with-deps
+```
+</CodeGroup>
+
+- `chromium`, `firefox`, और `webkit` में से किसी का भी नाम दें। कोई नाम न देने पर यह
+  `chromium` इंस्टॉल करता है।
+- `--with-deps` Linux पर ब्राउज़र के लिए ज़रूरी सिस्टम लाइब्रेरी भी इंस्टॉल करता है। जब
+  chromium या firefox इनके बिना इंस्टॉल हों, तो [`e2e doctor`](/reference/cli#e2e-doctor)
+  का `browser` चेक फ़ेल होता है और रन का लॉन्च भी फ़ेल होता है; दोनों मैसेज गायब
+  लाइब्रेरी और इस कमांड का नाम बताते हैं।
+- यह कमांड इंस्टॉलर के एग्ज़िट कोड के साथ बाहर निकलती है।
+
+## सिमैंटिक कैप्चर रिकवरी
+
+जब सिमैंटिक रीडर टाइमआउट हो जाए, तो एजेंट ऑब्ज़र्वेशन ताज़ा व्यूपोर्ट स्क्रीनशॉट के साथ
+रिकवर कर सकते हैं।
+
+- Playwright हर पहुँच वाले फ़्रेम (ओपन और क्लोज़्ड शैडो रूट समेत) पर नया सिक्योर-फ़ील्ड
+  मास्क स्वीप चलाता है। हर मास्क प्रोब का पास होना ज़रूरी है।
+- ऑब्ज़र्वेशन बताता है कि सिमैंटिक्स उपलब्ध नहीं हैं और पुराने नोड रेफ़रेंस साफ़ कर देता है।
+- रिकवरी के लिए ऑपरेशन बजट में समय बचा होना और रनर की परमिशन ज़रूरी है। `act` इसकी
+  परमिशन देता है; परख के लिए `vision: true` या `'only'` चाहिए।
+- मास्किंग फ़ेल होना, कैंसलेशन, और हार्ड इंजन एरर फिर भी ऑब्ज़र्वेशन को रोक देते हैं।
+
+जब फ़ॉलबैक की परमिशन होती है, तो रीडर बचे हुए ऑब्ज़र्वेशन बजट का एक चौथाई (अधिकतम दो
+सेकंड) स्क्रीनशॉट के लिए बचाकर रखता है। डेडलाइन में पेज वॉक, मेटाडेटा और एलिमेंट रीडबैक,
+और नेस्टेड फ़्रेम शामिल हैं।
+
+सीरियलाइज़ेशन का खर्च कम करने के लिए सिमैंटिक मेटाडेटा Playwright कनेक्शन के पार एक
+JSON स्ट्रिंग के रूप में जाता है। रीडर जिन एलिमेंट्स पर चला, वे हर डॉक्यूमेंट में एक
+इन-पेज ऐरे में रहते हैं, और कोई एक्शन पहली बार उस नोड तक पहुँचने पर उसी ऐरे से उसका
+हैंडल बनाता है। रेफ़रेंस फिर भी उसी एलिमेंट को बताता है जिसे वॉक ने पढ़ा था, न कि उस
+जगह पर बाद में जो कुछ आ जाए उसे। जो पेज `JSON.stringify` को बदल देता है, या ऑब्जेक्ट
+या ऐरे के प्रोटोटाइप में `toJSON` मेथड जोड़ता है, उसे स्ट्रक्चर्ड ट्रांसफ़र मिलता है।
+क्लीनअप अटके हुए प्रोटोकॉल जवाबों का इंतज़ार नहीं करता। छोड़ा गया रीडर नोड ID दोबारा
+इस्तेमाल नहीं कर सकता और न ही नए ऑब्ज़र्वेशन के ऊपर पुराने रेफ़रेंस पब्लिश कर सकता है।
+
+## surfaceOf
+
+किसी [कस्टम एक्ज़ीक्यूटर](/executors#driving-the-page-yourself) के लिए, जो पेज को खुद
+चलाता है, `web()` हैंडल का लाइव Playwright सरफ़ेस लौटाता है।
+
+```ts
+import { web, surfaceOf } from '@e2e-dev/web';
+
+const engine = web();
+const live = surfaceOf(engine);   // PlaywrightLiveSurface | undefined
+live!.page();                     // the Page of the current attempt
+live!.context();                  // its BrowserContext
+```
+
+- किसी दूसरे पैकेज के हैंडल के लिए यह `undefined` लौटाता है।
+- सीधे Playwright कॉल स्टेप के रूप में रिकॉर्ड नहीं होते।
+- [CDP रिकवरी](#recovering-a-cdp-transport) के बाद एक्सेसर फिर से पढ़ें।
+
+| थ्रो करता है | कब |
+| --- | --- |
+| `INVALID_STATE` | एक्टिव अटेम्प्ट के बाहर किसी एक्सेसर को कॉल करना। |
+
+## टाइप
+
+कॉन्फ़िग हेल्पर और फ़िक्स्चर को टाइप करने के लिए यह पैकेज ये टाइप एक्सपोर्ट करता है:
+`WebEngine`, `WebOptions`, `WebMedia`, `WebScreencastOptions`, `WebConnectOptions`,
+`WebBasicAuth`, `WebInitScript`, `BrowserName`, `BrowserProvider`,
+`BrowserProviderScope`, `BrowserRequest`, `BrowserLease`,
+`BrowserReleaseContext`, `BrowserProviderDownloads`,
+`BrowserDownloadContext`, `PlaywrightLiveSurface`, `Browser`, `FrameScreen`,
+`BrowserExpectation`, `WebRoute`, `RouteFulfillResponse`,
+`RouteContinueOverrides`, `RouteMatcher`, `WebResponse`, `Cookie`, `CookieFields`,
+`CookieFilter`, `Dialog`, और `DialogHandler`।
+
+रनटाइम एक्सपोर्ट्स हैं `web`, [`surfaceOf`](#surfaceof), और `browser` फ़िक्स्चर के साथ
+टाइप किए गए `test`, `describe`, `beforeEach`, `afterEach`, `beforeAll`, और `afterAll`।
+
+### `WebOptions`
+
+```ts
+/**
+ * Options of the browser engine: how it drives the app. The app itself
+ * (its `url`, `environment`, `identity`, and the command that starts it) is
+ * the target's `app`.
+ */
+export interface WebOptions {
+  /**
+   * Browser to launch, `chromium` by default. A `BrowserProvider` leases
+   * hosted browsers instead: one per worker slot at `prepare`, or one per
+   * attempt, each attached to over CDP and released when its scope ends. A
+   * provider implies chromium and excludes `connect`.
+   */
+  readonly browser?: BrowserName | BrowserProvider;
+  /**
+   * Initial viewport of every attempt's page; default 1280 by 720. `null`
+   * emulates no size: the page fills the browser window, whatever size the
+   * window has (a hosted browser's live view, a headed run), and
+   * `browser.setViewport` still fixes one for the rest of the attempt.
+   */
+  readonly viewport?: ViewportSize | null;
+  /**
+   * Device pixels per CSS pixel on every attempt's page, as
+   * `window.devicePixelRatio` reads it; default 1. At 2 the page renders as
+   * on a high-density display, and every saved screenshot
+   * (`app.screenshot()`, a failure's, an `agent.assert`'s) is twice the
+   * viewport's size on each side. The factor does not change the image the
+   * model reads or the one `toHaveScreenshot` compares. It needs a viewport
+   * size, so `viewport: null` refuses it, and a persistent context
+   * (`connect.reconnectEndpoint`, or a provider with `scope: 'attempt'`)
+   * refuses it.
+   */
+  readonly deviceScaleFactor?: number;
+  /**
+   * How the engine's own screencast records an attempt that records video.
+   * A browser provider that records (`BrowserProvider.record`) records in
+   * its place, and ignores these. Which attempts record is the config's
+   * `video`, not an engine option.
+   */
+  readonly screencast?: WebScreencastOptions;
+  /**
+   * Attach to a remote browser over CDP instead of launching locally. Requires
+   * the chromium browser (the default). Wired by a hosted-browser engine.
+   */
+  readonly connect?: WebConnectOptions;
+  /**
+   * Headers added to every request that starts at the app's origin (the
+   * scheme, host, and port of `app.url`) or one in `credentialOrigins`.
+   * Useful for preview-protection tokens. A request that starts at another
+   * origin goes without them; a redirect keeps them, to any origin.
+   * Names are case-insensitive and replace existing headers of the same name.
+   * This enables request routing, disables the browser's HTTP cache, and
+   * blocks service workers.
+   */
+  readonly headers?: Readonly<Record<string, string>>;
+  /**
+   * HTTP basic authentication. The browser answers a `401` challenge from the
+   * app's origin, or one in `credentialOrigins`, with these credentials.
+   */
+  readonly basicAuth?: WebBasicAuth;
+  /**
+   * More origins that receive `headers` and `basicAuth`, such as
+   * `https://api.example.com`; requires `headers` or `basicAuth`.
+   */
+  readonly credentialOrigins?: readonly string[];
+  /**
+   * The attribute that carries an element's test id: what the `testId` query
+   * (`screen.getByTestId`) resolves and what `SemanticNode.testId` reports.
+   * Defaults to `data-testid`.
+   */
+  readonly testIdAttribute?: string;
+  /**
+   * The `User-Agent` every attempt's context sends and `navigator.userAgent`
+   * reports, for an app that switches into a test mode on a marker in the
+   * agent string. Defaults to the browser's own. A `user-agent` entry in
+   * `headers` beside it is `INVALID_CONFIG`, and so is a persistent context
+   * (`connect.reconnectEndpoint`, or a provider with `scope: 'attempt'`).
+   */
+  readonly userAgent?: string;
+  /**
+   * The locale every attempt's context runs in, a BCP 47 tag such as
+   * `de-DE`: what `navigator.language`, `Intl` formatting, and the
+   * `Accept-Language` header report. Defaults to the browser's own. An
+   * `accept-language` entry in `headers` beside it is `INVALID_CONFIG`, and
+   * so is a persistent context.
+   */
+  readonly locale?: string;
+  /**
+   * The IANA time zone every attempt's context runs in, such as
+   * `Europe/Berlin`: what `Date` and `Intl` resolve local time against.
+   * Defaults to the machine's. A persistent context is `INVALID_CONFIG`.
+   */
+  readonly timezoneId?: string;
+  /** The `prefers-color-scheme` every page reports. See [Media emulation](#media-emulation). */
+  readonly colorScheme?: WebMedia['colorScheme'];
+  /** The `prefers-reduced-motion` every page reports. See [Media emulation](#media-emulation). */
+  readonly reducedMotion?: WebMedia['reducedMotion'];
+  /** Scripts every document runs before the page's own. See [Init scripts](#init-scripts). */
+  readonly initScripts?: readonly WebInitScript[];
+  /** Launches Chromium or Firefox with WebMCP, for `browser.webmcp`. See [WebMCP](#webmcp). */
+  readonly webmcp?: boolean;
+}
+```
+
+### `Browser` इंटरफ़ेस
+
+```ts
+/**
+ * The browser the attempt drives, showing one active tab. Navigation, reads,
+ * `locator`, `frameLocator`, `evaluate`, `waitForResponse`, `waitForDownload`,
+ * the keyboard and mouse, `expect(browser)`, and `screen` act on the active
+ * tab; cookies, routes, and dialog handlers cover the whole browser, every
+ * tab included. A tab the app opens (a `target="_blank"` link,
+ * `window.open`) joins `tabs()` but does not become active on its own:
+ * `waitForPopup` makes the tab its trigger opens active, and `activate`
+ * any other. When the active tab closes, the tab that opened it is active
+ * again.
+ */
+export interface Browser extends Expectable<BrowserExpectation> {
+  /** Navigates to an allowed URL. */
+  goto(
+    url: string,
+    options?: {
+      waitUntil?: 'load' | 'domcontentloaded' | 'networkidle';
+      timeout?: number;
+    },
+  ): Promise<void>;
+  /** Reloads the current document. */
+  reload(options?: ActionOptions): Promise<void>;
+  /** Navigates browser history back once. */
+  back(options?: ActionOptions): Promise<void>;
+  /** Navigates browser history forward once. */
+  forward(options?: ActionOptions): Promise<void>;
+  /** Returns the current URL. */
+  url(): Promise<string>;
+  /** Returns the current title. */
+  title(): Promise<string>;
+  /** Waits for the current URL to match. */
+  waitForURL(url: string | RegExp, options?: { timeout?: number }): Promise<void>;
+  /** Creates a web-only CSS or XPath locator. */
+  locator(selector: string): Locator;
+  /** Creates a screen query scope inside one iframe. */
+  frameLocator(selector: string): FrameScreen;
+  /** Evaluates trusted test code in the page: a function, or a string expression whose value is returned, called first if it is a function. */
+  evaluate<T extends JsonValue>(fn: string | (() => T | Promise<T>)): Promise<T>;
+  /** Evaluates trusted test code with one required JSON-safe argument. */
+  evaluate<T extends JsonValue, Arg extends JsonValue>(
+    fn: string | ((arg: Arg) => T | Promise<T>),
+    arg: Arg,
+  ): Promise<T>;
+  /** Adds a script every document runs before the page's own, from the next navigation on. */
+  addInitScript(script: string | { path: string } | (() => unknown)): Promise<void>;
+  /** Adds an init script function called with one JSON argument. */
+  addInitScript<Arg extends JsonValue>(script: (arg: Arg) => unknown, arg: Arg): Promise<void>;
+  /** Adds an attempt-scoped network route, optionally narrowed to one HTTP method. */
+  route(
+    pattern: string | RegExp | RouteMatcher,
+    handler: (route: WebRoute) => void | Promise<void>,
+  ): Promise<void>;
+  /**
+   * Removes the routes registered with the same pattern: the same string or
+   * `RegExp` source and flags, and the same method for a `{ method, url }`
+   * pattern. It does not URL-match registered routes.
+   */
+  unroute(pattern: string | RegExp | RouteMatcher): Promise<void>;
+  /** Removes all routes registered by this browser fixture, preserving the configured headers. */
+  unrouteAll(): Promise<void>;
+  /** Waits for a matching response, optionally narrowed to one HTTP method. */
+  waitForResponse(
+    pattern: string | RegExp | RouteMatcher,
+    options?: { timeout?: number },
+  ): Promise<WebResponse>;
+  /** Returns cookies visible to the current context. */
+  cookies(): Promise<Cookie[]>;
+  /** Sets cookies after URL validation. */
+  setCookies(cookies: readonly Cookie[]): Promise<void>;
+  /** Removes matching cookies only; without filters removes every cookie, preserving other storage. */
+  clearCookies(options?: CookieFilter): Promise<void>;
+  /** Sets the viewport size. */
+  setViewport(size: { width: number; height: number }): Promise<void>;
+  /** Emulates CSS media features on every open tab and every tab opened after them. */
+  emulateMedia(media: WebMedia): Promise<void>;
+  /** Registers an attempt-scoped dialog handler and returns an unsubscribe function. */
+  onDialog(handler: DialogHandler): Promise<() => Promise<void>>;
+  /** Returns the open tabs, in the order they opened. */
+  tabs(): readonly BrowserTab[];
+  /**
+   * Runs a trigger and waits for the tab it opens, then resolves with that
+   * tab once it is the active tab. The wait takes the first tab the app
+   * opens after it starts, which can be one an earlier action opened whose
+   * page loaded only now. Rejects with `ACTION_FAILED` when no tab opens
+   * within the timeout, naming the page when a tab was still loading it.
+   */
+  waitForPopup(trigger: () => Promise<void>, options?: { timeout?: number }): Promise<BrowserTab>;
+  /** Opens a blank tab in the same browser context, sharing its cookies and storage, and makes it the active tab. */
+  newTab(): Promise<BrowserTab>;
+  /** Runs a trigger and waits for its download. */
+  waitForDownload(
+    trigger: () => Promise<void>,
+    options?: { timeout?: number },
+  ): Promise<{ path: string; absolutePath: string; suggestedFilename: string }>;
+  /** Runs one trigger and waits for the requested number of completed downloads. */
+  waitForDownloads(
+    trigger: () => Promise<void>,
+    options: { count: number; timeout?: number },
+  ): Promise<readonly { path: string; absolutePath: string; suggestedFilename: string }[]>;
+  /** Viewport-level keyboard, for whatever has focus. */
+  readonly keyboard: {
+    /** Sends one key. */
+    press(key: string): Promise<void>;
+    /** Holds one key until up; repeated down calls send a repeat event. */
+    down(key: string): Promise<void>;
+    /** Releases a held key. */
+    up(key: string): Promise<void>;
+    /** Types plain text. */
+    type(text: string): Promise<void>;
+  };
+  /**
+   * Direct pointer input from test code, independent of agent observations.
+   * After CDP recovery, test code can read current geometry with `evaluate`
+   * before starting a pointer sequence.
+   */
+  readonly mouse: {
+    /** Moves the pointer. */
+    move(x: number, y: number): Promise<void>;
+    /** Scrolls the pointer wheel. */
+    wheel(deltaX: number, deltaY: number): Promise<void>;
+    /** Presses the primary pointer button. */
+    down(): Promise<void>;
+    /** Releases the primary pointer button. */
+    up(): Promise<void>;
+  };
+  /** The tools the active tab's page registers through WebMCP. See [WebMCP](#webmcp). */
+  readonly webmcp: {
+    /** Returns the tools the page has registered now. */
+    tools(): Promise<readonly WebMcpTool[]>;
+    /** Calls one tool and resolves with what its `execute` resolved to. */
+    callTool(name: string, input?: { readonly [key: string]: JsonValue } | null): Promise<JsonValue>;
+  };
+}
+```
+
+### JsonValue
+
+```ts
+/** A JSON scalar. */
+export type JsonPrimitive = string | number | boolean | null;
+
+/** Data that survives JSON serialization. */
+export type JsonValue =
+  | JsonPrimitive
+  | { readonly [key: string]: JsonValue }
+  | readonly JsonValue[];
+```
+
+## संबंधित
+
+[ब्राउज़र गाइड](/browser) इन मेंबर्स को रेसिपी में दिखाता है और
+[होस्टेड ब्राउज़र](/browser#hosted-browsers) को कवर करता है। पोर्टेबल ऑपरेशन
+[`app`](/reference/app) फ़िक्स्चर पर हैं।

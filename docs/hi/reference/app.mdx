@@ -1,0 +1,289 @@
+---
+title: app
+description: हर प्लेटफ़ॉर्म पर उपलब्ध पोर्टेबल ऐप लाइफ़साइकिल फ़िक्स्चर।
+"og:image": "https://e2e.com/docs/images/og/reference/app.png?v=0b63e99aab"
+"twitter:image": "https://e2e.com/docs/images/og/reference/app.png?v=0b63e99aab"
+---
+
+`app` फ़िक्स्चर टेस्ट हो रहे ऐप को खोलता, रीस्टार्ट करता, और रीसेट करता है, और
+स्क्रीनशॉट और रिकॉर्डिंग लेता है। यह हर टारगेट पर मिलता है। जो मेथड इंजन नहीं
+चला सकता, वह `UNSUPPORTED_CAPABILITY` से फ़ेल होता है।
+
+```ts title="tests/billing.e2e.ts"
+import { expect, test } from 'e2e';
+
+test('billing page', async ({ app, screen }) => {
+  await app.open('/settings/billing');
+  await expect(screen.getByRole('heading', { name: 'Billing' })).toBeVisible();
+  await app.screenshot('billing');
+});
+```
+
+## रेफ़रेंस
+
+| मेंबर | रिटर्न |
+| --- | --- |
+| [`baseUrl`](#baseurl) | `string \| undefined` |
+| [`open`](#open) | `Promise<void>` |
+| [`restart`](#restart) | `Promise<void>` |
+| [`clearState`](#clearstate) | `Promise<void>` |
+| [`back`](#back) | `Promise<void>` |
+| [`screenshot`](#screenshot) | `Promise<string>` |
+| [`startRecording`](#startrecording) | `Promise<void>` |
+| [`stopRecording`](#stoprecording) | `Promise<[RecordedVideo, ...RecordedVideo[]]>` |
+
+`open`, `restart`, और `clearState` की सीमा `timeout` से तय होती है। बाकी मेथड
+`actionTimeout` की सीमा में चलते हैं। दोनों [कॉन्फ़िग](/reference/config) से आते
+हैं: `timeout` का डिफ़ॉल्ट 120000 ms और `actionTimeout` का 30000 ms है। बचा हुआ
+टेस्ट टाइमआउट दोनों की ऊपरी सीमा तय करता है। `app` के मेथड हर कॉल के लिए अलग
+टाइमआउट ऑप्शन नहीं लेते।
+
+### `baseUrl`
+
+टारगेट के ऐप का रिज़ॉल्व किया हुआ बेस URL।
+
+```ts
+const health = await fetch(`${app.baseUrl}/api/health`);
+```
+
+- इसके अंत में स्लैश नहीं होता, इसलिए `${app.baseUrl}/path` एक स्लैश से जुड़ता
+  है।
+- जब `app.url` में पोर्ट `0` हो, तो `baseUrl` में रन से दिया गया पोर्ट होता
+  है।
+- जिस टारगेट में `app.url` डिक्लेयर न हो, वहाँ यह `undefined` होता है।
+  `@e2e-dev/web` से आने वाले `test` में इसका टाइप `string` होता है: `web()`
+  टारगेट में `app.url` हमेशा डिक्लेयर होता है।
+
+### `open`
+
+ऐप खोलता है: डिक्लेयर किया गया URL, उसके सापेक्ष कोई पाथ, या कोई भी एब्सोल्यूट
+`http(s)` URL।
+
+```ts
+await app.open(); // the target's app.url
+await app.open('/settings/billing'); // a path relative to app.url
+await app.open('https://example.com/login'); // any http(s) URL
+```
+
+डिवाइस टारगेट पर, जहाँ कोई URL नहीं होता, `open()` पिन किए गए ऐप को नए सिरे से
+लॉन्च करता है। जब टारगेट [`app.linkBase`](/reference/config#linkbase) डिक्लेयर
+करता है, तो पाथ ऐप में लिंक की तरह खुलता है; इसके बिना `APP_URL_REQUIRED` आता
+है। लिंक बेस के साथ कोई एब्सोल्यूट लिंक जैसा दिया गया है वैसा ही खुलता है,
+कस्टम ऐप स्कीम समेत।
+
+| क्या थ्रो होता है | कब |
+| --- | --- |
+| `APP_URL_REQUIRED` | पाथ दिया गया हो, लेकिन टारगेट में `app.url` (या डिवाइस पर `app.linkBase`) डिक्लेयर न हो। |
+| `POLICY_DENIED` | ऐसा URL जिसकी स्कीम `http:` या `https:` न हो। `about:blank` की इजाज़त है। जिस टारगेट में [`app.url` एक फ़ाइल हो](/reference/config#a-file-as-the-app), वहाँ उस फ़ाइल की डायरेक्टरी के बाहर का `file:` URL या किसी डायरेक्टरी का URL। `app.linkBase` वाले डिवाइस पर ऐसा लिंक जिसकी स्कीम `file:`, `data:`, `javascript:`, `view-source:`, `blob:`, या `filesystem:` हो। |
+| `APP_UNREACHABLE` | ऐप URL तक पहुँचा नहीं जा सका। |
+| `ACTION_FAILED` | ऑपरेशन फ़ेल हो गया या टाइमआउट हो गया। |
+| `UNSUPPORTED_CAPABILITY` | URL वाले टारगेट पर `session.open` न हो, या बिना URL वाले टारगेट पर `session.restart` न हो। बिना `app.bundleId` वाले डिवाइस पर तब भी जब टारगेट का बिल्ड अभी इंस्टॉल न हुआ हो ([मोबाइल](/reference/mobile#the-app-under-test))। |
+
+### `restart`
+
+एक्ज़ीक्यूशन कॉन्टेक्स्ट फिर से बनाता है और सेव किया हुआ स्टेट बनाए रखता है। फिर
+अगर टारगेट में बेस URL डिक्लेयर है, तो ऐप को उस बेस URL पर दोबारा खोलता है।
+
+```ts
+await app.restart();
+```
+
+| क्या थ्रो होता है | कब |
+| --- | --- |
+| `ACTION_FAILED`, `ENGINE_FAILURE` | ऑपरेशन या इंजन फ़ेल हो गया। |
+| `UNSUPPORTED_CAPABILITY` | `session.restart` न हो, या बिना `app.bundleId` वाले डिवाइस पर बिल्ड अभी इंस्टॉल न हुआ हो। |
+
+### `clearState`
+
+सेव किया हुआ क्लाइंट स्टेट साफ़ करता है और एक्ज़ीक्यूशन कॉन्टेक्स्ट फिर से बनाता
+है। फिर अगर टारगेट में बेस URL डिक्लेयर है, तो ऐप को उस बेस URL पर दोबारा खोलता
+है।
+
+```ts
+test.beforeEach(async ({ app }) => {
+  await app.clearState();
+});
+```
+
+| क्या थ्रो होता है | कब |
+| --- | --- |
+| `ACTION_FAILED`, `ENGINE_FAILURE` | ऑपरेशन या इंजन फ़ेल हो गया। |
+| `UNSUPPORTED_CAPABILITY` | `session.reset` न हो, या बिना `app.bundleId` वाले डिवाइस पर बिल्ड अभी इंस्टॉल न हुआ हो। |
+
+<Warning>
+सीरियल ग्रुप के अंदर `clearState` चलाने से वह शेयर्ड स्टेट खत्म हो जाता है जिस
+पर पूरा ग्रुप निर्भर है। इसके बजाय इसे साधारण ग्रुप के `beforeEach` में इस्तेमाल
+करें।
+</Warning>
+
+### `back`
+
+एक कदम पीछे जाता है।
+
+```ts
+await app.back();
+```
+
+| क्या थ्रो होता है | कब |
+| --- | --- |
+| `APP_NOT_OPEN` | `app.open()` अभी नहीं चला है, या इंजन ने इनवैलिड स्टेट रिपोर्ट किया। |
+| `ACTION_FAILED` | ऑपरेशन फ़ेल हो गया या टाइमआउट हो गया। |
+| `UNSUPPORTED_CAPABILITY` | `session.back` नहीं है। |
+
+### `screenshot`
+
+रेडैक्ट किया हुआ सबूत स्क्रीनशॉट कैप्चर करता है और उसका पाथ लौटाता है।
+
+```ts
+const shot = await app.screenshot('after-checkout');
+```
+
+- यह फ़ाइल अटेम्प्ट आर्टिफ़ैक्ट के रूप में `screenshots/` के अंदर बनती है। लौटाया
+  गया पाथ एब्सोल्यूट होता है। रिपोर्ट आर्टिफ़ैक्ट रूट के सापेक्ष पाथ रिकॉर्ड करती
+  है।
+- `list` रिपोर्टर की समरी `Screenshots` रो में ज़्यादा से ज़्यादा 10 फ़ाइलों के
+  नाम दिखाती है, और बाकी की गिनती बताती है। इस रो में
+  [`locator.screenshot`](/reference/screen#screenshot) की फ़ाइलें भी शामिल होती
+  हैं।
+- `label` स्टेप का नाम रखता है और फ़ाइल के नाम में जुड़ता है।
+- पेज नेविगेट होते समय लिया गया स्क्रीनशॉट उस वक्त दिख रहे डॉक्यूमेंट को कैप्चर
+  करता है।
+
+| क्या थ्रो होता है | कब |
+| --- | --- |
+| `UNSUPPORTED_CAPABILITY` | इंजन स्क्रीनशॉट नहीं लेता। |
+| `POLICY_DENIED` | iOS और Android पर स्क्रीन पर मौजूद किसी सिक्योर फ़ील्ड के मास्क करने लायक बाउंड्स नहीं मिले। |
+| `ENGINE_FAILURE` | कैप्चर फ़ेल हो गया। |
+
+<Note>
+स्क्रीनशॉट सिर्फ़ सिक्योर फ़ील्ड को मास्क करता है, `Secret` भरने के बाद भी। ऐप
+सीक्रेट को कहीं और दिखाए, तो वह इमेज में दिखेगा।
+[सीक्रेट भरने के बाद स्क्रीनशॉट](/reference/security#screenshots-after-a-secret-fill)
+देखें।
+</Note>
+
+### `startRecording`
+
+`stopRecording` कॉल होने तक स्क्रीन रिकॉर्ड करना शुरू करता है।
+
+```ts
+test('the dialog slides in', { video: 'off' }, async ({ app, screen }) => {
+  await app.open();
+  await app.startRecording({ name: 'dialog' });
+  await screen.getByRole('button', 'Open').tap();
+  await expect(screen.getByRole('dialog')).toBeVisible();
+  const [video] = await app.stopRecording();
+});
+```
+
+- एक समय पर एक ही रिकॉर्डिंग चल सकती है। इंजन में एक ही रिकॉर्डर होता है, इसलिए
+  टेस्ट पर `video: 'off'` सेट करें: टेस्ट का [वीडियो](/reference/config#video)
+  रिकॉर्ड हो रहा हो तो शुरू करना फ़ेल हो जाता है। इसमें `--video`,
+  `retain-on-failure`, और वे रीट्राई भी शामिल हैं जिन्हें `on-first-retry`
+  रिकॉर्ड करता है।
+- टेस्ट खत्म होने पर भी चल रही रिकॉर्डिंग रोककर सेव कर ली जाती है।
+- टेस्ट के वीडियो की तरह यह रिकॉर्डिंग भी कुछ मास्क नहीं करती।
+
+| क्या थ्रो होता है | कब |
+| --- | --- |
+| `UNSUPPORTED_CAPABILITY` | टेस्ट का वीडियो रिकॉर्ड हो रहा है, या इंजन वीडियो रिकॉर्ड नहीं करता। |
+| `INVALID_ARGUMENT` | कोई दूसरी रिकॉर्डिंग पहले से चल रही है। |
+
+### `stopRecording`
+
+रिकॉर्डिंग रोकता है और उसके वीडियो प्ले ऑर्डर में लौटाता है।
+
+```ts
+const [video] = await app.stopRecording();
+if ('path' in video) console.log(video.path);
+```
+
+- वीडियो या तो अटेम्प्ट की `recordings/` डायरेक्टरी में एक फ़ाइल (`path`,
+  एब्सोल्यूट) होता है जिसका नाम `001-<name>.<ext>` होता है, या फिर एक `url` जब
+  कोई होस्टेड ब्राउज़र या डिवाइस रिकॉर्डिंग रखता है।
+- एक ही वीडियो होता है, सिवाय वेब पर जब रिकॉर्डिंग के दौरान पेज बदल
+  जाए (`app.restart()`, `app.clearState()`): तब हर पेज के लिए एक वीडियो बनता है।
+- स्टेप हर वीडियो को ट्रेस में लिंक करता है।
+
+| क्या थ्रो होता है | कब |
+| --- | --- |
+| `INVALID_ARGUMENT` | कोई रिकॉर्डिंग नहीं चल रही। |
+| `ENGINE_FAILURE` | इंजन ने कोई वीडियो नहीं लिखा। |
+
+## टाइप
+
+```ts
+export interface App {
+  /**
+   * The resolved base URL of the target's app, with the port the run
+   * allocated when `app.url` declared port 0 and no trailing slash, so
+   * `${app.baseUrl}/api/users` joins with one slash; undefined for a target
+   * that declares no `app.url`.
+   */
+  readonly baseUrl: string | undefined;
+  /**
+   * Opens the app: the declared URL, a path relative to it, or any absolute
+   * http(s) URL. On a device target, which has no URL, it launches the pinned
+   * app fresh; a path opens as a link in it when the target declares
+   * `app.linkBase`.
+   */
+  open(path?: string): Promise<void>;
+  /**
+   * Recreates the execution context while preserving persisted state, then
+   * reopens the app at its base URL when the target declares one.
+   */
+  restart(): Promise<void>;
+  /**
+   * Clears persisted client state, recreates the execution context, then
+   * reopens the app at its base URL when the target declares one.
+   */
+  clearState(): Promise<void>;
+  /** Navigates back once. */
+  back(): Promise<void>;
+  /** Captures a redacted evidence screenshot and returns its absolute path. */
+  screenshot(label?: string): Promise<string>;
+  /**
+   * Starts recording the screen, until `stopRecording`. One recording at a
+   * time, and none while the test's `video` records: set `{ video: 'off' }`
+   * on the test.
+   */
+  startRecording(options?: RecordingOptions): Promise<void>;
+  /**
+   * Stops the recording and returns its videos in play order: one, or on the
+   * web one per page when the page was replaced while it recorded.
+   */
+  stopRecording(): Promise<readonly [RecordedVideo, ...RecordedVideo[]]>;
+}
+
+/** How `app.startRecording` names its file. */
+export interface RecordingOptions {
+  /** File name stem, `recordings/001-<name>.<ext>`; defaults to `recording`. */
+  readonly name?: string;
+}
+
+/** One video `app.stopRecording` returns: a file, or a link to a recording a hosted service keeps. */
+export type RecordedVideo = RecordedVideoFile | RecordedVideoLink;
+
+/** A video file under the attempt's `recordings/` directory. */
+export interface RecordedVideoFile {
+  /** Absolute path of the file. */
+  readonly path: string;
+  /** When it started recording, as an ISO timestamp. */
+  readonly startedAt: string;
+}
+
+/** A recording a hosted browser or device service keeps, by URL. */
+export interface RecordedVideoLink {
+  /** `http(s)` URL of the recording. */
+  readonly url: string;
+  /** Media type of what the URL serves: `video/mp4`, or `text/html` for a player page. */
+  readonly mediaType: string;
+  /** When it started recording, as an ISO timestamp. */
+  readonly startedAt: string;
+}
+```
+
+## संबंधित
+
+सिर्फ़ ब्राउज़र के ऑपरेशन [`browser`](/reference/web) फ़िक्स्चर पर मिलते हैं, और
+डिवाइस के ऑपरेशन [`device`](/reference/mobile) पर।

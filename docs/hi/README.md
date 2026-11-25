@@ -224,6 +224,10 @@ translation moves or goes with it in the same change.
 | failure, to fail | फ़ेलियर, फ़ेल होना | m |
 | identifier | आइडेंटिफ़ायर | m |
 | expected (result) | उम्मीद के मुताबिक | |
+| cookie | कुकी | f |
+| platform | प्लेटफ़ॉर्म | m |
+| attribute | ऐट्रिब्यूट | m |
+| format | फ़ॉर्मेट | m |
 | continuous integration | कंटीन्यूअस इंटीग्रेशन (CI) | m |
 | MCP | MCP (keep in English) | m |
 | CI | CI (keep in English) | m |

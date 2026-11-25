@@ -1,0 +1,223 @@
+---
+title: एनवायरनमेंट वेरिएबल
+description: रनर और फ़र्स्ट-पार्टी इंजन जो भी वेरिएबल पढ़ते हैं, और हर एक क्या करता है।
+"og:image": "https://e2e.com/docs/images/og/reference/environment.png?v=67a4d71e70"
+"twitter:image": "https://e2e.com/docs/images/og/reference/environment.png?v=67a4d71e70"
+---
+
+ये वेरिएबल रनर और फ़र्स्ट-पार्टी पैकेज कॉन्फ़िगर करते हैं। टेबल में `set` का
+मतलब वेरिएबल का मौजूद होना है, `value` का मतलब उसका खाली न होना, और `flag` का
+मतलब उसका खाली, `0`, या `false` न होना है। फ़्लैग वैल्यू केस-इनसेंसिटिव होती
+हैं।
+
+```bash
+export E2E_USER_ADMIN_PASSWORD="$ADMIN_PASSWORD"
+export E2E_CACHE_DIR=~/.cache/e2e
+export E2E_TELEMETRY_DISABLED=1
+```
+
+## रेफ़रेंस
+
+### मॉडल
+
+`e2e.config.ts` में मॉडल कॉन्फ़िगर करें। उसका प्रोवाइडर अपनी API key पढ़ता है:
+`gateway()` `AI_GATEWAY_API_KEY`, `openrouter()` `OPENROUTER_API_KEY`, और
+`openai()` `OPENAI_API_KEY` इस्तेमाल करता है। `AI_GATEWAY_API_KEY` न होने पर
+`gateway()` [Vercel OIDC टोकन](/models#vercel-oidc-instead-of-a-key) इस्तेमाल
+करता है। क्रेडेंशियल न होने पर पहली मॉडल कॉल फ़ेल हो जाती है। सब्सक्रिप्शन मॉडल
+इसकी जगह सेव किया हुआ लॉगिन इस्तेमाल करते हैं। `@e2e-dev/acp` का `codex()`
+कोडिंग एजेंट प्रीसेट भी, जब Codex का अपना लॉगिन न हो और `DEFAULT_AUTH_REQUEST`
+सेट न हो, खाली हो, या सिर्फ़ स्पेस हो, तब Codex को साइन इन करने के लिए
+`CODEX_API_KEY` और `OPENAI_API_KEY` में से पहली गैर-खाली वैल्यू पढ़ता है। फिर
+Codex उस key को अपने डिफ़ॉल्ट क्रेडेंशियल स्टोर में लॉगिन की तरह सेव कर लेता है।
+जब `APP_SERVER_LOGS` सेट हो, तो `codex()` कोई साइन-इन रिक्वेस्ट नहीं भेजता।
+[अपना कोडिंग एजेंट इस्तेमाल करें](/subscriptions#use-your-coding-agent) देखें।
+[मॉडल](/models) और [सब्सक्रिप्शन](/subscriptions) भी देखें।
+
+| वेरिएबल | उदाहरण | कैसे पढ़ा जाता है | असर |
+| --- | --- | --- | --- |
+| [`E2E_OAUTH_CREDENTIALS`](#e2e_oauth_credentials) | `E2E_OAUTH_CREDENTIALS="$(cat oauth.json)"` | value | सेव किए गए सब्सक्रिप्शन लॉगिन JSON के रूप में |
+| [`OPENCODE_API_KEY`](#opencode_api_key) | `OPENCODE_API_KEY=<key>` | value | सेव किए गए `opencode-console` लॉगिन की जगह लेता है |
+| `XDG_CONFIG_HOME` | `XDG_CONFIG_HOME=~/.config` | value | सेव किए गए लॉगिन की डायरेक्टरी, `$XDG_CONFIG_HOME/e2e/oauth.json`; डिफ़ॉल्ट `~/.config/e2e/oauth.json` |
+
+#### `E2E_OAUTH_CREDENTIALS`
+
+सेव किए गए सब्सक्रिप्शन लॉगिन JSON के रूप में (यानी `oauth.json` की सामग्री),
+ऐसी मशीन के लिए जहाँ कोई साइन इन नहीं कर सकता।
+
+- `e2e/oauth/*` मॉडल और `e2e models` इसे `$XDG_CONFIG_HOME/e2e/oauth.json` की
+  जगह पढ़ते हैं।
+- `e2e login` और `e2e logout` इसे बदलने से मना करते हैं।
+- रिफ़्रेश किए गए टोकन वापस नहीं लिखे जाते।
+
+#### `OPENCODE_API_KEY`
+
+OpenCode Console सर्विस अकाउंट API key या OpenCode Go सब्सक्रिप्शन API key।
+`opencodeConsole()` और `e2e models opencode-console` इसे सेव किए गए
+`opencode-console` लॉगिन की जगह इस्तेमाल करते हैं। OpenCode भी यही वेरिएबल पढ़ता
+है।
+
+### क्रेडेंशियल और सीक्रेट
+
+| वेरिएबल | उदाहरण | कैसे पढ़ा जाता है | असर |
+| --- | --- | --- | --- |
+| `E2E_USER_<NAME>_USERNAME` | `E2E_USER_ADMIN_USERNAME=admin@example.test` | set | `credentials.<name>.username` की जगह लेता है |
+| `E2E_USER_<NAME>_PASSWORD` | `E2E_USER_ADMIN_PASSWORD="$ADMIN_PASSWORD"` | set | `credentials.<name>.password` की जगह लेता है |
+| `E2E_SECRET_<NAME>` | `E2E_SECRET_API_KEY="$API_KEY"` | set | `secrets.<name>` की वैल्यू की जगह लेता है |
+
+- `<NAME>` नाम को अपरकेस करके और `A-Z0-9` के बाहर हर कैरेक्टर को `_` से बदलकर
+  बनता है, इसलिए `power-user` `E2E_USER_POWER_USER_USERNAME` बन जाता है।
+- दो क्रेडेंशियल, या दो सीक्रेट, जिनके नाम एक ही `<NAME>` पर मैप हों, वेरिएबल
+  सेट हो या न हो, कॉन्फ़िग लोड पर `INVALID_CONFIG` देते हैं। इससे एक रोटेशन कभी
+  दो एंट्री नहीं बदलता। मैसेज में दोनों एंट्री और वेरिएबल के नाम आते हैं। उदाहरण
+  के लिए, `api-key` और `api_key` दोनों `E2E_SECRET_API_KEY` पढ़ते हैं; `svc-a`
+  और `svc_a` दोनों `E2E_USER_SVC_A_USERNAME` और `_PASSWORD` पढ़ते हैं।
+- एक क्रेडेंशियल और एक सीक्रेट का नाम एक जैसा हो सकता है, क्योंकि उनके प्रीफ़िक्स
+  अलग हैं।
+- कॉन्फ़िग में मौजूद न होने वाले नाम का वेरिएबल अनदेखा कर दिया जाता है।
+- खाली पासवर्ड या सीक्रेट `INVALID_CONFIG` देता है, और 6 कैरेक्टर (कोड पॉइंट) से
+  छोटा होने पर भी यही होता है। रेडैक्शन वैल्यू की हर मौजूदगी को बदल देता है,
+  और इतनी छोटी वैल्यू आम टेक्स्ट को भी छिपा देगी। खाली यूज़रनेम मान्य है।
+
+### रन मोड
+
+| वेरिएबल | उदाहरण | कैसे पढ़ा जाता है | असर |
+| --- | --- | --- | --- |
+| [`CI`](#ci) | `CI=1` | flag | CI मोड |
+
+#### `CI`
+
+CI मोड चालू करता है:
+
+- `retries` का डिफ़ॉल्ट 1 और `workers` का 1 हो जाता है।
+- `cache` का डिफ़ॉल्ट `read-only` हो जाता है।
+- फ़ोकस्ड टेस्ट पर `ONLY_IN_CI` आता है।
+- ऐप कमांड पर `reuseExisting` अनदेखा हो जाता है।
+
+### रीप्ले कैश
+
+| वेरिएबल | उदाहरण | कैसे पढ़ा जाता है | असर |
+| --- | --- | --- | --- |
+| [`E2E_CACHE_DIR`](#e2e_cache_dir) | `E2E_CACHE_DIR=~/.cache/e2e` | value | [`cache.dir`](/reference/config#cache) की जगह लेता है |
+
+#### `E2E_CACHE_DIR`
+
+`e2e run` और `e2e cache` के लिए [`cache.dir`](/reference/config#cache) की जगह
+लेता है, और प्रोजेक्ट रूट के सापेक्ष रिज़ॉल्व होता है।
+
+- `~` या शुरू का `~/` होम डायरेक्टरी को दिखाता है।
+- `--cache-dir` इस पर भारी पड़ता है।
+- कस्टम `cache.store` इसे अनदेखा करता है।
+- कैश मोड कॉन्फ़िगर किए जैसा ही रहता है, और `--no-cache` तब भी कैश बंद कर देता
+  है।
+
+### डायग्नोस्टिक्स
+
+| वेरिएबल | उदाहरण | कैसे पढ़ा जाता है | असर |
+| --- | --- | --- | --- |
+| `NO_COLOR` | `NO_COLOR=1` | set | सादा CLI आउटपुट। इसके बिना TTY या CI में रंग चालू रहते हैं, पाइप होने पर बंद |
+| `FORCE_COLOR` | `FORCE_COLOR=1` | set | पाइप होने पर भी रंगीन CLI आउटपुट |
+| `TERM` | `TERM=dumb` | value | `dumb` पर `e2e init` का लोगो बिना एनीमेशन स्थिर दिखता है, CI की तरह |
+| `GITHUB_SHA`, `GITHUB_HEAD_REF`, `GITHUB_REF_NAME` | `GITHUB_REF_NAME=main` | value | जब `git` प्रोजेक्ट रूट न पढ़ सके, तब रिपोर्ट `run.vcs` में यही कमिट और ब्रांच दर्ज करती है। `GITHUB_HEAD_REF`, `GITHUB_REF_NAME` पर भारी पड़ता है |
+| `NODE_DEBUG` | `NODE_DEBUG=child_process` | value | Node का अपना डीबग आउटपुट। `child_process` चालू होने पर Node रन से शुरू हर प्रोसेस का एनवायरनमेंट प्रिंट करता है, और `net` पर `node:http` रिक्वेस्ट के हेडर, API key समेत। e2e जो आउटपुट लिखता है उसमें उसके सीक्रेट और [प्रोवाइडर key](/reference/security#provider-keys) वहीं छिपाए जाते हैं और कुछ नहीं; `openHost` कॉल करने वाला प्रोग्राम अपना stderr खुद रखता है। `e2e run`, `e2e mcp`, और `openHost` stderr पर एक बार चेतावनी देकर आगे बढ़ जाते हैं। `acp()` से शुरू होने वाले एजेंट को यह वेरिएबल कभी नहीं मिलता |
+
+`--debug` और `--ai-trace` फ़्लैग हैं, वेरिएबल नहीं; [CLI](/reference/cli#e2e-run)
+देखें।
+
+### टेलीमेट्री
+
+| वेरिएबल | उदाहरण | कैसे पढ़ा जाता है | असर |
+| --- | --- | --- | --- |
+| `E2E_TELEMETRY_DISABLED` | `E2E_TELEMETRY_DISABLED=1` | flag | अनाम यूसेज टेलीमेट्री और [अपडेट जाँच](/reference/cli#help-and-version) बंद करता है। `e2e telemetry disable` टेलीमेट्री के लिए यही पसंद प्रेफ़रेंस फ़ाइल में सेव करता है |
+| `DO_NOT_TRACK` | `DO_NOT_TRACK=1` | flag | `E2E_TELEMETRY_DISABLED` जैसा ही |
+| `E2E_UPDATE_CHECK_DISABLED` | `E2E_UPDATE_CHECK_DISABLED=1` | flag | नए e2e रिलीज़ की रोज़ाना जाँच बंद करता है |
+| `NO_UPDATE_NOTIFIER` | `NO_UPDATE_NOTIFIER=1` | flag | `E2E_UPDATE_CHECK_DISABLED` जैसा ही |
+| `npm_config_registry` | `npm_config_registry=https://npm.example.com/` | value | वह रजिस्ट्री जिससे [`e2e upgrade`](/reference/cli#e2e-upgrade) वर्ज़न पढ़ता है; डिफ़ॉल्ट `https://registry.npmjs.org/`। पैकेज मैनेजर इसे अपनी चलाई कमांड के लिए सेट करते हैं |
+| `E2E_TELEMETRY_DEBUG` | `E2E_TELEMETRY_DEBUG=1` | flag | हर टेलीमेट्री इवेंट को भेजने के बजाय stderr पर प्रिंट करता है |
+| [`E2E_TELEMETRY_FLEET`](#e2e_telemetry_fleet) | `E2E_TELEMETRY_FLEET=acme` | value | उस प्लेटफ़ॉर्म का नाम जो अपने यूज़र्स के लिए e2e चलाता है |
+| `XDG_CONFIG_HOME` | `XDG_CONFIG_HOME=~/.config` | value | प्रेफ़रेंस फ़ाइल और अपडेट जाँच की `update-check.json` की डायरेक्टरी, `$XDG_CONFIG_HOME/e2e`; डिफ़ॉल्ट `~/.config/e2e` |
+| `APPDATA` | `APPDATA=C:\Users\ada\AppData\Roaming` | value | Windows पर यही चीज़, `%APPDATA%\e2e`; डिफ़ॉल्ट `~/AppData/Roaming/e2e` |
+
+#### `E2E_TELEMETRY_FLEET`
+
+उस प्लेटफ़ॉर्म का नाम बताता है जो अपने यूज़र्स के लिए e2e चला रहा है।
+
+- इवेंट हर मशीन के अलग id के बजाय `fleet:<name>` से जोड़े जाते हैं।
+- कोई प्रेफ़रेंस फ़ाइल नहीं लिखी जाती, और कोई नोटिस प्रिंट नहीं होता।
+- जो वैल्यू सादा टोकन न हो, उसे `other` के रूप में भेजा जाता है।
+
+#### अपने-आप पहचाने गए एनवायरनमेंट
+
+टेलीमेट्री उन मार्कर को भी जाँचती है जिन्हें CI वेंडर और कोडिंग एजेंट सेट करते
+हैं। सिर्फ़ निकाला गया नाम भेजा जाता है।
+
+| मार्कर | किस नाम से रिपोर्ट होता है |
+| --- | --- |
+| `GITHUB_ACTIONS`, `GITLAB_CI`, `CIRCLECI`, `BUILDKITE`, `JENKINS_URL`, `TRAVIS`, `BITBUCKET_BUILD_NUMBER`, `TF_BUILD`, `TEAMCITY_VERSION`, `CODEBUILD_BUILD_ID`, `VERCEL`, `NETLIFY`, `DRONE`, `SEMAPHORE`, `APPVEYOR`, `WOODPECKER`, `EAS_BUILD`, `BITRISE_IO`, `CM_BUILD_ID`, `CI_XCODE_CLOUD` | `ci_name`: `github-actions`, `gitlab`, `circleci`, `buildkite`, `jenkins`, `travis`, `bitbucket`, `azure-pipelines`, `teamcity`, `aws-codebuild`, `vercel`, `netlify`, `drone`, `semaphore`, `appveyor`, `woodpecker`, `eas`, `bitrise`, `codemagic`, `xcode-cloud`; जब सिर्फ़ `CI` सेट हो तो `unknown` |
+| `CLAUDECODE`, `CLAUDE_CODE`, `CURSOR_AGENT`, `CURSOR_TRACE_ID`, `CODEX_SANDBOX`, `CODEX_THREAD_ID`, `CODEX_CI`, `GEMINI_CLI`, `COPILOT_GITHUB_TOKEN`, `COPILOT_MODEL`, `COPILOT_ALLOW_ALL`, `OPENCODE_CLIENT`, `AUGMENT_AGENT`, `ANTIGRAVITY_AGENT`, `REPL_ID`, `AI_AGENT` | `coding_agent`: `claude-code`, `cursor`, `codex`, `gemini-cli`, `copilot`, `opencode`, `augment`, `antigravity`, `replit`, `other` |
+| `WSL_DISTRO_NAME` | `wsl: true` |
+| `npm_config_user_agent` | `package_manager`: चलाने वाला पैकेज मैनेजर। `e2e init` भी इंस्टॉल कमांड चुनने के लिए यही वेरिएबल पढ़ता है |
+
+क्या भेजा जाता है और उसे कैसे पढ़ें, यह [टेलीमेट्री](/telemetry) पेज पर है।
+
+### रिपोर्टर
+
+रन खत्म होने पर `@e2e-dev/github` GitHub Actions के सेट किए हुए वेरिएबल पढ़ता
+है:
+
+| वेरिएबल | उदाहरण | कैसे पढ़ा जाता है | असर |
+| --- | --- | --- | --- |
+| `GITHUB_ACTIONS` | `GITHUB_ACTIONS=true` | value | इसके बिना रिपोर्टर कुछ पोस्ट नहीं करता और यह बात बता देता है |
+| `GITHUB_REPOSITORY`, `GITHUB_RUN_ID`, `GITHUB_EVENT_NAME`, `GITHUB_WORKFLOW`, `GITHUB_JOB` | `GITHUB_REPOSITORY=acme/shop` | value | रनर इन्हें हमेशा सेट करता है। कोई भी गायब होने पर रिपोर्टर उस वेरिएबल का नाम लेकर फ़ेल होता है। रिपॉज़िटरी और रन id से आर्टिफ़ैक्ट लिंक बनता है। इवेंट का नाम "not a pull request" रो में दिखता है। वर्कफ़्लो और जॉब उस मार्कर में जुड़ते हैं जिससे रीरन अपना कमेंट ढूँढता है |
+| `GITHUB_TOKEN`, `GH_TOKEN` | `GITHUB_TOKEN=<token>` | value | कमेंट पोस्ट करता है; दोनों में से जो पहले सेट हो वही चलता है। सेट न हो तब भी जॉब समरी लिखी जाती है। फ़ॉर्क का `pull_request` टोकन रीड-ओनली होता है और पोस्ट नहीं कर सकता; [जब कुछ पोस्ट न हो](/github#when-nothing-is-posted) देखें |
+| `GITHUB_EVENT_PATH`, `GITHUB_REF` | `GITHUB_REF=refs/pull/42/merge` | value | इवेंट पेलोड से पुल रिक्वेस्ट नंबर और हेड कमिट, या `refs/pull/N/merge` से नंबर |
+| `GITHUB_SHA` | `GITHUB_SHA=<commit>` | value | जब इवेंट किसी पुल रिक्वेस्ट का न हो, तो सोर्स लिंक इसी कमिट की ओर जाते हैं |
+| `GITHUB_WORKSPACE` | `GITHUB_WORKSPACE=/home/runner/work/shop/shop` | value | चेकआउट रूट। सोर्स लिंक इसके अंदर प्रोजेक्ट का पाथ जोड़ते हैं, ताकि सबडायरेक्टरी वाला सूट सही फ़ाइल पर लिंक करे |
+| `GITHUB_SERVER_URL`, `GITHUB_API_URL` | `GITHUB_SERVER_URL=https://github.example.com` | value | Enterprise Server के लिए GitHub होस्ट। डिफ़ॉल्ट `https://github.com` और `https://api.github.com` |
+| `GITHUB_STEP_SUMMARY` | `GITHUB_STEP_SUMMARY=<file>` | value | वह जॉब समरी फ़ाइल जिसमें कमेंट का टेक्स्ट जोड़ा जाता है |
+
+### इंजन
+
+| वेरिएबल | उदाहरण | कैसे पढ़ा जाता है | असर |
+| --- | --- | --- | --- |
+| `PLAYWRIGHT_BROWSERS_PATH` | `PLAYWRIGHT_BROWSERS_PATH=~/.cache/ms-playwright` | value | Playwright का ब्राउज़र कैश, जिसे इंजन का `prepare` हुक मानता है |
+| `PLAYWRIGHT_SKIP_BROWSER_GC` | `PLAYWRIGHT_SKIP_BROWSER_GC=0` | value | इंजन के ब्राउज़र इंस्टॉल के लिए डिफ़ॉल्ट `1` होता है, जिससे कैश में बाकी ब्राउज़र बने रहते हैं। `0` रखने पर इंस्टॉल उन्हें हटा सकता है |
+| `KERNEL_API_KEY` | `KERNEL_API_KEY=<key>` | value | वह API key जिससे `@e2e-dev/kernel` का `kernel()` ब्राउज़र बनाता है। सेट न होने पर ब्राउज़र लीज़ फ़ेल हो जाती है। [Kernel](/integrations/kernel) देखें |
+| `NOTTE_API_KEY` | `NOTTE_API_KEY=<key>` | value | वह API key जिससे `@e2e-dev/notte` का `notte()` सेशन शुरू करता है। सेट न होने पर ब्राउज़र लीज़ फ़ेल हो जाती है। [Notte](/integrations/notte) देखें |
+| `NOTTE_API_URL` | `NOTTE_API_URL=<url>` | value | वह Notte API URL जिसे `notte()` कॉल करता है। डिफ़ॉल्ट `https://api.notte.cc` |
+| `LIGHTPANDA_PATH` | `LIGHTPANDA_PATH=/opt/lightpanda` | value | वह बाइनरी जिससे `@e2e-dev/lightpanda` का `lightpanda()` CDP सर्वर शुरू करता है। सेट न होने पर `PATH`, `~/.lightpanda`, या `~/.local/bin` में `lightpanda` ढूँढता है। [Lightpanda](/integrations/lightpanda) देखें |
+| `MOLI_PATH` | `MOLI_PATH=/opt/moli` | value | `binary` सेट न होने पर `@e2e-dev/moli` का `moli()` यही एक्ज़ीक्यूटेबल चलाता है। `MOLI_PATH` न होने पर `PATH`, फिर `~/.local/bin/moli` में ढूँढता है। [Moli](/integrations/moli) देखें |
+| [`EXPO_TOKEN`](#expo_token) | `EXPO_TOKEN=<token>` | value | वह Expo एक्सेस टोकन जिसे `@e2e-dev/eas` का `expoSimulators()` इस्तेमाल करता है |
+| `HOME`, `USERPROFILE` | `HOME=/home/ada` | value | `EXPO_TOKEN` न होने पर `expoSimulators()` eas-cli लॉगिन यहीं ढूँढता है: Windows पर `USERPROFILE`, बाकी जगह `HOME`, और सेट न होने पर OS यूज़र का होम |
+| `LIMRUN_API_KEY` | `LIMRUN_API_KEY=<key>` | value | वह API key जिससे `@e2e-dev/limrun` का `limrun()` डिवाइस लीज़ करता है। सेट न होने पर लीज़ `INVALID_CONFIG` से फ़ेल हो जाती है। [Limrun](/integrations/limrun) देखें |
+| `LIMRUN_BASE_URL` | `LIMRUN_BASE_URL=<url>` | value | Limrun API होस्ट। डिफ़ॉल्ट `https://api.limrun.com` |
+| `BROWSERSTACK_USERNAME`, `BROWSERSTACK_ACCESS_KEY` | `BROWSERSTACK_USERNAME=acme_AbC123` | value | BrowserStack यूज़रनेम और एक्सेस key जिनसे `@e2e-dev/browserstack` का `browserstack()` डिवाइस लीज़ करता है। इनमें से कोई एक भी सेट न हो तो डिवाइस लीज़ फ़ेल हो जाती है। [BrowserStack](/integrations/browserstack) देखें |
+| `BROWSERSTACK_API_ENDPOINT` | `BROWSERSTACK_API_ENDPOINT=<url>` | value | App Automate API का बेस URL जिस पर `browserstack()` `https` बिल्ड अपलोड करता है और सेशन रिकॉर्डिंग ढूँढता है। डिफ़ॉल्ट `https://api-cloud.browserstack.com/app-automate`। अगर वैल्यू http(s) URL न हो, या उसमें यूज़रनेम या पासवर्ड हो, तो `INVALID_CONFIG` से फ़ेल होता है |
+| `LT_USERNAME`, `LT_ACCESS_KEY` | `LT_USERNAME=acme` | value | TestMu AI यूज़रनेम और एक्सेस key जिनसे `@e2e-dev/testmu` का `testmu()` डिवाइस लीज़ करता है। इनमें से कोई एक भी सेट न हो तो डिवाइस लीज़ फ़ेल हो जाती है। `@e2e-dev/testmu/web` का `testmuBrowsers()` इन्हें सिर्फ़ हर ब्राउज़र सेशन के CDP URL में डालता है, और कोई एक भी सेट न हो तो ब्राउज़र लीज़ फ़ेल हो जाती है। [TestMu AI](/integrations/testmu) देखें |
+| `TESTMU_API_ENDPOINT` | `TESTMU_API_ENDPOINT=<url>` | value | TestMu AI सेशन्स API का बेस URL जहाँ `testmu()` सेशन रिकॉर्डिंग ढूँढता है। डिफ़ॉल्ट `https://mobile-api.lambdatest.com/mobile-automation/api/v1`। अगर वैल्यू http(s) URL न हो, या उसमें यूज़रनेम या पासवर्ड हो, तो लुकअप `INVALID_CONFIG` से फ़ेल होता है। agent-device का TestMu AI प्लगइन भी इसे पढ़ता है |
+| `REVYL_API_KEY` | `REVYL_API_KEY=<key>` | value | वह API key जिससे `@e2e-dev/revyl` का `revyl()` डिवाइस लीज़ करता है। सेट न होने पर डिवाइस लीज़ फ़ेल हो जाती है। [Revyl](/integrations/revyl) देखें |
+| `REVYL_API_URL` | `REVYL_API_URL=<url>` | value | वह Revyl बैकएंड जहाँ से `revyl()` डिवाइस लीज़ करता है। डिफ़ॉल्ट `https://backend.revyl.ai`। agent-device का Revyl प्लगइन इसे पढ़ता है |
+| `E2B_API_KEY` | `E2B_API_KEY=<key>` | value | वह API key जिससे `@e2e-dev/e2b` का `e2b()` और `@e2e-dev/e2b/web` का `e2bBrowsers()` सैंडबॉक्स बनाते हैं। सेट न होने पर लीज़ `INVALID_CONFIG` से फ़ेल हो जाती है। [E2B](/integrations/e2b) देखें |
+| `E2B_DOMAIN` | `E2B_DOMAIN=e2b.example.com` | value | वह E2B डोमेन जिस पर प्रोवाइडर सैंडबॉक्स बनाते हैं। डिफ़ॉल्ट `e2b.app`। डेडिकेटेड E2B क्लस्टर के लिए इसे सेट करें |
+| `E2B_API_URL` | `E2B_API_URL=<url>` | value | वह E2B API URL जिसे प्रोवाइडर कॉल करते हैं। डिफ़ॉल्ट `https://api.<E2B_DOMAIN>` |
+| `E2B_SANDBOX_URL` | `E2B_SANDBOX_URL=<url>` | value | वह URL जिस पर प्रोवाइडर सैंडबॉक्स कमांड और अपलोड भेजते हैं। डिफ़ॉल्ट: E2B SDK इसे `E2B_DOMAIN` से बनाता है। अगर e2e शुरू करने वाला शेल इसे सेट करता है, तो रन के एनवायरनमेंट में भी वही वैल्यू होनी चाहिए, वरना लीज़ `INVALID_CONFIG` से फ़ेल हो जाती है |
+| `E2E_WEB_BROWSERS_<TARGET>_<digest>` | - | value | `@e2e-dev/web` इसे `prepare` में लिखता है; हर वर्कर अपना लीज़ किया हुआ ब्राउज़र ढूँढने के लिए इसे पढ़ता है। इसे हाथ से सेट न करें |
+| `E2E_AGENT_DEVICE_POOL_<TARGET>_<digest>` | - | value | `@e2e-dev/mobile` इसे `prepare` में लिखता है; हर वर्कर अपना बूट किया हुआ डिवाइस ढूँढने के लिए इसे पढ़ता है। इसे हाथ से सेट न करें |
+
+#### `EXPO_TOKEN`
+
+वह Expo एक्सेस टोकन जिससे `@e2e-dev/eas` का `expoSimulators()` सिम्युलेटर सेशन
+शुरू और बंद करता है। [Expo Simulators](/integrations/eas) देखें।
+
+- सेट न होने पर यह होम डायरेक्टरी में `.expo/state.json` से eas-cli लॉगिन
+  इस्तेमाल करता है ([`HOME`, `USERPROFILE`](#engines))।
+- दोनों में से कुछ भी न हो, तो डिवाइस लीज़ फ़ेल हो जाती है।
+
+## ऐप प्रोसेस को कौन-से वेरिएबल मिलते हैं
+
+ऐप `command` को `PATH`, `HOME`, `TMPDIR`, `TMP`, `TEMP`, `SystemRoot`, और
+`COMSPEC` मिलते हैं, साथ में वे वेरिएबल जो `command.inheritEnv` से मैच हों और जो
+`command.env` सेट करे।
+
+`APP_URL` को स्कैफ़ोल्डेड कॉन्फ़िग मॉड्यूल पढ़ता है, रनर नहीं। अगर डेव सर्वर को
+भी यह चाहिए, तो इसे `command.env` से पास करें।

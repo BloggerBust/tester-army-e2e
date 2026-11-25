@@ -1,0 +1,623 @@
+---
+title: "e2e/runner"
+description: "कोड से टेस्ट सूट या एक्सप्लोरेशन चलाएँ, सिलेक्शन लिस्ट करें, या किसी दूसरे टेस्ट रनर में e2e सेशन होस्ट करें।"
+"og:image": "https://e2e.com/docs/images/og/reference/runner.png?v=a4609b13d7"
+"twitter:image": "https://e2e.com/docs/images/og/reference/runner.png?v=a4609b13d7"
+---
+
+`e2e/runner` बिना CLI चलाए कोड से टेस्ट सूट चलाता है। `run` टेस्ट चलाकर उनकी
+रिपोर्ट लौटाता है, `explore` एक एक्सप्लोरेशन चलाकर उसकी फ़ाइंडिंग लौटाता है,
+`list` सिलेक्शन लौटाता है, और `openHost` किसी दूसरे टेस्ट रनर में e2e सेशन होस्ट
+करता है। टेस्ट फ़ाइल से `e2e` इंपोर्ट करने पर रनर लोड नहीं होता।
+
+<Note>
+`run`, `list`, `explore`, और `openHost` को Node.js चाहिए। Bun पर ये
+`NODE_UNSUPPORTED` थ्रो करते हैं; वहाँ [CLI](/reference/cli#bun) से टेस्ट चलाएँ।
+</Note>
+
+```ts title="scripts/run-e2e.ts"
+import type { E2EConfig } from 'e2e';
+import { run } from 'e2e/runner';
+import { web } from '@e2e-dev/web';
+
+const config: E2EConfig = {
+  targets: [{ name: 'web', engine: web(), app: { url: 'http://localhost:3000' } }],
+};
+const controller = new AbortController();
+const result = await run({
+  config,
+  files: ['tests/signup.e2e.ts'],
+  interruptSignal: controller.signal,
+  onEvent(event) {
+    if (event.type === 'test-started') console.log(event.title);
+  },
+});
+
+console.log(result.status, result.report.run.summary);
+```
+
+## रेफ़रेंस
+
+### फ़ंक्शन
+
+| फ़ंक्शन | रिटर्न |
+| --- | --- |
+| [`run`](#run) | `Promise<RunResult>` |
+| [`explore`](#explore) | `Promise<ExploreResult>` |
+| [`list`](#list) | `Promise<ListResult>` |
+| [`openHost`](#openhost) | `Promise<E2EHost<Fixtures>>` |
+| [`isE2EError`](#ise2eerror) | `boolean` |
+
+#### `run`
+
+`run(options?: RunOptions)` पूरा सूट चलाता है। यह रिज़ॉल्व होने से पहले क्लीनअप
+पूरा करता है और कॉलर की प्रोसेस को कभी बंद नहीं करता।
+
+```ts
+const result = await run({ files: ['tests/signup.e2e.ts'] });
+process.exitCode = result.exitCode;
+```
+
+##### ऑप्शन
+
+| ऑप्शन | उदाहरण | टाइप | डिफ़ॉल्ट |
+| --- | --- | --- | --- |
+| `cwd` | `'apps/web'` | `string` | मौजूदा वर्किंग डायरेक्टरी |
+| `config` | `'e2e.ci.config.ts'` | `string \| E2EConfig` | खोजी गई `e2e.config.ts` |
+| `files` | `['tests/signup.e2e.ts:12']` | `readonly string[]` | कॉन्फ़िगर किया हुआ सूट |
+| `changedSince` | `'origin/main'` | `string` | - |
+| `interruptSignal` | `controller.signal` | `AbortSignal` | - |
+| `onEvent` | `(event) => {}` | `RunEventSink` | - |
+
+- `files` पाथ, ग्लोब, सीधे नाम, या `file:line` लेता है।
+- `changedSince` [`--changed-since`](/filters) की तरह काम करता है।
+- `interruptSignal` अबॉर्ट करने पर टेस्ट रुकते हैं और टियरडाउन चलता है।
+- `onEvent` को टाइप्ड प्रोग्रेस इवेंट मिलते हैं। टर्मिनल प्रोग्रेस बंद रहती है।
+  इसे ब्लॉक नहीं करना चाहिए। थ्रो या रिजेक्ट करने वाला कॉलबैक रन को फ़ेल किए बिना
+  डिसेबल हो जाता है।
+- रीट्राई और वर्कर जैसी एक्ज़ीक्यूशन सेटिंग कॉन्फ़िग में रखें।
+- रनटाइम कॉन्फ़िग (`E2EConfig` वैल्यू) कॉलर की प्रोसेस में एक वर्कर से चलता है।
+  फ़ाइल कॉन्फ़िग कॉन्फ़िगर किए गए वर्कर प्रोसेस सपोर्ट करता है।
+
+##### नतीजा
+
+| फ़ील्ड | मतलब |
+| --- | --- |
+| `exitCode` | CLI जैसा एग्ज़िट कोड: `0`, `1`, `2`, `3`, `4`, या `130`। |
+| `status` | `passed`, `failed`, `blocked`, `error`, या `interrupted`। |
+| `report` | पूरी रिपोर्ट। नतीजों के लिए `report.run.results`, `report.run.errors`, और `report.run.summary` पढ़ें। |
+| `reportPath` | `report.json` का एब्सोल्यूट पाथ, या अगर वह लिखी न जा सकी या रन टेस्ट से पहले ही रुक गया तो `undefined`। |
+| `aiTracePath` | AI ट्रेस पाथ, या जब कोई AI ट्रेस न लिखा गया हो तो `undefined`। |
+
+टेस्ट फ़ेलियर, कॉन्फ़िग फ़ेलियर, और इंटरप्शन रिपोर्ट में अपने स्टेटस और एरर के
+साथ रिज़ॉल्व होते हैं।
+
+| क्या थ्रो होता है | कब |
+| --- | --- |
+| `RUNNER_BUSY` | कोई दूसरा सूट चल रहा है, या कोई होस्ट खुला है। सूट चलाने से पहले हर होस्ट बंद करें, और होस्ट खोलने से पहले सूट पूरा होने का इंतज़ार करें। |
+
+- आपकी टेस्ट फ़ाइलें जो हेल्पर मॉड्यूल इंपोर्ट करती हैं, वे एक ही प्रोसेस में कई
+  `run` कॉल के बीच कैश रहते हैं। उनमें बदलाव देखने के लिए नई प्रोसेस चाहिए।
+- रिपोर्ट लौटाने वाला हर रन CLI वाले ही ऑप्ट-आउट के साथ एक अनाम
+  [`e2e_run_completed`](/telemetry) इवेंट भेजता है। पहली कॉल stderr पर
+  टेलीमेट्री नोटिस प्रिंट कर सकती है।
+- सूट आउटपुट UTF-8 टेक्स्ट रेडैक्शन इस्तेमाल करता है और बाइनरी डेटा सुरक्षित नहीं
+  रखता। आपके ऐप के लॉग और प्रोग्रेस कॉलबैक का आउटपुट आपके कंट्रोल में रहता है।
+
+#### `explore`
+
+`explore(options?: ExploreOptions)` एक [एक्सप्लोरेशन](/explore) चलाता है, वही
+रन जो `e2e explore` शुरू करता है। यह रिज़ॉल्व होने से पहले क्लीनअप पूरा करता है
+और कॉलर की प्रोसेस को कभी बंद नहीं करता।
+
+```ts title="scripts/explore-e2e.ts"
+import type { E2EConfig } from 'e2e';
+import { explore } from 'e2e/runner';
+import { web } from '@e2e-dev/web';
+import { gateway } from 'ai';
+
+const config: E2EConfig = {
+  agents: { default: { model: gateway('openai/gpt-6-luna-fast') } },
+  targets: [{ name: 'web', engine: web(), app: { url: 'http://localhost:3000' } }],
+};
+const controller = new AbortController();
+const result = await explore({
+  config,
+  goal: 'Explore the checkout flow like a first-time buyer and report anything off',
+  maxSteps: 4,
+  interruptSignal: controller.signal,
+  onEvent(event) {
+    if (event.type === 'explore' && event.progress.phase === 'finding') console.log(event.progress.finding.title);
+  },
+});
+
+console.log(result.status, result.explore.ended, result.explore.findings.length);
+```
+
+##### ऑप्शन
+
+| ऑप्शन | उदाहरण | टाइप | डिफ़ॉल्ट |
+| --- | --- | --- | --- |
+| `cwd` | `'apps/web'` | `string` | मौजूदा वर्किंग डायरेक्टरी |
+| `config` | `'e2e.ci.config.ts'` | `string \| E2EConfig` | खोजी गई `e2e.config.ts` |
+| `goal` | `'Explore the login flow'` | `string` | `'Explore the app and find bugs'`; `changedSince` के साथ `'Explore what this change affects and find bugs in it'` |
+| `target` | `'web'` | `string` | पहला कॉन्फ़िगर टारगेट |
+| `agent` | `'smart'` | `string` | `agents.default` |
+| `session` | `'loggedIn'` | `string` | - |
+| `changedSince` | `'origin/main'` | `string` | - |
+| `maxSteps` | `4` | `number` | `8` |
+| `timeoutMs` | `300_000` | `number` | `600_000` |
+| `interruptSignal` | `controller.signal` | `AbortSignal` | - |
+| `onEvent` | `(event) => {}` | `RunEventSink` | - |
+
+- `goal` ज़्यादा से ज़्यादा 2,000 कैरेक्टर का हो सकता है।
+- `session` उस सेशन का नाम लेता है जिसे कोई [सेटअप टेस्ट](/authentication) सेव
+  करता है। वह सेटअप पहले चलता है, और एक्सप्लोरेशन उसी से शुरू होता है, ठीक
+  `--session` की तरह।
+- `changedSince` उस ref के बाद के बदलाव एक्सप्लोर करता है,
+  [`--changed-since`](/reference/cli#e2e-explore) की तरह।
+- `maxSteps` 1 से 100 तक होता है। `timeoutMs` `180000` से `7200000` तक होता है।
+- `onEvent` को `run` जैसे ही इवेंट मिलते हैं, साथ में हर प्लानिंग फ़ैसले, स्टेप,
+  और फ़ाइंडिंग के लिए `explore` इवेंट। रन शुरू होने से पहले `e2e explore` जो
+  प्रिंट करता है (जैसे चुना गया टारगेट), वह `collected` इवेंट से पहले `run`
+  टारगेट वाले `notice` इवेंट के रूप में आता है।
+- `video`, `trace`, और `output` जैसी रिकॉर्डिंग और आउटपुट सेटिंग कॉन्फ़िग से आती
+  हैं।
+
+##### नतीजा
+
+`ExploreResult` में [`RunResult`](#run) की हर फ़ील्ड होती है, साथ में `explore`,
+वही रिकॉर्ड जो `report.run.explore` में भी होता है।
+
+| फ़ील्ड | मतलब |
+| --- | --- |
+| `explore.goal`, `explore.budgets` | सीक्रेट वैल्यू छिपाया हुआ लक्ष्य, और वे स्टेप और समय बजट जिनके साथ यह चला। |
+| `explore.ended` | एक्सप्लोरेशन क्यों रुका: `finished`, `skipped` (`changedSince` के साथ प्लानर ने माना कि बदलाव में यूज़र को दिखने लायक कुछ नहीं है; रन पास होता है), `step-limit`, `time`, `stuck`, या `aborted`। |
+| `explore.summary` | एजेंट का अंतिम आकलन, जब उसने दिया हो। |
+| `explore.change` | `changedSince` के साथ वह बदलाव जिसके आधार पर प्लान बना: `base` (मर्ज बेस) और `files` (कितनी फ़ाइलें बदलीं)। |
+| `explore.steps` | एजेंट का प्लान किया और चलाया हर स्टेप, उसके स्टेटस के साथ: `passed`, `failed`, `blocked`, या `exhausted`। |
+| `explore.findings` | हर फ़ाइंडिंग: `kind`, 1 से 5 तक `severity`, `title`, `expected`, `actual`, और `reproduction`। `issue` रन को फ़ेल करता है; `warning` नहीं। |
+
+एक बार एक्सप्लोरेशन शुरू हो जाए, तो फ़ाइंडिंग, फ़ेलियर, और इंटरप्शन रिपोर्ट में
+अपने स्टेटस के साथ रिज़ॉल्व होते हैं। जो ऑप्शन या कॉन्फ़िग एक्सप्लोरेशन शुरू ही
+नहीं कर सकते वे पहले ही रिजेक्ट हो जाते हैं, ठीक `e2e explore` के मिलते-जुलते
+फ़्लैग की तरह। इन्हें [`isE2EError`](#ise2eerror) से पहचानें।
+[`openHost`](#openhost) फ़ेलियर की तरह ये भी रेडैक्ट होते हैं और इनमें रॉ
+`cause` नहीं होता।
+
+| क्या थ्रो होता है | कब |
+| --- | --- |
+| `INVALID_CONFIG` | `goal`, `maxSteps`, या `timeoutMs` रेंज से बाहर हो, या `agent` किसी कॉन्फ़िगर एजेंट का नाम न ले। |
+| `UNKNOWN_TARGET` | `target` किसी कॉन्फ़िगर टारगेट का नाम न ले। |
+| `MODEL_UNAVAILABLE` | एजेंट के पास कोई मॉडल नहीं है। |
+| `INVALID_CHANGED_SINCE` | `changedSince` खाली हो, `-` से शुरू हो, या ऐसे ref का नाम ले जिससे git बदलाव न माप सके। |
+| `RUNNER_BUSY` | कोई सूट या एक्सप्लोरेशन चल रहा है, या कोई होस्ट खुला है। |
+| `run` के रिकॉर्ड किए गए कोड | कॉन्फ़िग गायब है, या लोडर ने उसे मना कर दिया। |
+
+रिपोर्ट लौटाने वाला हर एक्सप्लोरेशन `run` की तरह एक अनाम
+[`e2e_run_completed`](/telemetry) इवेंट भेजता है।
+
+#### `list`
+
+`list(options?: ListOptions)` ठीक [`e2e list`](/reference/cli#e2e-list) की तरह
+कलेक्ट और सिलेक्ट करता है, और वहीं रुक जाता है। कोई ऐप प्रोसेस, इंजन, या वर्कर
+शुरू नहीं होता, और कुछ लिखा नहीं जाता।
+
+```ts
+import { isE2EError, list } from 'e2e/runner';
+
+const { pairs, unmatched, targets } = await list({
+  files: ['tests/signup.e2e.ts'],
+  grep: [/checkout/],
+});
+
+for (const pair of pairs) {
+  console.log(`${pair.id} ${pair.disposition} ${pair.titlePath.join(' › ')}`);
+}
+```
+
+हर कॉल टेस्ट फ़ाइलों को दोबारा इंपोर्ट करती है, इसलिए उसी प्रोसेस में बाद का
+`list()` नए बदलाव देखता है।
+
+##### ऑप्शन
+
+| ऑप्शन | उदाहरण | टाइप | डिफ़ॉल्ट |
+| --- | --- | --- | --- |
+| `config` | `'e2e.ci.config.ts'` | `string \| E2EConfig` | `cwd` से खोजा गया, `e2e list` जैसा ही |
+| `targets` | `['web']` | `readonly string[]` | - |
+| `cwd` | `'apps/web'` | `string` | मौजूदा वर्किंग डायरेक्टरी |
+| `files` | `['tests/', 'signup.e2e.ts:12']` | `readonly string[]` | कॉन्फ़िगर किया हुआ सूट |
+| `tags`, `tagMode`, `excludeTags` | `{ tags: ['smoke'], tagMode: 'all' }` | `readonly string[]`, `'any' \| 'all'` | - |
+| `grep`, `grepInvert` | `[/checkout/]` | `readonly RegExp[]` | - |
+| `lastFailed` | `true` | `boolean` | - |
+| `shard` | `{ index: 1, total: 4 }` | `{ index, total }` | - |
+| `changedSince` | `'origin/main'` | `string` | - |
+| `passWithNoTests` | `true` | `boolean` | - |
+| `output` | `'.e2e'` | `string` | कॉन्फ़िग का `output` |
+| `env` | `{ ...process.env, CI: '1' }` | `NodeJS.ProcessEnv` | `process.env` |
+
+- `targets` टारगेट के नाम देता है, `--target` की तरह।
+- `files` पोज़िशनल फ़ाइल सिलेक्शन है: पाथ, ग्लोब, सीधे नाम, और `file:line`।
+- `tags`, `tagMode`, और `excludeTags` `--tag`, `--tag-mode`, और `--exclude-tag`
+  फ़िल्टर हैं।
+- `grep` और `grepInvert`: स्पेस से जुड़े टेस्ट के describe टाइटल और टाइटल को कम
+  से कम एक `grep` पैटर्न से मैच होना चाहिए और किसी भी `grepInvert` पैटर्न से नहीं।
+- `lastFailed` सिर्फ़ वे टेस्ट रखता है जो पिछले रन में पास नहीं हुए थे, जिन्हें
+  `output` के अंदर `report.json` से पढ़ा जाता है।
+- `shard` `--shard index/total` का हिस्सा है।
+- `changedSince` `--changed-since` की तरह काम करता है। [टेस्ट फ़िल्टर](/filters)
+  कॉलिंग प्रोसेस में चलते हैं; `list` उनकी कोई लाइन प्रिंट नहीं करता, `e2e list`
+  करता है।
+- `passWithNoTests` चलने लायक टेस्ट न होने पर `NO_TESTS` थ्रो करने के बजाय
+  रिज़ॉल्व हो जाता है।
+- `output` रिज़ल्ट डायरेक्टरी है।
+- `env` वह एनवायरनमेंट है जिसके संदर्भ में कॉन्फ़िग रिज़ॉल्व होता है।
+
+##### नतीजा
+
+`ListResult` `{ pairs, unmatched, targets }` होता है।
+
+- `pairs` सिलेक्शन के क्रम में हर टेस्ट, टारगेट, और एजेंट के लिए एक `ListedPair`
+  है, उन जोड़ों समेत जिन्हें किसी फ़िल्टर ने हटाया। रिपीट फैलाए नहीं जाते।
+- `unmatched` वे पोज़िशनल आर्ग्युमेंट हैं (जैसे लिखे गए) जिन्होंने कोई खोजी गई
+  फ़ाइल नहीं चुनी।
+- `targets` कॉन्फ़िग के क्रम में चुने गए टारगेट के नाम हैं।
+
+| फ़ील्ड | मतलब |
+| --- | --- |
+| `id` | वह रिज़ल्ट id जिसे `report.json` रिपीट 0 के लिए स्टोर करती है। |
+| `file`, `title`, `titlePath`, `kind`, `tags` | कलेक्ट किया गया टेस्ट। `kind` `test` या `setup` होता है। टेस्ट में टैग न हों तो `tags` `[]` होता है। |
+| `source` | प्रोजेक्ट के सापेक्ष डिक्लेरेशन: `{ file, line, column }`। टेस्ट ने रिकॉर्ड न किया हो तो `undefined`। |
+| `session` | टेस्ट या उसकी describe चेन से वह सेशन जिसे टेस्ट इस्तेमाल करता है। न करे तो `undefined`। |
+| `sessions` | सेटअप जो सेशन नाम बनाता है। साधारण टेस्ट पर `[]`। |
+| `serialId` | टेस्ट सीरियल ग्रुप में हो तो सेट होता है, वरना `undefined`। |
+| `target`, `agent` | टारगेट का नाम और वह कॉन्फ़िगर एजेंट जिसके रूप में यह जोड़ा चलता है। |
+| `disposition` | `run`, `skip`, या `filtered`। |
+| `reason` | जोड़ा स्किप या फ़िल्टर क्यों हुआ, जैसे `title does not match --grep`। चलने पर नहीं होता। |
+| `filter` | उस टेस्ट फ़िल्टर का नाम जिसने जोड़े को बाहर किया। सिलेक्शन फ़्लैग से फ़िल्टर हुए जोड़े में यह नहीं होता। |
+
+`e2e list` `run` और `skip` जोड़े प्रिंट करता है, और वे जोड़े जिन्हें टेस्ट फ़िल्टर
+ने बाहर किया। `list` हर `filtered` जोड़ा लौटाता है।
+
+##### एरर
+
+फ़ेलियर वही कैटेगरी वाले एरर है जिसके साथ `e2e list` बाहर निकलता है। इसे
+[`isE2EError`](#ise2eerror) से पहचानें और `error.code` पर ब्रांच करें।
+[`openHost`](#openhost) फ़ेलियर की तरह यह रेडैक्ट होता है और इसमें रॉ `cause`
+नहीं होता: जो कॉन्फ़िग key लोड करके फ़ेल हो वह उसे कोट कर सकता है।
+
+```ts
+import { isE2EError, list } from 'e2e/runner';
+
+try {
+  await list({ targets: ['missing'] });
+} catch (error) {
+  if (isE2EError(error) && error.code === 'UNKNOWN_TARGET') {
+    console.error(error.message);
+  }
+}
+```
+
+| क्या थ्रो होता है | कब |
+| --- | --- |
+| `NO_TESTS` | सिलेक्शन खाली है और `passWithNoTests` सेट नहीं है। यह `ConfigurationError` है। जब टेस्ट फ़िल्टर चलाने के लिए कुछ न छोड़ें, तो `list` इसकी जगह हर जोड़े को `filtered` या `skip` के साथ रिज़ॉल्व करता है। |
+| `UNKNOWN_TARGET` | `targets` में कोई नाम कॉन्फ़िगर टारगेट नहीं है। |
+| `INVALID_CHANGED_SINCE` | `changedSince` खाली हो या `-` से शुरू हो, या टेस्ट फ़िल्टर चलें और यह ऐसे ref का नाम ले जिससे git बदलाव न माप सके। |
+| `run` के रिकॉर्ड किए गए कोड | कॉन्फ़िग गायब है, लोडर ने उसे मना कर दिया, या कलेक्शन फ़ेल हो गया। |
+
+#### `openHost`
+
+`openHost<Fixtures>(options?: OpenHostOptions)` Playwright Test, Vitest, Jest,
+या आपके अपने हार्नेस के लिए e2e तैयार करता है, और एक [होस्ट](#host) लौटाता है।
+
+```ts
+import { openHost } from 'e2e/runner';
+
+await using host = await openHost({ target: 'web' });
+await using session = await host.openSession({ name: 'checkout' });
+await session.fixtures.app.open('/checkout');
+```
+
+- कलेक्शन, रीट्राई, और रिपोर्टिंग आपका रनर संभालता है।
+- होस्ट हर वर्कर के जीवनकाल में एक बार टारगेट का इंजन तैयार करता है, ऐप प्रोसेस
+  शुरू करता है, और इंजन इनिशियलाइज़ करता है। वर्कर-स्कोप्ड होस्ट और टेस्ट-स्कोप्ड
+  सेशन इस्तेमाल करें; [Playwright Test फ़िक्स्चर उदाहरण](#playwright-test-fixtures)
+  देखें।
+- हर [`host.openSession`](#host-opensession) ताज़ा फ़िक्स्चर, डेडलाइन, स्टेप, और
+  आर्टिफ़ैक्ट के साथ एक टेस्ट-लाइफ़टाइम अटेम्प्ट बनाता है।
+- अगर खोलना फ़ेल हो, तो एरर थ्रो करने से पहले e2e जो शुरू हुआ था उसे बंद कर देता
+  है।
+
+##### ऑप्शन
+
+| ऑप्शन | उदाहरण | टाइप | डिफ़ॉल्ट |
+| --- | --- | --- | --- |
+| `config` | `'e2e.config.ts'` | `string \| E2EConfig` | सबसे करीबी `e2e.config.ts`, `.mts`, `.js`, या `.mjs` |
+| `cwd` | `'apps/web'` | `string` | `process.cwd()` |
+| `target` | `'android'` | `string` | एकमात्र टारगेट |
+| `env` | `process.env` | `NodeJS.ProcessEnv` | `process.env` |
+| `signal` | `controller.signal` | `AbortSignal` | - |
+| `headed` | `true` | `boolean` | `false` |
+| `onNotice` | `(target, message) => {}` | `(target: string, message: string) => void` | - |
+
+- `config` `cwd` के सापेक्ष कॉन्फ़िग फ़ाइल पाथ या `E2EConfig` वैल्यू है। इसे
+  छोड़ने पर `cwd` से कॉन्फ़िग खोजा जाता है, `list` जैसा ही।
+- `cwd` कॉन्फ़िग खोजने की डायरेक्टरी है, और कॉन्फ़िग वैल्यू का प्रोजेक्ट रूट।
+- जब कॉन्फ़िग में कई टारगेट हों तो `target` ज़रूरी है।
+- `env` वह एनवायरनमेंट है जिसे कॉन्फ़िग, इंजन, और प्रोवाइडर पढ़ते हैं।
+- `signal` होस्ट प्रोविज़निंग, पेंडिंग सेशन ओपन, या लाइव फ़िक्स्चर कॉल कैंसल करता
+  है।
+- `headed` ब्राउज़र इंजन को हेडेड मोड में चलाता है।
+- `onNotice` को स्टेप के बाहर की प्रोग्रेस मिलती है, जैसे प्रोविज़निंग या ऐप
+  प्रोसेस। इसे थ्रो नहीं करना चाहिए।
+
+कॉन्फ़िग पाथ वाला होस्ट फ़ाइल और उसके प्रोजेक्ट-फ़ाइल इंपोर्ट नए सिरे से लोड करता
+है। पैकेज इंपोर्ट शेयर्ड रहते हैं, इसलिए उनका सिंगलटन स्टेट हर होस्ट पर फिर नहीं
+बनता। कॉन्फ़िग वैल्यू अपने खुद के इंजन इंस्टेंस इस्तेमाल करती है। हर इंस्टेंस
+होस्ट के बंद होने तक उसी का रहता है, इसलिए दूसरे होस्ट को दूसरा इंस्टेंस चाहिए।
+
+| क्या थ्रो होता है | कब |
+| --- | --- |
+| `UNKNOWN_TARGET` | `target` किसी कॉन्फ़िगर टारगेट का नाम नहीं लेता। |
+| `TARGET_REQUIRED` | कॉन्फ़िग में कई टारगेट हैं और `target` में किसी का नाम नहीं है। |
+| `RUNNER_BUSY` | कोई सूट चल रहा है। होस्ट खोलने से पहले उसका इंतज़ार करें। |
+
+खोलने के फ़ेलियर कैटेगरी वाले, रेडैक्ट किए हुए एरर होते हैं; इंजन के रॉ `cause`
+बाहर नहीं दिखाए जाते। इन्हें [`isE2EError`](#ise2eerror) और `error.code` से मैच
+करें।
+
+#### `isE2EError`
+
+एक टाइप गार्ड जो कैटेगरी वाले e2e एरर को पहचानता है। इसके `error.code` पर ब्रांच
+करें।
+
+```ts
+if (isE2EError(error) && error.code === 'NO_TESTS') process.exitCode = 0;
+```
+
+पैकेज की दो कॉपियों के बीच `instanceof` e2e एरर को चूक सकता है, इसलिए
+`isE2EError` इस्तेमाल करें। `ConfigurationError` और `isE2EError` दोनों
+`e2e/runner` से एक्सपोर्ट होते हैं।
+
+### होस्ट
+
+[`openHost`](#openhost) `E2EHost<Fixtures>` लौटाता है।
+
+| मेंबर | रिटर्न |
+| --- | --- |
+| `runId`, `target` | `string` |
+| [`host.openSession`](#host-opensession) | `Promise<E2ESession<Fixtures>>` |
+| [`host.close`](#host-close) | `Promise<readonly SerializedError[]>` |
+
+`runId` और `target` वह पहचान है जिसे होस्ट के सारे सेशन शेयर करते हैं।
+
+पूरी प्रोसेस में एक समय पर सिर्फ़ एक ही होस्टेड अटेम्प्ट खुलता हुआ, लाइव, या बंद
+होता हुआ हो सकता है, भले ही होस्ट अलग हों या कॉन्फ़िग फ़ाइल हो या वैल्यू।
+
+- ओवरलैप करने वाला ओपन इंजन अटेम्प्ट स्टेट शुरू होने से पहले ही रिजेक्ट हो जाता
+  है। उसी होस्ट पर अगला सेशन खोलने से पहले `session.close()` का इंतज़ार करें।
+- जो लॉन्च फ़ेल हो या कैंसल हो, वह जो खोला था उसे बंद करके होस्ट को इस्तेमाल लायक
+  छोड़ता है, जैसे रन रीट्राई के लिए अपना वर्कर रखता है।
+- जिस सेशन का इंजन क्लीनअप फ़ेल हो जाए, वह होस्ट को हमेशा के लिए बंद कर देता है,
+  क्योंकि उसका आइसोलेशन पक्का नहीं रहता; नया होस्ट खोलें।
+
+| क्या थ्रो होता है | कब |
+| --- | --- |
+| `WORKER_PROTOCOL` | ओवरलैप करता हुआ होस्टेड अटेम्प्ट, या बंद होस्ट पर कॉल। |
+
+#### `host.openSession`
+
+`host.openSession(options: OpenSessionOptions)` इस होस्ट के टारगेट पर नया
+[सेशन](#session) खोलता है। सेशन एक टेस्ट अटेम्प्ट है जिसमें रीट्राई लूप नहीं
+होता। रीट्राई के लिए उसी वर्कर होस्ट पर नया सेशन खोलें।
+
+```ts
+const session = await host.openSession({
+  name: 'checkout',
+  timeout: 60_000, // default: the config's timeout
+  onStep: (step) => {
+    if (step.phase === 'end') console.log(`${step.api} ${step.label}: ${step.status}`);
+  },
+});
+```
+
+##### ऑप्शन
+
+| ऑप्शन | उदाहरण | टाइप | डिफ़ॉल्ट |
+| --- | --- | --- | --- |
+| `name` | `'checkout'` | `string` | ज़रूरी |
+| `timeout` | `60_000` | `number` | कॉन्फ़िग का `timeout` |
+| `signal` | `controller.signal` | `AbortSignal` | - |
+| `agent` | `'smart'` | `string` | पहला कॉन्फ़िगर एजेंट |
+| `onStep` | `(step) => {}` | `(progress: StepProgress) => void` | - |
+
+- `name` स्टेप और ट्रेस रिपोर्टिंग के लिए टेस्ट का नाम है।
+- `timeout` सेशन के ऑपरेशन की डेडलाइन मिलीसेकंड में है (पॉज़िटिव और फ़ाइनाइट),
+  जो सेशन खुलने से गिनी जाती है। यह प्रोविज़निंग या खुलने की सीमा नहीं तय करता,
+  और न ही सेशन बंद करता है।
+- `signal` खुलने या लाइव फ़िक्स्चर कॉल को कैंसल करता है। होस्ट का `signal` भी
+  लागू होता है। प्रोविज़निंग `openHost` में होती है, इसलिए सिर्फ़ होस्ट का
+  `signal` उसे कैंसल करता है; लॉन्च को दोनों में से कोई भी कैंसल कर सकता है।
+- `agent` वह एजेंट है जिसे `agent` फ़िक्स्चर तब इस्तेमाल करता है जब कॉल में कोई
+  नाम न हो।
+- `onStep` को लाइव `StepProgress` मिलता है, वही फ़ीड जो रिपोर्टर को मिलती है।
+  इसे ब्लॉक या थ्रो नहीं करना चाहिए। इसका `phase` `start`, `event`, `activity`,
+  `replay`, या `end` होता है। `end` इवेंट में `status`, `durationMs`,
+  `modelCalls`, और स्टेप फ़ेल होने पर रेडैक्ट किया हुआ `error` होता है।
+- `timeout`, `agent`, और `onStep` सेशन के ऑप्शन हैं, `openHost` के नहीं।
+
+| क्या थ्रो होता है | कब |
+| --- | --- |
+| `INVALID_CONFIG` | `name` स्ट्रिंग न हो, या `timeout` पॉज़िटिव और फ़ाइनाइट न हो। |
+| `CANCELLED` | खुलने से पहले या दौरान सेशन या होस्ट का `signal` अबॉर्ट हो गया। |
+| `WORKER_PROTOCOL` | कोई दूसरा होस्टेड अटेम्प्ट खुल रहा है, लाइव है, या बंद हो रहा है, या होस्ट बंद है। |
+
+#### `host.close`
+
+`host.close()` किसी भी एक्टिव या पेंडिंग सेशन को कैंसल करता है, उसके बंद होने का
+इंतज़ार करता है, फिर इंजन डिस्पोज़ करता है, ऐप प्रोसेस रोकता है, और प्रोविज़निंग
+रिलीज़ करता है।
+
+```ts
+const failures = await host.close();
+if (failures.length > 0) throw new AggregateError(failures, 'e2e host close failed');
+```
+
+- आइडम्पोटेंट: यह रिसोर्स को सिर्फ़ एक बार डिस्पोज़ और रिलीज़ करता है।
+- होस्ट `AsyncDisposable` है: `await using host = await openHost()` स्कोप से
+  बाहर निकलने पर इसे बंद कर देता है और बंद करने में फ़ेलियर हों तो
+  `AggregateError` थ्रो करता है।
+
+### सेशन
+
+[`host.openSession`](#host-opensession) `E2ESession<Fixtures>` लौटाता है।
+
+| मेंबर | रिटर्न |
+| --- | --- |
+| `fixtures` | `TestFixtures & Fixtures` |
+| `runId`, `attemptId`, `target` | `string` |
+| `steps()` | `readonly StepRecord[]` |
+| `report()` | `Report \| undefined` |
+| `artifactsDir` | `string` |
+| `tracePath` | `string` |
+| [`session.close`](#session-close) | `Promise<readonly SerializedError[]>` |
+
+- `fixtures` में `agent`, `app`, `screen`, `platform`, `request`, और इंजन के
+  फ़िक्स्चर होते हैं।
+- `runId` और `target` होस्ट के रन और टारगेट हैं; `attemptId` इस अटेम्प्ट के लिए
+  यूनिक होता है।
+- `steps()` अब तक चले स्टेप के रीड-ओनली `StepRecord` लौटाता है, ठीक वैसे ही जैसे
+  [रिपोर्ट](/reference/reporters) उन्हें दर्ज करती है।
+- `report()` क्लोज़ और सफल ट्रेस राइट के बाद वह सेशन `Report` लौटाता है जिससे
+  ट्रेस बना है; वरना `undefined`। इसका स्टेटस SDK सेशन का होता है, आपके रनर की
+  टेस्ट बॉडी के फ़ैसले का नहीं।
+- `artifactsDir` इस अटेम्प्ट के स्क्रीनशॉट, रिकॉर्डिंग, और ट्रेस की एब्सोल्यूट
+  डायरेक्टरी है।
+- `tracePath` `trace.md` का एब्सोल्यूट पाथ है; इसे `close()` सेटल होने के बाद
+  अटैच करें या पढ़ें।
+
+#### `session.close`
+
+`session.close()` बाकी बचे ऑपरेशन कैंसल करता है, अटेम्प्ट खत्म करता है, और उसका
+ट्रेस लिखता है। यह सॉफ़्ट एक्सपेक्टेशन, छोड़े गए ऑपरेशन (अधूरा पोल या स्टेप), और
+क्लीनअप फ़ेलियर को थ्रो करने के बजाय लौटाता है।
+
+```ts
+const failures = await session.close();
+if (failures.length > 0) throw new AggregateError(failures, 'e2e session close failed');
+```
+
+- आइडम्पोटेंट: बाद की कॉल वही फ़ेलियर लौटाती हैं।
+- अगले टेस्ट के लिए होस्ट खुला रहता है।
+- सेशन `AsyncDisposable` है:
+  `await using session = await host.openSession({ name: 'checkout' })` स्कोप से
+  बाहर निकलने पर इसे बंद कर देता है और लौटाए गए फ़ेलियर का `AggregateError` थ्रो
+  करता है।
+
+#### डेडलाइन और सॉफ़्ट फ़ेलियर
+
+`expect.soft` सेशन के पूरे जीवनकाल के फ़ेलियर इकट्ठा करता है। होस्ट रनर का टेस्ट
+फ़ेल करने के लिए `close()` का नतीजा जाँचें।
+
+- `expect.poll` सेशन का बचा हुआ बजट इस्तेमाल करता है, भले ही उसका अपना टाइमआउट
+  ज़्यादा हो।
+- इंजन के दिए बिल्ट-इन फ़िक्स्चर के ऑपरेशन भी उस बजट को मानते हैं, वे ऑपरेशन भी
+  जो अपना खुद का टाइमआउट बंद रखते हैं।
+- डेडलाइन बीतने पर, जो पोल या ऑपरेशन उसे देख रहा था वह अपना कट रिपोर्ट करता है।
+  बाकी जो भी चल रहा हो (ऐसा ऑपरेशन भी जिसका इंजन या मॉडल ने जवाब न दिया हो)
+  `TEST_TIMEOUT` से फ़ेल होता है।
+- दोनों ही मामलों में सेशन का नतीजा टाइमआउट होता है और `close()` टाइमआउट लौटाता
+  है। बाद के ऑपरेशन `TEST_TIMEOUT` से फ़ेल होते हैं; सेशन बंद कर दें।
+
+#### आर्टिफ़ैक्ट
+
+आर्टिफ़ैक्ट `<output>/results/host/<resultSegment>/` के अंदर रहते हैं। क्लोज़ पर
+e2e वहीं `trace.md` लिखता है, ठीक उसी रेडैक्टेड फ़ॉर्मेटिंग से जो रिपोर्ट इस्तेमाल
+करती है।
+
+- e2e नाम और यूनिक अटेम्प्ट पहचान से एक सुरक्षित `resultSegment` बनाता है। नाम
+  सीधे रॉ पाथ सेगमेंट कभी नहीं बनता।
+- दोहराए गए नाम और रीट्राई को अलग-अलग डायरेक्टरी मिलती हैं।
+- प्रोवाइडर-आधारित सीक्रेट के साथ डायरेक्टरी सिर्फ़ पहचान वाला सेगमेंट इस्तेमाल
+  करती है, क्योंकि अनरिज़ॉल्व्ड वैल्यू को टाइटल स्लग से रेडैक्ट नहीं किया जा
+  सकता। ट्रेस तब भी रेडैक्ट किया हुआ नाम दिखाता है।
+- आर्टिफ़ैक्ट पाथ `session.artifactsDir` नहीं, `<output>/results` के सापेक्ष होते
+  हैं।
+- पहले अटेम्प्ट के लिए वीडियो टारगेट का मोड मानता है। सिर्फ़ फ़ेलियर वाला वीडियो
+  सॉफ़्ट फ़ेलियर और फ़ेल, ब्लॉक्ड, टाइमआउट, या कैंसल हुए स्टेप के लिए रखा जाता है।
+
+<Note>
+होस्टेड सेशन `report.json` नहीं, अपना ट्रेस लिखता है। अपने रनर की रिपोर्टिंग के
+लिए `onStep`, `steps()`, `report()`, और `close()` के फ़ेलियर इस्तेमाल करें। आपके
+रनर की टेस्ट बॉडी के फ़ेलियर e2e को नहीं दिए जाते।
+
+`e2e mcp` जो वन-शॉट अटेम्प्ट इस्तेमाल करता है, वह इंटरनल ही रहता है। कोई
+टॉप-लेवल `openSession` एक्सपोर्ट नहीं है।
+</Note>
+
+## टाइप
+
+फ़ंक्शन के साथ `e2e/runner` ये टाइप एक्सपोर्ट करता है।
+
+| टाइप | क्या बताता है |
+| --- | --- |
+| `RunOptions`, `RunResult` | [`run`](#run) के ऑप्शन और नतीजा |
+| `ExploreOptions`, `ExploreResult` | [`explore`](#explore) के ऑप्शन और नतीजा |
+| `RunEventSink` | `onEvent` कॉलबैक |
+| `ListOptions`, `ListResult`, `ListedPair` | [`list`](#list) के ऑप्शन, नतीजा, और एक जोड़ा |
+| `OpenHostOptions`, `E2EHost` | [`openHost`](#openhost) के ऑप्शन और [होस्ट](#host) |
+| `OpenSessionOptions`, `E2ESession` | [`openSession`](#host-opensession) के ऑप्शन और [सेशन](#session) |
+| `StepProgress`, `StepRecord` | एक `onStep` प्रोग्रेस इवेंट, और `steps()` का लौटाया एक स्टेप |
+| `SerializedError` | `close()` का लौटाया एक फ़ेलियर |
+
+## उदाहरण
+
+### Playwright Test फ़िक्स्चर
+
+एक वर्कर-स्कोप्ड होस्ट और एक टेस्ट-स्कोप्ड सेशन:
+
+```ts title="tests/fixtures.ts"
+import { test as base } from '@playwright/test';
+import { openHost, type E2EHost, type E2ESession } from 'e2e/runner';
+import type { Device } from '@e2e-dev/mobile';
+
+type Fixtures = { device: Device };
+
+const test = base.extend<
+  { e2e: E2ESession<Fixtures> },
+  { e2eHost: E2EHost<Fixtures> }
+>({
+  e2eHost: [async ({}, use) => {
+    const host = await openHost<Fixtures>({ target: 'android' });
+    try {
+      await use(host);
+    } finally {
+      const failures = await host.close();
+      if (failures.length > 0) throw new AggregateError(failures, 'e2e host close failed');
+    }
+  }, { scope: 'worker' }],
+  e2e: async ({ e2eHost }, use, testInfo) => {
+    const session = await e2eHost.openSession({
+      name: testInfo.titlePath.join(' › '),
+      // Playwright's 0 disables its timeout; e2e then falls back to the config's.
+      timeout: testInfo.timeout || undefined,
+      onStep: (step) => {
+        if (step.phase === 'end') console.log(`${step.api} ${step.label}: ${step.status}`);
+      },
+    });
+    try {
+      await use(session);
+    } finally {
+      const failures = await session.close();
+      await testInfo.attach('e2e trace', { path: session.tracePath, contentType: 'text/markdown' });
+      if (failures.length > 0) throw new AggregateError(failures, 'e2e session close failed');
+    }
+  },
+});
+
+test('turns on dark mode', async ({ e2e }) => {
+  const { agent, app } = e2e.fixtures;
+  await agent.act('open settings and turn on dark mode');
+  await app.screenshot();
+});
+```
