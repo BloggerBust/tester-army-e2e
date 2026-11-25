@@ -84,7 +84,7 @@ export interface SessionGuest {
   readonly recordsVideo: boolean;
   /** Aborts when the test the session is opening for gives it up; absent for a session no test owns. */
   readonly signal: AbortSignal | undefined;
-  /** Takes the error the opening failed with, which the test that gave it up has told already. */
+  /** Takes the error the opening failed with: told already when the test gave the session up, else the caller's to meet, and the test's seat is given back. */
   failed(error: unknown): void;
   /** Takes each progress of the session's recorder with its record of the step. */
   readonly mirror: (progress: StepProgress, record: StepRecord) => void;
@@ -114,6 +114,8 @@ function ownedGuest(opener: AttemptGuests): SessionGuest {
     signal: seat.signal,
     failed: (error) => {
       if (seat.signal.aborted) opener.gaveUp(error);
+      // The caller meets this rejection, so nothing of the opening is left running in the test.
+      else seat.release?.();
     },
     mirror: (progress, record) => steps?.progress(progress, record),
     attach: (session) => {

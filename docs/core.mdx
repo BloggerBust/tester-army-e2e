@@ -349,7 +349,7 @@ The test's report covers the session:
 | Video | Kept beside the test's when the test records one, as `video/launch-1.webm`. The session must be opened inside the test, and `app.startRecording()` on it fails while it records. |
 | Secrets | The host redacts the config's secrets, and the report redacts the host's until the test ends. |
 | A host or session the test opened | Closed when the test ends, if still open. One a worker fixture or a `beforeAll` hook opened is left open, and records no video. |
-| A step left running | Fails the test with `STEP_NOT_AWAITED`, and its session is closed. |
+| A call left running | A step, `launch`, or `newSession` still running when the test ends fails it with `STEP_NOT_AWAITED`: a step's session is closed, and an opening is cancelled. A call that failed and whose error the test caught does not fail the test. |
 
 ## Next
 

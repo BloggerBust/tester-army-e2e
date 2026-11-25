@@ -16,13 +16,16 @@ import { engineConfig } from '../helpers/fixture-config.ts';
 import { assertValidReport } from '../helpers/report-schema.ts';
 import { resultByTitle, runProject, type FixtureProject } from '../helpers/run-project.ts';
 
-const SUITE = `import { test, describe } from 'e2e';
+const SUITE = `import { mkdirSync, mkdtempSync, renameSync, rmSync, writeFileSync } from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { test, describe } from 'e2e';
 import { launch } from '@e2e-dev/core';
 import { createFakeEngine, FAKE_APP } from '../../../helpers/fake-engine.ts';
 
 const scene = () => [{ id: 'confirm', role: 'button', name: 'Confirm' }];
 const second = (extra = {}) => createFakeEngine({ video: true, scene, ...extra }).engine;
-const open = (extra) => launch(second(extra), { app: FAKE_APP, handleSignals: false, timeout: 5_000 });
+const open = (extra, options = {}) => launch(second(extra), { app: FAKE_APP, handleSignals: false, timeout: 5_000, ...options });
 
 // Opened while no test runs; each test opens its own session on it.
 const shared = await open();
@@ -115,6 +118,98 @@ test('never awaits the session it opens', async ({ app }) => {
   await app.open();
   const host = await open({ onStartAttempt: () => new Promise((resolve) => setTimeout(resolve, 300)) });
   host.newSession();
+});
+
+test('never awaits the host it launches', async ({ app }) => {
+  await app.open();
+  open({ onInit: () => new Promise((resolve) => setTimeout(resolve, 300)) });
+});
+
+// Each opening below is awaited and its rejection caught: the test meets the failure, so it has nothing of it left in flight.
+const refusal = async (opening) => {
+  try {
+    await opening;
+  } catch (cause) {
+    return cause.code;
+  }
+  return 'opened';
+};
+
+test('catches a launch refused for its options', async ({ app }) => {
+  await app.open();
+  globalThis.launchReportRefused = { options: await refusal(launch(second(), { app: FAKE_APP, handleSignals: false, bogus: true })) };
+});
+
+test('catches a launch whose engine fails to start', async ({ app }) => {
+  await app.open();
+  globalThis.launchReportRefused.init = await refusal(open({ onInit: () => { throw new Error('no device left'); } }));
+});
+
+test('catches a launch whose working directory cannot be resolved', async ({ app }) => {
+  await app.open();
+  globalThis.launchReportRefused.cwd = await refusal(open({}, { cwd: 42 }));
+});
+
+/** Calls launch with the temporary directory at root: launch names its output directory before its first await, so the variables are back at once. */
+const launchUnder = (root, launching) => {
+  const saved = { TMPDIR: process.env.TMPDIR, TMP: process.env.TMP, TEMP: process.env.TEMP };
+  Object.assign(process.env, { TMPDIR: root, TMP: root, TEMP: root });
+  try {
+    return launching();
+  } finally {
+    for (const [name, value] of Object.entries(saved)) {
+      if (value === undefined) delete process.env[name];
+      else process.env[name] = value;
+    }
+  }
+};
+
+test('catches a launch whose options throw when read', async ({ app }) => {
+  await app.open();
+  // Handed to launch as is: spreading the options would call the getter before launch runs.
+  const options = { app: FAKE_APP, handleSignals: false, get artifactsDir() { throw Object.assign(new Error('the artifact mount is missing'), { code: 'NO_MOUNT' }); } };
+  globalThis.launchReportRefused.getter = await refusal(launch(second(), options));
+});
+
+test('catches a launch that cannot make its output directory', async ({ app }) => {
+  await app.open();
+  const scratch = mkdtempSync(path.join(os.tmpdir(), 'e2e-launch-root-'));
+  try {
+    globalThis.launchReportRefused.mkdtemp = await refusal(launchUnder(path.join(scratch, 'missing'), () => open()));
+  } finally {
+    rmSync(scratch, { recursive: true, force: true });
+  }
+});
+
+test('catches a launch that fails to start and then to remove its output directory', async ({ app }) => {
+  await app.open();
+  const scratch = mkdtempSync(path.join(os.tmpdir(), 'e2e-launch-root-'));
+  const root = path.join(scratch, 'temp');
+  mkdirSync(root);
+  try {
+    // A file in place of the output directory's parent once the directory is made, so removing it fails with ENOTDIR, for root too.
+    globalThis.launchReportRefused.cleanup = await refusal(launchUnder(root, () => open({ onInit: () => {
+      renameSync(root, path.join(scratch, 'moved'));
+      writeFileSync(root, '');
+      throw Object.assign(new Error('no device left'), { code: 'NO_DEVICE' });
+    } })));
+  } finally {
+    rmSync(scratch, { recursive: true, force: true });
+  }
+});
+
+test('catches a session refused for its state', async ({ app }) => {
+  await app.open();
+  const host = await open();
+  globalThis.launchReportRefused.state = await refusal(host.newSession({ state: 'not a state' }));
+  await host.close();
+});
+
+test('catches a session whose engine fails to start it', async ({ app }) => {
+  await app.open();
+  const host = await open({ onStartAttempt: () => { throw new Error('the app crashed on launch'); } });
+  globalThis.launchReportRefused.start = await refusal(host.newSession());
+  await host.close();
 });
 
 test('fails a locator on the second session', async ({ app }) => {
@@ -327,6 +422,35 @@ describe('a launch() session opened inside a test, in the test\'s report', { tim
   it('fails the test for an opening the body left in flight, and cancels it without a stray rejection', () => {
     const attempt = attemptOf('never awaits the session it opens');
     expect(attempt.error).toMatchObject({ code: 'STEP_NOT_AWAITED', message: expect.stringContaining('host.newSession()') });
+    expect(attempt.secondaryErrors).toEqual([]);
+    expect(outcome.report.run.errors).toEqual([]);
+    expect(outcome.report.run.results.flatMap((result) => result.attempts).filter((each) => each.error?.code === 'UNHANDLED_REJECTION')).toEqual([]);
+  });
+
+  it('passes a test that awaited a launch or newSession and caught its rejection', () => {
+    const titles = [
+      'catches a launch refused for its options',
+      'catches a launch whose engine fails to start',
+      'catches a launch whose working directory cannot be resolved',
+      'catches a launch whose options throw when read',
+      'catches a launch that cannot make its output directory',
+      'catches a launch that fails to start and then to remove its output directory',
+      'catches a session refused for its state',
+      'catches a session whose engine fails to start it',
+    ];
+    expect(Object.fromEntries(titles.map((title) => [title, attemptOf(title).error?.code ?? attemptOf(title).status]))).toEqual(Object.fromEntries(titles.map((title) => [title, 'passed'])));
+    expect(titles.flatMap((title) => attemptOf(title).secondaryErrors)).toEqual([]);
+    // Each opening did fail, and the test caught what it failed with.
+    const refused = (globalThis as { launchReportRefused?: Record<string, string> }).launchReportRefused;
+    expect(refused).toEqual({ options: 'INVALID_ARGUMENT', init: expect.any(String), cwd: 'ERR_INVALID_ARG_TYPE', getter: 'NO_MOUNT', mkdtemp: 'ENOENT', cleanup: expect.any(String), state: 'INVALID_ARGUMENT', start: expect.any(String) });
+    // The engine's failure, not the cleanup's that came after it.
+    expect(refused!.cleanup).toBe(refused!.init);
+    expect(Object.values(refused!)).not.toContain('opened');
+  });
+
+  it('fails the test for a launch the body left in flight, and cancels it without a stray rejection', () => {
+    const attempt = attemptOf('never awaits the host it launches');
+    expect(attempt.error).toMatchObject({ code: 'STEP_NOT_AWAITED', message: expect.stringContaining('launch()') });
     expect(attempt.secondaryErrors).toEqual([]);
     expect(outcome.report.run.errors).toEqual([]);
     expect(outcome.report.run.results.flatMap((result) => result.attempts).filter((each) => each.error?.code === 'UNHANDLED_REJECTION')).toEqual([]);
