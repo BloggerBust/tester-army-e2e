@@ -88,7 +88,7 @@ const shop = await launch(web(), {
 | `linkBase` | `mobile()` | `app.open(path)` がパスを結合し、リンクとして開く際のベース。[設定](/reference/config#linkbase)を参照してください。 |
 | `identity` | 両方 | 保存済みの状態や録画で使うアプリ名。デフォルトは URL またはバンドル ID。 |
 | `launchArguments` | `mobile()` | アプリの起動引数。 |
-| `permissions` | 両方 | 許可または拒否する権限。 |
+| `permissions` | 両方 | 許可または拒否する権限。`'all'` は、エンジンが付与できるすべての権限を付与します。[設定](/reference/config#permissions)を参照してください。 |
 
 <a id="timeout" />
 

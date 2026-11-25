@@ -1,14 +1,15 @@
 /**
  * A web target's `app.permissions` in a real browser: headless Chromium
- * refuses the clipboard to a page unless the target grants it, and a grant
- * holds on every context the attempt opens. Driven through the engine hooks,
+ * refuses the clipboard to a page unless the target grants it, by name or
+ * with `'all'`, and a grant holds on every context the attempt opens. Driven through the engine hooks,
  * as the attempt executor drives them.
  */
 
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+import type { BrowserContext } from 'playwright-core';
 import type { AppPermissionState, EngineCleanupContext, EngineHandle, OperationContext } from '@e2e-dev/core/engine';
 import { web, surfaceOf } from '../../src/index.ts';
 import { startFixtureApp, type FixtureApp } from '../helpers/fixture-app.ts';
@@ -37,11 +38,11 @@ describe('app permissions', () => {
   });
 
   /** Boots one engine into a running attempt for a target granting `permissions`. */
-  async function boot(permissions?: Readonly<Record<string, AppPermissionState>>): Promise<EngineHandle> {
+  async function boot(permissions?: Readonly<Record<string, AppPermissionState>> | 'all'): Promise<EngineHandle> {
     const engine = web();
     await engine.init!({
       runId: 'run-permissions', targetName: 'web', projectRoot: process.cwd(),
-      app: { site: new URL(app.url).hostname, ...(permissions === undefined ? {} : { permissions }) }, env: {}, headed: false,
+      app: { site: new URL(app.url).hostname, ...(permissions === undefined ? {} : permissions === 'all' ? { allPermissions: true as const } : { permissions }) }, env: {}, headed: false,
       workerSlot: 0, log: () => undefined, signal: new AbortController().signal,
     });
     await engine.startAttempt!({ attemptId: 'p1', artifactsDir, signal: new AbortController().signal, resolveSecret: noSecrets, ...ignoreTrace });
@@ -75,6 +76,36 @@ describe('app permissions', () => {
       await engine.session!.reset!(operation());
       expect(await copy(engine, 'third')).toBe('third');
     } finally {
+      await shutdown(engine);
+    }
+  });
+
+  it('grants every permission the browser grants for \'all\', the clipboard among them', async () => {
+    const engine = await boot('all');
+    try {
+      expect(await copy(engine, 'everything')).toBe('everything');
+    } finally {
+      await shutdown(engine);
+    }
+  });
+
+  it("starts an attempt under 'all' on a browser that refuses one name as unknown, granting the rest", async () => {
+    const engine = await boot('all');
+    // Every context of every attempt from here on answers like an older Chrome over CDP that does not know localNetworkAccess.
+    const prototype = Object.getPrototypeOf(surfaceOf(engine)!.context()) as BrowserContext;
+    const grant = prototype.grantPermissions;
+    const spy = vi.spyOn(prototype, 'grantPermissions').mockImplementation(async function (this: BrowserContext, names, options) {
+      if (names.includes('local-network-access')) throw new Error('browserContext.grantPermissions: Unknown permission type: localNetworkAccess');
+      return grant.call(this, names, options);
+    });
+    try {
+      await engine.endAttempt!(cleanup());
+      await engine.startAttempt!({ attemptId: 'p2', artifactsDir, signal: new AbortController().signal, resolveSecret: noSecrets, ...ignoreTrace });
+      // Refused with the whole list, then granted without the unknown name.
+      expect(spy.mock.calls.map(([names]) => names.includes('local-network-access'))).toEqual([true, false]);
+      expect(await copy(engine, 'the rest')).toBe('the rest');
+    } finally {
+      spy.mockRestore();
       await shutdown(engine);
     }
   });

@@ -65,7 +65,7 @@ import {
   describe,
   foldLastRun,
 } from '../../src/index.ts';
-import type { Engine, EngineAppInfo, EngineAttemptContext, EngineCleanupContext, EngineDisposeContext, EngineFixtureContext, EngineHandle, EngineObserveOptions, EngineSnapshot } from '../../src/engine/index.ts';
+import type { AppPermissionState, Engine, EngineAppInfo, EngineAttemptContext, EngineCleanupContext, EngineDisposeContext, EngineFixtureContext, EngineHandle, EngineObserveOptions, EngineSnapshot } from '../../src/engine/index.ts';
 import {
   BASE_RULES,
   createGrammarTools,
@@ -246,8 +246,11 @@ customExecutorObservation.keyboardVisible satisfies boolean | undefined;
 ({
   targets: [{ engine, app: { bundleId: 'dev.shop.app', appPath: './build/Shop.app', launchArguments: ['-e2e'], permissions: { camera: 'grant' } } }],
 }) satisfies E2EConfig;
+({ targets: [{ engine, app: { bundleId: 'dev.shop.app', permissions: 'all' } }] }) satisfies E2EConfig;
 // @ts-expect-error a permission is granted, denied, or reset; there is no `allow`
 ({ targets: [{ engine, app: { bundleId: 'dev.shop.app', permissions: { camera: 'allow' } } }] }) satisfies E2EConfig;
+// @ts-expect-error `'all'` is the one shorthand; anything else names each permission
+({ targets: [{ engine, app: { bundleId: 'dev.shop.app', permissions: 'every' } }] }) satisfies E2EConfig;
 // @ts-expect-error launch arguments are the strings the launch command takes
 ({ targets: [{ engine, app: { bundleId: 'dev.shop.app', launchArguments: [1] } }] }) satisfies E2EConfig;
 // An object value is a string, number, boolean, or list of strings, or undefined straight from the environment.
@@ -274,6 +277,11 @@ engineApp.launchArgumentValues?.['AppleLanguages'] satisfies string | number | b
 // @ts-expect-error an engine only drives the app: the target declares it
 ({ name: 'toy', version: '1.0.0', spiVersion: 1, app: { url: 'http://localhost:3000' } }) satisfies Engine;
 ({ name: 'toy', version: '1.0.0', spiVersion: 1, validateApp: (app, { targetName }) => void [app.bundleId, targetName] }) satisfies Engine;
+// An engine reads `app.permissions` as a map; `'all'` reaches only one that declares `grantsAllPermissions`, as `allPermissions`.
+({
+  name: 'toy', version: '1.0.0', spiVersion: 1, grantsAllPermissions: true,
+  validateApp: (app) => void [app.permissions?.['camera'] satisfies AppPermissionState | undefined, app.allPermissions satisfies true | undefined],
+}) satisfies Engine;
 // `e2e run --device`: an engine that selects devices reads the name `prepare` hands it.
 ({ name: 'toy', version: '1.0.0', spiVersion: 1, selectsDevice: true, prepare: async ({ device }) => void (device satisfies string | undefined) }) satisfies Engine;
 // @ts-expect-error a target declares its app; there is no services list in this version

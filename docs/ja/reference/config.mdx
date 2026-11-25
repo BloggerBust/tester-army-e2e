@@ -312,7 +312,7 @@ targets: [
 | [`identity`](#identity) | `string` | アプリから導出 |
 | [`environment`](#environment) | `'test' \| 'staging' \| 'production'` | `'test'` または `'production'` |
 | [`launchArguments`](#launcharguments) | `string[] \| Record<string, LaunchArgumentValue>` | - |
-| [`permissions`](#permissions) | `Record<string, AppPermissionState>` | - |
+| [`permissions`](#permissions) | `Record<string, AppPermissionState> \| 'all'` | - |
 | [`command`](#command) | `CommandConfig` | - |
 | [`readyUrl`](#readyurl) | `string` | `url` |
 
@@ -436,10 +436,10 @@ type LaunchArguments = readonly string[] | Readonly<Record<string, LaunchArgumen
 permissions: { camera: 'grant' },
 ```
 
-各値は `'grant'`、`'deny'`、`'reset'` のいずれかです。
+各値は `'grant'`、`'deny'`、`'reset'` のいずれかです。`permissions: 'all'` は、ターゲットのエンジンが付与できるすべての権限を付与します。
 
 - `mobile()` ターゲットは、新規起動のたびに各権限を設定します。[権限](/reference/mobile#engine)を参照してください。
-- `web()` ターゲットが受け付けるのは `'grant'` だけで、試行中の全ページに、オリジンを問わず付与します。ヘッドレス Chromium は、指定していない権限を拒否します。[ブラウザの権限を付与する](/web#granting-browser-permissions)を参照してください。
+- `web()` ターゲットが受け付けるのは `'grant'` だけで、試行中の全ページに、オリジンを問わず付与します。ヘッドレス Chromium は、指定していない権限を拒否します。[ブラウザの権限を付与する](/web#granting-browser-permissions)を参照してください。`'all'` は、下の表にあるそのブラウザの名前をすべて付与します。
 
 | ブラウザ | 名前 |
 | --- | --- |

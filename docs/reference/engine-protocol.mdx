@@ -212,6 +212,8 @@ export interface EngineManifest {
   readonly tapModifiers?: boolean;
   /** Requires `lifecycle/prepare`: `prepare` binds the device `e2e run --device` names. */
   readonly selectsDevice?: boolean;
+  /** See `Engine.grantsAllPermissions`. */
+  readonly grantsAllPermissions?: boolean;
   /** The engine reads the object form of `app.launchArguments` from `EngineAppInfo.launchArgumentValues`. */
   readonly launchArgumentValues?: boolean;
   /** The engine opens an app whose `url` is a `file:` URL, read from the disk of the machine the harness runs on. */

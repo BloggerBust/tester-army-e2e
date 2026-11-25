@@ -50,6 +50,7 @@ For a migration that spans several sessions, the [`migrate-to-e2e` skill](/codin
 | `appium:bundleId`, `appium:appPackage` | `app: { bundleId }`, the app `app.open()` launches |
 | `appium:processArguments`, `appium:optionalIntentArguments` | `app.launchArguments`, a list of strings or an object of argument name to value |
 | `appium:permissions` | `app.permissions: { camera: 'grant' }`. Each [`DevicePermission`](/reference/mobile#device-fixture) name takes `grant`, `deny`, or `reset` |
+| `appium:autoGrantPermissions` (Android) | `app.permissions: 'all'`, which grants every runtime permission the app declares |
 | `appium:noReset` | `true` is the default, so nothing clears the app's data. For `false`, call `app.clearState()` at the start of the test |
 | `appium:fullReset` | `device.installApp(path, { reinstall: true })` |
 | `appium:newCommandTimeout`, WebDriverAgent timeouts | Not needed. Actions use `actionTimeout`, assertions `assertionTimeout`, and tests `timeout` |
@@ -295,7 +296,7 @@ is not a step, so it skips the report and secret redaction.
 
 | Appium | Use today |
 | --- | --- |
-| `appium:autoGrantPermissions`, Android permissions off the list, iOS location `always` | List each permission in `app.permissions`, or run `adb shell pm grant` before the run. For iOS location `always`, tap the prompt's button |
+| Android permissions off the list, iOS location `always` | `app.permissions: 'all'` grants every runtime permission an Android app declares, and location `always` on an iOS simulator. Or run `adb shell pm grant` before the run, and on a physical iPhone tap the prompt's button |
 | Device settings and alerts on a `browserstack()` or `testmu()` device | Tap the prompt as UI. Run those tests on a local device |
 | `bstack:options.local`, `lt:options.tunnel` | Point the app at a backend the hosted device can reach |
 | `appium:appActivity`, `appWaitActivity`, `startActivity()` | `device.openLink(url)`, or `client.apps.open` through [`unstable_raw`](/reference/mobile#unstable_raw) |

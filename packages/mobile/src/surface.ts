@@ -127,8 +127,8 @@ export interface OpenAppOptions {
   readonly launchArguments?: LaunchArguments;
   /**
    * Permissions the app holds before this launch, each granted, denied, or
-   * reset. Replaces the target's `app.permissions` for a relaunch of the
-   * pinned app.
+   * reset, or `'all'` to grant every one the platform can. Replaces the
+   * target's `app.permissions` for a relaunch of the pinned app.
    */
   readonly permissions?: LaunchPermissions;
 }
@@ -386,19 +386,25 @@ const SNAPSHOT_MODES: readonly string[] = Object.keys({ full: true, interactive:
 /** Every state a permission takes, kept equal to `PermissionState` by the compiler. */
 const PERMISSION_STATES: readonly string[] = Object.keys({ grant: true, deny: true, reset: true } satisfies Record<PermissionState, true>);
 
+/** The target's `app.permissions` as a launch takes them: `'all'` arrives from the harness as `allPermissions`. */
+function configuredPermissions(app: EngineAppInfo): LaunchPermissions | undefined {
+  return app.allPermissions === true ? 'all' : app.permissions;
+}
+
 /**
- * Refuses a permissions map before any device command: anything but a plain
- * object, a name agent-device
+ * Refuses a permissions map before any device command: anything but `'all'`
+ * or a plain object, a name agent-device
  * does not set, naming the nearest, or a state other than grant, deny, or
  * reset. `INVALID_CONFIG` for a target's `app.permissions`, `INVALID_ARGUMENT`
  * for a test's `device.openApp`. An `undefined` state is skipped, as the preset
  * skips it.
  */
 export function assertPermissions(label: string, permissions: unknown, code: 'INVALID_CONFIG' | 'INVALID_ARGUMENT'): void {
+  if (permissions === 'all') return;
   // A Map or class instance carries no own keys to check, and the preset would apply none of it.
   const prototype: unknown = typeof permissions === 'object' && permissions !== null ? Object.getPrototypeOf(permissions) : undefined;
   if (prototype !== Object.prototype && prototype !== null) {
-    permissionError(code, `${label} must be a plain object of permission names to ${PERMISSION_STATES.join(', ')}`);
+    permissionError(code, `${label} must be 'all' or a plain object of permission names to ${PERMISSION_STATES.join(', ')}`);
   }
   rejectUnknownKeys(label, permissions as object, DEVICE_PERMISSIONS, code);
   for (const [name, state] of Object.entries(permissions as Record<string, unknown>)) {
@@ -901,7 +907,7 @@ export class AgentDeviceSurface<Platform extends MobilePlatform = MobilePlatform
     // permission change there would terminate the app it means to keep.
     const configured = relaunch && app === this.pinnedApp;
     const launchArguments = launchArgumentsForOpen(this.options.platform, options.launchArguments) ?? (configured ? (this.app.launchArgumentValues ?? this.app.launchArguments) : undefined);
-    const permissions = options.permissions ?? (configured ? this.app.permissions : undefined);
+    const permissions = options.permissions ?? (configured ? configuredPermissions(this.app) : undefined);
     if (permissions !== undefined) await this.presetPermissions(app, permissions, signal);
     await this.open(app, relaunch, launchArguments, signal);
   }
@@ -927,9 +933,14 @@ export class AgentDeviceSurface<Platform extends MobilePlatform = MobilePlatform
    * Puts an app's permissions in place before it launches, never after: iOS
    * terminates a running app whose permission changed, and Android one whose
    * permission was revoked, so a change after the launch would leave the
-   * test on no screen.
+   * test on no screen. `'all'` is one agent-device `all` grant on either
+   * platform; `LaunchPermissions` says what it grants on each.
    */
   private async presetPermissions(app: string, permissions: LaunchPermissions, signal: AbortSignal): Promise<void> {
+    if (permissions === 'all') {
+      await this.permission('all', 'grant', app, signal);
+      return;
+    }
     const entries = Object.entries(permissions).filter(
       (entry): entry is [DevicePermission, PermissionState] => entry[1] !== undefined,
     );
@@ -947,7 +958,7 @@ export class AgentDeviceSurface<Platform extends MobilePlatform = MobilePlatform
   }
 
   /** One permission change on `app`, which needs no running app and no open in the session. */
-  private async permission(permission: DevicePermission, state: PermissionState, app: string | undefined, signal: AbortSignal): Promise<void> {
+  private async permission(permission: DevicePermission | 'all', state: PermissionState, app: string | undefined, signal: AbortSignal): Promise<void> {
     await this.command(
       `permission ${permission} ${state}`,
       (client) => client.settings.update({ setting: 'permission', permission, state, ...this.selection(), ...(app === undefined ? {} : { app }) }),

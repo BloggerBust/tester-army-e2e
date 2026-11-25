@@ -93,6 +93,7 @@ export interface EngineHandle<Fixtures extends object = {}> extends Engine {
 | `performAt`, `pointerActions` | 片方しかない。`pointerActions` が空、種類が重複、または `POINTER_ACTION_KINDS` にない種類を含む。 |
 | `tapModifiers` | 真偽値でない、または `perform` がないのに `true`。 |
 | `selectsDevice` | 真偽値でない、または `prepare` がないのに `true`。 |
+| `grantsAllPermissions` | 真偽値でない。 |
 | `isolation` | `'attempt'` と `'worker'` 以外の値。 |
 | `keyboard`, `state`, `artifacts`, `session` | 未知のキーや関数でないメンバーがある。`keyboard` に `type` と `press` がない、`state` に `capture` と `restore` の両方がない、`artifacts` に `screenshot` がない、`startVideo` と `stopVideo` の片方しかない。 |
 | `secrets` | `secrets.get()` ハンドルの配列でない。 |
@@ -120,6 +121,7 @@ export interface EngineHandle<Fixtures extends object = {}> extends Engine {
 | [`performAt`, `pointerActions`](#pointer-actions) | メソッド、種類 |
 | [`tapModifiers`](#capabilities) | `boolean` |
 | [`selectsDevice`](#capabilities) | `boolean` |
+| [`grantsAllPermissions`](#capabilities) | `boolean` |
 | [`keyboard`](#keyboard) | `EngineKeyboard` |
 | [`fixtures`](#contributed-fixtures) | ファクトリー |
 | [`isolation`](#fixture-isolation) | `'attempt' \| 'worker'` |
@@ -227,6 +229,12 @@ export interface Engine {
    * for the target before anything is prepared.
    */
   readonly selectsDevice?: boolean;
+  /**
+   * The engine grants `app.permissions: 'all'`, which reaches it as
+   * `EngineAppInfo.allPermissions`. Without it the harness refuses `'all'` at
+   * config load, so an engine that predates the value never receives it.
+   */
+  readonly grantsAllPermissions?: boolean;
   /**
    * The engine reads the object form of `app.launchArguments` from
    * `EngineAppInfo.launchArgumentValues`. Without it the harness refuses an
@@ -376,6 +384,7 @@ export interface OperationContext {
 | `locate` | `location` | `observe` | `screen`、`Locator`、`expect(locator)`。 |
 | `tapModifiers: true` | - | `perform` | `tap`、`doubleTap`、`multiTap`、`secondaryTap` の `modifiers`。 |
 | `selectsDevice: true` | - | `prepare` | `e2e run --device`。`prepare` が指定のデバイスを割り当てます。 |
+| `grantsAllPermissions: true` | - | - | `app.permissions: 'all'`。エンジンは `EngineAppInfo.allPermissions` として受け取ります。宣言がなければ設定の読み込みで `'all'` を拒否するため、これより前のエンジンがこの文字列を受け取ることはありません。 |
 | `performAt` + `pointerActions` | `pointer` | `observe` | 対応するノードのないビューポート座標でのポインター操作。 |
 | `keyboard.{type,press,dismiss?}` | `keyboard` | `observe` | フォーカス中の対象への入力。 |
 | `fixtures.<name>` | `<name>` | - | エンジンが提供するフィクスチャ。 |
@@ -1405,6 +1414,12 @@ export interface EngineAppInfo {
   readonly launchArgumentValues?: LaunchArgumentValues;
   /** Permissions the app holds, by name; what each state means is the engine's (a device sets them before every fresh launch). */
   readonly permissions?: Readonly<Record<string, AppPermissionState>>;
+  /**
+   * `app.permissions: 'all'`: grant every permission the engine can grant,
+   * in place of `permissions`. Only an engine that declares
+   * `grantsAllPermissions` receives it; for any other, the config is refused.
+   */
+  readonly allPermissions?: true;
 }
 ```
 

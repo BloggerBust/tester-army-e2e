@@ -67,7 +67,7 @@ web({ viewport: { width: 390, height: 844 }, locale: 'de-DE' });
 
 - A `web()` target needs `app.url` and refuses the device keys (`bundleId`,
   `appPath`, `launchArguments`). Its `app.permissions` takes `'grant'` only,
-  for names its browser grants; see
+  for names its browser grants, or `'all'` for every one; see
   [`permissions`](/reference/config#permissions).
 - The full declaration with its JSDoc is [`WebOptions`](#weboptions) under
   Types.

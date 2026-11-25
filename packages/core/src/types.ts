@@ -1638,9 +1638,10 @@ export interface TargetApp {
    * denied, or reset before every fresh launch. A browser target takes
    * `grant` only and holds it on every page of the attempt; what it leaves
    * out is the browser's default, which headless Chromium refuses. The
-   * engine checks the names its platform knows.
+   * engine checks the names its platform knows. `'all'` grants every
+   * permission the engine can grant on its platform.
    */
-  permissions?: Readonly<Record<string, AppPermissionState>> | undefined;
+  permissions?: Readonly<Record<string, AppPermissionState>> | 'all' | undefined;
   /**
    * Process the runner starts before the first test and stops at the end of
    * the run (a dev server, Metro for a debug build). Structured, never

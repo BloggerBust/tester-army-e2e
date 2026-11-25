@@ -312,7 +312,7 @@ targets: [
 | [`identity`](#identity) | `string` | 根据应用推导 |
 | [`environment`](#environment) | `'test' \| 'staging' \| 'production'` | `'test'` 或 `'production'` |
 | [`launchArguments`](#launcharguments) | `string[] \| Record<string, LaunchArgumentValue>` | - |
-| [`permissions`](#permissions) | `Record<string, AppPermissionState>` | - |
+| [`permissions`](#permissions) | `Record<string, AppPermissionState> \| 'all'` | - |
 | [`command`](#command) | `CommandConfig` | - |
 | [`readyUrl`](#readyurl) | `string` | `url` |
 
@@ -436,10 +436,10 @@ type LaunchArguments = readonly string[] | Readonly<Record<string, LaunchArgumen
 permissions: { camera: 'grant' },
 ```
 
-每项为 `'grant'`、`'deny'` 或 `'reset'`。
+每项为 `'grant'`、`'deny'` 或 `'reset'`。`permissions: 'all'` 授予测试目标的引擎能授予的所有权限。
 
 - `mobile()` 测试目标会在每次全新启动前设置各项权限。参阅[权限](/reference/mobile#engine)。
-- `web()` 测试目标只接受 `'grant'`，并向本次尝试中任意源上的所有页面授予该权限。无头模式的 Chromium 会拒绝未列出的权限。参阅[授予浏览器权限](/web#granting-browser-permissions)。
+- `web()` 测试目标只接受 `'grant'`，并向本次尝试中任意源上的所有页面授予该权限。无头模式的 Chromium 会拒绝未列出的权限。参阅[授予浏览器权限](/web#granting-browser-permissions)。`'all'` 授予下表中该浏览器的所有名称。
 
 | 浏览器 | 名称 |
 | --- | --- |

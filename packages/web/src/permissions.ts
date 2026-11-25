@@ -1,9 +1,10 @@
 /**
  * A web target's `app.permissions`: the browser permissions every page of an
- * attempt holds. The surface grants them on each context the attempt opens.
+ * attempt holds, or `'all'` for every one its browser grants. The surface
+ * grants them on each context the attempt opens.
  */
 
-import { ConfigurationError, rejectUnknownKeys, type AppPermissionState } from '@e2e-dev/core/engine';
+import { ConfigurationError, rejectUnknownKeys, type AppPermissionState, type EngineAppInfo } from '@e2e-dev/core/engine';
 import type { BrowserName } from './browser-connection.ts';
 
 /** The permission names Playwright grants on each browser (playwright-core 1.65). */
@@ -34,4 +35,49 @@ export function validatePermissions(targetName: string, browser: BrowserName, pe
       );
     }
   }
+}
+
+/** The permission names a context on `browser` is granted: each one `browser` grants for `'all'` (`allPermissions`), else the map's names. */
+export function grantedPermissions(browser: BrowserName, app: Pick<EngineAppInfo, 'permissions' | 'allPermissions'>): readonly string[] {
+  return app.allPermissions === true ? BROWSER_PERMISSIONS[browser] : Object.keys(app.permissions ?? {});
+}
+
+/**
+ * Grants `names` on a context. A browser older than the list (a CDP attach to
+ * an older Chrome) refuses the whole call over one permission type it does
+ * not know. For `'all'` (`skipUnknown`) that name is left out and the rest
+ * granted; a named grant keeps the refusal, since the user can drop the name.
+ * Playwright keeps a refused name among the context's grants, so the context's
+ * grants are cleared before each retry; this runs on a fresh context, before
+ * anything else is granted on it.
+ */
+export async function grantPermissions(
+  context: { grantPermissions(permissions: string[]): Promise<void>; clearPermissions(): Promise<void> },
+  names: readonly string[],
+  skipUnknown: boolean,
+): Promise<void> {
+  let left = [...names];
+  while (left.length > 0) {
+    try {
+      await context.grantPermissions(left);
+      return;
+    } catch (error) {
+      const unknown = skipUnknown ? unknownPermission(error, left) : undefined;
+      if (unknown === undefined) throw error;
+      left = left.filter((name) => name !== unknown);
+      await context.clearPermissions();
+    }
+  }
+}
+
+/**
+ * The name among `names` a browser refused as an unknown permission type, which Playwright sends
+ * camel-cased (`localNetworkAccess`). Only names whose protocol type is their camel-cased web name match
+ * (the ones new in recent Chrome: `localNetworkAccess`, `storageAccess`, `localFonts`); a refused
+ * `wakeLockScreen`, `clipboardSanitizedWrite`, `videoCapture` or `sensors` still fails `'all'`.
+ */
+function unknownPermission(error: unknown, names: readonly string[]): string | undefined {
+  const type = /Unknown permission type: ([A-Za-z]+)/.exec(error instanceof Error ? error.message : '')?.[1];
+  if (type === undefined) return undefined;
+  return names.find((name) => name === type || name.replace(/-([a-z])/g, (_, letter: string) => letter.toUpperCase()) === type);
 }

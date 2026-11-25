@@ -24,7 +24,7 @@ export interface TargetAppDeclaration {
   readonly identity: string | undefined;
   readonly environment: 'test' | 'staging' | 'production' | undefined;
   readonly launchArguments: ResolvedLaunchArguments | undefined;
-  readonly permissions: Readonly<Record<string, AppPermissionState>> | undefined;
+  readonly permissions: Readonly<Record<string, AppPermissionState>> | 'all' | undefined;
   readonly command: CommandConfig | undefined;
   readonly readyUrl: string | undefined;
 }
@@ -70,7 +70,7 @@ export interface ResolvedApp {
   /** The link base `app.open(path)` joins on a device target; see `TargetApp.linkBase`. */
   readonly linkBase: string | undefined;
   readonly launchArguments: ResolvedLaunchArguments | undefined;
-  readonly permissions: Readonly<Record<string, AppPermissionState>> | undefined;
+  readonly permissions: Readonly<Record<string, AppPermissionState>> | 'all' | undefined;
   /** `app.command` with `{port}` expanded to the port the app is served on. */
   readonly command: CommandConfig | undefined;
   /** Readiness probe for `command`; defined whenever `command` is. */
@@ -145,13 +145,22 @@ export function checkTargetApp(targetName: string, engine: EngineHandle | undefi
       `${where}.launchArguments is an object, and engine "${engine.name}" takes only a list of strings: write the arguments as a list, or use an engine version that supports the object syntax`,
     );
   }
-  if (permissions !== undefined && !isRecord(permissions)) {
-    throw new ConfigurationError('INVALID_CONFIG', `${where}.permissions must be an object of permission name to grant, deny, or reset`);
-  }
-  for (const [permission, state] of Object.entries(permissions ?? {})) {
-    if (!PERMISSION_STATES.has(state)) {
-      throw new ConfigurationError('INVALID_CONFIG', `${where}.permissions.${permission} must be grant, deny, or reset, got ${JSON.stringify(state)}`);
+  if (permissions !== undefined && permissions !== 'all') {
+    if (!isRecord(permissions)) {
+      throw new ConfigurationError('INVALID_CONFIG', `${where}.permissions must be 'all' or an object of permission name to grant, deny, or reset`);
     }
+    for (const [permission, state] of Object.entries(permissions)) {
+      if (!PERMISSION_STATES.has(state)) {
+        throw new ConfigurationError('INVALID_CONFIG', `${where}.permissions.${permission} must be grant, deny, or reset, got ${JSON.stringify(state)}`);
+      }
+    }
+  }
+  // An engine that predates 'all' would read the string as a map of names.
+  if (permissions === 'all' && engine !== undefined && engine.grantsAllPermissions !== true) {
+    throw new ConfigurationError(
+      'INVALID_CONFIG',
+      `${where}.permissions is 'all', which engine "${engine.name}" does not take (it declares no grantsAllPermissions)`,
+    );
   }
   const checked: TargetAppDeclaration = {
     url: nonEmptyString(app.url, `${where}.url`),
@@ -173,7 +182,7 @@ export function checkTargetApp(targetName: string, engine: EngineHandle | undefi
       `${where}.url is a file, and engine "${engine.name}" does not declare that it opens one from this machine's disk: use an engine version that does, or serve the app over http(s)`,
     );
   }
-  engine?.validateApp?.(obj({ url, bundleId, appPath, ...engineLaunchArguments(launchArguments), permissions }) satisfies EngineAppDeclaration, { targetName, ...(file ? { fileApp: true } : {}) });
+  engine?.validateApp?.(obj({ url, bundleId, appPath, ...engineLaunchArguments(launchArguments), ...enginePermissions(permissions) }) satisfies EngineAppDeclaration, { targetName, ...(file ? { fileApp: true } : {}) });
   return checked;
 }
 
@@ -330,7 +339,13 @@ export function engineAppInfo(app: ResolvedApp): EngineAppInfo {
   const unassigned = portRequest !== undefined && portRequest.port === undefined;
   // A file has no origin to scope a credential to.
   const origin = unassigned || base === undefined || isFileBase(base) ? undefined : base.origin;
-  return obj({ origin, site, bundleId, appPath, ...engineLaunchArguments(launchArguments), permissions });
+  return obj({ origin, site, bundleId, appPath, ...engineLaunchArguments(launchArguments), ...enginePermissions(permissions) });
+}
+
+/** `app.permissions` as an engine receives it: a map under `permissions`, or `'all'` as `allPermissions`. */
+function enginePermissions(permissions: ResolvedApp['permissions']): Pick<EngineAppInfo, 'permissions' | 'allPermissions'> {
+  if (permissions === 'all') return { allPermissions: true };
+  return permissions === undefined ? {} : { permissions };
 }
 
 /**

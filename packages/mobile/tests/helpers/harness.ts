@@ -56,7 +56,7 @@ export interface Harness {
 }
 
 /** The engine's options and its target's app, in one literal: what a test varies. */
-export type HarnessOptions = Partial<MobileOptions> & Pick<EngineAppInfo, 'bundleId' | 'appPath' | 'launchArguments' | 'launchArgumentValues' | 'permissions'>;
+export type HarnessOptions = Partial<MobileOptions> & Pick<EngineAppInfo, 'bundleId' | 'appPath' | 'launchArguments' | 'launchArgumentValues' | 'permissions' | 'allPermissions'>;
 
 /** An engine over the scripted client; `pinned` false leaves the target's `bundleId` out. */
 export function harness(options: HarnessOptions = {}, pinned = true): Harness {
@@ -68,13 +68,13 @@ export function harness(options: HarnessOptions = {}, pinned = true): Harness {
   });
   const sessions: string[] = [];
   const connections: (DeviceConnection | undefined)[] = [];
-  const { bundleId, appPath, launchArguments, launchArgumentValues, permissions, ...engineOptions } = options;
+  const { bundleId, appPath, launchArguments, launchArgumentValues, permissions, allPermissions, ...engineOptions } = options;
   const surface = new AgentDeviceSurface({ platform: 'ios', ...engineOptions }, (session, connection) => {
     sessions.push(session);
     connections.push(connection);
     return fake.client;
   });
   const engine = buildEngine(surface);
-  const app = obj({ bundleId: bundleId ?? (pinned ? 'Settings' : undefined), appPath, launchArguments, launchArgumentValues, permissions });
+  const app = obj({ bundleId: bundleId ?? (pinned ? 'Settings' : undefined), appPath, launchArguments, launchArgumentValues, permissions, allPermissions });
   return { engine, fake, sessions, connections, surface, app, prepare: (info) => engine.prepare!({ ...info, app }) };
 }

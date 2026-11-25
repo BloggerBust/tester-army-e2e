@@ -148,6 +148,8 @@ export function web(options: WebOptions = {}): WebEngine<'web', 'attempt'> {
       type: (text, keyboardOptions, operation) => surface.typeText(text, keyboardOptions, operation),
       press: (key, operation) => surface.pressKey(key, operation),
     },
+    // `app.permissions: 'all'` grants every name the browser takes; see grantPermissions.
+    grantsAllPermissions: true,
     // A provider or a CDP attach speaks CDP, so it takes Chromium's names.
     validateApp: (app, info) => validateApp(app, info, options),
     ...(isSecret(options.basicAuth?.password) ? { secrets: [options.basicAuth.password] } : {}),

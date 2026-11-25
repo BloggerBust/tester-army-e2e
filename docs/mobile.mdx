@@ -90,6 +90,12 @@ app: {
   `app.clearState()` resets them with the data, then sets them again.
 - `deny` on iOS tells the app no without a prompt. On Android it revokes
   the permission, so the OS asks again.
+- `permissions: 'all'` grants every permission the platform can set: each
+  runtime permission the app declares on Android, and each privacy service
+  the runtime can set on an iOS simulator, with location `always`. Android
+  skips permissions it grants at install, such as `INTERNET`. The simulator
+  refuses to set notifications, so accept that prompt with
+  `device.alert('accept')`.
 - The warm-up before the run passes neither, so start each test with
   `app.open()`.
 - Arguments that select a build mode change what the app is. Give each mode

@@ -389,7 +389,7 @@ targets: [
 | [`identity`](#identity) | `string` | derived from the app |
 | [`environment`](#environment) | `'test' \| 'staging' \| 'production'` | `'test'` or `'production'` |
 | [`launchArguments`](#launcharguments) | `string[] \| Record<string, LaunchArgumentValue>` | - |
-| [`permissions`](#permissions) | `Record<string, AppPermissionState>` | - |
+| [`permissions`](#permissions) | `Record<string, AppPermissionState> \| 'all'` | - |
 | [`command`](#command) | `CommandConfig` | - |
 | [`readyUrl`](#readyurl) | `string` | `url` |
 
@@ -560,13 +560,15 @@ Permissions the app holds, by name.
 permissions: { camera: 'grant' },
 ```
 
-Each is `'grant'`, `'deny'`, or `'reset'`.
+Each is `'grant'`, `'deny'`, or `'reset'`. `permissions: 'all'` grants
+every permission the target's engine can grant.
 
 - A `mobile()` target sets each one before every fresh launch. See
   [permissions](/reference/mobile#engine).
 - A `web()` target takes `'grant'` only and grants it to every page of the
   attempt, on any origin. Headless Chromium refuses a permission left out. See
-  [Granting browser permissions](/web#granting-browser-permissions).
+  [Granting browser permissions](/web#granting-browser-permissions). `'all'`
+  grants each name in the table below for its browser.
 
 | Browser | Names |
 | --- | --- |

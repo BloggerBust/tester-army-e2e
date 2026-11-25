@@ -179,9 +179,14 @@ describe('manifest', () => {
       expect.objectContaining({ code: 'INVALID_CONFIG', message: 'target "ios" app.permissions.camera must be one of grant, deny, reset, got "granted"' }),
     );
     expect(() => validateApp!(app(new Map([['camera', 'grant']])), info)).toThrowError(
-      expect.objectContaining({ code: 'INVALID_CONFIG', message: 'target "ios" app.permissions must be a plain object of permission names to grant, deny, reset' }),
+      expect.objectContaining({ code: 'INVALID_CONFIG', message: 'target "ios" app.permissions must be \'all\' or a plain object of permission names to grant, deny, reset' }),
+    );
+    expect(() => validateApp!(app('every'), info)).toThrowError(
+      expect.objectContaining({ code: 'INVALID_CONFIG', message: 'target "ios" app.permissions must be \'all\' or a plain object of permission names to grant, deny, reset' }),
     );
     expect(() => validateApp!(app({ camera: 'grant', 'media-library': 'deny', photos: undefined }), info)).not.toThrow();
+    // Config load hands an engine 'all' as allPermissions, never as the string.
+    expect(() => validateApp!({ bundleId: 'com.example.app', allPermissions: true }, info)).not.toThrow();
   });
 });
 
@@ -309,6 +314,7 @@ describe('lifecycle', () => {
     for (const configured of [['iPhone 16e', 'iPad Pro 11-inch'], undefined]) {
       const h = harness(configured === undefined ? {} : { device: configured });
       expect(h.engine.selectsDevice).toBe(true);
+      expect(h.engine.grantsAllPermissions).toBe(true);
       const result = await h.prepare(info('iPhone 17 Pro'));
       // One named device is one worker, whatever the run planned.
       expect(result?.workers).toBe(1);
@@ -3542,6 +3548,32 @@ describe('device fixture', () => {
       permission('location', 'deny'),
       fresh,
     ]);
+  });
+
+  it('grants every permission before each fresh launch with \'all\', in one agent-device all on either platform, and for one openApp', async () => {
+    for (const platform of ['ios', 'android'] as const) {
+      const h = harness({ platform, bundleId: 'com.example.app', allPermissions: true });
+      h.fake.respond('apps.open', () => ({ session: 's', appName: 'Example', appBundleId: 'com.example.app', identifiers: {} }));
+      await boot(h, platform);
+      await h.engine.startAttempt!({ attemptId: 'a1', artifactsDir, signal: new AbortController().signal, resolveSecret: noSecrets, ...ignoreTrace });
+      const device = fixture(h);
+      const before = h.fake.calls.length;
+      await h.engine.session!.restart!(operation());
+      await h.engine.session!.reset!(operation());
+      await device.openApp('com.other', { relaunch: true, permissions: 'all' });
+      // agent-device expands `all` itself: the app's declared permissions on Android, each privacy service on iOS.
+      const all = (app: string): [string, unknown][] => [['settings.update', { setting: 'permission', permission: 'all', state: 'grant', platform, app }]];
+      const fresh: [string, unknown] = ['apps.open', { platform, app: 'com.example.app', relaunch: true }];
+      expect(h.fake.calls.slice(before).map((call) => [call.method, call.args]), platform).toEqual([
+        ...all('com.example.app'),
+        fresh,
+        ['settings.update', { platform, setting: 'clear-app-state', state: 'clear', app: 'com.example.app' }],
+        ...all('com.example.app'),
+        fresh,
+        ...all('com.other'),
+        ['apps.open', { platform, app: 'com.other', relaunch: true }],
+      ]);
+    }
   });
 
   it('spells a launch-argument object for the platform on every fresh launch of the pinned app, and sends nothing for an empty object', async () => {

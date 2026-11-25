@@ -124,6 +124,10 @@
       "description": "prepare binds the device e2e run --device names.",
       "type": "boolean"
     },
+    "grantsAllPermissions": {
+      "description": "The engine grants app.permissions: 'all', which it receives as the app's allPermissions.",
+      "type": "boolean"
+    },
     "launchArgumentValues": {
       "description": "The engine reads the object form of app.launchArguments from EngineAppInfo.launchArgumentValues; without it the harness refuses an object at config load.",
       "type": "boolean"

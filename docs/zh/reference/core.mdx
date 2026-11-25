@@ -88,7 +88,7 @@ const shop = await launch(web(), {
 | `linkBase` | `mobile()` | `app.open(path)` 将路径拼接到此值后作为链接打开。参阅[配置](/reference/config#linkbase)。 |
 | `identity` | 两者 | 保存状态和录制内容时使用的应用名称。默认值为 URL 或 bundle ID。 |
 | `launchArguments` | `mobile()` | 应用启动时使用的参数。 |
-| `permissions` | 两者 | 要授予或拒绝的权限。 |
+| `permissions` | 两者 | 要授予或拒绝的权限。`'all'` 授予引擎能授予的所有权限。参阅[配置](/reference/config#permissions)。 |
 
 <a id="timeout" />
 

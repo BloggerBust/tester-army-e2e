@@ -241,6 +241,7 @@ class EngineClient {
         pointerActions: manifest.pointerActions,
         tapModifiers: manifest.tapModifiers,
         selectsDevice: manifest.selectsDevice,
+        grantsAllPermissions: manifest.grantsAllPermissions,
         launchArgumentValues: manifest.launchArgumentValues,
         fileApps: manifest.fileApps,
         isolation: manifest.isolation,

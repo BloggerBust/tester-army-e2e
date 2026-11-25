@@ -30,6 +30,7 @@ const KNOWN_KEYS = [
   'pointerActions',
   'tapModifiers',
   'selectsDevice',
+  'grantsAllPermissions',
   'launchArgumentValues',
   'fileApps',
   'keyboard',
@@ -304,6 +305,9 @@ export function defineEngine<
     if (typeof spec.selectsDevice !== 'boolean') throw invalid(name, 'selectsDevice must be a boolean');
     if (spec.selectsDevice && spec.prepare === undefined) throw invalid(name, 'declares selectsDevice without prepare: prepare binds the device --device names');
   }
+  if (spec.grantsAllPermissions !== undefined && typeof spec.grantsAllPermissions !== 'boolean') {
+    throw invalid(name, 'grantsAllPermissions must be a boolean');
+  }
   if (spec.launchArgumentValues !== undefined && typeof spec.launchArgumentValues !== 'boolean') throw invalid(name, 'launchArgumentValues must be a boolean');
   if (spec.fileApps !== undefined && typeof spec.fileApps !== 'boolean') throw invalid(name, 'fileApps must be a boolean');
   if (spec.isolation !== undefined && spec.isolation !== 'attempt' && spec.isolation !== 'worker') {
@@ -327,6 +331,7 @@ export function defineEngine<
   if (spec.actions !== undefined) handle['actions'] = declaredKinds(name, 'actions', spec.actions, KNOWN_LOCATOR_ACTION_KINDS);
   if (spec.tapModifiers === true) handle['tapModifiers'] = true;
   if (spec.selectsDevice === true) handle['selectsDevice'] = true;
+  if (spec.grantsAllPermissions === true) handle['grantsAllPermissions'] = true;
   if (spec.launchArgumentValues === true) handle['launchArgumentValues'] = true;
   if (spec.fileApps === true) handle['fileApps'] = true;
   if (spec.isolation === 'worker') handle['isolation'] = 'worker';

@@ -138,6 +138,7 @@ rules:
 | `performAt`, `pointerActions` | One without the other. A `pointerActions` list that is empty, repeats a kind, or names one outside `POINTER_ACTION_KINDS`. |
 | `tapModifiers` | Not a boolean, or `true` without `perform`. |
 | `selectsDevice` | Not a boolean, or `true` without `prepare`. |
+| `grantsAllPermissions` | Not a boolean. |
 | `launchArgumentValues` | Not a boolean. |
 | `fileApps` | Not a boolean. |
 | `isolation` | Anything but `'attempt'` or `'worker'`. |
@@ -172,6 +173,7 @@ The body of one target. Every member but `name`, `version`, and
 | [`performAt`, `pointerActions`](#pointer-actions) | method, kinds |
 | [`tapModifiers`](#capabilities) | `boolean` |
 | [`selectsDevice`](#capabilities) | `boolean` |
+| [`grantsAllPermissions`](#capabilities) | `boolean` |
 | [`launchArgumentValues`](#engineappinfo) | `boolean` |
 | [`fileApps`](#capabilities) | `boolean` |
 | [`keyboard`](#keyboard) | `EngineKeyboard` |
@@ -283,6 +285,12 @@ export interface Engine {
    * for the target before anything is prepared.
    */
   readonly selectsDevice?: boolean;
+  /**
+   * The engine grants `app.permissions: 'all'`, which reaches it as
+   * `EngineAppInfo.allPermissions`. Without it the harness refuses `'all'` at
+   * config load, so an engine that predates the value never receives it.
+   */
+  readonly grantsAllPermissions?: boolean;
   /**
    * The engine reads the object form of `app.launchArguments` from
    * `EngineAppInfo.launchArgumentValues`. Without it the harness refuses an
@@ -447,6 +455,7 @@ member. Two gaps end differently:
 | `viewportIntersection` | `viewport-intersection` | `locate` | `expect(locator).toBeInViewport()`. |
 | `tapModifiers: true` | - | `perform` | `modifiers` on `tap`, `doubleTap`, `multiTap`, and `secondaryTap`. |
 | `selectsDevice: true` | - | `prepare` | `e2e run --device`, the device `prepare` binds. |
+| `grantsAllPermissions: true` | - | - | `app.permissions: 'all'`, which the engine receives as `EngineAppInfo.allPermissions`. Without it, config load refuses `'all'`, so an engine released before it never receives the string. |
 | `launchArgumentValues: true` | - | - | The object form of `app.launchArguments`, in `EngineAppInfo.launchArgumentValues`. |
 | `fileApps: true` | - | - | A target whose `app.url` is a `file:` URL. `validateApp` is told with `fileApp: true`. |
 | `performAt` + `pointerActions` | `pointer` | `observe` | One pointer action at a viewport point, with no node behind it. |
@@ -1590,6 +1599,12 @@ export interface EngineAppInfo {
   readonly launchArgumentValues?: LaunchArgumentValues;
   /** Permissions the app holds, by name; what each state means is the engine's (a device sets them before every fresh launch). */
   readonly permissions?: Readonly<Record<string, AppPermissionState>>;
+  /**
+   * `app.permissions: 'all'`: grant every permission the engine can grant,
+   * in place of `permissions`. Only an engine that declares
+   * `grantsAllPermissions` receives it; for any other, the config is refused.
+   */
+  readonly allPermissions?: true;
 }
 ```
 

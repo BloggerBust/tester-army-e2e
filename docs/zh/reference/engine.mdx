@@ -93,6 +93,7 @@ export interface EngineHandle<Fixtures extends object = {}> extends Engine {
 | `performAt`、`pointerActions` | 只声明了其中一个。`pointerActions` 列表为空、包含重复的种类，或指定了 `POINTER_ACTION_KINDS` 之外的种类。 |
 | `tapModifiers` | 不是布尔值，或设为 `true` 但未声明 `perform`。 |
 | `selectsDevice` | 不是布尔值，或设为 `true` 但未声明 `prepare`。 |
+| `grantsAllPermissions` | 不是布尔值。 |
 | `isolation` | 不是 `'attempt'` 或 `'worker'`。 |
 | `keyboard`、`state`、`artifacts`、`session` | 包含未知键或非函数成员。`keyboard` 缺少 `type` 和 `press`；`state` 未同时包含 `capture` 和 `restore`；`artifacts` 缺少 `screenshot`；声明了 `startVideo` 却没有 `stopVideo`，或反之。 |
 | `secrets` | 不是由 `secrets.get()` 句柄组成的数组。 |
@@ -120,6 +121,7 @@ export interface EngineHandle<Fixtures extends object = {}> extends Engine {
 | [`performAt`、`pointerActions`](#pointer-actions) | 方法、种类 |
 | [`tapModifiers`](#capabilities) | `boolean` |
 | [`selectsDevice`](#capabilities) | `boolean` |
+| [`grantsAllPermissions`](#capabilities) | `boolean` |
 | [`keyboard`](#keyboard) | `EngineKeyboard` |
 | [`fixtures`](#contributed-fixtures) | 工厂 |
 | [`isolation`](#fixture-isolation) | `'attempt' \| 'worker'` |
@@ -227,6 +229,12 @@ export interface Engine {
    * for the target before anything is prepared.
    */
   readonly selectsDevice?: boolean;
+  /**
+   * The engine grants `app.permissions: 'all'`, which reaches it as
+   * `EngineAppInfo.allPermissions`. Without it the harness refuses `'all'` at
+   * config load, so an engine that predates the value never receives it.
+   */
+  readonly grantsAllPermissions?: boolean;
   /**
    * The engine reads the object form of `app.launchArguments` from
    * `EngineAppInfo.launchArgumentValues`. Without it the harness refuses an
@@ -376,6 +384,7 @@ export interface OperationContext {
 | `locate` | `location` | `observe` | `screen`、`Locator`、`expect(locator)`。 |
 | `tapModifiers: true` | - | `perform` | `tap`、`doubleTap`、`multiTap` 和 `secondaryTap` 的 `modifiers`。 |
 | `selectsDevice: true` | - | `prepare` | `e2e run --device`，由 `prepare` 绑定指定的设备。 |
+| `grantsAllPermissions: true` | - | - | `app.permissions: 'all'`，引擎以 `EngineAppInfo.allPermissions` 接收。未声明时，加载配置会拒绝 `'all'`，因此在此之前发布的引擎不会收到这个字符串。 |
 | `performAt` + `pointerActions` | `pointer` | `observe` | 在视口坐标点上执行一次指针操作，无需对应节点。 |
 | `keyboard.{type,press,dismiss?}` | `keyboard` | `observe` | 向当前焦点所在位置输入。 |
 | `fixtures.<name>` | `<name>` | - | 引擎提供的测试夹具。 |
@@ -1405,6 +1414,12 @@ export interface EngineAppInfo {
   readonly launchArgumentValues?: LaunchArgumentValues;
   /** Permissions the app holds, by name; what each state means is the engine's (a device sets them before every fresh launch). */
   readonly permissions?: Readonly<Record<string, AppPermissionState>>;
+  /**
+   * `app.permissions: 'all'`: grant every permission the engine can grant,
+   * in place of `permissions`. Only an engine that declares
+   * `grantsAllPermissions` receives it; for any other, the config is refused.
+   */
+  readonly allPermissions?: true;
 }
 ```
 

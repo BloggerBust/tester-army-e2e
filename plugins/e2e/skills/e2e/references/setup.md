@@ -201,7 +201,7 @@ target's `app`:
 | `bundleId` | Device targets: the bundle id, package name, or display name (`Settings`) `app.open()` launches. |
 | `appPath` | Device targets: the `.app` or `.apk` under test. A device target needs `bundleId` or `appPath`. |
 | `launchArguments` | Device targets: arguments every fresh launch gets, a list of strings, or an object of argument name to string, number, boolean, or list of strings (`-name value` on iOS; on Android an `am start` extra of the value's type: `--es`, `--ez`, `--ei` or `--el` or `--ef`, `--esa`). |
-| `permissions` | Device targets: states (`grant`, `deny`, `reset`) every fresh launch gets. Web targets: `grant` only, held by every page (`{ 'clipboard-write': 'grant' }` lets headless Chromium write the clipboard). |
+| `permissions` | Device targets: states (`grant`, `deny`, `reset`) every fresh launch gets. Web targets: `grant` only, held by every page (`{ 'clipboard-write': 'grant' }` lets headless Chromium write the clipboard). `'all'` grants every permission the engine can. |
 | `command` | The process serving `url`: `{ executable, args, cwd, env, inheritEnv, startupTimeout, shutdownTimeout, log, reuseExisting }`; `{port}` in `args` and `env` expands to `url`'s port. Targets declaring the same command share one process. |
 | `readyUrl` | Readiness probe when it differs from `url`; `{port}` expands too. |
 | `environment` | `'test'`, `'staging'`, `'production'`; inferred from the host, labels the report and cache key. |

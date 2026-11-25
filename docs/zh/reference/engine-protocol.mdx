@@ -166,6 +166,8 @@ export interface EngineManifest {
   readonly tapModifiers?: boolean;
   /** Requires `lifecycle/prepare`: `prepare` binds the device `e2e run --device` names. */
   readonly selectsDevice?: boolean;
+  /** See `Engine.grantsAllPermissions`. */
+  readonly grantsAllPermissions?: boolean;
   /** See `Engine.isolation`; left out for `attempt`. */
   readonly isolation?: 'worker';
 }

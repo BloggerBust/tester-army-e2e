@@ -390,6 +390,14 @@ export default {
 - Each permission is `grant`, `deny`, or `reset`. `deny` is a recorded
   refusal on iOS, where the app is told no without a prompt, and a revocation
   on Android, where the OS asks again when the app requests the permission.
+- `permissions: 'all'` grants every permission the platform can set. It
+  replaces the map; name permissions instead to deny or reset one.
+  - On Android: each runtime permission the app's manifest declares.
+    Permissions that are not grantable at run time, such as `INTERNET`, are
+    skipped, so an app that declares none launches with nothing changed.
+  - On an iOS simulator: each privacy service the runtime can set, with
+    location `always`. The simulator refuses notifications, so accept that
+    prompt with `device.alert('accept')`.
 - The permissions are set on the app by name before it starts, with no open
   first, since iOS terminates a running app whose permission changed and
   Android one whose permission was revoked.
@@ -1437,8 +1445,14 @@ Each `MobileOptions` member is declared, with its JSDoc, in its
 /** A permission's state: held, refused, or not asked for yet, so the OS asks again. */
 export type PermissionState = 'grant' | 'deny' | 'reset';
 
-/** Permissions an app holds when it launches, by name. */
-export type LaunchPermissions = Readonly<Partial<Record<DevicePermission, PermissionState>>>;
+/**
+ * Permissions an app holds when it launches, by name, or `'all'` to grant
+ * every one the platform can. On Android that is each runtime permission the
+ * app declares; the rest are skipped. On an iOS simulator it is each privacy
+ * service the runtime can set, location `always` included. The simulator
+ * refuses to set notifications.
+ */
+export type LaunchPermissions = Readonly<Partial<Record<DevicePermission, PermissionState>>> | 'all';
 ```
 
 ### Device fixture
@@ -1460,8 +1474,8 @@ export interface OpenAppOptions {
   readonly launchArguments?: LaunchArguments;
   /**
    * Permissions the app holds before this launch, each granted, denied, or
-   * reset. Replaces the target's `app.permissions` for a relaunch of the
-   * pinned app.
+   * reset, or `'all'` to grant every one the platform can. Replaces the
+   * target's `app.permissions` for a relaunch of the pinned app.
    */
   readonly permissions?: LaunchPermissions;
 }

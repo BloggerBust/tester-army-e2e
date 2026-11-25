@@ -37,6 +37,17 @@ test.describe('permission prompt', () => {
   });
 });
 
+// `permissions: 'all'` grants the microphone before the launch, so the
+// request resolves without a system dialog: a dialog left up would keep the
+// scenario on its prompt and fail the check.
+test('permissions all grants the microphone without a system dialog', async ({ app, device, screen }) => {
+  await device.setPermission('microphone', 'reset');
+  await device.openApp('dev.e2e.benchmark', { relaunch: true, permissions: 'all' });
+  await openScenario({ app, device, screen }, 'Permission Prompt');
+  await screen.getByTestId('request-permission').tap();
+  await expect(screen.getByTestId('success-message')).toHaveText('Microphone enabled');
+});
+
 // Every step auto-focuses its field and keeps the keyboard up on Return
 // (`submitBehavior="submit"`), so the keyboard covers Continue from the start
 // and `device.dismissKeyboard()` is the way past it: Android hides the
