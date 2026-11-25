@@ -7,8 +7,10 @@
  */
 
 import { execFileSync } from 'node:child_process';
-import { existsSync, writeFileSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { dirname, join, resolve } from 'node:path';
+import { crc32 } from 'node:zlib';
 import type { Device } from '@e2e-dev/mobile';
 import type { Agent, AgentParam, App, Screen } from 'e2e';
 import { credentials } from 'e2e';
@@ -50,24 +52,114 @@ async function resetMicrophonePermission({ device, platform }: { device: Device;
 }
 
 /**
+ * The seeded photo's capture time. The picker names a photo by it, `Photo,
+ * October 15, 10:27`, and the recording taps that name. Without one, Photos
+ * names it by the time it was added, which differs on every simulator. The
+ * year is the current one: the picker spells out the year for older photos,
+ * in the order the host's region writes dates.
+ */
+function receiptCaptureTime(): string {
+  return `${new Date().getFullYear()}:10:15 10:27:00`;
+}
+
+/**
+ * `icon.png` with an `eXIf` chunk holding `DateTimeOriginal`: a big-endian
+ * TIFF header, IFD0 pointing at an Exif IFD, and the Exif IFD's one entry,
+ * the 20-byte date string. The file name stays `icon.png`, which the
+ * recording's end state reads back.
+ */
+function datedReceipt(time: string): Buffer {
+  const png = readFileSync(resolve(import.meta.dirname, '../assets/icon.png'));
+  const exif = Buffer.alloc(64);
+  exif.write('MM', 0, 'latin1');
+  exif.writeUInt16BE(42, 2);
+  exif.writeUInt32BE(8, 4);
+  exif.writeUInt16BE(1, 8);
+  exif.writeUInt16BE(0x8769, 10);
+  exif.writeUInt16BE(4, 12);
+  exif.writeUInt32BE(1, 14);
+  exif.writeUInt32BE(26, 18);
+  exif.writeUInt16BE(1, 26);
+  exif.writeUInt16BE(0x9003, 28);
+  exif.writeUInt16BE(2, 30);
+  exif.writeUInt32BE(20, 32);
+  exif.writeUInt32BE(44, 36);
+  exif.write(time, 44, 'latin1');
+  const type = Buffer.from('eXIf', 'latin1');
+  const chunk = Buffer.alloc(12 + exif.length);
+  chunk.writeUInt32BE(exif.length, 0);
+  type.copy(chunk, 4);
+  exif.copy(chunk, 8);
+  chunk.writeUInt32BE(crc32(Buffer.concat([type, exif])), 8 + exif.length);
+  // IHDR is always first: 8 bytes of signature, then its 25-byte chunk.
+  return Buffer.concat([png.subarray(0, 33), chunk, png.subarray(33)]);
+}
+
+/** Every booted iOS simulator, with the directory that holds its data. */
+function bootedSimulators(): { udid: string; dataPath: string }[] {
+  const booted = execFileSync('xcrun', ['simctl', 'list', 'devices', 'booted', '-j'], { encoding: 'utf8' });
+  const devices = JSON.parse(booted) as { devices: Record<string, { udid: string; state: string; dataPath: string }[]> };
+  return Object.values(devices.devices)
+    .flat()
+    .filter((device) => device.state === 'Booted');
+}
+
+/**
+ * Puts every booted simulator on the `en_US` locale, in English, with the
+ * 12-hour clock (a leftover 24-hour override is cleared), whatever region
+ * the host Mac is set to. A new simulator copies the Mac's settings, and the
+ * recordings name things by locale (`Photo, October 15, 10:27 AM`), so a
+ * recording and its replay need the same one. Each simulator is set once per process; an app that is
+ * already running may keep its old locale until it is launched again.
+ */
+const localized = new Set<string>();
+function setSimulatorLocale(): void {
+  for (const { udid } of bootedSimulators()) {
+    if (localized.has(udid)) continue;
+    execFileSync('xcrun', ['simctl', 'spawn', udid, 'defaults', 'write', '-g', 'AppleLocale', 'en_US']);
+    execFileSync('xcrun', ['simctl', 'spawn', udid, 'defaults', 'write', '-g', 'AppleLanguages', '-array', 'en']);
+    execFileSync('xcrun', ['simctl', 'spawn', udid, 'defaults', 'write', '-g', 'AppleICUForce24HourTime', '-bool', 'NO']);
+    localized.add(udid);
+  }
+}
+
+/**
  * The photo the picker scenario expects in the library, added once to every
  * booted simulator. A marker in the simulator's own data directory keeps a
  * rerun from adding a copy, which would leave the picker with twins the
- * trace cache cannot tell apart, and goes with the library when the
- * simulator is erased.
+ * trace cache cannot tell apart. It sits in `Media`, which survives a
+ * reboot (iOS clears `tmp` on every boot) and goes with the library when
+ * the simulator is erased. The marker holds the capture time, so a new year
+ * adds a photo under this year's name. Re-record on an erased simulator: one
+ * seeded before the photo had a capture time still holds an undated copy.
  */
 function seedReceiptPhoto(): void {
-  const photo = resolve(import.meta.dirname, '../assets/icon.png');
-  const booted = execFileSync('xcrun', ['simctl', 'list', 'devices', 'booted', '-j'], { encoding: 'utf8' });
-  const devices = JSON.parse(booted) as { devices: Record<string, { udid: string; state: string; dataPath: string }[]> };
-  for (const runtime of Object.values(devices.devices)) {
-    for (const device of runtime) {
-      if (device.state !== 'Booted') continue;
-      const marker = resolve(device.dataPath, 'tmp', 'e2e-mobile-benchmark-receipt');
-      if (existsSync(marker)) continue;
+  const time = receiptCaptureTime();
+  const pending = bootedSimulators()
+    .map((device) => ({ device, marker: resolve(device.dataPath, 'Media', 'e2e-mobile-benchmark-receipt') }))
+    .filter(({ marker }) => readMarker(marker) !== time);
+  if (pending.length === 0) return;
+  const dir = mkdtempSync(join(tmpdir(), 'e2e-receipt-'));
+  try {
+    const photo = join(dir, 'icon.png');
+    writeFileSync(photo, datedReceipt(time));
+    for (const { device, marker } of pending) {
       execFileSync('xcrun', ['simctl', 'addmedia', device.udid, photo]);
-      writeFileSync(marker, photo);
+      mkdirSync(dirname(marker), { recursive: true });
+      writeFileSync(marker, time);
     }
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+/** The capture time a simulator was seeded with, or `undefined` before the first seed. */
+function readMarker(marker: string): string | undefined {
+  try {
+    return readFileSync(marker, 'utf8');
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return undefined;
+    throw error;
   }
 }
 
@@ -258,6 +350,7 @@ async function complete(
   scenario: Scenario,
   { agent, app, device, platform, screen }: { agent: Agent; app: App; device: Device; platform: string; screen: Screen },
 ): Promise<void> {
+  if (platform === 'ios') setSimulatorLocale();
   await scenario.prepare?.({ device, platform });
   await openScenario({ app, device, screen }, scenario.name);
   const instruction = scenario.pixels === true
