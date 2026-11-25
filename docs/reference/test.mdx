@@ -32,6 +32,7 @@ describe('checkout', { tags: ['billing'] }, () => {
 | --- | --- |
 | [`test`](#test) | `TestCase` |
 | [`test.skip`](#test-skip) | `TestCase \| void` |
+| [`test.todo`](#test-todo) | `TestCase` |
 | [`test.fixme`](#test-fixme) | `TestCase \| void` |
 | [`test.skipIf`](#test-skipif) | `TestRegistrar` |
 | [`test.runIf`](#test-runif) | `TestRegistrar` |
@@ -133,6 +134,25 @@ test('switches organizations', { session: 'admin' }, async ({ app, agent }) => {
 | `INVALID_ARGUMENT` | Called in a setup test with a true condition, or none. A setup test cannot skip because other tests depend on its sessions. |
 | `COLLECTION_ERROR` | The conditional form, outside a test body. |
 | `COLLECTION_ERROR` | The registration form, inside a serial group. Set [`skip`](#skip) on the serial `describe` instead. |
+
+#### `test.todo`
+
+Registers an unfinished test without a body:
+
+```ts
+test.todo('add checkout coverage');
+```
+
+- The test never runs and has no attempts. It is reported `skipped`, with
+  `skip.cause` and `skip.reason` both `todo`.
+- A selection of only TODO tests fails with `NO_TESTS`, like any selection
+  with nothing to run, unless `--pass-with-no-tests` is set.
+- It takes no test options and returns a `TestCase`.
+
+| Throws | When |
+| --- | --- |
+| `COLLECTION_ERROR` | Called with a body or any argument after the title. Use [`test.skip`](#test-skip) or [`test.fixme`](#test-fixme) for a test with a body. |
+| `COLLECTION_ERROR` | Called inside a serial group. Set [`skip`](#skip) on the serial `describe` instead. |
 
 #### `test.fixme`
 
@@ -814,7 +834,7 @@ describe('checkout', { serial: true }, () => {
 | Throws | When |
 | --- | --- |
 | `COLLECTION_ERROR` | A member sets `retries`, `trace`, `video`, `session`, `platforms`, `skip`, `only`, or a nested `serial`. |
-| `COLLECTION_ERROR` | A member registers through `test.skip(title, fn)`, `test.skipIf`, `test.runIf`, or `test.fixme(title, fn)`. |
+| `COLLECTION_ERROR` | A member registers through `test.skip(title, fn)`, `test.todo(title)`, `test.skipIf`, `test.runIf`, or `test.fixme(title, fn)`. |
 
 #### `sessions`
 
@@ -1080,6 +1100,8 @@ export interface TestAPI<Fixtures = TestFixtures, Worker = WorkerFixtures> exten
    */
   skip(condition: boolean, reason?: string): void;
   skip(reason?: string): void;
+  /** Registers an unfinished test, reported as skipped with cause and reason `todo`. */
+  todo(title: string): TestCase;
   /** Registers one skipped test marked fixme, reported with the skip cause and reason `fixme`. */
   fixme(title: string, fn: TestFn<Fixtures & Worker>): TestCase;
   /**

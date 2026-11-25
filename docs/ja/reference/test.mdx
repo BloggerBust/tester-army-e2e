@@ -30,6 +30,7 @@ describe('checkout', { tags: ['billing'] }, () => {
 | --- | --- |
 | [`test`](#test) | `TestCase` |
 | [`test.skip`](#test-skip) | `TestCase \| void` |
+| [`test.todo`](#test-todo) | `TestCase` |
 | [`test.fixme`](#test-fixme) | `TestCase \| void` |
 | [`test.skipIf`](#test-skipif) | `TestRegistrar` |
 | [`test.runIf`](#test-runif) | `TestRegistrar` |
@@ -115,6 +116,19 @@ test('switches organizations', { session: 'admin' }, async ({ app, agent }) => {
 | `INVALID_ARGUMENT` | セットアップテストで、条件が true か条件なしで呼び出した場合。他のテストがそのセッションに依存するため、セットアップテストはスキップできません。 |
 | `COLLECTION_ERROR` | 条件付きの形式をテスト本体の外で呼び出した場合。 |
 | `COLLECTION_ERROR` | 登録時の形式を直列実行グループ内で呼び出した場合。代わりに直列実行の `describe` に [`skip`](#skip) を設定します。 |
+
+#### `test.todo`
+
+本文を持たない、未完了のテストを登録します。
+
+```ts
+test.todo('add checkout coverage');
+```
+
+`skipped` として報告され、`skip.cause` と `skip.reason` は `todo` です。
+実行されず、attempt もありません。TODO だけを選択すると、他のスキップされた
+テストだけの場合と同様に `NO_TESTS` で失敗します。シリアルグループ内で
+登録すると `COLLECTION_ERROR` になります。
 
 #### `test.fixme`
 
@@ -673,7 +687,7 @@ describe('checkout', { serial: true }, () => {
 | エラー | 発生条件 |
 | --- | --- |
 | `COLLECTION_ERROR` | メンバーが `retries`、`trace`、`video`、`session`、`platforms`、`skip`、`only`、または入れ子の `serial` を指定した場合。 |
-| `COLLECTION_ERROR` | メンバーが `test.skip(title, fn)`、`test.skipIf`、`test.runIf`、または `test.fixme(title, fn)` で登録された場合。 |
+| `COLLECTION_ERROR` | メンバーが `test.skip(title, fn)`、`test.todo(title)`、`test.skipIf`、`test.runIf`、または `test.fixme(title, fn)` で登録された場合。 |
 
 #### `sessions`
 
@@ -865,6 +879,8 @@ export interface TestAPI<Fixtures = TestFixtures, Worker = WorkerFixtures> exten
    */
   skip(condition: boolean, reason?: string): void;
   skip(reason?: string): void;
+  /** Registers an unfinished test, reported as skipped with cause and reason `todo`. */
+  todo(title: string): TestCase;
   /** Registers one skipped test marked fixme, reported with the skip cause and reason `fixme`. */
   fixme(title: string, fn: TestFn<Fixtures & Worker>): TestCase;
   /**

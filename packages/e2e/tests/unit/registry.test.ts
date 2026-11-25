@@ -463,6 +463,26 @@ describe('registration', () => {
     expect(() => test.fixme('outside', noop)).toThrow(/^test\.fixme\(\) can only be called while a test module is being collected/);
   });
 
+  it('registers test.todo(title) as a todo skip and rejects a body or serial registration', async () => {
+    const registration = await collectModule(async () => {
+      test.todo('not yet');
+    });
+    expect(registration.tests.map((item) => [item.title, item.mode, item.options])).toEqual([
+      ['not yet', 'todo', { skip: 'todo' }],
+    ]);
+    await expect(
+      collectModule(async () => {
+        test.describe('unit', { serial: true }, () => test.todo('member'));
+      }),
+    ).rejects.toThrow('test.todo() cannot be used inside a serial group');
+    await expect(
+      collectModule(async () => {
+        Reflect.apply(test.todo, test, ['has a body', noop]);
+      }),
+    ).rejects.toThrow('test.todo() takes a title only; register a test with a body through test.skip(title, fn) or test.fixme(title, fn)');
+    expect(() => test.todo('outside')).toThrow(/^test\.todo\(\) can only be called while a test module is being collected/);
+  });
+
   it('rejects test.skip(title, fn) in a serial group, naming test.skip()', async () => {
     await expect(
       collectModule(async () => {

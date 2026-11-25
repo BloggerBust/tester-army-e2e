@@ -30,9 +30,10 @@ export interface TestIdentity {
 
 /**
  * The skip causes a test gives itself: `explicit` from `test.skip` or the
- * `skip` option, `fixme` from `test.fixme`. Every other cause is the runner's.
+ * `skip` option, `fixme` from `test.fixme`, and `todo` from `test.todo`.
+ * Every other cause is the runner's.
  */
-const SELF_SKIP_CAUSES = ['explicit', 'fixme'] as const;
+const SELF_SKIP_CAUSES = ['explicit', 'fixme', 'todo'] as const;
 
 /** One of `SELF_SKIP_CAUSES`. */
 export type SelfSkipCause = (typeof SELF_SKIP_CAUSES)[number];

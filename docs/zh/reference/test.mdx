@@ -30,6 +30,7 @@ describe('checkout', { tags: ['billing'] }, () => {
 | --- | --- |
 | [`test`](#test) | `TestCase` |
 | [`test.skip`](#test-skip) | `TestCase \| void` |
+| [`test.todo`](#test-todo) | `TestCase` |
 | [`test.fixme`](#test-fixme) | `TestCase \| void` |
 | [`test.skipIf`](#test-skipif) | `TestRegistrar` |
 | [`test.runIf`](#test-runif) | `TestRegistrar` |
@@ -115,6 +116,18 @@ test('switches organizations', { session: 'admin' }, async ({ app, agent }) => {
 | `INVALID_ARGUMENT` | 在准备测试中调用，且条件为真或未给出条件。准备测试不能跳过，因为其他测试依赖它的会话。 |
 | `COLLECTION_ERROR` | 在测试主体之外使用条件形式。 |
 | `COLLECTION_ERROR` | 在串行分组内使用注册形式。请改为在串行 `describe` 上设置 [`skip`](#skip)。 |
+
+#### `test.todo`
+
+注册一个没有测试函数的未完成测试：
+
+```ts
+test.todo('add checkout coverage');
+```
+
+它会以 `skipped` 报告，`skip.cause` 和 `skip.reason` 均为 `todo`。它不会运行，也没有
+attempt。只选择 TODO 测试会导致 `NO_TESTS`，与只选择其他已跳过测试相同。在串行组内
+注册 TODO 会产生 `COLLECTION_ERROR`。
 
 #### `test.fixme`
 
@@ -673,7 +686,7 @@ describe('checkout', { serial: true }, () => {
 | 抛出 | 条件 |
 | --- | --- |
 | `COLLECTION_ERROR` | 成员设置了 `retries`、`trace`、`video`、`session`、`platforms`、`skip`、`only` 或嵌套的 `serial`。 |
-| `COLLECTION_ERROR` | 成员通过 `test.skip(title, fn)`、`test.skipIf`、`test.runIf` 或 `test.fixme(title, fn)` 注册。 |
+| `COLLECTION_ERROR` | 成员通过 `test.skip(title, fn)`、`test.todo(title)`、`test.skipIf`、`test.runIf` 或 `test.fixme(title, fn)` 注册。 |
 
 #### `sessions`
 
@@ -865,6 +878,8 @@ export interface TestAPI<Fixtures = TestFixtures, Worker = WorkerFixtures> exten
    */
   skip(condition: boolean, reason?: string): void;
   skip(reason?: string): void;
+  /** Registers an unfinished test, reported as skipped with cause and reason `todo`. */
+  todo(title: string): TestCase;
   /** Registers one skipped test marked fixme, reported with the skip cause and reason `fixme`. */
   fixme(title: string, fn: TestFn<Fixtures & Worker>): TestCase;
   /**

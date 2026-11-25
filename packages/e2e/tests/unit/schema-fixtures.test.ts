@@ -267,6 +267,35 @@ describe.each(schemas)('%s schema', (name) => {
       expect(validate(report)).toBe(false);
     });
 
+    it('takes todo as a skip cause only on a plain test result with no attempts', () => {
+      const report = readJson('fixtures', 'report-v1.valid.json') as {
+        run: { results: Record<string, unknown>[] };
+      };
+      const results = report.run.results;
+      const todo = results.find((result) => (result['skip'] as { cause?: string } | undefined)?.cause === 'todo')!;
+      expect(todo).toMatchObject({ kind: 'test', status: 'skipped', attempts: [], skip: { cause: 'todo', reason: 'todo' } });
+      expect(validate(report)).toBe(true);
+      const invalid = (change: Record<string, unknown>) => {
+        const changed = structuredClone(report);
+        Object.assign(changed.run.results[results.indexOf(todo)]!, change);
+        return !validate(changed);
+      };
+      expect(invalid({ skip: { cause: 'todo', reason: 'later' } })).toBe(true);
+      expect(invalid({ skip: { cause: 'todo', reason: 'todo', filter: 'areas' } })).toBe(true);
+      expect(invalid({ kind: 'setup' })).toBe(true);
+      expect(invalid({ serialGroupId: 'group-1' })).toBe(true);
+      expect(invalid({ attempts: [(results[1]!['attempts'] as unknown[])[0]] })).toBe(true);
+      expect(invalid({ selected: false, skip: { cause: 'todo', reason: 'todo', otherShard: true } })).toBe(false);
+    });
+
+    it('rejects todo as the skip cause of an attempt', () => {
+      const report = readJson('fixtures', 'report-v1.valid.json') as {
+        run: { results: { attempts: { skip?: { cause: string } }[] }[] };
+      };
+      report.run.results[1]!.attempts[0]!.skip!.cause = 'todo';
+      expect(validate(report)).toBe(false);
+    });
+
     it('rejects a fixme skip that names a filter, which only a filtered skip does', () => {
       const report = readJson('fixtures', 'report-v1.invalid.json') as {
         run: { results: { skip?: Record<string, unknown> }[] };

@@ -399,6 +399,13 @@ describe('foldLastRun', () => {
     expect(folded.attempts.map((entry) => [entry.status, entry.index])).toEqual([['failed', 0], ['passed', 1], ['passed', 2]]);
   });
 
+  it('gives a failed test that became a test.todo none of its earlier attempts', () => {
+    const before = report({ status: 'failed', results: [result({ title: 'later', status: 'failed', attempts: [failedAttempt] })] });
+    const todo = { cause: 'todo' as const, reason: 'todo' };
+    const again = report({ results: [result({ title: 'later', status: 'skipped', skip: todo, attempts: [] })] });
+    expect(byTitle(foldLastRun(again, before)).get('later#0')).toMatchObject({ status: 'skipped', skip: todo, attempts: [] });
+  });
+
   it('keeps every attempt of a test the run before holds a result for, over the last result the rerun carries for it', () => {
     // A fold of two runs that both failed `owed`, then a rerun another filter kept it out of.
     const history = report({ status: 'failed', results: [result({ title: 'owed', status: 'failed', attempts: [failedAttempt, failedAttempt] })] });

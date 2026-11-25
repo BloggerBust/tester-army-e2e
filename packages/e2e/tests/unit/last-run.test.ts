@@ -105,6 +105,7 @@ describe('readLastRun and lastFailedIds', () => {
           { id: 'interrupted', status: 'interrupted' },
           { id: 'explicit', status: 'skipped', skip: { cause: 'explicit', reason: 'later' } },
           { id: 'fixme', status: 'skipped', skip: { cause: 'fixme', reason: 'fixme: crashes on Android' } },
+          { id: 'todo', status: 'skipped', skip: { cause: 'todo', reason: 'todo' } },
           { id: 'filtered', status: 'skipped', skip: { cause: 'filtered', reason: 'tag filter did not match' } },
           { id: 'setup-failed', status: 'skipped', skip: { cause: 'setup-failed', reason: 'setup for session "user" failed' } },
           { id: 'predecessor', status: 'skipped', skip: { cause: 'serial-predecessor-failed', reason: 'step 1 failed' } },

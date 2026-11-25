@@ -560,6 +560,33 @@
           "reason": "outside the shard",
           "otherShard": true
         }
+      },
+      {
+        "id": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+        "testId": "tests/example.e2e.ts::todo%20coverage",
+        "kind": "test",
+        "tags": [],
+        "declarationIndex": 5,
+        "titlePath": [
+          "todo coverage"
+        ],
+        "file": "tests/example.e2e.ts",
+        "source": {
+          "file": "tests/example.e2e.ts",
+          "line": 25,
+          "column": 1
+        },
+        "targetId": "web",
+        "platform": "web",
+        "agent": "default",
+        "repeat": 0,
+        "selected": true,
+        "status": "skipped",
+        "attempts": [],
+        "skip": {
+          "cause": "todo",
+          "reason": "todo"
+        }
       }
     ],
     "errors": [
@@ -578,14 +605,14 @@
       }
     ],
     "summary": {
-      "discovered": 5,
-      "selected": 3,
+      "discovered": 6,
+      "selected": 4,
       "executed": 3,
       "passed": 1,
       "failed": 1,
       "interrupted": 0,
       "flaky": 0,
-      "skipped": 1
+      "skipped": 2
     },
     "limits": {
       "maxAgentContextBytes": 16384,

@@ -319,6 +319,23 @@ describe('select', () => {
     ]);
   });
 
+  it('gives a test.todo registration the cause and reason todo', async () => {
+    const col = await collection(() => {
+      test('runs', noop);
+      test.todo('not yet');
+    });
+    const todo = select(col, config()).pairs.find((pair) => pair.test.title === 'not yet')!;
+    expect(todo.disposition).toBe('skip');
+    expect(todo.skip).toEqual({ cause: 'todo', reason: 'todo' });
+
+    const todoOnly = await collection(() => {
+      test.todo('not yet');
+    });
+    expect(() => select(todoOnly, config())).toThrow(
+      '1 tests were collected but none is runnable: 1 marked todo; pass --pass-with-no-tests to allow this',
+    );
+  });
+
   it('focuses .only tests and filters the rest', async () => {
     const col = await collection(() => {
       test('normal', noop);

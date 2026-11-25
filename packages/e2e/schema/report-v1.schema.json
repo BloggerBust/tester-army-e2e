@@ -448,6 +448,21 @@
         { "if": { "required": ["filter"] }, "then": { "properties": { "cause": { "const": "filtered" } } } }
       ]
     },
+    "resultSkip": {
+      "description": "A result's skip: any skip an attempt can carry, or todo, which only a test.todo result carries.",
+      "if": { "required": ["cause"], "properties": { "cause": { "const": "todo" } } },
+      "then": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["cause", "reason"],
+        "properties": {
+          "cause": { "const": "todo" },
+          "reason": { "const": "todo" },
+          "otherShard": { "const": true }
+        }
+      },
+      "else": { "$ref": "#/$defs/skip" }
+    },
     "serialMember": {
       "type": "object",
       "additionalProperties": false,
@@ -563,7 +578,7 @@
         "selected": { "type": "boolean" },
         "serialGroupId": { "type": "string", "minLength": 1 },
         "status": { "enum": ["passed", "flaky", "failed", "timed-out", "interrupted", "skipped"] },
-        "skip": { "$ref": "#/$defs/skip" },
+        "skip": { "$ref": "#/$defs/resultSkip" },
         "expectedFailure": {
           "description": "Why the test was expected to fail, when its last attempt was marked test.fail. Absent in older reports.",
           "type": "object",
@@ -594,7 +609,7 @@
             "then": {
               "required": ["skip"],
               "properties": {
-                "skip": { "$ref": "#/$defs/skip" },
+                "skip": { "$ref": "#/$defs/resultSkip" },
                 "attempts": {
                   "type": "array",
                   "items": { "$ref": "#/$defs/attempt" }
@@ -624,6 +639,10 @@
         {
           "if": { "required": ["serialGroupId"] },
           "then": { "properties": { "expectedFailure": false } }
+        },
+        {
+          "if": { "required": ["skip"], "properties": { "skip": { "required": ["cause"], "properties": { "cause": { "const": "todo" } } } } },
+          "then": { "properties": { "kind": { "const": "test" }, "serialGroupId": false, "attempts": { "maxItems": 0 } } }
         }
       ]
     },

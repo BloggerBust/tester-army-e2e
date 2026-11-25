@@ -45,10 +45,11 @@ function testKey(result: ReportResult): string {
  * or hook, or a run limit) keeps the verdict it had, failed, flaky, or
  * passed, and the serial group its attempts live on; a kept verdict carries
  * no skip. A serial member's attempts live on its group, so its result lists
- * none, whatever it was before.
+ * none, whatever it was before. A `test.todo` never runs, so a test that
+ * became one keeps none of its earlier attempts.
  */
 function foldRerun(current: ReportResult, history: readonly ReportResult[]): ReportResult {
-  if (history.length === 0) return current;
+  if (history.length === 0 || current.skip?.cause === 'todo') return current;
   const before = history.toSorted((a, b) => a.repeat - b.repeat);
   const failure = before.findLast((result) => FAILED_STATUSES.has(result.status));
   const wasFlaky = before.some((result) => result.status === 'flaky');

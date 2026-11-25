@@ -736,6 +736,9 @@ void test.runIf(Promise.resolve(true));
 void test.runIf(isFeatureOn() as Promise<boolean> | boolean);
 // fixme takes exactly skip's shapes: a registration returns a TestCase, a call inside a body returns nothing.
 test.fixme('not yet', async () => {}) satisfies ReturnType<typeof test>;
+test.todo('not yet') satisfies ReturnType<typeof test>;
+// @ts-expect-error todo takes a title only, with no body
+test.todo('not yet', async () => {});
 void (test.fixme(true, 'flaky on webkit') satisfies void);
 void (test.fixme('flaky on webkit') satisfies void);
 void (test.fixme() satisfies void);
@@ -1203,6 +1206,7 @@ report.run.results[0]!.expectedFailure?.reason satisfies string | undefined;
 report.run.results[0]!.attempts[0]!.expectedFailure?.error?.code satisfies string | undefined;
 report.run.filters?.[0]?.outcome satisfies 'failed' | 'timed-out' | undefined;
 ({ cause: 'fixme', reason: 'fixme: crashes on Android' }) satisfies NonNullable<Report['run']['results'][number]['skip']>;
+({ cause: 'todo', reason: 'todo' }) satisfies NonNullable<Report['run']['results'][number]['skip']>;
 // @ts-expect-error only a filtered skip names the test filter that left the test out
 ({ cause: 'explicit', reason: 'not on CI', filter: 'jev' }) satisfies NonNullable<Report['run']['results'][number]['skip']>;
 // The change the filters judged is counts only, never a file list: base and files together once git measured it, else why no filter ran.
