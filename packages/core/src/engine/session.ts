@@ -143,7 +143,11 @@ function validTabs(tabs: EngineTabs | undefined): tabs is EngineTabs {
     && tabs.count >= 2 && tabs.active >= 0 && tabs.active < tabs.count;
 }
 
-/** Located refs are pruned oldest-first past this bound so the map cannot grow unboundedly. */
+/**
+ * Located refs are pruned oldest-first past this bound so the map cannot grow
+ * unboundedly. A single locate with more matches keeps all of its own: the
+ * bound is then that locate's size.
+ */
 const MAX_LOCATED_REFS = 2048;
 
 /** Revision prefixes: the adapter mints `l<n>` for locate, `b<n>` for observe, and `s<n>` for a screen the engine handed over. */
@@ -449,8 +453,11 @@ export function createEngineSession(options: EngineSessionOptions): TargetSessio
         located.set(stamped.ref.id, stamped);
         refs.push(stamped.ref);
       }
+      // The refs just added are the newest, so pruning oldest-first down to
+      // this locate's size never evicts them; reading them back as a set works.
+      const keep = Math.max(MAX_LOCATED_REFS, refs.length);
       for (const oldest of located.keys()) {
-        if (located.size <= MAX_LOCATED_REFS) break;
+        if (located.size <= keep) break;
         located.delete(oldest);
       }
       return refs;

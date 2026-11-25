@@ -498,6 +498,25 @@ describe('createEngineSession', () => {
     expect(performed).toEqual([observed.revision]);
   });
 
+  it('reads back every ref of a locate with more matches than the located-ref bound', async () => {
+    const many = (prefix: string, count: number) => Array.from({ length: count }, (_, i) => node(`${prefix}${i}`, `Row ${i}`));
+    let nodes = many('a', 2100);
+    const session = createEngineSession({
+      engine: defineEngine(observingEngine({ locate: async () => nodes })),
+      targetName: 'toy-target',
+    });
+    const refs = await session.locate({ kind: 'selector', selector: 'row' }, OP);
+    expect(refs).toHaveLength(2100);
+    const read = await Promise.all(refs.map((ref) => session.read(ref, OP)));
+    expect(read.map((n) => n.name)).toEqual(nodes.map((n) => n.name));
+    // A later, smaller locate still prunes the older refs back to the bound.
+    nodes = many('b', 10);
+    const later = await session.locate({ kind: 'selector', selector: 'row' }, OP);
+    await expect(Promise.all(later.map((ref) => session.read(ref, OP)))).resolves.toHaveLength(10);
+    await expect(session.read(refs[0]!, OP)).rejects.toMatchObject({ code: 'NODE_STALE' });
+    await expect(session.read(refs.at(-1)!, OP)).resolves.toMatchObject({ name: 'Row 2099' });
+  });
+
   it('ends the attempt exactly once, handing endAttempt the cleanup budget', async () => {
     const contexts: EngineCleanupContext[] = [];
     const session = createEngineSession({
