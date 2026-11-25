@@ -1310,7 +1310,7 @@ live!.context();                  // its BrowserContext
 
 | Throws | When |
 | --- | --- |
-| `INVALID_STATE` | An accessor called outside an active attempt. |
+| `INVALID_STATE` | An accessor called outside an active attempt, or on a handle that has not started in this process, such as a second `web()`. |
 
 ## Types
 

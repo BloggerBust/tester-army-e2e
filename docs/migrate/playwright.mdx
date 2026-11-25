@@ -266,7 +266,7 @@ purpose. Use the workaround, or keep the test in Playwright.
 
 | Playwright | Use today |
 | --- | --- |
-| `locator.locator(selector)`, `locator.and()`, `filter({ visible })` | One `browser.locator` selector, such as `'.card >> .close'`, or a `screen` query inside the scope |
+| `locator.and()`, `filter({ visible })` | One `browser.locator` selector, or a `screen` query inside the scope |
 | `locator.evaluate()`, `expect(locator).toHaveClass()`, `toHaveCSS()`, `dispatchEvent()` | `browser.evaluate(fn, selector)`; `expect(browser).toHaveClass(locator, cls)` |
 | `selectOption([...])`, `hover({ position })` | `browser.evaluate` for a multi-select; `browser.mouse` with `boundingBox()` |
 
@@ -347,6 +347,7 @@ purpose. Use the workaround, or keep the test in Playwright.
 | `page.goto('data:...')`, `'file://...'` | `route.fulfill({ body, contentType: 'text/html' })` on an app URL. Only `http` and `https` open |
 | `getByRole(role, { includeHidden })` | `browser.locator('role=button[include-hidden=true]')`. A role query follows the accessibility tree |
 | `--grep @smoke` for a tag, a regex positional, `file:line:column` | `--tag smoke`; a glob or a bare name; `file:line` |
+| `locator.locator(selector)` | A `screen` query inside the scope, such as `card.getByRole('button', { name: 'Close' })`, or one `browser.locator` selector, such as `'.card >> .close'` |
 | `getByTitle()` | `browser.locator('[title="Close"]')`. A title is a DOM attribute, so it has no `screen` query |
 | `page.waitForLoadState()` | An assertion on what the next page shows. A navigation waits for `load`, and each action and assertion waits for its node |
 | `npx playwright codegen`, the Inspector | [`npx e2e mcp`](/mcp-server) lets a coding agent drive the app while it writes the test; `screen.debug()` prints the tree |

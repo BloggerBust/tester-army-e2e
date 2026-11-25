@@ -235,8 +235,8 @@ executor keeps its entries.
 
 On the web engine, `surfaceOf(handle)` from `@e2e-dev/web` gives you the
 current attempt's `Page` and `BrowserContext`. Both accessors throw
-`INVALID_STATE` outside an active attempt, and `page()` also when no page is
-open.
+`INVALID_STATE` outside an active attempt or on a handle no target runs on,
+and `page()` also when no page is open.
 
 ```ts
 import type { E2EConfig, StepExecutor } from 'e2e';

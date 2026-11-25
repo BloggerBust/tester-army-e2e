@@ -31,6 +31,8 @@ describe('surfaceOf', () => {
       } catch (error) {
         expect(error).toBeInstanceOf(EngineError);
         expect((error as EngineError).code).toBe('INVALID_STATE');
+        // The handle of a second web() is the usual cause inside a test, so the message names it.
+        expect((error as EngineError).message).toContain('use the handle the target runs on');
       }
     }
   });

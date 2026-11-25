@@ -719,7 +719,7 @@ export interface App {
   startRecording(options?: RecordingOptions): Promise<void>;
   /**
    * Stops the recording and returns its videos in play order: one, or on the
-   * web one per page when the page was replaced while it recorded.
+   * web one per page it showed: a tab switch or a replaced page starts another.
    */
   stopRecording(): Promise<readonly [RecordedVideo, ...RecordedVideo[]]>;
 }

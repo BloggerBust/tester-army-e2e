@@ -631,6 +631,12 @@ const ref = await this.singleOf(await this.resolveOnce(expression, reads, missin
     await this.dispatchAt({ x: at.x + offset.x, y: at.y + offset.y }, action, deadline);
   }
 
+  /** The failure of an action that was not sent: its phase was cancelled, or its deadline passed first. */
+  private lateAction(kind: string, target: string): Error & { readonly code: string } {
+    if (!this.signal.aborted) return lateAction(kind, target);
+    return isE2EError(this.signal.reason) ? this.signal.reason : cancelledError();
+  }
+
   /** One pointer dispatch within a deadline, its engine error translated to the public taxonomy. */
   private async dispatchAt(point: ViewportPoint, action: PointerAction, deadline: Deadline): Promise<void> {
     const startedAt = timestamp();
@@ -646,8 +652,8 @@ const ref = await this.singleOf(await this.resolveOnce(expression, reads, missin
         detail: `${action.kind} at (${Math.round(point.x)}, ${Math.round(point.y)})`,
       });
     if (deadline.expired()) {
-      const failure = lateAction(action.kind, `(${Math.round(point.x)}, ${Math.round(point.y)})`);
-      record('failed', failure.code);
+      const failure = this.lateAction(action.kind, `(${Math.round(point.x)}, ${Math.round(point.y)})`);
+      record(this.signal.aborted ? 'cancelled' : 'failed', failure.code);
       throw failure;
     }
     try {
@@ -730,8 +736,8 @@ const ref = await this.singleOf(await this.resolveOnce(expression, reads, missin
       const record = (status: StepEvent['status'], code?: string): void =>
         this.recordAction({ node, kind: resolved.kind, startedAt, startedMs, waitedMs, stale, status, code });
       if (deadline.expired()) {
-        const failure = lateAction(resolved.kind, describeExpression(expression));
-        record('failed', failure.code);
+        const failure = this.lateAction(resolved.kind, describeExpression(expression));
+        record(this.signal.aborted ? 'cancelled' : 'failed', failure.code);
         throw failure;
       }
       try {

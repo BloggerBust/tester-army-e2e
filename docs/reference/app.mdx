@@ -193,8 +193,9 @@ if ('path' in video) console.log(video.path);
 - A video is a file (`path`, absolute) under the attempt's `recordings/`,
   named `001-<name>.<ext>`, or a `url` when a hosted browser or device
   keeps the recording.
-- There is one video, except on the web when the page was replaced while
-  it recorded (`app.restart()`, `app.clearState()`): then one per page.
+- There is one video. The web screencast instead writes one per page it
+  showed: a new one starts when the active tab changes or the page is
+  replaced (`app.restart()`, `app.clearState()`).
 - The step links each video in the trace.
 
 | Throws | When |
@@ -242,7 +243,7 @@ export interface App {
   startRecording(options?: RecordingOptions): Promise<void>;
   /**
    * Stops the recording and returns its videos in play order: one, or on the
-   * web one per page when the page was replaced while it recorded.
+   * web one per page it showed: a tab switch or a replaced page starts another.
    */
   stopRecording(): Promise<readonly [RecordedVideo, ...RecordedVideo[]]>;
 }

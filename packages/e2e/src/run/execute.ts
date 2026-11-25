@@ -680,6 +680,7 @@ export class TargetExecutor extends EngineSessions implements SerialHost {
     // the phase it landed in, beside a failure already there.
     let cutBody: ((cause: unknown) => void) | undefined;
     let leaveWorkerFixtures: (() => void) | undefined;
+    let endBudget: (() => void) | undefined;
     this.strayFailure = (cause) => {
       if (cutBody !== undefined) {
         attemptAbort.abort();
@@ -727,6 +728,7 @@ export class TargetExecutor extends EngineSessions implements SerialHost {
       const announce = (remainingMs?: number): void =>
         this.options.events?.onAttemptDeadline?.(pair, { index: attemptIndex, id: attemptId, startedAt, timeoutMs: timeout.timeoutMs, ...(remainingMs === undefined ? {} : { remainingMs }) });
       const budget = new AttemptBudget(attemptAbort.signal, new Deadline(pair.options.timeout));
+      endBudget = () => budget.end();
       const timeout = new AttemptTimeout(budget, pair.options.timeout, announce);
       announce();
       const saveSession =
@@ -1002,6 +1004,7 @@ export class TargetExecutor extends EngineSessions implements SerialHost {
       this.strayFailure = undefined;
       this.lastAttemptTestId = pair.test.id;
       attemptEnd.abort();
+      endBudget?.();
       this.interruptSignal.removeEventListener('abort', onInterrupt);
       // The verdict is reached before the session closes: nothing after this
       // point changes it, and the close reads it to decide what the attempt's

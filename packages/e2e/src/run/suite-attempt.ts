@@ -255,6 +255,7 @@ export class SuiteAttempt implements SuiteHookSession {
       steps,
       close: async () => {
         attemptEnd.abort();
+        budget.end();
         if (shared === undefined) {
           const errors: SerializedError[] = [];
           await host.closeSession(launched, { attemptId, video: undefined }, { status: 'passed', cleanup: 'complete' }, artifacts.sink, errors);

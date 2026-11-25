@@ -1054,7 +1054,8 @@ teardown starts while it may still be running. A setup abandoned this way
 that reaches `use` later gets an immediate resolve. Its teardown runs
 detached from the run, so what it allocated is still released. Later
 fixtures, hooks, and the test body do not start after an abandoned setup or
-hook finishes.
+hook finishes. An app or device call it makes after its phase ended fails with
+`CANCELLED`. Its other code, such as a Node `fetch`, still runs.
 </Note>
 
 #### Worker fixtures

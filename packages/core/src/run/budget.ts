@@ -1,7 +1,14 @@
 /** The cancellation signal and deadline an attempt's fixtures run under, per phase. */
 
 import { Deadline } from '../internal/time.ts';
-import { pollReadSignal } from '../expect/poll-scope.ts';
+import { leftRunning, pollReadSignal } from '../expect/poll-scope.ts';
+
+interface Phase {
+  readonly signal: AbortSignal;
+  readonly deadline: Deadline;
+}
+
+const ENDED: Phase = { signal: AbortSignal.abort(), deadline: new Deadline(0) };
 
 /**
  * One attempt's fixture budget. Through `beforeEach` and the body it is the
@@ -11,9 +18,13 @@ import { pollReadSignal } from '../expect/poll-scope.ts';
  * out or was cancelled, and a hook that overruns is cancelled without taking
  * the next hook's budget with it. Fixtures read the budget at call time, so a
  * fixture acquired in the body keeps working in teardown.
+ *
+ * Work a phase left running reads an ended budget, whichever phase runs
+ * now: a body past its timeout resumes during its own teardown or the next
+ * test, and may reach that test's budget through a worker fixture.
  */
 export class AttemptBudget {
-  private current: { readonly signal: AbortSignal; readonly deadline: Deadline };
+  private current: Phase;
   private combined: { readonly reading: AbortSignal; readonly phase: AbortSignal; readonly signal: AbortSignal } | undefined;
 
   constructor(signal: AbortSignal, deadline: Deadline) {
@@ -23,7 +34,7 @@ export class AttemptBudget {
   /** The signal the running phase's operations abort with. */
   get signal(): AbortSignal {
     const reading = pollReadSignal();
-    const phase = this.current.signal;
+    const phase = this.phase.signal;
     if (reading === undefined) return phase;
     if (this.combined?.reading !== reading || this.combined.phase !== phase) {
       this.combined = { reading, phase, signal: AbortSignal.any([reading, phase]) };
@@ -33,7 +44,16 @@ export class AttemptBudget {
 
   /** The deadline the running phase's operations are capped by. */
   get deadline(): Deadline {
+    return this.phase.deadline;
+  }
+
+  /** The running phase's deadline whoever asks: the clock `AttemptTimeout` keeps, also from a step its body left running. */
+  get clock(): Deadline {
     return this.current.deadline;
+  }
+
+  private get phase(): Phase {
+    return leftRunning() ? ENDED : this.current;
   }
 
   /**
@@ -47,6 +67,15 @@ export class AttemptBudget {
       deadline: new Deadline(timeoutMs),
     };
     return controller;
+  }
+
+  /**
+   * Ends the running phase: every operation that reads the budget is
+   * cancelled until a later phase enters. Covers what `leftRunning` cannot
+   * see, a callback that lost its async context.
+   */
+  end(): void {
+    this.current = ENDED;
   }
 
   /**
@@ -141,7 +170,7 @@ export class AttemptTimeout {
       return true;
     }
     this.budget.shiftDeadline(deltaMs);
-    this.onMoved?.(this.budget.deadline.remaining());
+    this.onMoved?.(this.budget.clock.remaining());
     this.timer?.check();
     return true;
   }
@@ -152,7 +181,7 @@ export class AttemptTimeout {
    * times out now instead, and the clock keeps running.
    */
   stop(): boolean {
-    const remainingMs = this.budget.deadline.remaining();
+    const remainingMs = this.budget.clock.remaining();
     if (remainingMs === 0 && this.timer !== undefined) {
       this.timer.check();
       return false;
@@ -191,7 +220,7 @@ export class AttemptTimeout {
     const check = (): void => {
       stop();
       if (this.stoppedMs !== undefined) return;
-      const remaining = this.budget.deadline.remaining();
+      const remaining = this.budget.clock.remaining();
       if (remaining > 0) handle = setTimeout(check, remaining);
       else fail(onTimeout());
     };

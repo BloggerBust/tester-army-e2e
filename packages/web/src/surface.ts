@@ -335,6 +335,8 @@ export class PlaywrightSurface {
   /** The provider's browsers, when `browser` names one; the runner and worker halves of the lease bookkeeping. */
   private readonly leases: LeasedBrowsers | undefined;
   private session: AttemptSession | undefined;
+  /** Set by `init`: a handle no target runs on never gets there. */
+  private started = false;
   private readonly usedContexts = new Set<string>();
   private readonly viewport: ViewportSize | null;
   private readonly deviceScaleFactor: number | undefined;
@@ -428,6 +430,7 @@ export class PlaywrightSurface {
 
   /** Provisions the shared browser once per worker: a local launch, or a CDP attach. */
   async init(info: EngineInitInfo): Promise<void> {
+    this.started = true;
     // A runner older than the peer floor passes no origin; fail rather than send the credentials nowhere.
     if (info.app.origin === undefined && (this.headers !== undefined || this.basicAuth !== undefined)) {
       throw new ConfigurationError('INVALID_CONFIG', 'web({ headers, basicAuth }) needs an e2e runner that tells the engine the app\'s origin; update e2e to the release beside this @e2e-dev/web');
@@ -674,7 +677,9 @@ export class PlaywrightSurface {
 
   /** Returns the active attempt, including its connection generation and references. */
   private requireSession(): AttemptSession {
-    if (this.session === undefined) throw invalidState('no attempt is running');
+    if (this.session === undefined) {
+      throw invalidState(this.started ? 'no attempt is running' : 'no attempt is running on this engine handle, which has not started in this process: use the handle the target runs on, not a new web(), from code a test runs');
+    }
     return this.session;
   }
 

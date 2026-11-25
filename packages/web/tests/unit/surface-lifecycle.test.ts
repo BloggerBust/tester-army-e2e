@@ -71,6 +71,11 @@ afterEach(async () => {
   rmSync(artifactsDir, { recursive: true, force: true });
 });
 
+it('names no handle mix-up when a started surface is read between attempts', async () => {
+  await surface.endAttempt(cleanup());
+  expect(() => surface.requireContext()).toThrow(/^no attempt is running$/);
+});
+
 it.each(['dialog', 'route'] as const)('keeps a late %s failure on the attempt that registered it', async (kind) => {
   let release!: () => void;
   const waiting = new Promise<void>((resolve) => { release = resolve; });

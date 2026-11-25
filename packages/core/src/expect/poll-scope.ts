@@ -185,6 +185,15 @@ export function outlivesTest(): boolean {
   return typeof shared?.outlives === 'function' && shared.outlives();
 }
 
+/**
+ * Whether this async context is work its phase left running: a body past its
+ * timeout, a promise nobody awaited. A worker fixture's never is; it belongs
+ * to no phase.
+ */
+export function leftRunning(): boolean {
+  return currentPollScope()?.over === true && !outlivesTest();
+}
+
 /** Whether this async context is inside an `expect.poll` read or a `toPass` block. */
 export function insidePollRead(): boolean {
   const shared: Partial<PollScopes> | undefined = slot.get(globalThis);
