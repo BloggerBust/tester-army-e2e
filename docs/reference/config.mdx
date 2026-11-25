@@ -7,8 +7,8 @@ description: Every configuration key, its default, its valid range, and the envi
 
 `e2e.config.ts` configures the runner: the targets tests run on, the app each
 one tests, the agents, and the replay cache. Export an object with
-`satisfies E2EConfig`, which checks its shape and keeps its inferred types.
-The runner validates the config again at load, including ranges and rules
+`satisfies E2EConfig` to check its shape and keep its inferred types, or
+pass it to [`defineConfig`](#defineconfig). The runner validates the config again at load, including ranges and rules
 TypeScript cannot check.
 For the options most projects change, see [Configure the project](/quickstart#configure-the-project).
 
@@ -28,6 +28,32 @@ export default {
 ```
 
 ## Reference
+
+### `defineConfig`
+
+Returns the config it's given. Use it in place of `satisfies E2EConfig`.
+
+```ts title="e2e.config.ts"
+import { defineConfig } from 'e2e';
+import { web } from '@e2e-dev/web';
+
+export default defineConfig({
+  targets: [{ engine: web(), app: { url: 'http://localhost:3000' } }],
+});
+```
+
+- As with `satisfies E2EConfig`, the editor completes every key, and an
+  unknown top-level key is a type error.
+- The config keeps its inferred type, so `typeof config` still works as a
+  type argument of [`test.extend`](/reference/test#test-extend).
+- Every rule below is enforced when the runner resolves the config, not when
+  `defineConfig` is called.
+
+```ts
+export function defineConfig<const Config extends E2EConfig>(
+  config: Config & { readonly [Key in Exclude<keyof Config, keyof E2EConfig>]: never },
+): Config;
+```
 
 ### Top level
 

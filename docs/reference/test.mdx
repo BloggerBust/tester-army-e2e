@@ -1175,7 +1175,7 @@ test('signs out', async ({ app, platform, device }) => {
   run it. With `platforms: ['ios']`, `device` is typed as `Device`. On a
   `describe`, `platforms` doesn't change the types.
 - With a type annotation such as `const config: E2EConfig`, the engine types
-  are lost. To keep them, use `as const satisfies E2EConfig` instead.
+  are lost. To keep them, use `as const satisfies E2EConfig` or `defineConfig` instead.
 
 #### Extending a fixture
 

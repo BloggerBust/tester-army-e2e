@@ -206,8 +206,8 @@ with `device` set to `undefined`.
 
 To type fixtures across targets:
 
-1. Use `as const satisfies E2EConfig` on the config object, not a type
-   annotation, to keep the inferred engine types.
+1. Use `as const satisfies E2EConfig` or `defineConfig` on the config
+   object, not a type annotation, to keep the inferred engine types.
 2. Import the config type with `import type config from '../e2e.config.ts'`.
 3. Pass `typeof config` as the third type argument of `test.extend`:
    `base.extend<{}, {}, typeof config>()`.

@@ -8,6 +8,7 @@ import { z } from 'zod';
 import { ctrf, json, junit, line, list as listReporter, markdown } from '../../src/reporters.ts';
 import {
   credentials,
+  defineConfig,
   expect,
   secrets,
   unique,
@@ -1265,6 +1266,23 @@ void (inferredEngine.isolation satisfies 'worker' | undefined);
 defineEngine<{}, 'ios'>({ name: 'tv', version: '1.0.0', spiVersion: 1 });
 // @ts-expect-error the literal 'worker' requires isolation: 'worker' in the spec
 defineEngine<{}, string, 'worker'>({ name: 'tv', version: '1.0.0', spiVersion: 1 });
+
+// defineConfig keeps the config's own type, so the config type passed to
+// test.extend types the engine's fixtures.
+const definedConfig = defineConfig({ targets: [{ engine: paneEngine, app: { url: 'http://127.0.0.1:0' } }] });
+test.extend<{}, {}, typeof definedConfig>()('reads an engine fixture', async ({ pane }) => {
+  await pane.goto('/');
+});
+// A config from defineConfig is still an E2EConfig.
+void (definedConfig satisfies E2EConfig);
+// defineConfig refuses a key E2EConfig doesn't have, as satisfies E2EConfig does.
+defineConfig({
+  targets: [{ engine: paneEngine }],
+  // @ts-expect-error E2EConfig has no key called bogus
+  bogus: true,
+});
+// @ts-expect-error E2EConfig has no key called reporter
+defineConfig({ reporter: ['list'], targets: [{ engine: paneEngine }] });
 
 // A test, a group, and a call each pin a configured agent by name.
 test('as the buyer', { agent: 'buyer' }, async () => {});

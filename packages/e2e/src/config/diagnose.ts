@@ -21,6 +21,7 @@ export const RUNTIME_EXPORTS: readonly string[] = [
   'afterEach',
   'beforeAll',
   'afterAll',
+  'defineConfig',
   'expect',
   'credentials',
   'secrets',
@@ -38,7 +39,6 @@ export const RUNTIME_EXPORTS: readonly string[] = [
  */
 const REMOVED_EXPORTS: Readonly<Record<string, Readonly<Record<string, string>>>> = {
   e2e: {
-    defineConfig: 'defineConfig was removed in e2e 0.5: default-export the object and end it with satisfies E2EConfig',
     BLOCKABLE_CODES:
       'BLOCKABLE_CODES was removed from e2e: a blocked verdict carries any code the errors reference marks blocked, and the set was never usable outside the runner',
     RUNTIME_CODES:

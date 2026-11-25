@@ -1,6 +1,7 @@
 /** Public sdk-0.1 entrypoint. */
 
 export { afterAll, afterEach, beforeAll, beforeEach, describe, test } from './collect/registry.ts';
+export { defineConfig } from './config/define.ts';
 export { expect } from './expect/index.ts';
 export { credentials, secrets } from '@e2e-dev/core/lib/secrets';
 export { unique } from '@e2e-dev/core/lib/params';

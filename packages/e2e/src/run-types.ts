@@ -230,7 +230,10 @@ export interface TestFilterResult {
   readonly note?: string;
 }
 
-/** The config an `e2e.config.ts` default-exports, through `defineConfig`. */
+/**
+ * The config an `e2e.config.ts` default-exports, through `defineConfig` or
+ * ending in `satisfies E2EConfig`.
+ */
 export interface E2EConfig extends ProjectConfig {
   /**
    * The run's reporters: built-in ids, each its factory from
