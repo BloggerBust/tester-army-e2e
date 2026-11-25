@@ -324,7 +324,7 @@ purpose. Use the workaround, or keep the test in Playwright.
 | Playwright | Use today |
 | --- | --- |
 | `projects[].retries`, `projects[].timeout` | Options on a group |
-| `--debug`, the VS Code extension | `--step --headed` holds each step until a key; `screen.debug()` prints the tree |
+| `--debug`, the VS Code extension | `--step --headed` runs the first step, then holds each later step until a key; `screen.debug()` prints the tree |
 | Option fixtures, overriding `page` or `context` in `extend` | `process.env` in the fixture; a new fixture under its own name |
 | `const response = await page.goto()` | Start `browser.waitForResponse` before the navigation |
 | A Playwright `Reporter` class, third-party reporters | A [custom reporter](/reference/reporters#custom-reporters) with `onEvent` and `onRunFinished`; `junit.xml` for a dashboard |
