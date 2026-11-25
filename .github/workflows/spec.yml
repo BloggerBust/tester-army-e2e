@@ -111,7 +111,9 @@ jobs:
 
   test:
     runs-on: blacksmith-4vcpu-ubuntu-2404
-    timeout-minutes: 15
+    # The suite takes about 14 minutes on a slow runner, so 15 cancelled jobs
+    # whose tests all passed.
+    timeout-minutes: 25
     strategy:
       fail-fast: false
       matrix:
