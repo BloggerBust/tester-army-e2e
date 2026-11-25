@@ -170,9 +170,28 @@ suites that consume the built packages the way a user would.
 - `packages/notte` - the published `@e2e-dev/notte` package: Notte cloud
   browsers for the web engine, `attempt` scope only, with a marker-file
   ledger for `sweep` since sessions carry no tags. Maintained by Notte.
+- `packages/browser-run` - the published `@e2e-dev/browser-run` package:
+  Cloudflare Browser Run hosted Chromium for the web engine
+  (`BrowserProvider`). It reads `CLOUDFLARE_ACCOUNT_ID` and
+  `CLOUDFLARE_API_TOKEN` from the run's environment when it acquires a
+  browser, so importing a config needs no login. One session per worker slot
+  by default, or a fresh browser per attempt with `scope: 'attempt'`; the CDP
+  endpoint is built from the account and session id rather than taken from the
+  response, so a response cannot send the token to another origin. Each
+  session is journaled by id under the OS temp directory, and `sweep` deletes
+  what a killed worker left open.
 - `packages/lightpanda` - the published `@e2e-dev/lightpanda` package: a
   `BrowserProvider` that starts a local `lightpanda serve` per worker slot
   and stops it with the run; no vendor SDK, the binary is the dependency.
+- `packages/moli` - the published `@e2e-dev/moli` package: a `BrowserProvider`
+  that runs a local Moli browser for the web engine, one `moli serve` process
+  on an available loopback port per worker slot, stopped when the lease is
+  released. The binary is `binary` when given, else `MOLI_PATH`, then `PATH`,
+  then `~/.local/bin/moli`, resolved when a browser is acquired, so importing
+  a config starts nothing; no vendor SDK, the binary is the dependency.
+  On-demand layout and screenshots (`--layout`) and optional resource fetching
+  (`--resource`) are on by default, and `args` passes further `moli serve`
+  flags. Worker scope only.
 - `packages/eas` - the published `@e2e-dev/eas` package: Expo Simulators
   hosted iOS simulators and Android emulators for the mobile engine
   (`DeviceProvider`). Expo publishes no SDK for the sessions API, so it calls
