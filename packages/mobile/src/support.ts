@@ -229,15 +229,16 @@ export type InstallIdentity = Pick<AppDeployResult, 'appId' | 'bundleId' | 'pack
 
 /**
  * The app an install of `build` opens by: the identity agent-device reported,
- * else the `app` it was installed as. Fails when neither names one.
+ * else the `app` it was installed as. Fails when neither names one, saying
+ * to name it with `namedBy`.
  */
-export function installedIdentity(result: InstallIdentity, app: string | undefined, build: string): { app: string; bundleId?: string } {
+export function installedIdentity(result: InstallIdentity, app: string | undefined, build: string, namedBy: string): { app: string; bundleId?: string } {
   const identity = result.bundleId ?? result.package ?? result.appId;
   const opensBy = identity ?? app;
   if (opensBy === undefined) {
     throw new EngineError(
       'ENGINE_FAILURE',
-      `installed ${build}, but agent-device reported no bundle id or package for it, so nothing can open it: name the app with the target's \`app.bundleId\` or installApp's \`app\` option`,
+      `installed ${build}, but agent-device reported no bundle id or package for it, so nothing can open it: name the app with ${namedBy}`,
       { retryable: false },
     );
   }

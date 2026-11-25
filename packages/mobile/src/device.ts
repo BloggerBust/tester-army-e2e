@@ -10,7 +10,7 @@ import type { EngineFixtureContext, Locator, ViewportSize } from '@e2e-dev/core/
 import { appLabel, linkLabel, linkTarget } from './links.ts';
 import { pressRemote, requireRemoteKey, type RemoteKey } from './remote.ts';
 import type { DevicePermission, MobilePlatform, PermissionState } from './options.ts';
-import type { DeviceSelection } from './pool.ts';
+import type { DeviceSelection } from './bindings.ts';
 import { unsupported } from './support.ts';
 import type { AgentDeviceSurface, FoldPose, InstallAppOptions, InstalledApp, OpenAppOptions } from './surface.ts';
 

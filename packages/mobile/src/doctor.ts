@@ -9,7 +9,8 @@ import path from 'node:path';
 import { obj, type EngineDoctorCheck, type EngineDoctorInfo } from '@e2e-dev/core/engine';
 import { runCommand } from './errors.ts';
 import type { ClientFactory, MobileOptions } from './options.ts';
-import { deviceSelection, isDeviceList } from './pool.ts';
+import { deviceSelection } from './bindings.ts';
+import { isDeviceList } from './pool.ts';
 import type { DeviceProvider } from './provider.ts';
 
 /** Checks that apply to the whole machine, reported once however many devices the target names. */

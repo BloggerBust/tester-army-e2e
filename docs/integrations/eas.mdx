@@ -126,7 +126,7 @@ The simulator boots with no apps. Choose one way to put yours on it:
 | --- | --- | --- |
 | A build from Expo Build | `buildId`: a simulator build (`"ios": { "simulator": true }` in `eas.json`) or an APK. Expo installs and launches it before the session is ready. The build never leaves Expo. | `bundleId`, so `app.open()` knows what to launch. No `appPath`, or the lease fails. |
 | A URL | `applicationArchiveUrl`: an app archive that Expo downloads and installs the same way. | `bundleId`, no `appPath`. |
-| A local build | Neither option. | `bundleId`, `appPath`, and a fixture that calls `device.installApp()`, as with a [local simulator](/mobile). The build uploads through the session's daemon to each simulator. |
+| A local build | Neither option. | `appPath`. The provider uploads the build through the session's daemon to each simulator and installs it. Don't also call `device.installApp()` for that build: it uploads a second time. |
 
 ## Options
 

@@ -70,9 +70,9 @@ import { keyboardDragStart, keyboardShownIn, type KeyboardUnknown } from './keyb
 import { DEVICE_PERMISSIONS, type AgentDeviceClient, type ClientFactory, type DevicePermission, type LaunchPermissions, type MobileOptions, type PermissionState } from './options.ts';
 import { maskPng } from './png.ts';
 import { mobileDoctor } from './doctor.ts';
-import { deviceLabel, pinnedApp, type SlotBinding } from './bindings.ts';
+import { deviceLabel, deviceSelection, pinnedApp, type DeviceSelection, type SlotBinding } from './bindings.ts';
 import { assertAppId } from './links.ts';
-import { bootRequest, DevicePool, deviceSelection, type DeviceSelection } from './pool.ts';
+import { bootRequest, DevicePool } from './pool.ts';
 import { recordLease, travelledLease, type DeviceLease, type RecordingDeviceProvider } from './provider.ts';
 import {
   installedIdentity,
@@ -1051,7 +1051,7 @@ export class AgentDeviceSurface {
           : client.apps.install({ ...selection, ...(app === undefined ? {} : { app }), appPath: resolved }),
       signal,
     );
-    const installed: InstalledApp = installedIdentity(result, app, resolved);
+    const installed: InstalledApp = installedIdentity(result, app, resolved, "the target's `app.bundleId` or installApp's `app` option");
     // The engine's own build, installed: without `app`, this is what `app.open()` launches from here on.
     if (engineBuild) this.installedApp = installed.app;
     return installed;

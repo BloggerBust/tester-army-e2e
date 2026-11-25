@@ -2,7 +2,7 @@
 
 import { TestError } from '@e2e-dev/core/engine';
 import type { AgentDeviceClient } from './options.ts';
-import type { DeviceSelection } from './pool.ts';
+import type { DeviceSelection } from './bindings.ts';
 
 type TvRemoteButton = Parameters<AgentDeviceClient['command']['tvRemote']>[0]['button'];
 

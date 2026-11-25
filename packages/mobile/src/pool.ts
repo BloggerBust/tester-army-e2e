@@ -21,39 +21,10 @@ import {
   type EnginePrepareInfo,
   type EnginePrepareResult,
 } from '@e2e-dev/core/engine';
-import { bindingsVariable, decodeBindings, deviceLabel, encodeBindings, pinnedApp, type DeviceSource, type SlotBinding } from './bindings.ts';
+import { bindingsVariable, decodeBindings, deviceLabel, deviceSelection, encodeBindings, pinnedApp, type DeviceSelection, type DeviceSource, type SlotBinding } from './bindings.ts';
 import { deviceHolder, isNoSession, isRunnerFailure, isShortLivedClaim, message, runCommand } from './errors.ts';
 import type { AgentDeviceClient, MobileOptions, MobilePlatform, ClientFactory } from './options.ts';
 import { asDeviceProvider, LeasedDevices, type RecordingDeviceProvider } from './provider.ts';
-
-/** An Apple simulator UDID. */
-const UDID = /^[0-9A-F]{8}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{12}$/i;
-/** An Android emulator's adb serial. */
-const EMULATOR_SERIAL = /^emulator-\d+$/;
-
-/** The fields agent-device commands select a device by: the platform, then one of a name, a simulator UDID, or an Android serial. */
-export interface DeviceSelection {
-  readonly platform: MobilePlatform;
-  readonly device?: string;
-  readonly udid?: string;
-  readonly serial?: string;
-}
-
-/**
- * The selection agent-device commands take for a binding: an id the pool
- * discovered goes under the platform's id field (`udid` for a simulator,
- * `serial` for an Android device), a configured string too when it reads as
- * a UDID or an emulator serial, and any other string is a device name.
- */
-export function deviceSelection(
-  platform: MobilePlatform,
-  binding: Pick<SlotBinding, 'device' | 'deviceId'> | undefined,
-): DeviceSelection {
-  const { device, deviceId } = binding ?? {};
-  const id = deviceId ?? (device !== undefined && (UDID.test(device) || EMULATOR_SERIAL.test(device)) ? device : undefined);
-  if (id === undefined) return obj({ platform, device });
-  return platform === 'android' ? { platform, serial: id } : { platform, udid: id };
-}
 
 /**
  * The request `boot` takes for a selection. One that names no device asks

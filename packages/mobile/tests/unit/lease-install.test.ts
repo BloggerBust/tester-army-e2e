@@ -1,14 +1,15 @@
 /**
  * `agentDeviceLeases()` with `installAppPath`: the build goes through the
  * lease's own daemon, never an ambient one, and a failed install releases the
- * lease it was granted for.
+ * lease it was granted for. `installLeasedApp()` on a lease that names a
+ * daemon address installs through that daemon, on the device the lease names.
  */
 
 import { rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { DeviceRequest } from '../../src/index.ts';
-import { agentDeviceLeases, type AgentDeviceLeaseRequest } from '../../src/lease/index.ts';
+import { agentDeviceLeases, installLeasedApp, type AgentDeviceLeaseRequest } from '../../src/lease/index.ts';
 import type { DriverRequest } from '../../src/lease/driver.ts';
 
 const mocks = vi.hoisted(() => ({
@@ -111,5 +112,27 @@ describe('agentDeviceLeases() installAppPath', () => {
       message: expect.stringContaining('reported no bundle id or package'),
     });
     expect(mocks.stop).toHaveBeenCalledOnce();
+  });
+});
+
+describe('installLeasedApp()', () => {
+  const lease = { id: 's1', daemon: { baseUrl: 'https://s1.example', authToken: 'daemon-token' }, deviceId: 'emulator-5554' };
+
+  it("installs app.appPath through the daemon the lease names, on the lease's device", async () => {
+    await expect(installLeasedApp(request(), lease)).resolves.toEqual({ ...lease, installedApp: 'com.example.local' });
+    expect(mocks.client).toHaveBeenCalledWith({ session: 'e2e-install-s1', daemonBaseUrl: 'https://s1.example', daemonAuthToken: 'daemon-token' });
+    expect(mocks.install).toHaveBeenCalledWith(expect.objectContaining({ appPath: APP_PATH, platform: 'android', serial: 'emulator-5554', app: 'com.example.app' }));
+    expect(mocks.close).toHaveBeenCalledOnce();
+  });
+
+  it('returns the lease as it is for a request without an appPath', async () => {
+    await expect(installLeasedApp(request({ appPath: undefined }), lease)).resolves.toBe(lease);
+    expect(mocks.client).not.toHaveBeenCalled();
+  });
+
+  it('closes the install session and rejects with the install failure', async () => {
+    mocks.install.mockRejectedValueOnce(new Error('upload refused'));
+    await expect(installLeasedApp(request(), lease)).rejects.toThrow('upload refused');
+    expect(mocks.close).toHaveBeenCalledOnce();
   });
 });

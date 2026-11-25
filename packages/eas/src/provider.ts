@@ -2,6 +2,7 @@
 
 import { setTimeout as sleep } from 'node:timers/promises';
 import type { DeviceLease, DeviceProvider, DeviceReleaseContext, DeviceRequest } from '@e2e-dev/mobile';
+import { installLeasedApp } from '@e2e-dev/mobile/lease';
 import { ConfigurationError, rejectUnknownKeys } from 'e2e/engine';
 import { easSessions, type EasSessionState, type EasSessions } from './client.ts';
 import { EXPO_TOKEN, expoCredentials } from './credentials.ts';
@@ -65,7 +66,9 @@ export interface ExpoSimulatorsOptions {
    * A build from Expo Build that Expo installs and launches on every
    * simulator before the session is ready: a simulator build
    * (`ios.simulator: true`) or an APK. Pair it with the target's
-   * `app.bundleId` and leave `app.appPath` out.
+   * `app.bundleId` and leave `app.appPath` out. With neither this nor
+   * `applicationArchiveUrl`, the target's `app.appPath` is uploaded to each
+   * simulator and installed there.
    */
   readonly buildId?: string | undefined;
   /** URL of an app archive Expo downloads and installs in place of a build from Expo Build; excludes `buildId`. */
@@ -122,10 +125,6 @@ export function expoSimulators(options: ExpoSimulatorsOptions = {}): DeviceProvi
   const maxIdleTimeMinutes = idleMinutes >= 1 ? idleMinutes : undefined;
   const projectIdFor = (request: DeviceRequest): Promise<string> => {
     if (projectId !== undefined) return Promise.resolve(projectId);
-    // The peer range admits an @e2e-dev/mobile from before providers were told the project root.
-    if (typeof request.projectRoot !== 'string') {
-      return Promise.reject(new Error('reading `projectId` from the app config needs an @e2e-dev/mobile that passes `projectRoot` to device providers; upgrade it, or pass `projectId`'));
-    }
     const key = `${request.runId}\0${request.projectRoot}`;
     let resolved = projectIds.get(key);
     if (resolved === undefined) {
@@ -176,28 +175,32 @@ export function expoSimulators(options: ExpoSimulatorsOptions = {}): DeviceProvi
         AbortSignal.timeout(60_000),
       );
       request.log(`simulator session ${created.id}, ${created.url}`);
-      try {
-        const session = await ready(client, created.id, request);
-        if (session.openPreviewUrl !== undefined) request.log(`watch at ${session.openPreviewUrl}`);
-        if (maxIdleTimeMinutes !== undefined) {
-          let held = idleDeadlines.get(request.runId);
-          if (held === undefined) {
-            held = new Map();
-            idleDeadlines.set(request.runId, held);
-          }
-          held.set(created.id, Date.now() + maxIdleTimeMinutes * 60_000);
-        }
-        leaseClients.set(created.id, client);
-        return { id: created.id, daemon: { baseUrl: session.daemonUrl, authToken: session.daemonToken } };
-      } catch (cause) {
-        // Expo bills a session from the moment it starts, and the engine holds only leases `acquire` returned.
+      // Expo bills a session from the moment it starts, and the engine holds only leases `acquire` returned.
+      const abandon = async (what: string, cause: unknown): Promise<never> => {
+        const held = idleDeadlines.get(request.runId);
+        held?.delete(created.id);
+        if (held?.size === 0) idleDeadlines.delete(request.runId);
+        leaseClients.delete(created.id);
         const outcome = await client.stop(created.id, AbortSignal.timeout(10_000)).then(
           () => 'stopped it',
           (stopCause: unknown) => `stopping it failed, so Expo stops it at its idle or duration limit (${stopCause instanceof Error ? stopCause.message : String(stopCause)})`,
         );
         const reason = request.signal.aborted ? 'cancelled' : cause instanceof Error ? cause.message : String(cause);
-        throw new Error(`simulator session ${created.id} did not become ready: ${reason}; ${outcome}, ${created.url}`, { cause });
+        throw new Error(`simulator session ${created.id} ${what}: ${reason}; ${outcome}, ${created.url}`, { cause });
+      };
+      const session = await ready(client, created.id, request).catch((cause: unknown) => abandon('did not become ready', cause));
+      if (session.openPreviewUrl !== undefined) request.log(`watch at ${session.openPreviewUrl}`);
+      if (maxIdleTimeMinutes !== undefined) {
+        let held = idleDeadlines.get(request.runId);
+        if (held === undefined) {
+          held = new Map();
+          idleDeadlines.set(request.runId, held);
+        }
+        held.set(created.id, Date.now() + maxIdleTimeMinutes * 60_000);
       }
+      leaseClients.set(created.id, client);
+      const lease: DeviceLease = { id: created.id, daemon: { baseUrl: session.daemonUrl, authToken: session.daemonToken } };
+      return installLeasedApp(request, lease).catch((cause: unknown) => abandon("did not install the target's `app.appPath`", cause));
     },
     async release(lease: DeviceLease, context: DeviceReleaseContext): Promise<void> {
       for (const key of projectIds.keys()) if (key.startsWith(`${context.runId}\0`)) projectIds.delete(key);

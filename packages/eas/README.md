@@ -42,8 +42,8 @@ and the engine drives it through the agent-device daemon Expo runs beside it.
 Tests start once every slot has a simulator.
 
 - `buildId` (or `applicationArchiveUrl`) has Expo install the app; without
-  it, `device.installApp()` uploads the target's `app.appPath` through the
-  daemon. `E2E_IOS_BUILD_ID` above is a variable you set to the build's ID.
+  it, the provider uploads the target's `app.appPath` through the daemon
+  and installs it. `E2E_IOS_BUILD_ID` above is a variable you set to the build's ID.
   Don't read `EAS_BUILD_ID`: in an Expo Workflows job, Expo sets it to the
   ID of the running job. In a workflow job, set the variable from
   `needs.<build job>.outputs.build_id`.

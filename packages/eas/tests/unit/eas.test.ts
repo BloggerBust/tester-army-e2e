@@ -3,15 +3,21 @@
  * `fetch`: the create input, polling to ready and the queue line, the lease
  * and its log lines, stopping on release and after a failed or cancelled
  * start, the token or eas-cli login, the project id from the app config,
- * and the target's `app.appPath`.
+ * and the target's `app.appPath`, installed through the session's daemon.
  */
 
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import type { DeviceReleaseContext, DeviceRequest } from '@e2e-dev/mobile';
+import type { DeviceLease, DeviceReleaseContext, DeviceRequest } from '@e2e-dev/mobile';
 import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { easSimulators, expoSimulators } from '../../src/index.ts';
+
+const mocks = vi.hoisted(() => ({
+  /** The lease helper of `@e2e-dev/mobile`, tested there: a request with an `appPath` installs `com.example.app`. */
+  install: vi.fn(async (asked: DeviceRequest, lease: DeviceLease): Promise<DeviceLease> => (asked.appPath === undefined ? lease : { ...lease, installedApp: 'com.example.app' })),
+}));
+vi.mock('@e2e-dev/mobile/lease', () => ({ installLeasedApp: mocks.install }));
 
 vi.mock('node:timers/promises', () => ({
   setTimeout: async (_ms: number, value: unknown, options?: { signal?: AbortSignal }) => {
@@ -490,13 +496,6 @@ describe('expoSimulators()', () => {
     expect(eas.calls).toEqual([]);
   });
 
-  it('names the engine to upgrade when it passes no project root', async () => {
-    await expect(expoSimulators({}).acquire(request({ projectRoot: undefined as unknown as string }))).rejects.toThrow(
-      'reading `projectId` from the app config needs an @e2e-dev/mobile that passes `projectRoot` to device providers; upgrade it, or pass `projectId`',
-    );
-    expect(eas.calls).toEqual([]);
-  });
-
   it('reads app.config.json before app.json, and a config without an expo key as the whole config', async () => {
     const projectRoot = projectWith({ 'app.config.json': JSON.stringify({ extra: { eas: { projectId: ' flat ' } } }), 'app.json': linked('from-app-json') });
     await expoSimulators({}).acquire(request({ projectRoot }));
@@ -545,10 +544,30 @@ describe('expoSimulators()', () => {
   it("refuses the target's app.appPath for an app Expo already installs, and two app sources", async () => {
     await expect(expoSimulators({ projectId: 'p1', buildId: 'b1' }).acquire(request({ appPath: '/builds/App.app' }))).rejects.toThrow("leave the target's `app.appPath` out");
     expect(eas.calls).toEqual([]);
-    await expect(expoSimulators({ projectId: 'p1' }).acquire(request({ appPath: '/builds/App.app' }))).resolves.toMatchObject({ id: 's1' });
     expect(() => expoSimulators({ projectId: 'p1', buildId: 'b1', applicationArchiveUrl: 'https://example.com/App.tar.gz' })).toThrow(
       expect.objectContaining({ code: 'INVALID_CONFIG', message: expect.stringContaining('not both') }),
     );
+  });
+
+  it("installs the target's app.appPath through the session's daemon when Expo installs no app, and reports it on the lease", async () => {
+    const acquiring = request({ appPath: '/builds/App.app' });
+    const lease = await expoSimulators({ projectId: 'p1' }).acquire(acquiring);
+    expect(mocks.install).toHaveBeenCalledWith(acquiring, { id: 's1', daemon: { baseUrl: 'https://agent-device-s1.eas-simulator.ngrok.dev', authToken: 'daemon-token' } });
+    expect(lease).toEqual({ id: 's1', daemon: { baseUrl: 'https://agent-device-s1.eas-simulator.ngrok.dev', authToken: 'daemon-token' }, installedApp: 'com.example.app' });
+  });
+
+  it('stops a session whose build did not install, names the install failure, and no longer counts the session as idling', async () => {
+    let now = 0;
+    vi.spyOn(Date, 'now').mockImplementation(() => (now += 60_000));
+    mocks.install.mockRejectedValueOnce(new Error('the simulator refused the build'));
+    const acquiring = request({ appPath: '/builds/App.app' });
+    await expect(expoSimulators({ projectId: 'p1', maxIdleTimeMinutes: 2 }).acquire(acquiring)).rejects.toThrow(
+      `simulator session s1 did not install the target's \`app.appPath\`: the simulator refused the build; stopped it, ${SESSION_URL}`,
+    );
+    expect(eas.calls.at(-1)?.operation).toBe('stop');
+    const queued = { status: 'NEW', turtleJobRun: { status: 'IN_QUEUE' }, remoteConfig: null };
+    eas.states = [...Array.from({ length: 10 }, () => queued), READY];
+    await expect(expoSimulators({ projectId: 'p1', maxIdleTimeMinutes: 2 }).acquire(request({ runId: acquiring.runId }))).resolves.toMatchObject({ id: 's1' });
   });
 
   it('rejects an option it does not know, naming the nearest', () => {

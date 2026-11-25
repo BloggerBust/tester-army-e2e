@@ -9,6 +9,7 @@
 import { createHash } from 'node:crypto';
 import type { createAgentDeviceClient } from 'agent-device';
 import { EngineError, obj, type EngineAppInfo, type EngineFinishInfo, type EnginePrepareInfo } from '@e2e-dev/core/engine';
+import type { MobilePlatform } from './options.ts';
 
 type AgentDeviceClientConfig = NonNullable<Parameters<typeof createAgentDeviceClient>[0]>;
 
@@ -76,6 +77,35 @@ export interface DeviceSource {
 /** What a binding calls its device in progress and error lines: the name, else the id, else nothing. */
 export function deviceLabel(binding: Pick<SlotBinding, 'device' | 'deviceId'> | undefined): string | undefined {
   return binding?.device ?? binding?.deviceId;
+}
+
+/** An Apple simulator UDID. */
+const UDID = /^[0-9A-F]{8}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{12}$/i;
+/** An Android emulator's adb serial. */
+const EMULATOR_SERIAL = /^emulator-\d+$/;
+
+/** The fields agent-device commands select a device by: the platform, then one of a name, a simulator UDID, or an Android serial. */
+export interface DeviceSelection {
+  readonly platform: MobilePlatform;
+  readonly device?: string;
+  readonly udid?: string;
+  readonly serial?: string;
+}
+
+/**
+ * The selection agent-device commands take for a binding: an id the pool
+ * discovered goes under the platform's id field (`udid` for a simulator,
+ * `serial` for an Android device), a configured string too when it reads as
+ * a UDID or an emulator serial, and any other string is a device name.
+ */
+export function deviceSelection(
+  platform: MobilePlatform,
+  binding: Pick<SlotBinding, 'device' | 'deviceId'> | undefined,
+): DeviceSelection {
+  const { device, deviceId } = binding ?? {};
+  const id = deviceId ?? (device !== undefined && (UDID.test(device) || EMULATOR_SERIAL.test(device)) ? device : undefined);
+  if (id === undefined) return obj({ platform, device });
+  return platform === 'android' ? { platform, serial: id } : { platform, udid: id };
 }
 
 /**

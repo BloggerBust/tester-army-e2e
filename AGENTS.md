@@ -131,7 +131,9 @@ suites that consume the built packages the way a user would.
   device-cloud providers (`testmu`, `browserstack`, `revyl`) share: one
   daemon per slot, heartbeat, a release that fails unless the session end is
   confirmed, and `agentDevicePlugin()`, which checks a provider plugin's
-  version and registers it in the daemon's home.
+  version and registers it in the daemon's home. Its `installLeasedApp()`
+  installs a target's `app.appPath` through any lease's daemon; `eas` uses
+  it too.
 - `packages/desktop` - the published `@e2e-dev/desktop` package: the
   desktop engine on agent-desktop (native apps through the OS accessibility
   tree), built with the same public `defineEngine`,
