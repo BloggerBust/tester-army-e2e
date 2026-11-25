@@ -93,6 +93,12 @@ app: {
   as define de novo.
 - `deny` no iOS responde não ao app sem prompt. No Android, revoga a
   permissão, então o sistema operacional pergunta de novo.
+- `permissions: 'all'` concede todas as permissões que a plataforma consegue
+  definir: cada permissão de tempo de execução que o app declara no Android e
+  cada serviço de privacidade que o runtime consegue definir em um simulador
+  iOS, com a localização em `always`. O Android pula as permissões que concede
+  na instalação, como `INTERNET`. O simulador se recusa a definir as
+  notificações, então aceite esse prompt com `device.alert('accept')`.
 - O aquecimento antes da execução não passa nenhum dos dois, então comece cada
   teste com `app.open()`.
 - Argumentos que selecionam um modo de build mudam o que o app é. Dê a cada
@@ -712,6 +718,8 @@ chega ao reporter.
 - Um alvo sem nada para rodar não reserva nada.
 - Defina `installedApp` somente quando a requisição tiver um `appPath`. Caso
   contrário, a execução falha.
+- Para instalar o `appPath` da requisição pelo daemon da reserva, retorne
+  `installLeasedApp(request, lease)` de `@e2e-dev/mobile/lease`.
 
 **`release`** roda depois que o último worker sai, dentro de
 `cleanupTimeout`, em todo caminho de saída: uma falha, uma interrupção ou um

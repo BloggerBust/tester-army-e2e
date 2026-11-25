@@ -320,6 +320,10 @@ app usar a área de transferência, conceda-a no alvo:
   `INVALID_CONFIG`: em vez disso, deixe a permissão de fora.
 - Os nomes são os do Playwright, e cada navegador concede seu próprio conjunto.
   Veja [`permissions`](/reference/config#permissions).
+- `permissions: 'all'` concede todos os nomes que o navegador do alvo concede.
+  Um Chrome mais antigo conectado por CDP que não conhece
+  `local-network-access`, `storage-access` ou `local-fonts` recebe o resto da
+  lista.
 
 ## Próximos passos
 
