@@ -506,6 +506,8 @@ export type WebInitScript = string | { readonly path: string } | (() => unknown)
 
 | Member | Returns |
 | --- | --- |
+| [`name`](#name-version) | `BrowserName` |
+| [`version`](#name-version) | `string` |
 | [`goto`](#goto) | `Promise<void>` |
 | [`reload`](#reload-back-forward) | `Promise<void>` |
 | [`back`](#reload-back-forward) | `Promise<void>` |
@@ -545,13 +547,42 @@ The [config](/reference/config) sets each member's budget:
   the same budget `app.open()` uses.
 - `waitForURL`: [`assertionTimeout`](/reference/config#assertiontimeout).
 - Every other member: [`actionTimeout`](/reference/config#actiontimeout).
-  `locator` and `frameLocator` touch no page and take none.
+  `name`, `version`, `locator`, and `frameLocator` touch no page and take none.
 
 A `{ timeout }` option overrides the budget on `goto`, `reload`, `back`,
 `forward`, `waitForResponse`, `waitForRequest`, `waitForPopup`, `waitForDownload`, and `waitForDownloads`, capped
 by the test deadline (`cleanupTimeout` in `afterEach`); `0` waits until it. `url`, `title`, `evaluate`, `addInitScript`, `route`,
 `unroute`, `unrouteAll`, `cookies`, `setCookies`, `clearCookies`, `setViewport`,
 `emulateMedia`, `setNetwork`, `onDialog`, `newTab`, the `BrowserTab` methods, `keyboard.*`, `mouse.*`, `webmcp.*`, and `clock.*` take no override.
+
+#### `name`, `version`
+
+The browser the test runs in, and the version that browser reports.
+
+```ts
+test('exports a PDF', async ({ app, browser }) => {
+  test.skip(browser.name !== 'chromium', 'PDF export is Chromium only');
+  console.log(browser.version); // 159.0.8154.6
+  await app.open('/invoice');
+});
+```
+
+- `name` is `'chromium'`, `'firefox'`, or `'webkit'`, the value of the
+  [`browser`](#browser) option.
+- A browser attached with [`connect`](#connect) or leased from a provider is
+  always `'chromium'`, because the engine drives it over CDP. That holds for
+  Chrome and Edge, and for a CDP server that isn't Chromium, such as
+  [Lightpanda](/integrations/lightpanda).
+- `version` is read from the running browser. For an attached or hosted one
+  it is what its CDP endpoint reports. The [`userAgent`](#useragent) option
+  doesn't change it.
+- Both are properties, not steps, and can be read before the first
+  navigation.
+- For the operating system, use `process.platform` when the browser runs on
+  the runner's machine. For a hosted browser, read `navigator.platform`
+  with [`evaluate`](#evaluate).
+- To tell Chrome from Edge, read `navigator.userAgentData.brands` with
+  [`evaluate`](#evaluate). Chromium exposes it only in a secure context: an HTTPS, loopback, or `file:` page.
 
 #### `goto`
 
@@ -1664,6 +1695,18 @@ export interface WebOptions {
  * again.
  */
 export interface Browser extends Expectable<BrowserExpectation> {
+  /**
+   * The browser the attempt drives, as the driver names it: the
+   * `web({ browser })` value, and `chromium` for every browser the engine
+   * attaches to over CDP (`connect`, a provider), whatever it is.
+   */
+  readonly name: BrowserName;
+  /**
+   * The version the running browser reports, such as `159.0.8154.6`: for
+   * an attached or hosted one, what its CDP endpoint reports. The target's
+   * `userAgent` does not change it.
+   */
+  readonly version: string;
   /** Navigates to an allowed URL. */
   goto(
     url: string,

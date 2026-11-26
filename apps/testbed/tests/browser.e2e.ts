@@ -73,6 +73,30 @@ test.describe('browser fixture', { platforms: ['web'], tags: ['browser'] }, () =
   });
 });
 
+test('the browser names its engine and reports a version before any page opens', { platforms: ['web'], tags: ['browser'] }, async ({ browser }) => {
+  expect(['chromium', 'firefox', 'webkit']).toContain(browser.name);
+  expect(browser.version).toMatch(/^\d+(\.\d+)*$/);
+});
+
+test('a test skips on the browsers it does not cover', { platforms: ['web'], tags: ['browser'] }, async ({ browser }) => {
+  test.skip(browser.name !== 'chromium', 'covers Chromium only');
+  expect(browser.name).toBe('chromium');
+});
+
+// A serial group's members share one session, each under an attempt id of its own.
+test.describe('browser identity in a serial group', { serial: true, platforms: ['web'], tags: ['browser'] }, () => {
+  let first = '';
+
+  test('the first member reads the identity', ({ browser }) => {
+    expect(['chromium', 'firefox', 'webkit']).toContain(browser.name);
+    first = browser.version;
+  });
+
+  test('the second member reads the same browser', ({ browser }) => {
+    expect(browser.version).toBe(first);
+  });
+});
+
 test('offline fails the page\'s requests and navigations until the test goes back online', { platforms: ['web'], tags: ['browser'] }, async ({ app, screen, browser }) => {
   await app.open('/browser');
   await expect(screen.getByLabel('Network')).toHaveText('online');

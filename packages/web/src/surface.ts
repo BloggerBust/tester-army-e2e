@@ -47,7 +47,7 @@ import {
 } from '@e2e-dev/core/engine';
 import { matchesText } from '@e2e-dev/core/engine';
 import { classifyActionError, classifyInputError, dispatchLocatorAction, dispatchPointerAction } from './actions.ts';
-import { BrowserConnection, connectCdp, defaultChromiumSandbox, type BrowserLaunchOptions, type BrowserName } from './browser-connection.ts';
+import { BrowserConnection, connectCdp, defaultChromiumSandbox, isBrowserName, type BrowserLaunchOptions, type BrowserName } from './browser-connection.ts';
 import { grantedPermissions, grantPermissions } from './permissions.ts';
 import { AttemptSession, type AttemptTab, type StorageState } from './attempt-session.ts';
 import type { CdpEndpointResolver } from './cdp-recovery.ts';
@@ -893,6 +893,35 @@ export class PlaywrightSurface {
   /** Closes the open tab at `index`, in opening order, for the agent's `closeTab` verb, and shows the screen after it. */
   closeTabAt(index: number, operation: OperationContext): Promise<void> {
     return this.acted(operation, this.guard(operation, 'close tab', () => this.requireSession().closeTabAt(index)));
+  }
+
+  // --- identity shared with the browser fixture ---
+
+  /**
+   * Reads the engine and version of the browser the attempt is connected to,
+   * both asked of the driver: a browser attached over CDP was not launched
+   * from `web({ browser })`, and its version is no package's. The reader
+   * belongs to the session running when it is made, or else to the first it
+   * reads: a fixture kept past its attempt gets no answer from the next
+   * attempt's browser, which a provider may have leased anew. The owner is
+   * the session, not an attempt id, because the members of a serial group
+   * share one session under ids of their own. `ended` is the fixture's own
+   * signal: a fixture first made after its attempt ended would otherwise
+   * take the next attempt's session for its own.
+   */
+  browserIdentity(ended: () => AbortSignal): () => { readonly name: BrowserName; readonly version: string } {
+    let owner = this.session;
+    return () => {
+      const session = this.requireSession();
+      owner ??= session;
+      if (session !== owner || ended().aborted) throw invalidState('the attempt this browser belongs to has ended');
+      const { browser } = session.current();
+      const name = browser.browserType().name();
+      if (!isBrowserName(name)) {
+        throw new EngineError('ENGINE_FAILURE', `the driver reported an unknown browser "${name}"`, { retryable: false });
+      }
+      return { name, version: browser.version() };
+    };
   }
 
   // --- tabs shared with the browser fixture ---

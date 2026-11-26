@@ -58,6 +58,7 @@ describe('CDP session recovery', () => {
   function fixtureOf(engine: EngineHandle, timeoutMs = 10_000): Browser {
     return engine.fixtures!['browser']!({
       operation: () => operation(timeoutMs),
+      signal: new AbortController().signal,
       app: { resolveUrl: (url: string) => new URL(url, app.url).href },
       expectable: (target: object) => target,
       fixture: (_name: string, target: object) => target,
@@ -132,6 +133,31 @@ describe('CDP session recovery', () => {
       expect(browser.isConnected()).toBe(false);
       expect(remote.proc.exitCode).toBeNull();
       expect(remote.proc.signalCode).toBeNull();
+      await closeRemoteChrome(remote);
+    }
+  }, 60_000);
+
+  it('identifies the persistent browser by its own endpoint, after reconnect too', async () => {
+    const remote = await host();
+    const { port } = new URL(remote.endpoint);
+    const reported = await (await fetch(`http://127.0.0.1:${port}/json/version`)).json() as { Browser: string };
+    const engine = await start({ cdpEndpoint: () => remote.endpoint, reconnectEndpoint: () => remote.endpoint });
+    // One fixture, as a test body keeps it across the reconnect.
+    const fixture = fixtureOf(engine);
+    const identity = () => ({ name: fixture.name, version: fixture.version });
+    try {
+      expect(identity()).toEqual({ name: 'chromium', version: reported.Browser.split('/')[1] });
+      const dropped = surfaceOf(engine)!.context().browser()!;
+      await dropped.close();
+      expect((await engine.locate!(heading, operation()))[0]?.name).toBe('Login');
+      // Both connections reach the same Chrome, so the value cannot tell them apart: the replacement has to be the one asked.
+      const replacement = surfaceOf(engine)!.context().browser()!;
+      expect(replacement).not.toBe(dropped);
+      const asked = vi.spyOn(replacement, 'version');
+      expect(identity()).toEqual({ name: 'chromium', version: reported.Browser.split('/')[1] });
+      expect(asked).toHaveBeenCalled();
+    } finally {
+      await engine.dispose!(cleanup());
       await closeRemoteChrome(remote);
     }
   }, 60_000);

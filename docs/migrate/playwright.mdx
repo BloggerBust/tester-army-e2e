@@ -174,6 +174,7 @@ run only in a browser, so a test that uses it declares
 | `page.addInitScript()`, `page.emulateMedia({ colorScheme, reducedMotion })` | `browser.addInitScript()` or `web({ initScripts })`; `browser.emulateMedia()` |
 | `page.clock.install()`, `pauseAt()`, `runFor()`, `fastForward()`, `resume()`, `setFixedTime()`, `setSystemTime()` | `browser.clock`, the same methods and arguments; it covers every tab, like `context.clock` |
 | `context.addCookies()`, `cookies(urls)`, `clearCookies()` | `browser.setCookies()`, `browser.cookies(urls)`, `browser.clearCookies()` |
+| The `browserName` fixture, `browser.browserType().name()`, `browser.version()` | [`browser.name`](/reference/web#name-version), `browser.version`; `test.skip(browser.name === 'firefox', reason)` in the body |
 | `context.setOffline(true)` | [`browser.setNetwork('offline')`](/reference/web#setnetwork), `'online'` to go back |
 | The `request` fixture: `get()`, `post()`, `put()`, `patch()`, `delete()`, `head()`, `fetch()` | the same on [`request`](/reference/request): `{ json }` for `data` (it refuses an `undefined` value or a `Date`), the query in the URL for `params`, `{ redirect: 'manual' }` for `maxRedirects: 0`, `status` and `headers` as properties. It keeps no cookies between calls: pass a token or session cookie in `headers` |
 | `page.request`, which shares the page's cookies | `request` with a `cookie` header from `browser.cookies(url)`, see [Signed-in requests](/api-testing#signed-in-requests) |

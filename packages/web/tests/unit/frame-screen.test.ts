@@ -33,7 +33,7 @@ function browserWithRecordingContext() {
       } as unknown as Screen;
     },
   } as unknown as EngineFixtureContext;
-  const browser = createBrowserFixture({} as PlaywrightSurface, context);
+  const browser = createBrowserFixture({ browserIdentity: () => undefined } as unknown as PlaywrightSurface, context);
   return { browser, minted };
 }
 

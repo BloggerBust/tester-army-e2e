@@ -516,6 +516,9 @@ background: `waitForPopup(() => trigger)` makes it active and returns it.
   fails the next step with `INVALID_STATE`); `waitForDownload(() =>
   trigger)` returns `{ path, absolutePath, suggestedFilename }`: read the
   saved file through `absolutePath`.
+- **Identity:** `name` (`'chromium'`, `'firefox'`, or `'webkit'`; always
+  `'chromium'` over CDP) and `version` are properties. Skip on a browser in
+  the body: `test.skip(browser.name === 'firefox', 'reason')`.
 - `locator(css)` and `keyboard`/`mouse` are last resorts: prefer a
   `screen` locator.
 

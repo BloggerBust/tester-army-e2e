@@ -93,6 +93,8 @@ test('signs in', async ({ app, screen, browser }) => {
 | `wait.until(visibilityOf(...))`, `textToBe(...)`, `urlContains(...)` | `expect(locator).toBeVisible()`, `.toHaveText(...)`, `expect(browser).toHaveURL(/.../)` |
 | `switchTo().frame()`, `switchTo().alert().accept()` | `browser.frameLocator('#frame')`, `browser.onDialog('accept')` before the action |
 | `switchTo().window(handle)`, `getWindowHandles()`, `switchTo().newWindow()` | `tab.activate()`, `browser.tabs()`, `browser.newTab()`; `browser.waitForPopup(() => trigger)` for a tab the app opens, see [Tabs](/reference/web#tabs) |
+| `getCapabilities().getBrowserName()`, `getBrowserVersion()`, WebdriverIO `browser.capabilities` | [`browser.name`](/reference/web#name-version), which is `chromium`, `firefox`, or `webkit` and never a brand, and `browser.version` |
+| `getCapabilities().getPlatformName()` | `process.platform` for a browser on the runner's machine; for a hosted one, `browser.evaluate(() => navigator.platform)` |
 | `executeScript(script, args)` | `browser.evaluate(fn, arg)`, JSON in and out only |
 | Page objects | A fixture from `test.extend`, or a goal for `agent.act`, see [Page objects](/page-object-model) |
 
