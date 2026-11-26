@@ -186,8 +186,13 @@ export class StepTraceSession {
   private consumedReplay = false;
   /** True once the store returned an entry for this step, whether or not it replayed. */
   private readEntryHit = false;
-  /** Grammar actions recorded so far when an end-mismatch hand-off happened. */
-  private actionsAtEndMismatch: number | undefined;
+  /**
+   * Actions and gaps the executor recorded after an end-mismatch hand-off;
+   * undefined without one. Counted here, not read off the recording: a
+   * scroll that repeats the replayed one folds into it and leaves the
+   * recording's length as it was.
+   */
+  private actionsAfterEndMismatch: number | undefined;
 
   constructor(host: StepCacheHost, options: StepCacheOptions) {
     this.host = host;
@@ -219,16 +224,19 @@ export class StepTraceSession {
   /** Records one committed grammar action into the step trace. */
   record(action: RecordableAction): void {
     this.recorder?.record(action);
+    this.countAfterEndMismatch();
   }
 
   /** Records one mutating project-tool call as a replay-ending gap. */
   recordGap(toolName: string): void {
     this.recorder?.recordGap(toolName);
+    this.countAfterEndMismatch();
   }
 
   /** Records a fill whose value was this run's data as a replay-ending gap, with the rule that said so. */
   recordDerivedGap(reason: DerivedReason): void {
     this.recorder?.recordDerivedGap(reason);
+    this.countAfterEndMismatch();
   }
 
   /** How many actions the step's recording holds, gaps included; undefined when this step records nothing. */
@@ -359,7 +367,7 @@ export class StepTraceSession {
         if (this.consumedReplay) await this.evict();
         return;
       case 'passed':
-        if (this.repairedAfterEndMismatch(recorder)) await this.evict();
+        if (this.repairedAfterEndMismatch()) await this.evict();
         else if (this.replayedWhole) {
           this.cache.staged.push({
             kind: 'keep',
@@ -564,7 +572,7 @@ export class StepTraceSession {
 
   private handOff(outcome: ReplayOutcome, stopReason: HandOffReason, detail: string | undefined): void {
     this.handedOffMs = Date.now();
-    if (stopReason === 'end-mismatch') this.actionsAtEndMismatch = this.recorder?.recordedCount ?? 0;
+    if (stopReason === 'end-mismatch') this.actionsAfterEndMismatch = 0;
     this.prefix = {
       replayedActions: outcome.summaries,
       totalActions: outcome.total,
@@ -668,8 +676,12 @@ export class StepTraceSession {
     if (deleted) this.cache.staged.push({ kind: 'decided', outcome: 'evicted', keyHash: this.keyHash, stepIndex: this.options.stepIndex });
   }
 
-  private repairedAfterEndMismatch(recorder: TraceRecorder): boolean {
-    return this.actionsAtEndMismatch !== undefined && recorder.recordedCount > this.actionsAtEndMismatch;
+  private countAfterEndMismatch(): void {
+    if (this.actionsAfterEndMismatch !== undefined) this.actionsAfterEndMismatch += 1;
+  }
+
+  private repairedAfterEndMismatch(): boolean {
+    return this.actionsAfterEndMismatch !== undefined && this.actionsAfterEndMismatch > 0;
   }
 
   /** Cache detail as the report keeps it: redacted, then cut to the schema's bound. */
