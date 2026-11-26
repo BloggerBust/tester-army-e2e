@@ -80,6 +80,7 @@ describe('classifyChange and watchRoots', () => {
       configPath: path.join(root, 'e2e.config.ts'),
       tests: ['tests/**/*.e2e.ts', '!tests/wip/**'],
       written: [path.join(root, 'test-results'), path.join(root, 'tests', 'cache')],
+      writtenFiles: [],
     };
   });
   afterEach(() => rmSync(root, { recursive: true, force: true }));
@@ -98,6 +99,17 @@ describe('classifyChange and watchRoots', () => {
     expect(at('test-results', 'report.json')).toBeUndefined();
     expect(at('tests', 'cache', 'abc.json')).toBeUndefined();
     expect(at('..', 'other', 'tests', 'x.e2e.ts')).toBeUndefined();
+  });
+
+  it('ignores the --timings file itself but not saves under a --timings path that names a directory', () => {
+    const globs = compileGlobList(scope.tests);
+    const file: WatchScope = { ...scope, writtenFiles: [path.join(root, 'timings.json')] };
+    expect(classifyChange(file, globs, path.join(root, 'timings.json'))).toBeUndefined();
+    const directory: WatchScope = { ...scope, writtenFiles: [path.join(root, 'tests')] };
+    expect(classifyChange(directory, globs, path.join(root, 'tests', 'agent', 'signup.e2e.ts'))).toEqual({ kind: 'test', file: 'tests/agent/signup.e2e.ts' });
+    mkdirSync(path.join(root, 'src'));
+    const wide: WatchScope = { ...directory, tests: ['**/*.e2e.ts'] };
+    expect(watchRoots(wide, compileGlobList(wide.tests))).toContainEqual({ dir: path.join(root, 'tests'), recursive: true });
   });
 
   it('a glob from the project root watches the root flat and its directories, not node_modules or dot directories', () => {
@@ -154,7 +166,7 @@ describe('ChangeWatcher', () => {
     vi.useFakeTimers();
     root = mkdtempSync(path.join(tmpdir(), 'e2e-watch-'));
     mkdirSync(path.join(root, 'tests'));
-    scope = { projectRoot: root, configPath: path.join(root, 'e2e.config.ts'), tests: ['tests/**/*.e2e.ts'], written: [] };
+    scope = { projectRoot: root, configPath: path.join(root, 'e2e.config.ts'), tests: ['tests/**/*.e2e.ts'], written: [], writtenFiles: [] };
   });
   afterEach(() => {
     vi.useRealTimers();
@@ -471,6 +483,36 @@ describe('watchSession', () => {
     expect(runs).toHaveLength(2);
     await vi.advanceTimersByTimeAsync(DEBOUNCE_MS);
     release!();
+    await settle();
+    expect(runs).toHaveLength(2);
+    signals.escalate(() => undefined);
+    await expect(session).resolves.toBe(0);
+  });
+
+  it('a --timings path that names a directory still reruns on a save under it', async () => {
+    const listeners = new Map<string, (event: string, filename: string | null) => void>();
+    const runs: RunOptions[] = [];
+    const run = async (options: RunOptions): Promise<RunOutcome> => {
+      runs.push(options);
+      return passed(0);
+    };
+    const signals = new SignalLadder();
+    const session = watchSession({
+      base: { timings: 'tests' },
+      cwd: root,
+      signals,
+      run,
+      stdin: undefined,
+      write: () => undefined,
+      writeError: () => undefined,
+      pc,
+      clear: false,
+      watch: fakeWatch(listeners),
+    });
+    await settle();
+    writeFileSync(path.join(root, 'tests', 'a.e2e.ts'), '');
+    listeners.get(path.join(root, 'tests'))!('change', 'a.e2e.ts');
+    await vi.advanceTimersByTimeAsync(DEBOUNCE_MS);
     await settle();
     expect(runs).toHaveLength(2);
     signals.escalate(() => undefined);
