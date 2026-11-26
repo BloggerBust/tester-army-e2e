@@ -25,6 +25,13 @@ import { ANDROID_APP_PACKAGE, ANDROID_ID_SNAPSHOT, createFakeClient, SETTINGS_NO
 import { boot, harness, poolVariableIn, PROJECT_ROOT, type Harness } from '../helpers/harness.ts';
 import { ignoreTrace, noSecrets } from '../helpers/secrets.ts';
 
+// The harness's project root, `/project`, is not on disk: a build under it
+// counts as present, so `installApp` reaches the fake client.
+vi.mock('node:fs', async (original) => {
+  const fs = await original<typeof import('node:fs')>();
+  return { ...fs, existsSync: (file: import('node:fs').PathLike) => String(file).startsWith('/project/') || fs.existsSync(file) };
+});
+
 /** An agent's operation: the agent reads the screen right after acting, so its actions settle. */
 function operation(signal = new AbortController().signal): OperationContext {
   return { signal, timeoutMs: 30_000, runId: 'run-1', attemptId: 'a1', origin: 'agent' };
@@ -3229,18 +3236,34 @@ describe('device fixture', () => {
     const device = fixture(h);
     const before = h.fake.calls.length;
     expect(await device.installApp('./b/App.app')).toEqual({ app: 'com.example.app', bundleId: 'com.example.app' });
-    expect(await device.installApp('/b/App.app', { reinstall: true })).toEqual({ app: 'Settings' });
-    expect(await device.installApp('/b/App.app', { app: 'com.other', reinstall: true })).toEqual({ app: 'com.other' });
+    expect(await device.installApp('/project/b/App.app', { reinstall: true })).toEqual({ app: 'Settings' });
+    expect(await device.installApp('/project/b/App.app', { app: 'com.other', reinstall: true })).toEqual({ app: 'com.other' });
     expect(h.fake.calls.slice(before).map((call) => [call.method, call.args])).toEqual([
       ['apps.install', { platform: 'ios', appPath: '/project/b/App.app' }],
-      ['apps.reinstall', { platform: 'ios', app: 'Settings', appPath: '/b/App.app' }],
-      ['apps.reinstall', { platform: 'ios', app: 'com.other', appPath: '/b/App.app' }],
+      ['apps.reinstall', { platform: 'ios', app: 'Settings', appPath: '/project/b/App.app' }],
+      ['apps.reinstall', { platform: 'ios', app: 'com.other', appPath: '/project/b/App.app' }],
     ]);
 
     const free = harness({}, false);
     await openAttempt(free);
-    await expect(fixture(free).installApp('/b/App.app', { reinstall: true })).rejects.toMatchObject({ code: 'INVALID_STATE' });
+    await expect(fixture(free).installApp('/project/b/App.app', { reinstall: true })).rejects.toMatchObject({ code: 'INVALID_STATE' });
     expect(free.fake.methods()).toEqual(['devices.boot']);
+  });
+
+  it('refuses a build path with nothing at it as INVALID_ARGUMENT before any device command', async () => {
+    const h = harness({ appPath: '../elsewhere/Missing.app' });
+    await openAttempt(h);
+    const device = fixture(h);
+    const before = h.fake.calls.length;
+    for (const missing of ['../missing/App.app', '/missing/App.app']) {
+      await expect(device.installApp(missing)).rejects.toMatchObject({
+        code: 'INVALID_ARGUMENT',
+        message: `device.installApp(${JSON.stringify(missing)}): no build at /missing/App.app; the path resolves against the project root`,
+      });
+      await expect(device.installApp(missing, { reinstall: true })).rejects.toMatchObject({ code: 'INVALID_ARGUMENT' });
+    }
+    await expect(device.installApp('')).rejects.toMatchObject({ code: 'INVALID_ARGUMENT' });
+    expect(h.fake.calls.slice(before)).toEqual([]);
   });
 
   it('uninstalls and looks up apps by id or listed name, the pinned app by default', async () => {
@@ -3402,6 +3425,34 @@ describe('device fixture', () => {
       ['settings.update', { platform: 'android', setting: 'location', state: 'set', latitude: 52.2297, longitude: 21.0122 }],
       ['settings.update', { platform: 'android', setting: 'location', state: 'off' }],
     ]);
+  });
+
+  it('refuses coordinates out of range or not finite as INVALID_ARGUMENT before any device command', async () => {
+    const h = harness({ platform: 'android', bundleId: 'com.android.settings' });
+    await openAttempt(h);
+    const device = fixture(h);
+    const before = h.fake.calls.length;
+    const refused: [unknown, string][] = [
+      [{ latitude: 152.5, longitude: 21.01 }, 'latitude must be a finite number from -90 to 90, got 152.5'],
+      [{ latitude: -90.5, longitude: 21.01 }, 'latitude must be a finite number from -90 to 90, got -90.5'],
+      [{ latitude: Number.NaN, longitude: 21.01 }, 'latitude must be a finite number from -90 to 90, got NaN'],
+      [{ latitude: 52.23, longitude: 181 }, 'longitude must be a finite number from -180 to 180, got 181'],
+      [{ latitude: 52.23, longitude: Number.POSITIVE_INFINITY }, 'longitude must be a finite number from -180 to 180, got Infinity'],
+      [{ latitude: '52.23', longitude: 21.01 }, 'latitude must be a finite number from -90 to 90, got "52.23"'],
+      [{ latitude: {}, longitude: 21.01 }, 'latitude must be a finite number from -90 to 90, got type object'],
+      [{ latitude: 52.23 }, 'longitude must be a finite number from -180 to 180, got undefined'],
+      [undefined, 'latitude must be a finite number from -90 to 90, got undefined'],
+    ];
+    for (const [coordinates, message] of refused) {
+      await expect(device.setLocation(coordinates as { latitude: number; longitude: number })).rejects.toMatchObject({
+        code: 'INVALID_ARGUMENT',
+        message: `device.setLocation: ${message}`,
+      });
+    }
+    expect(h.fake.calls.slice(before)).toEqual([]);
+    // The edges themselves are valid.
+    await device.setLocation({ latitude: -90, longitude: 180 });
+    expect(h.fake.lastArgs('settings.update')).toEqual({ platform: 'android', setting: 'location', state: 'set', latitude: -90, longitude: 180 });
   });
 
   it('opens a link into the pinned app or a named one, and the location follows the app it landed in', async () => {

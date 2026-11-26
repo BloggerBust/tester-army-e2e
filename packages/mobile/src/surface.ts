@@ -1043,11 +1043,18 @@ export class AgentDeviceSurface<Platform extends MobilePlatform = MobilePlatform
    * Installs a build on the session's device. `reinstall` removes the app
    * named by `options.app` (else the pinned app) first, so the build starts
    * with no data; a plain install replaces the binary and keeps its data.
+   * A path passed in with nothing at it is `INVALID_ARGUMENT`, before any
+   * device command.
    */
   async installApp(appPath: string | undefined, options: InstallAppOptions, signal: AbortSignal): Promise<InstalledApp> {
     const build = appPath ?? this.app.appPath;
     if (build === undefined) throw invalidState("installApp needs a build: pass a path, or name one with the target's app.appPath");
     const resolved = path.resolve(this.projectRoot, build);
+    // A path the test passed is the test's own mistake when nothing is there;
+    // agent-device would refuse it as a device failure (exit 3).
+    if (appPath !== undefined && (appPath.trim() === '' || !existsSync(resolved))) {
+      throw new TestError('INVALID_ARGUMENT', `device.installApp(${JSON.stringify(appPath)}): no build at ${resolved}; the path resolves against the project root`);
+    }
     const selection = this.selection();
     const engineBuild = appPath === undefined || (this.app.appPath !== undefined && resolved === path.resolve(this.projectRoot, this.app.appPath));
     const app = options.app ?? (engineBuild ? this.app.bundleId : undefined) ?? (options.reinstall === true ? this.pinnedApp : undefined);

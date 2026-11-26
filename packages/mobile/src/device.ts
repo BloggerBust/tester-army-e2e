@@ -6,7 +6,7 @@
  */
 
 import type { AgentDeviceClient as DeviceSessionClient } from 'agent-device';
-import type { EngineFixtureContext, Locator, ViewportSize } from '@e2e-dev/core/engine';
+import { TestError, type EngineFixtureContext, type Locator, type ViewportSize } from '@e2e-dev/core/engine';
 import { appLabel, linkLabel, linkTarget } from './links.ts';
 import { pressRemote, requireRemoteKey, type RemoteKey } from './remote.ts';
 import { pressButton, requireHardwareButton, type HardwareButton } from './buttons.ts';
@@ -91,7 +91,12 @@ export interface Device {
    * on Android, so it goes before the `app.open()` a test starts with.
    */
   setPermission(permission: DevicePermission, state: PermissionState): Promise<void>;
-  /** Sets the simulated location, switching location services on first on Android. */
+  /**
+   * Sets the simulated location, switching location services on first on
+   * Android. A latitude outside -90 to 90, a longitude outside -180 to 180,
+   * or either one not a finite number is `INVALID_ARGUMENT`, before any
+   * device command.
+   */
   setLocation(coordinates: { latitude: number; longitude: number }): Promise<void>;
   /** Turns simulated location off; on Android that is location services off, until the next `setLocation`. */
   clearLocation(): Promise<void>;
@@ -265,6 +270,24 @@ export interface Device {
   setClipboard(text: string): Promise<void>;
 }
 
+/**
+ * The coordinates `device.setLocation` was given, or `INVALID_ARGUMENT`
+ * naming the one out of range. agent-device refuses the same values, but as
+ * a device failure.
+ */
+function requireCoordinates(coordinates: unknown): { latitude: number; longitude: number } {
+  const given = typeof coordinates === 'object' && coordinates !== null ? (coordinates as Record<string, unknown>) : {};
+  return { latitude: coordinate(given, 'latitude', 90), longitude: coordinate(given, 'longitude', 180) };
+}
+
+/** One coordinate within ±`limit`, or `INVALID_ARGUMENT` showing what was given. */
+function coordinate(given: Record<string, unknown>, name: 'latitude' | 'longitude', limit: number): number {
+  const value = given[name];
+  if (typeof value === 'number' && Number.isFinite(value) && Math.abs(value) <= limit) return value;
+  const shown = typeof value === 'string' ? JSON.stringify(value) : typeof value === 'object' && value !== null ? `type ${typeof value}` : String(value);
+  throw new TestError('INVALID_ARGUMENT', `device.setLocation: ${name} must be a finite number from -${limit} to ${limit}, got ${shown}`);
+}
+
 /** The raw driver session a surface is bound to: `device.unstable_raw`, and what `unstable_deviceSession()` hands a custom tool. */
 export function rawSession(surface: AgentDeviceSurface): DeviceSession {
   const { session, deviceId, deviceName } = surface.boundDevice;
@@ -312,7 +335,8 @@ export function createDeviceFixture(surface: AgentDeviceSurface, context: Engine
     async setPermission(permission, state) {
       await surface.setPermission(permission, state, context.signal);
     },
-    async setLocation({ latitude, longitude }) {
+    async setLocation(coordinates) {
+      const { latitude, longitude } = requireCoordinates(coordinates);
       // Android reads a fix only while location services are on, and
       // `clearLocation` switched them off for good on the emulator (the
       // setting outlives the app); iOS has no such switch.
