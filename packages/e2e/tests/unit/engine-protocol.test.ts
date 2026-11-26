@@ -1,4 +1,4 @@
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, readdirSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { PassThrough } from 'node:stream';
@@ -1014,6 +1014,69 @@ describe('engine protocol against a server written from the messages alone', () 
     await remote.init!(initInfo());
     await remote.startAttempt!({ attemptId: 'attempt-1', artifactsDir, signal: new AbortController().signal, resolveSecret: async () => '', appLog: () => {}, navigation: () => {}, environment: () => {} });
     expect(await remote.artifacts!.screenshot(undefined, operation())).toBe(path.join('screenshots', '001-screenshot.png'));
+    await remote.dispose!(cleanup);
+    rmSync(artifactsDir, { recursive: true, force: true });
+  });
+
+  it('keeps a screenshot answered after its attempt ended out of the next attempt\'s directory', async () => {
+    const methods = ['engine/observe', 'artifacts/screenshot', 'lifecycle/startAttempt', 'lifecycle/endAttempt'] as const;
+    let answer: (() => void) | undefined;
+    const { transport } = handWritten(methods, {
+      'lifecycle/endAttempt': async () => null,
+      'artifacts/screenshot': async () => {
+        await new Promise<void>((resolve) => (answer = resolve));
+        return { data: Buffer.from('late png bytes').toString('base64'), mediaType: 'image/png' };
+      },
+    });
+    const remote = connectEngine({ manifest: { name: 'hand', version: '1', spiVersion: 1, methods: [...methods] }, transport });
+    const first = mkdtempSync(path.join(tmpdir(), 'e2e-protocol-'));
+    const second = mkdtempSync(path.join(tmpdir(), 'e2e-protocol-'));
+    const attempt = (attemptId: string, artifactsDir: string): EngineAttemptContext => ({
+      attemptId, artifactsDir, signal: new AbortController().signal, resolveSecret: async () => '', appLog: () => {}, navigation: () => {}, environment: () => {},
+    });
+    await remote.init!(initInfo());
+    await remote.startAttempt!(attempt('attempt-1', first));
+    const late = remote.artifacts!.screenshot('late', operation()).then(() => undefined, (cause: unknown) => cause);
+    await vi.waitFor(() => expect(answer).toBeDefined());
+    await remote.endAttempt!(cleanup);
+    await remote.startAttempt!(attempt('attempt-2', second));
+    answer?.();
+    const refused = await late;
+    expect(readdirSync(second)).toEqual([]);
+    expect(refused).toMatchObject({ code: 'INVALID_STATE' });
+    await remote.dispose!(cleanup);
+    rmSync(first, { recursive: true, force: true });
+    rmSync(second, { recursive: true, force: true });
+  });
+
+  it('keeps a screenshot answered while its attempt is ending out of that attempt\'s directory', async () => {
+    const methods = ['engine/observe', 'artifacts/screenshot', 'lifecycle/startAttempt', 'lifecycle/endAttempt'] as const;
+    let answer: (() => void) | undefined;
+    let ended: (() => void) | undefined;
+    const { transport } = handWritten(methods, {
+      'lifecycle/endAttempt': async () => {
+        await new Promise<void>((resolve) => (ended = resolve));
+        return null;
+      },
+      'artifacts/screenshot': async () => {
+        await new Promise<void>((resolve) => (answer = resolve));
+        return { data: Buffer.from('late png bytes').toString('base64'), mediaType: 'image/png' };
+      },
+    });
+    const remote = connectEngine({ manifest: { name: 'hand', version: '1', spiVersion: 1, methods: [...methods] }, transport });
+    const artifactsDir = mkdtempSync(path.join(tmpdir(), 'e2e-protocol-'));
+    await remote.init!(initInfo());
+    await remote.startAttempt!({ attemptId: 'attempt-1', artifactsDir, signal: new AbortController().signal, resolveSecret: async () => '', appLog: () => {}, navigation: () => {}, environment: () => {} });
+    const late = remote.artifacts!.screenshot('late', operation()).then(() => undefined, (cause: unknown) => cause);
+    await vi.waitFor(() => expect(answer).toBeDefined());
+    const ending = remote.endAttempt!(cleanup);
+    await vi.waitFor(() => expect(ended).toBeDefined());
+    answer?.();
+    const refused = await late;
+    expect(readdirSync(artifactsDir)).toEqual([]);
+    expect(refused).toMatchObject({ code: 'INVALID_STATE' });
+    ended?.();
+    await ending;
     await remote.dispose!(cleanup);
     rmSync(artifactsDir, { recursive: true, force: true });
   });

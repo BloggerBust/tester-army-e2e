@@ -262,6 +262,9 @@ params are the member's arguments by name, with every `OperationContext` as
 `artifacts/screenshot` returns `{ data, mediaType: 'image/png' }`, the image
 in base64, when the server cannot write the attempt's artifact directory,
 such as a server on a device. The client writes it under `screenshots/`.
+Bytes that arrive once `lifecycle/endAttempt` has been sent for the attempt
+that asked, or after that attempt has ended, are dropped, and the call fails
+with `INVALID_STATE`.
 Observation pixels cross the same way: `pixels.data` is base64. File payload buffers also cross as base64 in `engine/perform`; engines receive them as `Uint8Array` bytes.
 
 `screens` in `lifecycle/startAttempt` says whether the attempt keeps a
