@@ -56,6 +56,20 @@ describe('FileCredentialStore', () => {
     });
   });
 
+  it('replaces a login only while it is still the one stored, under the key it is stored under', async () => {
+    const file = tempFile();
+    const store = new FileCredentialStore(file);
+    const renewed = { ...creds, access: 'renewed', refresh: 'r2' };
+    expect(await store.replace('spacexsi', creds, renewed)).toBe(false);
+    expect(await store.list()).toEqual([]);
+    writeFileSync(file, JSON.stringify({ spacexai: creds, openai: creds }));
+    expect(await store.replace('spacexsi', creds, renewed)).toBe(true);
+    expect(JSON.parse(readFileSync(file, 'utf8'))).toEqual({ spacexai: renewed, openai: creds });
+    // The stored login changed meanwhile: a new login stands.
+    expect(await store.replace('spacexsi', creds, { ...creds, access: 'stale-renewal' })).toBe(false);
+    expect(await store.get('spacexsi')).toEqual(renewed);
+  });
+
   it('prefers the login under the id to one under its legacy key', async () => {
     const file = tempFile();
     const store = new FileCredentialStore(file);
@@ -191,6 +205,11 @@ describe('EnvCredentialStore', () => {
     await expect(store.set('spacexsi', creds)).rejects.toMatchObject({ code: 'MISCONFIGURED', message: expect.stringContaining(CREDENTIALS_ENV) });
     await expect(store.remove('github-copilot')).rejects.toMatchObject({ code: 'MISCONFIGURED' });
     expect(defaultCredentialStore({ [CREDENTIALS_ENV]: '' })).toBeInstanceOf(FileCredentialStore);
+  });
+
+  it('refuses to replace a login the variable holds', async () => {
+    const store = new EnvCredentialStore(JSON.stringify({ 'github-copilot': creds }));
+    await expect(store.replace('github-copilot', creds, { ...creds, access: 'renewed' })).rejects.toMatchObject({ code: 'MISCONFIGURED' });
   });
 
   it('reads a login the variable holds under a legacy key', async () => {

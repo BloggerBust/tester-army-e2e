@@ -3,7 +3,9 @@
  * Writes hold an advisory lock and replace the file atomically, so two runs
  * writing at once neither tear the file nor lose each other's entries. A
  * refresh holds a lock for its login from its read to its write, so worker
- * processes send a rotating refresh token once between them.
+ * processes send a rotating refresh token once between them, and it stores
+ * the renewed tokens only while the login it read is still stored, so a
+ * login or logout meanwhile stands.
  * `E2E_OAUTH_CREDENTIALS` holding the same JSON stands in for the file on a
  * machine the user cannot sign in on; that store refuses to write.
  */
@@ -54,6 +56,16 @@ export class FileCredentialStore implements CredentialStore {
 
   async remove(providerId: string): Promise<void> {
     await this.update((all) => Object.fromEntries(Object.entries(all).filter(([key]) => currentId(key) !== providerId)));
+  }
+
+  async replace(providerId: string, expected: OAuthCredentials, next: OAuthCredentials): Promise<boolean> {
+    let replaced = false;
+    await this.update((all) => {
+      const key = storedKey(all, providerId);
+      replaced = sameLogin(all[key], expected);
+      return replaced ? { ...all, [key]: next } : all;
+    });
+    return replaced;
   }
 
   async list(): Promise<string[]> {
@@ -120,6 +132,9 @@ export class EnvCredentialStore implements CredentialStore {
   async remove(): Promise<void> {
     return this.set();
   }
+  async replace(_providerId: string, _expected: OAuthCredentials, _next: OAuthCredentials): Promise<boolean> {
+    this.assertWritable();
+  }
   async list(): Promise<string[]> {
     return storedIds(this.entries);
   }
@@ -139,6 +154,10 @@ function currentId(key: string): string {
 function storedKey(all: CredentialsFile, providerId: string): string {
   if (Object.hasOwn(all, providerId)) return providerId;
   return Object.keys(all).find((key) => currentId(key) === providerId) ?? providerId;
+}
+
+function sameLogin(stored: OAuthCredentials | undefined, expected: OAuthCredentials): boolean {
+  return stored !== undefined && stored.access === expected.access && stored.refresh === expected.refresh;
 }
 
 function storedIds(all: CredentialsFile): string[] {

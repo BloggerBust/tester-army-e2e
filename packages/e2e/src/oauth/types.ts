@@ -80,6 +80,11 @@ export interface CredentialStore {
   get(providerId: string): Promise<OAuthCredentials | undefined>;
   set(providerId: string, credentials: OAuthCredentials): Promise<void>;
   remove(providerId: string): Promise<void>;
+  /**
+   * Stores `next` only while the stored login is still `expected`; false
+   * when a login or logout replaced it meanwhile, which then stands.
+   */
+  replace(providerId: string, expected: OAuthCredentials, next: OAuthCredentials): Promise<boolean>;
   /** Every provider id with stored credentials. */
   list(): Promise<string[]>;
   /**

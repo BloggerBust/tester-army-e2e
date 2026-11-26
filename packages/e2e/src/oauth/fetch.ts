@@ -79,9 +79,10 @@ export function createOAuthFetch<Credentials extends OAuthCredentials>(
     return credentials;
   }
 
-  async function persist(renewed: Credentials): Promise<void> {
+  /** Stores what `sent` was renewed to, unless a login or logout replaced `sent` meanwhile. */
+  async function persist(sent: Credentials, renewed: Credentials): Promise<void> {
     try {
-      await store.set(provider.id, renewed);
+      await store.replace(provider.id, sent, renewed);
       shared.renewed.delete(provider.id);
     } catch (cause) {
       if (!(cause instanceof OAuthError && cause.code === 'MISCONFIGURED')) throw cause;
@@ -111,7 +112,7 @@ export function createOAuthFetch<Credentials extends OAuthCredentials>(
             // No deadline: the vendor may rotate the token before a late answer,
             // and dropping that answer loses the login.
             const renewed = known(await provider.refresh(latest));
-            await persist(renewed);
+            await persist(latest, renewed);
             return { renewed };
           } catch (cause) {
             if (cause instanceof OAuthError && cause.code === 'LOGIN_REQUIRED') {

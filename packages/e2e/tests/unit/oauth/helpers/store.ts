@@ -15,6 +15,12 @@ export class MemoryCredentialStore implements CredentialStore {
   async remove(providerId: string): Promise<void> {
     this.entries.delete(providerId);
   }
+  async replace(providerId: string, expected: OAuthCredentials, next: OAuthCredentials): Promise<boolean> {
+    const stored = this.entries.get(providerId);
+    if (stored?.access !== expected.access || stored.refresh !== expected.refresh) return false;
+    this.entries.set(providerId, next);
+    return true;
+  }
   async list(): Promise<string[]> {
     return [...this.entries.keys()];
   }
