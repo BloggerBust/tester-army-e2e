@@ -1,0 +1,134 @@
+---
+title: Navegadores do Notte
+sidebarTitle: Notte
+description: Rode alvos web nos navegadores em nuvem do Notte com o provedor de navegadores notte() de @e2e-dev/notte.
+---
+
+`notte()` de `@e2e-dev/notte` é um
+[provedor de navegadores](/browser#hosted-browsers) para o [Notte](https://notte.cc).
+Cada tentativa de teste recebe a própria sessão de navegador em nuvem. Os
+testes continuam iguais. Só o `browser` do alvo muda.
+
+## Configuração
+
+Instale o provedor e o SDK do Notte:
+
+<CodeGroup>
+```bash npm
+npm install --save-dev @e2e-dev/notte notte-sdk
+```
+
+```bash pnpm
+pnpm add -D @e2e-dev/notte notte-sdk
+```
+
+```bash bun
+bun add -d @e2e-dev/notte notte-sdk
+```
+</CodeGroup>
+
+Defina o `browser` do alvo como `notte()`:
+
+```ts title="e2e.config.ts"
+import type { E2EConfig } from 'e2e';
+import { web } from '@e2e-dev/web';
+import { notte } from '@e2e-dev/notte';
+
+export default {
+  targets: [
+    {
+      name: 'notte',
+      engine: web({ browser: notte() }),
+      app: { url: 'https://staging.example.com' },
+    },
+  ],
+} satisfies E2EConfig;
+```
+
+Defina `NOTTE_API_KEY` no ambiente em que o `e2e run` inicia, como um
+segredo da CI. Copie a chave do [console do Notte](https://console.notte.cc/apikeys).
+`workers` define quantas sessões rodam ao mesmo tempo. O app precisa estar
+acessível a partir do navegador em nuvem, então aponte `app.url` para a URL
+de um deploy ou de um túnel, não para `localhost`.
+
+Sem a chave, ou em um erro do Notte, a tentativa falha com essa mensagem.
+
+## Opções
+
+`notte(options)` recebe o corpo de início de sessão do Notte sem alterações:
+`solve_captchas`, `proxies`, `browser_type`, `idle_timeout_minutes`,
+`max_duration_minutes`, `viewport_width` e `viewport_height`, `profile`,
+`user_agent`, `extra_http_headers`, `block_ads` e o restante de
+`ApiSessionStartRequest` no seu `notte-sdk`:
+
+```ts
+web({
+  browser: notte({ solve_captchas: true, proxies: true, idle_timeout_minutes: 5 }),
+})
+```
+
+`cdp_url` e os campos de autenticação gerenciada (`auth_ids`, `auth_retry`,
+`wait_for_authentication`) ficam de fora: o primeiro indica um navegador de
+outro provedor, e os outros retornam uma sessão antes que seja possível se
+conectar a ela.
+
+## Uma sessão por tentativa
+
+O provedor reserva apenas no escopo `attempt`. Uma sessão do Notte tem um
+único contexto de navegador e recusa novos contextos, dos quais o escopo
+`worker` precisa para manter os testes separados. Cada tentativa, incluindo
+as novas tentativas, roda no contexto padrão e na primeira aba de uma sessão
+nova. Cada teste arca com o custo de iniciar uma sessão, e os
+[limites de uma reserva por tentativa](/browser#hosted-browsers) se aplicam,
+incluindo as sessões.
+
+## Acompanhe e limpe as sessões
+
+O reporter registra `session <id>, watch at <console URL>` no log para cada
+sessão nova. O link abre a sessão no console do Notte, ao vivo enquanto o
+teste roda e como replay depois que ele termina. O link exige que você faça
+login no console, então é seguro em logs públicos de CI. Com `NOTTE_API_URL`
+definida, o reporter registra só `session <id>`, já que o provedor não
+consegue saber qual console atende essa API.
+
+Quando uma tentativa termina, em todo caminho de saída, o provedor encerra a
+sessão da tentativa. Quando a execução termina, o provedor encerra a sessão
+de qualquer worker que caiu antes de conseguir encerrá-la. Se a própria
+execução cair, o Notte fecha cada sessão depois de `idle_timeout_minutes`
+sem atividade, 3 por padrão. O Notte também encerra toda sessão depois de
+`max_duration_minutes`, 15 por padrão, então aumente esse valor para um
+teste que roda por mais tempo.
+
+## Downloads
+
+`browser.waitForDownload` funciona como localmente. O Notte guarda cada
+arquivo que o navegador baixa no armazenamento de arquivos da sessão, com o
+nome que o site sugeriu, e o provedor copia o arquivo com esse nome para os
+artefatos da tentativa.
+
+## Diferenças em relação a um navegador local
+
+- O Notte responde aos diálogos de JavaScript por conta própria: `confirm`
+  retorna `false` e `prompt` retorna `null` antes que o handler de diálogo
+  de um teste possa aceitá-los.
+- O navegador aceita combinações de teclas do Windows. `ControlOrMeta` segue
+  o sistema do runner, então em um Mac envia `Meta`, que o navegador ignora:
+  escreva `Control+A` para um teste que também roda a partir de um Mac.
+- `setInputFiles` faz upload de arquivos de até 50 MB, e não de pastas.
+- O app precisa estar acessível a partir da nuvem do Notte, então endereços
+  `localhost` não carregam. Aponte `app.url` para a URL de um deploy ou de
+  um túnel.
+- `app.clearState()` e [sessões](/authentication) salvas não estão
+  disponíveis, como em qualquer reserva por tentativa. Toda tentativa já
+  começa em uma sessão nova.
+
+## Próximos passos
+
+<CardGroup cols={2}>
+  <Card title="Navegadores hospedados" icon="globe" href="/browser#hosted-browsers">
+    Como um provedor de navegadores reserva navegadores, e os limites do escopo `'attempt'`.
+  </Card>
+  <Card title="Integração contínua" icon="rotate" href="/ci">
+    Rode a suíte no GitHub Actions ou em outro serviço de CI.
+  </Card>
+</CardGroup>

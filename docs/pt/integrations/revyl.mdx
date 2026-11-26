@@ -1,0 +1,163 @@
+---
+title: Teste apps mobile no Revyl
+sidebarTitle: Revyl
+description: Rode testes de apps mobile nos simuladores iOS e emuladores Android hospedados do Revyl com @e2e-dev/revyl.
+---
+
+`@e2e-dev/revyl` é um provedor de dispositivos hospedados para a engine mobile.
+Ele inicia um dispositivo do Revyl para cada worker, instala o seu app nele e libera o dispositivo quando a execução termina.
+Use as APIs padrão `app`, `screen` e `expect` para testar os fluxos de usuário do seu app.
+
+## Instale e autentique-se
+
+Instale a integração junto com a engine mobile:
+
+<CodeGroup>
+```bash npm
+npm install --save-dev e2e @e2e-dev/mobile @e2e-dev/revyl
+```
+
+```bash pnpm
+pnpm add -D e2e @e2e-dev/mobile @e2e-dev/revyl
+```
+
+```bash bun
+bun add -d e2e @e2e-dev/mobile @e2e-dev/revyl
+```
+</CodeGroup>
+
+Defina `REVYL_API_KEY` no ambiente que inicia o e2e. Na CI, guarde a chave
+como um segredo. Sem ela, a reserva falha antes de qualquer teste começar.
+
+O runner de testes precisa só do Node.js e das dependências dos pacotes: sem
+Mac, Xcode nem Android SDK. Faça o build do seu app separadamente, como um
+`.app` de simulador iOS em zip ou um `.apk` Android, e hospede o build em uma
+URL `https` que o Revyl consiga baixar.
+
+## Configure um alvo
+
+Defina `device: revyl({ app, device })` na engine mobile. O `app` é a URL
+`https` do build, e o `device` é um modelo do catálogo do Revyl. Para testar
+um build local em vez disso, deixe `app` de fora e defina o `app.appPath` do
+alvo.
+
+```ts title="e2e.config.ts"
+import type { E2EConfig } from 'e2e';
+import { mobile } from '@e2e-dev/mobile';
+import { revyl } from '@e2e-dev/revyl';
+
+export default {
+  targets: [
+    {
+      name: 'ios',
+      engine: mobile({
+        platform: 'ios',
+        device: revyl({ app: 'https://builds.example.com/MyApp-simulator.zip', device: 'iPhone 17 Pro Max', osVersion: 'iOS 27.0' }),
+      }),
+      app: { bundleId: 'com.example.app' },
+    },
+    {
+      name: 'android',
+      engine: mobile({
+        platform: 'android',
+        device: revyl({ app: 'https://builds.example.com/app.apk', device: 'Pixel 7' }),
+      }),
+      app: { bundleId: 'com.example.app' },
+    },
+  ],
+  workers: 2,
+  assertionTimeout: 15_000,
+} satisfies E2EConfig;
+```
+
+O Revyl instala o `app` ao iniciar cada dispositivo, então não defina
+`app.appPath` no alvo. Para Android, `bundleId` é o nome do pacote do app.
+
+Sem `app`, cada dispositivo começa sem nenhum app, e o provedor de dispositivos
+faz upload do `app.appPath` do alvo para o dispositivo e instala esse build
+nele: um `.app` de simulador iOS em zip ou um `.apk` Android. Não chame também
+`device.installApp()` para esse build, porque isso faz um segundo upload dele.
+
+```ts title="e2e.config.ts"
+{
+  name: 'android-local',
+  engine: mobile({ platform: 'android', device: revyl({ device: 'Pixel 7' }) }),
+  app: { appPath: './build/app-debug.apk', bundleId: 'com.example.app' },
+}
+```
+
+Uma leitura da tela em um dispositivo do Revyl leva cerca de 2,5 s, e às vezes
+mais de 5 s. Defina `assertionTimeout` como `15_000`. Com o padrão de 5 s, um
+`expect` pode falhar antes de ler a tela uma única vez.
+
+## Teste um fluxo do app
+
+Os testes usam as mesmas APIs mobile de qualquer outro dispositivo, exceto as que estão em [Limites](#limits):
+
+```ts title="tests/checkout.e2e.ts"
+import { expect } from 'e2e';
+import { test } from '@e2e-dev/mobile';
+
+test('opens the cart', async ({ app, screen }) => {
+  await app.open();
+  await screen.getByText('Cart').click();
+  await expect(screen.getByText('Your cart is empty')).toBeVisible();
+  await app.screenshot('cart');
+});
+```
+
+## Escolha as opções do dispositivo
+
+| Opção | Padrão | Finalidade |
+| --- | --- | --- |
+| `app` | nenhum; nesse caso, o `app.appPath` do alvo é instalado | URL `https` do build. Um caminho local é recusado, já que o Revyl não consegue ler o caminho; use `app.appPath` para um build local. |
+| `device` | obrigatório | Modelo do dispositivo como aparece na lista do Revyl, por exemplo `iPhone 17 Pro Max` ou `Pixel 7`. |
+| `osVersion` | o padrão do Revyl para o modelo | Versão do sistema operacional como aparece na lista do Revyl, por exemplo `iOS 27.0` ou `Android 14`. |
+
+Opções desconhecidas ou inválidas fazem o carregamento da configuração falhar
+com `INVALID_CONFIG`.
+
+## Limites
+
+- Mantenha `workers` dentro do número de dispositivos simultâneos que o seu plano do Revyl permite.
+- Um dispositivo roda da reserva até a liberação. A engine libera todo
+  dispositivo obtido quando a execução termina ou é interrompida.
+- Se o runner for encerrado à força antes de liberar um dispositivo, nada
+  envia outro comando à sessão, e o Revyl encerra a sessão depois de
+  5 minutos sem atividade.
+- O `app` precisa estar acessível por `https` sem credenciais na URL. Uma URL
+  pré-assinada de armazenamento funciona. Defina `app` ou `app.appPath`, não
+  os dois.
+- Um build de `app.appPath` é enviado à sessão de cada dispositivo, então uma
+  execução com `workers: 4` faz quatro uploads do build. Para fazer upload de
+  um build grande uma só vez, hospede o build em uma URL `https` e passe essa
+  URL como `app`.
+- O app roda na rede do Revyl, não na sua, e o redirecionamento reverso de
+  portas não está disponível, então o app não consegue acessar `localhost` nem
+  um servidor da sua rede. Aponte o app para um servidor que ele alcance por
+  `https`.
+- Os dispositivos do Revyl não gravam vídeo: uma tentativa que grava vídeo,
+  por exemplo com `--video`, falha com `UNSUPPORTED_CAPABILITY`. Use
+  `app.screenshot()` como evidência em vez disso.
+- O Revyl insere texto em um ponto da tela. Use `fill`. `pressSequentially` e
+  a digitação no campo em foco falham com `UNSUPPORTED_CAPABILITY`.
+- `setAppearance` e `setPermission` funcionam nas duas plataformas, mas os
+  simuladores iOS do Revyl recusam as permissões `camera` e `notifications`.
+  `setOrientation` gira um dispositivo Android para os quatro lados, e um
+  dispositivo iOS só para `portrait` e `landscape-left`. `setLocation`
+  funciona no iOS, e `clearKeychain` funciona só no iOS.
+- Estes métodos de `device` falham com `UNSUPPORTED_CAPABILITY`: `setNetwork`,
+  `setAirplaneMode`, `setLocation` no Android, `clearLocation`,
+  `setBiometrics`, `enrollBiometrics`, `clipboard` e `setClipboard`.
+  `foregroundApp` falha no Android, e `back` falha no iOS.
+
+## Próximos passos
+
+<CardGroup cols={2}>
+  <Card title="Testes mobile" icon="mobile-screen" href="/mobile">
+    Configure a inicialização do app, as permissões e os localizadores mobile.
+  </Card>
+  <Card title="API mobile" icon="code" href="/reference/mobile">
+    Consulte a fixture de dispositivo e o contrato do provedor.
+  </Card>
+</CardGroup>

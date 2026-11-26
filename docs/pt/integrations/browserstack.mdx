@@ -1,0 +1,153 @@
+---
+title: BrowserStack
+sidebarTitle: BrowserStack
+description: Rode alvos mobile em dispositivos Android e iOS reais do BrowserStack App Automate com o provedor de dispositivos browserstack() de @e2e-dev/browserstack.
+"og:image": "https://e2e.com/docs/images/og/integrations/browserstack.png?v=e37c085f7a"
+"twitter:image": "https://e2e.com/docs/images/og/integrations/browserstack.png?v=e37c085f7a"
+---
+
+`browserstack()` de `@e2e-dev/browserstack` é um
+[provedor de dispositivos](/mobile#hosted-devices) para dispositivos Android e
+iOS reais do
+[BrowserStack App Automate](https://www.browserstack.com/app-automate). Cada
+slot de worker reserva um dispositivo quando a execução começa e o libera
+quando a execução termina.
+
+<Tip>
+Você não precisa de Mac, Xcode nem Android SDK para rodar o e2e com
+dispositivos hospedados.
+</Tip>
+
+## Configuração
+
+Instale a integração junto com a engine mobile:
+
+<CodeGroup>
+```bash npm
+npm install --save-dev e2e @e2e-dev/mobile @e2e-dev/browserstack
+```
+
+```bash pnpm
+pnpm add -D e2e @e2e-dev/mobile @e2e-dev/browserstack
+```
+
+```bash bun
+bun add -d e2e @e2e-dev/mobile @e2e-dev/browserstack
+```
+</CodeGroup>
+
+```ts title="e2e.config.ts"
+import type { E2EConfig } from 'e2e';
+import { mobile } from '@e2e-dev/mobile';
+import { browserstack } from '@e2e-dev/browserstack';
+
+const apk = 'https://www.browserstack.com/app-automate/sample-apps/android/WikipediaSample.apk';
+
+export default {
+  targets: [
+    {
+      name: 'pixel-7',
+      engine: mobile({
+        platform: 'android',
+        device: browserstack({ device: 'Google Pixel 7', osVersion: '13.0', app: apk, appiumVersion: '3.2.0' }),
+      }),
+      app: { bundleId: 'org.wikipedia.alpha' },
+    },
+  ],
+  workers: 1,
+} satisfies E2EConfig;
+```
+
+`device` e `osVersion` precisam corresponder exatamente ao catálogo do App
+Automate do BrowserStack, como a [lista de dispositivos](https://www.browserstack.com/list-of-browsers-and-platforms/app_automate)
+os mostra: `13.0` no Android, `18` no iOS.
+
+`app` é o build que o BrowserStack instala em cada sessão: um id de app
+`bs://` de um upload anterior; uma URL `https`, que o BrowserStack baixa uma
+vez por execução; ou um caminho local, resolvido em relação ao diretório do
+`e2e.config.ts` e enviado por upload. Use um `.apk` ou `.aab` no Android e um
+`.ipa` assinado no iOS. Deixe de fora o `app.appPath` do alvo e mantenha o
+`app.bundleId` para o `app.open()`.
+
+Defina `appiumVersion`: sem essa opção, o BrowserStack roda o Appium 1.x
+padrão do serviço, que não tem os comandos `mobile:` que deep links e botões
+físicos usam.
+
+Os testes são iguais aos de um dispositivo local:
+
+```ts title="tests/home.e2e.ts"
+import { test } from '@e2e-dev/mobile';
+import { expect } from 'e2e';
+
+test('Wikipedia home screen', async ({ app, screen }) => {
+  await app.open();
+  await expect(screen.getByText('Search Wikipedia').first()).toBeVisible();
+});
+```
+
+## Autentique-se
+
+Defina `BROWSERSTACK_USERNAME` e `BROWSERSTACK_ACCESS_KEY` no ambiente em que
+o `e2e run` inicia, como os segredos da CI. Copie os dois de **Account &
+Profile → My profile → Authentication & Security**. O nome de usuário é o que
+aparece ali, não o seu endereço de e-mail. Se faltar um dos dois, a reserva
+falha antes de qualquer coisa começar. O seu plano precisa incluir o App
+Automate.
+
+## Opções
+
+| Opção            | Padrão          | Significado |
+| ---------------- | --------------- | ------- |
+| `device`         | obrigatório     | Nome do dispositivo como o catálogo do App Automate o lista (`'Google Pixel 7'`, `'iPhone 16'`). |
+| `osVersion`      | obrigatório     | Versão do sistema operacional como o catálogo a lista para esse dispositivo. |
+| `app`            | obrigatório     | O build que o BrowserStack instala: um id de app `bs://`, uma URL `https` ou um caminho local. |
+| `project`        | `'e2e'`         | Projeto do dashboard em que as sessões são agrupadas. |
+| `build`          | o id da execução | Build do dashboard em que as sessões são agrupadas. |
+| `sessionName`    | `e2e-<run id>-<target>-<slot>` | Nome da sessão no dashboard. Com mais de um slot de worker, `-<slot>` é acrescentado. |
+| `orientation`    | do dispositivo  | `'portrait'` ou `'landscape'`. |
+| `geoLocation`    | do BrowserStack | Código do país onde o IP do dispositivo é geolocalizado (`'US'`). |
+| `timezone`       | do dispositivo  | Fuso horário (`'New_York'`). |
+| `language`       | do app          | Idioma (`'fr'`). |
+| `locale`         | do dispositivo  | Localidade (`'fr_FR'`). |
+| `appiumVersion`  | do BrowserStack (1.x) | Versão do Appium para a sessão (`'3.2.0'`). |
+| `networkProfile` | nenhum          | Um perfil nomeado de condição de rede (`'4g-lte-advanced-good'`). Não pode ser usado com `customNetwork`. |
+| `customNetwork`  | nenhum          | Uma condição de rede personalizada. Não pode ser usada com `networkProfile`. |
+| `noResignApp`    | `false`         | Somente iOS: mantém a assinatura do app enviado em vez da reassinatura do BrowserStack, que remove entitlements como notificações push. |
+
+Os recursos do dispositivo são definidos quando a sessão começa e valem pela
+sessão inteira. Opções desconhecidas e tipos de opção inválidos fazem o
+carregamento da configuração falhar com `INVALID_CONFIG`; os valores do
+catálogo e as restrições de cada plataforma são verificados quando a reserva
+do dispositivo começa.
+
+Uma tentativa que grava [vídeo](/reference/config#video) traz o link da
+gravação da sessão feita pelo BrowserStack, encontrada pelo `build` e pelo
+`sessionName` da sessão. A gravação cobre a sessão inteira, então toda
+tentativa em um slot de worker traz o link do mesmo vídeo. Execuções que se
+sobrepõem e compartilham um `build` e um `sessionName` fixos podem trazer o
+link dos vídeos umas das outras; com os valores padrão, isso nunca acontece.
+
+## Limites
+
+- Cada sessão começa quando o dispositivo do slot dela é reservado, enquanto o
+  e2e prepara o alvo. O provisionamento leva cerca de 20 a 50 segundos, e a
+  sessão é cobrada até que a execução a libere, mesmo quando nenhum teste roda
+  nessa sessão. Mantenha `workers` vezes o número de alvos do BrowserStack
+  dentro das sessões paralelas do seu plano.
+- O BrowserStack mantém um upload por 30 dias depois do último uso. Uma
+  execução com uma URL `https` em `app` faz o upload de novo; reutilize um id
+  `bs://` para evitar isso.
+- Se o runner for encerrado à força antes de liberar um dispositivo, o tempo
+  limite de inatividade do BrowserStack encerra a sessão depois do último
+  comando dela.
+- Uma liberação faz a execução falhar quando o agent-device não consegue
+  confirmar que encerrou a sessão, mesmo quando todos os testes passaram. As
+  causas: o fim da sessão ultrapassou a janela de encerramento do
+  agent-device (cerca de 3 segundos), uma parada forçada do daemon, um
+  relatório de encerramento perdido ou um daemon que terminou durante a execução.
+  Encontre a sessão no dashboard pelos valores de `build` e `sessionName`.
+- Configurações do dispositivo (permissões, localização, rede, aparência),
+  alertas do sistema, gravação e logs do dispositivo pelo agent-device, e
+  redirecionamento reverso de portas não estão disponíveis. Leia os logs no
+  dashboard do BrowserStack e use o BrowserStack Local para acessar um
+  servidor na sua rede.

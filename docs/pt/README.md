@@ -264,3 +264,19 @@ translation moves or goes with it in the same change.
 | rate limit | limite de taxa |
 | template | template (keep in English, o template) |
 | warm browser | navegador aquecido |
+| device provider, browser provider | provedor de dispositivos, provedor de navegadores |
+| worker slot | slot de worker |
+| scope (`'attempt'`, `'worker'`) | escopo por tentativa, escopo por worker (where English names the value in code, keep it: escopo `'attempt'`) |
+| release (a lease or device) | liberar, liberação |
+| live view | visualização ao vivo |
+| cloud browser | navegador em nuvem |
+| sandbox | sandbox (keep in English, o sandbox) |
+| tunnel | túnel |
+| daemon | daemon (keep in English, o daemon) |
+| crashed, died (a worker or run) | que caiu, cair |
+| killed (the runner) | encerrado à força |
+| idle timeout | tempo limite de inatividade |
+| layout engine | motor de layout (not engine, which names an e2e engine) |
+| below the fold | abaixo da dobra |
+| port reverse | redirecionamento reverso de portas |
+| dashboard | dashboard (keep in English, o dashboard) |

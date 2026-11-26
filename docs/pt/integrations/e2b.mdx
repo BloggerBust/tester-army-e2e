@@ -1,0 +1,178 @@
+---
+title: E2B
+sidebarTitle: E2B
+description: Rode alvos Android e alvos web em sandboxes do E2B com os provedores e2b() e e2bBrowsers() de @e2e-dev/e2b.
+---
+
+`@e2e-dev/e2b` roda os seus alvos em sandboxes do [E2B](https://e2b.dev):
+Android 16 com `e2b()`, um [provedor de dispositivos](/mobile#hosted-devices),
+e Chromium com `e2bBrowsers()` de `@e2e-dev/e2b/web`, um
+[provedor de navegadores](/browser#hosted-browsers). Os seus testes continuam
+os mesmos.
+
+## Autentique-se
+
+Defina `E2B_API_KEY` no ambiente que inicia o e2e. Na CI, guarde a chave como
+um segredo. Copie a chave do [dashboard do E2B](https://e2b.dev/dashboard).
+Para um cluster dedicado do E2B, defina também `E2B_DOMAIN`. Sem uma chave, o
+provedor falha com `INVALID_CONFIG`.
+
+## Rode alvos Android
+
+Cada worker recebe o próprio sandbox Android, pronto com o seu `.apk` em cerca
+de 15 a 45 segundos. O provedor instala o `.apk` pelo agent-device, como
+`device.installApp()`, e exclui o sandbox quando a execução termina.
+
+<Tip>
+A máquina que roda o e2e não precisa de Android SDK, emulador nem `adb`.
+</Tip>
+
+Instale a integração junto com a engine mobile:
+
+<CodeGroup>
+```bash npm
+npm install --save-dev e2e @e2e-dev/mobile @e2e-dev/e2b e2b
+```
+
+```bash pnpm
+pnpm add -D e2e @e2e-dev/mobile @e2e-dev/e2b e2b
+```
+
+```bash bun
+bun add -d e2e @e2e-dev/mobile @e2e-dev/e2b e2b
+```
+</CodeGroup>
+
+Defina o `device` do alvo como `e2b()`:
+
+```ts title="e2e.config.ts"
+import type { E2EConfig } from 'e2e';
+import { mobile } from '@e2e-dev/mobile';
+import { e2b } from '@e2e-dev/e2b';
+
+export default {
+  targets: [
+    {
+      name: 'android',
+      engine: mobile({ platform: 'android', device: e2b() }),
+      app: { bundleId: 'com.example.app', appPath: 'build/app-debug.apk' },
+    },
+  ],
+  workers: 4,
+} satisfies E2EConfig;
+```
+
+O `bundleId` é opcional: sem ele, `app.open()` abre o pacote que o
+agent-device informa para o `.apk`.
+
+## Rode alvos web em navegadores
+
+Cada worker recebe o próprio sandbox Chromium, e cada tentativa recebe nele
+um novo contexto de navegador, como em uma execução local. Com
+`scope: 'attempt'`, cada tentativa recebe um sandbox novo em vez disso
+([limites desse escopo](/browser#pick-a-lease-scope)).
+
+Instale a integração junto com a engine web:
+
+<CodeGroup>
+```bash npm
+npm install --save-dev e2e @e2e-dev/web @e2e-dev/e2b e2b
+```
+
+```bash pnpm
+pnpm add -D e2e @e2e-dev/web @e2e-dev/e2b e2b
+```
+
+```bash bun
+bun add -d e2e @e2e-dev/web @e2e-dev/e2b e2b
+```
+</CodeGroup>
+
+Faça o build do template do navegador uma vez, a partir da imagem do
+Playwright. Use a tag de imagem da versão do Playwright que o seu
+`@e2e-dev/web` usa e dê ao template 4 GB de memória, como abaixo:
+
+```ts title="build-template.ts"
+import { Template, defaultBuildLogger } from 'e2b';
+
+const template = Template().fromImage('mcr.microsoft.com/playwright:v1.65.1-noble');
+await Template.build(template, 'e2e-chromium', {
+  cpuCount: 4,
+  memoryMB: 4096,
+  onBuildLogs: defaultBuildLogger(),
+});
+```
+
+Depois, defina o `browser` do alvo como `e2bBrowsers()`. Se você deu outro
+nome ao template, passe esse nome como `template`:
+
+```ts title="e2e.config.ts"
+import type { E2EConfig } from 'e2e';
+import { web } from '@e2e-dev/web';
+import { e2bBrowsers } from '@e2e-dev/e2b/web';
+
+export default {
+  targets: [
+    {
+      name: 'e2b-web',
+      engine: web({ browser: e2bBrowsers() }),
+      app: { url: 'https://staging.example.com' },
+    },
+  ],
+  workers: 4,
+} satisfies E2EConfig;
+```
+
+O navegador roda na nuvem do E2B, então `app.url` precisa estar acessível
+pela internet, não só a partir de `localhost`.
+
+## Opções do Android
+
+| Opção       | Padrão         | Significado |
+| ----------- | -------------- | ------- |
+| `template`  | `'android-16'` | Template do sandbox que faz o boot do Android. |
+| `timeoutMs` | `3600000` (1 hora) | Tempo de vida do sandbox. Passado esse tempo, o E2B encerra o sandbox, mesmo quando a execução ainda o usa. |
+
+## Opções do navegador
+
+| Opção       | Padrão           | Significado |
+| ----------- | ---------------- | ------- |
+| `template`  | `'e2e-chromium'` | Template do sandbox com o Chromium do Playwright. |
+| `scope`     | `'worker'`       | `'worker'`: um sandbox por slot de worker durante a execução. `'attempt'`: um sandbox novo para cada tentativa. |
+| `timeoutMs` | `3600000` (1 hora) | Tempo de vida do sandbox. Passado esse tempo, o E2B encerra o sandbox, mesmo quando a execução ainda o usa. |
+
+Uma opção desconhecida ou um valor inválido falha com `INVALID_CONFIG` quando
+a configuração é carregada.
+
+## Como os sandboxes ficam privados
+
+Os sandboxes recusam tráfego público: o provedor acessa cada um deles por um
+túnel em `127.0.0.1` que adiciona o token de acesso do E2B e, como acontece
+com um Chromium local, qualquer programa na sua máquina pode usar esse túnel
+enquanto a execução detém a reserva.
+
+## Limites
+
+- **Somente Android.** O E2B não tem sandboxes iOS, então `e2b()` recusa um
+  alvo iOS.
+- **Imagem Android.** O Android 16 no E2B é somente x86_64, sem o Google Play
+  Services, e renderiza em software. Apps com bibliotecas nativas precisam de
+  builds x86_64; veja [a página de Android do E2B](https://e2b.dev/docs/use-cases/android).
+  O provedor instala um `.apk`, não um `.aab`.
+- **Cobrança.** Um sandbox é cobrado enquanto roda. Os sandboxes Android e os
+  sandboxes de navegador com escopo por worker rodam do início ao fim da
+  execução, mesmo quando nenhum teste os usa; um sandbox de navegador com
+  escopo por tentativa roda só durante a própria tentativa.
+- **Execuções interrompidas.** Se o runner for encerrado à força antes de
+  excluir um sandbox, o E2B exclui esse sandbox quando `timeoutMs` acabar.
+
+## Próximos passos
+
+<CardGroup cols={2}>
+  <Card title="Dispositivos hospedados" icon="mobile" href="/mobile#hosted-devices">
+    Como um provedor de dispositivos reserva dispositivos.
+  </Card>
+  <Card title="Navegadores hospedados" icon="globe" href="/browser#hosted-browsers">
+    Como um provedor de navegadores reserva navegadores.
+  </Card>
+</CardGroup>

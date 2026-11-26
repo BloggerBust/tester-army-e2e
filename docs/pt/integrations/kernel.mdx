@@ -1,0 +1,147 @@
+---
+title: Navegadores do Kernel
+sidebarTitle: Kernel
+description: Rode alvos web no Chromium hospedado do Kernel com o provedor de navegadores kernel() de @e2e-dev/kernel.
+"og:image": "https://e2e.com/docs/images/og/integrations/kernel.png?v=c116b9983d"
+"twitter:image": "https://e2e.com/docs/images/og/integrations/kernel.png?v=c116b9983d"
+---
+
+`kernel()` de `@e2e-dev/kernel` é um
+[provedor de navegadores](/browser#hosted-browsers) para o [Kernel](https://kernel.sh).
+Cada slot de worker, ou cada tentativa, recebe o próprio Chromium hospedado.
+Os testes continuam iguais. Só o `browser` do alvo muda.
+
+## Configuração
+
+Instale o provedor e o SDK do Kernel:
+
+<CodeGroup>
+```bash npm
+npm install --save-dev @e2e-dev/kernel @onkernel/sdk
+```
+
+```bash pnpm
+pnpm add -D @e2e-dev/kernel @onkernel/sdk
+```
+
+```bash bun
+bun add -d @e2e-dev/kernel @onkernel/sdk
+```
+</CodeGroup>
+
+Defina o `browser` do alvo como `kernel()`:
+
+```ts title="e2e.config.ts"
+import type { E2EConfig } from 'e2e';
+import { web } from '@e2e-dev/web';
+import { kernel } from '@e2e-dev/kernel';
+
+export default {
+  targets: [
+    {
+      name: 'kernel',
+      engine: web({ browser: kernel() }),
+      app: { url: 'https://staging.example.com' },
+    },
+  ],
+} satisfies E2EConfig;
+```
+
+Defina `KERNEL_API_KEY` no ambiente em que o `e2e run` inicia, como um
+segredo da CI. `workers` define quantos navegadores rodam ao mesmo tempo.
+
+Sem a chave, ou em um erro do Kernel, a reserva falha com essa mensagem. No
+escopo `worker`, a execução termina antes de qualquer teste. No escopo
+`attempt`, só a tentativa falha.
+
+## Preencha a tela
+
+Defina o tamanho da tela com o `viewport` do Kernel, e `viewport: null` na
+engine web para que a página assuma o tamanho da janela:
+
+```ts
+web({
+  browser: kernel({ viewport: { width: 1920, height: 1080 } }),
+  viewport: null,
+})
+```
+
+A janela abre maximizada, e a página [preenche a janela](/web#fill-the-window):
+1920 por 993 em uma tela de 1920 por 1080. Com um `viewport` web fixo, a
+visualização ao vivo mostra a página cortada, ou em só uma parte da janela.
+
+## Opções
+
+`kernel(options)` recebe o corpo de criação de navegador do Kernel sem
+alterações: `stealth`, `headless`, `timeout_seconds`, `profile`, `proxy_id`,
+`viewport`, `tags` e o restante de `BrowserCreateParams` no seu
+`@onkernel/sdk`. E acrescenta duas opções:
+
+| Opção    | Padrão     | Significado |
+| -------- | ---------- | ------- |
+| `scope`  | `'worker'` | Um navegador por slot de worker, ou por tentativa. Veja [Escopos](#scopes). |
+| `replay` | `true`     | Um replay do Kernel ou o screencast da engine. Veja [Gravações](#recordings). |
+
+## Escopos
+
+`scope: 'worker'` mantém um navegador por slot de worker durante a execução.
+Cada tentativa recebe um novo contexto nesse navegador, como em uma execução
+local, então um teste nunca vê os cookies, o armazenamento ou as permissões
+de outro teste. A primeira aba do Kernel continua aberta por trás desse
+contexto. Um `profile` do Kernel não tem efeito, porque se aplica apenas ao
+contexto padrão do navegador.
+
+`scope: 'attempt'` reserva um novo navegador para cada tentativa, incluindo
+as novas tentativas. A tentativa roda no contexto padrão e na primeira aba
+desse navegador, então um `profile` se aplica e a visualização ao vivo mostra
+uma aba só. Cada teste arca com o custo de iniciar um navegador, e os
+[limites de uma reserva por tentativa](/browser#hosted-browsers) se aplicam,
+incluindo as sessões.
+
+## Gravações
+
+Uma tentativa que grava [vídeo](/reference/config#video) recebe um replay do
+Kernel da tela do navegador, salvo como `video/replay.mp4` no diretório de
+artefatos da tentativa. O replay mostra a janela inteira, com as abas e a
+barra de endereços, no tamanho que o `viewport` do Kernel define.
+
+Os replays rodam nos 10 fps padrão do Kernel. Para mudar isso, passe o corpo
+de início de replay do Kernel (`framerate`, `max_duration_in_seconds`,
+`record_audio`): `kernel({ replay: { framerate: 20 } })`. Um `framerate`
+acima de 20 precisa de `gpu: true` no navegador.
+
+O Kernel só gera replays de navegadores headed, que são o padrão dele. Com
+`headless: true` ou `replay: false`, a engine web grava, em vez disso, o
+próprio screencast da página.
+
+## Downloads
+
+`browser.waitForDownload` funciona como localmente, nos dois escopos. O
+provedor copia cada arquivo do disco do navegador para os artefatos da
+tentativa.
+
+## Acompanhe e limpe os navegadores
+
+O reporter registra `browser <id>` no log para cada navegador novo. A URL da
+visualização ao vivo fica fora do log: ela carrega tokens que permitem agir
+sobre a sessão, e o log de uma execução muitas vezes é uma saída pública da
+CI. Cada navegador carrega as tags `e2e_run`, `e2e_target`, `e2e_slot` e
+`e2e_attempt` no escopo `'attempt'`, além das suas `tags`. O dashboard do
+Kernel encontra o navegador por essas tags e então mostra a execução que
+iniciou esse navegador.
+
+Quando a execução termina, o provedor exclui todo navegador ativo marcado com
+as tags da execução e do alvo, incluindo o navegador de um worker que caiu.
+Se a própria execução cair antes, o Kernel exclui cada navegador depois de
+`timeout_seconds` de inatividade, 600 se você não passar outro valor.
+
+## Próximos passos
+
+<CardGroup cols={2}>
+  <Card title="Navegadores hospedados" icon="globe" href="/browser#hosted-browsers">
+    Como um provedor de navegadores reserva navegadores, e os limites do escopo `'attempt'`.
+  </Card>
+  <Card title="Integração contínua" icon="rotate" href="/ci">
+    Rode a suíte no GitHub Actions ou em outro serviço de CI.
+  </Card>
+</CardGroup>

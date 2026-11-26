@@ -1,0 +1,229 @@
+---
+title: Expo Simulators
+sidebarTitle: Expo Simulators
+description: Rode alvos mobile nos simuladores iOS e emuladores Android hospedados do Expo Simulators com o provedor de dispositivos expoSimulators() de @e2e-dev/eas.
+"og:image": "https://e2e.com/docs/images/og/integrations/eas.png?v=d8cb1fd2c5"
+"twitter:image": "https://e2e.com/docs/images/og/integrations/eas.png?v=d8cb1fd2c5"
+---
+
+`expoSimulators()` de `@e2e-dev/eas` é um
+[provedor de dispositivos](/mobile#hosted-devices) para o
+[Expo Simulators](https://expo.dev/services/simulators): simuladores iOS e
+emuladores Android hospedados. Ao lado de cada dispositivo, o Expo roda um
+daemon do agent-device, e a engine controla o dispositivo por esse daemon.
+Você não precisa de um Mac, do Xcode nem do Android SDK para rodar o e2e com
+dispositivos hospedados pelo Expo.
+
+<Note>
+Para rodar o e2e no serviço de CI do Expo em vez disso, veja [Expo Workflows](/ci/eas-workflows).
+</Note>
+
+## Configuração
+
+O Expo Simulators está em acesso limitado. Para verificar o seu acesso, rode
+`npx eas-cli@latest simulator:availability`. Depois, instale o provedor. Ele
+não precisa de SDK.
+
+<CodeGroup>
+```bash npm
+npm install --save-dev e2e @e2e-dev/mobile @e2e-dev/eas
+```
+
+```bash pnpm
+pnpm add -D e2e @e2e-dev/mobile @e2e-dev/eas
+```
+
+```bash bun
+bun add -d e2e @e2e-dev/mobile @e2e-dev/eas
+```
+</CodeGroup>
+
+Defina o `device` do alvo como `expoSimulators()`:
+
+```ts title="e2e.config.ts"
+import type { E2EConfig } from 'e2e';
+import { mobile } from '@e2e-dev/mobile';
+import { expoSimulators } from '@e2e-dev/eas';
+
+export default {
+  targets: [
+    {
+      name: 'ios',
+      engine: mobile({
+        platform: 'ios',
+        device: expoSimulators({ buildId: process.env.E2E_IOS_BUILD_ID }),
+        videoTouches: false,
+      }),
+      app: { bundleId: 'com.example.app' },
+    },
+  ],
+  workers: 2,
+} satisfies E2EConfig;
+```
+
+Defina `E2E_IOS_BUILD_ID` como o ID de um build de simulador. Não leia
+`EAS_BUILD_ID`: em um job do [Expo Workflows](/ci/eas-workflows), o Expo
+define essa variável com o ID do job em execução. Em um workflow, defina a
+variável no `env` do job de teste, a partir da saída do job de build de que
+ele depende:
+
+```yaml title=".eas/workflows/e2e.yml"
+jobs:
+  e2e_ios:
+    needs: [build_ios]
+    env:
+      E2E_IOS_BUILD_ID: ${{ needs.build_ios.outputs.build_id }}
+```
+
+<Note>
+`expoSimulators()` se chamava `easSimulators()`. O nome antigo ainda
+funciona, mas está obsoleto.
+</Note>
+
+## Vincule o projeto Expo
+
+O provedor lê o id do projeto em `extra.eas.projectId` na configuração do app
+ao lado de `e2e.config.ts`, que o `eas init` escreve. Se a configuração do app
+estiver em outro lugar ou não vincular nenhum projeto, passe `projectId`: o
+id, não o slug.
+
+<Accordion title="Como o provedor lê a configuração do app">
+- **`app.json` ou `app.config.json`**: lido como JSON, sob `expo` quando o
+  arquivo tem essa chave.
+- **Uma configuração dinâmica** (`app.config.ts`, `.js`, `.mjs`, `.cjs`,
+  `.mts` ou `.cts`): avaliada com o próprio `expo config --type public` do
+  projeto, no ambiente da execução, porque a configuração pode calcular o id.
+  Ela precisa do `expo` instalado no projeto. Como no eas-cli, os arquivos
+  `.env` não são carregados (`EXPO_NO_DOTENV=1`). Uma variável que a
+  configuração lê precisa estar no ambiente em que o `e2e run` inicia.
+
+Uma configuração que não vincula nenhum projeto faz a reserva falhar antes que
+qualquer sessão comece, com o nome do arquivo na mensagem. Um
+`@e2e-dev/mobile` antigo demais para passar `projectRoot` aos provedores
+também faz a reserva falhar: atualize o pacote ou passe `projectId`.
+</Accordion>
+
+## Autentique-se
+
+O provedor se autentica do mesmo jeito que o eas-cli:
+
+- **`EXPO_TOKEN`**: um [token de acesso](https://expo.dev/settings/access-tokens)
+  de uma conta ou de um robô com acesso ao projeto, no ambiente em que o
+  `e2e run` inicia. Ele tem precedência sobre um login.
+- **O login do eas-cli** feito com `eas login`, que o eas-cli guarda em
+  `~/.expo/state.json` (`USERPROFILE` no Windows).
+
+As sessões sempre vão para o `api.expo.dev` de produção, então os logins
+`EXPO_STAGING` e `EXPO_LOCAL` do eas-cli não contam.
+
+<Warning>
+Em um runner de CI ou em uma máquina compartilhada, defina `EXPO_TOKEN`. Sem
+ele, um login que alguém deixou no diretório home do runner inicia sessões
+cobradas na conta dessa pessoa.
+</Warning>
+
+## Instale o app
+
+O simulador faz o boot sem nenhum app. Escolha uma forma de colocar o seu app
+nele:
+
+| Forma | `expoSimulators()` | `app` do alvo |
+| --- | --- | --- |
+| Um build do Expo Build | `buildId`: um build de simulador (`"ios": { "simulator": true }` em `eas.json`) ou um APK. O Expo instala e inicia o build antes de a sessão ficar pronta. O build nunca sai do Expo. | `bundleId`, para que `app.open()` saiba o que iniciar. Não defina `appPath`, senão a reserva falha. |
+| Uma URL | `applicationArchiveUrl`: um pacote do app que o Expo baixa e instala da mesma forma. | `bundleId`, sem `appPath`. |
+| Um build local | Nenhuma das duas opções. | `appPath`. O provedor faz upload do build para cada simulador, pelo daemon da sessão, e instala o app. Não chame também `device.installApp()` para esse build: isso faz o upload uma segunda vez. |
+
+## Opções
+
+| Opção                   | Padrão      | Significado |
+| ----------------------- | ----------- | ------- |
+| `projectId`             | o da configuração do app | Veja [Vincule o projeto Expo](#link-the-expo-project). |
+| `buildId`               | nenhum      | Veja [Instale o app](#install-the-app). |
+| `applicationArchiveUrl` | nenhum      | Veja [Instale o app](#install-the-app). |
+| `device`                | escolha do Expo | Nome ou UDID do dispositivo iOS (`'iPhone 17 Pro'`), ou um perfil de hardware de AVD do Android (`'pixel_9'`). |
+| `maxIdleTimeMinutes`    | `10`        | Minutos sem um comando do agent-device antes de o Expo encerrar a sessão, o que também encerra as sessões de uma execução que caiu. Um `maxDurationMinutes` menor baixa o padrão para um minuto a menos que ele. |
+| `maxDurationMinutes`    | limite da conta | Minutos que uma sessão pode rodar depois de ficar pronta. O Expo limita esse valor a 40, ou a 115 em um plano de alta prioridade. |
+| `agentDeviceVersion`    | a da engine | A versão do agent-device do daemon da sessão. O padrão corresponde ao cliente que o `@e2e-dev/mobile` fixa. |
+| `tags`                  | `[]`        | Tags em toda sessão, além das tags da própria execução. |
+
+Uma opção desconhecida, `buildId` junto com `applicationArchiveUrl`, ou um
+`maxIdleTimeMinutes` que não seja menor que um `maxDurationMinutes` passado
+com ele faz o carregamento da configuração falhar com `INVALID_CONFIG`. Os
+dois limites em minutos precisam ser inteiros não negativos.
+
+## Sessões
+
+Cada alvo inicia até `workers` sessões, menos quando tem menos arquivos de
+teste. Elas começam em paralelo antes de o relógio da execução começar a
+contar, e cada uma leva cerca de três minutos (fila, boot, instalação do
+build). Os testes começam quando todas estão prontas.
+
+Uma execução precisa caber em uma sessão, porque o Expo encerra uma sessão
+`maxDurationMinutes` depois que ela fica pronta. Divida uma suíte mais longa
+entre mais workers ou jobs de CI.
+
+O Expo coloca na fila as sessões além do limite de concorrência da conta.
+Nenhuma sessão termina antes da execução, então mantenha `workers` vezes o
+número de alvos do Expo dentro desse limite:
+
+- Uma sessão que ainda está na fila depois de dois minutos registra no log
+  `still queued at Expo after two minutes`.
+- Os alvos se preparam um depois do outro, então as sessões prontas de um
+  alvo ficam ociosas enquanto as do próximo alvo esperam na fila e fazem o
+  boot.
+- Uma sessão que ainda está na fila quando outra já está pronta há
+  `maxIdleTimeMinutes` faz a reserva falhar, porque o Expo pode estar
+  encerrando a sessão ociosa. A execução então encerra todas as sessões.
+
+## Acompanhe uma execução
+
+Ao criar cada sessão, o provedor registra no log a página dela no expo.dev:
+
+```text
+ℹ leasing 2 ios device(s) from expo-simulators
+ℹ expo-simulators (1 of 2): simulator session 01a0…, https://expo.dev/accounts/acme/projects/shop/simulator-sessions/01a0…
+ℹ expo-simulators: leased 01a0…
+```
+
+Uma visualização no navegador que abre sem token aparece no log como
+`watch at <url>`. Uma que precisa de token fica fora do log, porque o token
+controla o simulador.
+
+As sessões recebem o nome `e2e <target> <n> of <total>` e as tags `e2e`,
+`e2e-run:<run id>` e `e2e-target:<target>`. Para listar as sessões de uma
+execução, use `eas simulator:list --tag e2e-run:<run id>`.
+
+## Gravações
+
+Uma tentativa que grava [vídeo](/reference/config#video) grava pelo
+agent-device, como faz localmente, em `video/video.mp4` no diretório de
+artefatos da tentativa.
+
+Defina `videoTouches: false` na engine mobile, como em
+[Configuração](#setup). O agent-device desenha os toques em uma gravação
+quando ela termina, o que leva minutos em um simulador iOS do Expo. A
+tentativa então esgota o próprio `cleanupTimeout` e não mantém nenhum
+arquivo. Sem os toques, encerrar a gravação leva cerca de dois segundos.
+
+## Quando uma sessão não inicia
+
+Uma reserva falha, e a execução termina antes de qualquer teste, quando não
+há `EXPO_TOKEN` nem login do eas-cli, quando a conta não tem o Expo
+Simulators ou quando uma sessão não consegue iniciar. Uma sessão falha quando
+dá erro, fica na fila por tempo demais (veja [Sessões](#sessions)) ou ainda
+está fazendo o boot 15 minutos depois de sair da fila.
+
+O provedor encerra a sessão que falhou e as outras sessões da execução. Ele
+cancela o job de uma sessão na fila, para que o Expo não a inicie mais tarde
+e cobre a conta por ela.
+
+## Próximos passos
+
+<CardGroup cols={2}>
+  <Card title="Dispositivos hospedados" icon="mobile" href="/mobile#hosted-devices">
+    Como um provedor de dispositivos reserva dispositivos e como escrever o seu.
+  </Card>
+  <Card title="Expo Workflows" icon="/images/integrations/expo.svg" href="/ci/eas-workflows">
+    Rode a suíte em um workflow do Expo.
+  </Card>
+</CardGroup>

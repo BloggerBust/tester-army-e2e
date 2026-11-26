@@ -1,0 +1,199 @@
+---
+title: Lightpanda
+sidebarTitle: Lightpanda
+description: Rode alvos web no Lightpanda, o navegador headless de código aberto, com o provedor de navegadores lightpanda() de @e2e-dev/lightpanda.
+"og:image": "https://e2e.com/docs/images/og/integrations/lightpanda.png?v=b97a3ebae4"
+"twitter:image": "https://e2e.com/docs/images/og/integrations/lightpanda.png?v=b97a3ebae4"
+---
+
+O [Lightpanda](https://lightpanda.io) é um navegador headless de código
+aberto escrito do zero, sem o Chromium. Ele inicia em milissegundos, ocupa
+uma fração da memória do Chrome e fala o Chrome DevTools Protocol.
+`lightpanda()` de `@e2e-dev/lightpanda` é um
+[provedor de navegadores](/browser#hosted-browsers) para ele: cada slot de
+worker recebe o próprio `lightpanda serve`, iniciado em uma porta livre no
+início da execução e encerrado no fim. Os testes e a CI continuam iguais; a
+configuração muda só no `browser` do alvo.
+
+O Lightpanda não tem motor de layout. Ele monta o DOM, roda JavaScript e
+expõe a árvore de acessibilidade que a engine lê, que é o que localizadores,
+asserções e [passos do agente](/agent-steps) usam. Tudo o que depende de
+onde um nó é pintado se comporta de outro jeito; veja
+[O que não funciona](#what-does-not-work) antes de migrar uma suíte.
+
+## Configuração
+
+Instale o pacote:
+
+<CodeGroup>
+```bash npm
+npm install --save-dev @e2e-dev/lightpanda
+```
+
+```bash pnpm
+pnpm add -D @e2e-dev/lightpanda
+```
+
+```bash bun
+bun add -d @e2e-dev/lightpanda
+```
+</CodeGroup>
+
+E o binário nightly do Lightpanda, que o provedor inicia:
+
+<CodeGroup>
+```bash macOS
+brew install lightpanda-io/browser/lightpanda
+```
+
+```bash Linux
+curl -L -o lightpanda https://github.com/lightpanda-io/browser/releases/download/nightly/lightpanda-x86_64-linux
+install -D -m 755 lightpanda ~/.local/bin/lightpanda
+```
+</CodeGroup>
+
+```ts title="e2e.config.ts"
+import type { E2EConfig } from 'e2e';
+import { web } from '@e2e-dev/web';
+import { lightpanda } from '@e2e-dev/lightpanda';
+
+export default {
+  targets: [
+    {
+      name: 'lightpanda',
+      engine: web({ browser: lightpanda() }),
+      app: { url: 'http://localhost:3000' },
+    },
+  ],
+} satisfies E2EConfig;
+```
+
+O provedor roda o `lightpanda` do `PATH`, de `~/.lightpanda/lightpanda` ou de
+`~/.local/bin/lightpanda`, os lugares onde o
+[agent-browser](https://agent-browser.dev/engines/lightpanda) também procura,
+ou o binário que `LIGHTPANDA_PATH` indica no ambiente em que o `e2e run` inicia,
+ou `binary` nas opções. Se nenhum for encontrado, a execução falha antes de
+qualquer teste, indicando a página de instalação.
+Cada worker recebe o próprio servidor, então `workers` define quantos rodam
+ao mesmo tempo, e o log da execução nomeia cada um:
+
+```text
+ℹ lightpanda (1 of 2): lightpanda 1.1.0-nightly at ws://127.0.0.1:51165/
+```
+
+## Conecte-se a um servidor que já está rodando
+
+Um Lightpanda que já está rodando, como a imagem Docker na CI, é um alvo de
+[`connect`](/reference/web#options), não um provedor: a engine se conecta
+ao endpoint CDP do Lightpanda e deixa o servidor rodando.
+
+```ts title="e2e.config.ts"
+web({ connect: { cdpEndpoint: () => process.env.LIGHTPANDA_URL ?? 'ws://127.0.0.1:9222/' } })
+```
+
+```bash
+docker run -d --name lightpanda -p 127.0.0.1:9222:9222 lightpanda/browser:nightly
+```
+
+Todos os workers então compartilham esse servidor. Um `lightpanda serve`
+aceita 16 conexões por padrão; aumente o `--cdp-max-connections` do servidor
+para mais que `workers` quando rodar mais workers.
+
+## Opções
+
+| Opção           | Padrão                          | Significado |
+| --------------- | ------------------------------- | ----------- |
+| `binary`        | `LIGHTPANDA_PATH`, senão o binário encontrado | O binário a iniciar: um caminho ou um nome no `PATH`. |
+| `loadResources` | `['stylesheet']`                | Sub-recursos que o servidor busca: `iframe`, `image`, `stylesheet`. Veja [Busque mais recursos da página](#fetch-more-of-the-page). |
+| `args`          | `[]`                            | Flags extras de `lightpanda serve`, depois das que o provedor define. |
+
+O provedor reserva um servidor por slot de worker durante a execução e não
+tem `scope: 'attempt'`, já que o Lightpanda não expõe a identidade do
+contexto padrão pela qual uma reserva por tentativa se reconecta. Um servidor
+que não responde na própria porta em até dez segundos faz a reserva falhar,
+e o mesmo vale para um binário que sai antes, com o stderr do binário na
+mensagem.
+
+## Busque mais recursos da página
+
+Por padrão, `lightpanda serve` não requisita nenhum sub-recurso: nenhuma
+imagem, nenhuma folha de estilo externa, nenhum iframe. O provedor pede as
+folhas de estilo, e `loadResources` define a lista, como `--load-resources`
+no servidor. Uma lista substitui esse padrão, então mantenha `stylesheet`
+nela, e `[]` não busca nenhum:
+
+```ts
+web({ browser: lightpanda({ loadResources: ['stylesheet', 'iframe'] }) })
+```
+
+Estilos inline, blocos `<style>` e o atributo `hidden` já decidem a
+visibilidade; `stylesheet` faz as regras de um arquivo externo contarem
+também, então um nó que uma folha de estilo vinculada esconde fica oculto
+para uma consulta. `image` busca os cabeçalhos das imagens para que `load` e
+`error` reflitam o status real.
+
+## O que funciona
+
+Na suíte local do testbed do e2e, no Lightpanda 1.0.4, estes itens passam
+sem mudanças:
+
+- `app.open`, `app.back`, e também `expect(browser).toHaveURL` e `toHaveTitle`.
+- Todas as consultas de `screen` (`getByRole`, `getByLabel`, `getByText`,
+  `getByTestId`, filtros, `nth`) e as ações sobre elas: `tap`, `fill`,
+  `check`, `select`, `press` e entrada de teclado.
+- Asserções com polling sobre texto, valor, contagem e estado.
+- Mocks de `browser.route` e esperas por requisições.
+- [Downloads](/browser#download-a-file) com `browser.waitForDownload`.
+- `browser.setCookies` a partir de um teste.
+- [Sessões](/authentication): `test.setup` com `session.save`, e `session:`
+  em um teste.
+- `app.screenshot` e a captura de tela de uma falha. O Lightpanda pinta uma
+  renderização simples do DOM, não a página como o Chrome a mostraria.
+- Passos do agente: `agent.act`, `agent.assert`, `agent.extract` e
+  `agent.waitFor` leem a árvore da tela, que o Lightpanda fornece por
+  inteiro. A suíte agêntica do testbed passa nos fluxos guiados pela árvore
+  (lista de tarefas, wizard, login, hover, menu de contexto, toque longo,
+  upload); o que falha é desenhado em um canvas, arrastado ou fica abaixo da
+  dobra. Um julgamento sobre pixels vê a renderização simples, então mantenha
+  o agente na árvore.
+
+Um teste que faz asserções sobre o que o usuário vê, e não sobre onde isso é
+desenhado, migra como está.
+
+## O que não funciona
+
+Cada um destes itens faz o teste falhar com o erro de sempre da engine, sem
+travar. Os motivos são do Lightpanda, e a
+[issue de compatibilidade com o Playwright](https://github.com/lightpanda-io/browser/issues/3076)
+do projeto acompanha a maioria deles.
+
+| Recurso | O que acontece | Por quê |
+| ------- | -------------- | ------- |
+| [Diálogos](/browser#handle-a-dialog) | `browser.onDialog` roda e depois faz o teste falhar com `ENGINE_FAILURE`: `Page.handleJavaScriptDialog` informa que não há diálogo. | O próprio Lightpanda responde a `alert`, `confirm` (`false`) e `prompt` (`null`) antes que um cliente consiga. |
+| [Uploads de arquivo](/reference/screen#setinputfiles) por um botão que abre um input de arquivo oculto | `setInputFiles` no botão falha depois do tempo limite da ação: o clique não abre nenhuma janela de escolha de arquivo. `setInputFiles` no próprio input funciona. | O Lightpanda aceita `Page.setInterceptFileChooserDialog`, mas nunca envia `Page.fileChooserOpened`. |
+| [Iframes](/browser#reach-into-an-iframe) | `frameLocator` não encontra nada. | Iframes não são carregados por padrão. `loadResources: ['stylesheet', 'iframe']` os carrega; consultas e preenchimentos então funcionam, mas um listener na página que contém o frame, em um elemento que o frame criou, não dispara. |
+| Arrastar e soltar: `locator.swipeTo`, ou um caminho de `screen.swipe` até uma área de soltura | O ponteiro se move, mas nada é solto: o nó arrastado fica onde estava. | No Lightpanda, a entrada do mouse ainda não inicia um arraste HTML. |
+| `browser.setViewport` | A página mede o novo tamanho, mas um listener de `resize` nunca roda. | Nenhum evento `resize` é disparado. |
+| [Emulação de mídia](/reference/web#media-emulation): `colorScheme`, `reducedMotion`, `browser.emulateMedia` | A página continua informando `light` e movimento completo. | `Emulation.setEmulatedMedia` não muda o que `matchMedia` responde. |
+| Rolagem: `scrollIntoView`, `scrollUntilVisible` e uma ação em um nó “outside of the viewport” | A rolagem não faz nada, e uma espera de acionabilidade pode estourar o tempo limite. | Sem layout, não há posição de rolagem para mover. A renderização simples empilha todos os blocos em uma coluna, então uma parte maior da página fica abaixo da dobra do que no Chrome, e nada ali pode ser alcançado. |
+| Conteúdo de `<canvas>`: um marcador de mapa, um teclado numérico ou um gráfico, desenhados com o contexto 2D | Uma captura de tela não mostra nenhum desenho, e o canvas não ocupa espaço. A camada de pixels do agente (`tap_at`, `type_at`, um julgamento por visão) não tem nada para ver. | `getContext('2d')` retorna um contexto que não registra nada do que o renderizador desenha. |
+
+Uma release do Lightpanda que resolva um destes itens elimina a linha
+correspondente da tabela acima, sem nenhuma mudança do lado do e2e; a engine
+envia os mesmos comandos CDP que envia ao Chrome.
+
+## Onde ele se encaixa
+
+O Lightpanda combina com uma suíte que depende muito da leitura da tela pelo
+agente e pouco de geometria: fluxos de smoke test, formulários, navegação,
+páginas alimentadas por uma API e passos `agent.act` cujas verificações são
+texto e estado. Ele roda essa suíte em uma fração do tempo e da memória do
+Chrome, em uma máquina sem o Chrome instalado.
+
+Mantenha um alvo Chromium para o resto e selecione por alvo quando os dois
+estiverem na mesma configuração:
+
+```bash
+e2e run --target lightpanda
+e2e run --target chromium
+```

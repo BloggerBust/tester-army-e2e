@@ -1,0 +1,206 @@
+---
+title: Navegadores do smol machines
+sidebarTitle: smol machines
+description: Rode cada tentativa de teste web em uma branch própria de uma microVM Chromium aquecida no seu computador, com o provedor de navegadores smol() de @e2e-dev/smol.
+"og:image": "https://e2e.com/docs/images/og/integrations/smol.png?v=93b61e0399"
+"twitter:image": "https://e2e.com/docs/images/og/integrations/smol.png?v=93b61e0399"
+---
+
+`smol()` de `@e2e-dev/smol` é um
+[provedor de navegadores](/browser#hosted-browsers) que roda o Chromium em
+microVMs do [smol machines](https://smolmachines.com) no seu computador. Cada
+slot de worker faz o boot de uma máquina de navegador. Por padrão, cada
+tentativa de teste roda em uma branch copy-on-write dessa máquina, pronta em
+cerca de um segundo, então toda nova tentativa começa do mesmo estado do
+navegador. Os dados do app só são redefinidos quando o app
+[roda na máquina](#run-the-app-in-the-machine). O estado no seu computador
+ou em serviços externos continua compartilhado.
+
+## Configure o provedor
+
+<Note>
+O smol machines roda no macOS em Apple Silicon ou no Linux com KVM
+(`/dev/kvm`). Ele não precisa de conta nem de chave de API. O primeiro boot
+baixa a imagem Ubuntu do Playwright, então demora mais.
+</Note>
+
+Instale o provedor e o SDK do smol machines:
+
+<CodeGroup>
+```bash npm
+npm install --save-dev @e2e-dev/smol smolmachines
+```
+
+```bash pnpm
+pnpm add -D @e2e-dev/smol smolmachines
+```
+
+```bash bun
+bun add -d @e2e-dev/smol smolmachines
+```
+</CodeGroup>
+
+Defina o `browser` do alvo como `smol()`:
+
+```ts title="e2e.config.ts"
+import type { E2EConfig } from 'e2e';
+import { web } from '@e2e-dev/web';
+import { smol } from '@e2e-dev/smol';
+
+export default {
+  targets: [
+    {
+      name: 'web',
+      engine: web({ browser: smol({ hostPorts: [3000] }) }),
+      app: {
+        url: 'http://localhost:3000',
+        command: { executable: 'npm', args: ['run', 'dev'] },
+      },
+    },
+  ],
+  workers: 4,
+} satisfies E2EConfig;
+```
+
+Dentro da máquina, `localhost` é a própria máquina. `hostPorts` lista as
+portas do seu computador que o navegador acessa como o próprio `localhost`,
+então `app.url` continua `http://localhost:3000`.
+
+<Warning>
+`hostPorts` não é uma lista de permissões. A máquina consegue acessar
+qualquer porta de loopback do seu computador por `host.smolvm.internal` e tem
+acesso de saída irrestrito à rede. Encerre os serviços de loopback sensíveis
+antes de testar um app não confiável com `smol()`.
+</Warning>
+
+## Comece cada teste com o login feito
+
+`prepare` controla cada navegador aquecido uma vez, antes que qualquer
+tentativa crie uma branch desse navegador. Toda tentativa nesse slot começa
+com os cookies, o armazenamento e as páginas que essa preparação deixou. Isso
+substitui as [sessões](/authentication), que o escopo `'attempt'` não
+consegue usar.
+
+`prepare` recebe o endpoint de DevTools do navegador. Trabalhe no contexto
+padrão, onde as tentativas rodam. Desconecte antes que `prepare` seja
+resolvido e deixe o navegador rodando.
+
+<Accordion title="Faça login com o Playwright">
+Instale a versão do `playwright-core` que o `@e2e-dev/web` fixa, hoje a
+1.65.1, e mantenha as duas versões iguais quando atualizar. O pnpm não deixa a sua
+configuração importar uma dependência de uma dependência.
+
+<CodeGroup>
+```bash npm
+npm install --save-dev playwright-core@1.65.1
+```
+
+```bash pnpm
+pnpm add -D playwright-core@1.65.1
+```
+
+```bash bun
+bun add -d playwright-core@1.65.1
+```
+</CodeGroup>
+
+```ts title="Provider options"
+import { chromium } from 'playwright-core';
+
+smol({
+  hostPorts: [3000],
+  prepare: async (cdpEndpoint) => {
+    const browser = await chromium.connectOverCDP(cdpEndpoint);
+    const page = browser.contexts()[0]!.pages()[0]!;
+    await page.goto('http://localhost:3000/login');
+    await page.getByLabel('Email').fill('qa@example.com');
+    await page.getByLabel('Password').fill(process.env.QA_PASSWORD!);
+    await page.getByRole('button', { name: 'Sign in' }).click();
+    await page.waitForURL('**/dashboard');
+    await browser.close();
+  },
+})
+```
+
+Em um navegador obtido com `connectOverCDP`, `browser.close()` só desconecta.
+</Accordion>
+
+## Rode o app na máquina
+
+Com `app`, o app em teste roda em cada máquina de navegador em vez de rodar no
+seu computador, então nada do que um teste ou um agente leva o app a fazer roda
+no host. A máquina ainda consegue acessar as suas portas de loopback, como
+[Configure o provedor](#set-up-the-provider) avisa. No escopo `'attempt'`,
+cada tentativa recebe a própria cópia do app em execução e dos arquivos
+dele, incluindo um banco de dados local.
+
+```ts title="Provider options"
+smol({
+  app: {
+    source: '.',
+    setup: 'npm ci && npm run db:seed',
+    start: 'npm start',
+    port: 3000,
+    env: { DATABASE_URL: 'file:/app/dev.db' },
+  },
+})
+```
+
+Defina `app.url` como `http://localhost:<port>` e não declare
+`app.command`. `setup` e `start` rodam em todo boot da máquina, antes de
+`prepare`.
+
+| Campo de `app` | Significado |
+| -------------- | ----------- |
+| `start`        | Obrigatório. Comando de shell que serve o app, rodado em segundo plano em `/app`. O provedor espera até 180 segundos que o app responda em `port`. |
+| `port`         | Obrigatório. Porta em que o app escuta dentro da máquina. Não pode ser 80 nem 9229, que o navegador usa, nem estar em `hostPorts`. |
+| `source`       | Diretório copiado para `/app`, sem `node_modules`, `.git` nem `.e2e`. Resolvido a partir de onde a execução começa. `.` por padrão. |
+| `setup`        | Script de shell rodado como root em `/app` antes de `start`. A imagem inclui Node.js e npm, então `npm ci` instala as dependências para o Linux da máquina. |
+| `env`          | Variáveis de ambiente para `setup` e `start`. Os nomes precisam ser nomes de variável de shell. |
+
+## Escolha um escopo
+
+`scope: 'attempt'`, o padrão, dá a cada tentativa a própria branch do
+navegador aquecido do slot, com os limites de uma
+[reserva por tentativa](/browser#hosted-browsers).
+
+`scope: 'worker'` mantém uma máquina por slot de worker durante a execução.
+Cada tentativa recebe um novo contexto de navegador nessa máquina, como em
+uma execução local, então sessões e opções como `headers` e `locale`
+funcionam. Nenhuma branch é criada, e `prepare` causa um `INVALID_CONFIG`.
+
+## Opções
+
+| Opção       | Padrão      | Significado |
+| ----------- | ----------- | ----------- |
+| `scope`     | `'attempt'` | Veja [Escolha um escopo](#choose-a-scope). |
+| `prepare`   | nenhum      | Veja [Comece cada teste com o login feito](#start-every-test-signed-in). |
+| `hostPorts` | `[]`        | Veja [Configure o provedor](#set-up-the-provider). Não pode ser 80 nem 9229. |
+| `app`       | nenhum      | Veja [Rode o app na máquina](#run-the-app-in-the-machine). |
+| `setup`     | nenhum      | Script de shell rodado como root em cada máquina antes de o Chromium iniciar, como `apt-get update && apt-get install -y fonts-noto-cjk` para ter mais fontes. |
+| `cpus`      | `2`         | vCPUs por máquina. |
+| `memoryMb`  | `2048`      | Memória por máquina, em MiB. |
+
+## O que muda em relação a um navegador local
+
+O cache de voltar e avançar do navegador fica desativado, então voltar
+recarrega a página. `browser.waitForDownload` funciona como localmente.
+
+## Limpe as máquinas que sobraram
+
+O runner exclui as máquinas da execução quando ela termina, incluindo as de
+um worker que caiu. Um runner encerrado à força, como em um job de CI
+cancelado, deixa para trás as próprias máquinas de escopo `'worker'`, paradas, com
+nomes que começam com `e2e-`. Liste e exclua essas máquinas com a
+[CLI do smol](https://smolmachines.com), por exemplo `smol machine ls`.
+
+## Próximos passos
+
+<CardGroup cols={2}>
+  <Card title="Segurança" icon="shield-halved" href="/security">
+    O que roda no seu computador e o que ainda pode vazar.
+  </Card>
+  <Card title="Navegadores hospedados" icon="globe" href="/browser#hosted-browsers">
+    Como um provedor de navegadores reserva navegadores, e os limites do escopo `'attempt'`.
+  </Card>
+</CardGroup>

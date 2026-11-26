@@ -1,0 +1,271 @@
+---
+title: TestMu AI
+sidebarTitle: TestMu AI
+description: Rode alvos mobile em emuladores, simuladores e dispositivos reais do TestMu AI (antigo LambdaTest), e alvos web no Chrome e no Edge hospedados pelo serviço, com @e2e-dev/testmu.
+"og:image": "https://e2e.com/docs/images/og/integrations/testmu.png?v=4bc1e43b07"
+"twitter:image": "https://e2e.com/docs/images/og/integrations/testmu.png?v=4bc1e43b07"
+---
+
+`@e2e-dev/testmu` roda alvos no
+[TestMu AI](https://www.lambdatest.com) (antigo LambdaTest). `testmu()` é um
+[provedor de dispositivos](/mobile#hosted-devices) para emuladores Android,
+simuladores iOS e dispositivos reais. `testmuBrowsers()` de
+`@e2e-dev/testmu/web` é um [provedor de navegadores](/browser#hosted-browsers)
+para Chrome e Edge hospedados. Os testes continuam os mesmos.
+
+## Autentique-se
+
+Defina `LT_USERNAME` e `LT_ACCESS_KEY` no ambiente em que o `e2e run`
+inicia, como os segredos da CI. Copie os dois de **Account Settings →
+Password & Security → Username and Access Key**
+([accounts.lambdatest.com/security/username-accesskey](https://accounts.lambdatest.com/security/username-accesskey)).
+Se faltar um dos dois, a reserva falha antes de qualquer teste começar. O
+`testmuBrowsers()` envia os dois somente na URL CDP de cada sessão, nunca em
+uma linha de log.
+
+## Rode alvos mobile em dispositivos
+
+Cada slot de worker reserva um dispositivo quando a execução começa e o libera
+quando a execução termina.
+
+<Tip>
+Você não precisa de Mac, Xcode nem Android SDK para rodar o e2e com
+dispositivos hospedados.
+</Tip>
+
+Instale a integração junto com a engine mobile:
+
+<CodeGroup>
+```bash npm
+npm install --save-dev e2e @e2e-dev/mobile @e2e-dev/testmu
+```
+
+```bash pnpm
+pnpm add -D e2e @e2e-dev/mobile @e2e-dev/testmu
+```
+
+```bash bun
+bun add -d e2e @e2e-dev/mobile @e2e-dev/testmu
+```
+</CodeGroup>
+
+```ts title="e2e.config.ts"
+import type { E2EConfig } from 'e2e';
+import { mobile } from '@e2e-dev/mobile';
+import { testmu } from '@e2e-dev/testmu';
+
+const apk = 'https://prod-mobile-artefacts.lambdatest.com/assets/docs/proverbial_android.apk';
+const ipa = 'https://prod-mobile-artefacts.lambdatest.com/assets/docs/proverbial_ios.ipa';
+
+export default {
+  targets: [
+    {
+      name: 'android-emulator',
+      engine: mobile({
+        platform: 'android',
+        device: testmu({ device: 'Galaxy S22 Ultra 5G', osVersion: '14', app: apk }),
+      }),
+      app: { bundleId: 'com.lambdatest.proverbial' },
+    },
+    {
+      name: 'ios-real',
+      engine: mobile({
+        platform: 'ios',
+        device: testmu({ device: 'iPhone 16', osVersion: '18', app: ipa, deviceType: 'real' }),
+      }),
+      app: { bundleId: 'proverbial' },
+    },
+    {
+      name: 'android-real',
+      engine: mobile({
+        platform: 'android',
+        device: testmu({ device: 'Pixel 6', osVersion: '14', app: apk, deviceType: 'real' }),
+      }),
+      app: { bundleId: 'com.lambdatest.proverbial' },
+    },
+  ],
+  workers: 1,
+} satisfies E2EConfig;
+```
+
+`device` e `osVersion` precisam corresponder exatamente ao catálogo do TestMu
+AI, como o [gerador de capabilities](https://www.lambdatest.com/capabilities-generator)
+os lista: `18.0` para um dispositivo iOS virtual, `18` para um real, `14` para
+Android. Dispositivos reais e virtuais têm catálogos separados.
+
+`app` é o build que o TestMu AI instala em cada sessão: um id de app `lt://`,
+uma URL `https` ou um caminho local, resolvido em relação ao diretório do
+`e2e.config.ts` e enviado por upload. Use um `.apk` ou `.aab` no Android, um
+`.app` compactado em zip em um simulador iOS e um `.ipa` assinado em um
+dispositivo iOS real. Deixe de fora o `app.appPath` do alvo e mantenha o
+`app.bundleId` para o `app.open()`.
+
+<Accordion title="Exemplo de teste">
+
+```ts title="tests/home.e2e.ts"
+import { test } from '@e2e-dev/mobile';
+import { expect } from 'e2e';
+
+test('Proverbial home screen', async ({ app, screen }) => {
+  await app.open();
+  await expect(screen.getByText('Proverbial')).toBeVisible();
+  // Android labels the button GEOLOCATION, iOS GeoLocation.
+  await expect(screen.getByRole('button', /^geolocation$/i)).toBeVisible();
+});
+```
+</Accordion>
+
+## Rode alvos web em navegadores
+
+Cada slot de worker recebe a própria sessão do Chrome ou do Edge durante a
+execução. Cada tentativa recebe um novo contexto de navegador nessa sessão,
+como em uma execução local, então um teste nunca vê os cookies, o
+armazenamento ou as permissões de outro teste.
+
+Instale a integração junto com a engine web:
+
+<CodeGroup>
+```bash npm
+npm install --save-dev e2e @e2e-dev/web @e2e-dev/testmu
+```
+
+```bash pnpm
+pnpm add -D e2e @e2e-dev/web @e2e-dev/testmu
+```
+
+```bash bun
+bun add -d e2e @e2e-dev/web @e2e-dev/testmu
+```
+</CodeGroup>
+
+Defina o `browser` do alvo como `testmuBrowsers()`:
+
+```ts title="e2e.config.ts"
+import type { E2EConfig } from 'e2e';
+import { web } from '@e2e-dev/web';
+import { testmuBrowsers } from '@e2e-dev/testmu/web';
+
+export default {
+  targets: [
+    {
+      name: 'testmu-web',
+      engine: web({ browser: testmuBrowsers(), viewport: null }),
+      app: { url: 'https://staging.example.com' },
+    },
+  ],
+} satisfies E2EConfig;
+```
+
+## Opções do dispositivo
+
+| Opção         | Padrão          | Significado |
+| ------------- | --------------- | ------- |
+| `device`      | obrigatório     | Nome do dispositivo como o catálogo do TestMu AI o lista (`'Galaxy S22 Ultra 5G'`, `'iPhone 16'`). |
+| `osVersion`   | obrigatório     | Versão do sistema operacional como o catálogo a lista para esse dispositivo. |
+| `app`         | obrigatório     | O build que o TestMu AI instala: um id de app `lt://`, uma URL `https` ou um caminho local. |
+| `deviceType`  | `'virtual'`     | `'virtual'` para um emulador ou simulador, `'real'` para um dispositivo real. |
+| `project`     | `'e2e'`         | Projeto do dashboard em que as sessões são agrupadas. |
+| `build`       | o id da execução | Build do dashboard em que as sessões são agrupadas. |
+| `sessionName` | `e2e-<run id>-<target>-<slot>` | Nome da sessão no dashboard. Com mais de um slot de worker, `-<slot>` é acrescentado. |
+| `orientation` | do dispositivo  | `'portrait'` ou `'landscape'`. |
+| `geoLocation` | do TestMu AI    | Código do país onde o IP do dispositivo é geolocalizado (`'US'`). |
+| `timezone`    | do dispositivo  | Fuso horário (`'UTC+05:30'`). |
+| `language`    | do dispositivo  | Código de idioma (`'fr'`). |
+| `locale`      | do dispositivo  | Localidade (`'fr_FR'`). |
+| `appiumVersion` | do TestMu AI  | Versão do Appium para a sessão (`'2.16.2'`). |
+
+Os recursos do dispositivo são definidos quando a sessão começa e valem pela
+sessão inteira. Uma opção desconhecida ou um valor inválido faz o carregamento
+da configuração falhar com `INVALID_CONFIG`.
+
+## Opções do navegador
+
+| Opção | Padrão | Significado |
+| ------ | ------- | ------- |
+| `browserName` | `'Chrome'` | `'Chrome'` ou `'MicrosoftEdge'`. A engine web se conecta por CDP, então qualquer outro navegador faz a configuração falhar. |
+| `capabilities` | nenhum | `browserVersion`, enviado junto com `browserName`, e os campos de `LT:Options` do TestMu AI, como `platform`, `geoLocation`, `timezone`, `video`, `network`, ou `tunnel` e `tunnelName` para o [TestMu AI Tunnel](https://www.lambdatest.com/support/docs/testing-locally-hosted-pages/). |
+
+O provedor envia `platform` (`Windows 11`, já que o TestMu AI recusa uma
+sessão sem esse campo), `build` (o id da execução), `project` (`e2e`) e
+`idleTimeout` (600 segundos), a menos que `capabilities` defina esses valores.
+Sessões do Edge recebem `--user-data-dir=remote-debug-profile-edge` em
+`browserOptions`, a menos que `capabilities` defina um. O provedor define
+`user`, `accessKey` e `name` por conta própria, então `capabilities` que
+definam qualquer um deles fazem a configuração falhar com `INVALID_CONFIG`. O
+mesmo vale para um `LT:Options` aninhado, um `browserName` (use a opção), um
+valor que o JSON não consegue representar e uma opção de `testmuBrowsers()`
+com erro de digitação. As demais chaves de `capabilities` vão para o TestMu AI
+sem verificação.
+
+```ts
+testmuBrowsers({
+  browserName: 'MicrosoftEdge',
+  capabilities: { browserVersion: '140', platform: 'Windows 10', build: `checkout ${process.env.GITHUB_SHA}`, video: true },
+})
+```
+
+## Encontre sessões e vídeos
+
+Por padrão, o dashboard dá a cada sessão o nome `e2e-<run id>-<target>-<slot>`.
+
+Uma tentativa que grava [vídeo](/reference/config#video) recebe:
+
+- **Em um dispositivo**, um link para a gravação da sessão feita pelo TestMu
+  AI, encontrada pelo `build` e pelo `sessionName` da sessão. A gravação cobre
+  a sessão inteira, então toda tentativa em um slot de worker traz o link do
+  mesmo vídeo. Execuções que se sobrepõem e compartilham um `build` e um
+  `sessionName` fixos podem trazer o link dos vídeos umas das outras; com os
+  valores padrão, isso nunca acontece.
+- **Em um navegador**, o screencast da página feito pela engine web, como em
+  uma execução local. O TestMu AI grava a tela da sessão quando você passa
+  `capabilities: { video: true }`. Assista à gravação no dashboard do TestMu
+  AI.
+
+## Limites
+
+- **Sessões paralelas.** Mantenha `workers` vezes o número de alvos do TestMu
+  AI dentro das sessões paralelas do seu plano. Uma sessão de navegador além
+  do plano espera na fila do TestMu AI.
+- **Sessões de dispositivo são cobradas enquanto estão reservadas.** Uma
+  sessão de dispositivo começa quando o slot dela é reservado, o que leva
+  cerca de 30 a 75 segundos. A sessão é cobrada até que a execução a libere,
+  mesmo quando nenhum teste roda nessa sessão.
+- **Runner interrompido em um dispositivo.** Se o runner for encerrado à força
+  antes de liberar um dispositivo, nada envia outro comando à sessão. O
+  [tempo limite de inatividade](https://www.lambdatest.com/support/docs/desired-capabilities-in-appium/)
+  do TestMu AI (120 segundos por padrão) encerra a sessão cerca de três
+  minutos depois do último comando.
+- **Uma liberação não confirmada faz a execução falhar.** Uma liberação faz a
+  execução falhar quando o agent-device não consegue confirmar que encerrou a
+  sessão do dispositivo, mesmo quando todos os testes passaram: uma parada
+  forçada do daemon, um relatório de encerramento perdido ou um daemon que
+  terminou durante a execução. Encontre a sessão no dashboard pelos valores de
+  `build` e `sessionName`.
+- **Configurações e logs do dispositivo.** Configurações do dispositivo
+  (permissões, localização, rede, aparência), alertas do sistema, gravação e
+  logs do dispositivo pelo agent-device, e redirecionamento reverso de portas
+  não estão disponíveis. Leia os logs no dashboard do TestMu AI e use o TestMu
+  AI Tunnel para acessar um servidor na sua rede.
+- **Conexão do navegador em até 60 segundos.** A engine web espera no máximo
+  60 segundos para uma sessão de navegador aceitar a conexão CDP. Um
+  `launchTimeout` menor encerra a espera antes, mas um maior não estende esse
+  limite. Uma sessão ainda na fila ou em provisionamento depois disso falha
+  com `LAUNCH_TIMEOUT`, ou com `ENGINE_FAILURE` quando o `launchTimeout` passa
+  de 60 segundos.
+- **Conexões de navegador perdidas.** Uma sessão de navegador não pode ser
+  retomada, então uma conexão perdida faz a tentativa falhar.
+- **Downloads no navegador.** Os navegadores do TestMu AI salvam os downloads
+  nas próprias máquinas, então `browser.waitForDownload` falha com
+  `ENGINE_FAILURE`. Em vez disso, faça a asserção sobre o link de download ou
+  sobre a requisição.
+
+## Próximos passos
+
+<CardGroup cols={2}>
+  <Card title="Dispositivos hospedados" icon="mobile" href="/mobile#hosted-devices">
+    Como um provedor de dispositivos reserva dispositivos.
+  </Card>
+  <Card title="Navegadores hospedados" icon="globe" href="/browser#hosted-browsers">
+    Como um provedor de navegadores reserva navegadores.
+  </Card>
+</CardGroup>

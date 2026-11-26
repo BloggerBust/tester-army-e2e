@@ -1,0 +1,84 @@
+---
+title: Cloudflare Browser Run
+sidebarTitle: Browser Run
+description: Rode alvos web no Chromium hospedado da Cloudflare com o provedor de navegadores browserRun().
+---
+
+`browserRun()` de `@e2e-dev/browser-run` dá a cada slot de worker, ou a cada tentativa de teste, um navegador Chromium hospedado pela Cloudflare.
+Os testes usam a mesma engine web e as mesmas fixtures.
+
+## Conecte sua conta
+
+Crie um [token de API da Cloudflare](https://developers.cloudflare.com/browser-run/cdp/) com a permissão `Browser Rendering - Edit` para a sua conta.
+Defina `CLOUDFLARE_ACCOUNT_ID` e `CLOUDFLARE_API_TOKEN` no ambiente em que o `e2e run` inicia.
+
+Instale o provedor junto com `e2e` e `@e2e-dev/web`:
+
+<CodeGroup>
+```bash npm
+npm install --save-dev @e2e-dev/browser-run
+```
+
+```bash pnpm
+pnpm add -D @e2e-dev/browser-run
+```
+
+```bash bun
+bun add -d @e2e-dev/browser-run
+```
+</CodeGroup>
+
+Defina o navegador do alvo:
+
+```ts title="e2e.config.ts"
+import type { E2EConfig } from 'e2e';
+import { web } from '@e2e-dev/web';
+import { browserRun } from '@e2e-dev/browser-run';
+
+export default {
+  targets: [{
+    name: 'cloudflare',
+    engine: web({ browser: browserRun() }),
+    app: { url: 'https://staging.example.com' },
+  }],
+  workers: 2,
+} satisfies E2EConfig;
+```
+
+Use uma URL HTTPS pública para o app. Um navegador hospedado não consegue acessar o `localhost` do runner; exponha apps locais por um túnel.
+
+## Defina o tempo de vida do navegador
+
+| Opção | Padrão | Significado |
+| --- | --- | --- |
+| `scope` | `'worker'` | Um navegador por slot de worker. `'attempt'` reserva um navegador novo para cada tentativa, inclusive as novas tentativas. |
+| `keepAlive` | `600000` | Tempo limite de inatividade em milissegundos, de `10000` a `1200000`. |
+
+O tempo limite conta o tempo sem comandos CDP, mesmo com a conexão aberta. Aumente `keepAlive` quando um teste puder ficar parado por mais de dez minutos.
+
+O escopo por worker cria um contexto isolado para cada tentativa.
+O escopo por tentativa usa o contexto padrão do navegador novo e permite reconectar a esse navegador depois de uma queda do transporte.
+Os [limites de provedores por tentativa](/browser#hosted-browsers) se aplicam.
+
+As sessões são excluídas no encerramento. Se o runner sair antes da limpeza, o tempo limite de inatividade encerra o navegador.
+
+## Verifique a compatibilidade
+
+Chromium, navegação, localizadores, rotas de rede, cookies, capturas de tela e o vídeo de screencast da engine web usam CDP.
+Os cabeçalhos de autorização do CDP autenticam a conexão com o navegador e não viram cabeçalhos das requisições da página.
+
+A navegação pelo histórico pode estourar o tempo limite no Browser Run enquanto espera o evento `load` da página depois de `browser.back()` ou `browser.forward()`.
+
+Downloads de arquivos remotos não são suportados. O Browser Run não expõe nenhuma API de sistema de arquivos do navegador que o provedor possa ler.
+As gravações de sessão nativas da Cloudflare não são anexadas aos relatórios.
+Quando o [vídeo](/reference/config#video) está ativado, a engine web grava um screencast WebM por tentativa.
+
+Mantenha `workers` dentro dos [limites de concorrência e de aquisição](https://developers.cloudflare.com/browser-run/limits/) da sua conta.
+Um HTTP `401` ou `403` informa qual permissão do token verificar.
+
+## Próximos passos
+
+<CardGroup cols={2}>
+  <Card title="Navegadores hospedados" href="/browser#hosted-browsers">Entenda os escopos dos provedores e o isolamento.</Card>
+  <Card title="Engine web" href="/web">Configure viewports, acesso ao app e vídeo.</Card>
+</CardGroup>

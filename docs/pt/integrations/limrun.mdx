@@ -1,0 +1,159 @@
+---
+title: Teste apps mobile no Limrun
+sidebarTitle: Limrun
+description: Rode testes de apps mobile em simuladores iOS e emuladores Android hospedados.
+"og:image": "https://e2e.com/docs/images/og/integrations/limrun.png?v=9be019105e"
+"twitter:image": "https://e2e.com/docs/images/og/integrations/limrun.png?v=9be019105e"
+---
+
+`@e2e-dev/limrun` é um provedor de dispositivos hospedados para a engine mobile.
+Ele cria um dispositivo para cada worker, instala o seu app e libera o dispositivo quando a execução termina.
+Use as APIs padrão `app`, `screen` e `expect` para testar os fluxos de usuário do seu app.
+
+## Instale e autentique-se
+
+Instale a integração junto com a engine mobile e as peer dependencies da engine:
+
+<CodeGroup>
+```bash npm
+npm install --save-dev e2e @e2e-dev/mobile @e2e-dev/limrun @limrun/api
+```
+
+```bash pnpm
+pnpm add -D e2e @e2e-dev/mobile @e2e-dev/limrun @limrun/api
+```
+
+```bash bun
+bun add -d e2e @e2e-dev/mobile @e2e-dev/limrun @limrun/api
+```
+</CodeGroup>
+
+Defina `LIMRUN_API_KEY` no ambiente que inicia o e2e. Na CI, guarde a chave
+como um segredo. Use uma chave com permissão para criar e controlar instâncias.
+O provedor lê o ambiente da execução. Ele não lê a sessão do `lim login`
+nem `LIM_API_KEY`.
+
+O runner de testes precisa do Node.js e das dependências dos pacotes. Para
+Android, coloque o `adb` do [Android SDK Platform-Tools](https://developer.android.com/tools/releases/platform-tools)
+no `PATH`. Nenhum emulador local é necessário. O runner de iOS não precisa de
+Xcode nem de simulador local. Faça o build do seu app separadamente, para um
+simulador iOS ou como um APK Android.
+
+## Configure um alvo
+
+Defina `device: limrun()` na engine mobile e aponte `appPath` para o seu build.
+Esta configuração roda o app SwiftUI do
+[exemplo de fluxo de app](https://github.com/limrun-inc/testerarmy-e2e-limrun) do Limrun.
+
+```ts title="e2e.config.ts"
+import type { E2EConfig } from 'e2e';
+import { mobile } from '@e2e-dev/mobile';
+import { limrun } from '@e2e-dev/limrun';
+
+export default {
+  targets: [{
+    name: 'ios',
+    engine: mobile({ platform: 'ios', device: limrun() }),
+    app: {
+      bundleId: 'dev.e2e.examples.swiftui',
+      appPath: 'build/HelloApp.app',
+    },
+  }],
+  workers: 2,
+} satisfies E2EConfig;
+```
+
+Para Android, use `platform: 'android'`, o nome do pacote do app como `bundleId`
+e um APK como `appPath`. Os caminhos são resolvidos a partir da raiz do projeto.
+O provedor instala o build antes de os testes começarem.
+
+## Teste um fluxo do app
+
+Use test IDs estáveis e texto visível para preencher formulários e verificar os resultados.
+Este teste corrige um envio vazio e salva uma captura de tela da saudação.
+
+```ts title="tests/greeting.e2e.ts"
+import { expect } from 'e2e';
+import { test } from '@e2e-dev/mobile';
+
+test('corrects an empty submission', async ({ app, screen }) => {
+  await app.open();
+  await screen.getByTestId('greet').click();
+  await expect(screen.getByText('Enter a name first.', { exact: true })).toBeVisible();
+
+  await screen.getByTestId('name').fill('Ada');
+  await screen.getByTestId('greet').click();
+  await expect(screen.getByText('Hello, Ada!', { exact: true })).toBeVisible();
+  await expect(screen.getByText('Enter a name first.', { exact: true })).not.toBeVisible();
+  await app.screenshot('greeting');
+});
+```
+
+O Limrun mantém um [exemplo pronto para rodar](https://github.com/limrun-inc/testerarmy-e2e-limrun)
+que usa os mesmos cinco testes em apps SwiftUI e Compose.
+Ele cobre o formulário inicial, a recuperação de um erro de validação, a entrada com espaços removidos, os envios repetidos e o reinício do app.
+O Limrun faz o build dos dois apps remotamente, e a configuração tem os dois alvos. Nenhuma chave de IA é necessária.
+
+## Grave uma execução
+
+Adicione `--video` para gravar todas as tentativas:
+
+<CodeGroup>
+```bash npm
+npx e2e run --video
+```
+```bash pnpm
+pnpm exec e2e run --video
+```
+```bash bun
+bunx e2e run --video
+```
+</CodeGroup>
+
+Os vídeos e as capturas de tela ficam em `.e2e/`, junto com os relatórios da execução.
+
+## Escolha as opções do dispositivo
+
+| Opção | Padrão | Finalidade |
+| --- | --- | --- |
+| `region` | o Limrun escolhe | Preferência de região, como `eu` ou `us-east1`. Se faltar capacidade, o dispositivo pode ir para outra região. |
+| `hardTimeout` | `1h` | Tempo de vida máximo do dispositivo, inclusive em execuções abandonadas. Use uma duração no formato do Go, como `30m` ou `2h`. |
+| `ios.model` | o Limrun escolhe | `iphone` ou `ipad`. |
+| `android.model` | o Limrun escolhe | `phone` ou `tablet`. |
+| `android.osVersion` | `15` | Versão principal do Android, pedida como dica para o agendamento. |
+
+Cada worker recebe um daemon do agent-device isolado no runner de testes e
+uma instância do Limrun. O daemon usa o driver do Limrun do agent-device para
+controlar o app e gravar. A integração fixa a mesma versão do agent-device
+que a engine mobile e confere essa versão antes da alocação.
+
+Um dispositivo precisa ficar pronto e terminar a instalação em até cinco minutos.
+O provedor faz a limpeza depois de uma preparação que falhou, e a engine libera
+todos os dispositivos obtidos quando a execução termina ou é interrompida. O provedor renova as reservas ociosas do driver enquanto outros alvos rodam. O daemon
+mantém vivo um dispositivo ativo entre os comandos; o tempo limite rígido
+continua sendo o limite superior se o runner desaparecer. Escolha um tempo
+limite maior que a execução.
+
+Os IDs das instâncias aparecem na saída de progresso. Encontre as instâncias de
+uma execução pelos rótulos `source=e2e` e `run=<run id>` no Limrun. As gravações
+usam o caminho normal de artefatos mobile, `video/video.mp4` dentro do
+diretório de cada tentativa.
+
+## Verifique a compatibilidade do app
+
+O transporte iOS do Limrun recusa ações de teclado como `locator.press('Enter')` com `UNSUPPORTED_CAPABILITY`.
+Toque no botão de envio do app quando o fluxo tiver um.
+
+Teste no runtime de destino os localizadores e as bibliotecas que o seu app usa.
+O exemplo da saudação demonstra fluxos de formulário nativos; ele não comprova compatibilidade com todo framework ou controle mobile.
+
+## Próximos passos
+
+<CardGroup cols={2}>
+  <Card title="Testes mobile" icon="mobile-screen" href="/mobile">
+    Configure a inicialização do app, as permissões e os localizadores mobile.
+  </Card>
+  <Card title="API mobile" icon="code" href="/reference/mobile">
+    Consulte a fixture de dispositivo e o contrato do provedor.
+  </Card>
+</CardGroup>

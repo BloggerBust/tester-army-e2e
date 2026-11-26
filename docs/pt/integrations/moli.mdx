@@ -1,0 +1,90 @@
+---
+title: Moli
+sidebarTitle: Moli
+description: Rode alvos web em navegadores Moli locais, com inicialização e limpeza automáticas pelo @e2e-dev/moli.
+---
+
+O [Moli](https://github.com/lexmount/moli) é um navegador de código aberto que
+fala o Chrome DevTools Protocol. `moli()` de `@e2e-dev/moli` inicia um
+navegador local por slot de worker e o encerra junto com a execução.
+
+## Inicie um alvo Moli
+
+Instale o [binário do Moli](https://github.com/lexmount/moli#direct-installation)
+e estes pacotes:
+
+<CodeGroup>
+```bash npm
+npm install --save-dev e2e @e2e-dev/web @e2e-dev/moli
+```
+
+```bash pnpm
+pnpm add -D e2e @e2e-dev/web @e2e-dev/moli
+```
+
+```bash bun
+bun add -d e2e @e2e-dev/web @e2e-dev/moli
+```
+</CodeGroup>
+
+```ts title="e2e.config.ts"
+import type { E2EConfig } from 'e2e';
+import { web } from '@e2e-dev/web';
+import { moli } from '@e2e-dev/moli';
+
+export default {
+  targets: [
+    {
+      name: 'moli',
+      engine: web({ browser: moli() }),
+      app: { url: 'http://localhost:3000' },
+    },
+  ],
+} satisfies E2EConfig;
+```
+
+Rode seus testes com [`e2e run`](/reference/cli#e2e-run). Cada worker usa um
+processo Moli separado em uma porta de loopback disponível. Um servidor que
+não expõe o CDP em até dez segundos faz a própria reserva falhar.
+
+## Configure o navegador
+
+| Opção | Padrão | Significado |
+| --- | --- | --- |
+| `binary` | `MOLI_PATH`, depois `PATH`, depois `~/.local/bin/moli` | Caminho ou nome do executável. Resolvido a partir do ambiente da execução quando o navegador inicia. |
+| `layout` | `true` | Passa `--layout` para ter layout e capturas de tela sob demanda. |
+| `loadResources` | `true` | Passa `--resource` para buscar recursos opcionais: imagens, fontes, áudio, vídeo, mídia e faixas de texto. |
+| `args` | `[]` | Flags adicionais de `moli serve`. |
+
+O provedor suporta o escopo por worker. Reservas por tentativa não estão
+implementadas.
+
+<Accordion title="Conecte-se a um servidor que você mesmo inicia">
+Inicie o Moli em outro terminal:
+
+```bash
+moli serve --host 127.0.0.1 --port 19222 --layout --resource
+```
+
+Use a opção `connect` da engine web para se conectar. A execução deixa esse servidor rodando:
+
+```ts
+web({ connect: { cdpEndpoint: () => process.env.MOLI_CDP_URL?.trim() || 'http://127.0.0.1:19222' } })
+```
+</Accordion>
+
+## Verifique a compatibilidade do navegador
+
+Rode a sua suíte no build do Moli que você coloca em produção. Consulte as
+[issues do upstream](https://github.com/lexmount/moli/issues) para encontrar lacunas de compatibilidade com o CDP.
+
+## Próximos passos
+
+<CardGroup cols={2}>
+  <Card title="APIs do navegador" icon="globe" href="/browser">
+    Navegação, interceptação de rede, downloads e capturas de tela.
+  </Card>
+  <Card title="Autenticação" icon="key" href="/authentication">
+    Salve e restaure uma sessão autenticada entre testes.
+  </Card>
+</CardGroup>
