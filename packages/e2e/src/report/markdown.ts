@@ -35,6 +35,7 @@ import {
   failedStepOf,
   type FailedStep,
   failureSource,
+  hasAuthoredLabel,
   lastTurnLines,
   MAX_DETAIL_CHARS,
   screenLines,
@@ -270,17 +271,20 @@ function evidence(artifacts: readonly ReportArtifact[], options: MarkdownReportO
 
 /**
  * `at step 6 of 6: \`expect.toBeHidden getByRole(...)\`, after 15.1s and 12
- * model calls`: where a failure happened, how long the step ran, and what
- * the agent spent on it. A step that is not the agent's reads as the one
+ * model calls`: where a failure happened (and the `test.step` it was in),
+ * how long the step ran, and what the agent spent on it. A step that is not the agent's reads as the one
  * call it was; an agent step's label is the sentence the author wrote.
  */
 function stepClause(steps: readonly ReportStep[], at: { index: number; step: FailedStep }): string {
   const calls = modelCalls(at.step);
   const spent = calls === 0 ? '' : ` and ${plural(calls, 'model call')}`;
-  const call = at.step.kind === 'agent' ? `${code(at.step.api, MAX_ID_CHARS)} ${stepLabel(at.step, MAX_PATH_CHARS)}` : code(`${at.step.api} ${at.step.label}`, MAX_PATH_CHARS);
+  const call = hasAuthoredLabel(at.step) ? `${code(at.step.api, MAX_ID_CHARS)} ${stepLabel(at.step, MAX_PATH_CHARS)}` : code(`${at.step.api} ${at.step.label}`, MAX_PATH_CHARS);
   // A step of a session the test opened beside its own says whose it is.
   const on = at.step.actor === undefined ? '' : ` on ${cell(at.step.actor, MAX_ID_CHARS)}`;
-  return `at step ${at.index + 1} of ${steps.length}${on}: ${call}, after ${formatDuration(at.step.durationMs)}${spent}`;
+  // The `test.step` around it is the name the author gave this part of the test.
+  const group = at.step.parent === undefined ? undefined : steps.find((step) => step.index === at.step.parent);
+  const within = group === undefined ? '' : ` in ${stepLabel(group, MAX_ID_CHARS)}`;
+  return `at step ${at.index + 1} of ${steps.length}${within}${on}: ${call}, after ${formatDuration(at.step.durationMs)}${spent}`;
 }
 
 /** `**CODE** (phase)`: how the error names itself. */

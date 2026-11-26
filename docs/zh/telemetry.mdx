@@ -126,7 +126,7 @@ CLI 会以 `[telemetry] {...}` 格式将确切的载荷输出到标准错误，�
 | `attempts_total`, `tests_retried` | 本次运行在各测试和串行组中进行了多少次尝试，以及其中多少需要多次尝试 |
 | `filters_run`, `filters_timed_out`, `filters_failed`, `filters_skipped`, `filters_changed_files`, `tests_left_out_by_filters` | 本次运行应用了多少个[测试过滤器](/filters)、多少个超时、多少个失败；带 `--changed-since` 的运行是否未调用任何过滤器（例如没有文件变化时）；变更涉及多少文件；过滤器排除了多少测试。绝不包含过滤器名称、原因、备注、路径或提交 |
 | `targets`, `platforms`, `engines` | 测试目标数量、所用平台，以及引擎和版本：`web`、`ios`、`web@0.6.1`，或你自己的引擎名称和版本 |
-| `steps_total`, `steps_agent`, `steps_locator`, `steps_assertion`, `steps_screen`, `steps_app`, `steps_session`, `steps_resource` | 按类型统计的步骤数 |
+| `steps_total`, `steps_agent`, `steps_locator`, `steps_assertion`, `steps_screen`, `steps_app`, `steps_session`, `steps_resource`, `steps_step` | 按类型统计的步骤数 |
 | `steps_agent_act`, `steps_agent_assert`, `steps_agent_extract`, `steps_agent_waitfor` | 按入口统计的智能体步骤数 |
 | `tests_with_agent_steps`, `tests_with_act` | 已执行的测试中，多少运行过任意智能体步骤，多少运行过 `agent.act` |
 | `agent_steps_replayed`, `agent_steps_partial`, `agent_steps_missed`, `agent_steps_uncached`, `agent_steps_vision` | 回放缓存如何服务智能体步骤、多少 `agent.act` 步骤在关闭缓存时运行，以及多少使用了像素证据 |

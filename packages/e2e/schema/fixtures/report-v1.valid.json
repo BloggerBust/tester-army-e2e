@@ -290,6 +290,41 @@
                   "message": "semantic capture timed out",
                   "retryable": false
                 }
+              },
+              {
+                "id": "018f0f5c-7b2a-7abc-8abc-0123456789ab:2",
+                "index": 2,
+                "kind": "step",
+                "api": "test.step",
+                "label": "Check out",
+                "source": {
+                  "file": "tests/example.e2e.ts",
+                  "line": 3,
+                  "column": 1
+                },
+                "status": "passed",
+                "startedAt": "2026-07-24T12:00:01.000Z",
+                "durationMs": 12,
+                "events": [],
+                "artifacts": []
+              },
+              {
+                "id": "018f0f5c-7b2a-7abc-8abc-0123456789ab:3",
+                "index": 3,
+                "kind": "locator",
+                "api": "locator.tap",
+                "label": "getByRole(\"button\", name: \"Pay\")",
+                "parent": 2,
+                "source": {
+                  "file": "tests/example.e2e.ts",
+                  "line": 3,
+                  "column": 1
+                },
+                "status": "passed",
+                "startedAt": "2026-07-24T12:00:01.000Z",
+                "durationMs": 10,
+                "events": [],
+                "artifacts": []
               }
             ],
             "artifacts": [

@@ -23,7 +23,10 @@ import { insidePollRead, pollReadSignal } from '../expect/poll-scope.ts';
 import { processSecrets, registerProviderKeys } from './secrecy.ts';
 
 /** The closed step kind set; the type is derived from it, so the two cannot drift. */
-export const STEP_KINDS = ['agent', 'locator', 'assertion', 'screen', 'app', 'session', 'resource'] as const;
+export const STEP_KINDS = ['agent', 'locator', 'assertion', 'screen', 'app', 'session', 'resource', 'step'] as const;
+
+/** The api of a step the test names with `test.step`, the one step of kind `step`. */
+export const TEST_STEP_API = 'test.step';
 
 export type StepKind = (typeof STEP_KINDS)[number];
 
@@ -204,6 +207,8 @@ export interface StepRecord {
    * opened outside it. Absent for a step of the test's own session.
    */
   actor?: string;
+  /** The index of the `test.step` the step ran inside; absent for a step outside one. */
+  parent?: number;
   /** The test line the step was called from; absent when no project line was on the stack. */
   source?: SourceLocation;
   status: 'passed' | 'failed' | 'blocked' | 'timed-out' | 'cancelled';
@@ -257,6 +262,8 @@ interface StepProgressIdentity {
   readonly stepIndex: number;
   /** The session the step ran on when it is not the test's own; see `StepRecord.actor`. */
   readonly actor?: string;
+  /** The id of the `test.step` the step runs inside; see `StepRecord.parent`. */
+  readonly parentStepId?: string;
 }
 
 /** One progress payload before the recorder attaches its identity. */
@@ -316,6 +323,16 @@ export interface StepRunOptions {
   readonly verifies?: boolean;
   /** The configured agent an agent step runs with, recorded on the step. */
   readonly agent?: string | undefined;
+}
+
+/**
+ * How a step that threw ended. A blocked verdict is a distinct outcome, not a
+ * product failure: the step's error names what stood in the way, and the
+ * report says so.
+ */
+function failedStatus(error: { readonly code: string }, cause: unknown): StepRecord['status'] {
+  if (error.code === 'CANCELLED') return 'cancelled';
+  return isAgentError(cause) && cause.blocked ? 'blocked' : 'failed';
 }
 
 /** How many causes down a thrown error is redacted; a chain is rarely three deep. */
@@ -431,6 +448,8 @@ export interface StepHoldRequest {
 
 /** A step call waiting at its hold, kept so a body that returns without awaiting it still fails as `STEP_NOT_AWAITED`. */
 interface HeldCall {
+  /** The `test.step` the call was made in, kept for a call recorded from outside it. */
+  readonly group: ActiveGroup | undefined;
   readonly kind: StepKind;
   readonly api: string;
   readonly label: string;
@@ -501,9 +520,19 @@ function callName(step: { readonly api: string; readonly label: string }): strin
   return step.label === '' ? step.api : `${step.api} ${quoted(step.label)}`;
 }
 
+/** Per-call options for `StepRecorder.group`. */
+export interface StepGroupOptions {
+  /** Whether a thrown value ends the test without failing it (a skip): the step it passes through then passes. */
+  readonly passesThrough?: (thrown: unknown) => boolean;
+  /** Cuts the step when it aborts, as the engine cuts the calls inside it, beside what cuts any step. */
+  readonly signal?: AbortSignal;
+}
+
 /** What the recorder keeps about one step while its body runs; dropped whole when the body ends. */
 interface ActiveStep {
   readonly record: StepRecord;
+  /** The `test.step` the step runs inside. */
+  readonly group: ActiveGroup | undefined;
   /** The `owner` that started the step, as `abandonRunning` names it. */
   readonly owner: string;
   /** The stack the step was started from, for the error it fails with when abandoned or named. */
@@ -518,10 +547,20 @@ interface ActiveStep {
   seenScreen?: () => ScreenText | undefined;
 }
 
+/** A running `test.step`. */
+interface ActiveGroup extends ActiveStep {
+  /** What the steps that failed inside it threw on. Each is that step's error, which this one does not record again. */
+  readonly rethrown: Set<unknown>;
+  /** The calls still running directly inside it, a `launch()` session's included. */
+  readonly inside: Set<Promise<unknown>>;
+}
+
 export class StepRecorder {
   private readonly attempt: { readonly id: string; readonly index: number };
   private readonly steps: StepRecord[] = [];
   private readonly scope = new AsyncLocalStorage<StepRecord>();
+  /** The `test.step` this code runs inside, with the ones around it. Apart from `scope`: a step called in a `test.step` is still a top-level step, held and verified as one. */
+  private readonly groups = new AsyncLocalStorage<ActiveGroup>();
   /** The hook steps run in from now on; undefined while the test body runs. */
   phase: StepPhase | undefined = undefined;
   /**
@@ -616,25 +655,117 @@ export class StepRecorder {
     body: () => Promise<T>,
     options: StepRunOptions = {},
   ): Promise<T> {
+    const refused = this.refuseInAbortedRead();
+    if (refused !== undefined) return refused;
+    // The label is published, reported, and traced as is: a secret the test
+    // spelled into an instruction or a locator stops here, once.
+    const label = this.redact?.(rawLabel) ?? rawLabel;
+    const parent = this.current();
+    const group = this.enclosingGroup();
+    const stack = stepStack(this.projectRoot);
+    // A step inside another (an `onAction` hook's) or inside an `expect.poll`
+    // read or a `toPass` block is part of what holds it, so only a top-level step waits.
+    if (this.hold?.steps === true && this.holdable && parent === undefined && !insidePollRead()) {
+      return this.runHeld(this.hold.ask, { group, kind, api, label, stack, options, cancel: new AbortController(), promise: Promise.resolve() }, body);
+    }
+    return this.start(kind, api, label, stack, body, options, parent, group);
+  }
+
+  /**
+   * Runs `body` as one step the test names (`test.step`). The steps `body`
+   * starts are recorded as they would be outside it, each with this step as
+   * its `parent`, so the group itself is never held and verifies nothing.
+   * It fails with what `body` throws, keeping the error only when no step
+   * inside it already did.
+   */
+  group<T>(rawTitle: string, body: () => T | Promise<T>, options: StepGroupOptions = {}): Promise<T> {
+    const refused = this.refuseInAbortedRead();
+    if (refused !== undefined) return refused;
+    const opened = this.open('step', TEST_STEP_API, this.redactText(rawTitle), stepStack(this.projectRoot), {}, this.enclosingGroup());
+    const step: ActiveGroup = Object.assign(opened, { rethrown: new Set<unknown>(), inside: new Set<Promise<unknown>>() });
+    const promise = this.executeGroup(step, body, options);
+    step.pending = promise;
+    this.runsInside(step.group, promise);
+    return promise;
+  }
+
+  /**
+   * The rejection of a step called in an `expect.poll` read or a `toPass`
+   * block that already ended, or nothing when the step may start. A hook or
+   * test may set a provider key after the session opened, so a step that
+   * starts takes them in before its label is redacted.
+   */
+  private refuseInAbortedRead(): Promise<never> | undefined {
     const reading = pollReadSignal();
     if (reading?.aborted === true) {
       const error = abortError(reading, cancelledError);
       markAbandonedRejection(error);
       return Promise.reject(error);
     }
-    // A hook or test may set a provider key after the session opened.
     registerProviderKeys(process.env);
-    // The label is published, reported, and traced as is: a secret the test
-    // spelled into an instruction or a locator stops here, once.
-    const label = this.redact?.(rawLabel) ?? rawLabel;
-    const parent = this.current();
-    const stack = stepStack(this.projectRoot);
-    // A step inside another (an `onAction` hook's) or inside an `expect.poll`
-    // read or a `toPass` block is part of what holds it, so only a top-level step waits.
-    if (this.hold?.steps === true && this.holdable && parent === undefined && !insidePollRead()) {
-      return this.runHeld(this.hold.ask, { kind, api, label, stack, options, cancel: new AbortController(), promise: Promise.resolve() }, body);
+    return undefined;
+  }
+
+  private async executeGroup<T>(step: ActiveGroup, body: () => T | Promise<T>, options: StepGroupOptions): Promise<T> {
+    const { record } = step;
+    const startedMs = Date.now();
+    const reading = pollReadSignal();
+    const cut = this.cutAfterCallsInside(step, this.cutSignal(reading, options.signal));
+    try {
+      const work = this.groups.run(step, async () => body());
+      // A body waiting on something that is no step would never end it.
+      return await (cut === undefined ? work : withAbort(work, cut.signal, () => cut.signal.reason));
+    } catch (thrown) {
+      // The body may have set a provider key since the step started, and quote it in what it threw.
+      registerProviderKeys(process.env);
+      if (step.abandoned || reading?.aborted === true) markAbandonedRejection(thrown);
+      if (step.abandoned) throw thrown;
+      if (options.passesThrough?.(thrown) !== true) {
+        const error = classifyError(thrown);
+        record.status = failedStatus(error, thrown);
+        if (!step.rethrown.has(thrown)) record.error = serializeError(error, { projectRoot: this.projectRoot, redact: this.redact });
+      }
+      step.group?.rethrown.add(thrown);
+      throw thrown;
+    } finally {
+      cut?.release();
+      this.active.delete(record.id);
+      if (!step.abandoned) {
+        record.durationMs = Date.now() - startedMs;
+        this.publishEnd(record);
+      }
     }
-    return this.start(kind, api, label, stack, body, options, parent);
+  }
+
+  /**
+   * A signal that aborts with the step's own cancellation once `signal` has
+   * and the calls running inside `group` have ended. Their engine calls are
+   * cut by the same abort, and each keeps its own outcome: a `test.step` that
+   * ended first would leave them running past the body, to be recorded as
+   * not awaited. A step that waited for such a call does not record the
+   * cancellation again.
+   */
+  private cutAfterCallsInside(group: ActiveGroup, signal: AbortSignal | undefined): { readonly signal: AbortSignal; release(): void } | undefined {
+    if (signal === undefined) return undefined;
+    const after = new AbortController();
+    const cut = async (): Promise<void> => {
+      const cancelled = new TestError('CANCELLED', `${group.record.api} cancelled`);
+      if (group.inside.size > 0) group.rethrown.add(cancelled);
+      // A body may answer a cut call by starting another.
+      while (group.inside.size > 0) await Promise.allSettled(group.inside);
+      after.abort(cancelled);
+    };
+    if (signal.aborted) void cut();
+    else signal.addEventListener('abort', cut, { once: true });
+    return { signal: after.signal, release: () => signal.removeEventListener('abort', cut) };
+  }
+
+  /** Keeps `call` among what runs inside `group` until it settles. */
+  private runsInside(group: ActiveGroup | undefined, call: Promise<unknown>): void {
+    if (group === undefined) return;
+    group.inside.add(call);
+    const ended = (): void => void group.inside.delete(call);
+    call.then(ended, ended);
   }
 
   /**
@@ -726,13 +857,13 @@ export class StepRecorder {
       } finally {
         this.held.delete(call);
       }
-      return this.start(call.kind, call.api, call.label, call.stack, body, call.options, undefined);
+      return this.start(call.kind, call.api, call.label, call.stack, body, call.options, undefined, call.group);
     })();
     call.promise = promise;
     return promise;
   }
 
-  /** Records the step as started now and runs its body; `parent` is the step it runs inside, if any. */
+  /** Records the step as started now and runs its body; `parent` is the step it runs inside, if any, and `group` the `test.step`. */
   private start<T>(
     kind: StepKind,
     api: string,
@@ -741,18 +872,20 @@ export class StepRecorder {
     body: () => Promise<T>,
     options: StepRunOptions,
     parent: StepRecord | undefined,
+    group: ActiveGroup | undefined,
   ): Promise<T> {
     // A verification run inside another step (an `onAction` hook's) proves
     // only what the steps before that one left, never the step still running.
     const verifiesBefore = parent?.index ?? this.opened;
-    const step = this.open(kind, api, label, stack, options);
+    const step = this.open(kind, api, label, stack, options, group);
     const promise = this.execute(step, body, options, verifiesBefore);
     step.pending = promise;
+    this.runsInside(group, promise);
     return promise;
   }
 
   /** Mints a step's record at the next index, started now in the running phase. */
-  private file(step: Pick<StepRecord, 'kind' | 'api' | 'label'> & { readonly [Key in 'source' | 'agent' | 'actor']?: StepRecord[Key] | undefined }): StepRecord {
+  private file(step: Pick<StepRecord, 'kind' | 'api' | 'label'> & { readonly [Key in 'source' | 'agent' | 'actor' | 'parent']?: StepRecord[Key] | undefined }): StepRecord {
     const index = this.opened;
     this.opened += 1;
     const record: StepRecord = {
@@ -762,6 +895,7 @@ export class StepRecorder {
       api: step.api,
       label: step.label,
       ...(step.actor === undefined ? {} : { actor: step.actor }),
+      ...(step.parent === undefined ? {} : { parent: step.parent }),
       ...(step.source === undefined ? {} : { source: step.source }),
       status: 'passed',
       startedAt: timestamp(),
@@ -776,9 +910,9 @@ export class StepRecorder {
   }
 
   /** Records a step as started now and tells reporters. */
-  private open(kind: StepKind, api: string, label: string, stack: string | undefined, options: StepRunOptions): ActiveStep {
-    const record = this.file({ kind, api, label, source: sourceLocation(stack, this.projectRoot), agent: options.agent });
-    const step: ActiveStep = { record, owner: this.owner, ...(stack === undefined ? {} : { stack }) };
+  private open(kind: StepKind, api: string, label: string, stack: string | undefined, options: StepRunOptions, group: ActiveGroup | undefined): ActiveStep {
+    const record = this.file({ kind, api, label, source: sourceLocation(stack, this.projectRoot), agent: options.agent, parent: group?.record.index });
+    const step: ActiveStep = { record, group, owner: this.owner, ...(stack === undefined ? {} : { stack }) };
     this.active.set(record.id, step);
     // Only a finished step is dropped, and only from the front, so a running
     // one keeps its record, the one opened here included: with nothing
@@ -789,13 +923,17 @@ export class StepRecorder {
     return step;
   }
 
+  /** What cuts a running step: the attempt's signal, and that of the `expect.poll` read or `toPass` block it runs in. */
+  private cutSignal(reading: AbortSignal | undefined, also?: AbortSignal): AbortSignal | undefined {
+    const signals = [reading, this.signal, also].filter((signal) => signal !== undefined);
+    return signals.length > 1 ? AbortSignal.any(signals) : signals[0];
+  }
+
   private async execute<T>(step: ActiveStep, body: () => Promise<T>, options: StepRunOptions, verifiesBefore: number): Promise<T> {
     const { record } = step;
     const startedMs = Date.now();
     const reading = pollReadSignal();
-    const signal = reading === undefined || this.signal === undefined
-      ? reading ?? this.signal
-      : AbortSignal.any([reading, this.signal]);
+    const signal = this.cutSignal(reading);
     try {
       // Model calls made inside the body are attributed to this step.
       const work = this.scope.run(record, () => withAiTraceStep(record.api, record.label, body));
@@ -817,22 +955,15 @@ export class StepRecorder {
       }
       record.durationMs = Date.now() - startedMs;
       const error = classifyError(cause);
-      // A blocked verdict is a distinct outcome, not a product failure: the
-      // step's error names what stood in the way, and the report says so.
-      record.status =
-        error.code === 'CANCELLED'
-          ? 'cancelled'
-          : isAgentError(cause) && cause.blocked
-            ? 'blocked'
-            : 'failed';
+      record.status = failedStatus(error, cause);
       record.error = serializeError(error, { projectRoot: this.projectRoot, redact: this.redact });
+      const onward = failure ?? (this.redactThrown ? error : cause);
       if (reading?.aborted === true && (error.code === 'CANCELLED' || thrown === reading.reason)) {
-        markAbandonedRejection(failure ?? (this.redactThrown ? error : cause));
+        markAbandonedRejection(onward);
       }
-      if (failure !== undefined) throw failure;
-      if (!this.redactThrown) throw cause;
-      if (this.redact !== undefined) redactErrorInPlace(error, this.redact);
-      throw error;
+      if (failure === undefined && this.redactThrown && this.redact !== undefined) redactErrorInPlace(error, this.redact);
+      step.group?.rethrown.add(onward);
+      throw onward;
     } finally {
       this.active.delete(record.id);
       // An abandoned step reported its end when the body returned; what it did since is not the test's.
@@ -859,7 +990,7 @@ export class StepRecorder {
     const held = [...this.held].map((call) => {
       this.held.delete(call);
       call.cancel.abort();
-      const step = this.open(call.kind, call.api, call.label, call.stack, call.options);
+      const step = this.open(call.kind, call.api, call.label, call.stack, call.options, call.group);
       step.pending = call.promise;
       return step;
     });
@@ -887,7 +1018,10 @@ export class StepRecorder {
       const more = first === undefined && count > 1 ? ` and ${count - 1} more` : '';
       const error = new TestError(
         'STEP_NOT_AWAITED',
-        withHint(`${step.owner} returned before ${callName(record)}${more} finished`, 'put `await` in front of every step call'),
+        withHint(
+          `${step.owner} returned before ${callName(record)}${more} finished`,
+          record.kind === 'step' ? "put `await` in front of test.step(); a fixture can't call use() inside one" : 'put `await` in front of every step call',
+        ),
       );
       relocateStack(error, step.stack);
       first ??= error;
@@ -1100,7 +1234,10 @@ export class StepRecorder {
    * it verifies nothing.
    */
   guest(step: Pick<StepRecord, 'kind' | 'api' | 'label' | 'actor'> & { readonly source: SourceLocation | undefined }): GuestRecord {
-    const record = this.file({ ...step, label: this.redactText(step.label) });
+    const group = this.enclosingGroup();
+    const record = this.file({ ...step, label: this.redactText(step.label), parent: group?.record.index });
+    let ended = (): void => undefined;
+    this.runsInside(group, new Promise<void>((resolve) => { ended = resolve; }));
     this.publishStart(record);
     return {
       tell: (progress) => {
@@ -1112,6 +1249,7 @@ export class StepRecorder {
         Object.assign(record, fields);
         if (cache !== undefined) record.cache = this.cacheForReport(cache);
         this.publishEnd(record);
+        ended();
       },
     };
   }
@@ -1125,9 +1263,9 @@ export class StepRecorder {
     return model === undefined ? rest : { ...rest, recordedBy: model };
   }
 
-  /** The last step of the test's own session, the one an event with no running step belongs to. */
+  /** The last call on the test's own session, the one an event with no running step belongs to; a `test.step` is a name over calls, not one. */
   private lastOwn(): StepRecord | undefined {
-    return this.steps.findLast(isOwnStep);
+    return this.steps.findLast((step) => isOwnStep(step) && step.kind !== 'step');
   }
 
   /** The step whose body this call runs inside, unless it ended or was abandoned. */
@@ -1141,6 +1279,14 @@ export class StepRecorder {
     return this.currentStep()?.record;
   }
 
+  /** The innermost `test.step` still running that this call is inside; one that ended is no parent to work it left behind. */
+  private enclosingGroup(): ActiveGroup | undefined {
+    for (let group = this.groups.getStore(); group !== undefined; group = group.group) {
+      if (this.active.has(group.record.id) && group.abandoned === undefined) return group;
+    }
+    return undefined;
+  }
+
   /** Publishes a phase with the owning record's identity, including nested and finishing steps. */
   private publish(record: StepRecord, fact: StepProgressFact): void {
     if (this.onProgress === undefined && this.mirror === undefined) return;
@@ -1152,6 +1298,7 @@ export class StepRecorder {
         stepId: record.id,
         stepIndex: record.index,
         ...(record.actor === undefined ? {} : { actor: record.actor }),
+        ...(record.parent === undefined ? {} : { parentStepId: `${this.attemptId}:${record.parent}` }),
       },
     };
     this.onProgress?.(progress);

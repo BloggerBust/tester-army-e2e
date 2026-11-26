@@ -194,6 +194,7 @@ run only in a browser, so a test that uses it declares
 | `fullyParallel` in the config or a project, `--fully-parallel` | the same, in the config or on a target |
 | `describe.configure({ mode: 'parallel' })`, `test.describe.parallel` | `describe.configure({ parallel: true })`, or `{ parallel: true }` on a `describe`, see [`parallel`](/reference/test#parallel) |
 | `describe.configure({ mode: 'default' })` | `describe.configure({ parallel: false })`, or `{ parallel: false }` on a `describe` |
+| `test.step(title, body)` | [the same](/reference/test#test-step), but not around a fixture's `use()`, and a failed `expect.soft` inside does not fail the step; there are no `box`, `location`, or `timeout` options, no step argument, and no `test.step.skip` |
 | `test.fail()` on a describe | `test.describe.fail(title, fn)`, or `{ fail: 'reason' }` on the group; for a condition, `test.fail(condition, 'reason')` in a `beforeEach` |
 | `test.describe.only()` | the same, or `{ only: true }` on the group; CI rejects it with `ONLY_IN_CI`, as it does `test.only` |
 | `{ tag: '@smoke' }` | `{ tags: ['smoke'] }` on a test or group |
@@ -305,7 +306,7 @@ purpose. Use the workaround, or keep the test in Playwright.
 
 | Playwright | Use today |
 | --- | --- |
-| `test.step()`, `testInfo.attach()` | Each call is already a named step in the report; `app.screenshot(label)` attaches a screenshot |
+| `testInfo.attach()` | `app.screenshot(label)` attaches a screenshot |
 | `test.info()`, `testInfo` in hooks and fixtures, `annotations` | Your own fixture or module state; an issue id in the title or a tag |
 | `mergeTests()` | One chain of `extend` calls |
 | `globalSetup`, `globalTeardown`, a `webServer` array | A script around the run, or one `app.command` that starts every process |

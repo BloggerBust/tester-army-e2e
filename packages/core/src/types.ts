@@ -1118,6 +1118,19 @@ export interface TestAPI<Fixtures = TestFixtures, Worker = WorkerFixtures> exten
    * `COLLECTION_ERROR`, so use the `timeout` option there.
    */
   setTimeout(timeout: number): void;
+  /**
+   * Inside a running test, hook, or fixture: runs `body` as one step named
+   * `title` and returns what it returns. Reports show the title, with the
+   * calls `body` makes nested under it; steps nest. The step fails when
+   * `body` throws, and the error goes on to the test:
+   *
+   *   await test.step('Log in as test user', async () => {
+   *     await screen.getByTestId('login_button').tap();
+   *   });
+   *
+   * Outside a test the call is `COLLECTION_ERROR`.
+   */
+  step<T>(title: string, body: () => T | Promise<T>): Promise<T>;
   /** Registers one focused local test. CI rejects focused tests. */
   only(title: string, fn: TestFn<Fixtures & Worker>): TestCase;
   /** Registers one setup test with statically declared session outputs. */

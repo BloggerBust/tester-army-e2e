@@ -24,7 +24,7 @@ import {
   classifyError, ConfigurationError, E2EError, InfrastructureError, serializeError, TestError, TestTimeoutError, type ErrorPhase, type SerializedError,
 } from '@e2e-dev/core/lib/internal/errors';
 import type { ExpectedFailureInfo } from '@e2e-dev/core/lib/internal/expected-failure';
-import { isRuntimeSkip, type CaughtRuntimeSkip } from '../internal/skip.ts';
+import { attemptStep, isRuntimeSkip, type CaughtRuntimeSkip } from '../internal/skip.ts';
 import { settleExpectedFailure } from './expected-failure.ts';
 import { withAbort, withTimeout } from '@e2e-dev/core/lib/internal/time';
 import { AttemptTimeout, type AttemptBudget } from '@e2e-dev/core/lib/run/budget';
@@ -299,6 +299,7 @@ export function createStandaloneTestRun(env: StandaloneTestEnvironment, test: St
           assertionTimeout: config.assertionTimeout,
           toPass: config.toPass,
           recordSecondaryError: (error) => { secondaryErrors.push(serialize(error, phase)); },
+          step: attemptStep(steps, budget),
           budget,
           soft,
           polls,
@@ -487,6 +488,7 @@ export function createStandaloneTestRun(env: StandaloneTestEnvironment, test: St
           publishAttempt({
             attemptId, owner: 'host', testKind: 'test', assertionTimeout: config.assertionTimeout, toPass: config.toPass,
             budget, soft, polls: new PollScope('the test teardown'), setTimeout: () => 'teardown',
+            step: attemptStep(steps, budget),
             recordSecondaryError: (error) => { retryErrors.push(serialize(error, 'afterEach')); },
           }, publication.signal);
           steps.phase = 'afterEach';

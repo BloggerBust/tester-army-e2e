@@ -249,7 +249,7 @@ test.setup('sign in', { sessions: ['admin'] }, async ({ app, screen, session }) 
   on mobile, `device`, `app`, and `screen` are worker fixtures and keep
   their state between tests. Naming a test fixture in a suite hook is a
   `COLLECTION_ERROR`.
-- `test.skip`, `test.fixme`, `test.fail`, `test.slow`, `test.setTimeout`,
+- `test.skip`, `test.fixme`, `test.fail`, `test.slow`, `test.setTimeout`, `test.step`,
   `test.for`, `serial` and `parallel` groups, and every test option:
   Full reference: docs/reference/test.mdx.
 

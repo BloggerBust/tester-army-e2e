@@ -5,6 +5,7 @@ import {
   formatCost,
   formatDuration,
   formatTokens,
+  stepDepths,
   testTitle,
   timedVideos,
   videoPosition,
@@ -116,6 +117,7 @@ function AttemptPanel({ attempt, model, prompt, platform }: { attempt: AttemptVi
 
   // The error points at the statement; the failed step at the call in it, where the caret belongs.
   const failedStep = attempt.steps.findLast((step) => step.status === 'failed');
+  const depthOf = stepDepths(attempt.steps);
   const thrownAt = attempt.error?.source;
   const failingCall =
     failedStep?.source !== undefined && thrownAt !== undefined && failedStep.source.file === thrownAt.file && failedStep.source.line === thrownAt.line
@@ -159,6 +161,7 @@ function AttemptPanel({ attempt, model, prompt, platform }: { attempt: AttemptVi
                 <StepRow
                   key={step.id}
                   step={step}
+                  depth={depthOf(step)}
                   attempt={attempt}
                   model={model}
                   videos={videos}
@@ -230,6 +233,7 @@ const ACTOR_HINT = "Ran on a session the test opened beside its own with launch(
 
 function StepRow({
   step,
+  depth,
   attempt,
   model,
   videos,
@@ -237,6 +241,8 @@ function StepRow({
   onSeek,
 }: {
   step: Step;
+  /** How many `test.step` calls the step ran inside: its row is indented once per one. */
+  depth: number;
   attempt: AttemptView;
   model: ReportModel;
   videos: readonly TimedVideo[];
@@ -264,7 +270,7 @@ function StepRow({
 
   return (
     <li className={`border-b border-shade-800 ${playing ? 'bg-playhead/5 shadow-[inset_2px_0_0_var(--color-playhead)]' : ''}`}>
-      <div className="flex items-center gap-e2e-1 px-e2e-1 py-e2e-1">
+      <div className="flex items-center gap-e2e-1 px-e2e-1 py-e2e-1" style={depth === 0 ? undefined : { paddingInlineStart: `calc(var(--spacing-e2e-1) + ${depth * 1.25}rem)` }}>
         <button
           type="button"
           className="flex min-w-0 flex-1 cursor-pointer items-center gap-e2e-1 text-left disabled:cursor-default"
@@ -276,8 +282,8 @@ function StepRow({
             <Icon name={open ? 'disclosure-open' : 'disclosure-closed'} />
           </span>
           <StepStatusIcon status={step.status} />
-          <span className="type-code-s shrink-0 text-shade-400">{step.api}</span>
-          <span className="type-body-s min-w-0 truncate">{step.label}</span>
+          {step.kind === 'step' ? null : <span className="type-code-s shrink-0 text-shade-400">{step.api}</span>}
+          <span className={`type-body-s min-w-0 truncate ${step.kind === 'step' ? 'font-medium' : ''}`}>{step.label}</span>
         </button>
         {step.actor === undefined ? null : <Tag hint={ACTOR_HINT}>{step.actor}</Tag>}
         {step.phase === undefined ? null : <Tag hint={PHASE_HINT[step.phase]}>{step.phase}</Tag>}

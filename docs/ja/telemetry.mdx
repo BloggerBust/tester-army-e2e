@@ -126,7 +126,7 @@ CLI は、実際のペイロードを `[telemetry] {...}` として標準エラ�
 | `attempts_total`, `tests_retried` | テストと直列実行グループ全体で行った試行数と、複数回の試行を必要としたものの数 |
 | `filters_run`, `filters_timed_out`, `filters_failed`, `filters_skipped`, `filters_changed_files`, `tests_left_out_by_filters` | 適用した[テストフィルター](/filters)の数、時間切れと失敗の数、変更ファイルがないなどの理由で `--changed-since` 付きの実行がフィルターを呼ばなかったか、変更ファイル数、除外したテスト数。フィルター名、理由、注記、パス、コミットは含みません |
 | `targets`, `platforms`, `engines` | ターゲット数、プラットフォーム、エンジンとそのバージョン: `web`、`ios`、`web@0.6.1`、または独自エンジンの名前とバージョン |
-| `steps_total`, `steps_agent`, `steps_locator`, `steps_assertion`, `steps_screen`, `steps_app`, `steps_session`, `steps_resource` | 種類別のステップ数 |
+| `steps_total`, `steps_agent`, `steps_locator`, `steps_assertion`, `steps_screen`, `steps_app`, `steps_session`, `steps_resource`, `steps_step` | 種類別のステップ数 |
 | `steps_agent_act`, `steps_agent_assert`, `steps_agent_extract`, `steps_agent_waitfor` | 呼び出し口別のエージェントステップ数 |
 | `tests_with_agent_steps`, `tests_with_act` | 実行済みテストのうち、エージェントステップを使った数と、`agent.act` を使った数 |
 | `agent_steps_replayed`, `agent_steps_partial`, `agent_steps_missed`, `agent_steps_uncached`, `agent_steps_vision` | エージェントステップでのリプレイキャッシュの利用状況、キャッシュを無効にして実行した `agent.act` の数、画像を根拠に使った数 |

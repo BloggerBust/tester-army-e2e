@@ -267,6 +267,13 @@ export function videoPosition(step: Step, videos: readonly TimedVideo[]): { read
   return first !== -1 && at < (videos[first]?.startsAt ?? 0) ? { video: first, seconds: 0 } : undefined;
 }
 
+/** How many `test.step` calls a step ran inside, for every step of `steps`. A step follows the one it ran in, so one pass counts them. */
+export function stepDepths(steps: readonly Step[]): (step: Step) => number {
+  const depths = new Map<number, number>();
+  for (const step of steps) depths.set(step.index, step.parent === undefined ? 0 : (depths.get(step.parent) ?? 0) + 1);
+  return (step) => depths.get(step.index) ?? 0;
+}
+
 /** A step's api as the page names it: under the session it ran on when that is not the test's own. */
 export function stepCall(step: Step): string {
   return step.actor === undefined ? step.api : `${step.actor} › ${step.api}`;

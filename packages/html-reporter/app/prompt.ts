@@ -1,4 +1,4 @@
-import { formatDuration, stepCall, testTitle, type Artifact, type AttemptView, type ReportError, type ReportModel, type Result, type Step } from './data.ts';
+import { formatDuration, stepCall, stepDepths, testTitle, type Artifact, type AttemptView, type ReportError, type ReportModel, type Result, type Step } from './data.ts';
 
 /** Agent turns quoted per failed step; the trace page has every one. */
 const MAX_TURNS = 3;
@@ -11,6 +11,7 @@ const MAX_APP_ERRORS = 10;
  * in the project, so file paths are from the project root.
  */
 export function failurePrompt(model: ReportModel, result: Result, attempt: AttemptView, position: { readonly number: number; readonly count: number }): string {
+  const depthOf = stepDepths(attempt.steps);
   const sections = [
     section('Instructions', [
       '- This end-to-end test failed. Explain why, briefly.',
@@ -30,7 +31,7 @@ export function failurePrompt(model: ReportModel, result: Result, attempt: Attem
     ),
     section(
       'Steps',
-      attempt.steps.flatMap((step, index) => stepLines(step, index, attempt)),
+      attempt.steps.flatMap((step, index) => stepLines(step, index, attempt, depthOf(step))),
     ),
     section('At failure', failureLines(attempt)),
     section(
@@ -58,10 +59,10 @@ function errorLines(error: ReportError): string[] {
 }
 
 /** One line per step; a step that did not pass also gets what it did and why it stopped. */
-function stepLines(step: Step, index: number, attempt: AttemptView): string[] {
+function stepLines(step: Step, index: number, attempt: AttemptView, depth: number): string[] {
   const label = step.label === '' ? '' : `: ${step.label.replaceAll('\n', ' ')}`;
   const notes = [formatDuration(step.durationMs), step.phase, step.cache === undefined ? undefined : `cache ${step.cache.mode}`].filter((note) => note !== undefined);
-  const head = `${index + 1}. ${step.status} ${stepCall(step)}${label} (${notes.join(', ')})`;
+  const head = `${index + 1}. ${'↳ '.repeat(depth)}${step.status} ${stepCall(step)}${label} (${notes.join(', ')})`;
   if (step.status === 'passed') return [head];
   const actions = step.events.flatMap((event) => (event.kind === 'engine' && event.detail !== undefined ? [`${event.detail}${event.status === 'passed' ? '' : ` (${event.status})`}`] : []));
   const turns = (step.turns ?? []).slice(-MAX_TURNS).map((turn) => `turn ${turn.index}: ${turn.calls.join(', ')} -> ${turn.outcome}`);

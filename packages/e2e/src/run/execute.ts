@@ -4,7 +4,7 @@ import path from 'node:path';
 import type { TargetSession } from '@e2e-dev/core/lib/engine/surface';
 import { isCiMode, type ResolvedConfig } from '@e2e-dev/core/lib/config/resolve';
 import { classifyError, ConfigurationError, E2EError, serializeError, sanitizeRecordedText, truncateUtf8, TestError, TestTimeoutError, withHint, type SerializedError } from '@e2e-dev/core/lib/internal/errors';
-import { isRuntimeSkip, runtimeSkipCause, type CaughtRuntimeSkip } from '../internal/skip.ts';
+import { attemptStep, isRuntimeSkip, runtimeSkipCause, type CaughtRuntimeSkip } from '../internal/skip.ts';
 import { lateExpectedFailureError } from '@e2e-dev/core/lib/internal/expected-failure';
 import { settleExpectedFailure } from './expected-failure.ts';
 import type { ExecutorAttempt } from '@e2e-dev/core/lib/agent/executor';
@@ -816,6 +816,7 @@ export class TargetExecutor extends EngineSessions implements SerialHost {
           attemptId,
           guests: guests.offer,
           owner: 'suite',
+          step: attemptStep(steps, budget),
           testKind: pair.test.kind,
           assertionTimeout: this.config.assertionTimeout,
           toPass: this.config.toPass,

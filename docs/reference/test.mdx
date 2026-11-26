@@ -41,6 +41,7 @@ describe('checkout', { tags: ['billing'] }, () => {
 | [`test.fail`](#test-fail) | `TestCase \| void` |
 | [`test.setTimeout`](#test-settimeout) | `void` |
 | [`test.slow`](#test-slow) | `void` |
+| [`test.step`](#test-step) | `Promise<T>` |
 | [`test.only`](#test-only) | `TestCase` |
 | [`test.setup`](#test-setup) | `TestCase` |
 | [`test.extend`](#test-extend) | `TestAPI` |
@@ -389,6 +390,41 @@ test('renders the report', async ({ platform }) => {
 | --- | --- |
 | `INVALID_ARGUMENT` | A call from an `afterEach` or `afterAll` hook, a fixture teardown, or a hosted session; or from code a test or hook left running after it ended. |
 | `COLLECTION_ERROR` | A call outside a running test or hook, even with a false condition, or `test.slow(title, fn)`. Use the `timeout` option there. |
+
+#### `test.step`
+
+Runs a function as one step with a name of your own. Reports show the name,
+with the calls the function makes nested under it.
+
+```ts
+test('buys a ticket', async ({ screen }) => {
+  await test.step('Log in as test user', async () => {
+    await screen.getByLabel('Email').fill('ada@example.com');
+    await screen.getByRole('button', 'Log in').tap();
+  });
+  const total = await test.step('Read the total', () => screen.getByTestId('total').textContent());
+});
+```
+
+- It returns what the function returns.
+- Steps nest: a `test.step` inside another is listed under it.
+- When the function throws, the step is failed and the error goes on to the
+  test. Catch it to continue.
+- Call it in a test body, a `beforeEach` or `afterEach` hook, or a fixture.
+  In a `beforeAll` or `afterAll` hook the function runs, but no report has
+  the step.
+- In a fixture, call it before or after `use()`. A `test.step` around
+  `use()` fails the test with `STEP_NOT_AWAITED`.
+- A failed [`expect.soft`](/reference/expect#soft-assertions) inside it does not
+  fail the step. A `test.skip()` inside it skips the test and the step
+  passes.
+- [`e2e run --step`](/reference/cli#e2e-run) stops before each call inside
+  it, not before the `test.step` itself.
+
+| Throws | When |
+| --- | --- |
+| `INVALID_ARGUMENT` | A title that is not a non-empty string, or no function. |
+| `COLLECTION_ERROR` | A call outside a running test, hook, or fixture. |
 
 #### `test.only`
 

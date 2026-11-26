@@ -195,7 +195,7 @@ export class RunningTree {
     const prompt = held === undefined ? [] : heldStepRows(this.pc, held.event, maxWidth).slice(0, budget);
     const current = [...this.stepRows(test, maxEvents, budget - prompt.length, now), ...prompt];
     const room = budget - current.length;
-    const rendered = (test.ran ?? test.steps).map((step) => stepLine(this.pc, step, { maxWidth }));
+    const rendered = (test.ran ?? test.steps).map((step) => stepLine(this.pc, step, { maxWidth, depth: step.groups.length }));
     let finished: string[] = [];
     if (room > 0) {
       const folded = rendered.length - room + 1;

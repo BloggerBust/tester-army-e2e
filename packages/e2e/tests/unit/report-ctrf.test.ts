@@ -249,6 +249,18 @@ describe('renderCtrfReport', () => {
     expect(test).toMatchObject({ status: 'passed', extra: { [KEY]: { expectedFailure: { reason: 'known bug', code: 'ASSERTION_FAILED', message: 'still broken' } } } });
   });
 
+  it('tells the test.step a step ran in by its position among the steps', () => {
+    const steps = [
+      reportStep({ id: 's0', index: 0, kind: 'step', api: 'test.step', label: 'Log in' }),
+      reportStep({ id: 's1', index: 1, parent: 0 }),
+    ];
+    const [test] = tests(doc({ results: [reportResult({ attempts: [reportAttempt({ steps })] })] }));
+    expect(test!.steps.map((step: Json) => [step.name, step.extra[KEY].kind, step.extra[KEY].parent])).toEqual([
+      ['test.step Log in', 'step', undefined],
+      ['locator.tap tap Sign in', 'locator', 0],
+    ]);
+  });
+
   it('renders the represented attempt steps with CTRF statuses and the e2e status in extra', () => {
     const steps = [
       reportStep({ id: 's0', status: 'passed', cache: { mode: 'self-finalized', replayedActions: 1, totalActions: 1 } }),

@@ -78,13 +78,29 @@ export function detailLines(error: ReportError | undefined): string[] {
 }
 
 /**
- * A step's label as the reader should see it: an agent step's is a sentence
- * the author wrote, quoted; any other step's is the locator or value it was
- * called with, which reads as code.
+ * A step's label as the reader should see it: an agent step's and a
+ * `test.step`'s is a sentence the author wrote, quoted; any other step's is
+ * the locator or value it was called with, which reads as code.
  */
 export function stepLabel(step: ReportStep, max = MAX_LABEL_CHARS): string {
   if (step.label === '') return '';
-  return step.kind === 'agent' ? `"${cell(step.label, max)}"` : code(step.label, max);
+  return hasAuthoredLabel(step) ? `"${cell(step.label, max)}"` : code(step.label, max);
+}
+
+/** Whether the step's label is a sentence the author wrote, not the arguments of a call. */
+export function hasAuthoredLabel(step: Pick<ReportStep, 'kind'>): boolean {
+  return step.kind === 'agent' || step.kind === 'step';
+}
+
+/**
+ * The mark a line of a numbered step list opens with: one `↳` per
+ * `test.step` the step ran inside, and nothing outside any. The numbers stay
+ * flat. A step follows the one it ran in, so one pass counts them.
+ */
+export function nestingMarks(steps: readonly { readonly index: number; readonly parent?: number | undefined }[]): (step: { readonly index: number }) => string {
+  const depths = new Map<number, number>();
+  for (const step of steps) depths.set(step.index, step.parent === undefined ? 0 : (depths.get(step.parent) ?? 0) + 1);
+  return (step) => '↳ '.repeat(depths.get(step.index) ?? 0);
 }
 
 /**
@@ -581,6 +597,7 @@ export function renderTracePage(report: Report1Document, result: ReportResult, f
   if (told.steps.length > 0) {
     const videos = timedVideos(told);
     lines.push('## Steps', '');
+    const nesting = nestingMarks(told.steps);
     told.steps.forEach((step, index) => {
       const own = step.source.file === 'unknown' ? '' : ` — ${code(`${step.source.file}:${step.source.line}`, MAX_PATH_CHARS)}`;
       const calls = step.metrics === undefined || step.metrics.modelCalls === 0 ? '' : `, ${plural(step.metrics.modelCalls, 'model call')}`;
@@ -589,7 +606,7 @@ export function renderTracePage(report: Report1Document, result: ReportResult, f
       const hook = step.phase === undefined ? '' : ` in ${step.phase}`;
       const label = stepLabel(step, MAX_CELL_CHARS);
       const call = withActor(step.actor === undefined ? undefined : cell(step.actor, MAX_ID_CHARS), code(step.api, MAX_ID_CHARS));
-      lines.push(`${index + 1}. ${STEP_GLYPH[step.status]} ${call}${label === '' ? '' : ` ${label}`} (${formatDuration(step.durationMs)}${calls}${offset}${hook})${failed}${own}`);
+      lines.push(`${index + 1}. ${STEP_GLYPH[step.status]} ${nesting(step)}${call}${label === '' ? '' : ` ${label}`} (${formatDuration(step.durationMs)}${calls}${offset}${hook})${failed}${own}`);
       if (step.status !== 'passed' && step.explanation !== undefined && step.explanation.trim() !== '') {
         lines.push(`   > ${cell(step.explanation, MAX_DETAIL_CHARS)}`);
       }

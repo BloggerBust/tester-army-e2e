@@ -8,6 +8,7 @@
 import path from 'node:path';
 import picocolors from 'picocolors';
 import { codeFrame } from '../report/code-frame.ts';
+import { nestingMarks } from '../report/failure-text.ts';
 import { formatTime } from '../report/format.ts';
 import { plural } from '../report/markdown-text.ts';
 import { testLocation, type StandaloneTest, type StandaloneTestOutcome } from '../run/standalone-test.ts';
@@ -61,18 +62,19 @@ export function describeTestOutcome(test: StandaloneTest, outcome: StandaloneTes
   if ((outcome.status !== 'passed' || error !== undefined) && steps.length > 0) {
     const shown = steps.slice(-MAX_STEPS);
     lines.push(shown.length < steps.length ? `Steps, the last ${shown.length} of ${steps.length}:` : 'Steps:');
-    for (const step of shown) lines.push(`  ${stepLine(step)}`);
+    const nesting = nestingMarks(steps);
+    for (const step of shown) lines.push(`  ${stepLine(step, nesting(step))}`);
   }
   lines.push(nextSteps(test, outcome));
   return lines.join('\n');
 }
 
 /** `7. ✗ locator.fill getByLabel('Name') LOCATOR_NOT_FOUND (tests/a.e2e.ts:13)`. */
-function stepLine(step: StepRecord): string {
+function stepLine(step: StepRecord, nesting: string): string {
   const hook = step.phase === undefined ? '' : ` in ${step.phase}`;
   const failed = step.status === 'passed' ? '' : ` ${step.error?.code ?? step.status}`;
   const at = step.source === undefined ? '' : ` (${step.source.file}:${step.source.line})`;
-  return `${step.index + 1}. ${STEP_GLYPH[step.status]} ${step.api}${step.label === '' ? '' : ` ${step.label}`}${hook}${failed}${at}`;
+  return `${step.index + 1}. ${STEP_GLYPH[step.status]} ${nesting}${step.api}${step.label === '' ? '' : ` ${step.label}`}${hook}${failed}${at}`;
 }
 
 /** What the session is for now, and how to run the test again. */

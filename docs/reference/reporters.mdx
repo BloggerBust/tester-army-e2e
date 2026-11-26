@@ -759,7 +759,7 @@ product failure.
 Every step phase the runner emits includes `progress.identity`:
 
 ```ts
-{ attemptId: string; attemptIndex: number; stepId: string; stepIndex: number; actor?: string }
+{ attemptId: string; attemptIndex: number; stepId: string; stepIndex: number; actor?: string; parentStepId?: string }
 ```
 
 - The IDs match the final report. Both indexes start at zero.
@@ -771,6 +771,9 @@ Every step phase the runner emits includes `progress.identity`:
   including nested steps.
 - `actor` names the session a step ran on when it is not the test's own: one
   the test opened with [`launch()`](/core#open-a-host-inside-a-test).
+- `parentStepId` is the `stepId` of the [`test.step`](/reference/test#test-step)
+  the step runs inside. A `test.step` is itself a step of kind `step` with
+  the api `test.step` and its title as the label.
 - `identity` is optional in the type so a reporter can also accept older
   streams.
 

@@ -13,6 +13,7 @@ import { realmSlot } from '@e2e-dev/core/lib/internal/realm-slot';
 import { registrarModuleSlot } from '../internal/registrar-modules.ts';
 import { expectedFailureOption, markRunningTestExpectedToFail } from '@e2e-dev/core/lib/internal/expected-failure';
 import { setRunningTestTimeout, slowRunningTest } from '@e2e-dev/core/lib/internal/test-timeout';
+import { runTestStep } from '@e2e-dev/core/lib/internal/test-step';
 import { fixmeReason, parseModifierCall, skipRunningTest } from '../internal/skip.ts';
 import { formatEachTitle, readRows } from './each.ts';
 import { unknownKeyMessage } from '@e2e-dev/core/lib/internal/options';
@@ -951,6 +952,7 @@ function createTestAPI(chain: readonly FixtureDefinition[]): TestAPI {
       }
       slowRunningTest(call.condition);
     },
+    step: runTestStep,
     skipIf(condition: unknown): TestRegistrar<object> {
       return registrar('test.skipIf()', readCondition('test.skipIf()', condition));
     },

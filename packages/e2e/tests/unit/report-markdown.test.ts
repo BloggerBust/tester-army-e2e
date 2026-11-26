@@ -268,6 +268,13 @@ describe('renderMarkdownReport', () => {
     // A step of a session the test opened beside its own says whose it is.
     const guest = named({ title: 'two', status: 'failed', attempts: [attempt({ status: 'failed', error: { code: 'E', message: 'm' }, steps: [step({ index: 0, label: 'only', actor: 'launch-1', status: 'failed', error: reportError({ code: 'E', message: 'm' }) })] })] });
     expect(renderMarkdownReport(page({ status: 'failed', results: [guest] }))).toContain('**E** at step 1 of 1 on launch-1: `screen.tap only`, after 900ms');
+    // A step inside a test.step says which, and a test.step that failed on its own reads as its title.
+    const error = reportError({ code: 'E', message: 'm' });
+    const group = step({ index: 0, kind: 'step', api: 'test.step', label: 'Log in', status: 'failed' });
+    const nested = named({ title: 'three', status: 'failed', attempts: [attempt({ status: 'failed', error: { code: 'E', message: 'm' }, steps: [group, step({ index: 1, parent: 0, label: 'only', status: 'failed', error })] })] });
+    expect(renderMarkdownReport(page({ status: 'failed', results: [nested] }))).toContain('**E** at step 2 of 2 in "Log in": `screen.tap only`, after 900ms');
+    const own = named({ title: 'four', status: 'failed', attempts: [attempt({ status: 'failed', error: { code: 'E', message: 'm' }, steps: [{ ...group, error }] })] });
+    expect(renderMarkdownReport(page({ status: 'failed', results: [own] }))).toContain('**E** at step 1 of 1: `test.step` "Log in", after 900ms');
   });
 
   it('names the step whose error ended the test, not an earlier failure the test caught and went on from', () => {

@@ -35,6 +35,8 @@ export interface PublishedAttempt {
    * no e2e test.
    */
   readonly setTimeout?: (update: TimeoutUpdate) => TimeoutChange;
+  /** Runs `body` as one named step of the attempt (`test.step`); absent where the attempt runs no e2e test. */
+  readonly step?: <T>(title: string, body: () => T | Promise<T>) => Promise<T>;
   /** Hosted callers have no runner-owned body lineage; their polls belong to the session. */
   readonly polls?: PollScope;
   /**

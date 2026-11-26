@@ -816,6 +816,13 @@ test.slow('imports a large file');
 test.slow('slow', async () => {});
 // @ts-expect-error the condition is a boolean
 test.slow(1);
+// step resolves to what its body returns, sync or async.
+void (test.step('Log in', async () => 7) satisfies Promise<number>);
+void (test.step('Read the title', () => 'Home') satisfies Promise<string>);
+// @ts-expect-error a step needs a body
+void test.step('Log in');
+// @ts-expect-error the title is a string
+void test.step(1, async () => {});
 test.fail('gap', async () => {}) satisfies ReturnType<typeof test>;
 void (test.fail(false) satisfies void);
 test('gap', { fail: 'known gap' }, async () => {});

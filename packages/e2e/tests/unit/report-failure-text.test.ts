@@ -167,6 +167,32 @@ describe('renderTracePage', () => {
     return renderTracePage(document, failing, outcome(failing, NO_GROUPS), { artifactsDir: '.e2e/artifacts', readArtifact });
   };
 
+  it('marks each step inside a test.step, once per one around it, and keeps the numbers flat', () => {
+    const error = reportError();
+    const body = page([
+      failed({
+        error,
+        steps: [
+          step({ index: 0, kind: 'step', api: 'test.step', label: 'Log in', status: 'failed' }),
+          step({ index: 1, parent: 0, kind: 'step', api: 'test.step', label: 'Type the password' }),
+          step({ index: 2, parent: 1, api: 'locator.fill', label: 'Password' }),
+          step({ index: 3, parent: 0, api: 'locator.tap', label: 'Submit', status: 'failed', error }),
+          step({ index: 4, api: 'app.back', label: '' }),
+        ],
+      }),
+    ]);
+    const lines = body.split('\n');
+    const at = lines.indexOf('## Steps');
+    expect(lines.slice(at + 2, at + 7).map((line) => line.replace(/ \(.*$/, ''))).toEqual([
+      '1. ✗ `test.step` "Log in"',
+      '2. ✓ ↳ `test.step` "Type the password"',
+      '3. ✓ ↳ ↳ `locator.fill` `Password`',
+      '4. ✗ ↳ `locator.tap` `Submit`',
+      '5. ✓ `app.back`',
+    ]);
+    expect(lines[at + 2]).toContain('**failed**');
+  });
+
   it('lists the screenshots a step attached under that step, and no other artifact', () => {
     const image = (id: string, file: string) => ({ id, kind: 'screenshot' as const, mediaType: 'image/png', path: `t/screenshots/${file}`, redaction: 'complete' as const, producer: { kind: 'step' as const, stepId: 's1' } });
     const log = { id: 'a:3', kind: 'log' as const, mediaType: 'text/plain', path: 't/console.txt', redaction: 'complete' as const, producer: { kind: 'step' as const, stepId: 's1' } };

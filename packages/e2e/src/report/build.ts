@@ -209,6 +209,8 @@ export interface ReportStep {
   label: string;
   /** The session the step ran on when it is not the test's own: one the test opened with `launch()`. */
   actor?: string | undefined;
+  /** The index of the `test.step` the step ran inside; absent for a step outside one. */
+  parent?: number | undefined;
   source: ReportSource;
   status: StepRecord['status'];
   startedAt: string;

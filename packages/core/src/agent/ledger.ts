@@ -38,7 +38,8 @@ export interface PriorStep {
  * that names runner internals.
  */
 export function projectPriorSteps(records: readonly StepRecord[]): PriorStep[] {
-  return records.map((step) => {
+  // A `test.step` is a name over the calls inside it, which are listed themselves.
+  return records.filter((step) => step.kind !== 'step').map((step) => {
     const replayed = step.cache?.mode === 'self-finalized';
     return {
       api: step.api,

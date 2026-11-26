@@ -22,7 +22,7 @@ import {
   withActor,
   type Colors,
 } from './format.ts';
-import type { ConfiguredModel, FinishedStep, ReplayNotice, ShownEvent } from './list-model.ts';
+import type { ConfiguredModel, ListedStep, ReplayNotice, ShownEvent } from './list-model.ts';
 
 /** Step labels stay one glanceable line; the report holds the full text. */
 const MAX_STEP_LABEL_COLUMNS = 72;
@@ -43,10 +43,14 @@ const REASONING_SEPARATOR_WIDTH = 3;
 /** A narrower clip than this hides more than it says; the excerpt is dropped instead. */
 const MIN_REASONING_COLUMNS = 24;
 
+/** One-line step label; `maxColumns` clips it further to fit a row. */
+export function fitLabel(label: string, maxColumns = MAX_STEP_LABEL_COLUMNS): string {
+  return fitColumns(collapseText(label), Math.min(MAX_STEP_LABEL_COLUMNS, Math.max(MIN_STEP_LABEL_COLUMNS, maxColumns)));
+}
+
 /** One-line, quoted step label; `maxColumns` clips it further to fit a row. */
-export function quotedLabel(label: string, maxColumns = MAX_STEP_LABEL_COLUMNS): string {
-  const max = Math.min(MAX_STEP_LABEL_COLUMNS, Math.max(MIN_STEP_LABEL_COLUMNS, maxColumns));
-  return `"${fitColumns(collapseText(label), max)}"`;
+export function quotedLabel(label: string, maxColumns?: number): string {
+  return `"${fitLabel(label, maxColumns)}"`;
 }
 
 export interface StepLineOptions {
@@ -54,24 +58,35 @@ export interface StepLineOptions {
   readonly context?: string;
   /** Printed width the line may take; the label is clipped so the tail stays on the row. */
   readonly maxWidth?: number;
+  /** How many `test.step` calls the line is drawn under: it is indented once per one. */
+  readonly depth?: number;
 }
 
+/** A `test.step` that has not ended. */
+const F_RUNNING = '◌';
+/** What each `test.step` around a step indents its line by. */
+const DEPTH_INDENT = '  ';
+
 /**
- * One finished agent step: outcome glyph, api, quoted label, then duration,
- * model calls, and a non-passed status.
+ * One listed step: outcome glyph, api, quoted label, then duration, model
+ * calls, and a non-passed status. A `test.step` is its title alone, with
+ * nothing after it while it runs.
  */
-export function stepLine(pc: Colors, step: FinishedStep, options: StepLineOptions = {}): string {
-  const glyph = step.status === 'passed' ? pc.green(F_CHECK) : pc.red(F_CROSS);
-  const calls =
-    step.modelCalls > 0 ? ` · ${step.modelCalls} model call${step.modelCalls === 1 ? '' : 's'}` : '';
-  const outcome = step.status === 'passed' ? '' : ` ${step.status}`;
-  const head = `${glyph} ${options.context ?? ''}${pc.dim(withActor(step.actor, step.api))} `;
-  const tail = pc.dim(`${formatTime(step.durationMs)}${calls}${outcome}`);
-  const room =
-    options.maxWidth === undefined
-      ? undefined
-      : options.maxWidth - visibleWidth(head) - visibleWidth(tail) - LABEL_CHROME;
-  return `${head}${quotedLabel(step.label, room)} ${tail}`;
+export function stepLine(pc: Colors, step: Pick<ListedStep, 'api' | 'label' | 'kind' | 'actor' | 'outcome'>, options: StepLineOptions = {}): string {
+  const { outcome } = step;
+  const glyph = outcome === undefined ? pc.dim(F_RUNNING) : outcome.status === 'passed' ? pc.green(F_CHECK) : pc.red(F_CROSS);
+  const titled = step.kind === 'step';
+  const call = titled ? '' : `${pc.dim(withActor(step.actor, step.api))} `;
+  const head = `${DEPTH_INDENT.repeat(options.depth ?? 0)}${glyph} ${options.context ?? ''}${call}`;
+  let tail = '';
+  if (outcome !== undefined) {
+    const calls = outcome.modelCalls > 0 ? ` · ${outcome.modelCalls} model call${outcome.modelCalls === 1 ? '' : 's'}` : '';
+    tail = pc.dim(`${formatTime(outcome.durationMs)}${calls}${outcome.status === 'passed' ? '' : ` ${outcome.status}`}`);
+  }
+  // A title takes no quotes.
+  const chrome = titled ? LABEL_CHROME - 2 : LABEL_CHROME;
+  const room = options.maxWidth === undefined ? undefined : options.maxWidth - visibleWidth(head) - visibleWidth(tail) - chrome;
+  return `${head}${titled ? fitLabel(step.label, room) : quotedLabel(step.label, room)}${tail === '' ? '' : ` ${tail}`}`;
 }
 
 /** A waiting test as its `paused` event tells it. */

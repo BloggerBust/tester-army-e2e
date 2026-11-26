@@ -230,6 +230,7 @@ function renderStep(step: ReportStep, clean: Clean): CtrfStep {
         kind: step.kind,
         durationMs: step.durationMs,
         ...(step.actor === undefined ? {} : { actor: clean(step.actor) }),
+        ...(step.parent === undefined ? {} : { parent: step.parent }),
         ...(step.error === undefined ? {} : { code: clean(step.error.code) }),
         ...(step.cache === undefined ? {} : { cache: step.cache.mode }),
         ...(step.explanation === undefined ? {} : { explanation: clean(step.explanation) }),

@@ -162,6 +162,7 @@ describe('telemetry events', () => {
       steps_screen: 1,
       steps_app: 0,
       steps_session: 0,
+      steps_step: 0,
       steps_resource: 0,
       steps_agent_act: 2,
       steps_agent_assert: 0,

@@ -142,6 +142,7 @@ Calls on `device` run only on a device, so a test that uses it declares
 | `assertScreenshot: { path, thresholdPercentage }` | `await expect(screen).toHaveScreenshot(name, { maxDiffPixelRatio })`, see [Visual comparison](/visual-testing) |
 | `takeScreenshot`, `startRecording`, `stopRecording` | `app.screenshot('label')`, [`app.startRecording()`, `app.stopRecording()`](/reference/app#startrecording) |
 | `assertWithAI`, `assertNoDefectsWithAI`, `extractTextWithAI` | `agent.assert('...', { vision: true })`, `agent.extract('...', { schema })` |
+| `label` on a command | [`test.step('label', fn)`](/reference/test#test-step) around the call; reports show the label with the call under it |
 | `runFlow: file.yaml`, `onFlowStart`, `onFlowComplete` | a function or a `test.extend` fixture; `beforeEach`, `afterEach` |
 | `runFlow: { when: { visible } }` | `if (await locator.isVisible()) { ... }`, see [Rewrite selectors](#rewrite-selectors) |
 | `repeat`, `runScript`, `evalScript`, `${output.x}`, `http.get` | TypeScript in the test: loops, variables, and the `request` fixture, see [API](/api-testing) |
@@ -175,7 +176,6 @@ on purpose.
 | The grant-all default, names such as `bluetooth` and `storage` | `app.permissions: 'all'`, which on Android grants every runtime permission the app declares, or accept the prompt with `device.alert('accept')` |
 | `inputText` and `pressKey: Enter` with no field, `eraseText: N`, `pressKey: backspace`, `tab` | `fill` or `press` on the field's locator; `fill` a shortened `inputValue()` to erase; tap the next field for Tab |
 | `addMedia` | On an iOS simulator, `xcrun simctl addmedia` before `app.open()`; Android is unchecked. See "Photos for a picker test" under [The device fixture](/mobile#the-device-fixture) |
-| `label` on a command | `-`. The call names each step |
 | `scrollUntilVisible: { centerElement, visibilityPercentage }` | No exact match. After it resolves, read `boundingBox()`, then `screen.swipe({ direction, momentum: 'slow' })` if the node is off center |
 | Device logs and crash reports beside a failure | `adb logcat` or `xcrun simctl spawn <udid> log stream`, collected in a fixture |
 | `maestro hierarchy` as a terminal command | A one-line test that calls `screen.debug()` |

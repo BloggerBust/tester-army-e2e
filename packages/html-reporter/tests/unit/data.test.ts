@@ -2,7 +2,7 @@ import type { Report } from 'e2e';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
-import { buildModel, formatDuration, formatTokens, onTarget, selectedTarget, statusTabs, timedVideos, videoName, videoPosition, type Artifact, type Step } from '../../app/data.ts';
+import { buildModel, formatDuration, formatTokens, onTarget, selectedTarget, statusTabs, stepDepths, timedVideos, videoName, videoPosition, type Artifact, type Step } from '../../app/data.ts';
 import { ListView } from '../../app/list.tsx';
 import fixture from '../../../e2e/schema/fixtures/report-v1.valid.json' with { type: 'json' };
 
@@ -128,6 +128,14 @@ describe('statusTabs', () => {
 
   it('keeps the active tab even at 0, so a filter never strands itself', () => {
     expect(statusTabs(counts, 'failed')).toEqual(['all', 'failed', 'passed', 'skipped']);
+  });
+});
+
+describe('stepDepths', () => {
+  it('counts the test.step calls around each step', () => {
+    const step = (index: number, parent?: number): Step => ({ index, ...(parent === undefined ? {} : { parent }) }) as Step;
+    const steps = [step(0), step(1, 0), step(2, 1), step(3, 0), step(4)];
+    expect(steps.map(stepDepths(steps))).toEqual([0, 1, 2, 1, 0]);
   });
 });
 

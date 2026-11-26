@@ -227,7 +227,8 @@ export async function launchAttempt<Sessions extends EngineSessions, Extra>(
   };
   /** One outcome drives recording retention and the trace. */
   const verdict = (): { status: AttemptRecord['status']; error: SerializedError | undefined } => {
-    const step = steps.all().find((candidate) => candidate.status !== 'passed');
+    // A `test.step` a call failed in has no error of its own: the call after it does.
+    const step = steps.all().find((candidate) => candidate.status !== 'passed' && candidate.error !== undefined);
     const error = attemptErrors[0] ?? step?.error;
     if (error === undefined) return { status: 'passed', error };
     return { status: classifyAttemptStatus(error, step?.status === 'timed-out', error.code === 'CANCELLED'), error };

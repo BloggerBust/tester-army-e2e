@@ -8,7 +8,9 @@
  * `dist` next to a runner on `src`, or a nested install).
  */
 
-import { currentAttempt } from '@e2e-dev/core/lib/expect/attempt';
+import { currentAttempt, type PublishedAttempt } from '@e2e-dev/core/lib/expect/attempt';
+import type { AttemptBudget } from '@e2e-dev/core/lib/run/budget';
+import type { StepRecorder } from '@e2e-dev/core/lib/run/steps';
 import { CollectionError, TestError } from '@e2e-dev/core/lib/internal/errors';
 import type { SelfSkipCause } from '@e2e-dev/core/lib/run/records';
 
@@ -50,6 +52,15 @@ export function isRuntimeSkip(value: unknown): value is CaughtRuntimeSkip {
     (value as { [runtimeSkipBrand]?: unknown })[runtimeSkipBrand] === true &&
     typeof (value as { reason?: unknown }).reason === 'string'
   );
+}
+
+/**
+ * `test.step` for an attempt that records on `steps`. A skip thrown inside
+ * a step leaves the step passed, and the step is cut with the phase it runs
+ * in, since its body may wait on something no engine call cuts.
+ */
+export function attemptStep(steps: StepRecorder, budget: AttemptBudget): NonNullable<PublishedAttempt['step']> {
+  return (title, body) => steps.group(title, body, { passesThrough: isRuntimeSkip, signal: budget.signal });
 }
 
 /** The three shapes `test.skip`, `test.fixme`, and `test.fail` accept, told apart before anything runs. */
