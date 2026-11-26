@@ -31,10 +31,10 @@
     "e2e": "workspace:*"
   },
   "devDependencies": {
-    "@ai-sdk/devtools": "1.0.84",
+    "@ai-sdk/devtools": "1.0.87",
     "@napi-rs/image": "1.16.0",
-    "@types/node": "26.6.6",
-    "ai": "7.0.181",
+    "@types/node": "26.6.11",
+    "ai": "7.0.183",
     "typescript": "7.0.2",
     "zod": "4.6.7"
   }

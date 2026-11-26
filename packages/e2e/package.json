@@ -109,7 +109,7 @@
     "@jridgewell/remapping": "2.3.5",
     "@modelcontextprotocol/server": "2.4.0",
     "@oxc-project/runtime": "0.160.0",
-    "@vitest/expect": "5.1.1",
+    "@vitest/expect": "5.1.2",
     "commander": "15.1.0",
     "exsolve": "1.2.0",
     "get-tsconfig": "4.14.3",
@@ -149,21 +149,21 @@
     }
   },
   "devDependencies": {
-    "@ai-sdk/anthropic": "4.0.107",
-    "@ai-sdk/google": "4.0.125",
-    "@ai-sdk/openai": "4.0.122",
-    "@ai-sdk/openai-compatible": "3.0.94",
-    "@ai-sdk/xai": "5.0.49",
+    "@ai-sdk/anthropic": "4.0.110",
+    "@ai-sdk/google": "4.0.128",
+    "@ai-sdk/openai": "4.0.125",
+    "@ai-sdk/openai-compatible": "3.0.96",
+    "@ai-sdk/xai": "5.0.52",
     "@e2e-dev/web": "workspace:*",
     "@modelcontextprotocol/client": "2.4.0",
     "@napi-rs/image": "1.16.0",
     "@openrouter/ai-sdk-provider": "3.1.0",
-    "@types/node": "26.6.6",
-    "ai": "7.0.181",
+    "@types/node": "26.6.11",
+    "ai": "7.0.183",
     "ajv": "8.20.0",
     "ajv-formats": "3.0.1",
     "typescript": "7.0.2",
-    "vitest": "5.1.1"
+    "vitest": "5.1.2"
   },
   "engines": {
     "node": "^22.22.3 || >=24.8.0"

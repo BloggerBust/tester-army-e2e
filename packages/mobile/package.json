@@ -68,7 +68,7 @@
   },
   "dependencies": {
     "@napi-rs/image": "1.16.0",
-    "agent-device": "0.21.42",
+    "agent-device": "0.21.43",
     "zod": "4.6.7"
   },
   "peerDependencies": {
@@ -86,11 +86,11 @@
   },
   "devDependencies": {
     "@e2e-dev/core": "workspace:*",
-    "@types/node": "26.6.6",
-    "ai": "7.0.181",
+    "@types/node": "26.6.11",
+    "ai": "7.0.183",
     "e2e": "workspace:*",
     "typescript": "7.0.2",
-    "vitest": "5.1.1"
+    "vitest": "5.1.2"
   },
   "engines": {
     "node": "^22.22.3 || >=24.8.0"

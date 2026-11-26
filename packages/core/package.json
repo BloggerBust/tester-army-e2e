@@ -74,10 +74,10 @@
     }
   },
   "devDependencies": {
-    "@types/node": "26.6.6",
-    "ai": "7.0.181",
+    "@types/node": "26.6.11",
+    "ai": "7.0.183",
     "typescript": "7.0.2",
-    "vitest": "5.1.1"
+    "vitest": "5.1.2"
   },
   "engines": {
     "node": "^22.22.3 || >=24.8.0"
