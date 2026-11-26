@@ -11,8 +11,12 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import type { ArtifactStore, StoredArtifact } from '@e2e-dev/core/lib/types';
+import type { ResolvedTarget } from '@e2e-dev/core/lib/config/resolve';
+import { uuidv7 } from '@e2e-dev/core/lib/internal/ids';
 import { SecretLedger } from '@e2e-dev/core/lib/internal/redact';
 import { createAttemptArtifacts } from '@e2e-dev/core/lib/run/artifacts';
+import { buildReport } from '../../src/report/build.ts';
+import { assertValidReport } from '../helpers/report-schema.ts';
 
 const roots: string[] = [];
 function root(): string {
@@ -177,6 +181,94 @@ describe('createAttemptArtifacts with an ArtifactStore', () => {
 });
 
 describe('artifact redaction labels', () => {
+  it.each([false, true])('marks files that never appeared incomplete and keeps reports schema-valid (store: %s)', async (withStore) => {
+    const store = capturing();
+    const attemptId = uuidv7();
+    const ledger = new SecretLedger([['api-key', 'missing-download-secret-9921']]);
+    const artifacts = createAttemptArtifacts({
+      artifactsRoot: root(),
+      segments: ['web', 'test-1', 'attempt-0'],
+      attemptId,
+      ledger: () => ledger,
+      ...(withStore ? { store } : {}),
+    });
+    writeFileSync(path.join(artifacts.dir, 'present.png'), 'x');
+    writeFileSync(path.join(artifacts.dir, 'present.txt'), 'ok');
+    artifacts.sink.register('screenshot', 'missing.png');
+    artifacts.sink.register('log', 'missing.txt');
+    artifacts.sink.register('download', 'missing.csv');
+    artifacts.sink.register('screenshot', 'present.png');
+    artifacts.sink.register('log', 'present.txt');
+
+    // Before settlement no path, size, or digest exists yet, so records stay incomplete.
+    for (const record of artifacts.records) {
+      expect(record.path).toBeUndefined();
+      expect(record.redaction).toBe('incomplete');
+    }
+
+    await artifacts.settle();
+
+    const [missingShot, missingLog, missingDownload, presentShot, presentLog] = artifacts.records;
+    for (const missing of [missingShot, missingLog, missingDownload]) {
+      expect(missing?.path).toBeUndefined();
+      expect(missing?.size).toBeUndefined();
+      expect(missing?.sha256).toBeUndefined();
+      expect(missing?.redaction).toBe('incomplete');
+    }
+    expect(presentShot).toMatchObject({ path: 'web/test-1/attempt-0/present.png', redaction: 'complete', size: 1 });
+    expect(presentLog).toMatchObject({ path: 'web/test-1/attempt-0/present.txt', redaction: 'complete', size: 2 });
+    expect(store.puts).toHaveLength(withStore ? 2 : 0);
+
+    const target = {
+      name: 'web',
+      index: 0,
+      platform: 'web',
+      engine: undefined,
+      app: { base: undefined, site: undefined, environment: 'test', identity: undefined },
+    } as unknown as ResolvedTarget;
+    const report = buildReport({
+      runId: uuidv7(),
+      config: undefined,
+      startedAt: '2026-01-01T00:00:00.000Z',
+      status: 'passed',
+      exitCode: 0,
+      results: [{
+        test: {
+          kind: 'test',
+          title: 'missing artifacts',
+          titlePath: ['missing artifacts'],
+          declarationIndex: 0,
+          sessions: [],
+          tags: [],
+          source: undefined,
+          file: 'tests/case.e2e.ts',
+          id: 'tests/case.e2e.ts::missing artifacts',
+          serialId: undefined,
+        },
+        target,
+        agent: 'default',
+        repeat: 0,
+        status: 'passed',
+        selected: true,
+        attempts: [{
+          id: attemptId,
+          index: 0,
+          status: 'passed',
+          startedAt: '2026-01-01T00:00:00.000Z',
+          durationMs: 10,
+          steps: [],
+          artifacts: artifacts.records,
+          secondaryErrors: [],
+          cleanup: 'complete',
+        }],
+      }],
+      serialGroups: [],
+      runErrors: [],
+      targetProvenance: new Map(),
+    });
+    assertValidReport(report);
+  });
+
   it('labels each kind by what the runner masked: a screenshot and a log complete, a video incomplete', async () => {
     const artifacts = createAttemptArtifacts({
       artifactsRoot: root(),

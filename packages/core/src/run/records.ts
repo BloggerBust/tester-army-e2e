@@ -105,8 +105,8 @@ export interface ArtifactRecord {
    * unless the file is text the session's ledger was run over, which makes
    * it `complete`. report-1 also admits an
    * `incomplete` artifact without a `path`: a video a hosted service keeps,
-   * recorded by `url`, or one its producer withheld, which this runner never
-   * writes.
+   * recorded by `url`, or an artifact whose file never appeared or could not
+   * be read, which stays `incomplete` without `path`, `size`, or `sha256`.
    */
   redaction: 'complete' | 'incomplete';
   producer: ArtifactProducer;

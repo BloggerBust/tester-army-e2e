@@ -101,7 +101,7 @@ export function createAttemptArtifacts(options: {
         mediaType: mediaTypeFor(relativePath),
         ...(startedAt === undefined ? {} : { startedAt }),
         ...(registration?.actor === undefined ? {} : { actor: registration.actor }),
-        redaction: REDACTION_BY_KIND[kind],
+        redaction: 'incomplete',
         producer: stepId === undefined ? { kind: 'attempt' } : { kind: 'step', stepId },
       };
       records.push(record);
@@ -109,19 +109,22 @@ export function createAttemptArtifacts(options: {
       const ledger = kind === 'download' ? options.ledger?.() : undefined;
       pending.push(
         (async () => {
+          let redaction = REDACTION_BY_KIND[kind];
           if (ledger !== undefined && isTextLike(record.mediaType) && redactsDownloads(ledger)) {
-            record.redaction = await redactDownload(absolute, ledger);
+            redaction = await redactDownload(absolute, ledger);
           }
           // Without a store the file is streamed for its size and digest only;
           // with one it is read whole, since the store needs the bytes anyway,
-          // and hashed from that same buffer. A file that never appeared is
-          // recorded without size or digest either way.
+          // and hashed from that same buffer. A file that never appeared stays
+          // without path, size, or digest, and keeps its incomplete redaction
+          // either way.
           if (options.store === undefined) {
             const measured = await measure(absolute);
             if (measured === undefined) return;
             record.path = reportPath;
             record.size = measured.size;
             record.sha256 = measured.sha256;
+            record.redaction = redaction;
             return;
           }
           const bytes = await readFile(absolute).catch(() => undefined);
@@ -129,6 +132,7 @@ export function createAttemptArtifacts(options: {
           record.path = reportPath;
           record.size = bytes.byteLength;
           record.sha256 = createHash('sha256').update(bytes).digest('hex');
+          record.redaction = redaction;
           // The store's failure is its own: the record keeps its local path and
           // simply carries no ref, and the run is never failed by evidence
           // that did not upload.
