@@ -628,6 +628,97 @@ describe('e2e upgrade', () => {
       }
     });
 
+    /** pnpm's link to the installed skill in `location`, as pnpm 12 writes it: relative, into `target` under the project. */
+    function pnpmLink(location: string, name = 'e2e', target = path.join('node_modules', 'e2e', 'skills', 'e2e')): void {
+      linkDir(path.relative(path.join(dir, location), path.join(dir, target)), path.join(dir, location, name));
+    }
+
+    it('leaves pnpm\'s link to the installed skill alone, without a warning', async () => {
+      project({ devDependencies: { e2e: '^0.21.2' } }, { e2e: '0.21.2' });
+      installedSkill({ 'SKILL.md': 'new' });
+      rmSync(path.join(dir, '.agents', 'skills', 'e2e'), { recursive: true });
+      pnpmLink('.agents/skills');
+      // A link into a peer variant's directory is pnpm's too, though node_modules/e2e leads elsewhere.
+      const variant = path.join('node_modules', '.pnpm', 'e2e@0.21.2_zod@4.1.8', 'node_modules', 'e2e', 'skills', 'e2e');
+      mkdirSync(path.join(dir, variant), { recursive: true });
+      writeFileSync(path.join(dir, variant, 'SKILL.md'), 'new');
+      pnpmLink('.claude/skills', 'e2e', variant);
+      expect(await run()).toMatchObject({ exitCode: 0, result: 'up-to-date' });
+      expect(written(stdoutSpy)).toBe('Already up to date: e2e 0.21.2\n');
+
+      project({ devDependencies: { e2e: '^0.20.0' } }, { e2e: '0.20.0' });
+      stdoutSpy.mockClear();
+      expect((await run(undefined, { dryRun: true })).exitCode).toBe(0);
+      expect(written(stdoutSpy)).not.toContain('agent skill');
+      spawnMock.mockImplementation(() => {
+        installedSkill({ 'SKILL.md': 'newer' });
+        return { status: 0, signal: null };
+      });
+      stdoutSpy.mockClear();
+      expect(await run()).toMatchObject({ exitCode: 0, result: 'upgraded' });
+      expect(written(stdoutSpy)).not.toContain('agent skill');
+      expect(written(stdoutSpy)).not.toContain('Symlink');
+      expect(lstatSync(path.join(dir, '.agents', 'skills', 'e2e')).isSymbolicLink()).toBe(true);
+    });
+
+    it('warns about a copy beside pnpm\'s link, and still updates the copy', async () => {
+      project({ devDependencies: { e2e: '^0.21.2' } }, { e2e: '0.21.2' });
+      installedSkill({ 'SKILL.md': 'new' });
+      pnpmLink('.agents/skills', 'pnpm-e2e-e2e');
+      expect((await run()).exitCode).toBe(0);
+      expect(skillFile('.agents/skills', 'SKILL.md')).toBe('new');
+      expect(written(stdoutSpy)).toContain(
+        'Two e2e skills in .agents/skills: e2e and pnpm-e2e-e2e, the link to the installed e2e; delete .agents/skills/e2e and run pnpm install --force\n',
+      );
+
+      // pnpm's link under that name, with no copy beside it, is the only skill there.
+      rmSync(path.join(dir, '.agents', 'skills', 'e2e'), { recursive: true });
+      stdoutSpy.mockClear();
+      expect((await run()).exitCode).toBe(0);
+      expect(written(stdoutSpy)).toBe('Already up to date: e2e 0.21.2\n');
+    });
+
+    it('removes a file an earlier e2e shipped and the installed one does not, and keeps the user\'s own', async () => {
+      project({ devDependencies: { e2e: '^0.21.2' } }, { e2e: '0.21.2' });
+      installedSkill({ 'SKILL.md': 'new' });
+      // The copy is current but for the retired file, which alone makes it stale.
+      writeFileSync(path.join(dir, '.agents', 'skills', 'e2e', 'SKILL.md'), 'new');
+      writeFileSync(path.join(dir, '.agents', 'skills', 'e2e', 'references', 'explore.md'), 'old topic');
+      expect((await run(undefined, { dryRun: true })).exitCode).toBe(0);
+      expect(written(stdoutSpy)).toBe('Already up to date: e2e 0.21.2\nWould update the agent skill in .agents/skills/e2e/ and remove references/explore.md\n');
+      expect(existsSync(path.join(dir, '.agents', 'skills', 'e2e', 'references', 'explore.md'))).toBe(true);
+
+      stdoutSpy.mockClear();
+      expect((await run()).exitCode).toBe(0);
+      expect(written(stdoutSpy)).toBe('Already up to date: e2e 0.21.2\nUpdated the agent skill in .agents/skills/e2e/ (1 file; removed references/explore.md)\n');
+      expect(existsSync(path.join(dir, '.agents', 'skills', 'e2e', 'references', 'explore.md'))).toBe(false);
+      expect(skillFile('.agents/skills', 'references/gone.md')).toBe('old topic');
+
+      // With the user's file gone too, the emptied directory goes with the retired file.
+      rmSync(path.join(dir, '.agents', 'skills', 'e2e', 'references', 'gone.md'));
+      writeFileSync(path.join(dir, '.agents', 'skills', 'e2e', 'references', 'explore.md'), 'old topic');
+      expect((await run()).exitCode).toBe(0);
+      expect(existsSync(path.join(dir, '.agents', 'skills', 'e2e', 'references'))).toBe(false);
+    });
+
+    // A file symlink needs a privilege on Windows.
+    it.skipIf(process.platform === 'win32')('never removes a retired path that is a symlink', async () => {
+      project({ devDependencies: { e2e: '^0.21.2' } }, { e2e: '0.21.2' });
+      installedSkill({ 'SKILL.md': 'new' });
+      const shared = mkdtempSync(path.join(os.tmpdir(), 'e2e-upgrade-shared-'));
+      try {
+        writeFileSync(path.join(shared, 'explore.md'), 'shared');
+        symlinkSync(path.join(shared, 'explore.md'), path.join(dir, '.agents', 'skills', 'e2e', 'references', 'explore.md'));
+        expect((await run()).exitCode).toBe(0);
+        expect(skillFile('.agents/skills', 'SKILL.md')).toBe('new');
+        expect(lstatSync(path.join(dir, '.agents', 'skills', 'e2e', 'references', 'explore.md')).isSymbolicLink()).toBe(true);
+        expect(readFileSync(path.join(shared, 'explore.md'), 'utf8')).toBe('shared');
+        expect(written(stdoutSpy)).toContain('Updated the agent skill in .agents/skills/e2e/ (1 file)\n');
+      } finally {
+        rmSync(shared, { recursive: true, force: true });
+      }
+    });
+
     it('points at init when no installed e2e can be read, as under Plug\'n\'Play', async () => {
       project({ devDependencies: { e2e: '^0.20.0' } }, { e2e: '0.20.0' });
       expect((await run()).exitCode).toBe(0);

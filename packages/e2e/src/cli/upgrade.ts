@@ -10,7 +10,7 @@
  */
 
 import { spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import picocolors from 'picocolors';
 import { z } from 'zod';
@@ -21,7 +21,18 @@ import { insideProjectRoot, realpathOfExisting } from '@e2e-dev/core/lib/interna
 import { DEPENDENCY_SECTIONS, RUNNER } from '../internal/project-package.ts';
 import { compareVersions, parseVersion, satisfies } from '../internal/semver.ts';
 import type { UpgradeOutcome, UpgradeResult } from '../telemetry/events.ts';
-import { describeLinks, describeObstacles, findInstalledSkillDirs, planSkillInstall } from './init/agent-skill.ts';
+import {
+  describeCopy,
+  describeDuplicate,
+  describeLinks,
+  describeObstacles,
+  findDuplicateSkills,
+  findInstalledSkillDirs,
+  findPackageSkillLinks,
+  linkedAtSkillName,
+  planSkillInstall,
+  writeSkillCopy,
+} from './init/agent-skill.ts';
 import { describeManifestError, readPackage, serializePackage } from './init/package.ts';
 import { packagedSkillDirectory, readSkillFiles, SKILL_NAME } from './skill.ts';
 import type { UpgradeTarget } from './upgrade-target.ts';
@@ -549,13 +560,18 @@ function restoreLockfiles(snapshot: ReadonlyMap<string, Buffer | undefined>): st
  * Brings every copy of the agent skill in the project to the installed e2e's,
  * the files under `node_modules/e2e/skills/e2e`: after the install, the new
  * version's, which the running process does not have. Copies that already
- * match are left alone, and files the new skill no longer ships stay, as with
- * `e2e init`. A symlink to a copy outside the project and an entry a write
+ * match are left alone, and a file an earlier e2e shipped and the new one does
+ * not is removed, as with `e2e init`; a file no e2e shipped stays. A link the
+ * package manager keeps on the installed skill, as pnpm links it, needs
+ * nothing, and a copy beside one under another name is named as a second
+ * skill. A symlink to a copy outside the project and an entry a write
  * cannot pass are named and never written through. With no installed package
  * to read (Yarn Plug'n'Play), the line names the init command instead.
  */
 function refreshSkills(projectDir: string, manager: PackageManager, out: (text: string) => void, dryRun = false): void {
-  const dirs = skillCopies(projectDir);
+  const packageLinks = findPackageSkillLinks(projectDir);
+  for (const duplicate of findDuplicateSkills(projectDir, packageLinks)) out(picocolors.yellow(describeDuplicate(duplicate)));
+  const dirs = skillCopies(projectDir, packageLinks);
   if (dirs.length === 0) return;
   const installed = installedPackage(projectDir, RUNNER);
   const skillDir = installed === undefined ? undefined : packagedSkillDirectory(installed.dir);
@@ -574,30 +590,29 @@ function refreshSkills(projectDir: string, manager: PackageManager, out: (text: 
       continue;
     }
     if (dryRun) {
-      out(picocolors.dim(`Would update the agent skill in ${install.relative}/`));
+      const removing = install.retired.length === 0 ? '' : ` and remove ${install.retired.join(', ')}`;
+      out(picocolors.dim(`Would update the agent skill in ${install.relative}/${removing}`));
       continue;
     }
     try {
-      for (const file of install.files) {
-        mkdirSync(path.dirname(file.absolute), { recursive: true });
-        writeFileSync(file.absolute, file.content, 'utf8');
-      }
+      writeSkillCopy(projectDir, install);
     } catch (cause) {
       // The packages are installed by now; a skill copy that cannot be written does not undo that.
       out(picocolors.yellow(`Could not update the agent skill in ${install.relative}/ (${cause instanceof Error ? cause.message : String(cause)}); refresh it with ${execCommand(manager, 'e2e init')}`));
       continue;
     }
-    out(`Updated the agent skill in ${install.relative}/ (${install.files.length} ${install.files.length === 1 ? 'file' : 'files'})`);
+    out(`Updated the agent skill in ${install.relative}/ (${describeCopy(install)})`);
   }
 }
 
 /**
  * The skill locations the project holds a copy in, leaving out one reached
  * through a symlink to another location's copy (`.claude/skills/e2e`, as
- * `e2e init` links it): refreshing that copy refreshes it.
+ * `e2e init` links it): refreshing that copy refreshes it. A location whose
+ * `e2e` is a package link is left out as well.
  */
-function skillCopies(projectDir: string): string[] {
-  const found = findInstalledSkillDirs(projectDir);
+function skillCopies(projectDir: string, packageLinks = findPackageSkillLinks(projectDir)): string[] {
+  const found = findInstalledSkillDirs(projectDir).filter((dir) => !linkedAtSkillName(packageLinks, dir));
   const root = realpathOfExisting(projectDir);
   const real = (dir: string): string => realpathOfExisting(path.join(projectDir, dir, SKILL_NAME));
   const direct = (dir: string): boolean => real(dir) === path.join(root, dir, SKILL_NAME);

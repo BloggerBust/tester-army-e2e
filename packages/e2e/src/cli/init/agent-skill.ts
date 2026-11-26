@@ -1,9 +1,23 @@
 /** The `e2e init` step that installs the bundled skill for coding agents. */
 
-import { existsSync, lstatSync, readdirSync, readFileSync, readlinkSync, realpathSync, type Stats } from 'node:fs';
+import {
+  existsSync,
+  lstatSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  readlinkSync,
+  realpathSync,
+  rmdirSync,
+  unlinkSync,
+  writeFileSync,
+  type Dirent,
+  type Stats,
+} from 'node:fs';
 import path from 'node:path';
 import { insideProjectRoot, realpathOfExisting } from '@e2e-dev/core/lib/internal/paths';
-import { MISSING_SKILL_MESSAGE, SKILL_NAME, type SkillFile } from '../skill.ts';
+import { RUNNER } from '../../internal/project-package.ts';
+import { MISSING_SKILL_MESSAGE, SHIPPED_SKILL_FILES, SKILL_NAME, type SkillFile } from '../skill.ts';
 
 interface SkillLocation {
   /** Project-relative skills directory with `/` separators. */
@@ -58,6 +72,12 @@ interface SkillInstallBase {
 interface SkillCopy extends SkillInstallBase {
   readonly kind: 'copy';
   readonly files: readonly { readonly absolute: string; readonly content: string }[];
+  /**
+   * Files an earlier e2e shipped and the bundle no longer does, removed with
+   * the write: each a regular file in the project, reached through no
+   * symlink. Paths relative to the skill directory with `/` separators.
+   */
+  readonly retired: readonly string[];
 }
 
 /** A symlink standing in for the skill directory, leading to the copy in another location. */
@@ -68,6 +88,73 @@ interface SkillSymlink extends SkillInstallBase {
 }
 
 export type SkillInstall = SkillCopy | SkillSymlink;
+
+/**
+ * A link in a skills directory that leads to the skill an installed e2e
+ * ships, as pnpm 12.11 or later links a dependency's skills: `pnpm-e2e-e2e`
+ * before pnpm 12.18, and from 12.18 `e2e` unless that name is taken. The
+ * package manager keeps it on the installed version, so init and upgrade
+ * write nothing there.
+ */
+export interface PackageSkillLink {
+  /** The skills directory, e.g. `.agents/skills`. */
+  readonly dir: string;
+  /** The link's name in it, e.g. `e2e` or `pnpm-e2e-e2e`. */
+  readonly name: string;
+}
+
+/**
+ * Every link in a known location that leads to an installed e2e's skill. A
+ * link is told by where it resolves, `node_modules/e2e/skills/e2e` with a
+ * `SKILL.md`, not by its name or by the package `node_modules/e2e` resolves
+ * to, since pnpm may link a peer variant's directory.
+ */
+export function findPackageSkillLinks(cwd: string): PackageSkillLink[] {
+  return SKILL_LOCATIONS.flatMap(({ dir }) => {
+    let entries: Dirent[];
+    try {
+      entries = readdirSync(path.join(cwd, dir), { withFileTypes: true });
+    } catch {
+      return [];
+    }
+    return entries
+      .filter((entry) => entry.isSymbolicLink() && leadsToPackageSkill(path.join(cwd, dir, entry.name)))
+      .map((entry) => ({ dir, name: entry.name }))
+      .toSorted((a, b) => a.name.localeCompare(b.name));
+  });
+}
+
+/**
+ * The package links beside which `<dir>/e2e` holds another skill, a copy or a
+ * link to one: an agent reading the directory loads two e2e skills.
+ */
+export function findDuplicateSkills(cwd: string, links: readonly PackageSkillLink[]): PackageSkillLink[] {
+  return links.filter((link) =>
+    link.name !== SKILL_NAME
+    && !links.some((other) => other.dir === link.dir && other.name === SKILL_NAME)
+    && holdsSkill(cwd, link.dir),
+  );
+}
+
+/**
+ * The warning for another skill beside a package link: delete it, and for
+ * pnpm's link, reinstall with `--force` so pnpm 12.18 or later renames the
+ * link to `e2e`, the path the instructions files name.
+ */
+export function describeDuplicate(link: PackageSkillLink): string {
+  const rename = link.name.startsWith('pnpm-') ? ' and run pnpm install --force' : '';
+  return `Two e2e skills in ${link.dir}: ${SKILL_NAME} and ${link.name}, the link to the installed e2e; delete ${link.dir}/${SKILL_NAME}${rename}`;
+}
+
+/** Whether `<dir>/e2e` holds a skill an agent loads: a `SKILL.md` there, through any link. */
+export function holdsSkill(cwd: string, dir: string): boolean {
+  return existsSync(path.join(cwd, dir, SKILL_NAME, 'SKILL.md'));
+}
+
+/** Whether `<dir>/e2e` is itself a link to an installed e2e's skill. */
+export function linkedAtSkillName(links: readonly PackageSkillLink[], dir: string): boolean {
+  return links.some((link) => link.dir === dir && link.name === SKILL_NAME);
+}
 
 /**
  * Known locations that hold a copy of the skill. The directory is the marker,
@@ -90,8 +177,9 @@ export function splitSkillDirs(dirs: readonly string[]): { copies: string[]; lin
 /**
  * Plans the writes for the given directories from the bundled files. A
  * directory without the skill is created and one whose copy differs from the
- * bundle is rewritten; an up-to-date copy needs nothing and is left out. Files
- * the bundle does not ship are never removed. A location reached through a
+ * bundle, or holds a file an earlier e2e shipped and the bundle does not, is
+ * rewritten; an up-to-date copy needs nothing and is left out. Files no e2e
+ * shipped, such as a project's own notes, are never removed. A location reached through a
  * symlink, or holding an entry a write cannot pass, is planned with what was
  * met and never read, for the caller to skip or replace. An empty bundle with
  * somewhere to write is a broken installation, never a set of current copies.
@@ -103,12 +191,38 @@ export function planSkillInstall(cwd: string, dirs: readonly string[], bundled: 
     const root = path.join(cwd, dir, SKILL_NAME);
     const files = bundled.map((file) => ({ absolute: path.join(root, file.relative), content: file.content }));
     const { links, obstacles } = findBlockers(cwd, root, files.map((file) => file.absolute));
-    const current = links.length === 0 && obstacles.length === 0
+    const retired = links.length > 0 ? [] : retiredFiles(cwd, root, bundled);
+    const current = links.length === 0 && obstacles.length === 0 && retired.length === 0
       && files.every((file) => currentContent(file.absolute) === file.content);
     if (current) continue;
-    installs.push({ kind: 'copy', relative: `${dir}/${SKILL_NAME}`, existing: existsSync(root), files, links, obstacles });
+    installs.push({ kind: 'copy', relative: `${dir}/${SKILL_NAME}`, existing: existsSync(root), files, retired, links, obstacles });
   }
   return installs;
+}
+
+/**
+ * Writes a planned copy: every bundled file, then the retired files removed,
+ * with each directory that removal left empty inside the skill directory.
+ */
+export function writeSkillCopy(cwd: string, install: SkillCopy): void {
+  for (const file of install.files) {
+    mkdirSync(path.dirname(file.absolute), { recursive: true });
+    writeFileSync(file.absolute, file.content, 'utf8');
+  }
+  const root = path.join(cwd, install.relative);
+  for (const relative of install.retired) {
+    const absolute = path.join(root, relative);
+    unlinkSync(absolute);
+    for (let parent = path.dirname(absolute); parent !== root && readdirSync(parent).length === 0; parent = path.dirname(parent)) {
+      rmdirSync(parent);
+    }
+  }
+}
+
+/** The copy's write for a message: `8 files`, then `; removed references/x.md` when it removes any. */
+export function describeCopy(install: SkillCopy): string {
+  const count = `${install.files.length} ${install.files.length === 1 ? 'file' : 'files'}`;
+  return install.retired.length === 0 ? count : `${count}; removed ${install.retired.join(', ')}`;
 }
 
 /**
@@ -182,6 +296,30 @@ export function describeObstacles(install: SkillInstall): string {
   return `${install.relative}/ (${install.obstacles.map((obstacle) => `${obstacle.relative} is a ${obstacle.kind}`).join(', ')})`;
 }
 
+/**
+ * The files under `root` an earlier e2e shipped and `bundled` does not: each
+ * a regular file reached through no symlink, inside the project.
+ */
+function retiredFiles(cwd: string, root: string, bundled: readonly SkillFile[]): string[] {
+  const shipped = new Set(bundled.map((file) => file.relative));
+  return SHIPPED_SKILL_FILES.filter((relative) => {
+    if (shipped.has(relative)) return false;
+    const absolute = path.join(root, relative);
+    return lstatOrUndefined(absolute)?.isFile() === true && firstBlocker(cwd, absolute, 'file') === undefined && insideProjectRoot(cwd, absolute);
+  });
+}
+
+/** Whether `entry` resolves to the skill an installed e2e package ships. */
+function leadsToPackageSkill(entry: string): boolean {
+  let real: string;
+  try {
+    real = realpathSync(entry);
+  } catch {
+    return false;
+  }
+  return real.split(path.sep).slice(-4).join('/') === `node_modules/${RUNNER}/skills/${SKILL_NAME}` && existsSync(path.join(real, 'SKILL.md'));
+}
+
 /** The content a bundled file currently has, or undefined when it cannot be read as a file, which differs from any bundle. */
 function currentContent(absolute: string): string | undefined {
   try {
@@ -206,7 +344,7 @@ function leadsTo(link: string, canonical: string): boolean {
  * under the copy rules, never a file to drop.
  */
 function holdsOnlyBundled(root: string, bundled: readonly SkillFile[]): boolean {
-  const shipped = bundled.map((file) => file.relative);
+  const shipped = [...bundled.map((file) => file.relative), ...SHIPPED_SKILL_FILES];
   return readdirSync(root, { recursive: true, withFileTypes: true }).every((entry) => {
     const relative = posixRelative(root, path.join(entry.parentPath, entry.name));
     return entry.isDirectory() ? shipped.some((file) => file.startsWith(`${relative}/`)) : entry.isFile() && shipped.includes(relative);

@@ -9,6 +9,26 @@ export const SKILL_NAME = 'e2e';
 /** Printed when a build or an install left the skill files out of the package. */
 export const MISSING_SKILL_MESSAGE = 'this installation ships no skill files; reinstall e2e';
 
+/**
+ * Every file the skill has shipped, relative to its directory. Append-only:
+ * a file removed from the skill keeps its line, so `e2e init` and
+ * `e2e upgrade` remove it from a project's copy, and a file a project adds
+ * under any other path stays. `e2e upgrade` runs the CLI from before the
+ * install, so the list it reads is the old version's, which holds every file
+ * that version's copy can have.
+ */
+export const SHIPPED_SKILL_FILES: readonly string[] = [
+  'SKILL.md',
+  'references/agent.md',
+  'references/bug-bash.md',
+  'references/debugging.md',
+  'references/explore.md',
+  'references/mcp.md',
+  'references/running.md',
+  'references/setup.md',
+  'references/writing-tests.md',
+];
+
 const TOPIC_PREFIX = 'references/';
 
 /**

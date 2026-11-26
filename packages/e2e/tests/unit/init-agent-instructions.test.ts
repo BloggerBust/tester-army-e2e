@@ -92,7 +92,7 @@ describe('planAgentInstructions', () => {
   it.skipIf(!symlinks)('plans a directory whose link leads to a copy this run installs', () => {
     mkdirSync(path.join(dir, '.claude/skills'), { recursive: true });
     symlinkSync('../../.agents/skills/e2e', path.join(dir, '.claude/skills/e2e'));
-    const going = [{ kind: 'copy' as const, relative: '.agents/skills/e2e', existing: false, files: [], links: [], obstacles: [] }];
+    const going = [{ kind: 'copy' as const, relative: '.agents/skills/e2e', existing: false, files: [], retired: [], links: [], obstacles: [] }];
     expect(planAgentInstructions(dir, BOTH, going).writes.map((planned) => planned.relative)).toEqual(['AGENTS.md', 'CLAUDE.md']);
   });
 

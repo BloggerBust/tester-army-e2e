@@ -122,6 +122,36 @@ hermes skills install e2e-inc/e2e/e2e
 
 </Accordion>
 
+<Accordion title="Let pnpm link the skill">
+
+pnpm 12.11 and later can link the skill from the installed `e2e` package
+instead of the copy `init` writes. Until you choose, every `pnpm install`
+lists `e2e skills` as awaiting approval. Choose in `pnpm-workspace.yaml`
+at the workspace root, where pnpm links skills:
+
+- **Keep the copy.** Set `skills: false`. The approval line goes away.
+- **Let pnpm link it.** Use pnpm 12.18 or later: older versions name the
+  link `pnpm-e2e-e2e`, not the `e2e` that `AGENTS.md` names. Delete
+  `.agents/skills/e2e` and `.claude/skills/e2e`, then set `skills: true` or
+  run `pnpm approve`. Each install links the skill into the root's skill
+  folders and adds the link to their `.gitignore`, so the skill follows
+  every `e2e` upgrade. Before the first install the skill is missing: an
+  agent that reads a fresh clone finds nothing at that path.
+
+```yaml title="pnpm-workspace.yaml"
+permissions:
+  e2e:
+    skills: true
+```
+
+When a copy is still there, pnpm links the skill beside it as
+`pnpm-e2e-e2e`, and agents load two `e2e` skills. `init` and `upgrade` warn
+about it: delete the copy, then run `pnpm install --force` to rename the
+link to `e2e`. Neither command writes over pnpm's link, and `init` adds no
+copy where pnpm links the skill, a workspace member included.
+
+</Accordion>
+
 ## Let the agent use the app
 
 `e2e mcp` gives the agent a live session on your app. It checks its

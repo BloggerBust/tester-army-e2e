@@ -365,9 +365,14 @@ bunx e2e init my-app --example with-expo
   environment variables and client timeouts, even when it repairs the launch
   command. A current registration stays byte-for-byte unchanged.
 - Once a skill directory exists, later runs refresh copies that differ from
-  the installed version. They never add a directory the project did not
-  choose. `--skills` and `--mcp` name the exact locations instead and leave
-  the others as they are.
+  the installed version, and remove a file an earlier version shipped and
+  this one doesn't; a file you added stays. They never add a directory the
+  project did not choose. `--skills` and `--mcp` name the exact locations
+  instead and leave the others as they are.
+- Where pnpm links the skill from the installed package, in the project or
+  at its workspace root ([Let pnpm link the skill](/coding-agents)), `init`
+  leaves the links alone, writes no copy beside them, and warns about a copy
+  and a link in one folder.
 - A `.claude/skills/e2e/` copy from an earlier version becomes the symlink
   when it holds only the shipped files. A copy with other files stays a copy
   and is refreshed.
@@ -1365,7 +1370,10 @@ Updated the agent skill in .agents/skills/e2e/ (12 files)
 - **The agent skill.** A copy in `.agents/skills/e2e` or `.claude/skills/e2e`
   is updated to the installed version's after the install, and when
   everything was already up to date. A `.claude/skills/e2e` symlink to the
-  `.agents/skills` copy follows it. Files the new skill no longer ships stay.
+  `.agents/skills` copy follows it. A file an earlier version shipped and the
+  new one doesn't is removed; a file you added stays. A link pnpm keeps on
+  the installed skill is left alone, and a copy beside one is named as a
+  second skill ([Let pnpm link the skill](/coding-agents)).
   A symlink to a copy outside the project isn't written through, and without
   `node_modules`, as under Yarn Plug'n'Play, the command names `e2e init`
   instead.
