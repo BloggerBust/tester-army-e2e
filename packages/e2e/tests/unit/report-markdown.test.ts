@@ -388,6 +388,18 @@ describe('renderMarkdownReport', () => {
     expect(body).not.toContain('&copy;');
   });
 
+  it('escapes an underscore at the edge of a word, so a title or a message is not bold or italic', () => {
+    const underscores = named({
+      title: 'reads the __proto__ key',
+      status: 'failed',
+      attempts: [attempt({ status: 'failed', error: { code: 'ASSERTION_FAILED', message: '_id_ is missing (_x) in snake_case _ __' } })],
+    });
+    const body = renderMarkdownReport(page({ status: 'failed', results: [underscores] }));
+    expect(body).toContain('reads the \\_\\_proto\\_\\_ key');
+    expect(body).toContain('\\_id\\_ is missing (\\_x) in snake_case _ __');
+    expect(body).toContain('**ASSERTION_FAILED**');
+  });
+
   it('keeps an entity from decoding into a mention or an issue link, and leaves an ampersand inside a code span alone', () => {
     // `&#64;alice` holds `#6`, so it is a linkable token and already goes out as code; the hex and named spellings are plain text.
     const entities = named({

@@ -30,6 +30,9 @@ const LINKABLE_TOKEN = /@[A-Za-z0-9]|#\d|\bGH-\d|:\/\/|\bwww\./i;
  */
 const BLOCK_OPENER = /^(\d{1,9})([.)])(?=\s|$)|^[#+=_-]/;
 
+/** A letter or digit: an underscore between two of them is inside a word. */
+const WORD_CHAR = /[\p{L}\p{N}]/u;
+
 /**
  * Text safe inside a table cell, a list item, or at the start of a line: one
  * line, clipped by code point so an emoji at the cut survives whole, markdown
@@ -38,8 +41,9 @@ const BLOCK_OPENER = /^(\d{1,9})([.)])(?=\s|$)|^[#+=_-]/;
  * escaped. A token GitHub would link on its own (a mention, an issue number,
  * a URL) is shown as code, the one rendering GitHub's autolink filters leave
  * alone, so screen text from the app under test cannot notify anyone or plant
- * a link in a pull request comment. An underscore stays: inside a word GitHub
- * never reads it as emphasis, and error codes are full of them.
+ * a link in a pull request comment. An underscore inside a word stays: GitHub
+ * never reads it as emphasis there, and error codes are full of them. One at
+ * the edge of a word is escaped, so `__proto__` or `_id_` is not bold or italic.
  */
 export function cell(text: string, max = MAX_CELL_CHARS): string {
   const line = ellipsize(collapseText(text), max)
@@ -60,9 +64,24 @@ export function cell(text: string, max = MAX_CELL_CHARS): string {
 function escapeInline(text: string): string {
   return text
     .replace(/[\\`*[\]~|]/g, (char) => `\\${char}`)
+    .replace(/_+/g, escapeEdgeUnderscores)
     .replaceAll('&', '&amp;')
     .replaceAll('<', '&lt;')
     .replaceAll('>', '&gt;');
+}
+
+/**
+ * A run of underscores, escaped unless it sits between two letters or digits
+ * (`ERROR_CODE`), where GitHub never reads it as emphasis, or is the whole
+ * token, which has nothing to emphasize. One at the edge of a word can open
+ * or close emphasis (`__proto__`, `_id_`), so each underscore gets a backslash.
+ */
+function escapeEdgeUnderscores(run: string, offset: number, token: string): string {
+  const before = token[offset - 1];
+  const after = token[offset + run.length];
+  if (before === undefined && after === undefined) return run;
+  if (before !== undefined && after !== undefined && WORD_CHAR.test(before) && WORD_CHAR.test(after)) return run;
+  return run.replaceAll('_', '\\_');
 }
 
 /**
