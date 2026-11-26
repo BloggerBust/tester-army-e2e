@@ -434,6 +434,49 @@ describe('watchSession', () => {
     await expect(session).resolves.toBe(0);
   });
 
+  it('the --timings file the run writes does not rerun it, from the first run on', async () => {
+    const listeners = new Map<string, (event: string, filename: string | null) => void>();
+    const runs: RunOptions[] = [];
+    let release: (() => void) | undefined;
+    const run = async (options: RunOptions): Promise<RunOutcome> => {
+      runs.push(options);
+      // The run's atomic write of the history, a temp file renamed over timings.json in the flat-watched root, then the rest of its teardown.
+      writeFileSync(path.join(root, 'timings.json'), '{}');
+      listeners.get(root)!('rename', 'timings.json');
+      await new Promise<void>((resolve) => (release = resolve));
+      return passed(0);
+    };
+    const signals = new SignalLadder();
+    const session = watchSession({
+      base: { timings: 'timings.json' },
+      cwd: root,
+      signals,
+      run,
+      stdin: undefined,
+      write: () => undefined,
+      writeError: () => undefined,
+      pc,
+      clear: false,
+      watch: fakeWatch(listeners),
+    });
+    // The first run's write lands while only the config directory is watched.
+    await vi.advanceTimersByTimeAsync(DEBOUNCE_MS);
+    release!();
+    await settle();
+    expect(runs).toHaveLength(1);
+    // A save reruns; that run's write, under the loaded config's watcher, does not.
+    writeFileSync(path.join(root, 'helpers.ts'), '');
+    listeners.get(root)!('change', 'helpers.ts');
+    await vi.advanceTimersByTimeAsync(DEBOUNCE_MS);
+    expect(runs).toHaveLength(2);
+    await vi.advanceTimersByTimeAsync(DEBOUNCE_MS);
+    release!();
+    await settle();
+    expect(runs).toHaveLength(2);
+    signals.escalate(() => undefined);
+    await expect(session).resolves.toBe(0);
+  });
+
   it('keys: a clears the filters, f and u rerun once each, h prints the help, an unmapped key does nothing', async () => {
     const stdin = fakeStdin();
     const runs: RunOptions[] = [];

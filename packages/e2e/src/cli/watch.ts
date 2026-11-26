@@ -93,7 +93,7 @@ export interface WatchScope {
   readonly configPath: string | undefined;
   /** The config's `tests` globs; none when the config did not load. */
   readonly tests: readonly string[];
-  /** Directories the run itself writes, by absolute path: the output and the cache. A change there is the run's own, not a save. */
+  /** Paths the run itself writes, by absolute path: the output, the cache, and the `--timings` file. A change there is the run's own, not a save. */
   readonly written: readonly string[];
 }
 
@@ -101,14 +101,17 @@ export interface WatchScope {
  * The scope a run leaves behind: its config, or before the first run and
  * for a config that did not load, the config file it would be, alone.
  */
-function scopeOf(config: RunOutcome['config'], cwd: string, configPath: string | undefined): WatchScope {
+function scopeOf(config: RunOutcome['config'], cwd: string, base: RunOptions): WatchScope {
+  const { configPath, timings } = base;
+  // The run writes `--timings` from its first run on, before the session sees the loaded config.
+  const timingsFile = (projectRoot: string): string[] => (timings === undefined ? [] : [path.resolve(projectRoot, timings)]);
   if (config !== undefined) {
     const { projectRoot, configPath: loadedPath, tests, output, cache } = config;
-    return { projectRoot, configPath: loadedPath, tests, written: [path.resolve(projectRoot, output), cache.dir] };
+    return { projectRoot, configPath: loadedPath, tests, written: [path.resolve(projectRoot, output), cache.dir, ...timingsFile(projectRoot)] };
   }
   try {
     const discovered = discoverConfig(cwd, configPath);
-    return { projectRoot: discovered.projectRoot, configPath: discovered.configPath, tests: [], written: [] };
+    return { projectRoot: discovered.projectRoot, configPath: discovered.configPath, tests: [], written: timingsFile(discovered.projectRoot) };
   } catch {
     return { projectRoot: cwd, configPath: undefined, tests: [], written: [] };
   }
@@ -557,7 +560,7 @@ export async function watchSession(options: WatchSessionOptions): Promise<number
 
   try {
     // The config file is watched from the start; its test directories once it has loaded.
-    rescope(scopeOf(undefined, options.cwd, options.base.configPath));
+    rescope(scopeOf(undefined, options.cwd, options.base));
     for (;;) {
       const interrupt = new AbortController();
       const force = new AbortController();
@@ -590,7 +593,7 @@ export async function watchSession(options: WatchSessionOptions): Promise<number
         return 2;
       }
 
-      const changed = rescope(scopeOf(outcome.config, options.cwd, options.base.configPath));
+      const changed = rescope(scopeOf(outcome.config, options.cwd, options.base));
       if ((changed || count === 1) && watched.length === 0) {
         if (keyboard === undefined) {
           options.write(`${pc.yellow('nothing to watch')}: no test directory or config file to watch, and no terminal for the keys\n`);
