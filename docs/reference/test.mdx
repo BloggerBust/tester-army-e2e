@@ -1174,8 +1174,11 @@ test('signs out', async ({ app, platform, device }) => {
 - With `platforms` on a test, its fixtures are typed for the targets that
   run it. With `platforms: ['ios']`, `device` is typed as `Device`. On a
   `describe`, `platforms` doesn't change the types.
-- With a type annotation such as `const config: E2EConfig`, the engine types
-  are lost. To keep them, use `as const satisfies E2EConfig` or `defineConfig` instead.
+- With a type annotation such as `const config: E2EConfig`, `typeof config` is
+  plain `E2EConfig`. Calling `test.extend<{}, {}, typeof config>()` with that
+  type fails with a type error because the target types aren't inferred.
+  Use `as const satisfies E2EConfig` or `defineConfig` instead to keep the
+  config's inferred type.
 
 #### Extending a fixture
 
@@ -1351,7 +1354,7 @@ export interface TestAPI<Fixtures = TestFixtures, Worker = WorkerFixtures> exten
    *
    *   export const test = base.extend<{ device: Device }>();
    */
-  extend<Extra = {}, ExtraWorker = {}, Config = unknown>(): TestAPI<
+  extend<Extra = {}, ExtraWorker = {}, Config extends InferredConfig<Config> = {}>(): TestAPI<
     ConfigBase<Fixtures, Config> & Extra & ConfigFixtures<Config, 'test'>,
     ConfigBase<Worker, Config> & ExtraWorker & ConfigFixtures<Config, 'worker'>
   >;
@@ -1406,7 +1409,7 @@ export interface TestAPI<Fixtures = TestFixtures, Worker = WorkerFixtures> exten
    * (`[fn, { scope: 'worker', auto: true }]`). A suite hook sets up the auto
    * worker fixtures of its chain, never a test fixture.
    */
-  extend<Extra = {}, ExtraWorker = {}, Config = unknown>(
+  extend<Extra = {}, ExtraWorker = {}, Config extends InferredConfig<Config> = {}>(
     fixtures: FixtureDefinitions<
       ConfigBase<Fixtures, Config> & ConfigBase<Worker, Config> & ConfigFixtures<Config, 'test'> & ConfigFixtures<Config, 'worker'>,
       Extra,

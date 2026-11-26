@@ -13,7 +13,7 @@ import type { StepCacheInfo } from './run/steps.ts';
 import type { EngineHandle } from './engine/index.ts';
 import type { KeyModifier, Momentum, ScrollDirection, SelectOption, ViewportPoint } from './engine/contract.ts';
 import type { CacheStore } from './cache/store.ts';
-import type { ConfigBase, ConfigFixtures, FixtureDefinitions, FixtureOverrides, OmitEach, PickEach, SelectedFixtures, TestOverrides, WorkerFixtures } from './types/fixtures.ts';
+import type { ConfigBase, ConfigFixtures, FixtureDefinitions, FixtureOverrides, InferredConfig, OmitEach, PickEach, SelectedFixtures, TestOverrides, WorkerFixtures } from './types/fixtures.ts';
 
 export type { KeyModifier, Momentum, ScrollDirection, SelectOption } from './engine/contract.ts';
 export type { CacheReadResult, CacheStore } from './cache/store.ts';
@@ -1130,7 +1130,7 @@ export interface TestAPI<Fixtures = TestFixtures, Worker = WorkerFixtures> exten
    *
    *   export const test = base.extend<{ device: Device }>();
    */
-  extend<Extra = {}, ExtraWorker = {}, Config = unknown>(): TestAPI<
+  extend<Extra = {}, ExtraWorker = {}, Config extends InferredConfig<Config> = {}>(): TestAPI<
     ConfigBase<Fixtures, Config> & Extra & ConfigFixtures<Config, 'test'>,
     ConfigBase<Worker, Config> & ExtraWorker & ConfigFixtures<Config, 'worker'>
   >;
@@ -1185,7 +1185,7 @@ export interface TestAPI<Fixtures = TestFixtures, Worker = WorkerFixtures> exten
    * (`[fn, { scope: 'worker', auto: true }]`). A suite hook sets up the auto
    * worker fixtures of its chain, never a test fixture.
    */
-  extend<Extra = {}, ExtraWorker = {}, Config = unknown>(
+  extend<Extra = {}, ExtraWorker = {}, Config extends InferredConfig<Config> = {}>(
     fixtures: FixtureDefinitions<
       ConfigBase<Fixtures, Config> & ConfigBase<Worker, Config> & ConfigFixtures<Config, 'test'> & ConfigFixtures<Config, 'worker'>,
       Extra,

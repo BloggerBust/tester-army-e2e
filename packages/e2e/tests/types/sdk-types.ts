@@ -1255,10 +1255,16 @@ test.extend<{}, {}, typeof constConfig>()('narrows a target platform', async ({ 
   if (platform === 'ios') await handset.closeApp();
   platform satisfies 'api' | 'plain' | 'ios';
 });
-// With an E2EConfig type annotation, the inferred engine types are lost, so engine fixtures aren't typed.
+// With an E2EConfig type annotation, the config has no target types, so test.extend rejects it.
 const annotatedConfig: E2EConfig = mixedConfig;
-// @ts-expect-error handset is absent from the annotated config type
-test.extend<{}, {}, typeof annotatedConfig>()('names handset', async ({ handset }) => { void handset; });
+// @ts-expect-error the annotated config type is rejected
+test.extend<{}, {}, typeof annotatedConfig>();
+// @ts-expect-error the annotated config type is rejected with fixture definitions too
+test.extend<{ extra: number }, {}, typeof annotatedConfig>({ extra: async ({}, use) => { await use(1); } });
+const annotatedTarget: Target = { engine: paneEngine };
+const spreadConfig = { targets: [{ ...annotatedTarget, name: 'one' }, { ...annotatedTarget, name: 'two' }] } as const satisfies E2EConfig;
+// @ts-expect-error a target spread from an annotated Target has no engine type either
+test.extend<{}, {}, typeof spreadConfig>();
 const inferredEngine = defineEngine({ name: 'tv', version: '1.0.0', spiVersion: 1, platform: 'tv', isolation: 'worker' });
 void (inferredEngine.platform satisfies 'tv' | undefined);
 void (inferredEngine.isolation satisfies 'worker' | undefined);

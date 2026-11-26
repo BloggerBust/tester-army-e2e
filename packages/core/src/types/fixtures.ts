@@ -148,7 +148,7 @@ export type PickEach<Worker, Names extends PropertyKey> = Worker extends unknown
  * `platform` is in both halves, so an intersection of members with
  * different platforms reduces to `never`.
  */
-export type ConfigFixtures<Config, Half extends FixtureScope, Handle = ConfigEngines<Config>> = unknown extends Config
+export type ConfigFixtures<Config, Half extends FixtureScope, Handle = ConfigEngines<Config>> = {} extends Config
   ? {}
   : Handle extends EngineHandle<infer Fixtures, infer Platform, infer Isolation>
     ? { readonly platform: Platform } & (Half extends ([Isolation] extends ['worker'] ? FixtureScope : 'test')
@@ -161,7 +161,35 @@ export type ConfigFixtures<Config, Half extends FixtureScope, Handle = ConfigEng
  * this, a fixture typed on the base `test` (`device: Device`, say) would keep
  * that type on every target, even where it's `undefined`.
  */
-export type ConfigBase<Base, Config> = unknown extends Config ? Base : Omit<Base, ConfigFixtureNames<ConfigEngines<Config>> | 'app' | 'screen'>;
+export type ConfigBase<Base, Config> = {} extends Config ? Base : Omit<Base, ConfigFixtureNames<ConfigEngines<Config>> | 'app' | 'screen'>;
+
+/**
+ * `Config` with `targets` replaced by an error message when the targets
+ * weren't inferred. It's the constraint for `test.extend`'s third type
+ * argument, so an annotated config fails to compile instead of leaving
+ * fixtures typed wrong.
+ */
+export type InferredConfig<Config> = {
+  readonly [Key in keyof Config]: Key extends 'targets' ? InferredTargets<Config[Key]> : Config[Key];
+};
+
+/** `Targets` when the target types were inferred, or the error message. */
+type InferredTargets<Targets> = Targets extends readonly (infer Each)[]
+  ? [UninferredTarget<Each>] extends [never]
+    ? Targets
+    : "The config's targets don't have inferred types because of a type annotation. Write the config with `as const satisfies E2EConfig` or `defineConfig` instead."
+  : Targets;
+
+/** Targets whose `engine` is optional and can hold an engine, or `never`. */
+type UninferredTarget<Each> = Each extends unknown
+  ? 'engine' extends keyof Each
+    ? undefined extends Each['engine']
+      ? [Exclude<Each['engine'], undefined>] extends [never]
+        ? never
+        : Each
+      : never
+    : never
+  : never;
 
 /**
  * `Fixtures` without the targets that a test's `platforms` option skips: a
