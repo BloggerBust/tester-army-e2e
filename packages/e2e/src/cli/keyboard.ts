@@ -23,17 +23,17 @@ function isInterruptPress(press: Keypress): boolean {
  * leaves the terminal as it found it.
  */
 export class Keyboard<Key> {
-  private handler: ((key: Key) => void) | undefined;
+  private handler: ((key: Key, press: Keypress) => void) | undefined;
   private readonly onKeypress = (_chunk: unknown, press: Keypress | undefined): void => {
     if (press === undefined || this.handler === undefined) return;
     const key = this.keyOf(press);
-    if (key !== undefined) this.handler(key);
+    if (key !== undefined) this.handler(key, press);
   };
   /** While a prompt has the keys, Ctrl-C still ends the session: the prompt only closes on it. */
   private readonly onInterruptOnly = (_chunk: unknown, press: Keypress | undefined): void => {
     if (press === undefined || !isInterruptPress(press)) return;
     const key = this.keyOf(press);
-    if (key !== undefined) this.handler?.(key);
+    if (key !== undefined) this.handler?.(key, press);
   };
   private readonly restore = (): void => {
     this.stdin.setRawMode?.(false);
@@ -47,7 +47,7 @@ export class Keyboard<Key> {
   }
 
   /** Starts delivering keys to `handler`, in raw mode. */
-  listen(handler: (key: Key) => void): void {
+  listen(handler: (key: Key, press: Keypress) => void): void {
     this.handler = handler;
     process.on('exit', this.restore);
     this.resume();

@@ -496,6 +496,8 @@ export async function watchSession(options: WatchSessionOptions): Promise<number
   let watcher: ChangeWatcher | undefined;
   let running: RunCancel | undefined;
   let wake: ((value: Wake) => void) | undefined;
+  /** Closes the open filter prompt, as Ctrl-C typed into it does. */
+  let closePrompt: (() => void) | undefined;
   let exitCode = 0;
 
   const arrive = (next: WatchTrigger): void => {
@@ -503,8 +505,10 @@ export async function watchSession(options: WatchSessionOptions): Promise<number
     else wake(next);
   };
   const keyboard = options.stdin === undefined ? undefined : new Keyboard(options.stdin, keyOf);
-  keyboard?.listen((key) => {
+  keyboard?.listen((key, press) => {
     if (key === 'interrupt') {
+      // clack cancels a prompt on this same Ctrl-C keypress; closing the prompt here too would close it twice.
+      if (press.ctrl && press.name === 'c') closePrompt = undefined;
       signals.escalate();
       return;
     }
@@ -537,7 +541,10 @@ export async function watchSession(options: WatchSessionOptions): Promise<number
         arrive({ kind: 'key', key });
     }
   });
-  const quit = (): void => wake?.('quit');
+  const quit = (): void => {
+    wake?.('quit');
+    closePrompt?.();
+  };
   signals.interruptSignal.addEventListener('abort', quit, { once: true });
   const waiting = (): void =>
     options.write(`\n${pc.dim('Waiting for file changes...')}\n${keyboard === undefined ? '' : `  ${helpText(pc, false)}`}`);
@@ -628,9 +635,18 @@ export async function watchSession(options: WatchSessionOptions): Promise<number
           woken = value;
           break;
         }
+        // An interrupt that came with the key, as Ctrl-C in the same read does, ends the session at the loop top.
+        if (signals.interruptSignal.aborted) continue;
         // The prompt owns the terminal: keys wait, and so does a change, in `pending`.
         keyboard?.pause();
-        const answer = await (value === 'p' ? promptFile(filters, terminal) : promptTitle(filters, terminal));
+        // A signal closes the prompt, so a SIGTERM from outside the terminal ends the session as Ctrl-C in it does.
+        // The prompt gets its own signal: clack never removes its abort listener from a signal that did not abort.
+        const closer = new AbortController();
+        closePrompt = () => closer.abort();
+        const prompt = value === 'p' ? promptFile : promptTitle;
+        const answer = await prompt(filters, terminal, closer.signal).finally(() => {
+          closePrompt = undefined;
+        });
         keyboard?.resume();
         if (answer !== undefined && !signals.interruptSignal.aborted) {
           filters = answer;
@@ -658,9 +674,10 @@ function sameScope(a: WatchScope, b: WatchScope): boolean {
 }
 
 /** `p`: the positional the next runs select with; empty clears it. Answers nothing when cancelled or an invalid glob. */
-async function promptFile(filters: WatchFilters, output: Writable): Promise<WatchFilters | undefined> {
+async function promptFile(filters: WatchFilters, output: Writable, signal: AbortSignal): Promise<WatchFilters | undefined> {
   const answer = await clack.text({
     output,
+    signal,
     message: 'Filter by a file name, path, or glob (empty clears the filter)',
     placeholder: 'signup',
     defaultValue: '',
@@ -673,9 +690,10 @@ async function promptFile(filters: WatchFilters, output: Writable): Promise<Watc
 }
 
 /** `t`: the title pattern the next runs select with; empty clears it. Answers nothing when cancelled or invalid. */
-async function promptTitle(filters: WatchFilters, output: Writable): Promise<WatchFilters | undefined> {
+async function promptTitle(filters: WatchFilters, output: Writable, signal: AbortSignal): Promise<WatchFilters | undefined> {
   const answer = await clack.text({
     output,
+    signal,
     message: 'Filter by a test name regex pattern (empty clears the filter)',
     placeholder: 'checkout',
     defaultValue: '',
