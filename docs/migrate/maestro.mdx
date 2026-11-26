@@ -156,9 +156,9 @@ Calls on `device` run only on a device, so a test that uses it declares
   `getByText(/^mute account$/i)`, or `{ exact: false }` for a substring of text.
 - Maestro taps the first of several matches. e2e fails with
   `LOCATOR_AMBIGUOUS`, so add `.first()` when the first match is what you mean.
-- `isVisible()` replaces `optional` and `runFlow: { when }`. It reads the
-  screen one time and doesn't wait. It fails on several matches, so add
-  `{ visible: true }` or `.first()` when a hidden twin may exist.
+- `isVisible()` replaces `optional` and `runFlow: { when }`. It checks the
+  screen once without waiting and fails on multiple matches, so add
+  `{ visible: true }` or `.first()` if a hidden duplicate may exist.
 - `below`, `above`, `leftOf`, and `rightOf` have no port, see
   [Not yet](#not-yet). `filter({ has })` and chaining match nothing on a
   plain React Native `View` on iOS, see [Known device limitations](/mobile#known-device-limitations).

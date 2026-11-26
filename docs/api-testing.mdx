@@ -5,9 +5,8 @@ description: Check your API with the request fixture and value matchers, in the 
 "twitter:image": "https://e2e.com/docs/images/og/api-testing.png?v=bd427bf4fd"
 ---
 
-An API test calls your API with the [`request`](/reference/request) fixture
-and checks the response with the value matchers. It sits in the
-same files and the same run as UI tests, and calls no model.
+API tests use the [`request`](/reference/request) fixture and value matchers
+right alongside your UI tests, with no model calls.
 
 ```ts title="tests/users-api.e2e.ts"
 import { test, expect } from 'e2e';
@@ -74,15 +73,15 @@ of the browser.
 
 ## Without a browser
 
-On a web target, an API test still opens a browser context. A target
-without an engine opens nothing, and has no `app.url`, so pass an absolute
-URL. Read it from an environment variable:
+On a web target, an API test still opens a browser context. If you want
+pure API tests with no browser overhead, omit the engine on the target and
+pass an absolute URL from an environment variable:
 
 ```ts
 const response = await request.get(`${process.env.API_URL}/api/users`);
 ```
 
-`e2e init` sets up such a target when you select no engine.
+`e2e init` can scaffold an engine-free target for you.
 
 ## Next
 
@@ -94,6 +93,6 @@ const response = await request.get(`${process.env.API_URL}/api/users`);
     Every matcher, `toMatchSchema`, and `expect.poll`.
   </Card>
   <Card title="Authentication" icon="key" href="/authentication">
-    Sign in one time and reuse the session in every test.
+    Sign in once and reuse the session in every test.
   </Card>
 </CardGroup>

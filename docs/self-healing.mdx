@@ -3,11 +3,10 @@ title: Self-healing tests
 description: How a replayed agent step recovers when the UI changed, and how the recording repairs itself.
 ---
 
-A self-healing test keeps passing when the UI changes under a recorded
-`agent.act()` step. The runner replays the recording until it no longer
-matches the screen. Then it hands the rest of the step to the agent, which
-finishes the goal from the current screen. In `read-write` mode, the same
-run can save the new flow once a later check passes.
+A self-healing test keeps passing even when the UI changes under a recorded
+`agent.act()` step. e2e replays the recording as far as it still matches the
+screen, then hands off to the live agent to finish the goal. In `read-write`
+mode, the updated flow is saved automatically once a later assertion passes.
 
 The run summary counts each step that healed this way as `handed off`:
 
@@ -76,23 +75,16 @@ hand-off: the agent runs it from the beginning with no notice.
 
 ## How the recording repairs itself
 
-A healed step records again like a new step: in `read-write` mode, and only
-when a check after it passes, such as a locator assertion or
-`agent.assert`. Then the recording is saved with the new controls and end
-state, unless the store rejected the write (`not-written`). Otherwise the
-old entry goes away:
+A healed step saves a fresh recording in `read-write` mode once a later
+verification check (like a locator or engine assertion, or `agent.assert()`)
+passes. Otherwise the stale entry is removed, for instance if the step
+failed, wasn't confirmed by a later check, changed nothing on screen, or
+needed a repair after an `end-mismatch`.
 
-- The step failed. The next run doesn't replay a flow that broke.
-- No check passed after the step.
-- The step changed nothing replay could check, so there is no new flow to
-  save.
-- The agent had to act to fix an `end-mismatch`. The next verified run
-  records a clean flow, not the failed flow plus the fix.
-
-When no model answered or the run was cancelled, the entry stays as it is.
-`step.cache.write` in the report says what happened. See
-[When a recording is written](/cache#when-a-recording-is-written) for every
-value and for what counts as a check.
+If the run was cancelled or the model couldn't be reached, the existing
+entry stays intact. See
+[When a recording is written](/cache#when-a-recording-is-written) for the
+full rules.
 
 ## Catch regressions, not only UI changes
 
@@ -121,14 +113,14 @@ A [custom executor](/executors#replay-cache) gets the hand-off in
 
 ## Keep healing from costing model calls in CI
 
-With `CI` set and `cache` unset, the cache is `read-only`, so a healed step
-isn't saved. It hands off again on every CI run and pays for model calls
-each time. Record it again in a local `read-write` run, then
-[commit the replay cache](/cache#commit-the-replay-cache).
+In CI, `cache` defaults to `read-only`, so a healed step isn't saved back to
+disk and will hand off (and pay for model calls) on every CI run until you
+update it. Rerun locally in `read-write` mode and
+[commit the updated cache](/cache#commit-the-replay-cache).
 
-To fail instead of heal, run CI with `--strict-cache`. A step whose
-recording no longer replays fails with `REPLAY_STALE` and makes no model
-call. See [Fail on a stale recording](/cache#fail-on-a-stale-recording).
+If you'd rather fail CI immediately instead of calling a model, pass
+`--strict-cache`. See
+[Fail on a stale recording](/cache#fail-on-a-stale-recording).
 
 ## Next
 

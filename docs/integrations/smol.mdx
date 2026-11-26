@@ -74,9 +74,9 @@ an untrusted app with `smol()`.
 
 ## Start every test signed in
 
-`prepare` drives each warm browser one time, before any attempt branches
-it. Every attempt on that slot starts with the cookies, storage, and pages
-it left. It replaces [sessions](/authentication), which `'attempt'` scope
+`prepare` drives each warm browser once before any attempt branches it.
+Every attempt on that slot starts with the cookies, storage, and pages it
+left. It replaces [sessions](/authentication), which `'attempt'` scope
 can't use.
 
 `prepare` gets the browser's DevTools endpoint. Work in the default context,

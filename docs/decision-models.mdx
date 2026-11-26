@@ -12,9 +12,9 @@ newest semantic tree. It never writes free text: a small text model writes
 field values. The runner still authorizes every action.
 
 Any AI SDK decision model that answers `choice` questions with probabilities
-works, such as TypeSafe Jev or OpenAI `gpt-6-luna`. `evaluationModel()`
-instances work too. A model id string or a language model in `model` fails
-the config load with `INVALID_CONFIG`.
+works, such as TypeSafe Jev or OpenAI `gpt-6-luna` (including
+`evaluationModel()` instances). Passing a plain string or a standard
+language model fails config validation.
 
 The same package's `decisionFilter()` runs only the tests a pull request can
 affect. See [Test filters](/filters).
@@ -143,14 +143,11 @@ executor never offers `type`, `upload`, `tap_at`, or `type_at`.
 
 ## Finishing a step
 
-When the decision model answers `done` or `failed`, the executor checks the
-claim on a fresh screen with one question: is the step's task complete? The
-check never sees model reasoning or a secret.
-
-A confirmed `done` passes the step, and a confirmed `failed` fails it with
-`ACTION_FAILED`. An unconfirmed claim goes back to the decision model as
-history. A second one ends the step: `ACTION_FAILED` when the screen
-contradicts the goal, else `blocked` with `AUTOMATION_UNSUPPORTED`.
+When the decision model says `done` or `failed`, the executor double-checks
+on a fresh screen whether the task is actually complete (without seeing
+model reasoning or secrets). Confirmed results finish the step; an
+unconfirmed claim goes back to the model once before failing or blocking the
+step.
 
 ## Gates
 
@@ -247,20 +244,16 @@ executor takes that choice with probability 1 and confidence 0, so a
 
 ## Limits
 
-- No `navigate`. In-app navigation is a `tap` on a link. URLs belong in
-  test code (`browser.goto`, `app.open`).
-- No multi-select `listbox` and no `scrollUntil`. `type_at` never clears a
-  drawn field first, so it suits empty fields.
-- The text model that names a drawn control doesn't see pixels. It can't
-  follow an instruction that exists only as drawn text, such as a wizard
-  that paints "tap the circle".
-- Every decide call and text call counts against `maxModelCalls`.
-- Three actions in a row that fail or change nothing block the step with
-  `AUTOMATION_UNSUPPORTED`.
-- A question the provider refuses fails the step with `MODEL_OUTPUT_INVALID`.
-- A question has at most 255 options, TypeSafe's limit. On a larger
-  screen, nodes in the viewport come first and the rest count as omitted,
-  so the model can scroll.
+- No `navigate` tool: click links in-app, and put URLs in test code
+  (`app.open`, `browser.goto`).
+- No multi-select `listbox` or `scrollUntil`, and `type_at` never clears a
+  drawn field first (it suits empty fields).
+- The text model doesn't see screenshots, so it can't read instructions that
+  only exist as drawn pixels (like a canvas prompt).
+- Every decision call and text call counts toward `maxModelCalls`.
+- Three consecutive actions that fail or change nothing block the step.
+- Each question is capped at 255 options (TypeSafe's limit); on huge pages,
+  visible elements come first so the model can scroll to reach the rest.
 
 ## Next
 

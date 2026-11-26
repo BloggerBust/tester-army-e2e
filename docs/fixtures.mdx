@@ -94,7 +94,7 @@ export const test = base.extend<{ cleanData: void }>({
 });
 ```
 
-With `{ scope: 'worker', auto: true }` it runs one time per worker.
+With `{ scope: 'worker', auto: true }` it runs once per worker.
 
 ## Extend a built-in fixture
 
@@ -112,7 +112,7 @@ export const test = base.extend({
 ```
 
 This override is a test fixture, so it runs for each test that uses `device`.
-To run it one time per worker and use it in `beforeAll`, define it as
+To run it once per worker and use it in `beforeAll`, define it as
 `[fn, { scope: 'worker' }]`. See
 [Extending a fixture](/reference/test#extending-a-fixture).
 
@@ -178,10 +178,10 @@ on web too, with `device` set to `undefined`.
 
 ## Share a fixture across a worker
 
-A worker fixture is set up one time per worker and target, by the first test
-or suite hook that names it, and torn down when the worker ends. Use one for a
-database, a server, or an API client that many tests share. Declare it with `{ scope: 'worker' }` and type it with the second
-type argument:
+A worker fixture is set up once per worker and target (on the first test or
+suite hook that uses it) and torn down when the worker exits. Use it for a
+database, server, or API client shared across many tests. Declare it with
+`{ scope: 'worker' }` and type it in the second type argument:
 
 ```ts title="tests/fixtures.ts"
 export const test = base.extend<{}, { database: Database }>({
@@ -232,6 +232,6 @@ that names the failed fixture is skipped. An error in teardown is reported in
     The fixture contract, types, and every failure.
   </Card>
   <Card title="Authentication" icon="key" href="/authentication">
-    Save a session one time and restore it in each test.
+    Save a session once and restore it in each test.
   </Card>
 </CardGroup>

@@ -42,45 +42,40 @@ the modes. Screenshots mask secure fields only
 
 ## What the model may do
 
-The agent gets the tools the target's engine supports, such as `tap`,
-`type`, `press`, `select`, `scroll`, and `navigate`. On engines with a
-keyboard, it can type and press keys in the focused control. When the text
-snapshot can't describe a control, pixel tools let it take a screenshot and
-act at a point. See the
-[tool reference](/reference/agent#pixel-tools-screenshot-and-the-point-verbs).
+The agent gets whatever action tools the target engine supports (`tap`,
+`type`, `press`, `select`, `scroll`, `navigate`, focused keyboard input, and
+coordinate-based pixel actions when the accessibility tree isn't enough).
+See the [tool reference](/reference/agent#pixel-tools-screenshot-and-the-point-verbs).
 
-To fill a `Secret` param, the model calls `type_secret`. The model sees only
-the secret's name and purpose. The runner checks the field the model
-picked, then fills the value itself. The value never enters prompts,
-transcripts, reports, or AI traces.
+For a `Secret` param, the model calls `type_secret` using only the secret's
+name and purpose. e2e validates the field and types the real value itself
+so it never enters prompts, transcripts, reports, or AI traces.
 
-A targeted action times out after at most 15 seconds. [Project tools](/tools)
-add your own operations, with declared budgets and platforms.
+Targeted actions time out after 15 seconds. You can also expose custom
+operations with [project tools](/tools).
 
-The built-in agent presses Save, Submit, or another control that commits a
-change once for each commit the step asks for. It retries only when the
-current screen shows that the first press did not commit, such as a
-validation error, or when the tap only closed the keyboard.
+To avoid duplicate submissions, the built-in agent only clicks Save/Submit
+buttons once unless the screen clearly shows the submission didn't go
+through (like a validation error) or the tap only dismissed the keyboard.
+A silent save with no visible confirmation can end the step as `failed`, so
+tell the agent how to confirm it, for example `"save the product, then
+confirm it appears in the product list"`.
 
-The agent checks a save on the current screen unless the step asks it to leave.
-A silent save can end the step as `failed`. Specify how to check it, for
-example "save the product, then confirm it appears in the product list".
-A click before the page is ready can also leave no trace. Wait for the page
-before saving. The agent makes one press when the outcome is unclear.
+A built-in loop guard catches repeated failures, cycles, or long stalls on
+an unchanged screen, prompting the agent to wrap up with a verdict before it
+burns its budget or hits the deadline.
 
-The loop detects repeated calls and cycles. It warns after three failed
-actions in a row and asks for a verdict after five. Consecutive calls to
-`observe` or `screenshot` can wait longer, including during assertion
-exploration.
-
-| Wait | Notice | Verdict |
-| --- | ---: | ---: |
-| Looks without a change to the listing, location, or tabs | 6 | 10 |
-| Total consecutive looks, even when the screen changes | 12 | 20 |
-
-Changes to the listing, location, or tabs reset the first count. Pixel
-changes alone, such as a spinner, leave the count in place. The loop also
-asks for a verdict when the budget or deadline is near.
+<Accordion title="Loop-guard thresholds and same-turn verdicts">
+- **Failed actions:** the loop warns after 3 consecutive failed actions and
+  asks for a verdict after 5.
+- **Repeated observations:** `observe` or `screenshot` calls warn after 6
+  looks without a change to the listing, location, or tabs (verdict at 10),
+  or 12 total consecutive looks even when the screen changes (verdict at 20).
+- **Same-turn verdicts:** when a step only asks for actions, the agent can
+  send its verdict in the same turn as its last action to save a model call.
+  The runner refuses that verdict if an earlier action failed or the last
+  action changed nothing.
+</Accordion>
 
 ## Assertion exploration
 
@@ -111,11 +106,6 @@ Only `failed` and `blocked` carry an error code.
 
 The [errors reference](/reference/errors#agenterror) lists every code a
 verdict can carry.
-
-When a step only asks for actions, the agent may send its verdict in the
-same turn as the last action, and the step returns without another model
-call. The runner takes that verdict after those actions run, and refuses it
-when one failed or the last one changed nothing.
 
 ## What a step costs
 

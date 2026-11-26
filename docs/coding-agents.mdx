@@ -30,25 +30,23 @@ bunx e2e init
 | `.agents/skills/e2e/` | Codex, Cursor, OpenCode, and other agents that read `.agents/skills` |
 | `.claude/skills/e2e/` | Claude Code. A symlink to `.agents/skills/e2e/` when both are installed. |
 
-The copy holds `SKILL.md` and topic references.
-[`e2e upgrade`](/reference/cli#e2e-upgrade) updates it, also after you
-upgrade with your package manager. Without `init`, `npx skills add e2e-inc/e2e`
-installs the skill, and `npx e2e guide [topic]` prints it from the
-installed package. The plugin below installs all three e2e skills for
-every project.
+`init` drops `SKILL.md` and topic references into those folders, and
+[`e2e upgrade`](/reference/cli#e2e-upgrade) keeps them up to date. Without
+`init`, install the skill with `npx skills add e2e-inc/e2e`, or print it from
+the installed package with `npx e2e guide [topic]`. The plugin below installs
+all three e2e skills globally across projects.
 
-`init` also appends this line to `AGENTS.md`, so a prompt such as "add a
-test for checkout" reaches the skill. `CLAUDE.md` gets it with the
-`.claude/skills` path, and a missing file is created. Add the line yourself
-when you install the skill another way:
+`init` also adds a short pointer to `AGENTS.md` (and `CLAUDE.md` with the
+`.claude/skills` path), creating the file if needed, so prompts like "add a
+test for checkout" automatically pick up the skill. If you install the skill
+another way, add this line yourself:
 
 ```md title="AGENTS.md"
 End-to-end tests use e2e; read .agents/skills/e2e/SKILL.md before writing or running one.
 ```
 
-The package also ships these docs as `.mdx` pages for offline reading, in
-`node_modules/e2e/docs` in a single-package project. A link such as
-`/reference/cli` is `docs/reference/cli.mdx`.
+The `e2e` package also ships these docs offline in `node_modules/e2e/docs/`
+for agents to read locally.
 
 <Accordion title="Install the Claude Code, Codex, or Cursor plugin">
 
@@ -161,10 +159,10 @@ prompts.
 
 ## How an agent writes and runs a test
 
-The skill tells the agent to read the config and an existing test first.
-With `e2e mcp`, it walks the flow in a session and writes each step as it
-takes it. Each test checks one behavior. It arranges the starting state,
-acts toward one goal, then checks the outcome at the end:
+The skill tells your agent to read your config and an existing test first.
+With `e2e mcp`, it walks through the flow in a live session and writes each
+step as it goes. Each test checks one behavior: arrange the starting state,
+act toward one goal, then verify the outcome at the end:
 
 ```ts title="tests/shop.e2e.ts"
 import { test, expect } from 'e2e';
@@ -202,9 +200,9 @@ test('filters the shop to items under $20', { session: 'customer' }, async ({ ap
   other secret in a test: declare runner credentials in configuration and pass
   a second host's secrets through `launch({ secrets })`.
 
-While it iterates, the agent runs only the test it works on, by the line
-its `test(` opens on. With `--action-timeout 5000`, a wrong locator fails
-after 5 s instead of 30 s:
+While iterating, the agent runs just the test it's editing (by line number)
+with `--action-timeout 5000` so a wrong locator fails in 5 seconds instead of
+30:
 
 <CodeGroup>
 ```bash npm
@@ -220,49 +218,36 @@ bunx e2e run tests/checkout.e2e.ts:3 --action-timeout 5000
 ```
 </CodeGroup>
 
-The agent fixes CLI, config, and collection errors before it runs again.
-It doesn't edit cache recordings.
-
-The agent keeps the replay cache on, so a goal whose check passed replays
-without model calls. It turns retries off, since a retry runs every goal
-live. When the test passes, the agent drops `--action-timeout` and runs it
-one time with `--no-cache` to check that the live agent reaches every
-goal. See
+The agent leaves the replay cache on so passing goals replay without calling
+a model, and turns retries off (since retries run every goal live). Once the
+test passes, it drops `--action-timeout` and runs it once with `--no-cache`
+to make sure the live agent still completes every goal. See
 [Rerun a test while you fix it](/cache#rerun-a-test-while-you-fix-it).
 
 ## How an agent reads a failure
 
-By default ([`trace`](/reference/config#trace)), a run writes a trace page
-for each failed, timed-out, interrupted, or flaky test, to the test's
-directory under `.e2e/results/`. `.e2e` is the default `output`. The
-terminal names the page under each failed test, as
-`❯ trace .e2e/results/<test>/trace.md`.
+By default ([`trace`](/reference/config#trace)), e2e writes a `trace.md` file
+under `.e2e/results/` for every failed, timed-out, interrupted, or flaky
+test. The terminal prints the path right under the failure
+(`❯ trace .e2e/results/<test>/trace.md`).
 
-The agent reads that page, not `.e2e/report.json`, which holds the same
-facts for [scripts](/debugging). The page has the failing line and every
-step with what it did: the node an action hit, the values an assertion
-read, the cache's decision, console errors, and failed requests. It also
-has the agent's last turns and the screen at the failure.
+Your coding agent reads `trace.md` rather than raw `report.json`. It
+includes the failing line, every step's target and outcome, console errors,
+failed network requests, the agent's last turns, and the screen at failure.
+If the agent needs to check a screen that isn't in the trace, it opens that
+URL directly in an MCP session instead of re-walking the flow from scratch.
 
-The agent fixes the test from that evidence. It fixes every line the
-evidence covers, not only the failing one. A test stops at its first failed
-step, so the agent also checks the lines after it before the next run.
-
-To see a screen the page doesn't show, the agent opens it in an MCP session
-by the shortest way, such as its URL on the web. It doesn't walk the flow
-again from the start.
-
-For model-call details, the agent adds `--ai-trace` and reads the trace
-with [unbox-ai](/debugging#agent-steps). Pair it with `--no-cache` to
-capture every model call in the flow. Don't open the raw trace in an
-agent's context. It repeats prompts and can be several megabytes.
+To inspect individual model calls, pass `--ai-trace --no-cache` and read the
+output with [unbox-ai](/debugging#agent-steps). Don't paste the raw
+`ai-trace.json` into an agent's context, since it repeats prompts across
+turns and can grow to several megabytes.
 
 ## Generate a verification skill for your app
 
-The e2e skill teaches the runner, not your app. The
-`create-verification-skill` skill writes a project-local
-`.agents/skills/verify-<app>/` skill that does, and tests it one time
-before it hands over.
+The `e2e` skill teaches the framework, not your app. The
+`create-verification-skill` skill generates a project-local
+`.agents/skills/verify-<app>/` skill tailored to your app and tests it once
+before finishing.
 
 <CodeGroup>
 ```bash npm

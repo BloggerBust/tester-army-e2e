@@ -226,10 +226,10 @@ A target's `video` wins over the config's, and `--video` wins over both. A
 test's own option, such as `test('checkout', { video: 'on' }, ...)`, wins
 over all of them.
 
-The config's `video` and `--video` apply only to targets whose engine can
-record, and one notice names the others. When a target or a test asks for a
-recording its engine can't make, the run fails with `UNSUPPORTED_ARTIFACT`
-before any test starts.
+The config's `video` setting and `--video` flag only apply to targets whose
+engine supports recording (other targets are skipped with a notice). Asking
+for video on a specific target or test whose engine can't record fails before
+tests start.
 
 [Recording](/reference/config#recording) has every mode and file.
 
@@ -290,21 +290,15 @@ You can scroll through the screen or app log while the test stays paused.
 | `p` | Close the viewer and print its text above the live summary |
 | `q`, Esc | Return to the prompt |
 
-- A key pressed within 150 ms of a prompt is ignored, so a key meant for the
-  last step never runs this one. Ctrl-C works at any time, also while a step
-  runs. The same guard applies when you close the viewer.
-- The time a step is held counts toward nothing: not its duration, not the
-  test's `timeout`, not `maxDuration`, and not the run's `Duration`. A test that hangs after a step still
-  times out on the time it had left. The test's own duration in the report
-  includes the holds.
-- Setup tests, retries, `afterEach` hooks, fixture teardowns, and steps inside
-  an `expect.poll` read or a `toPass` block run without stopping. An `agent.act` is one step.
-- Steps started together, as in `Promise.all`, share one prompt and run on one
-  Enter, so a `waitForResponse` beside the click that triggers it never waits
-  for a key. A step already running when another is held keeps running on its
-  own timeout.
-- A hosted browser or device can end a session that sits idle too long while
-  a step is held.
+- Brief accidental keypresses right after a prompt opens are ignored, while
+  Ctrl-C works at any time.
+- Paused time doesn't count against step, test, or run timeouts.
+- Setup tests, retries, `afterEach` hooks, fixture teardowns, and polling
+  callbacks run without pausing; each `agent.act` counts as one step.
+- Concurrent steps (like `Promise.all`) share a single prompt so a
+  `waitForResponse` paired with a click runs together.
+- Hosted browsers or devices may still close idle sessions if left paused
+  too long.
 
 `--step` runs one test at a time. It is refused in CI, with `--watch`, and
 with `--workers` above 1. With the json reporter it needs stdin and stdout
@@ -355,23 +349,12 @@ Next: e2e run --step next to run it, e2e run --step rest to run the rest, or e2e
 | `e2e run --step rest` | runs the rest of the run without holding steps |
 | `e2e run --step stop` | stops the run as `q` does, exit 130, even while another command waits |
 
-- Each answer starts with what the run printed since the last command: a
-  line per step that ran, as the first line above, with the error under a
-  failed one. The last answer ends with the run summary and
-  `The stepped run has ended.`, and the command exits with the run's exit
-  code.
-- The screen lists the app's nodes as a trace page does, with secrets
-  redacted.
-- One directory has one stepped run. A second `--step` there exits 2 until
-  the first ends.
-- `next` and `rest` only act on a step a command has printed. When a
-  command is killed while it waits, the next one prints what it missed: the
-  step, without running it, or the end of the run. A `next` or `rest` sent while a step runs waits for
-  the next held step without acting. Either way, the answer opens with a line
-  saying the action was not applied.
-- A step held for 30 minutes with no command stops the run.
-- With `--step`, a file or directory named `next`, `rest`, or `stop` needs
-  a path, such as `./next`.
+- Each command prints everything that happened since the previous command,
+  along with the redacted accessibility tree of the current screen.
+- Only one stepped run can be active per directory at a time, and an idle
+  step automatically times out after 30 minutes.
+- If a file or directory is literally named `next`, `rest`, or `stop`, pass
+  it with a relative path like `./next`.
 
 ## Pause a test
 
@@ -449,26 +432,15 @@ end, you get `The run has ended.` and the run's exit code. See
 [Step through a test without a terminal](#step-through-a-test-without-a-terminal)
 for what each answer holds.
 
-- Paused time doesn't count toward any timeout. But without a terminal, the
-  run is stopped after 30 minutes at a pause without a command.
-- The test is paused on every attempt, retries and setup tests included.
-- With several workers, pauses are shown one at a time, oldest first, while
-  the other workers keep running.
-- Call `screen.pause()` with `await` in a
-  [`beforeEach`](/reference/test#beforeeach) hook,
-  [fixture](/fixtures) setup, or the test body. See
-  [`screen.pause()`](/reference/screen#screen-pause) for what happens
-  anywhere else.
-- You can control one run per directory at a time with `e2e run --step`
-  commands. A `--step` run started without a terminal is controlled from its
-  start. A run without `--step` is controlled from its first pause. If
-  another run in the directory is already controlled this way:
-  - Without a terminal, the test fails at the pause with `RUNNER_BUSY`. End
-    the other run with `e2e run --step stop`, or run this one in a terminal.
-  - In a terminal, you can still use the keys. A line is printed to say
-    that the commands go to the other run.
-- With `CI` set, the test fails at the pause with `PAUSE_UNAVAILABLE`.
-  Remove the call before you commit.
+- Paused time doesn't count toward test timeouts (though runs without a
+  terminal time out after 30 minutes with no command).
+- Pauses run on every attempt, including retries and setup tests. With
+  multiple workers, pauses queue one at a time while other workers continue.
+- Call `await screen.pause()` inside a test body, `beforeEach`, or fixture
+  setup. Only one run per directory can be controlled via `--step` commands
+  at a time.
+- In CI, `screen.pause()` fails the test immediately. Remove it before
+  committing.
 
 ## Console output
 

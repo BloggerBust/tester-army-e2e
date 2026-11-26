@@ -5,8 +5,8 @@ description: Use your ChatGPT, GitHub Copilot, OpenCode Console, or SuperGrok su
 "twitter:image": "https://e2e.com/docs/images/og/subscriptions.png?v=174d49a0e9"
 ---
 
-Run agent steps on a plan you already pay for. Sign in one time, then use
-the plan's model in `e2e.config.ts`.
+Run agent steps using a plan you already pay for. Sign in once, then plug
+the plan's model into `e2e.config.ts`.
 
 | Plan | How to connect |
 | --- | --- |
@@ -101,9 +101,8 @@ const agent = { model: opencodeConsole('deepseek-v4.1-flash') };
 const goAgent = { model: opencodeConsole('go/deepseek-v4.1-flash') };
 ```
 
-On the Anthropic route, a call that sets no `maxOutputTokens` asks for 8192: the
-Anthropic SDK does not know the ids OpenCode serves there, and on its own it
-limits the request to 4096 tokens and only warns.
+On the Anthropic route, requests default `maxOutputTokens` to 8192 when
+unset so the Anthropic SDK doesn't cap unknown OpenCode model IDs at 4096.
   </Tab>
   <Tab title="SuperGrok">
 <CodeGroup>
@@ -195,42 +194,33 @@ The id is not always the name the vendor's app shows.
 With `OPENCODE_API_KEY` set, `e2e models opencode-console` lists the ids that
 key serves, the same key `opencodeConsole()` uses in place of the login.
 
-- **Copilot** marks `not enabled` (turn the model on in your Copilot
-  settings on GitHub, or ask the admin who manages your seat) and `no chat
-  or responses` (use a different model). It can't see what your plan
-  serves: on Copilot Free, GitHub serves models through
-  [auto model selection only](https://docs.github.com/en/copilot/get-started/plans),
-  so a model called by id is usually refused. The run then stops with
-  `MODEL_UNAVAILABLE` naming it; pick another id or an
+- **Copilot** flags models that are `not enabled` (turn them on in your
+  GitHub Copilot settings or ask your org admin) or `no chat or responses`
+  (pick a different model). Copilot Free only serves models via
+  [auto model selection](https://docs.github.com/en/copilot/get-started/plans),
+  so calling a specific model ID usually fails; pick another ID or an
   [API provider](/models).
-- **OpenCode Console** lists `go/` models only if you have Go. It leaves out
-  models your workspace turned off, and Zen's free models. Key
-  `providerOptions` by `opencode` for chat completions models, else by
-  `openai`, `anthropic`, or `google`.
+- **OpenCode Console** lists `go/` models only if you have Go, and hides
+  disabled or free Zen models. Key `providerOptions` by `opencode` for chat
+  completions models, or by `openai`, `anthropic`, or `google` otherwise.
 
 ## Sign-in help
 
-- ChatGPT opens a browser. To use a device code, add `--device`.
-- Copilot uses your GitHub CLI login. Without `gh`, pass `--client-id` with
-  your own GitHub OAuth app that has device flow on. For GitHub Enterprise,
-  add `--enterprise-url`.
-- OpenCode Console shows a device code. Approve it and select the
-  workspace. The page shows e2e as an unknown client. To change the
-  workspace, run `npx e2e logout opencode-console` and sign in again.
-- SuperGrok shows a device code and the URL where you enter it.
+- **ChatGPT** opens your browser. Pass `--device` to use a device code
+  instead.
+- **Copilot** reuses your GitHub CLI (`gh`) login. Without `gh`, pass
+  `--client-id` for your own GitHub OAuth app with device flow enabled (add
+  `--enterprise-url` for GitHub Enterprise).
+- **OpenCode Console** prints a device code to approve in your workspace. To
+  switch workspaces later, run `npx e2e logout opencode-console` and sign in
+  again.
+- **SuperGrok** prints a device code and verification URL.
 
-`npx e2e login` with no provider opens a picker that shows which accounts
-are signed in. `npx e2e logout` removes a login. When a saved login stops
-working, the step fails with `MODEL_PROVIDER_FAILED`, and the message gives
-the `npx e2e login <provider>` command to run. See the
-[CLI reference](/reference/cli#e2e-login) for every flag.
-
-Model-call cancellation also applies while waiting for a token refresh.
-
-When a login saved with `npx e2e login` expires, parallel workers refresh it
-once between them. A worker waits up to 30 seconds for another worker's
-refresh. After that its step fails with `MODEL_PROVIDER_FAILED`, unless the
-step's own timeout ends it first, as `STEP_TIMEOUT`.
+Run `npx e2e login` with no arguments to see which accounts are connected,
+and `npx e2e logout` to remove one. Expired tokens refresh automatically
+(including across parallel workers). If a saved login stops working, e2e
+tells you which `npx e2e login <provider>` command to rerun. See the
+[CLI reference](/reference/cli#e2e-login) for all flags.
 
 ## CI
 
@@ -286,19 +276,15 @@ export default {
 ```
   </Tab>
   <Tab title="Codex">
-Install the package and the Codex adapter. Sign in with `codex login`, or
-set `OPENAI_API_KEY`: when Codex has no login, `codex()` signs it in with the
-first nonblank of `CODEX_API_KEY` and `OPENAI_API_KEY`, unless you set a
-nonblank `DEFAULT_AUTH_REQUEST`. Codex saves the key as its login, like
-`codex login --with-api-key` (in `CODEX_HOME/auth.json` with the default
-credential store, nowhere with `ephemeral`), and keeps it until
-`codex logout`. While `APP_SERVER_LOGS` is set, `codex()` passes no sign-in
-request, yours included, since the adapter's log would write credentials in
-plain text; a saved login still works. A variable in `codex({ env })`
-replaces the environment's, so `env: { OPENAI_API_KEY: '' }` keeps a key you
-set for the app under test away from Codex. Start the first sessions on a new
-`CODEX_HOME` one at a time: several at once often fail with
-`failed to initialize sqlite state runtime`.
+Install the package and the Codex adapter, then sign in with `codex login`,
+or set `OPENAI_API_KEY` or `CODEX_API_KEY`. When Codex has no login,
+`codex()` signs it in with that key and Codex saves it as its login (in
+`CODEX_HOME/auth.json` with the default store) until you run `codex logout`.
+When `APP_SERVER_LOGS` is set, `codex()` skips API-key sign-in so the
+adapter log doesn't write credentials in plaintext (a saved login still
+works). Pass `env: { OPENAI_API_KEY: '' }` to hide a key from Codex when
+your app uses it, and start the first session on a fresh `CODEX_HOME`
+alone so Codex initializes its local state cleanly.
 
 <CodeGroup>
 ```bash npm
@@ -331,38 +317,36 @@ export default {
 
 | Option | What it does |
 | --- | --- |
-| `model` | A model the agent offers, such as `sonnet`. When the agent doesn't offer it, the session fails to start and the error lists the models it does offer. Omitted, the agent's default runs. |
-| `env` | Variables added to the agent's environment. |
-| `system` | Text appended to the rules the agent gets with the first step. |
-| `name` | The executor name in reports. |
-
-Unexpected forwarding failures stop the ACP session and appear in the runner's
-secret-redacted failure output. The HTTP client receives a generic error or a
-closed stream, without the exception text.
+| `model` | Which model to use (for example `'sonnet'`). Defaults to the agent's own default; if unsupported, the error lists available models. |
+| `env` | Extra environment variables for the agent process. |
+| `system` | Extra instructions appended to the agent's initial prompt. |
+| `name` | Label shown for this executor in reports. |
 
 ### What the agent can use
 
-An action the agent takes with its own tools isn't recorded, can't replay,
-and can reach files or the web. So e2e keeps the agent to the step tools:
+Because actions taken with a coding agent's own tools (shell, filesystem,
+web search) aren't recorded and can't replay safely, e2e restricts the agent
+strictly to step tools:
 
-- The agent process starts in your project. Its session opens in an empty
-  temporary directory, and e2e offers it no file system or terminal access.
-- e2e allows permission requests for step tools and rejects all others.
-- When a tool of the agent's own runs without asking, e2e stops the turn
-  and fails the step with `POLICY_DENIED`. Later step tool calls take no
-  action. The session closes, so the next step starts a fresh agent that
-  never saw what the tool read.
+- Sessions open in an empty temp directory with no filesystem or terminal
+  access.
+- Only step-tool permission requests are approved; all others are rejected.
+- If the agent invokes one of its own tools anyway, e2e immediately fails
+  the step and closes the session so later steps start clean.
 
-Each preset also turns off the agent's own tools that run without asking:
+Both presets also disable the agent's own tools, user MCP servers, and
+shell/web access for these sessions.
 
-- **Claude Code**: no built-in tools, no user, project, or local settings,
-  no MCP servers but the step tools, no saved session, and no bypass of
-  permission prompts.
-- **Codex**: read-only mode, no shell, web search, apps, plugins, browser,
-  or computer use, and no shell snapshots, which would copy your environment,
-  keys included, to disk. Every MCP server from your Codex config is off for these
-  sessions only. Codex can still start a subagent, which fails the step like
-  any tool of its own.
+<Accordion title="Per-preset isolation details">
+- **Claude Code:** no built-in tools, no user/project/local settings, no
+  MCP servers except step tools, no saved sessions, and no permission-prompt
+  bypass.
+- **Codex:** read-only mode, no shell, web search, apps, plugins, browser,
+  computer use, or shell snapshots (which would copy environment keys to
+  disk), and all user Codex MCP servers turned off for these sessions. If
+  Codex spawns a subagent, e2e fails the step like any other unauthorized
+  tool.
+</Accordion>
 
 ### Secrets
 

@@ -36,14 +36,14 @@ bunx e2e explore 'Explore the checkout flow like a first-time buyer and report a
 ```
 </CodeGroup>
 
-A limit can be "stop before placing the order." With no goal, explore uses
-`Explore the app and find bugs`. A failed step does not stop the run.
+Add any limits right in the prompt (for example, "stop before placing the
+order"). Without a prompt, `e2e explore` defaults to `"Explore the app and
+find bugs"`. Individual failed steps don't abort the exploration.
 
-With no `e2e.config.ts`, explore runs the
-[`e2e init`](/reference/cli#e2e-init) wizard first. The exploration starts
-right after when nothing is left to do by hand. Otherwise init lists the
-steps left, such as `npm install` or setting the model key.
-Without a terminal, as in CI, explore fails with `CONFIG_NOT_FOUND`.
+If you don't have an `e2e.config.ts` yet, `explore` runs the
+[`e2e init`](/reference/cli#e2e-init) wizard first and starts exploring
+immediately when setup completes. In non-interactive environments like CI,
+it exits with a missing-config error instead.
 
 ## Read the results
 
@@ -131,26 +131,21 @@ bunx e2e explore --changed-since origin/main
 ```
 </CodeGroup>
 
-Only a defect the change can cause is an `issue`. A defect elsewhere in the
-app is a `warning` and doesn't fail the run.
+Only defects that the change could have caused count as an `issue`;
+unrelated issues elsewhere in the app are reported as `warning`s and won't
+fail the run.
 
-With no goal, the goal is `Explore what this change affects and find bugs in
-it`. The planner can then skip a change no user can see, such as docs or
-tests only. The run ends `skipped` and passes. It skips only when it read
-the whole change. A large diff, a binary file, or an uncommitted file rules
-a skip out.
+Without an explicit prompt, `explore` focuses on what your diff changed and
+may skip changes users can't see (like docs-only or test-only PRs) if the
+working tree is clean and the whole diff fits. A skipped run passes; the
+branch's own commit messages, PR text, and code can sway that call (read
+`run.explore.ended` to tell a skip from a clean exploration). See
+[Security](/reference/security#mcp-and-explore) for what gets sent to the
+model.
 
-The branch's own commit messages, pull request description, and code can
-sway the call. To tell a skip from a clean exploration, read
-`run.explore.ended`.
-
-For what the model reads, see
-[Security](/reference/security#mcp-and-explore).
-
-On GitHub Actions, run it in its own job on `pull_request`. With the
-[GitHub reporter](/github) in the config, the findings go to their own pull
-request comment. A fork's run can't post; see
-[when nothing is posted](/github#when-nothing-is-posted).
+On GitHub Actions, run `explore` in its own `pull_request` job. With the
+[GitHub reporter](/github), findings post straight to a PR comment (fork PRs
+won't post; see [when nothing is posted](/github#when-nothing-is-posted)).
 
 ```yaml title=".github/workflows/explore.yml"
 on: pull_request
@@ -174,17 +169,14 @@ jobs:
           GITHUB_TOKEN: ${{ github.token }}
 ```
 
-`fetch-depth: 0` puts the base branch in the checkout. Without it, the run
-fails with `INVALID_CHANGED_SINCE`.
+`fetch-depth: 0` gives git the base branch history it needs to diff your
+branch; without it, the run fails. On GitHub pull requests and GitLab merge
+requests, the planner also reads the PR title and description, so mention
+what should visibly change.
 
-In a `pull_request` job or a GitLab merge request pipeline, the planner also
-reads the pull request's title and description. Say there what a user should
-see change. GitHub gives the text from the event that started the job, so an
-edit shows after the next push, not on a re-run.
-
-Keep the working tree clean after install and build, or the run is never
-skipped. Ignore `.e2e/` and build output. Run e2e with `npx`, not
-`pnpm exec`, which can rewrite `pnpm-lock.yaml`.
+Keep the working tree clean after install and build so docs-only PRs can
+still be skipped (run `npx` instead of `pnpm exec` if `pnpm` touches your
+lockfile).
 
 <Warning>
 Never run it on `pull_request_target`. That run holds your secrets, and the

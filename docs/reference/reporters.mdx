@@ -230,8 +230,8 @@ reporters: ['list', 'ctrf'],
   count as a test. A tool that counts failed tests alone reads such a run as
   green, so [gate the job](/ci#gate-pull-requests) on the exit code.
 - Attachments link screenshots, videos, and logs, such as the screen at a
-  failure, by the hosted URL, else by the artifact store's `http(s)`
-  reference, else by path from the project root (`$CI_PROJECT_DIR` when
+  failure, by hosted URL, then by the artifact store's `http(s)`
+  reference, then by path from the project root (`$CI_PROJECT_DIR` when
   set). A file outside it, and every download, is left out. A test in a
   serial group lists only its own files, plus files of the group, such as
   its video, that belong to no single test. A video of a second session a
@@ -694,12 +694,12 @@ interface CollectedTestInfo {
 - `tests` has one entry per test, target, and agent, in selection order.
   Tests a filter, `--grep`, or a shard left out are `filtered`.
 - A `test` that runs does so `repeatEach` times: 1 without `--repeat-each`.
-  A `setup` test runs one time.
+  A `setup` test runs once.
 - `total` counts every test the run collected, and `files` the `run` and
   `skip` ones per file and target, so a reporter knows when a file's results
   are complete. A skipped `setup` test gets no result, so `files` leaves it
-  out. Both count a repeated test one time for each repeat, where
-  `tests` lists it one time.
+  out. Both count a repeated test once for each repeat, whereas
+  `tests` lists it once.
 - The event's `at` is the run's start, the report's `startedAt`.
 
 ### Tests and attempts

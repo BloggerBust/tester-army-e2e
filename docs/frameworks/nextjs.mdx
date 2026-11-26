@@ -13,9 +13,9 @@ export const setupPrompt = `Set up e2e end-to-end tests in this Next.js app. Doc
 4. Install dependencies, run the example test, and fix errors until it passes. Check the page's "Fix Next.js problems" section first.
 5. Write one test for the most important user flow in this app, run it, and iterate until it passes.`;
 
-This page adds e2e to an existing Next.js app. The runner starts `next dev`
-on your machine and `next start` in CI, and the web engine tests the app in
-Chromium. For a new app, [start from the example](#start-a-new-app).
+Add e2e to an existing Next.js app. e2e starts `next dev` locally and
+`next start` in CI, and runs your tests in Chromium. Starting from scratch?
+[Use the example app](#start-a-new-app) instead.
 
 <SetupPrompt>
 
@@ -55,10 +55,9 @@ Found Next.js: the web target starts npm run dev on http://localhost:3000, and n
 
 ## Start the app from the config
 
-`app.command` starts your app, and the runner waits until `app.url`
-answers. `init` writes a target like this one, with your package manager
-and the port from your `dev` script. To add it to an existing config, keep
-your model import and `agents` entry:
+`app.command` starts your app and waits until `app.url` responds. `init`
+generates a target using your package manager and dev port. If you're adding
+this to an existing config, keep your `agents` entry:
 
 ```ts title="e2e.config.ts"
 import type { E2EConfig } from 'e2e';
@@ -82,14 +81,13 @@ export default {
 } satisfies E2EConfig;
 ```
 
-- **Locally**, the runner starts `next dev`. With `reuseExisting: true`, it
-  uses a dev server you already started on that port.
-- **In CI**, the runner starts `next start`, which serves the build.
-  `reuseExisting` doesn't apply there.
-- **The port** in `app.url` must be the port that `dev` and `start` both
-  listen on. Next.js uses 3000. When one script sets `--port`, set the same
-  port in the other. When they differ, or the app has no `start` script,
-  `init` starts `next dev` in CI too and leaves out the `ci` switch.
+- **Locally**, e2e runs `next dev` (and reuses an already-running dev server
+  when `reuseExisting: true` is set).
+- **In CI**, e2e runs `next start` against your production build (and ignores
+  `reuseExisting`).
+- **Port matching:** Both `dev` and `start` need to listen on the port in
+  `app.url` (3000 by default). If your `package.json` has no `start` script
+  or uses different ports, `init` falls back to `next dev` everywhere.
 
 Then run the tests:
 

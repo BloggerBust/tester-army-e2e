@@ -67,22 +67,15 @@ The loop runs at most `maxModelCalls` model turns per step with the entry's
 also bring a `judge`. When the entry sets the same option, both must name the
 same provider and model, or the config load fails with `INVALID_CONFIG`.
 
-`buildPrompt` returns a string or a message history. `prepareMessages` runs
-between turns to shorten the history, or returns `{ messages, stop }` when the
-step makes no progress. A message it rewrites, in place or by replacement,
-edits the request prefix, and on Anthropic models, whose thinking is bound
-to it, the loop then stops sending the reasoning from that message on.
-When the provider refuses a request as too large, the loop shortens the
-history and retries once if that makes the request smaller, else fails with
-`CONTEXT_OVERFLOW`; `inconclusiveOnOverflow: true` fails the step with
-`ASSERTION_INCONCLUSIVE` instead, for an assertion loop whose earlier screens
-are evidence. `guard()` stops new tool calls when the step is
-concluding and returns a failure to the model as text. A `complete_step`
-sent in the same turn as other calls waits for the calls before it, and is
-refused when one of them failed or the last one reported no change; calls
-after it don't run. `ctx.actions`
-authorizes, counts, and records each action, so these steps replay from the
-[cache](/cache) and run on any engine that supports `tap`.
+`buildPrompt` returns a string or message history, and `prepareMessages`
+lets you trim history between turns or stop early if a step stalls. If a
+provider rejects a request for context length, the loop compacts history and
+retries once before failing (set `inconclusiveOnOverflow: true` for
+assertion loops that should end as inconclusive instead). `guard()` blocks
+new tool calls once the step is wrapping up and surfaces errors back to the
+model as text. Actions run through `ctx.actions` are authorized, budgeted,
+and recorded so they work with the [replay cache](/cache) across any engine
+that supports them.
 
 To keep the built-in actions beside your own tools, spread
 `createGrammarTools(ctx, { guard })` into the toolset. It returns the
@@ -163,7 +156,7 @@ export default {
 | `ctx.ledger` | The completed steps of the test |
 | `ctx.attempt` | Test and attempt ids, the test's `titlePath` (empty outside `e2e run`), retry index, abort signal, and a `memory` map that is never reported |
 | `ctx.budgets` | Accounting for custom tools (`runTool`) and model calls (`recordModelCall`) |
-| `ctx.attachTranscript(text)` | Under `--debug`, attaches the model transcript as a `log` artifact. Call it one time, at the end |
+| `ctx.attachTranscript(text)` | Under `--debug`, attaches the model transcript as a `log` artifact. Call it once, at the end |
 | `ctx.attachTurns(turns)` | Keeps a clipped record of the model turns (`{ index, calls, outcome }`) on the step. The report shows the last ones under a failed step |
 | `ctx.attachScreenshot(pixels, label)` | Keeps observed pixels as a `screenshot` artifact of the step and resolves with its report id |
 

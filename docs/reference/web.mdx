@@ -74,7 +74,7 @@ web({ viewport: { width: 390, height: 844 }, locale: 'de-DE' });
 
 | Throws | When |
 | --- | --- |
-| `INVALID_CONFIG` | An option `web()` does not take (`url` or any other app key included), or an unknown key inside `connect` or `basicAuth`. The message names the nearest known key for a likely typo (`viewprt` is `viewport`), else every key. |
+| `INVALID_CONFIG` | An option `web()` does not take (`url` or any other app key included), or an unknown key inside `connect` or `basicAuth`. The message names the nearest known key for a likely typo (`viewprt` is `viewport`), or lists every key. |
 | `INVALID_CONFIG` | A browser provider, `connect`, `headers`, or `basicAuth` on a target whose [`app.url` is a file](/reference/config#a-file-as-the-app). |
 | `INVALID_CONFIG` | `headers`, `basicAuth`, `userAgent`, `locale`, `timezoneId`, or `deviceScaleFactor` on a [persistent context](#recovering-a-cdp-transport) (`connect.reconnectEndpoint`, or a provider with `scope: 'attempt'`). |
 
@@ -270,7 +270,7 @@ What survives:
 
 A `browser` provider with `scope: 'attempt'` rides the same persistent
 context, with the same limits. The lease's `cdpEndpoint` provisions the
-attempt's browser, and its `reconnectEndpoint` (else `cdpEndpoint` again)
+attempt's browser, and its `reconnectEndpoint` (or `cdpEndpoint` again)
 reconnects to it. A lease is fresh by the provider's contract, so the engine
 does not compare its context with earlier attempts'. A hosted service may
 restore browsers from one snapshot, which gives new browsers the same
@@ -730,7 +730,7 @@ const title = await browser.evaluate<string>('document.title');
   not close over anything outside its own body. Helpers declared inside the
   body work. Pass outside values through `arg`.
 - A string is evaluated as a single expression, not as statements. If it
-  evaluates to a function, that function is called with `arg`. Else its
+  evaluates to a function, that function is called with `arg`; otherwise its
   value is the result.
 - A promise, from either, is awaited.
 

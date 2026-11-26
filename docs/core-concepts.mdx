@@ -5,15 +5,16 @@ description: Goals, assertions, and locators, and how to structure and run tests
 "twitter:image": "https://e2e.com/docs/images/og/core-concepts.png?v=e4829aef06"
 ---
 
-A test mixes three types of step:
+A test mixes three kinds of steps:
 
-| Step | API | Model call |
+| Step | API | Calls a model? |
 | --- | --- | --- |
-| [Goal](#goals) | `agent.act` | Yes, unless the [cache](/cache) replays it |
+| [Goal](#goals) | `agent.act` | Yes, unless replayed from [cache](/cache) |
 | [Assertion](#assertions) | `agent.assert`, `agent.waitFor`, `agent.extract` | Yes |
 | [Locator](#locators) | `screen` and `expect` | No |
 
-With a [custom executor](/executors), `act` and `assert` need no model.
+If you use a [custom executor](/executors), `act` and `assert` don't need an
+LLM either.
 
 ```ts title="tests/todos.e2e.ts"
 import { describe, test, expect } from 'e2e';
@@ -33,38 +34,33 @@ describe('todos', () => {
 });
 ```
 
-Each test checks one behavior with one goal. Arrange the starting state,
-act toward that goal, then assert the result.
+Each test checks one behavior with one goal: set up the starting state, act
+toward that goal, then assert the result.
 
-Name repeated locators and values with `const`. Share setup with a hook or
-fixture. Use a small function for a shared action, or a
-[page object](/page-object-model) when several tests drive the same screen.
-Keep the outcome checks visible in the test.
+Name repeated locators and values with `const`, share setup with a hook or
+fixture, and use a small helper or [page object](/page-object-model) when
+several tests drive the same screen, keeping outcome checks visible in the
+test. Keep short, single-use instructions inline (or name long ones with a
+local `const`), and share recurring instructions in a TypeScript module with
+`params` for test data.
 
-Keep short, single-use `agent.act` and `agent.assert` instructions inline.
-Name a long instruction with a local `const` when that makes the test
-easier to read. Share instructions with the same meaning in a feature's
-TypeScript module and pass test data in `params`. Use JSON when an existing
-data-driven tool needs it.
-
-Await each agent call, screen call, and `expect.poll`. If a test returns
-while a step still runs, the test fails with `STEP_NOT_AWAITED`.
+Always `await` every `agent`, `screen`, and `expect.poll` call. If a test
+exits with a step still running, e2e fails it.
 
 ## Goals
 
-`agent.act` takes an instruction and performs the actions it needs. Give
-it the steps that lead to the test's goal. Use the screen's field and button
-names and specify the order when it matters. For example, completing
-checkout can mean filling a shipping form, choosing a delivery option,
-and placing the order.
+`agent.act` takes a natural-language instruction, performs the interactions
+needed to reach the goal, and throws if it can't. Use the field and button
+names shown on screen and specify the order when it matters (for example,
+filling shipping info, picking a delivery option, and placing the order).
 
 Start with one call for the behavior under test. Split at a meaningful
 transition when the next step needs a known state (such as the payment
 page of a long checkout), when a long flow risks `maxSteps` or
 `maxModelCalls` budgets, or when a middle failure needs its own step
 boundary. Explain why the split is needed and wait for the intermediate
-screen state before continuing. Each call has its own [budgets](/reference/agent#budgets) and
-can replay from its own recording.
+screen state before continuing. Each call has its own
+[budgets](/reference/agent#budgets) and can replay from its own recording.
 
 ```ts title="Complete one checkout across two screens"
 test('places an order with a saved card', async ({ app, agent, screen }) => {
@@ -81,15 +77,17 @@ test('places an order with a saved card', async ({ app, agent, screen }) => {
 });
 ```
 
-- When setup uses `agent.act`, end the arrange block with a wait for
-  the starting state. Check the test's outcome in the assert block.
-- A later passing wait or check confirms an action for the
-  [replay cache](/cache#when-a-recording-is-written).
-- Use the words that the screen shows.
-- Give test data in `params`. For a password, give a `Secret`. The model
-  never gets its value as text. See [Authentication](/authentication).
-- For a value that changes on each run, use `unique()` so the
-  [cache can replay the step](/cache#what-must-match):
+- **Wait after setup, assert at the end.** When setup uses `agent.act`, end
+  setup with a wait for the starting state, and check the final outcome in
+  the assert block. Any later passing wait or check confirms earlier goals
+  for the [replay cache](/cache#when-a-recording-is-written).
+- **Match the UI's wording.** Use the labels and terms that actually appear
+  on screen.
+- **Pass data in `params`.** For passwords or tokens, pass a `Secret` handle
+  so the model never sees the plaintext value. See
+  [Authentication](/authentication).
+- **Wrap dynamic values in `unique()`.** Timestamps or fresh emails change on
+  every run; wrapping them lets the [cache still replay](/cache#what-must-match):
 
 ```ts
 import { unique } from 'e2e';
@@ -98,25 +96,24 @@ const email = `ada+${Date.now()}@example.test`;
 await agent.act('sign up with email {email}', { params: { email: unique(email) } });
 ```
 
-`act` gets screenshots when it needs them. On some engines, it can tap and
-type at points in the image.
-
-If a goal fails, read the report and make the instruction more specific.
-Put words that many goals use in the agent's [`context`](/agents).
+`agent.act` automatically grabs screenshots when the text tree isn't enough,
+and on supported engines it can tap or type by coordinates. If a goal fails,
+tighten the instruction or move shared domain terminology into the agent's
+[`context`](/agents).
 
 ## Assertions
 
-An assertion judges the screen. The model sees the statement, a redacted
-text snapshot of the current screen, its location, and the agent's context. It does not
-see the earlier steps or the summaries of `act`.
+Agent assertions inspect the current screen independently. The model sees
+your statement, a redacted snapshot of the screen, the current URL or
+location, and the agent's `context`, not earlier steps or `agent.act`
+summaries.
 
-- `agent.assert` examines the screen now. A false statement fails with
-  `ASSERTION_FAILED`. When the evidence is not enough, it fails with
-  `ASSERTION_INCONCLUSIVE`.
-- `agent.waitFor` waits until a condition is true. It calls the model only
-  when the screen or its location changes.
-- `agent.extract` reads data from the screen into a
-  [Standard Schema](https://standardschema.dev) type, for example Zod.
+- **`agent.assert`** checks the screen right now and fails if the statement
+  is false or there isn't enough evidence.
+- **`agent.waitFor`** waits until a condition becomes true, calling the model
+  only when the screen or location changes.
+- **`agent.extract`** pulls structured data from the screen into any
+  [Standard Schema](https://standardschema.dev) type like Zod.
 
 ```ts
 import { expect } from 'e2e';
@@ -132,17 +129,17 @@ const data = await agent.extract('every todo title', {
 expect(data.titles).toContain('Buy milk');
 ```
 
-For text that the model wrote, examine the meaning, not the full sentence.
-When the exact text is important, use a [locator](#locators).
+When checking text generated by the model, assert on meaning rather than
+exact wording. When exact wording matters, use a [locator](#locators).
 
-For a visual check, such as a chart or a layout, add `vision: true`. To
-judge only the screenshot, use `vision: 'only'`. Images add input tokens.
-See the [agent reference](/reference/agent#vision).
+For visual checks like charts or layout alignment, pass `vision: true` (or
+`vision: 'only'` to judge the screenshot alone). Keep in mind that images add
+input tokens. See [vision options](/reference/agent#vision).
 
 ## Locators
 
-A locator finds a known control, with no model call. Use one when you know
-the exact action or the exact value.
+Locators target known controls directly with no model call. Use them whenever
+you know the exact interaction or value you want to check.
 
 ```ts
 // Role and name first, label second, test ID last.
@@ -161,11 +158,10 @@ await screen.getByRole('image', 'Seat map').tap({ position: { x: 120, y: 48 } })
 await expect(screen.getByRole('status')).toHaveText('2 remaining');
 ```
 
-- An action, a read, or a single-node assertion fails when its query finds
-  more than one node. Use `.filter()`, `.first()`, or `.nth()` to find one
-  node.
-- A direct read, such as `textContent()`, waits for its match, then reads once
-  and does not retry for a value.
+- Single-element actions and assertions fail if a locator matches more than
+  one control. Narrow it with `.filter()`, `.first()`, or `.nth()`.
+- Direct reads like `textContent()` wait for the element to appear, then read
+  it once without retrying for a specific value.
 
 See the [screen reference](/reference/screen) and the
 [expect reference](/reference/expect#locator-matchers). For routes, cookies,
@@ -190,19 +186,20 @@ test('needs two organizations', async ({ app }) => {
 });
 ```
 
-- Each test runs in its own attempt. Start it near the screen it checks, so
-  every run skips the clicks that lead there. Create its data in fixtures
-  or hooks. In a browser, restore a [saved session](/authentication) and
-  open the screen by its path. On a device, open a
-  [deep link](/mobile#the-device-fixture).
-- `test.skip(condition, reason)` stops the test as `skipped` when the
-  condition is true.
-- For a flow across many tests, set `{ serial: true }` on the group. The
-  tests run in sequence on one worker and retry together.
-- For setup and cleanup, use `test.extend`. See
+- **Start near the screen you're testing.** Each test runs in its own
+  attempt, so skip repetitive navigation by creating data in fixtures,
+  restoring a [saved session](/authentication), opening a direct URL, or
+  using a mobile [deep link](/mobile#the-device-fixture). (Browsers start a
+  fresh context per attempt; mobile devices keep app state until you call
+  `app.open()` or `app.clearState()`.)
+- **Skip conditionally** with `test.skip(condition, reason)`.
+- **Chain dependent tests** with `{ serial: true }` on a `describe` block so
+  they run in order on one worker and retry together.
+- **Share setup and cleanup** with `test.extend`. See
   [Writing fixtures](/fixtures).
-- Import `test` from `@e2e-dev/web`, `@e2e-dev/mobile`, or
-  `@e2e-dev/desktop` to type the `browser`, `device`, or `desktop` fixture.
+- **Get typed platform fixtures** by importing `test` from `@e2e-dev/web`,
+  `@e2e-dev/mobile`, or `@e2e-dev/desktop` for `browser`, `device`, or
+  `desktop`.
 
 The [test reference](/reference/test) shows all options.
 

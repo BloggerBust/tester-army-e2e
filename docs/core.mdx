@@ -34,14 +34,14 @@ bun add @e2e-dev/core @e2e-dev/web
 
 </CodeGroup>
 
-Install `@e2e-dev/mobile` instead of, or beside, `@e2e-dev/web` to drive a
-device. `@e2e-dev/core` needs no `e2e`, the test runner, which is built on it.
-It needs Node.js 22.22.3 or later on 22.x, or 24.8 or later.
+Install `@e2e-dev/mobile` instead of (or alongside) `@e2e-dev/web` to drive
+mobile devices. `@e2e-dev/core` doesn't need the `e2e` test runner installed,
+and runs on Node.js 22.22.3+ or 24.8+.
 
 <Note>
-Import an engine from its `/engine` entry, as the examples do. The main entry
-also runs without `e2e`, but its `test` throws `RUNNER_NOT_INSTALLED`, and its
-types need `e2e` unless `skipLibCheck` is on.
+Always import engines from their `/engine` subpath (like
+`@e2e-dev/web/engine`). The root entry exports a `test` fixture that requires
+the full `e2e` package.
 </Note>
 
 ## Drive a browser
@@ -86,13 +86,13 @@ try {
 
 | Rule | Behavior |
 | --- | --- |
-| Ownership | Each `launch` takes its own engine instance: `launch(web())`. A second host on the same instance fails with `WORKER_PROTOCOL`. |
-| Sessions | One session at a time on a host. Close it before `newSession()`. For parallel work, launch more hosts. |
-| Devices | A `mobile()` host drives a device under an agent-device session of its own. See [Several hosts on devices](#several-hosts-on-devices). |
-| Timeouts | An action, a wait, or a read gets 30000 ms. `app.open()` and `app.restart()` get 120000 ms. `launch({ timeout })` or `session.setDefaultTimeout(ms)` sets one value for all of them. There is no session deadline. |
-| Cancellation | `launch({ signal })` and `newSession({ signal })` stop what is running. |
-| Ctrl-C | The host closes on SIGINT, SIGTERM, and SIGHUP, so its browser or device session does not stay behind. Then the program ends by the signal, unless it listens for the signal itself. Turn it off with `handleSignals: false`. |
-| Files | Screenshots and downloads go to a temp directory that is deleted when the host closes. Set `artifactsDir` to keep them. |
+| Ownership | Pass a fresh engine instance to each `launch(web())` call; reusing one fails. |
+| Sessions | One active session per host at a time. Close it before calling `newSession()`, or launch another host for parallel work. |
+| Devices | Each `mobile()` host claims its own device session. See [Several hosts on devices](#several-hosts-on-devices). |
+| Timeouts | Actions, waits, and reads default to 30s; `app.open()` and `app.restart()` default to 120s. Override with `launch({ timeout })` or `session.setDefaultTimeout(ms)`. |
+| Cancellation | Pass an `AbortSignal` to `launch({ signal })` or `newSession({ signal })`. |
+| Ctrl-C | Hosts close cleanly on SIGINT, SIGTERM, and SIGHUP so browsers and devices don't linger. Disable with `handleSignals: false`. |
+| Files | Screenshots and downloads go to a temp folder that's deleted on `close()`. Pass `artifactsDir` to keep them. |
 
 The [reference](/reference/core) lists every option.
 
@@ -167,9 +167,8 @@ Tap its `Open` button when it shows:
 ## Keep a signed-in state
 
 `session.saveState()` captures a browser session's cookies and storage in
-memory. Close that session, then start another from the state with
-`newSession({ state })`. The mobile engine has no state to capture, so there
-it fails with `UNSUPPORTED_CAPABILITY`.
+memory so you can pass it to `newSession({ state })` after closing the first
+session. (Not supported on mobile devices.)
 
 ```ts
 const state = await session.saveState();
@@ -189,10 +188,10 @@ const bytes = await state.export({ key }); // write these to disk
 const restored = await SessionState.import(bytes, { key });
 ```
 
-A state restores only on a host of the same engine, platform, and app. Another
-is `SESSION_MISMATCH`. Two addresses of one app, such as `localhost` and
-`127.0.0.1`, are two apps unless both hosts set the same `app.identity`. A
-wrong key or a changed byte is `SESSION_INVALID`.
+Saved state only restores on a host using the same engine, platform, and
+app (set matching `app.identity` values if addresses like `localhost` and
+`127.0.0.1` differ). A mismatched host, wrong key, or tampered bytes will
+fail to restore.
 
 ## Pass secrets
 
@@ -287,38 +286,30 @@ if (order.total <= 39_000) {
 }
 ```
 
-`createAgent` takes the options of an [`agents` entry](/reference/config#agents),
-such as `model`, `judge`, `maxSteps`, and `context`, plus `cache`.
-There is no default model: an agent without one fails its first call with
-`MODEL_UNAVAILABLE`. An `act` step has its own timeout, 120000 ms: set it per
-call with `timeout`.
+`createAgent` accepts the same options as an [`agents` entry](/reference/config#agents)
+(`model`, `judge`, `maxSteps`, `context`), plus `cache`. There's no default
+model, so always pass one. `agent.act` defaults to a 120s timeout (override
+per call with `timeout`).
 
 ### Replay recorded steps
 
-With `cache`, `act` records each flow and replays it on the next run with no
-model call. Every `act` then names its recording with `cacheKey`, or runs live
-with `cache: false`. An `act` without one fails with `INVALID_ARGUMENT`, and
-TypeScript refuses it when the `cache` option is written in the `createAgent`
-call.
+Pass `cache` to record passing `agent.act` steps and replay them on future
+runs with zero model calls. Every `act` call must then specify either a
+`cacheKey` or `cache: false`. Entries are keyed by `cacheKey`, instruction,
+params, app, and how many times the session made that call.
 
-A recording is keyed by the `cacheKey`, the instruction, its params, the app,
-and how many times the session made the same call. Pass a value that changes
-between runs as a param: a value the agent reads off the screen is decided by
-the model again on each run.
-
-A recording is saved when the session closes, or its host does, and only when
-a check passed after the step, such as `locator.waitFor()`, `agent.assert`,
-or `agent.waitFor`. When an agent step fails, the recordings not yet confirmed
-at that moment are dropped. A failure of your own code's locator call, such
-as a `waitFor` that ran out, drops nothing. Read [Replay cache](/cache) for
-how a replay checks the screen and hands off to the model.
+Recordings are saved when the session or host closes, as long as a check
+like `locator.waitFor()`, `agent.assert()`, or `agent.waitFor()` passed
+after the step. A failed agent step drops unconfirmed recordings, while a
+failure in your own locator code (like a timed-out `waitFor`) drops nothing.
+See [Caching](/cache) for how replay and self-healing work.
 
 | Option | Default | Meaning |
 | --- | --- | --- |
-| `dir` | `.e2e/cache` | The directory, from the `launch` `cwd`. |
-| `mode` | `read-write` | `read-only` replays and never writes. |
-| `strict` | `false` | A recording that no longer replays fails with `REPLAY_STALE`. |
-| `store` | - | A custom [`CacheStore`](/cache) in place of the files. |
+| `dir` | `.e2e/cache` | Cache directory (relative to `launch`'s `cwd`). |
+| `mode` | `read-write` | Set `read-only` to replay without writing. |
+| `strict` | `false` | Fail on stale recordings instead of falling back to the model. |
+| `store` | - | Custom [`CacheStore`](/cache) instead of local files. |
 
 ## Open a host inside a test
 

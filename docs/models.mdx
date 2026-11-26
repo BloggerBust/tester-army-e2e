@@ -107,9 +107,9 @@ Gateways usually use `provider/model` IDs. Direct providers use their own.
 
 ### Vercel OIDC instead of a key
 
-Without `AI_GATEWAY_API_KEY`, `gateway()` signs in with a short-lived Vercel
-OIDC token, which it refreshes. Sign in to the Vercel CLI and link the
-project one time:
+If `AI_GATEWAY_API_KEY` isn't set, `gateway()` authenticates with a
+short-lived Vercel OIDC token and refreshes it automatically. Sign in to the
+Vercel CLI and link your project once:
 
 <CodeGroup>
 ```bash npm
@@ -131,11 +131,10 @@ bunx e2e run
 ```
 </CodeGroup>
 
-The gateway uses a valid `VERCEL_OIDC_TOKEN`. Else it gets a token for the
-project in `.vercel/project.json`, found from the working directory upward.
-e2e loads no `.env` file, so a token from `npx vercel env pull` works only
-when your shell exports it, or when the config loads the file with
-[`process.loadEnvFile()`](/reference/config#loading).
+The gateway uses `VERCEL_OIDC_TOKEN` if it's valid; otherwise it requests a
+token for the project in `.vercel/project.json`. e2e doesn't load `.env`
+files on its own, so export the token in your shell or call
+[`process.loadEnvFile()`](/reference/config#loading) in `e2e.config.ts`.
 
 ## AI SDK providers
 
@@ -239,14 +238,11 @@ model. For Clef or Jev, use the [decision executor](/decision-models). See
 
 ## Data retention and compliance
 
-Model input is the redacted screen, the step instruction, and the
-screenshots the agent asks for. e2e reads nothing back from the provider
-after a response, so a run needs no state stored by the provider.
-
-Every model request names e2e: a `User-Agent` that starts with
-`e2e/<version> (<platform>; <arch>)`, plus `HTTP-Referer:
-https://tester.army/e2e` and `X-Title: e2e` for Vercel AI Gateway and
-OpenRouter. They replace the same headers set on the provider instance.
+e2e sends the redacted screen, the step instruction, and any requested
+screenshots to your model provider, and never depends on server-side
+conversation storage. Every request sends an `e2e/<version>` `User-Agent`
+(plus `HTTP-Referer` and `X-Title` headers for Vercel AI Gateway and
+OpenRouter).
 
 <AccordionGroup>
 <Accordion title="OpenAI and Azure OpenAI: zero data retention">

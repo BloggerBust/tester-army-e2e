@@ -116,8 +116,8 @@ open_session {target: "web", headed: true}
 
 | Input | Type | Required | Does |
 | --- | --- | --- | --- |
-| `target` | string | no | The target to open. Otherwise `--target`, else the only target. |
-| `config` | string (path) | no | The config for this session, absolute or relative to the server's working directory (`cwd` in the client's MCP config). Otherwise `--config`, else discovered like `e2e run`. |
+| `target` | string | no | The target to open. Falls back to `--target`, then the sole target. |
+| `config` | string (path) | no | The config for this session, absolute or relative to the server's working directory (`cwd` in the client's MCP config). Falls back to `--config`, then normal `e2e run` discovery. |
 | `headed` | boolean | no | `true` shows this session's browser or simulator, `false` hides it. Without it the session follows `--headed`. |
 | `path` | string | no | Where on the app URL to open instead of its root, such as `/settings/members`. The first observation is that page. Not with `test`. |
 | `test` | string | no | One test to run first, named like an `e2e run` positional. The session stops where the test stopped. See [Running a test](#running-a-test). |
@@ -365,7 +365,7 @@ Test line: await screen.getByRole("button", "Sign in").tap();
   moved together.
 - A control with no name, label, placeholder, text, or test id is found by
   its role: alone when it is the only one (`getByRole("spinbutton")`, with
-  a comment), else narrowed like twins.
+  a comment), otherwise narrowed like twins.
 - At most 10 locators are tried per target. On a device each try reads the
   whole screen.
 - When nothing reaches the target alone, the result says `No test line:`

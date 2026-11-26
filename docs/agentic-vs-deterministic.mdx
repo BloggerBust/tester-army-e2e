@@ -3,13 +3,12 @@ title: Agentic or deterministic
 description: Choose agentic or deterministic actions and assertions for your end-to-end tests.
 ---
 
-Agentic testing lets you describe a user's intention and the expected
-result in natural language. The agent can choose the actions to perform
-and judge whether the screen meets your expectations. Your test focuses
-on the outcome, with no selectors to maintain as the UI changes.
+Agentic testing lets you describe what a user wants to do and what the screen
+should show in natural language. The agent picks the actions and checks the
+outcome, so you don't spend time maintaining selectors when the UI changes.
 
-Deterministic testing specifies the actions and checks in code. Both
-approaches can test user outcomes, and e2e lets you mix them in one test.
+Deterministic testing spells out every interaction and assertion in code.
+Both test user outcomes, and e2e lets you mix them freely in the same test.
 
 ## When to use agentic tests?
 
@@ -108,12 +107,11 @@ result you didn't intend. If a specific path matters, name it in the goal
 or use locators for those actions. An `expect` after `agent.act` catches
 a goal that passed the wrong way.
 
-Model-driven actions and assertions add latency and cost, and can make
-mistakes. The [replay cache](/cache) can repeat recorded `agent.act`
-actions without model calls. Assertions run again on every test run.
-When a recording no longer matches, the agent can adapt to the changed
-UI unless strict cache mode is enabled. See
-[Self-healing tests](/self-healing) for how this works.
+Model calls add latency, cost, and occasional mistakes. The
+[replay cache](/cache) solves most of that by replaying recorded `agent.act`
+actions with zero model calls, while assertions always run live. When the UI
+changes and a recording no longer matches, the agent steps in to adapt unless
+you enable strict cache mode. See [Self-healing tests](/self-healing).
 
 ## Next
 

@@ -70,11 +70,11 @@ Take the screenshots on the machine that renders them in CI: a Linux
 runner for the web and Android, a macOS runner with the same simulator for
 iOS.
 
-Without `--update-snapshots`, a CI run never writes into the project. A
-missing screenshot fails the test, and the run saves it in the test's
-results at `snapshots/<path in the project>` for you to download and
-commit. To write all of them at one time, run `--update-snapshots` in a job
-like the test job:
+Without `--update-snapshots`, CI never writes into your repo. A missing
+snapshot fails the test and saves the new image under
+`.e2e/results/.../snapshots/` so you can download and commit it. To
+regenerate all baselines at once, add a manual workflow with
+`--update-snapshots`:
 
 ```yaml title=".github/workflows/screenshots.yml"
 name: Update screenshots
@@ -134,9 +134,9 @@ On the web, e2e stops animations and hides the text caret. On iOS and
 Android, it holds the status bar fixed, so the clock and battery match on
 every run.
 
-e2e masks secure fields in every screenshot, after a secret fill too. The
-matcher fails with `POLICY_DENIED` when the engine can't prove every secure
-field on screen is masked.
+e2e masks secure fields in every screenshot, even after filling a secret. If
+the engine can't guarantee every secure field is masked, the assertion fails
+instead of saving an unmasked image.
 
 ## Next
 

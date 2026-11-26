@@ -36,8 +36,8 @@ in your app's directory:
 
 </SetupPrompt>
 
-The agent installs the [e2e skill](/coding-agents), so later prompts such as
-"add a test for checkout" need no more setup.
+The agent installs the [e2e skill](/coding-agents), so future prompts like
+"add a test for checkout" need no extra setup.
 
 <Note>
 Use Node.js 24.8 or newer (22.22.3 or newer on Node.js 22), or [Bun](/reference/cli#bun) 1.4.3 or newer for web tests. On Windows, run inside WSL. Mobile tests also
@@ -151,9 +151,9 @@ test('Settings opens', async ({ app, screen }) => {
   ```
   </CodeGroup>
 
-  e2e downloads a browser or boots the simulator or emulator, checks that
-  the app opens, and prints the result. The example makes no model calls,
-  so it needs no sign-in or API key.
+  e2e downloads a browser (or boots your simulator/emulator), checks that
+  the app opens, and prints the result. The example doesn't call a model, so
+  you don't need a login or API key yet.
   </Step>
 </Steps>
 
@@ -235,14 +235,14 @@ test('the agent opens General', async ({ agent, app, device }) => {
 });
 ```
 
-  `app.open()` launches the app fresh. Without it, a test starts where the
-  previous one left the device. `device.locator` takes
+  `app.open()` launches the app fresh so each test starts cleanly instead of
+  picking up where the previous one left off. `device.locator` accepts
   [agent-device selectors](/mobile#the-device-fixture).
   </Tab>
 </Tabs>
 
-`params` fill the goal's placeholders. `agent.assert` judges the screen.
-`expect` checks an exact value.
+`params` fill placeholders in the goal, `agent.assert` checks the screen with
+the model, and `expect` checks an exact value.
 
 <CodeGroup>
 ```bash npm
@@ -258,14 +258,14 @@ bunx e2e run tests/agent.e2e.ts
 ```
 </CodeGroup>
 
-If you chose **Skip for now** in the wizard, [add a model](/models) first. Add
-`--headed` to watch a web test. Add `--no-cache` to call the model instead of
-replaying cached actions.
+If you picked **Skip for now** in the wizard, [add a model](/models) first.
+Pass `--headed` to watch a web test run, or `--no-cache` to call the model
+instead of replaying cached actions.
 
 ### Configure the project
 
-`e2e.config.ts` holds the options. These are the ones most projects change
-after `init`:
+`e2e.config.ts` holds your project settings. Most projects tweak a few of
+these after `init`:
 
 | To | Set | See |
 | --- | --- | --- |

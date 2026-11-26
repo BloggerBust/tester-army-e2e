@@ -82,8 +82,8 @@ test for what it covers, not for the verdict you expect.
 
 ## Pick an agent per run
 
-`--agent` chooses the agent for tests that don't select one. Several names
-run each test one time per agent:
+`--agent` picks which agent runs for tests that don't pin one. Pass a
+comma-separated list to run every test once per agent:
 
 <CodeGroup>
 ```bash npm
@@ -127,9 +127,9 @@ describe('checkout as a first-time buyer', { agent: 'buyer' }, () => {
 });
 ```
 
-`--agent` doesn't replace an agent that a test selects. An unknown agent on
-a test or group fails during collection. An unknown agent on a call raises
-`INVALID_ARGUMENT`. Reports record the agent of each step.
+`--agent` won't override an agent pinned in a test. An unknown agent name
+fails collection on a test or group, and fails the step when passed on a
+call. Reports record which agent ran each step.
 
 ## One flow, several personas
 
@@ -139,7 +139,7 @@ a test or group fails during collection. An unknown agent on a call raises
   Four personas, one per language, run the same localization suite.
 </Video>
 
-Select several agents to run the same test one time with each:
+Pass an array of agents to run the same test once with each persona:
 
 ```ts title="tests/checkout.e2e.ts"
 import { describe, test } from 'e2e';

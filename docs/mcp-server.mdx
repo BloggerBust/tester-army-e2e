@@ -19,16 +19,19 @@ acts on it, and checks its work.
 | Fix a failing test | Clicks through the flow again | Runs the test and stops on the failure |
 | Show a change in a PR | Describes it | Records a video |
 
-The server needs no model. A test it runs needs one only for an agent
-step with no recording.
+The MCP server itself doesn't need a model. You only need one if you run a
+test with an uncached agent step.
 
 ## Set it up
 
-The [e2e plugin](/coding-agents) for Codex and Cursor includes the server as `npx -y e2e@<version> mcp`. It runs the plugin's e2e release even when the project has another one installed.
-In Claude Code, or without the plugin, register it in the project. `e2e init` offers to register the server in `.mcp.json` (Claude Code),
-`.cursor/mcp.json` (Cursor), and `.codex/config.toml` (Codex). Install the
-project dependencies and start the MCP client in the project directory so
-`npx` (`bunx` in a Bun project) uses the installed e2e version. By hand:
+The [e2e plugin](/coding-agents) for Codex and Cursor includes the server
+as `npx -y e2e@<version> mcp`, running the plugin's e2e release even when
+the project has another version installed. In Claude Code (or without the
+plugin), register it in your project. `e2e init` can write the config for
+`.mcp.json` (Claude Code), `.cursor/mcp.json` (Cursor), and
+`.codex/config.toml` (Codex). Install your project dependencies and launch
+your MCP client in the project directory so `npx` (or `bunx`) picks up the
+installed `e2e` version. To set it up by hand:
 
 <Tabs>
   <Tab title="Claude Code">
@@ -84,22 +87,21 @@ project dependencies and start the MCP client in the project directory so
   </Tab>
 </Tabs>
 
-A session starts the target's app command, if it has one, and names it
-with its URL and port. The config reads the server's environment, not the
-agent's shell.
+If your target defines an `app.command`, the session starts your app and
+prints its URL and port. The config reads the MCP server's environment, not
+your agent's shell.
 
 ## Try it without a config
 
-In a directory with no e2e config file, the agent names the engine when it
-opens a session:
+If the directory doesn't have an `e2e.config.ts` yet, the agent can still
+open a session by naming the engine directly:
 
 ```txt
 open_session {engine: "@e2e-dev/web", app: {url: "http://localhost:3000"}}
 ```
 
-`e2e run` still needs a config. For engine options, device providers, and
-installing an engine, see
-[Without a config](/reference/mcp#without-a-config).
+`e2e run` still requires a config file. For engine options, device providers,
+and installing engines, see [Without a config](/reference/mcp#without-a-config).
 
 ## Ask the agent
 
@@ -191,24 +193,24 @@ limits.
 
 ## Run tests next to a session
 
-A session writes no test results, and only a test it runs with
-`open_session {test}` uses the replay cache. The agent runs suites with
-`e2e run` and, when a run can go beside the session, keeps the session
-open between runs. After a failed run, it goes to the failing screen in
-that session instead of opening a new one.
+An interactive session doesn't write test reports, and only tests launched
+via `open_session {test}` use the replay cache. Your agent can keep a session
+open while running suites with `e2e run` and jump straight to any failing
+screen afterward.
 
-On web, a run next to a session depends on the target's `app`:
+On web, whether `e2e run` can run alongside an open session depends on your
+`app` config:
 
-| Target's `app` | A run while a session is open |
+| Target's `app` | Running `e2e run` while a session is open |
 | --- | --- |
-| No `command` | Both use the app you started. |
-| `url` on port [`0`](/web#let-the-runner-pick-the-port) | Each starts its own copy of the app. A dev server that runs one copy per directory, such as `next dev`, fails the run. |
-| `command` with [`reuseExisting: true`](/web#starting-your-app) | The run uses the app the session started. When the session closes, also during a run, that app stops. |
-| `command` on a fixed port, without `reuseExisting` | Fails with `APP_ALREADY_RUNNING`. |
+| No `command` | Both share the server you started yourself. |
+| `url` on port [`0`](/web#let-the-runner-pick-the-port) | Each starts its own server instance (note that servers like `next dev` don't allow two instances in the same directory). |
+| `command` with [`reuseExisting: true`](/web#starting-your-app) | The test run reuses the session's server. Closing the session stops that server. |
+| `command` on a fixed port without `reuseExisting` | Fails because the port is already in use. |
 
-When `CI` is set, e2e ignores `reuseExisting`, and the run fails as on a
-fixed port. Close the session before a run that would fail. On mobile, run
-on a device no session uses.
+In CI, e2e ignores `reuseExisting`, so a fixed port behaves like the last
+row. Close the session before running tests if they would collide on the port
+or mobile device.
 
 ## Run several agents
 

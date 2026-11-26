@@ -191,7 +191,7 @@ test.skipIf(process.platform === 'win32')('watches files', async ({ app }) => {}
 test.skipIf(process.env.CI)('opens the system dialog', async ({ app }) => {});
 ```
 
-- The condition is read one time, at the call, while the file is collected.
+- The condition is read once, at the call, while the file is collected.
   Use a value known then, such as `process.platform` or an environment
   variable. For a condition you learn at runtime, call
   [`test.skip(condition, reason)`](#test-skip) inside the body.
@@ -919,7 +919,7 @@ describe('reports', { parallel: true }, () => {
   top level. For every file, set
   [`fullyParallel`](/reference/config#fullyparallel).
 - Tests that run apart on the same worker share the state in the test
-  file: the worker imports the file one time for them. Tests on different
+  file: the worker imports the file once for them. Tests on different
   workers do not, so keep no state in the file that one test leaves for
   another. A `beforeAll` and its `afterAll` can run several times on that
   state, so create in `beforeAll` what `afterAll` closes.
@@ -933,9 +933,9 @@ describe('reports', { parallel: true }, () => {
 - `false` keeps a group inside a parallel scope in order on one worker.
 - Tests with a `beforeAll` or `afterAll` hook around them run in batches,
   at most as many as the target has workers, for each agent. Each batch
-  runs in order on one worker and runs the hooks one time, and again after
+  runs in order on one worker and runs the hooks once, and again after
   a failed test. A serial group or a `parallel: false` group runs the hooks
-  around it one time more.
+  around it one more time.
 - The repeats of a test (`--repeat-each`) run one after another on one
   worker, so the first records the replay cache and the rest replay it.
 - With one worker the tests run one at a time, and not always in
@@ -1077,7 +1077,7 @@ checked against that target's fixtures.
 | A function that does not destructure its first parameter, takes a rest or computed property there, or is a bound function | At import, `COLLECTION_ERROR` naming the fixture |
 | Fixtures that name each other in a cycle | At import, `COLLECTION_ERROR` naming the cycle |
 | A name that isn't a fixture on any target in the config, in a test that runs, its hooks, or a fixture they need | At collection, `COLLECTION_ERROR` |
-| A `scope` or an `auto` that differs from that of the [fixture it extends](#extending-a-fixture) | At import when it is the same on every engine, else at collection, `COLLECTION_ERROR` naming both |
+| A `scope` or an `auto` that differs from that of the [fixture it extends](#extending-a-fixture) | At import when it is the same on every engine, otherwise at collection, `COLLECTION_ERROR` naming both |
 | A fixture that names one a later `extend` declares | At collection, `COLLECTION_ERROR` |
 | A definition that returns without calling `use` | The attempt, in `beforeEach`, `TEST_SETUP_FAILED` |
 | A definition that calls `use` twice | The attempt, at teardown, `TEST_SETUP_FAILED` |
@@ -1202,7 +1202,7 @@ export const test = base.extend({
 - Its scope and `auto` come from its options, like any other fixture. Without
   options, it's a test fixture that's set up for code that names it, even if
   the fixture it extends is a worker fixture or `auto`.
-- To run a `device` override one time per worker and use it in `beforeAll`,
+- To run a `device` override once per worker and use it in `beforeAll`,
   pass `{ scope: 'worker' }`. Like any worker fixture, it can't use test
   fixtures, so it fails on a target where the fixture it extends is a test
   fixture, such as `app` on web.

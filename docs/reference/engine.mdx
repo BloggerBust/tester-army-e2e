@@ -1055,7 +1055,7 @@ async endAttempt(context) {
 
 #### `dispose`
 
-Runs one time per worker, including when `init` never ran.
+Runs once per worker, including when `init` never ran.
 
 Missing or aborted `context.reuseSignal` requires final cleanup. A live
 signal permits keeping run-owned resources for a replacement worker.

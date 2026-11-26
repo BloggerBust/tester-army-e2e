@@ -70,15 +70,12 @@ bundle id must be `bundleId`. `app.launchArguments` go to every launch. An
 object entry becomes `-name value`, as on iOS, so
 `{ AppleLanguages: ['fr'] }` opens the app in French.
 
-The app gets only these variables of the run's environment: `HOME`, `USER`,
-`LOGNAME`, `SHELL`, `PATH`, `TMPDIR`, `LANG`, `LC_*`, and
-`__CF_USER_TEXT_ENCODING`. Secrets, model keys, and CI tokens in the
-environment never reach it. The engine also sets `E2E_DESKTOP_LAUNCH`, a
-token it uses to find the copy it launched. macOS hides that token in its
-own apps and in a build signed with the `restrict` flag, so an `appPath` to
-one of them is refused. Launch such an app by its `bundleId`: agent-desktop
-then reports the process it started, and passes the app
-`AGENT_DESKTOP_HOME`, the worker's private agent-desktop directory.
+The launched app gets only a minimal environment (`HOME`, `USER`, `LOGNAME`,
+`SHELL`, `PATH`, `TMPDIR`, `LANG`, `LC_*`, `__CF_USER_TEXT_ENCODING`, plus
+`E2E_DESKTOP_LAUNCH` for process tracking, or `AGENT_DESKTOP_HOME` when
+launched by `bundleId`), so your secrets, model keys, and CI tokens never
+leak into it. Built-in macOS apps and builds signed with the `restrict` flag
+must be launched by `bundleId` rather than `appPath`.
 
 ```ts title="e2e.config.ts"
 import type { E2EConfig } from 'e2e';
@@ -144,27 +141,31 @@ the one `screen` reads (`desktop.useWindow(window)`), and quits the app
 
 | Area | On a desktop target |
 | --- | --- |
-| Input | The app runs in the background, and actions use the accessibility API, so your pointer, focus, and typing stay where they are. An app that opens no window in the background, such as a document-based one, fails to open; it needs `headed: true` or `--headed` |
-| Physical input | `doubleTap`, `hover`, `press`, point taps, and typing into whatever has focus need `desktop({ headed: true })`, which brings the app forward and uses the real pointer and keyboard. A floating window over a tapped point, such as another app's panel, gets the click |
-| Keys | agent-desktop sends a key only to the active window, which an app in the background never has. The engine never sends a key by the app's name, which could reach another copy of it. A key goes to a control only while that control has focus, in the window the app sends keys to. `press` takes the named keys, letters, digits, and ``, . / ; ' [ ] \ - = ` ``, and refuses any other character, such as `!` or `é`, before the control gets focus. It also refuses quit, log-out, and lock shortcuts such as `ControlOrMeta+q`; use `desktop.closeApp()` |
-| Select | `selectOption` takes an option's label, not an index. It refuses an editable combo box, which takes any text: `fill()` it instead. A pop-up button with no such option can leave its menu open. The engine closes it with Escape, which reaches the app only while its window is active, as `headed: true` makes it; otherwise the error says the menu is still open |
-| Windows | `screen` reads one window of the app: the one `desktop.useWindow()` picked, else the focused one, else the first visible one. Sheets are part of their window. The window's own Close, Minimize, and Zoom buttons are left out. A minimized window reads as hidden; one on another Space still reads as visible, so you can switch Spaces during a run |
-| Reading | Only an app with no window open reads as an empty screen. A window that cannot be read never does, so `not.toBeVisible()` cannot pass on it. A locator reads again until its timeout while the screen is locked, the window is closing, or the window is read only in part (deeper than `maxDepth` levels, or too slow to read), since its matches cannot be counted. `app.open()` on a locked screen fails and says so. A step on an app that quit fails. A field value agent-desktop could not read (over 64 KiB, or a failed read) reads as empty |
-| Menu bar | The app's menu bar cannot be read yet. Use a key shortcut with `press` and `headed: true` |
-| Web content | Text in a browser window, an Electron app, or a web view is not supported. Test web apps with `@e2e-dev/web` |
-| Workers | One per target, because its workers would share one screen. Two desktop targets run at the same time. With `headed: true` they would share the pointer and keyboard too, so set `workers: 1` in the config |
-| State | `app.clearState()` is not supported |
-| Secrets | A password field shows no value, and screenshots paint it black. One whose states agent-desktop could not read is not painted; it shows dots, not text |
+| Input | The app runs in the background using the macOS Accessibility API, so your mouse and keyboard stay free. Apps that don't open a window in the background (like document-based apps) need `headed: true` or `--headed`. |
+| Physical input | `doubleTap`, `hover`, `press`, coordinate taps, and focused typing require `desktop({ headed: true })`, which brings the app forward and uses real pointer/keyboard input. Watch out for floating windows overlapping the target area. |
+| Keys | `press` sends keys only to the focused control in an active window (`headed: true`). It supports named keys, letters, digits, and ``, . / ; ' [ ] \ - = ` `` (other characters like `!` or `é` are rejected), and blocks system shortcuts like `ControlOrMeta+q` (use `desktop.closeApp()` instead). |
+| Select | `selectOption` matches by option label, not index. For editable combo boxes, use `fill()` instead. |
+| Windows | `screen` reads the window picked with `desktop.useWindow()`, otherwise the focused window, otherwise the first visible window. Sheets are included; window chrome (Close/Minimize/Zoom) is excluded. Minimized windows read as hidden, while windows on another macOS Space stay readable. |
+| Reading | Only an app with no open windows reads as empty. If the screen is locked or the window tree is deeper than `maxDepth`, locators keep retrying until timeout instead of returning false negatives, and `app.open()` fails on a locked screen. |
+| Menu bar | The app's menu bar isn't readable yet; trigger menu items with a key shortcut (`press` + `headed: true`). |
+| Web content | Browser windows, Electron apps, and web views aren't supported. Use `@e2e-dev/web` for those. |
+| Workers | Limited to one worker per desktop target. If you run two desktop targets with `headed: true`, set `workers: 1` so they don't fight over the cursor and keyboard. |
+| State | `app.clearState()` isn't supported yet. |
+| Secrets | Password fields never expose their value and are painted black in screenshots (a field whose states can't be read isn't painted and shows dots instead). If a screenshot can't cover a readable password field, or the window exceeds `maxDepth`, it fails instead of saving. |
 
-A screenshot that cannot cover a password field is not saved, and fails with
-`POLICY_DENIED`, as does one of a window deeper than `maxDepth`, which can
-hide a password field. agent-desktop
-keeps the text of other fields in each worker's private state directory.
-When a worker exits, the engine removes that text. If the app could not be
-quit, the engine keeps a record of the launch for a later desktop run. That
-run quits the app when it can show that the process belongs to the launch:
-by the launch token, or by the process id and the time the process started.
-The next run also does this for a worker that was killed.
+Temporary accessibility state is cleaned up when the run exits, and if an
+app or worker gets killed mid-run, the next desktop run cleans up the
+leftover app process automatically.
+
+<Accordion title="Additional desktop edge cases">
+- **Unreadable windows:** a window that can't be read never reads as empty,
+  so `not.toBeVisible()` can't pass on it.
+- **Large field values:** a field value over 64 KiB, or one agent-desktop
+  couldn't read, reads as empty.
+- **Pop-up menus:** choosing a missing option in a pop-up button can leave
+  its menu open; e2e tries Escape to close it, which only reaches the app in
+  `headed: true` mode.
+</Accordion>
 
 ## Options
 

@@ -7,11 +7,11 @@ description: Sign in once, reuse the session across tests, and pass secrets with
 
 import { Video } from './snippets/video.jsx';
 
-A setup test signs in one time and saves a named session. Other tests
-restore that session and start signed in. Passwords and other secrets are
-handles: the runner types the value and shows `<secret:name>` in its place
-in model input and reports, with
-[some limits](/reference/security#where-redaction-stops).
+A setup test signs in once and saves a named session. Other tests restore
+that session so they start already signed in. Passwords and other secrets
+are opaque handles: e2e types the real value for you and shows
+`<secret:name>` everywhere else (with
+[a few limits](/reference/security#where-redaction-stops)).
 
 <Video>
   <video src="/images/authentication.mp4" aria-label="The config declares admin credentials, a setup test signs in and saves the admin session, and a headed run opens the customers page already signed in. 15 tests pass in 12 seconds." muted loop playsInline controls />
@@ -76,27 +76,27 @@ signed-in element before you save.
 
 ## Session rules
 
-| Rule | If you break it |
+| Rule | What happens if broken |
 | --- | --- |
-| Setup tests are top-level, never inside `describe` | collection error |
-| Exactly one setup declares a given session name | collection error |
-| Every name in `sessions` is saved by the body | `SESSION_CONTRACT` failure |
-| Only declared names are saved | `SESSION_CONTRACT` failure |
-| The target's engine saves and restores state | collection error, before any test runs; a hosted browser leased per attempt has none |
+| Define setup tests at the top level, never inside `describe` | Collection error |
+| Only one setup can declare a given session name | Collection error |
+| The setup body must save every name it declares | Session contract failure |
+| Don't save undeclared session names | Session contract failure |
+| The target engine must support saving/restoring state | Collection error before tests run (per-attempt cloud browsers can't save sessions) |
 
-When a setup fails, the runner skips its dependents with cause
-`setup-failed`. Other tests keep running.
+If a setup fails, any tests that depend on its session are skipped while
+independent tests keep running.
 
-On a browser target, a session holds cookies, local storage, and IndexedDB,
-not server or database state. A restore leaves no page open, so each test
-calls `app.open()` first.
-
-A session lasts one run. The runner encrypts it with a key held only in
-memory and deletes it at cleanup. See [Sessions](/reference/security#sessions).
+In browsers, a session captures cookies, localStorage, and IndexedDB (not
+server or database state). Restoring a session doesn't open a page, so still
+call `app.open()` at the start of each test. Sessions last one run, are
+encrypted on disk with a key held only in memory, and are deleted at
+cleanup. See [Sessions](/reference/security#sessions).
 
 ## Credentials
 
-Declare each account in config. Read the password from the environment:
+Declare test accounts in your config and read passwords from the
+environment:
 
 ```ts title="e2e.config.ts"
 import type { E2EConfig } from 'e2e';
@@ -113,10 +113,9 @@ export default {
 } satisfies E2EConfig;
 ```
 
-The config load checks each password. While `ADMIN_PASSWORD` is unset or
-shorter than 6 characters, every command fails with `INVALID_CONFIG`,
-`e2e list` included. A valid [override](#override-a-value-per-run) replaces
-it.
+e2e validates passwords when loading the config: if `ADMIN_PASSWORD` is
+missing or shorter than 6 characters, every command fails with a config
+error unless you pass an [env override](#override-a-value-per-run).
 
 <Accordion title="Keep the value out of the environment">
 
@@ -203,20 +202,20 @@ await agent.act('Connect Stripe with the given key', {
 });
 ```
 
-A `secrets` entry can fill any editable input. An unconfigured name throws
-`SECRET_UNAVAILABLE`. A plain input isn't masked, so screenshots show the
-value while the input holds it, the model's included. `secrets.get()`
-returns `secrets` entries only, so
-`credentials.admin` and `secrets.admin` can both exist.
+`secrets` entries can fill any editable input, and asking for an
+unconfigured secret fails the step. Because plain inputs aren't masked like
+password fields, screenshots (including model screenshots) will show the
+value while it's visible in the input. `credentials.admin` and
+`secrets.admin` live in separate namespaces.
 
-In `e2e.config.ts`, `secrets.get()` can pass a secret to an engine option
-that declares it, such as [`basicAuth`](/web#protected-previews). The config
-load checks the name. Screenshots stay on, so the app's pixels aren't masked.
-See [Secrets in engine options](/reference/security#secrets-in-engine-options).
+You can also pass `secrets.get()` to engine options that support it, like
+[`basicAuth`](/web#protected-previews). See
+[Secrets in engine options](/reference/security#secrets-in-engine-options).
 
 ## Override a value per run
 
-An environment variable replaces a config value for one run:
+Override any configured credential or secret for a single run with an
+environment variable:
 
 | Entry | Variable |
 | --- | --- |
@@ -224,10 +223,8 @@ An environment variable replaces a config value for one run:
 | `credentials.admin.password` | `E2E_USER_ADMIN_PASSWORD` |
 | `secrets['stripe-key']` | `E2E_SECRET_STRIPE_KEY` |
 
-The variable holds the entry name in upper case, with each character
-outside `A-Z` and `0-9` as `_`. When two entries map to one variable, such
-as `stripe-key` and `stripe_key`, the config load fails with
-`INVALID_CONFIG`.
+Entry names are uppercased with non-alphanumeric characters turned into `_`
+(two names that collide on the same env var fail config validation).
 
 <CodeGroup>
 ```bash npm

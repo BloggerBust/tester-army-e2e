@@ -1555,9 +1555,9 @@ secret, and `CI` switches the defaults below.
 
 | Setting | Order |
 | --- | --- |
-| Base URL | the target's `app.url`, else `APP_URL_REQUIRED` at the first navigation. The runner reads no `APP_URL`; the scaffolded config reads it itself |
+| Base URL | the target's `app.url`, otherwise `APP_URL_REQUIRED` at the first navigation. The runner reads no `APP_URL`; the scaffolded config reads it itself |
 | Built-in agent model | `agents.<name>.model`, then `MODEL_UNAVAILABLE` at `agent` acquisition; an agent never falls back to `default`'s model |
-| Custom executor model | `agents.<name>.model`, else the model the executor brought; two different values is `INVALID_CONFIG` |
+| Custom executor model | `agents.<name>.model`, or the model the executor brought; two different values is `INVALID_CONFIG` |
 | Model credential | the provider package's own variable or the key passed at construction, read by the provider on the first model call |
 | Credential username and password | the `E2E_USER_*` variable, then the config value |
 

@@ -7,10 +7,10 @@ description: Replay verified agent actions without model calls, and let the agen
 
 import { VideoCard } from './snippets/video-card.jsx';
 
-The replay cache records the actions of an `agent.act()` step after a later
-check verifies the result. On the next run, the runner replays those
-actions without a model call. When a control or the expected end state no
-longer matches, the agent takes over from the current screen. See
+The replay cache saves the actions from a passing `agent.act()` step once a
+later check confirms the outcome. On future runs, e2e replays those actions
+with zero model calls. If the UI changed and an element or expected end
+state no longer matches, the agent takes over from the current screen. See
 [Self-healing tests](/self-healing).
 
 <VideoCard
@@ -19,24 +19,23 @@ longer matches, the agent takes over from the current screen. See
   subtitle="In this video, Kacper shows how e2e replays an agent's actions without a model call, and what happens when the app changes."
 />
 
-`agent.assert`, `agent.waitFor`, and `agent.extract` always run live. The
-run summary counts the outcomes:
+`agent.assert`, `agent.waitFor`, and `agent.extract` always run live.
+The run summary breaks down what happened to your `agent.act` steps:
 
 ```text
            AI  4.1k tokens · 2 model calls · openai/gpt-6-luna-fast
         Cache  4 replayed · 1 handed off · 1 missed · 1 not saved
 ```
 
-`not saved` counts the steps of passing and flaky tests whose
-[`step.cache.write`](#when-a-recording-is-written) is `unconfirmed`,
-`no-change`, or `not-written` in the attempt that passed.
+`not saved` counts steps that passed without writing a recording, usually
+because no assertion followed the step or the step caused no visible UI
+change.
 
 ## When a recording is written
 
-End the test with a check of its outcome. In `read-write` mode, the runner
-saves the recording of each `act` at the end of the attempt when a later
-verification step passed. One check at the end confirms every `act` before
-it.
+Always end a test with an assertion. In `read-write` mode, e2e only saves
+`agent.act` recordings at the end of a test if a later verification check
+passed. One check at the end confirms every `agent.act` before it.
 
 ```ts title="tests/cart.e2e.ts"
 import { expect, test } from 'e2e';
@@ -55,72 +54,51 @@ test('adds an item', async ({ app, agent, screen }) => {
 | `expect(locator).toHaveText(...)` and other locator matchers | `expect(value).toBe(...)` on a plain value |
 | `expect(browser).toHaveURL(...)` and other engine assertions | `expect.poll(...)` |
 | `locator.waitFor()`, `browser.waitForURL()` | `locator.textContent()` and other reads |
-| `agent.assert(...)`, `agent.waitFor(...)` | `agent.extract(...)`, another `act`, the attempt passing |
+| `agent.assert(...)`, `agent.waitFor(...)` | `agent.extract(...)`, another `act`, or just passing |
 
-`step.cache.write`, in the report only, says what happened to the recording
-when the attempt ended:
+In the JSON report, `step.cache.write` records what happened to the entry:
 
 | `step.cache.write` | Meaning |
 | --- | --- |
-| `saved` | Recorded for the next run. |
-| `kept` | The entry stays as it is. |
-| `unconfirmed` | Not saved: no check passed after the step. End the test with a locator or engine assertion or `agent.assert`, or wait for the state with `locator.waitFor()` or `agent.waitFor`. |
-| `evicted` | The entry was deleted: its replay ended in a failure or a repair, or no check confirmed it before the attempt failed. |
-| `no-change` | Nothing recorded: no control appeared, went away, or changed state, and the route stayed the same. That includes a step whose only change is inside a [frame from another site](/browser#reach-into-an-iframe). Such a step runs live on every run. |
-| `not-written` | Not saved: the store rejected the write, or refused the recording, for example one over the file store's size limit. |
+| `saved` | Recorded for future runs. |
+| `kept` | Existing entry left as is. |
+| `unconfirmed` | Not saved because no verification check passed after the step. |
+| `evicted` | Deleted because the replay failed, needed repair, or wasn't confirmed before a failure. |
+| `no-change` | Not saved because no visible control or route changed (including steps that only touch a [cross-origin iframe](/browser#reach-into-an-iframe)). Such a step runs live on every run. |
+| `not-written` | Not saved because the cache store rejected it (for example, exceeding the size limit). |
 
-A step that took no action records nothing and reports no `write`.
+If a test fails partway through, e2e still saves any earlier steps that were
+already confirmed, and evicts the broken replay. To preserve setup steps
+while you debug a failing assertion, put a quick `locator.waitFor()` after
+setup. Cancelling a run leaves the cache untouched.
 
-A failing attempt still saves the steps verified before the failure. It
-deletes unverified entries and the replays involved in the failure. To keep
-setup goals recorded while you fix a failing assertion, end the setup with
-a wait for its state, such as `locator.waitFor()`. A custom store needs a `delete` method for this. Cancelling
-a run leaves the cache unchanged.
+<Accordion title="Failures where the model couldn't answer">
+If a test fails only because the model couldn't be reached (no model
+configured, rejected API key, rate limit, or provider outage), e2e doesn't
+evict your recordings. Those failures say nothing about your app, so a
+`read-write` run without model access won't wipe working cache entries.
 
-<Accordion title="Failures where no model answered">
-An attempt whose only failures are ones where no model answered evicts
-nothing, since these say nothing about the app:
-
-- `MODEL_UNAVAILABLE`: no model is configured, or GitHub Copilot doesn't
-  serve it to the account.
-- `MODEL_PROVIDER_FAILED`: the provider returned an error, such as a
-  missing or rejected key, a rate limit, or a 5xx, or a request got no
-  response within 120 seconds.
-
-So a `read-write` run without model access keeps its recordings, including
-a step that replayed before an `agent.assert` that could not reach its
-model.
-
-These count as a failure of the flow: an unusable model answer
-(`MODEL_OUTPUT_INVALID`, `CONTEXT_OVERFLOW`), a refusal (`MODEL_REFUSED`),
-`STEP_TIMEOUT` (even with a
-request still open), and any other failure in the same attempt, such as an
-`afterEach` assertion.
+Flow failures still evict as usual: invalid model output
+(`MODEL_OUTPUT_INVALID`), context overflow (`CONTEXT_OVERFLOW`), refusals
+(`MODEL_REFUSED`), `STEP_TIMEOUT`, or any other failure in the same attempt
+(such as an `afterEach` assertion).
 </Accordion>
 
 ## What must match
 
-A cache entry belongs to one test, target, instruction, set of params, and
-agent. Each of these changes causes a miss:
+Each cache entry belongs to one test, target, instruction, set of params,
+and agent. A cache miss happens if you:
 
-- renaming the test, its `describe` group, or the target, or moving the
-  test file,
-- changing the instruction or an ordinary param,
-- running with another configured agent (`agent: ['buyer', 'admin']`
-  records one entry each), or changing the agent's `context` or the test's
-  `agentContext` (a secret in it enters the key as its name only),
-- switching to another engine, or changing the project id or the app's
-  identity.
+- rename the test, its `describe` block, or the target, or move the test file,
+- change the instruction text or a normal param,
+- switch to a different agent or change its `context` / `agentContext`,
+- switch engines, or change `projectId` or `app.identity`.
 
-Changing the model doesn't cause a miss, and neither does upgrading the
-engine: a node the new version resolves differently misses at replay.
+Switching models or upgrading the engine does **not** invalidate your cache.
+Use `--no-cache` when you want to test how a new model performs.
 
-Use `--no-cache` to evaluate a new model. Replays expose
-`step.cache.recordedBy` when the entry has provenance; older or unattributed
-entries omit it.
-
-A timestamp or a fresh email address would miss on every run. Wrap such
-values in `unique()`, and the runner puts in the current value at replay:
+Dynamic values like timestamps or generated emails would miss on every run.
+Wrap them in `unique()` so e2e substitutes the new value during replay:
 
 ```ts
 import { unique } from 'e2e';
@@ -130,149 +108,103 @@ await agent.act('create a company named {name}', { params: { name: unique(name) 
 await expect(screen.getByRole('heading', { name })).toBeVisible();
 ```
 
-Use `unique()` for data the flow enters or checks, and ordinary params for
-choices that change the flow, such as a plan name. The substitution also
-covers the value as a URL spells it (`%20`, `+`) and a multi-line value as
-the screen shows it, on one line. When a `unique()` value
-equals or sits inside another param's value, the step isn't recorded:
-`step.cache.notRecorded` reads `param-collision`, and the next run records
-it.
+Use `unique()` for data the flow enters or displays, and plain params for
+values that change the branch of the flow (like a plan name). Don't reuse a
+`unique()` value inside another param's value, or e2e will skip recording
+that step.
 
-For preview URLs that change on each deploy, set
-[`app.identity`](/reference/config#the-app-under-test) to keep one cache
-identity. On devices, replay uses the
-[screen title](/reference/mobile#replay-cache-on-a-device) as the path.
+For preview URLs that change on every deploy, set
+[`app.identity`](/reference/config#the-app-under-test) so recordings stay
+valid across previews. On mobile devices, replay identifies screens by
+their [screen title](/reference/mobile#replay-cache-on-a-device).
 
 ## Rerun a test while you fix it
 
-While you fix a failing test, keep the cache on in `read-write` mode, the
-local default, and outside [strict mode](#fail-on-a-stale-recording),
-which never writes. With `CI` set, an unset mode is `read-only`. A failed
-run keeps the recordings a check
-[confirmed](#when-a-recording-is-written) before the failure. The next run
-replays those goals without model calls, as long as each replay still
-matches the screen.
+Keep the cache in `read-write` mode (the local default) while iterating on a
+failing test. Earlier setup goals that were already confirmed replay with no
+model calls:
 
-1. Run only that test, by the line its `test(` opens on:
+1. Run only the test you're fixing by line number:
    `npx e2e run tests/cart.e2e.ts:3`.
-2. Don't rename the test or reword a goal that passes. Each
-   [causes a miss](#what-must-match): a rename for every goal in the test,
-   a reworded goal for itself.
-3. When retries are on (`retries` in the config, or `CI` set), add
-   `--retries 0`. A `retries` option on the test or its `describe` wins
-   over the flag. A retry doesn't replay, so it runs every goal live.
-4. When the test passes, run it one time with `--no-cache`. Every goal
-   runs live, which shows the agent still reaches it without a recording.
+2. Don't rename the test or reword passing goals, since that
+   [causes a miss](#what-must-match).
+3. Pass `--retries 0` if retries are enabled (retries skip replay and run
+   every goal live).
+4. Once it passes, run it once with `--no-cache` to confirm the live agent
+   can still reach the goal without a recording.
 
 ## How a replay works
 
-1. Check the starting screen: it must be the same route.
-2. Find each recorded control by role, name, test id, and surrounding
-   context, and repeat its action. The runner waits for missing controls and
-   stops when a match is ambiguous.
-3. Check the final route and what the original step changed: the controls
-   that appeared, with their checked, selected, expanded, or pressed state,
-   and the ones that went away.
-4. Finish without a model call, or let the agent continue with a record of
-   what ran and why replay stopped.
+1. **Check the starting screen** to make sure the app is on the same route.
+2. **Replay each recorded action**, matching controls by role, name, test
+   ID, and surrounding context. e2e waits for controls to appear and stops
+   if a match is ambiguous.
+3. **Check the end state** (final route plus the controls that appeared,
+   disappeared, or changed state).
+4. **Finish with zero model calls**, or hand off to the live agent with a
+   summary of what already ran.
 
-Typed values replay as recorded. A secret fill resolves the current value
-by name and goes through authorization again.
+Typed text replays verbatim; secret fills resolve the current secret by name
+and re-run authorization.
 
-A replay finishes as soon as the recorded changes show, which can be before
-content below them has loaded. To check content that loads after the step,
-use `agent.waitFor`, which waits for it, rather than `agent.assert`, which
-judges the screen once.
+Replay finishes as soon as the recorded UI changes appear, which can happen
+before content further down the page finishes loading. If the next step
+checks async content, use `agent.waitFor` instead of `agent.assert`.
 
 <Accordion title="What counts as the same route">
-A route is the origin, the path, and the query. The record id and the
-fragment don't count. Ids, tokens, timestamps, and cache busters in the
-path or the query read as an id placeholder, so `/orders/42?t=1727780000`
-and `/orders/7?t=1727780999` are one route.
+A route includes the origin, path, and query parameters, ignoring dynamic
+IDs, tokens, timestamps, and fragments. For example,
+`/orders/42?t=1727780000` and `/orders/7?t=1727780999` match as the same
+route, while `?tab=notes` vs `?tab=billing` or `/products/a` vs
+`/products/b` are treated as different routes.
 
-Every other query value is part of the route: `?mode=safe` and
-`?mode=unsafe` differ, and so do `/companies` and `/companies?tab=notes`, or
-a new tracking parameter. `/products/summer-sneaker` and
-`/products/winter-boot` are different routes too.
-
-A location on the app's own origin is compared by its path, so a recording
-follows the app to a preview deployment that shares its `app.identity`. A
-page on any other origin is another route.
+Pages on your app's own origin are compared by path only, so recordings work
+across preview URLs that share an `app.identity`.
 </Accordion>
 
-<Accordion title="How the end check reads the screen">
-- At least one recorded change must happen during the replay. An outcome
-  already on screen before the actions proves nothing. When the step's last
-  action moved to another route, that move is the evidence.
-- An alert that the replay raised and the recording never saw stops the
-  replay. The web engine does not observe the
-  [Next.js](/frameworks/nextjs#fix-next-js-problems) App Router's route announcer, so
-  its title echo never counts.
-- Text that differs on every run, such as a date, a duration, or an id,
-  is skipped while a stable change exists on either side of the step's delta,
-  whether something appeared or disappeared. With nothing else, it is kept,
-  and a changed value hands the replay off. In an alert, it reads as a placeholder.
-  A node known only by a test id the app generates (`node-<uuid>`) is
-  skipped the same way. When kept, a node that appeared may carry any id
-  with that pattern; one that went away is still checked by its exact id.
-- A count that names what it counts, such as `3 records imported` or
-  `42件`, must read the same on replay when the step made it appear on the
-  screen it acted on. A count that only moved (`41 items` to `42 items`),
-  or one on a screen the step navigated to, is skipped only when its own
-  side of the delta has a stable change. Otherwise the count stays, even
-  when the opposite side has a stable change. A bare number such as a badge
-  follows the text rule above.
-- A control with no name is found by its place among the unnamed controls
-  of its kind inside the same named row, list item, or group. A control
-  known only by a generated test id is found by the id pattern the same
-  way, or when it was the only one with that pattern.
-- A control whose test id changed is found by its role and name, unless
-  another control shared them when the step was recorded. Then the one
-  left could be the other, and the replay stops. A step recorded by a
-  unique test id before this rule replays as it did until it is recorded
-  again. An action taken from the same look as an earlier action of the
-  step, which may have changed the twins, also replays as it did once it
-  is recorded with this rule; a recording made before it hands off once,
-  or fails with `REPLAY_STALE` under `--strict-cache`, until the step is
-  recorded again.
+<Accordion title="How the end check verifies the screen">
+- At least one recorded change must happen during replay (or the last action
+  must navigate to another route). State that was already on screen before
+  the step doesn't count.
+- An unexpected alert that didn't happen during recording stops the replay.
+- Volatile values like dates, durations, or generated UUIDs are tolerated as
+  long as a stable UI change also happened. A labeled count that appeared on
+  the same screen (like `3 records imported`) must still match on replay.
+- Unnamed controls are matched by their position inside their named row,
+  list item, or group. If a test ID changes, e2e falls back to role and name
+  when that match is unambiguous.
 </Accordion>
 
 ## Why a step was not replayed
 
-Each `act` step reports `step.cache`, absent when caching is off for the
-step. `agent.act()` returns it as `result.cache`, without `write`, and the
-[trace page](/debugging#traces) shows it under the step.
+Each `act` step includes cache details in the
+[trace page](/debugging#traces) and on `result.cache`.
 
 | Run summary | `step.cache.mode` | Meaning |
 | --- | --- | --- |
-| `replayed` | `self-finalized` | The recording completed without a model call. |
-| `handed off` | `agent-concluded` | Replay started, then the agent took over. |
-| `missed` | `missed` | The agent ran the step from the beginning. |
+| `replayed` | `self-finalized` | Replayed completely with no model call. |
+| `handed off` | `agent-concluded` | Started replaying, then handed off to the agent. |
+| `missed` | `missed` | Ran live from the start. |
 
-Both carry `step.cache.reason`, and `step.cache.detail` says where the
-replay stopped and why (`at action 2 of 3, tap button "Apply": ...`). After
-an `end-mismatch` it names the recorded nodes that did not show, the ones
-that did not go away, and any alert the recording never saw, or says the
-outcome already showed before the replay acted.
-`step.cache.entry` is the entry's key and its file name (`<entry>.json`) in
-the file store.
+When a step misses or hands off, the trace shows the reason and which action
+stopped:
 
 | Reason | What happened | What to do |
 | --- | --- | --- |
-| `no-entry` | No recording matches this step and its params. | The next verified pass records it, unless the step's `step.cache.write` is `no-change`. |
-| `retry` | Retries never replay, except under `--strict-cache` or `cache.strict`. | Nothing. |
-| `invalid-entry` | The file is unreadable, over 1 MiB, or from another schema version. | `npx e2e cache clear`. |
-| `truncated` | The recording hit a limit, see [below](#limits-and-gaps). | Split the step, or pass the secret as a `Secret`. |
-| `wrong-context` | The app was on another route than when the step was recorded. See [How a replay works](#how-a-replay-works). | Open the same screen before the step. |
-| `target-not-found` | A recorded control did not appear within 15 seconds, or it has no name and no named container to tell it from its twins. | The UI changed: the next passing run records it again. For an unnamed control, give it a label or put it in a named row or group. |
-| `target-ambiguous` | The number of matching controls changed, or the control the step used is gone and a twin with its role and name is left. Fewer controls than recorded, one twin included, are looked for up to 15 seconds first, since a form may still be rendering; once the count is back, the control in the recorded place is used. Two or more where the step saw one stop at once. | Give repeated controls distinct names or use unique test data. |
-| `gap` | An action can't be replayed, see [below](#limits-and-gaps). | The agent does this part live. Put stable values in `params`. |
+| `no-entry` | No recording matches this step and params. | The next verified pass will record it. |
+| `retry` | Retries run live (unless `--strict-cache` is on). | Nothing. |
+| `invalid-entry` | Recording is unreadable, too large, or from an incompatible schema. | Run `npx e2e cache clear`. |
+| `truncated` | Recording hit a size or action limit ([see below](#limits-and-gaps)). | Split the step into smaller goals, or pass secrets as `Secret` handles. |
+| `wrong-context` | App started on a different route than recorded. | Open the same screen before the step. |
+| `target-not-found` | A recorded control didn't appear within 15 seconds. | If the UI changed, the next passing run updates the cache. Give unnamed controls labels or put them in named containers. |
+| `target-ambiguous` | Multiple controls matched where the recording expected one (or the count of matching controls changed). | Give repeated controls distinct names or use unique test data. |
+| `gap` | An action can't be replayed safely ([see below](#limits-and-gaps)). | Let the agent handle it live, or pass stable values via `params`. |
 | `action-failed` | The app rejected a replayed action. | Check the app. |
-| `action-uncertain` | A replayed action failed, and it's unknown whether it took effect. The agent is told to check before it acts again. | Check the app. |
-| `viewport-changed` | A bare-point tap, hover, or drag was recorded on a viewport of another size. | Keep the viewport fixed. |
-| `end-mismatch` | Every action ran, but the [end check](#how-a-replay-works) failed. | Leftover data from an earlier run, a banner that comes and goes, or a regression. Unique test data and cleanup in `afterEach` help. |
+| `action-uncertain` | A replayed action failed and may have taken effect; the agent checks the screen before acting. | Check the app. |
+| `viewport-changed` | A coordinate tap/hover/drag was recorded at a different viewport size. | Keep the viewport size consistent. |
+| `end-mismatch` | Every action ran, but the expected UI changes didn't match. | Check for leftover data, flaky banners, or a real regression. |
 
-To rule the cache out of a failure, run one time without it:
+To rule out the cache when debugging a failure, run once with `--no-cache`:
 
 <CodeGroup>
 ```bash npm
@@ -290,41 +222,34 @@ bunx e2e run --no-cache
 
 ### Limits and gaps
 
-A recording is `truncated` when the step:
+A recording is marked `truncated` if a step took more than 50 actions, typed
+a string longer than 4,096 characters (or a registered secret directly), or
+interacted with a control that had no usable description.
 
-- took more than 50 actions, which is possible only with `maxSteps` above 50,
-- typed a value or URL over 4,096 characters, or one that holds a
-  registered secret,
-- acted on a control with no usable description.
+Some actions can't be replayed safely and are marked as a `gap`, so the live
+agent handles them instead:
 
-A `gap` is an action the cache can't repeat: a mutating
-[project tool](/tools), or a value the agent read off the screen, typed
-after it saw a screenshot, or worked out from the date. `step.cache.derived`
-names the rule: `whole-node` (a control's whole name or text),
-`minted-token` (a code or id the app showed as its own word, or any value
-typed into a field marked `autocomplete="one-time-code"`, or into the
-focused field in a step that showed one), `date`, or `pixels`. Values from
-the instruction or `params`, and values the agent composed itself, replay,
-except in a one-time-code field or the focused field in a step that showed
-one: there only a whole value of two or more characters that the
-instruction or `params` spell out replays.
+- calling a mutating [project tool](/tools),
+- typing a value the agent read off the screen (like a freshly generated
+  one-time code or token), worked out from the current date, or read from a
+  screenshot.
 
-Values typed in a row into several fields, with only taps or `Tab` between
-them, are also judged joined. A code the page showed, typed one digit per box
-or three and three, makes the recording a gap from its first piece, even when
-no field declares a purpose, as no field does on iOS and Android.
+Values passed in the instruction or `params` (as well as values composed by
+the agent) replay normally. In a one-time-code field, or the focused field
+in a step that showed one, only a whole value of two or more characters
+spelled out in the instruction or `params` replays; codes typed across
+separate digit boxes are a gap from the first character.
 
 ## What a recording holds
 
-Each entry is a JSON file under `.e2e/cache/`, named by a hash of its key.
-It holds actions, target descriptions, typed text, a step summary, and the
-end checks: the route and up to eight controls that appeared and eight that
-went away. Entries hold no prompts, conversations, screenshots, observed
-trees, or secret values. A secret fill stores only the secret's name.
+Each entry is a JSON file under `.e2e/cache/` containing the recorded
+actions, target descriptions, typed text, a short summary, and the expected
+end-state checks. Recordings never store prompts, transcripts, screenshots,
+DOM trees, or secret values (secret fills store only the secret's name).
 
 <Warning>
-Other typed values are stored as typed. Review recordings before you share
-them. See [cache trust](/reference/security#cache-trust).
+Non-secret typed values are stored verbatim. Review cache diffs before
+committing or sharing them. See [cache trust](/reference/security#cache-trust).
 </Warning>
 
 ## Modes
@@ -341,30 +266,25 @@ cache: 'off',
 cache: { mode: 'read-write', dir: '.e2e/cache' },
 ```
 
-`--no-cache` overrides the config. In `read-only` mode, stale entries stay
-until a `read-write` run replaces them. A custom `cache.store` replaces the
-file store and doesn't default to `read-only` in CI. `e2e explore` and
-`e2e mcp` sessions don't use the cache. A test a session runs
-([`open_session {test}`](/reference/mcp#running-a-test)) uses it as a run's
-first attempt does.
+`--no-cache` overrides the config for one run. In `read-only` mode, stale
+entries stay untouched until a `read-write` run replaces them. A custom
+`cache.store` replaces the file store and doesn't default to `read-only` in
+CI. Interactive `e2e explore` and `e2e mcp` sessions don't use the cache
+(except when MCP runs a test via
+[`open_session {test}`](/reference/mcp#running-a-test)).
 
 ## Share the cache across checkouts
 
-Point every checkout of a project at one directory with `E2E_CACHE_DIR`, or
-`--cache-dir` for one run. Either replaces `cache.dir`, resolves from the
-project root (`~` or a leading `~/` is your home directory), and leaves the mode
-alone. With a custom `cache.store`, `--cache-dir` is an error and
-`E2E_CACHE_DIR` is ignored. Parallel runs can share the directory: each write
-replaces its file atomically. Entries are keyed by project, so give every
-checkout the same `projectId` (or `package.json` `name`); without either,
-each checkout's path becomes its identity and nothing replays across them.
+Point multiple checkouts or worktrees at one shared folder with
+`E2E_CACHE_DIR` or `--cache-dir`. Give each checkout the same `projectId`
+(or `package.json` `name`) so entries match across paths.
 
-- Checkouts share entries: a failing run in any of them evicts the entry, and
-  checkouts with the same app identity but different app code overwrite each
-  other's entries (the last write wins).
-- While the override is set, a cache committed under `cache.dir` isn't read.
-- Use one directory per project. Two projects in one directory can fail with
-  a false `REPLAY_STALE` under `cache.strict`.
+- Writes are atomic so parallel runs can share the directory. Checkouts
+  share entries, so a failing run in any checkout evicts the shared entry
+  and different branches with the same app identity overwrite each other.
+- While the override is set, a cache committed in `cache.dir` isn't read.
+- Keep one directory per project so `--strict-cache` doesn't confuse entries
+  from another repo.
 
 ```bash
 E2E_CACHE_DIR=~/.cache/my-app/e2e npx e2e run
@@ -374,31 +294,20 @@ E2E_CACHE_DIR=~/.cache/my-app/e2e npx e2e run
 
 <span id="commit-your-traces" />
 
-`e2e init` adds `.e2e/cache/` to `.gitignore`, so each machine records its
-own and CI starts with none. To share replays, remove that line and commit
-the directory. CI stays `read-only` unless you set `cache: 'read-write'`.
-Treat committed entries as test data, and review them in the pull request
-that recorded them again.
+`e2e init` adds `.e2e/cache/` to `.gitignore`. To share recordings across
+your team and CI, remove that line and commit `.e2e/cache/`. CI defaults to
+`read-only`, so it replays committed entries without modifying them.
 
-Local runs leave a committed directory clean unless something changed. A
-replayed step never rewrites its entry, and a live recording with the same
-actions, paths, and anchors isn't written. So an entry for a UI that drifts
-is repaired only when a control can no longer be found. A file changes when:
-
-- a step records for the first time, or after a hand-off,
-- a step fails after a replay, ends in an `end-mismatch` the agent had to
-  repair, passes with nothing to record, or isn't confirmed by the end of the attempt, which deletes the
-  entry,
-- an `e2e` upgrade changes how entries are matched, which gives every entry
-  a new key, so the next run records them again.
+Local runs keep your git diff clean: e2e only rewrites a cache file when a
+step is recorded for the first time, heals after a UI change, gets evicted,
+or an `e2e` upgrade changes the cache key format.
 
 ## Fail on a stale recording
 
-By default, a committed recording that stops replaying fails nothing: the
-agent takes the step over, and every CI run pays for model calls until
-someone records it again. With `--strict-cache` (or
-`cache: { strict: true }`), the step fails with `REPLAY_STALE` and makes no
-model call:
+By default, if a committed recording stops matching the app, the live agent
+takes over and CI pays for model calls on every run until someone updates
+the cache. Pass `--strict-cache` (or set `cache: { strict: true }`) to fail
+immediately instead of calling a model:
 
 <CodeGroup>
 ```bash npm
@@ -414,29 +323,17 @@ CI=1 bunx e2e run --strict-cache
 ```
 </CodeGroup>
 
-`REPLAY_STALE` exits 2 and is not retried.
+Strict mode fails any recording whose UI or cache key changed with
+`REPLAY_STALE` (exit 2, no retry), and never writes or deletes cache files.
+Alternate-key detection only applies to the built-in file store (not a
+custom `cache.store`), and steps that were never recorded yet, hit a store
+read failure, or have a `gap` or `truncated` recording still run live.
 
-| Fails under strict | Still runs live |
-| --- | --- |
-| `invalid-entry`, `wrong-context`, `target-not-found`, `target-ambiguous`, `viewport-changed`, `action-failed`, `action-uncertain`, `end-mismatch`: the app or the entry changed | A step never recorded (a new or edited instruction or params) |
-| `no-entry`, when the cache directory holds a recording of the same step under another key | A `gap` or a `truncated` recording |
-| | A step whose store read fails |
-| | A step whose test's `testId` in `report.json`, target name, or agent name is over 300 characters, when an earlier `e2e` version recorded it under another key and no `read-write` run of this version has replayed it since |
+To refresh a stale recording:
 
-A recording under another key comes from an `e2e` upgrade that changed the
-keys, or a change to the project id, the app's identity, or the agent's
-context. The message names that file and, for a recording made by a
-current version, what changed. Delete the file when nothing replays it. This check doesn't cover a
-custom `cache.store`.
-
-A strict run never writes or deletes an entry, even in `read-write` mode, so
-a new step records only on a run without strict. Prefer `--strict-cache` in
-CI over `cache.strict` in the config. To fix a stale entry:
-
-1. Run the test in `read-write` mode without the flag. Turn `cache.strict`
-   off if the config sets it.
-2. Commit the changed entry. A custom `cache.store` gets the new entry from
-   that run instead.
+1. Run the test locally in `read-write` mode without `--strict-cache` (turn
+   `cache.strict` off if your config sets it).
+2. Commit the updated cache file.
 
 ## Inspect the cache
 

@@ -191,9 +191,8 @@ await screen.getByRole('button', 'Refresh').tap();
 await expect(screen.getByText('You are offline')).toBeVisible();
 ```
 
-`browser.reload()` loads a page its service worker cached. A navigation to a
-page no cache holds fails with `ACTION_FAILED`. See
-[`setNetwork`](/reference/web#setnetwork).
+`browser.reload()` loads a cached service-worker page when offline; navigating
+to an uncached URL fails. See [`setNetwork`](/reference/web#setnetwork).
 
 ## Control time
 
@@ -218,9 +217,8 @@ own timeouts and waits keep real time. See [clock](/reference/web#clock).
 await browser.setCookies([{ url: 'http://localhost:3000', name: 'tz', value: 'UTC' }]);
 ```
 
-A cookie URL that doesn't parse, `about:blank`, or a scheme other than
-`http:` or `https:` is `POLICY_DENIED`. A domain cookie is checked as the
-origin it would go to. When one entry is refused, e2e sets none.
+Cookie URLs must be valid `http:` or `https:` URLs (invalid entries are
+rejected as a batch so no partial cookies get set).
 
 ## Pick a browser
 
@@ -432,60 +430,48 @@ browser that no earlier test touched, for the cost of a session start per
 attempt. A hosted session costs money while it runs, so keep `workers` at
 what the suite can fill.
 
-A worker that dies (a crash, `process.exit`, a kill) can't release what it
-acquired. Implement `sweep` to have the runner release those leases when
-the run ends, one time per target: it finds them by service tags or a
-shared local lease journal scoped to the run and target, and resolves to their ids for the reporter. A
-failed sweep shows as a line and fails nothing. Without `sweep`, such a
-browser lives until the service ends it.
+A worker that crashes or gets killed can't release its leases. Implement
+`sweep` to clean up any orphaned leases at the end of a run (once per
+target, using provider tags or a local lease journal). A failed sweep logs a
+line without failing the run. Without `sweep`, orphaned browsers stay open
+until the service ends them.
 
 <Accordion title="Worker scope: when leases start and end">
-- The engine leases every slot's browser in parallel when the run starts.
-  When one slot fails, the run ends before any test, and the leases that
-  succeeded are released.
-- The engine releases leases after the last worker exits, within
-  `cleanupTimeout`, on every exit path: failure, interrupt, and a
-  `prepare` that threw.
-- When a worker's browser drops, the worker leases a replacement at the
-  next attempt start and releases it when it exits. So `acquire` also runs
-  in a worker process: don't depend on state built in the runner process.
-  Its `log` still reaches the reporter, prefixed with the target and slot.
-- The side that acquired a lease releases it, exactly one time.
+- All worker slots lease their browsers in parallel at startup; if any slot
+  fails, the run aborts before tests begin and releases the rest.
+- Leases are released after the last worker exits (within `cleanupTimeout`),
+  even on failures or Ctrl-C.
+- If a worker's browser drops mid-run, the worker leases a replacement on
+  the next attempt and releases it on exit. Because `acquire` can run inside
+  a worker process, don't rely on in-memory state from the main process.
+- Whichever side acquired a lease releases it once.
 </Accordion>
 
 <Accordion title="Attempt scope: limits">
-The attempt runs in the browser's persistent default context, on its first
-tab, so the remote browser must contain only that context. The limits of
+Attempt-scoped tests run in the browser's persistent default context on its
+first tab, so the same limits as
 [`connect.reconnectEndpoint`](/reference/web#recovering-a-cdp-transport)
 apply:
 
-- No `headers`, `basicAuth`, `userAgent`, `locale`, `timezoneId`, or
-  `deviceScaleFactor`. Each is `INVALID_CONFIG`.
-- No `app.clearState()`. It is `UNSUPPORTED_CAPABILITY`, naming the scope.
-- No session state capture or restore. A run whose tests use a
-  [session](/authentication) on the target fails with `COLLECTION_ERROR`
-  before its setup test signs in.
+- `headers`, `basicAuth`, `userAgent`, `locale`, `timezoneId`, and
+  `deviceScaleFactor` aren't supported.
+- `app.clearState()` isn't supported.
+- Saved [sessions](/authentication) aren't supported.
 
-After a transport drop, the next operation reattaches through the lease's
-`reconnectEndpoint`, else its `cdpEndpoint`, and checks that it is the same
-browser.
+If the CDP connection drops mid-test, e2e reconnects via `reconnectEndpoint`
+(or `cdpEndpoint`) and verifies it's still the same browser.
 </Accordion>
 
 ### Downloads on the provider
 
-Implement `downloads`, and `browser.waitForDownload` works as it does
-locally. A hosted browser saves a download to its own disk, where the
-runner can't open it. With `downloads`, it saves the file under `dir`, and
-the engine passes the finished file's path to `read`. `read` fetches the
-bytes through the service's file API, in the worker, bounded by the call's
-timeout. [Kernel](/integrations/kernel#downloads) serves downloads this
-way. A service that stores downloads by name rather than by path finds the
-file by `context.suggestedFilename`, the name the site suggested, as
-[Notte](/integrations/notte#downloads) does.
-
-Without `downloads`, a download on a browser on another machine fails with
-`ENGINE_FAILURE`, naming the provider. A provider whose browsers run on the
-runner's machine needs nothing.
+Implement `downloads` so `browser.waitForDownload` works on remote browsers.
+Because a remote browser writes downloads to its own disk, `downloads` tells
+the browser to save files under `dir` and passes each finished path to
+`read` to fetch the bytes through the provider's API (see
+[Kernel](/integrations/kernel#downloads) or
+[Notte](/integrations/notte#downloads)). Without `downloads`, calling
+`waitForDownload` on a remote browser fails. Local browser providers don't
+need it.
 
 ### Recording on the provider
 

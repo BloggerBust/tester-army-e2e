@@ -109,12 +109,11 @@ export default {
 } satisfies E2EConfig;
 ```
 
-Keep the server's own logging on stderr: stdout carries the protocol.
-When the server exits during a request, the request fails with
-`ENGINE_FAILURE`, which names its exit code or the signal that stopped it,
-and its last lines of stderr.
-A process the server started that still holds its stdout keeps the request
-open until that process exits too.
+Keep the server's own logging on stderr since stdout carries the protocol.
+If the server exits unexpectedly during a request, e2e reports the exit code
+or signal along with the last lines of stderr. (Make sure child processes
+spawned by your server don't inherit stdout, or requests will hang waiting
+for them to exit.)
 
 ## Write a server in another language
 

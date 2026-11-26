@@ -111,8 +111,25 @@ Shortening adds claims. Check each new sentence:
 - Not `skills/e2e/`. Agents read it start to finish, and the interactive
   components don't render there.
 - `unslop` still applies to every sentence. This skill adds structure and
-  tone on top. Where they disagree, this skill wins on docs pages: keep the
-  STE sentence and paragraph limits, and write no first person.
+  the guide-vs-reference boundary on top. Keep prose plain, human, and
+  concrete.
+
+## Guides vs. reference
+
+Keep user guides and API reference pages cleanly separated:
+
+- **Guides (every page outside `docs/reference/`)** teach a developer how to
+  get something done and what behavior to expect. Don't bury readers in
+  internal algorithms, byte caps, heuristic details, or `UPPER_SNAKE` error
+  code lists. For accurate, non-duplicated facts, either move them to the
+  matching `docs/reference/` page in the same PR and link there, or fold
+  them into an `Accordion` when no reference page exists (or until a move
+  lands). Delete only obsolete claims, repetition, and implementation steps
+  users never act on. Diagnostic lookup tables (such as `step.cache.write`
+  in `docs/cache.mdx`) stay where readers look them up.
+- **Reference (`docs/reference/`)** is the complete lookup: exact option
+  types, defaults, limits, error codes, edge cases, and report fields live
+  here.
 
 ## Page skeleton
 
@@ -251,27 +268,31 @@ Rules:
 - About one screen of visible content between two headings. If more,
   fold it, cut it, or split the section.
 
-## Tone: 80% ASD-STE100
+## Tone: plain developer English
 
-Follow Simplified Technical English for sentences and words. Relax it where
-it would make the docs sound robotic.
+Write the way a helpful senior engineer explains something to a teammate:
+clear, direct, and natural. Avoid both marketing fluff and robotic
+spec-manual prose.
 
-Keep:
+Do:
 
-- **Short sentences.** Procedure: 20 words or fewer. Description: 25 words
-  or fewer.
-- **One instruction per sentence.** "Start the app. Then run the test."
-  Not "Start the app and then run the test, making sure that...".
-- **Imperative for procedures**: "Install the skill." Not "You will want to
-  install the skill."
-- **Active voice, present tense**: "e2e downloads a browser." Not "A browser
-  will be downloaded."
-- **Condition or warning first, then the instruction**: "When `CI` is set,
-  e2e ignores `reuseExisting`. Use port `0`."
-- **Short paragraphs**: 1-3 sentences.
-- **One term for one concept** across the site. A step is a step, a run is
-  a run. Don't rotate synonyms for variety.
-- **Simple words**:
+- **Write naturally.** Use contractions (`don't`, `it's`, `doesn't`,
+  `you'll`) and natural phrasing (`once`, not `one time`; `otherwise`, not
+  `Else`; `doesn't call a model`, not `makes no model calls`).
+- **Keep `"that"` when dropping it makes a reader backtrack.** Write "the
+  tests that a filter skipped" instead of "the tests a filter left out".
+- **Vary sentence length.** Keep procedures crisp (one step per sentence),
+  but let explanatory sentences breathe so paragraphs don't read like a
+  staccato list of 10-word stubs.
+- **Use active voice and present tense**: "e2e downloads a browser", not "A
+  browser will be downloaded." Say `e2e` instead of `the runner` in guides
+  unless the distinction matters.
+- **Put the condition first**: "In CI, e2e ignores `reuseExisting`. Use port
+  `0` instead."
+- **Keep paragraphs short** (1-3 sentences) and put the main point first.
+- **Stay consistent on terminology.** A step is a step, a run is a run.
+  Don't rotate synonyms for variety.
+- **Prefer plain words**:
 
   | Write | Not |
   | --- | --- |
@@ -279,24 +300,29 @@ Keep:
   | make sure | ensure |
   | start, stop | initiate, terminate |
   | show | display |
-  | examine, check | inspect, verify (for the reader's action) |
+  | check | inspect, verify (for a reader's action) |
   | about | approximately |
-  | one time | once (as a count) |
+  | once | one time |
+  | otherwise | else (in prose) |
   | to | in order to |
   | if, when | in the event that |
   | (cut) | simply, just, easily, seamlessly, powerful, load-bearing |
 
-Relax:
+Avoid:
 
-- Contractions are fine: "don't", "it's", "you'll".
-- Product and API names stay as they are: `agent.act`, replay cache,
-  fixture, target, engine.
-- "You" is fine for descriptions. Procedures still use the imperative.
-- Page titles can use the term people search for, `-ing` forms included:
-  "Signing in", "Debugging".
-- "Can" for capability is fine: "The agent can start one subagent for each
-  area."
-- When an STE phrasing reads worse than the plain one, use the plain one.
+- **Implementation leaks in guides.** Don't dump internal algorithms,
+  byte/line truncation thresholds, or heuristic rules into top-level guide
+  prose. Move accurate facts to `docs/reference/` and link there, or fold
+  them into an `Accordion` if the topic has no reference page.
+- **Error code dumps in guides.** Say what happens ("e2e stops with a config
+  error") instead of sprinkling `UPPER_SNAKE` codes into every paragraph.
+  Leave exact codes to `docs/reference/errors.mdx` and reference tables.
+- **Edge-case sections before the happy path.** At the section level, show
+  the common workflow first and move rare edge cases down or into an
+  `Accordion` or reference page. Within a sentence, still put the condition
+  first and keep any caveat right beside its claim.
+- **Em dashes, en dashes, or spaced hyphens as dash substitutes.** Use
+  periods, commas, or colons.
 
 Before and after:
 
@@ -304,14 +330,17 @@ Before and after:
 Before: In order to ensure that your app is able to handle multiple explorers
         simultaneously, you'll want to either reuse an existing server or
         configure a dynamic port.
-After:  Make sure the app can serve many explorers at the same time. Start the
-        app one time and set `reuseExisting: true`, or set port `0`.
+After:  Make sure your app can serve several explorers at once. Either start
+        the app once with `reuseExisting: true`, or use port `0`.
 ```
 
 ```
-Before: The wizard will then proceed to write out a config file as well as an
-        example test, after which dependencies are added.
-After:  The wizard writes a config and an example test, and adds dependencies.
+Before: A log of up to 40 lines inside 8 KiB is quoted whole; otherwise the
+        quote keeps up to 20 lines from each end, with `[startup output
+        omitted]` between them, and for a log past 8 KiB those lines come
+        from its first and last 4 KiB.
+After:  e2e quotes short logs in full and trims longer ones to the start and
+        end. See the command reference for the exact truncation limits.
 ```
 
 ## Rewriting a legacy page

@@ -6,10 +6,9 @@ description: Run e2e on GitHub Actions, Vercel deployments, GitLab CI/CD, Expo W
 "twitter:image": "https://e2e.com/docs/images/og/ci.png?v=01be716140"
 ---
 
-e2e runs on each CI service that can run Node 24.8 or later (22.22.3 or
-later on Node 22), or [Bun](/reference/cli#bun) 1.4.3 or later for web tests.
-Each job installs the dependencies, starts the app or a device, runs the
-tests, and uploads `.e2e/`.
+e2e works on any CI provider that runs Node 24.8+ (22.22.3+ on Node 22), or
+[Bun](/reference/cli#bun) 1.4.3+ for web tests. A typical job installs
+dependencies, starts the app or device, runs `e2e run`, and uploads `.e2e/`.
 
 ## Pick your CI service
 
@@ -43,46 +42,45 @@ workflow. To lease browsers or devices from a hosted service, see
 
 ## Upload the reports
 
-Upload `.e2e/` at the end of each job, also when a test fails. It holds:
+Always upload `.e2e/` at the end of a job, even when tests fail:
 
-| Path | What it holds |
+| Path | What's inside |
 | --- | --- |
-| `report.json` | The run report, from each run that reaches its tests |
-| `junit.xml` | With the `junit` reporter (`--reporter list,junit`): the results, the tests a [test filter](/filters) left out as skipped, and startup failures such as `APP_UNREACHABLE` in a `run` suite |
-| `results/` | The trace pages, screenshots, and screen dumps of each test. With `--video`, also a video for each target whose engine can record |
+| `report.json` | Full JSON report for the run |
+| `junit.xml` | JUnit XML (with `--reporter list,junit`), including filtered tests as skipped and startup failures |
+| `results/` | Trace pages, screenshots, screen dumps, and videos (with `--video`) |
 
-Point the test-report integration of your CI service at `.e2e/junit.xml`.
-On GitLab, `junit.xml` also links each failure screenshot, so it shows in the test report.
-The [`output`](/reference/config#output) option moves `.e2e/`.
+Point your CI provider's test-report view at `.e2e/junit.xml`. On GitLab,
+`junit.xml` automatically links failure screenshots inline. You can move
+`.e2e/` with the [`output`](/reference/config#output) option.
 
 ## Model credentials
 
-Give the job the credential your provider needs, such as
-`AI_GATEWAY_API_KEY` (see [Models](/models)). Tests that never use `agent`
-need none.
+Pass the API key your provider expects, such as `AI_GATEWAY_API_KEY` (see
+[Models](/models)). Locator-only suites don't need any model key.
 
 <Warning>
-Each job that has the key gives it to the code it runs: tests, config, and
-dependencies. Give the key only to builds of branches you trust. Run
-untrusted pull request code with no secrets and no write tokens. See
-[Security](/security).
+Any job with an API key exposes it to your test code, config, and
+dependencies. Only give secrets to branches you trust. Run untrusted pull
+request code with no secrets and no write tokens. See [Security](/security).
 </Warning>
 
-Keep keys in CI secrets, and set spending limits where you can. GitHub does
-not give secrets to pull requests from forks.
+Store keys in CI secrets and set spending limits where your provider supports
+them. GitHub Actions automatically withholds secrets from fork pull requests.
 
 ## What CI changes
 
-CI mode is on when `CI` has a value other than an empty string, `0`, or
-`false`. To get these defaults locally, run `CI=1 npx e2e run`:
+CI mode turns on whenever the `CI` environment variable is set to anything
+other than empty, `0`, or `false`. To test CI behavior locally, run
+`CI=1 npx e2e run`:
 
 | Setting | Local | CI |
 | --- | --- | --- |
 | `retries` | `0` | `1` |
 | `workers` | half your cores | `1` |
 | `cache` when unset | `read-write` | `read-only` |
-| `.only` | allowed | rejected with `ONLY_IN_CI` |
-| `command.reuseExisting` | honored | ignored, with a notice |
+| `.only` | allowed | fails the run |
+| `command.reuseExisting` | honored | ignored |
 
 To change the worker and retry defaults, use flags:
 
@@ -185,69 +183,55 @@ These rules apply on each service:
 
 ## Gate pull requests
 
-Each non-zero exit fails the job, a failed agent step included. To block
-merges on a failed run, make the e2e job a required check. A check that
-counts a test report's failed tests alone, such as one built from
-`ctrf.json`, misses a run-level error, so keep the exit code as the gate.
-[Debugging a run](/debugging#read-the-failure) lists each exit code and
-whether rerunning the job can help.
+Any non-zero exit fails the job, including failed agent steps. Make the e2e
+job a required check to block merges on failures; don't rely solely on
+counting failed tests from a report file, since that misses run-level errors.
+See [Debugging a run](/debugging#read-the-failure) for the exit codes.
 
-To keep the checks predictable:
+To keep PR checks fast and predictable:
 
-- Give each `agent.act` the steps toward one [goal](/core-concepts#goals). Then
-  check its result with a locator assertion or `agent.assert`.
-- [Commit the replay cache](/cache#commit-the-replay-cache). A replayed
-  `agent.act` makes no model call. With the built-in agent, a cache miss, a
-  hand-off, and every agent judgment (`agent.assert`, `agent.waitFor`,
-  `agent.extract`) call the model.
-- Watch for flaky tests. The report marks a test that passes only on the
-  CI retry as flaky.
-- Add `--max-failures <n>` to stop the run after that many failed tests, so
-  a broken deploy doesn't spend a model call on each remaining step. The job
-  exits 1.
-- Add `--max-duration <ms>` to limit test-running time; the clock starts
-  when tests start, not during app startup. The job exits 1.
+- Give each `agent.act` the steps toward one [goal](/core-concepts#goals),
+  followed by a locator assertion or `agent.assert`.
+- [Commit the replay cache](/cache#commit-the-replay-cache) so recorded
+  `agent.act` steps replay with zero model calls. (Cache misses, hand-offs,
+  and agent judgments still call the model.)
+- Watch for flaky tests: e2e flags any test that only passes on a retry as
+  flaky.
+- Use `--max-failures <n>` to bail out early on a broken deploy instead of
+  burning model calls on every remaining test.
+- Use `--max-duration <ms>` to cap test execution time (the timer starts once
+  tests begin, excluding app startup).
 
 ## Run only affected tests
 
-On a pull request, pass `--changed-since` so a [test filter](/filters) can
-leave out the tests the change is unlikely to affect. When the filter scores
-tests, as the decision filter does, each target starts the files of the
-likeliest to fail first. Without the flag, as on `main`, the whole suite
-runs. See [Add the decision filter](/filters#add-the-decision-filter).
-
-With the CI default of one worker, only the relevance bands order files and
-collection order breaks ties: e2e reads the
-[timings history](#cache-the-timings-history) only with more than one worker.
-See [Start the likeliest first](/filters#start-the-likeliest-first).
+Pass `--changed-since` on pull requests so a [test filter](/filters) skips
+tests that the diff is unlikely to affect and runs the riskiest files first.
+Without the flag (such as on `main`), the full suite runs. See
+[Add the decision filter](/filters#add-the-decision-filter).
 
 ## Cache the timings history
 
-With more than one worker, `e2e run` starts the longest files first, after
-any file it has no time for, ordered by `<output>/timings.json` (`.e2e/timings.json` by default): a few KB that a
-run updates when it ran at least one file whole. A fresh CI checkout has none,
-so restore it from your CI cache before the run and save it after.
-[GitHub Actions](/ci/github-actions#cache-the-timings-history) has the step.
+When running with multiple workers, `e2e run` uses `<output>/timings.json`
+(`.e2e/timings.json` by default) to start the slowest test files first. Save
+and restore this file in your CI cache so fresh checkouts keep the speedup.
+See [GitHub Actions](/ci/github-actions#cache-the-timings-history) for an
+example.
 
-- The file is advisory. One that is missing, corrupt, or invalid is no history,
-  and the run falls back to the previous `report.json`. A restored file can
-  change the order of files, never a result.
-- A run times a file only when it ran all of it. A `--grep` or
-  `--last-failed` run leaves the entry of a file it ran in part as it was.
-- CI defaults to one worker. Set [`workers`](/reference/config#workers) or
-  pass `--workers` to benefit.
-- Key the cache by branch, with `main` as the fallback, so a new pull
-  request starts from the history of `main`. With [sharding](#sharding), add
-  the shard index to the key.
-- `--timings <file>` reads and writes another path.
+- It's purely advisory: a missing or invalid file never affects test results.
+- Partial runs (`--grep`, `--last-failed`) don't overwrite timings for files
+  they didn't run in full.
+- Key the cache by branch with `main` as a fallback (and include the shard
+  index if you use [sharding](#sharding)).
+- Remember CI defaults to `workers: 1`; set `workers` or pass `--workers` to
+  parallelize.
 
 ## Sharding
 
-`--shard <index/total>` runs one slice of the suite. Every job runs the
-same command with its own index, and every machine slices the suite the
-same way. A shard with no test fails with `NO_TESTS`. If a matrix can have
-more shards than tests, add `--pass-with-no-tests`. The
-[CLI reference](/reference/cli#flags) has the slicing rules.
+Pass `--shard <index/total>` to split a suite across parallel CI jobs. Every
+machine slices the suite deterministically. If a shard can end up with zero
+tests (for example, a matrix wider than the suite), add
+`--pass-with-no-tests`. See the [CLI reference](/reference/cli#flags) for
+slicing details.
 
 On GitHub Actions, a matrix runs one job for each shard:
 
@@ -263,29 +247,22 @@ jobs:
       - run: npx e2e run --shard ${{ matrix.shard }}/3 --reporter list,junit
 ```
 
-Upload each shard's `report.json` and `junit.xml` under a name with the
-shard index. Each report records its shard as `run.shard`. e2e can't merge
-shard reports yet.
+Upload each shard's `report.json` and `junit.xml` with the shard index in the
+artifact name. (e2e doesn't merge shard reports yet.)
 
 ## Rerunning failures
 
-`--last-failed` runs only the tests that didn't pass in the previous run,
-read from `report.json` in the output directory. Run it in the same step as
-the first run:
+`--last-failed` reruns only the tests that failed in the previous run (read
+from `.e2e/report.json`). You can chain it in the same CI step:
 
 ```yaml
       - run: npx e2e run || npx e2e run --last-failed
 ```
 
-The rerun keeps the first run's artifacts and writes its own under
-`rerun-<n>/` in each test's directory, so one upload holds both. Beside
-`report.json`, it writes `report-with-reruns.json`: both runs as one report. The
-[CLI reference](/reference/cli#flags) lists what counts as not passed.
-
-For a rerun in a separate job, download the previous job's `report.json`
-into the output directory. If the previous job was a rerun, also download
-its matching `report-with-reruns.json` to keep the earlier results and
-attempts. Download `results/` as well if you need the attempt files.
+The rerun keeps the original artifacts, saves its own under `rerun-<n>/`, and
+writes a combined `report-with-reruns.json` alongside `report.json`. If you
+run the retry in a separate CI job, download the previous job's `report.json`
+(plus `report-with-reruns.json` and `results/` if you want the full history).
 
 ## Next
 

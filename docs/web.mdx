@@ -24,9 +24,8 @@ works only on a loopback host. A `file:` URL opens
 
 ### Let the runner start it
 
-Add `app.command` and the runner starts the dev server. It waits until
-`app.url` answers, and stops a server it started when the run ends, fails, or
-is interrupted:
+Add `app.command` and e2e starts your dev server, waits until `app.url`
+responds, and shuts it down when the run ends (even on failures or Ctrl-C):
 
 ```ts title="e2e.config.ts"
 import type { E2EConfig } from 'e2e';
@@ -52,31 +51,31 @@ export default {
  ✓ target "web" command at http://localhost:3000/ ready 1.20s
 ```
 
-The command runs without a shell: `executable` comes from `PATH` and `args`
-pass as written. The child gets only `PATH`, `HOME`, the temp-directory
-variables, `inheritEnv`, and `env`.
+The command runs directly without a shell (`executable` is resolved from
+`PATH`, and `args` pass as-is). The child process only receives `PATH`,
+`HOME`, temp-directory variables, `inheritEnv`, and `env`.
 
 | Option | Purpose |
 | --- | --- |
-| `reuseExisting: true` | Use a server that already runs, such as one an [MCP session](/mcp-server#run-tests-next-to-a-session) started. In CI, e2e ignores it, and a server that already answers is `APP_ALREADY_RUNNING`. |
-| `log` | Save the app's stdout and stderr to a project-relative file. A startup error, or an unexpected exit during `e2e run`, quotes the lines any process appended to the file since the command started. A log of up to 40 lines inside 8 KiB is quoted whole; otherwise the quote keeps up to 20 lines from each end, with `[startup output omitted]` between them, and for a log past 8 KiB those lines come from its first and last 4 KiB. `command.env` and `inheritEnv` values of at least four characters are redacted from the quote. The file itself is not redacted. |
+| `reuseExisting: true` | Reuse a server that's already running (for example, one started by an [MCP session](/mcp-server#run-tests-next-to-a-session)). Ignored in CI, where an already-running server fails the run. |
+| `log` | Save the app's stdout and stderr to a project-relative file. If the server fails to start or crashes mid-run, e2e prints the relevant lines from this log (`env` and `inheritEnv` values of 4+ characters are redacted in the quote). The log file itself isn't redacted. |
 | `env` | Environment variables for the app. |
 | `inheritEnv` | Host variables to pass through when set, by name or prefix: `['DATABASE_URL', 'STRIPE_*']`. `env` wins over them. |
-| `startupTimeout` | How long to wait for the app to answer. Default 60 seconds. |
-| `readyUrl` | Set beside `command`, not in it, to probe a health endpoint instead of `app.url`. |
+| `startupTimeout` | How long to wait for the app to respond. Default 60 seconds. |
+| `readyUrl` | Set beside `command` (not inside it) to probe a health endpoint instead of `app.url`. |
 
-See the [command reference](/reference/config#command) for all options.
+See the [command reference](/reference/config#command) for all options and
+log truncation details.
 
 <Note>
-The runner starts only `app.command`. Start databases, mocks, and other
-services before the run, or make `app.command` a script that starts them
-and serves the app. A services API returns in a later release.
+e2e only starts `app.command`. Start databases, mocks, or other sidecar
+services beforehand, or wrap them in a single startup script.
 </Note>
 
 ### Let the runner pick the port
 
-Use port `0` to run several checkouts without a port conflict. The runner
-picks a free port and replaces `{port}` in the command's `args` and `env`:
+Use port `0` to run multiple checkouts without port conflicts. e2e picks an
+open port and substitutes `{port}` in `args` and `env`:
 
 ```ts title="Target fragment"
 engine: web(),
@@ -113,24 +112,24 @@ app: {
 },
 ```
 
-The browser adds `headers` only to requests that start at the origin of
-`app.url`: its scheme, host, and port. A request keeps them through its
-redirects, to any origin. To add them for another origin, such as an API
-host behind the same gate, list it in `credentialOrigins`. See
-[request credentials](/reference/security#request-credentials). For ngrok,
-use `'ngrok-skip-browser-warning': '1'`.
-`app.identity` keeps the cache identity stable when the preview URL changes.
+The browser sends `headers` only on requests that start at `app.url`'s
+origin, and keeps them on redirects to any origin. To include another
+origin, like an API host behind the same gate, list it in
+`credentialOrigins` (see
+[request credentials](/reference/security#request-credentials)). For ngrok,
+use `'ngrok-skip-browser-warning': '1'`. Setting `app.identity` keeps replay
+cache keys stable when preview URLs change.
 
 <Note>
-Setting `headers` turns off the browser's HTTP cache and blocks service
+Setting `headers` disables the browser's HTTP cache and blocks service
 workers.
 </Note>
 
-Use `basicAuth` for HTTP basic authentication. The browser answers a `401`
-challenge from the origin of `app.url`, and from each origin in
-`credentialOrigins`. WebKit answers any origin when one of those is on a
-default port, such as an `https://` URL with no port, or has an IPv6 host.
-Declare the password under `secrets` and pass `secrets.get(name)`:
+For HTTP basic auth, use `basicAuth`. It answers a `401` from `app.url` and
+any origin in `credentialOrigins` (on WebKit, from any origin if one of them
+uses a default port or an IPv6 host). Declare the password under `secrets`
+and pass `secrets.get(name)` so e2e keeps it out of reports, logs, and model
+input:
 
 ```ts title="e2e.config.ts"
 import type { E2EConfig } from 'e2e';
@@ -150,10 +149,8 @@ export default {
 } satisfies E2EConfig;
 ```
 
-The engine resolves the secret when each attempt starts, and the runner
-keeps it out of reports, logs, and what the agent reads. An undeclared name
-fails the config load with `INVALID_CONFIG`. A plain string password also
-works, but e2e redacts only a `secrets.get` password.
+Plain string passwords also work, though only `secrets.get()` passwords are
+redacted.
 
 ## Viewports
 
@@ -243,22 +240,16 @@ desktop render first.
 
 ### What the agent sees
 
-The agent gets the current viewport size with each observation, so resize
-before `agent.act`. Screenshots cover the viewport. Off-screen elements can
-still be in the tree, a tap scrolls them into view, and the agent can
-scroll to load lazy content.
+The agent receives the current viewport size with each observation, so
+resize before calling `agent.act`. Screenshots capture the visible viewport,
+while off-screen elements can still appear in the accessibility tree (taps
+automatically scroll them into view, and the agent can scroll to trigger
+lazy loading).
 
-A sentence with a link, emphasis, or code reaches the agent whole, and the
-link is also listed as a control. The agent reads the first 512 characters
-of each block of text. In a longer block, e2e also lists its links and
-emphasized text on their own.
-
-The agent also sees a checkbox or radio that a component library shrinks
-to no size under its own label, as Element Plus does, with its checked
-state. A tap on it clicks the label. When that label is or holds a link
-or another control, the agent sees the label's text and that control but
-not the checkbox, since a click on the label could land on the link. Locators still call that control hidden, as
-Playwright does, so check it with `toBeChecked()`, not `toBeVisible()`.
+Styled checkboxes and radios whose native input is visually hidden under a
+label still show up for the agent (and tapping them clicks the label),
+unless that label also wraps a link or another control. For locators, check
+those with `toBeChecked()` instead of `toBeVisible()`.
 
 ### Scoping a test to one size
 
@@ -306,12 +297,13 @@ the app use the clipboard, grant it on the target:
 }
 ```
 
-- Every page of every attempt holds the grant, on any origin.
-- A web target takes `'grant'` only. `'deny'` and `'reset'` are
-  `INVALID_CONFIG`: leave the permission out instead.
-- The names are Playwright's, and each browser grants its own set. See
+- Permissions apply to every page and origin for that target.
+- Web targets only accept `'grant'` (leave a permission out instead of
+  passing `'deny'` or `'reset'`).
+- Permission names follow Playwright's list and vary by browser. See
   [`permissions`](/reference/config#permissions).
-- `permissions: 'all'` grants every name the target's browser grants. An older Chrome attached over CDP that does not know `local-network-access`, `storage-access` or `local-fonts` gets the rest of the list.
+- `permissions: 'all'` grants every permission that the target browser
+  supports.
 
 ## Next
 

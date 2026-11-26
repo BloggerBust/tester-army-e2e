@@ -219,13 +219,12 @@ on Android. Each UI framework sets them its own way:
   in full.
 - On Android, Compose hides test tags until a root composable sets
   `Modifier.semantics { testTagsAsResourceId = true }`. Without it,
-  `getByTestId` finds nothing. iOS reads a Compose Multiplatform tag as is,
-  so a shared screen sets the flag in its Android activity.
-- In SwiftUI, an `.accessibilityIdentifier()` on a container such as a
-  `VStack` replaces the ids of every element inside it. `getByTestId` then
-  fails with `LOCATOR_AMBIGUOUS` on the container's id and finds nothing for
-  the children's ids. Put `.accessibilityElement(children: .contain)` before
-  the identifier to keep both.
+  `getByTestId` won't find them. (iOS reads Compose Multiplatform tags as-is,
+  so only your Android activity needs this flag.)
+- In SwiftUI, putting `.accessibilityIdentifier()` on a container like a
+  `VStack` overrides its children's identifiers, causing ambiguous matches.
+  Add `.accessibilityElement(children: .contain)` before the identifier to
+  preserve both.
 - In Flutter, wrap a button's `Semantics` in `MergeSemantics` so the id and
   the button role land on one node.
 - In NativeScript, `testID` and `accessibilityIdentifier` set the same id:
@@ -265,11 +264,11 @@ await device.openLink('myapp://orders/42');
 await expect(screen.getByText('Order #42')).toBeVisible();
 ```
 
-`device.setNetwork('offline')` and `device.setAirplaneMode(true)` work on
-Android only. An iOS simulator shares the Mac's network, and simctl can only
-change its status bar, so on iOS both fail with `UNSUPPORTED_CAPABILITY`.
-`setNetwork('online')` and `setAirplaneMode(false)` do nothing on iOS, so a
-cleanup hook that both platforms run still passes.
+`device.setNetwork('offline')` and `device.setAirplaneMode(true)` only work
+on Android. Because iOS simulators share the host Mac's network, calling
+them on iOS throws an unsupported capability error. Calling
+`setNetwork('online')` or `setAirplaneMode(false)` is a safe no-op on iOS so
+shared cleanup hooks keep passing.
 
 On Android, `setNetwork('offline')` turns off Wi-Fi only, and the app can
 stay online over cellular. To take the app offline, use
@@ -565,7 +564,7 @@ a matching name wins, so give each phone a unique name. Without `device`, a
 paired iPhone or iPad that is reachable (USB or network), or a connected
 Android phone, counts as booted and joins the pool beside booted simulators.
 
-Set the phone up one time:
+One-time phone setup:
 
 <Tabs>
   <Tab title="iOS">
@@ -866,56 +865,29 @@ export function cloudDevices(options: { provider: string; device: string; osVers
 
 ## Troubleshooting
 
-A device failure shows agent-device's own message. Under the agent, an
-engine fault with no more specific code reports as `APP_UNREACHABLE`, so
-read the message before the code: often the app isn't what failed.
+Device failures surface agent-device's underlying error message; read the
+message itself, not just the wrapper error code.
 
-**The iOS automation runner is busy, wedged, or can't present a
-snapshot.** A heavy or animating screen can overrun the runner, and a run
-stopped with Ctrl-C can leave it busy. The message names the runner and
-the first move, usually a rerun. If the next run meets it again, stop the
-daemon and reboot the simulator with the commands below.
+**The iOS automation runner is busy or stuck.** Heavy animations or a
+Ctrl-C'd run can wedge the runner. Try rerunning once; if it persists, stop
+the daemon and reboot the simulator with the commands below.
 
-**`device.installApp()` on Android reports no bundle id or package.**
-agent-device couldn't tell which package the build is, so `app.open()` has
-nothing to launch. When it can't read the APK's manifest, it falls back to
-the Android SDK's `aapt`, found under `ANDROID_SDK_ROOT`, `ANDROID_HOME`,
-`~/Library/Android/sdk` on macOS, or `~/Android/Sdk`. Set the target's
-`app.bundleId`. Or export `ANDROID_HOME`, then stop the agent-device daemon
-so the next run starts it with the variable.
+**`device.installApp()` can't detect the Android package.** If agent-device
+can't read the APK manifest, either set `app.bundleId` explicitly in your
+config or export `ANDROID_HOME` and restart the agent-device daemon.
 
-**Android reports insufficient foreground app content, or iOS reports the
-app is not running.** agent-device couldn't read the screen yet, often an
-app still loading after a cold start. On iOS this only counts until the
-first readable screen after `app.open()`, `app.restart()`, or
-`device.openLink()`, as on a physical iPhone that is still launching the
-app; an app that exits later fails at once. A waiting locator action or
-`expect` waits through it, as for an element not there yet. If the screen
-is still unreadable when the wait runs out, the step fails with this
-message. Immediate reads like `count()` and `isVisible()` see no matches
-instead, so `not.toBeVisible()` can pass while the screen is unreadable,
-including on an app that crashed before it rendered. An observation, such
-as the agent's next turn, fails on it at once.
+**Android reports insufficient foreground content / iOS reports the app
+isn't running.** This usually means the app is still cold-starting. Waiting
+locators and `expect()` wait through cold starts, while immediate reads like
+`isVisible()` or `count()` see no matches. Because of that,
+`not.toBeVisible()` can pass while the screen is unreadable, including on an
+app that crashed before rendering. Prefer positive `expect(...).toBeVisible()`
+checks after launch.
 
-**A timeout on the device.** A simulator boot, runner connection, or app
-launch that times out on the device is `ENGINE_FAILURE` with agent-device's
-message and hint, never `LAUNCH_TIMEOUT`, `ACTION_FAILED`, or
-`STEP_TIMEOUT`.
-
-**An action that outlives its timeout.** A tap, fill, key, swipe, or
-`back` gets its `timeout` (default `actionTimeout`). If the device doesn't
-answer in time, the step fails with `ACTION_FAILED` and isn't retried: the
-input may have landed. A pending tap, double tap, focus, check or uncheck is
-cancelled when the step stops waiting for it or the run is interrupted. Input
-already sent to the device may still finish. A `longPress` that holds at least
-as long as the time left is refused before it's sent; raise its `timeout`.
-Snapshots and screenshots run within the timeout of the call that takes them,
-so a device that stops answering fails the step with `ACTION_FAILED` instead
-of holding it until the test timeout. `locator.waitFor`, `expect`, and
-`toHaveScreenshot` give their last snapshot extra time, up to their slowest
-one so far and within the test timeout, so a screen that shows up during it
-still passes. An element that never shows up fails as
-`LOCATOR_NOT_FOUND`, or `ASSERTION_FAILED` for `expect`.
+**Device timeouts.** If a simulator boot, launch, or action times out, e2e
+fails the step instead of retrying an action that might have already landed
+on the device. For long gestures like `longPress`, raise `actionTimeout` or
+pass a per-call `timeout`.
 
 <CodeGroup>
 ```bash npm

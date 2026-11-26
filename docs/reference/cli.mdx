@@ -206,7 +206,7 @@ it wrote:
 
 - `app.url` is `http://localhost:<port>`, with the port from the `--port`
   or `-p` flag or `PORT=` variable of the `next` command in the `dev`
-  script, else 3000. It's never `127.0.0.1`, which
+  script, or 3000 by default. It's never `127.0.0.1`, which
   [doesn't hydrate](/frameworks/nextjs#fix-next-js-problems) on `next dev`.
 - Locally, `app.command` runs the `dev` script with `reuseExisting: true`.
 - When the app also has `build` and `start` scripts on the same port,
@@ -552,7 +552,7 @@ release when nothing is installed and a global install is its own version:
 | has another e2e version installed than the CLI that runs | the installed version's guide and topics |
 | has a version installed from before the guide shipped | the CLI's guide, and says the installed version ships none |
 | declares a version or range that leaves the CLI out, with nothing installed | the CLI's guide, and the commands that print the project's |
-| has a version installed that its `package.json` range leaves out | the CLI's guide when the range includes the CLI, else the installed one, and tells you to reinstall |
+| has a version installed that its `package.json` range leaves out | the CLI's guide when the range includes the CLI, otherwise the installed one, and tells you to reinstall |
 
 A range is read as npm reads it. A dist-tag, a workspace link, or an alias
 names no version, so the line adds nothing. With a range, install first: the
@@ -719,7 +719,7 @@ Test files, directories, or globs relative to the project root:
 | `--grep-invert <pattern>` | Leaves out tests whose title matches one of the regular expressions; repeatable, with the text and forms of `--grep`. With both, the run keeps what `--grep` matches minus what `--grep-invert` matches. |
 | `--changed-since <ref>` | Runs the configured [test filters](/filters) on the change since the ref: every file that differs from the merge base of the ref and `HEAD`, uncommitted and untracked files included. Each target starts the files of the tests the filters score likeliest first. Without it, no filter runs. With no filters configured, a warning says every test runs. |
 | `--last-failed` | Only the tests the previous run did not pass; the list after these tables says which. |
-| `--shard <index/total>` | Runs one contiguous slice of the selected tests, such as `2/3`, cut after every other flag. Slices differ by at most one test. A serial group counts as one and is never split. Each shard brings only the setup tests its own tests need. Skipped tests are not cut: the shard that runs the nearest test before one reports it, else the first shard, so only one shard does. Every shard runs the same command with a different index. The order is the report order, so a suite shards the same way on every machine. A shard with no test is `NO_TESTS` unless `--pass-with-no-tests`. The report records the shard as `run.shard`, and marks each test the cut gives another shard with `skip.otherShard`. With `--last-failed`, the cut slices the tests the last run did not pass. See [Sharding](/ci#sharding). |
+| `--shard <index/total>` | Runs one contiguous slice of the selected tests, such as `2/3`, cut after every other flag. Slices differ by at most one test. A serial group counts as one and is never split. Each shard brings only the setup tests its own tests need. Skipped tests are not cut: the shard that runs the nearest test before one reports it (or the first shard), so only one shard does. Every shard runs the same command with a different index. The order is the report order, so a suite shards the same way on every machine. A shard with no test is `NO_TESTS` unless `--pass-with-no-tests`. The report records the shard as `run.shard`, and marks each test the cut gives another shard with `skip.otherShard`. With `--last-failed`, the cut slices the tests the last run did not pass. See [Sharding](/ci#sharding). |
 | `--pass-with-no-tests` | Exits 0 instead of `NO_TESTS` when nothing is selected. A run with nothing to run prepares no engine and starts no app or service command. |
 
 **Execution**
@@ -728,7 +728,7 @@ Test files, directories, or globs relative to the project root:
 | --- | --- |
 | `--headed` | Visible UI when the engine supports it. |
 | `--device <name>` | The simulator, emulator, or phone the selected mobile target runs on for this run, in place of its `device` option: a device name, a simulator UDID, or an emulator serial (`emulator-5554`). It applies to the one selected target that can take a device; the other selected targets (`web()`, or a target whose devices a provider leases) still run as configured. With several selected targets that can take one, pick one with `--target`, or the run fails with `TARGET_REQUIRED`. When none can, it is `UNSUPPORTED_CAPABILITY`. `e2e login --device` is a different flag. |
-| `--agent <names>` | Runs unpinned tests once per selected agent, comma-separated or repeated. Default: `default`. For a test with `{ agent }`, it selects the shared names when they overlap, else keeps the test's own. An unknown name is `INVALID_CONFIG`. |
+| `--agent <names>` | Runs unpinned tests once per selected agent, comma-separated or repeated. Default: `default`. For a test with `{ agent }`, it selects the shared names when they overlap, otherwise keeps the test's own. An unknown name is `INVALID_CONFIG`. |
 | `--retries <n>` | Replaces `config.retries`; an integer 0-10. Default: the config. |
 | `--workers <n>` | Replaces `config.workers`; an integer 1-1024. Default: the config. |
 | `--fully-parallel` | Runs the tests of one file in parallel on every target, over [`fullyParallel`](/reference/config#fullyparallel) in the config and on a target. |
@@ -748,8 +748,8 @@ Test files, directories, or globs relative to the project root:
 | Option | Description |
 | --- | --- |
 | `--reporter <ids>` | Replaces the built-in reporters in `config.reporters`, comma-separated: `list`, `dot`, `line`, `json`, `junit`, `markdown`, `ctrf`. Default: the config. A built-in the config configured, such as `junit({ outputFile })`, keeps its options. Beside `json`, `list`, `dot`, and `line` print to stderr. Two of `list`, `dot`, and `line` together are `INVALID_CONFIG`. [Other reporters](/reference/reporters) in the config keep running. |
-| `--output <dir>` | The results directory for this run, over the config's [`output`](/reference/config#output): the report, the reporter files, the AI trace, `results/`, and `sessions/`. Default: the config, else `.e2e`. Resolved from the project root, and must be a directory inside it, not the root itself; that and the other directories the run cannot own (listed there) are `INVALID_CONFIG`. `results/` is cleared once the tests start; a `--last-failed` rerun keeps what the previous report names. |
-| `--cache-dir <dir>` | The replay cache directory for this run, over [`E2E_CACHE_DIR`](/reference/environment#replay-cache) and [`cache.dir`](/reference/config#cache). Default: `E2E_CACHE_DIR`, else `cache.dir`, else `.e2e/cache`. Resolved from the project root; `~` or a leading `~/` is the home directory. The cache mode stays as configured. With a custom `cache.store` it is `INVALID_CONFIG`. |
+| `--output <dir>` | The results directory for this run, over the config's [`output`](/reference/config#output): the report, the reporter files, the AI trace, `results/`, and `sessions/`. Default: the config, or `.e2e`. Resolved from the project root, and must be a directory inside it, not the root itself; that and the other directories the run cannot own (listed there) are `INVALID_CONFIG`. `results/` is cleared once the tests start; a `--last-failed` rerun keeps what the previous report names. |
+| `--cache-dir <dir>` | The replay cache directory for this run, over [`E2E_CACHE_DIR`](/reference/environment#replay-cache) and [`cache.dir`](/reference/config#cache). Default: `E2E_CACHE_DIR`, then `cache.dir`, then `.e2e/cache`. Resolved from the project root; `~` or a leading `~/` is the home directory. The cache mode stays as configured. With a custom `cache.store` it is `INVALID_CONFIG`. |
 | `--timings <file>` | The [timings history](/ci#cache-the-timings-history) to update when the run ends, over `<output>/timings.json`. With more than one worker, files with no recorded time start first, then the rest longest first. Resolved from the project root. A missing or invalid file is no history, never an error. |
 | `--debug` | Phase timings and an agent step table on stderr after the run; see [Debug output](#debug-output). |
 | `--ai-trace` | Records every model call to `<output>/ai-trace.json`; see [Output](#output). |
@@ -768,7 +768,7 @@ the project root or outside it maps to `--output .e2e`.
 
 `--last-failed` selects the tests the previous run did not pass. It reads them
 from the `report.json` this run overwrites, `<output>/report.json` (`--output`,
-else the config's [`output`](/reference/config#output)):
+or the config's [`output`](/reference/config#output)):
 
 - Tests that failed, timed out, or were interrupted.
 - Tests skipped because a setup, a serial predecessor, a hook, or the worker
@@ -1049,7 +1049,7 @@ bunx e2e explore 'Hunt for broken forms and dead links' --agent thorough --video
 | `--timeout <ms>` | The run's wall clock, an integer 180000-7200000. Default: `600000`. The last minute is kept for the closing assessment. Out of range exits 2. |
 | `--headed` | Requests visible UI when the engine supports it. |
 | `--reporter <ids>` | As for `run`. Default: the resolved config value. `list` prints the exploration rows under its summary, `json` carries the record in the report, and `markdown` writes the findings to `<output>/summary.md`. |
-| `--output <dir>` | As for `run`. Default: the config, else `.e2e`. A finding's evidence screenshot is an attempt artifact under `<output>/results`. |
+| `--output <dir>` | As for `run`. Default: the config, or `.e2e`. A finding's evidence screenshot is an attempt artifact under `<output>/results`. |
 | `--debug` | As for `run`: phase timings and the agent step table. |
 | `--ai-trace` | As for `run`. |
 | `--trace [mode]` | As for `run`: a trace page of the exploration. Default: the config. |
@@ -1204,7 +1204,7 @@ bunx e2e doctor --target web --headed
 | `node` | `pass`: the Node.js or Bun version. On an unsupported runtime, `--json` still prints a report with `node` as `fail`. |
 | `config` | `pass` with `path` and `targets` (`name`, `platform`, `engine`), or `fail` with the `CONFIG_*` or `UNKNOWN_TARGET` code. A failed `config` is the last check. |
 | Engine checks, with `target` | What the target's engine reports, such as the web engine's `browser`: `pass` when installed, `warn` when the first run will download it, `fail` on Linux when the installed chromium or firefox cannot resolve its system libraries (the message names them and the [`--with-deps` install](/reference/web#installing-browsers)), `skip` with a browser provider or `connect`; or the mobile engine's agent-device checks (`agent-device`, `toolchain`, `ios-runner-cache`, `device` per configured device, `target-app`) and `app-path`, with only `device`, as `skip`, for a device provider. An engine that reports nothing adds no check. `engine` is `skip` when the engine has no `doctor` hook, and `fail` when the hook threw, timed out, or returned a malformed check. |
-| `model`, with `agent` | `model` and `judge` as `provider` and `modelId`, the names the AI SDK instance reports. `pass` or `fail` for a model on an [`e2e login`](/subscriptions), from the stored login or the provider's API key variable, with `login` set when the agent's models read one login. `warn` for a Vercel AI Gateway or OpenRouter model whose key variable is not set (`AI_GATEWAY_API_KEY` or `VERCEL_OIDC_TOKEN`; `OPENROUTER_API_KEY`): agent steps that call the model fail with `MODEL_PROVIDER_FAILED`, unless the model gets its key another way, such as a key passed where it is constructed or a linked Vercel project. `unknown` for any other model, because the model reads its own credential. With `--check-model`, `pass` when every model answered, else `fail` with the error code, its message prefixed `model:` or `judge:` when the agent has both. `skip` when the agent has no model. `unknown` with `executor` when a custom executor brings its own agent and declares no model or judge; any model it declares is checked like an agent's. |
+| `model`, with `agent` | `model` and `judge` as `provider` and `modelId`, the names the AI SDK instance reports. `pass` or `fail` for a model on an [`e2e login`](/subscriptions), from the stored login or the provider's API key variable, with `login` set when the agent's models read one login. `warn` for a Vercel AI Gateway or OpenRouter model whose key variable is not set (`AI_GATEWAY_API_KEY` or `VERCEL_OIDC_TOKEN`; `OPENROUTER_API_KEY`): agent steps that call the model fail with `MODEL_PROVIDER_FAILED`, unless the model gets its key another way, such as a key passed where it is constructed or a linked Vercel project. `unknown` for any other model, because the model reads its own credential. With `--check-model`, `pass` when every model answered, otherwise `fail` with the error code, its message prefixed `model:` or `judge:` when the agent has both. `skip` when the agent has no model. `unknown` with `executor` when a custom executor brings its own agent and declares no model or judge; any model it declares is checked like an agent's. |
 
 By default, doctor prints one line per check: a mark, the check id, the
 target or agent in brackets, and the details. The last line says whether a
@@ -1256,7 +1256,7 @@ bunx e2e cache ls --config packages/web/e2e.config.ts
 | Option | Description |
 | --- | --- |
 | `--config <path>` | Explicit config path. Default: the nearest `e2e.config.ts`, `.mts`, `.js`, or `.mjs` (see [Loading](/reference/config#loading)). |
-| `--cache-dir <dir>` | The store directory. Default: `E2E_CACHE_DIR`, else `cache.dir`, else `.e2e/cache/`. |
+| `--cache-dir <dir>` | The store directory. Default: `E2E_CACHE_DIR`, then `cache.dir`, then `.e2e/cache/`. |
 
 ```text
 TEST                             TARGET  INSTRUCTION   AGE  ACTIONS
@@ -1283,8 +1283,8 @@ moves the `@e2e-dev/*` packages in the same `package.json`, and installs
 them with the project's package manager. `e2e update` is the same command.
 
 <Note>
-`npx e2e` runs the installed version. When that version has no `upgrade`
-command yet, run `npx e2e@latest upgrade` one time.
+`npx e2e` runs the installed version. When that version doesn't have the
+`upgrade` command yet, run `npx e2e@latest upgrade` once.
 </Note>
 
 <CodeGroup>
@@ -1366,7 +1366,7 @@ Updated the agent skill in .agents/skills/e2e/ (12 files)
   command installs nothing. Without `node_modules`, as under Yarn
   Plug'n'Play, it compares the specs in `package.json` instead.
 - **The registry.** `npm_config_registry` when the package manager sets it,
-  else `https://registry.npmjs.org/`.
+  otherwise `https://registry.npmjs.org/`.
 - **The agent skill.** A copy in `.agents/skills/e2e` or `.claude/skills/e2e`
   is updated to the installed version's after the install, and when
   everything was already up to date. A `.claude/skills/e2e` symlink to the
@@ -1506,7 +1506,7 @@ E2E_TELEMETRY_DEBUG=1 bunx e2e run
   touching the file.
 - `E2E_TELEMETRY_DEBUG=1` prints every event to stderr and sends nothing.
 - The first command on a machine, other than `e2e init` and
-  `e2e telemetry`, prints a notice one time. In CI nothing is printed and no
+  `e2e telemetry`, prints a notice once. In CI nothing is printed and no
   file is written.
 
 #### `e2e report`
@@ -1539,7 +1539,7 @@ bunx e2e report --output out
 | --- | --- |
 | `[path]` | HTML file or directory holding `report.html` (default: `<output>/report.html`; mutually exclusive with `--output`) |
 | `--config <path>` | Config file (default: the nearest `e2e.config.ts`, `.mts`, `.js`, or `.mjs`) |
-| `--output <dir>` | Results directory containing `report.html` (default: `output` in the config, else `.e2e`) |
+| `--output <dir>` | Results directory containing `report.html` (default: `output` in the config, or `.e2e`) |
 
 - If [`htmlReporter({ outputFile })`](/reference/reporters#htmlreporter) writes the page elsewhere, pass that path as `[path]`: `e2e report` checks `<output>/report.html` only.
 
@@ -1585,8 +1585,8 @@ that differs from Node.js:
   import to the file.
 - A legacy decorator in a `.cts` file fails to load. Move the class to a `.ts`
   file.
-- `e2e run --watch` and `e2e mcp` read `tsconfig.json` one time, and load a
-  file that an `import()` or `require()` names with a computed path one time.
+- `e2e run --watch` and `e2e mcp` read `tsconfig.json` once, and load a
+  file that an `import()` or `require()` names with a computed path once.
   Restart them after you edit either, or after you add a file that an import
   did not find.
 - `e2e mcp` opens one session at a time and ignores `--max-sessions`.
