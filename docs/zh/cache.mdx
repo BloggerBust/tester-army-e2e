@@ -5,7 +5,15 @@ description: 无需调用模型即可回放已验证的智能体操作，并在�
 "twitter:image": "https://e2e.com/docs/images/og/cache.png?v=d035986b13"
 ---
 
+import { VideoCard } from '../snippets/video-card.jsx';
+
 回放缓存会在后续检查验证结果后，记录 `agent.act()` 步骤的操作。下次运行时，运行器会回放这些操作，无需调用模型。当控件或预期的结束状态不再匹配时，智能体会从当前屏幕接管。参阅[自修复测试](/self-healing)。
+
+<VideoCard
+  id="FHTMtH0v4SI"
+  title="e2e 的智能体缓存如何工作？"
+  subtitle="在这个视频中，Kacper 演示 e2e 如何在不调用模型的情况下回放智能体的操作，以及应用变化时会发生什么。"
+/>
 
 `agent.assert`、`agent.waitFor` 和 `agent.extract` 始终实时执行。运行摘要会统计各种结果：
 

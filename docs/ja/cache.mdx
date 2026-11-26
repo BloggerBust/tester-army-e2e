@@ -5,7 +5,15 @@ description: 確認済みのエージェント操作をモデル呼び出しな�
 "twitter:image": "https://e2e.com/docs/images/og/cache.png?v=d035986b13"
 ---
 
+import { VideoCard } from '../snippets/video-card.jsx';
+
 リプレイキャッシュは、後続の確認で結果が検証された `agent.act()` ステップの操作を記録します。次の実行では、ランナーがモデルを呼ばずにその操作を再生します。コントロールや期待する終了状態が一致しなくなると、エージェントが現在の画面から引き継ぎます。[セルフヒーリングするテスト](/self-healing)を参照してください。
+
+<VideoCard
+  id="FHTMtH0v4SI"
+  title="e2e のエージェント型キャッシュの仕組み"
+  subtitle="Kacper が、e2e がモデルを呼ばずにエージェントの操作を再生する仕組みと、アプリが変わったときの動きを紹介します。"
+/>
 
 `agent.assert`、`agent.waitFor`、`agent.extract` は、毎回実際に実行されます。実行サマリーには結果別の件数が表示されます。
 

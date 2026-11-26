@@ -5,11 +5,19 @@ description: Reproduza ações verificadas do agente sem chamadas ao modelo e de
 "twitter:image": "https://e2e.com/docs/images/og/cache.png?v=d035986b13"
 ---
 
+import { VideoCard } from '../snippets/video-card.jsx';
+
 O cache de replay grava as ações de um passo `agent.act()` depois que uma
 verificação posterior confirma o resultado. Na próxima execução, o runner
 reproduz essas ações sem chamada ao modelo. Quando um controle ou o estado
 final esperado não corresponde mais, o agente assume a partir da tela atual.
 Veja [Testes com autocorreção](/self-healing).
+
+<VideoCard
+  id="FHTMtH0v4SI"
+  title="Como funciona o cache agêntico no e2e?"
+  subtitle="Neste vídeo, Kacper mostra como o e2e reproduz as ações de um agente sem chamada ao modelo e o que acontece quando o app muda."
+/>
 
 `agent.assert`, `agent.waitFor` e `agent.extract` sempre rodam ao vivo. O
 resumo da execução conta os resultados:

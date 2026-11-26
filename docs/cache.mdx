@@ -5,11 +5,19 @@ description: Replay verified agent actions without model calls, and let the agen
 "twitter:image": "https://e2e.com/docs/images/og/cache.png?v=d035986b13"
 ---
 
+import { VideoCard } from './snippets/video-card.jsx';
+
 The replay cache records the actions of an `agent.act()` step after a later
 check verifies the result. On the next run, the runner replays those
 actions without a model call. When a control or the expected end state no
 longer matches, the agent takes over from the current screen. See
 [Self-healing tests](/self-healing).
+
+<VideoCard
+  id="FHTMtH0v4SI"
+  title="How Does Agentic Caching Work in e2e?"
+  subtitle="In this video, Kacper shows how e2e replays an agent's actions without a model call, and what happens when the app changes."
+/>
 
 `agent.assert`, `agent.waitFor`, and `agent.extract` always run live. The
 run summary counts the outcomes:
