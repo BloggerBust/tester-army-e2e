@@ -105,6 +105,21 @@ describe('tool loop context overflow', () => {
     expect(step.metrics?.modelCalls).toBe(2);
   });
 
+  it('sends the wind-down notice once when the turn that carried it is shrunk and sent again', async () => {
+    const model = installFakeLoopModel(({ turn }) => {
+      if (turn === 1) throw new Error(OVERFLOW);
+      return [{ toolName: 'complete_step', input: { status: 'passed', summary: 'read the rows' } }];
+    });
+    const { fixtures } = runtime(bigScreen(), { agents: { default: { model, maxModelCalls: 5 } } });
+
+    await fixtures.agent.act('read the big output');
+
+    expect(loopCalls).toHaveLength(2);
+    expect(loopCalls[0]!.lastPrompt).toContain('Only 5 turns remain');
+    expect(loopCalls[1]!.lastPrompt).toContain('Only 5 turns remain');
+    expect(loopCalls[1]!.userMessages).toBe(loopCalls[0]!.userMessages);
+  });
+
   it('shrinks a pixel-mode history, where every screen rides a result with its screenshot, and retries', async () => {
     let variant = 0;
     const model = installFakeLoopModel(({ turn }) => {

@@ -264,6 +264,8 @@ class LoopRun {
   /** Whether each look (by call id) showed a change, read when the result was new and kept past compaction. */
   private readonly looks = new Map<string, boolean>();
   private noticedLowClock = false;
+  /** A turn asked again (a refused forced choice, an overflow) resends the request that already carries the notice. */
+  private noticedWindDown = false;
   /** Every turn that ran, oldest first: the debug transcript is rendered from it, the report keeps the tail. */
   private readonly turns: LoopTurn[] = [];
   /** Loop notes from before the first turn. */
@@ -844,7 +846,8 @@ class LoopRun {
           'blocked (with errorCode) if something outside the application stopped you.',
       );
     }
-    if (turnsLeft === WIND_DOWN_TURNS && this.guardStop === undefined) {
+    if (turnsLeft === WIND_DOWN_TURNS && this.guardStop === undefined && !this.noticedWindDown) {
+      this.noticedWindDown = true;
       this.note(`before turn ${String(stepNumber + 1)}: only ${String(turnsLeft)} turns remain, asking to wrap up`);
       prepared = appendNotice(
         prepared,

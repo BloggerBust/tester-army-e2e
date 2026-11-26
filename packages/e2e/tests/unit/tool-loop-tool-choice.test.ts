@@ -112,6 +112,20 @@ describe('tool loop forced tool choice', () => {
     expect(steps.all()[0]!.status).toBe('passed');
   });
 
+  it('sends the wind-down notice once when the turn that carried it is asked again', async () => {
+    const model = installFakeLoopModel(refusingForcedChoice(() => [conclude]));
+    const { fixtures } = runtime({ agents: { default: { model, maxModelCalls: 5 } } });
+
+    await fixtures.agent.act('do the thing');
+
+    expect(loopCalls).toHaveLength(2);
+    // Five turns left on the first turn: the notice rides on it, and the
+    // re-sent request is that same request, not one with a second notice.
+    expect(loopCalls[0]!.lastPrompt).toContain('Only 5 turns remain');
+    expect(loopCalls[1]!.lastPrompt).toContain('Only 5 turns remain');
+    expect(loopCalls[1]!.userMessages).toBe(loopCalls[0]!.userMessages);
+  });
+
   it('asks again when a turn comes back as prose without a tool call', async () => {
     const model = installFakeLoopModel(
       refusingForcedChoice(({ turn }) => (turn === 2 ? { text: 'I will look around first.' } : [conclude])),
