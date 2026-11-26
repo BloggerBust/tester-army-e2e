@@ -134,5 +134,9 @@ and `describe.only` fail with `ONLY_IN_CI`, and the replay cache is
 - `--changed-since <ref>` runs the configured `filters` (such as
   `decisionFilter` from `@e2e-dev/decision`) on a pull request; never pass
   it on `pull_request_target`.
+- With `--shard i/n`, give each shard its own `--output` and upload the
+  whole directory; `npx e2e merge-reports <shard dirs> --output <dir>`
+  builds one report for the matrix. To rerun one shard's failures first,
+  reuse its `--output` with `--last-failed` and drop `--shard`.
 
 Full reference: docs/ci.mdx, docs/ci/github-actions.mdx, docs/filters.mdx.

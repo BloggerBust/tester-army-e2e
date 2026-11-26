@@ -244,11 +244,45 @@ jobs:
         shard: [1, 2, 3]
     steps:
       # ...
-      - run: npx e2e run --shard ${{ matrix.shard }}/3 --reporter list,junit
+      - run: npx e2e run --shard ${{ matrix.shard }}/3 --pass-with-no-tests --output .e2e/shard-${{ matrix.shard }}
 ```
 
-Upload each shard's `report.json` and `junit.xml` with the shard index in the
-artifact name. (e2e doesn't merge shard reports yet.)
+To rerun a shard's failures before uploading, run `e2e run --last-failed`
+with that shard's original `--output`. Omit `--shard` so the rerun uses the
+failures already selected from that shard.
+
+Use a final job to publish one report for the matrix:
+
+1. Upload each shard's output directory with `if: always()`. Include
+   `report.json`, `report-with-reruns.json` when present, and `results/`.
+2. Give the merge job `needs: e2e` and `if: always()`. Check out the same
+   revision, install the project, and download the artifacts from this
+   workflow run and attempt into separate directories such as
+   `.e2e/shard-1`, `.e2e/shard-2`, and `.e2e/shard-3`.
+3. Run [`e2e merge-reports`](/reference/cli#e2e-merge-reports) on those
+   directories. Every shard must be present, including empty ones. Upload
+   the entire merged directory with `if: always()` to keep trace links working.
+
+<CodeGroup>
+```bash npm
+npx e2e merge-reports .e2e/shard-* --output .e2e/merged --reporter junit,markdown
+```
+
+```bash pnpm
+pnpm exec e2e merge-reports .e2e/shard-* --output .e2e/merged --reporter junit,markdown
+```
+
+```bash bun
+bunx e2e merge-reports .e2e/shard-* --output .e2e/merged --reporter junit,markdown
+```
+</CodeGroup>
+
+Configure PR publishers such as `github()` only in the merge job, for
+example by passing a separate `--config` there. Give that job the
+publisher's permissions. If you keep the merge config in a subdirectory,
+pass an absolute `--output` path to put the report outside that directory.
+To rerun failures from the whole matrix, download the merged directory and
+pass `--last-failed --output` with that directory's path to the run command.
 
 ## Rerunning failures
 

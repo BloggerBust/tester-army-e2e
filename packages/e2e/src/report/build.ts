@@ -76,6 +76,32 @@ export interface ReportShard {
   total: number;
 }
 
+/** One source shard combined into a merged report, in ascending shard index order. */
+export interface ReportMergeShard {
+  /** One-based shard index (`--shard index/total`). */
+  index: number;
+  /** The source shard run's `run.id`. */
+  id: string;
+  /** The source shard run's final status. */
+  status: BuildReportOptions['status'] | 'blocked';
+  /** The source shard run's exit code. */
+  exitCode: BuildReportOptions['exitCode'];
+  /** The source shard's `run.project.configDigest`. */
+  configDigest: string;
+  /** The source shard's `run.changes`, when present. */
+  changes?: ReportChanges | undefined;
+  /** The source shard's `run.filters`, when present. */
+  filters?: readonly ReportFilter[] | undefined;
+}
+
+/** Source-shard provenance on a report produced by `e2e merge-reports`. */
+export interface ReportMerge {
+  /** Sum of each source shard's elapsed duration in milliseconds. */
+  shardDurationMs: number;
+  /** Source shards in ascending index order. */
+  shards: readonly ReportMergeShard[];
+}
+
 /**
  * The change a run's test filters judged, by counts only, or why no filter
  * ran: `base` and `files` once git measured the change, `skipped` alone
@@ -240,6 +266,8 @@ export interface ReportStep {
 }
 
 interface ReportAttemptBase {
+  /** The source shard index when this attempt was merged from a shard report. */
+  shard?: number;
   id: string;
   index: number;
   status: AttemptRecord['status'];
@@ -317,6 +345,8 @@ export interface ReportSerialGroup {
 }
 
 export interface ReportResult {
+  /** The owning shard index when this test was merged from a shard report. */
+  shard?: number;
   id: string;
   testId: string;
   kind: 'test' | 'setup';
@@ -456,6 +486,11 @@ export interface Report1Document {
      * to another shard with `skip.otherShard`.
      */
     shard?: ReportShard;
+    /**
+     * Source-shard provenance on a report produced by `e2e merge-reports`;
+     * absent on an unmerged run.
+     */
+    merge?: ReportMerge | undefined;
     targets: readonly ReportTarget[];
     serialGroups: readonly ReportSerialGroup[];
     results: readonly ReportResult[];
@@ -665,6 +700,11 @@ function serializeTarget(
     }),
     ...(provenance ?? describeTarget(target)),
   };
+}
+
+/** The exit-code status the report builder starts from; `blocked` is derived from the results there. */
+export function statusOf(exitCode: BuildReportOptions['exitCode']): BuildReportOptions['status'] {
+  return exitCode === 0 ? 'passed' : exitCode === 1 ? 'failed' : exitCode === 130 ? 'interrupted' : 'error';
 }
 
 /**

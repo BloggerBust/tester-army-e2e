@@ -517,6 +517,9 @@ finishedRun.lastRun satisfies FinishedRun['report'] | undefined;
 // A reporter folds a --last-failed rerun into the runs before it the way the runner does.
 foldLastRun(finishedRun.report, finishedRun.lastRun ?? finishedRun.report) satisfies Report;
 finishedRun.report.run.shard?.index satisfies number | undefined;
+finishedRun.report.run.merge?.shardDurationMs satisfies number | undefined;
+finishedRun.report.run.merge?.shards[0]?.configDigest satisfies string | undefined;
+finishedRun.report.run.merge?.shards[0]?.exitCode satisfies RunExitCode | undefined;
 // @ts-expect-error the shard marker is set or absent, never false
 ({ cause: 'filtered', reason: 'outside the shard', otherShard: false }) satisfies NonNullable<Report['run']['results'][number]['skip']>;
 // @ts-expect-error the run status is a closed union

@@ -610,6 +610,12 @@ importers:
       '@vitest/expect':
         specifier: 5.1.2
         version: 5.1.2
+      ajv:
+        specifier: 8.20.0
+        version: 8.20.0
+      ajv-formats:
+        specifier: 3.0.1
+        version: 3.0.1(ajv@8.20.0)
       commander:
         specifier: 15.1.0
         version: 15.1.0
@@ -671,12 +677,6 @@ importers:
       ai:
         specifier: 7.0.183
         version: 7.0.183(zod@4.6.7)
-      ajv:
-        specifier: 8.20.0
-        version: 8.20.0
-      ajv-formats:
-        specifier: 3.0.1
-        version: 3.0.1(ajv@8.20.0)
       typescript:
         specifier: 7.0.2
         version: 7.0.2

@@ -193,7 +193,7 @@ export function checkObservedLocation(location: string | undefined, base: Normal
  * free on one address family only, so a port-0 URL must name the address the
  * command binds rather than a name that may resolve to either.
  */
-function isLoopbackAddress(hostname: string): boolean {
+export function isLoopbackAddress(hostname: string): boolean {
   return hostname === '[::1]' || /^127(\.\d{1,3}){3}$/.test(hostname);
 }
 

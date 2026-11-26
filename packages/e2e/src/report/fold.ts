@@ -32,8 +32,8 @@ function unreached(result: ReportResult): boolean {
  * `--last-failed` selects by, so a rerun without the flag runs once a test any
  * repeat of which failed.
  */
-function testKey(result: ReportResult): string {
-  return [result.testId, result.targetId, result.agent].join('\u0000');
+export function testKey(result: ReportResult): string {
+  return JSON.stringify([result.testId, result.targetId, result.agent]);
 }
 
 /**
@@ -82,7 +82,7 @@ function foldGroup(current: ReportSerialGroup, before: readonly ReportSerialGrou
  * The usage of two runs as one: their totals added, their per-step maxima
  * the larger of the two, and the results counted again.
  */
-function addUsage(a: ReportRun['usage'], b: ReportRun['usage'], discoveredResults: number): ReportRun['usage'] {
+export function combineReportUsage(a: ReportRun['usage'], b: ReportRun['usage'], discoveredResults: number): ReportRun['usage'] {
   const optional = (x: number | undefined, y: number | undefined): number | undefined => (x === undefined && y === undefined ? undefined : (x ?? 0) + (y ?? 0));
   const cachedTokens = optional(a.modelCachedTokens, b.modelCachedTokens);
   const cost = optional(a.estimatedCostUsd, b.estimatedCostUsd);
@@ -114,7 +114,7 @@ function rowsById<T extends { readonly id: string; readonly selected?: boolean }
 }
 
 /** Reads the duration of a pass. Wall time is used for older reports. */
-function runDuration(run: ReportRun): number {
+export function runDuration(run: ReportRun): number {
   return run.durationMs ?? Date.parse(run.finishedAt) - Date.parse(run.startedAt);
 }
 
@@ -230,8 +230,8 @@ export function foldLastRun(current: Report, lastRun: Report): Report {
     carriedErrors.length > 0 ||
     [...carriedById.values()].some((result) => result.status !== 'interrupted') ||
     results.some((result) => result.selected !== false && FAILED_STATUSES.has(result.status));
-  // The run that chose the tests decides the shard, so the rerun's own is dropped.
-  const { shard: _rerunShard, ...currentRun } = current.run;
+  // The run that chose the tests decides the shard and merge provenance, so the rerun's own are dropped.
+  const { shard: _rerunShard, merge: _rerunMerge, ...currentRun } = current.run;
   return {
     ...current,
     run: {
@@ -244,9 +244,10 @@ export function foldLastRun(current: Report, lastRun: Report): Report {
       results,
       errors: [...current.run.errors, ...carriedErrors, ...otherShardFailures],
       summary: summarizeResults(results, serialGroups),
-      usage: addUsage(lastRun.run.usage, current.run.usage, results.length),
+      usage: combineReportUsage(lastRun.run.usage, current.run.usage, results.length),
       filters: lastRun.run.filters,
       changes: lastRun.run.changes,
+      ...(lastRun.run.merge === undefined ? {} : { merge: lastRun.run.merge }),
       ...(lastRun.run.shard === undefined ? {} : { shard: lastRun.run.shard }),
     },
   };

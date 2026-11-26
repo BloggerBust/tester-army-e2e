@@ -315,7 +315,7 @@ purpose. Use the workaround, or keep the test in Playwright.
 | `test.describe.fixme()`, `test.fixme(title, details, body)` | `{ timeout }` or `{ skip: 'fixme' }` on the test or group, with any `tags` from the details beside it, reported with skip cause `explicit`, not `fixme` |
 | `test.skip(callback, description)`, `test.fixme(callback, description)` | `test.skip(condition, reason)` or `test.fixme(condition, reason)` inside the body, or `platforms` on the test |
 | `failOnFlakyTests`, `use.navigationTimeout`, `--timeout`, `--quiet` | `run.summary.flaky` in `report.json`; `browser.goto(url, { timeout })`; `timeout` in the config |
-| The `blob` reporter and `merge-reports` | One report for each shard |
+| The `blob` reporter and `merge-reports` | [`e2e merge-reports`](/reference/cli#e2e-merge-reports) reads each shard's finished report directory |
 | The Playwright Docker image | The image for the `playwright-core` version `@e2e-dev/web` pins, or `npx @e2e-dev/web install chromium --with-deps` |
 | `test.use({ ... })` in a file or describe | Runner options on the group, engine options on a target, `browser.setViewport` at runtime |
 | `projects[].dependencies`, `teardown` | A top-level `test.setup` for sign-in; a script around the run |

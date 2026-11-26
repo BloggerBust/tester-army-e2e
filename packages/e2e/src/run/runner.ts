@@ -34,7 +34,7 @@ import { DebugTrace } from '@e2e-dev/core/lib/internal/debug';
 import { printableUrl } from '@e2e-dev/core/lib/internal/urls';
 import { resultId, timestamp, uuidv7 } from '@e2e-dev/core/lib/internal/ids';
 import type { ExploreProgress } from '../explore/progress.ts';
-import { buildReport, projectSource, type Report1Document, type ReportChanges, type ReportExplore, type ReportFilter } from '../report/build.ts';
+import { statusOf, buildReport, projectSource, type Report1Document, type ReportChanges, type ReportExplore, type ReportFilter } from '../report/build.ts';
 import type { TargetProvenance } from '@e2e-dev/core/lib/run/provision';
 import { agentStepTable } from '../report/debug-steps.ts';
 import { writeTracePages, type TracePages } from '../report/traces.ts';
@@ -1633,11 +1633,6 @@ function plannedFiles(selection: Selection): { file: string; target: string; tes
     }
   }
   return [...files.values()];
-}
-
-/** The exit-code status the report builder starts from; `blocked` is derived from the results there. */
-function statusOf(exitCode: RunExitCode): Exclude<RunStatus, 'blocked'> {
-  return exitCode === 0 ? 'passed' : exitCode === 1 ? 'failed' : exitCode === 130 ? 'interrupted' : 'error';
 }
 
 /**

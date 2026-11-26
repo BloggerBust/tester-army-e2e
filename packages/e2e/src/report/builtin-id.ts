@@ -12,6 +12,23 @@ const BUILTIN_ID = Symbol.for('e2e.reporter.builtin');
 
 export const BUILTIN_REPORTERS = ['list', 'dot', 'line', 'json', 'junit', 'markdown', 'ctrf'] as const satisfies readonly BuiltinReporter[];
 
+/**
+ * Whether a built-in can report a run from its finished report alone, as
+ * `e2e merge-reports` asks. `list`, `dot`, and `line` print from live events.
+ * A new built-in fails to compile until it says which.
+ */
+const REPORTS_FINISHED_RUN = {
+  list: false,
+  dot: false,
+  line: false,
+  json: true,
+  junit: true,
+  markdown: true,
+  ctrf: true,
+} as const satisfies Record<BuiltinReporter, boolean>;
+
+export const FINISHED_BUILTIN_REPORTERS: readonly BuiltinReporter[] = BUILTIN_REPORTERS.filter((id) => REPORTS_FINISHED_RUN[id]);
+
 export function isBuiltinReporter(value: string): value is BuiltinReporter {
   return (BUILTIN_REPORTERS as readonly string[]).includes(value);
 }

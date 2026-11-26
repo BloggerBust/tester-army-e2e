@@ -683,6 +683,16 @@ export function renderTracePage(report: Report1Document, result: ReportResult, f
     lines.push('');
   }
 
+  const setupAttempts = result.kind === 'setup' ? result.attempts.filter((attempt) => attempt.shard !== undefined) : [];
+  if (setupAttempts.length > 1) {
+    lines.push('## Shard executions', '');
+    for (const attempt of setupAttempts) {
+      lines.push(`- Shard ${attempt.shard}, attempt ${attempt.index + 1} · ${STATUS_WORD[attempt.status]}`);
+      for (const artifact of attempt.artifacts) lines.push(`  - ${artifactPath(artifact, options)}`);
+    }
+    lines.push('');
+  }
+
   const footer = `e2e ${cell(run.runner.version, MAX_ID_CHARS)} · run ${code(run.id, MAX_ID_CHARS)}`;
   lines.push(`<sub>${options.standalone === true ? footer : `${footer} · the whole run is in \`report.json\``}</sub>`);
   return `${lines.join('\n')}\n`;

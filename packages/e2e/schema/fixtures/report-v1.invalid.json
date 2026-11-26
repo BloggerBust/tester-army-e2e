@@ -6,13 +6,30 @@
     "exitCode": 4,
     "durationMs": -1,
     "shard": { "index": 0, "total": 3 },
+    "merge": {
+      "shardDurationMs": -1,
+      "shards": [
+        {
+          "index": 0,
+          "id": "not-a-uuid",
+          "status": "passed",
+          "exitCode": 0,
+          "configDigest": "short"
+        }
+      ]
+    },
     "targets": [],
+    "serialGroups": [
+      { "attempts": [{ "shard": 0 }] }
+    ],
     "results": [
       {
+        "shard": 0,
         "skip": { "cause": "filtered", "reason": "outside the shard", "otherShard": false },
         "tags": [""],
         "attempts": [
           {
+            "shard": 0,
             "expectedFailure": { "error": "a mark always has a reason" },
             "artifacts": [
               {

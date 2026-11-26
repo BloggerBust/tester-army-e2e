@@ -71,7 +71,15 @@ function danglingLinkTarget(entry: string): string | undefined {
  * (`..logs/out.log`) is an ordinary entry.
  */
 export function relativeToProjectRoot(projectRoot: string, target: string): string | undefined {
-  const relative = path.relative(realpathOfExisting(projectRoot), realpathOfExisting(target));
+  return strictlyRelative(path.relative(realpathOfExisting(projectRoot), realpathOfExisting(target)));
+}
+
+/** Lexical containment for paths whose existing parents the caller has resolved. */
+export function isStrictlyInside(directory: string, target: string): boolean {
+  return strictlyRelative(path.relative(directory, target)) !== undefined;
+}
+
+function strictlyRelative(relative: string): string | undefined {
   const inside = relative !== '' && relative !== '..' && !relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative);
   return inside ? relative : undefined;
 }

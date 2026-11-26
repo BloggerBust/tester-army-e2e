@@ -553,6 +553,19 @@ does not carry them.
   a carried failure or hook error against the outcome.
 - The artifacts both reports name are on disk under `artifactsRoot`.
 
+<a id="merged-shard-reports" />
+##### Merged shard reports
+
+- A report from [`e2e merge-reports`](/reference/cli#e2e-merge-reports) has
+  no `run.shard`. Its `run.merge` holds `shardDurationMs`, the sum of the
+  source shards' durations, and `shards`, in ascending index order. Each
+  entry is one source shard's `index`, `id`, `status`, `exitCode`, and
+  `configDigest`, plus its `changes` and `filters` when that shard had them.
+- Attempts carry their source `shard` index. Test results carry `shard`
+  when one shard owns them. For shared setups, read the index on each
+  attempt. A `--last-failed` rerun folded into a merged report keeps
+  `run.merge`.
+
 <a id="test-filters" />
 ##### Test filters
 

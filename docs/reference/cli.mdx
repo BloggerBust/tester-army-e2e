@@ -80,6 +80,7 @@ $ npx e2e --version
 | [`e2e list`](#e2e-list) | Prints the tests a run selects |
 | [`e2e doctor`](#e2e-doctor) | Checks that a run can start |
 | [`e2e cache`](#e2e-cache) | Inspects or clears the replay cache |
+| [`e2e merge-reports`](#e2e-merge-reports) | Merges finished shard reports and artifacts |
 | [`e2e report`](#e2e-report) | Opens the HTML report in a browser |
 | [`e2e upgrade`](#e2e-upgrade) | Upgrades e2e and its packages |
 | [`e2e feedback`](#e2e-feedback) | Sends feedback to the e2e team |
@@ -1508,6 +1509,50 @@ E2E_TELEMETRY_DEBUG=1 bunx e2e run
 - The first command on a machine, other than `e2e init` and
   `e2e telemetry`, prints a notice once. In CI nothing is printed and no
   file is written.
+
+#### `e2e merge-reports`
+
+```sh
+e2e merge-reports <directories...> --output <dir>
+```
+
+Pass one output directory from each shard of the same run. Relative input
+directories start at the working directory. Download the shards from the
+same workflow run and attempt. The reports carry no shared workflow run ID.
+A matching `report-with-reruns.json` takes precedence over
+`report.json`. The command checks the shard indexes and totals, project, runner version,
+recorded commits, targets and their environments, and test and agent
+selection. Fresh shards with runnable tests must have the same repeat
+count. A shard with no recorded commit can merge with shards that agree on
+a commit. Different config digests or engine metadata produce a warning.
+Shards with the same config can use different assigned ports on the same
+loopback address. A missing shard fails the merge. A shard that
+still owes results after a rerun requires its matching folded report.
+
+| Flag | Meaning |
+| --- | --- |
+| `--output <dir>` | Required. A new directory for `report.json`, copied local artifacts, trace pages, and reporter output. Relative to the project root. With `--config`, the project root is the directory containing that config. |
+| `--config <path>` | Config to load for finished-run reporters. Defaults to the nearest config, if present. With a config in a subdirectory, reporters use the closest default config at or above that directory as the root for source and trace paths. |
+| `--reporter <ids>` | Comma-separated finished-run reporters (`json`, `junit`, `markdown`, or `ctrf`). Overrides built-in choices in the config and keeps configured third-party reporters. `list`, `dot`, and `line` print from a run's live events, so the flag refuses them. One named in the config still loads, and prints only where the other reporters wrote their files. |
+
+Reporters must implement a finished-run hook. The command reads finished
+reports and does not replay live events. Its terminal verdict goes to
+stderr, so the JSON reporter can write the document alone to stdout.
+
+Download entire shard outputs. Referenced files must be present and match their
+recorded size and digest. The merge regenerates trace pages from recorded attempts,
+including earlier shard reruns and shards run with `--trace off`. The merged run
+counts each setup once, keeps its attempts by shard, and takes the worst
+setup verdict. An interrupted result carried from before a shard rerun gives
+the merged run exit code 130. A
+per-shard `--max-failures` or `--max-duration` stop keeps its failing verdict.
+The recorded duration spans the earliest shard start to the latest shard
+finish. The merged report leaves `run.shard` unset and records the source
+shards and the sum of their durations in
+[`run.merge`](/reference/reporters#merged-shard-reports). The command returns
+the merged run's [exit code](#exit-codes), or 2 if the merge could not be made.
+
+See [Sharding](/ci#sharding) for artifact upload and whole-run reruns.
 
 #### `e2e report`
 

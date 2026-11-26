@@ -112,6 +112,10 @@ export function hostReporters(reporters: readonly Reporter[], options: HostOptio
   return { emit, showsRun, finish: (finished) => finishReporters(reporters, finished, options) };
 }
 
+export function hasFinishedRunHook(reporter: Reporter): boolean {
+  return reporter.onRunFinished !== undefined || reporter.reportFiles !== undefined || reporter.onSummary !== undefined;
+}
+
 /**
  * What the runner prints itself while no interactive reporter shows the
  * run, always on stderr: what user code prints, a test's unless the run is
@@ -154,7 +158,7 @@ const FORCED_REPORT_FILES_MS = 5_000;
  * of time, or returns something other than files or rows is one line on
  * stderr; it can never change the run's outcome.
  */
-async function finishReporters(reporters: readonly Reporter[], finished: FinishedRun, { timeoutMs, force, processOutput }: Pick<HostOptions, 'timeoutMs' | 'force' | 'processOutput'>): Promise<void> {
+export async function finishReporters(reporters: readonly Reporter[], finished: FinishedRun, { timeoutMs, force, processOutput }: Pick<HostOptions, 'timeoutMs' | 'force' | 'processOutput'>): Promise<void> {
   const say = (reporter: Reporter, detail: string): void => {
     process.stderr.write(`e2e: reporter "${reporter.name}" ${detail}\n`);
   };

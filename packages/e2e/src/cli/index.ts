@@ -29,6 +29,7 @@ import { runsFromCheckout } from '../telemetry/checkout.ts';
 import { initCompletedEvent, runCompletedEvent, upgradeCompletedEvent, USAGE_ERROR_CODE } from '../telemetry/events.ts';
 import { Telemetry } from '../telemetry/telemetry.ts';
 import { CACHE_DIR_DESCRIPTION, registerCacheCommand } from './cache.ts';
+import { registerMergeReportsCommand } from './merge-reports-command.ts';
 import { docsLine, examples, helpSection, pc } from './help.ts';
 import { EXIT_CODES } from './exit-codes.ts';
 import type { DoctorReport } from './doctor.ts';
@@ -1102,6 +1103,8 @@ function createProgram(version: string, telemetry: Telemetry, updateCheck: Updat
     });
 
   registerCacheCommand(program);
+
+  registerMergeReportsCommand(program);
 
   program
     .command('report')

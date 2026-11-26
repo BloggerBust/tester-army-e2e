@@ -37,6 +37,8 @@ describe.each(schemas)('%s schema', (name) => {
         expect.arrayContaining([
           expect.objectContaining({ instancePath: '/run/durationMs', keyword: 'minimum' }),
           expect.objectContaining({ instancePath: '/run/shard/index', keyword: 'minimum' }),
+          expect.objectContaining({ instancePath: '/run/merge/shardDurationMs', keyword: 'minimum' }),
+          expect.objectContaining({ instancePath: '/run/merge/shards/0/index', keyword: 'minimum' }),
           expect.objectContaining({ instancePath: '/run/results/0/skip/otherShard', keyword: 'const' }),
           expect.objectContaining({ keyword: 'minimum', instancePath: expect.stringMatching(/\/steps\/\d+\/parent$/) }),
         ]),
@@ -427,6 +429,28 @@ describe.each(schemas)('%s schema', (name) => {
       delete cache.reason;
       delete (cache as { derived?: string }).derived;
       expect(validate(report)).toBe(false);
+    });
+
+    it('validates run.merge provenance and rejects empty or malformed shards', () => {
+      const report = readJson('fixtures', 'report-v1.valid.json') as {
+        run: { merge?: Record<string, unknown> };
+      };
+      expect(report.run.merge).toBeDefined();
+      expect(validate(report)).toBe(true);
+      const valid = structuredClone(report.run.merge!);
+      for (const bad of [
+        { shardDurationMs: -1, shards: valid['shards'] },
+        { shardDurationMs: 100, shards: [] },
+        { shardDurationMs: 100, shards: valid['shards'], extra: true },
+        { shardDurationMs: 100, shards: [{ ...(valid['shards'] as Record<string, unknown>[])[0], index: 0 }] },
+        { shardDurationMs: 100, shards: [{ ...(valid['shards'] as Record<string, unknown>[])[0], exitCode: 5 }] },
+        { shardDurationMs: 100, shards: [{ ...(valid['shards'] as Record<string, unknown>[])[0], configDigest: 'bad' }] },
+      ]) {
+        report.run.merge = bad;
+        expect(validate(report)).toBe(false);
+      }
+      delete report.run.merge;
+      expect(validate(report)).toBe(true);
     });
   }
 });

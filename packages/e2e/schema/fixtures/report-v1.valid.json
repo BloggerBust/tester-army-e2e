@@ -27,6 +27,36 @@
       "index": 2,
       "total": 3
     },
+    "merge": {
+      "shardDurationMs": 1800,
+      "shards": [
+        {
+          "index": 1,
+          "id": "018f0f5c-7b2a-7abc-8abc-0123456789a1",
+          "status": "passed",
+          "exitCode": 0,
+          "configDigest": "0000000000000000000000000000000000000000000000000000000000000000",
+          "changes": {
+            "base": "0123456789abcdef0123456789abcdef01234567",
+            "files": 1
+          },
+          "filters": [
+            {
+              "name": "areas",
+              "candidates": 2,
+              "excluded": 1
+            }
+          ]
+        },
+        {
+          "index": 2,
+          "id": "018f0f5c-7b2a-7abc-8abc-0123456789a2",
+          "status": "failed",
+          "exitCode": 1,
+          "configDigest": "0000000000000000000000000000000000000000000000000000000000000000"
+        }
+      ]
+    },
     "targets": [
       {
         "id": "web",
@@ -76,6 +106,7 @@
         "status": "failed",
         "attempts": [
           {
+            "shard": 2,
             "id": "018f0f5c-7b2a-7abc-8abc-0123456789ac",
             "index": 0,
             "cutRetry": false,
@@ -126,6 +157,7 @@
     ],
     "results": [
       {
+        "shard": 2,
         "id": "4bbfd0a6dbf44ac1018dd6ca1a6243d742b24607aa735b28d57541e1128507d3",
         "testId": "tests/example.e2e.ts::opens%20app",
         "kind": "test",
@@ -153,6 +185,7 @@
         },
         "attempts": [
           {
+            "shard": 2,
             "id": "018f0f5c-7b2a-7abc-8abc-1123456789ab",
             "index": 0,
             "status": "passed",
