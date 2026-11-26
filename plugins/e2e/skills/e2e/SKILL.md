@@ -30,9 +30,12 @@ versions differ.
 | Running goal-driven exploration without a test file (`e2e explore`) | `explore` | [references/explore.md](references/explore.md) |
 | Running a bug bash or QA pass across an app or branch | `bug-bash` | [references/bug-bash.md](references/bug-bash.md) |
 
-Full docs ship in `node_modules/e2e/docs/` (e.g. `/reference/cli` is
-`docs/reference/cli.mdx`). Complete examples live at
-https://github.com/e2e-inc/e2e/tree/main/examples.
+References keep the rules and point to the docs for full API tables. A
+pointer such as `Full reference: docs/reference/cli.mdx.` names a page that
+ships in the installed package at `node_modules/e2e/docs/reference/cli.mdx`
+and is online at https://e2e.com/docs/reference/cli. Read the page only when
+you need an option, matcher, or flag the reference does not show. Complete
+examples live at https://github.com/e2e-inc/e2e/tree/main/examples.
 
 ## Workflow
 
