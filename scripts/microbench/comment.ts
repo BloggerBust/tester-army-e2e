@@ -1,10 +1,11 @@
 /**
  * The pull request comment the `microbench` workflow keeps current: the
  * `compare` job's table under a one-line headline, and whether the
- * `repeatability` job found the counts stable enough to trust it.
+ * `repeatability` job found the counts stable enough to trust it. Cases that
+ * did not change are folded away, so the open table shows only what moved.
  */
 
-import { comparisonLines, methodLines, repeatabilityFailures, type Result } from './markdown.ts';
+import { comparisonIntro, comparisonTable, methodLines, repeatabilityFailures, type Result } from './markdown.ts';
 import type { Direction } from './stats.ts';
 
 /** The first line of the workflow's comment; the run edits the comment that carries it. */
@@ -58,6 +59,22 @@ function repeatabilityLine(repeatability: Result | undefined): string {
   return `⚠️ Repeatability check failed: two builds of the head landed apart in ${cases}. A direction below can be measurement noise.`;
 }
 
+/**
+ * The comparison: the cases with a direction, or that moved past the floor
+ * without one, in an open table, and the unchanged cases folded under it.
+ */
+function comparisonSection(compare: Result): string[] {
+  const unchanged = compare.rows.filter((row) => row.assessment?.verdict === 'same');
+  const changed = compare.rows.filter((row) => row.assessment !== undefined && row.assessment.verdict !== 'same');
+  return [
+    ...comparisonIntro(compare),
+    ...(changed.length === 0 ? [] : comparisonTable(compare, changed)),
+    ...(unchanged.length === 0
+      ? []
+      : [`<details><summary>${plural(unchanged.length, 'unchanged case', 'unchanged cases')}</summary>`, '', ...comparisonTable(compare, unchanged), '</details>', '']),
+  ];
+}
+
 /** The whole comment body, opening with {@link COMMENT_MARKER}. */
 export function renderComment({ compare, repeatability, runUrl, head }: CommentInput): string {
   return [
@@ -71,7 +88,7 @@ export function renderComment({ compare, repeatability, runUrl, head }: CommentI
     '',
     ...(compare === undefined
       ? []
-      : [...comparisonLines(compare), '<details><summary>How this is measured</summary>', '', ...methodLines(compare), '</details>', '']),
+      : [...comparisonSection(compare), '<details><summary>How this is measured</summary>', '', ...methodLines(compare), '</details>', '']),
     `[Workflow run](${runUrl}): each job's summary, and \`result.json\` in its artifact.`,
     '',
   ].join('\n');

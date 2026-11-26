@@ -50,6 +50,30 @@ describe('renderComment', () => {
     assert.match(text, /<details><summary>How this is measured<\/summary>/);
   });
 
+  it('folds the unchanged cases away and keeps the changed ones in the open table', () => {
+    const text = renderComment({ compare: result(false, [1000, 1001, 1002], [1100, 1101, 1102], [1000.5, 1001, 1002], [990, 1010, 1030]), repeatability: STABLE, runUrl: RUN, head: undefined });
+    const fold = text.indexOf('<details><summary>2 unchanged cases</summary>');
+    assert.notEqual(fold, -1);
+    const end = text.indexOf('</details>', fold);
+    const open = text.slice(0, fold);
+    const folded = text.slice(fold, end);
+    assert.match(open, /\| `case-1` \|.*🔴 higher/);
+    assert.match(open, /\| `case-3` \|.*⚪ inconclusive/);
+    assert.doesNotMatch(open, /`case-0`|`case-2`/);
+    assert.match(folded, /\| `case-0` \|.*⚪ same/);
+    assert.match(folded, /\| `case-2` \|.*⚪ same/);
+    assert.doesNotMatch(folded, /`case-1`|`case-3`/);
+  });
+
+  it('opens no table when every case is unchanged, and folds none when every case moved', () => {
+    const same = renderComment({ compare: result(false, [1000, 1001, 1002]), repeatability: STABLE, runUrl: RUN, head: undefined });
+    assert.match(same, /<details><summary>1 unchanged case<\/summary>\n\n\| Case \|/);
+    assert.equal(same.match(/\| Case \|/g)?.length, 1);
+    const moved = renderComment({ compare: result(false, [1100, 1101, 1102]), repeatability: STABLE, runUrl: RUN, head: undefined });
+    assert.doesNotMatch(moved, /unchanged case/);
+    assert.equal(moved.match(/\| Case \|/g)?.length, 1);
+  });
+
   it('counts the cases that cost more and less', () => {
     const text = renderComment({ compare: result(false, [1100, 1101, 1102], [1200, 1201, 1202], [900, 901, 902]), repeatability: STABLE, runUrl: RUN, head: undefined });
     assert.match(text, /🔴 2 cases cost more, 🟢 1 case costs less\./);

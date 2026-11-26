@@ -77,21 +77,25 @@ export function methodLines(result: Result): string[] {
   ];
 }
 
-/** The base-against-head table, after a line naming both commits and the rule a direction follows. */
-export function comparisonLines(result: Result): string[] {
+/** A line naming both commits, and the rule a direction follows. */
+export function comparisonIntro(result: Result): string[] {
   const { tool } = result;
   const first = result.rows[0];
-  const lines = [
+  return [
     result.expectSame
       ? `Base and head hold the same code: a repeatability check. It fails when ${tool === 'cachegrind' ? 'the trial ranges of any case do not overlap, whatever the change' : 'any case reports a direction'}.`
       : `Base \`${first?.base?.sha.slice(0, 12) ?? 'unknown'}\`, head \`${first?.head.sha.slice(0, 12) ?? 'unknown'}\`.`,
     '',
     `A direction is reported only when ${tool === 'cachegrind' ? 'the trial ranges of base and head do not overlap' : 'every round agrees on it'} and the change is at least ${result.thresholdPercent}%.`,
     '',
-    '| Case | Mode | Base | Head | Change | Direction | Base spread | Head spread |',
-    '| --- | --- | ---: | ---: | ---: | --- | ---: | ---: |',
   ];
-  for (const row of result.rows) {
+}
+
+/** The base-against-head table of `rows`; a row with no base or no assessment is left out. */
+export function comparisonTable(result: Result, rows: readonly BenchRow[]): string[] {
+  const { tool } = result;
+  const lines = ['| Case | Mode | Base | Head | Change | Direction | Base spread | Head spread |', '| --- | --- | ---: | ---: | ---: | --- | ---: | ---: |'];
+  for (const row of rows) {
     if (row.base === undefined || row.assessment === undefined) continue;
     const { verdict, reason, changePercent } = row.assessment;
     lines.push(
@@ -105,7 +109,7 @@ export function comparisonLines(result: Result): string[] {
 export function renderSummary(result: Result): string {
   const { tool } = result;
   const lines = ['### Microbenchmarks', '', ...methodLines(result)];
-  if (result.rows.some((row) => row.base !== undefined)) return [...lines, ...comparisonLines(result)].join('\n');
+  if (result.rows.some((row) => row.base !== undefined)) return [...lines, ...comparisonIntro(result), ...comparisonTable(result, result.rows)].join('\n');
   lines.push(
     `Checkout \`${result.rows[0]?.head.sha.slice(0, 12) ?? 'unknown'}\`.`,
     '',
