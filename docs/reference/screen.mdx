@@ -68,6 +68,8 @@ screen.getByRole('heading', /welcome/i, { level: 1 });
 The accessible name goes second, a string or a `RegExp`, with the other
 options after it. The object form, `{ name: 'Save' }`, is the same query.
 The options are [`RoleOptions`](#types).
+For visible content inside an unlabelled list item or status, filter by
+text, for example `screen.getByRole('listitem').filter({ hasText: 'Invoice 42' })`.
 
 <Note>
 A role query never matches a node hidden from the accessibility tree: one

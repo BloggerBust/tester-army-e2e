@@ -33,56 +33,58 @@ describe('todos', () => {
 });
 ```
 
-Each test checks one behavior in three blocks: arrange the starting state,
-act on the behavior, then assert the result.
+Each test checks one behavior with one goal. Arrange the starting state,
+act toward that goal, then assert the result.
+
+Name repeated locators and values with `const`. Share setup with a hook or
+fixture. Use a small function for a shared action, or a
+[page object](/page-object-model) when several tests drive the same screen.
+Keep the outcome checks visible in the test.
+
+Keep short, single-use `agent.act` and `agent.assert` instructions inline.
+Name a long instruction with a local `const` when that makes the test
+easier to read. Share instructions with the same meaning in a feature's
+TypeScript module and pass test data in `params`. Use JSON when an existing
+data-driven tool needs it.
 
 Await each agent call, screen call, and `expect.poll`. If a test returns
 while a step still runs, the test fails with `STEP_NOT_AWAITED`.
 
 ## Goals
 
-`agent.act` takes one goal and does the actions it needs. It returns when
-the goal is complete and throws when the goal fails.
+`agent.act` takes an instruction and performs the actions it needs. Give
+it the steps that lead to the test's goal. Use the screen's field and button
+names and specify the order when it matters. For example, completing
+checkout can mean filling a shipping form, choosing a delivery option,
+and placing the order.
 
-```ts
-await agent.act('complete checkout with the test card');
-await agent.act('invite {email} as an editor', { params: { email: 'ada@example.test' } });
-```
+Start with one call for the behavior under test. Split at a meaningful
+transition when the next step needs a known state (such as the payment
+page of a long checkout), when a long flow risks `maxSteps` or
+`maxModelCalls` budgets, or when a middle failure needs its own step
+boundary. Explain why the split is needed and wait for the intermediate
+screen state before continuing. Each call has its own [budgets](/reference/agent#budgets) and
+can replay from its own recording.
 
-Keep each goal atomic: one outcome that one check confirms. When two parts
-of an instruction each leave a state worth checking, they are two goals.
-A test can have many goals.
+```ts title="Complete one checkout across two screens"
+test('places an order with a saved card', async ({ app, agent, screen }) => {
+  await app.open('/checkout');
 
-```ts title="Bad: three goals in one call, no check between them"
-await agent.act('open the Pro plan, set the seats to {seats}, and check out', {
-  params: { seats: 3 },
-});
-```
-
-```ts title="Good: one atomic goal per call, arrange, act, assert"
-test('checks out the Pro plan', async ({ app, agent, screen }) => {
-  await app.open('/plans');
-  await agent.act('open the Pro plan');
-  await agent.act('set the seats to {seats}', { params: { seats: 3 } });
-  await agent.waitFor('the cart shows the Pro plan with 3 seats');
-
-  await agent.act('check out');
+  // The saved card can load after the Payment heading appears.
+  await agent.act('Fill the Shipping address with {address}, then choose Continue to payment.', {
+    params: { address: '12 Market Street' },
+  });
+  await screen.getByRole('radio', 'Test card').waitFor();
+  await agent.act('Select the saved Test card and choose Place order.');
 
   await expect(screen.getByText('Order confirmed')).toBeVisible();
 });
 ```
 
-The setup goals come first and end with a wait for the state they reach.
-The goal under test comes next. The assertions on its result come last. A
-failure then names the goal that broke. Each goal replays from its own
-recording and gets its own model-call and action
-[budgets](/reference/agent#budgets). The actions toward one outcome are not
-goals: opening the screen or menu that holds a control, scrolling to it,
-closing a banner, or filling the fields of one form.
-
-- You control the order of the goals. The agent picks the actions.
-- End the test with an `expect` on the result. The [replay cache](/cache)
-  records a goal only after a later check or wait passes.
+- When setup uses `agent.act`, end the arrange block with a wait for
+  the starting state. Check the test's outcome in the assert block.
+- A later passing wait or check confirms an action for the
+  [replay cache](/cache#when-a-recording-is-written).
 - Use the words that the screen shows.
 - Give test data in `params`. For a password, give a `Secret`. The model
   never gets its value as text. See [Authentication](/authentication).

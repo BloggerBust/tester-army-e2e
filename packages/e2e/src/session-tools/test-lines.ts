@@ -11,8 +11,8 @@
  * narrowed (to the nodes that render, under a container, or by position, in
  * that order), and otherwise the result says why there is no line. The
  * session keeps the lines in order, with the lines `run_code` passed
- * among them, and `test_lines` returns them as a draft test body; after a
- * test the session ran, as the lines that continue it. Only the session
+ * among them, and `test_lines` returns them as a draft test body, lines that
+ * continue a resumed test, or lines for a held test's pause point. Only the session
  * catalog wraps its grammar this way; the testing agent's model loop never
  * sees a line.
  */
@@ -90,6 +90,10 @@ export interface TestLineOptions {
   readonly engineFixtures?: readonly string[] | undefined;
   /** The test the session ran before it went live, as `file:line`: the lines carry on from where it stopped. */
   readonly testRan?: string | undefined;
+  /** Whether the session is attached to a held running test (`screen.pause()` or `--step`). */
+  readonly attached?: boolean | undefined;
+  /** Whether the session's agent has a model or custom executor, so tests can call `agent.act`. */
+  readonly hasAgent?: boolean | undefined;
 }
 
 /** The names a test fills values from, as the config declares them. */
@@ -198,15 +202,23 @@ export class SessionTestLines {
 
   /** The read-only `test_lines` catalog tool. */
   tool(): ToolSet[string] {
+    const guidance =
+      this.options.testRan !== undefined
+        ? "Use these lines to continue the existing test where it stopped. Keep the test's outcome checks together at the end."
+        : this.options.attached === true
+          ? "Use these lines at the pause point of the held test. Keep the test's outcome checks together at the end."
+          : 'Split the draft into tests, one behavior each. Arrange the starting state, act, then check the outcome at the end. A check of a screen the flow later leaves belongs to its own test. Name a locator a test repeats.';
     return {
       description:
-        "Every test line this session's actions printed so far, in order, as a draft test body: the screen.* and app.* calls that repeat each action, with a comment where an action has none, and the lines run_code passed. Paste it into a test, then add any assertion it lacks. After open_session with test, the lines continue that test from where it stopped.",
+        "Every test line this session's actions printed so far, in order: the screen.* and app.* calls that repeat each action, with a comment where an action has none, and the lines run_code passed. " +
+        guidance +
+        ' See topic writing-tests, Structure.',
       inputSchema: z.object({}).strict(),
       execute: async () => this.draft(),
     };
   }
 
-  /** The recorded lines as a draft test body. */
+  /** The recorded lines with placement guidance for a fresh draft, a resumed test, or a held test's pause point. */
   draft(): string {
     if (this.entries.length === 0) {
       return 'No test lines yet. Each action (tap, type, select, check, and the rest) prints the line that repeats it in a test, run_code adds the lines that pass, and this tool returns them in order.';
@@ -214,18 +226,33 @@ export class SessionTestLines {
     const body = this.entries.map((entry) => ('line' in entry ? entry.line : `// ${entry.tool}: no test line: ${entry.reason}`));
     const imports = ['credentials', 'secrets'].filter((name) => body.some((line) => line.includes(`${name}.`)));
     const count = `in order (${String(this.entries.filter((entry) => 'line' in entry).length)} lines)`;
-    const { testRan } = this.options;
-    // A session that ran a test holds only what came after it: the test's own lines are in its file.
+    const { testRan, attached, hasAgent } = this.options;
+    const agentGuidance =
+      hasAgent === true
+        ? ' Prefer agent.act for user flows, with agent among the test fixtures (keep screen lines for low-level mechanics under test or a sign-in setup). Give the agent the steps for one test goal, and split into calls when a later step needs a known screen state, risks maxSteps or maxModelCalls budgets, or needs a middle step boundary. Wait for the intermediate screen state before continuing.'
+        : '';
+    // A session that ran a test, or attached to a held one, holds only lines from that point onward.
     const [lead, place] =
-      testRan === undefined
-        ? [`Draft test body from this session's actions, ${count}:`, `Paste it into a test body, async ({ ${fixturesIn(body, this.options.engineFixtures ?? []).join(', ')} }) => { ... },`]
-        : [`Test lines from this session's actions after test ${testRan} stopped, ${count}:`, 'Put them in that test where it stopped, in place of the line that failed or after its last line,'];
+      testRan !== undefined
+        ? [
+            `Test lines from this session's actions after test ${testRan} stopped, ${count}:`,
+            "Put them in that test where it stopped, in place of the line that failed or after its last step. Keep the test's checks together at its end, with one that checks its outcome. See topic writing-tests, Structure.",
+          ]
+        : attached === true
+          ? [
+              `Test lines from this session's actions while the test was held, ${count}:`,
+              "Put them in the held test at the pause point. Keep the test's checks together at its end, with one that checks its outcome. See topic writing-tests, Structure.",
+            ]
+          : [
+              `Draft test body from this session's actions, ${count}:`,
+              `Split these lines into tests, one behavior each: its arrange lines, the act under test, then its checks together at the end. Each test body is async ({ ${fixturesIn(body, this.options.engineFixtures ?? []).join(', ')} }) => { ... }. Every test needs a check of its outcome; add one where none is here. A check of a screen the flow later leaves belongs to its own test. Name a locator a test uses twice.${agentGuidance} See topic writing-tests, Structure.`,
+            ];
     return [
       lead,
       '',
       ...body,
       '',
-      `${place} and add an expect after each step that should change the screen.${imports.length === 0 ? '' : ` Import ${imports.join(' and ')} from 'e2e'.`}`,
+      `${place}${imports.length === 0 ? '' : ` Import ${imports.join(' and ')} from 'e2e'.`}`,
     ].join('\n');
   }
 

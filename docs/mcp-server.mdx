@@ -120,8 +120,9 @@ Test line: await screen.getByRole("button", "Sign in").tap();
 ```
 
 The agent copies the lines it needs into the test as it walks the flow.
-`test_lines` returns every line so far, in order, as a draft test body. See
-[`test_lines`](/reference/mcp#test_lines) for how a line is built.
+`test_lines` returns every line so far, in order, with guidance matching
+whether the session is a fresh recording, a resumed test, or an attached
+held test. See [`test_lines`](/reference/mcp#test_lines) for how a line is built.
 
 ## How it checks a locator
 

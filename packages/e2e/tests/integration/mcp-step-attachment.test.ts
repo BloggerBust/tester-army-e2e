@@ -228,7 +228,14 @@ describe('MCP attachments to held tests', { timeout: 60_000 }, () => {
     const tapped = await invoke(client, 'call', { tool: 'tap', args: { target } });
     expect(tapped.isError, tapped.text).toBe(false);
     expect(tapped.text).toContain('Submitted');
-    expect((await invoke(client, 'call', { tool: 'test_lines' })).text).toContain('.tap()');
+    const linesTool = await invoke(client, 'tools', { session: opened.session, tool: 'test_lines' });
+    expect(linesTool.isError, linesTool.text).toBe(false);
+    expect(linesTool.text).toContain('Use these lines at the pause point of the held test');
+    expect(linesTool.text).not.toMatch(/split the draft into tests/i);
+    const drafted = await invoke(client, 'call', { tool: 'test_lines' });
+    expect(drafted.text).toContain('.tap()');
+    expect(drafted.text).toContain('Put them in the held test at the pause point');
+    expect(drafted.text).not.toMatch(/split these lines into tests/i);
     expect(e2e(dir, 'run', '--step', 'next').status).toBe(0);
     expect(await held.exited).toBe(0);
   });

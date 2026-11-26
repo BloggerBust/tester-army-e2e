@@ -133,36 +133,44 @@ prompts.
 
 The skill tells the agent to read the config and an existing test first.
 With `e2e mcp`, it walks the flow in a session and writes each step as it
-takes it. Known fields and exact values get `screen` calls, from
-locators that matched one node:
+takes it. Each test checks one behavior. It arranges the starting state,
+acts toward one goal, then checks the outcome at the end:
 
-```ts title="tests/checkout.e2e.ts"
-import { test, expect, credentials } from 'e2e';
+```ts title="tests/shop.e2e.ts"
+import { test, expect } from 'e2e';
 
-test('a signed-in user reaches checkout', async ({ screen, app, agent }) => {
-  const user = credentials.user('customer');
-  await app.open('/login');
-  await screen.getByLabel('Email').fill(user.username);
-  await screen.getByLabel('Password').fill(user.password);
-  await screen.getByRole('button', 'Sign in').click();
-  await expect(screen.getByRole('heading', 'Welcome back')).toBeVisible();
+test('filters the shop to items under $20', { session: 'customer' }, async ({ app, agent, screen }) => {
+  const results = screen.getByRole('status', 'Results');
+  const products = screen.getByRole('list', 'Products').getByRole('listitem');
+  await app.open('/shop');
+  await results.waitFor();
+  await products.filter({ hasText: 'Leather Backpack, $90' }).waitFor();
 
-  await agent.act('Add the cheapest item on the page to the cart');
-  await expect(screen.getByRole('status', 'Cart')).toHaveText('1 item');
-  await agent.act('Open the cart');
-  await expect(screen.getByRole('heading', 'Your cart')).toBeVisible();
+  await agent.act('show only items under $20');
+
+  await expect(results).toHaveText('2 items under $20');
+  await expect(products).toHaveText(['Canvas Tote, $14', 'Steel Bottle, $18']);
 });
 ```
 
-- **One `agent.act` per [atomic goal](/core-concepts#goals), then an
-  `expect`.** The `expect` fails when the agent did the wrong thing. A
-  locator matcher, or another
-  [verification check](/cache#when-a-recording-is-written), also lets the
-  cache replay the step.
+- **One behavior and one [goal](/core-concepts#goals) per test.** Give
+  `agent.act` the specific steps it needs to reach that goal. Split the
+  path into calls when a later step needs a known screen state, when a
+  long flow risks `maxSteps` or `maxModelCalls` budgets, or when a middle
+  failure needs its own step boundary. Explain the split and wait for the
+  intermediate screen state before continuing. Check the outcome at the end
+  to verify the behavior and confirm the
+  [recording](/cache#when-a-recording-is-written).
+- **Named locators.** A locator the test uses twice, like `results`, is a
+  `const`, so a renamed control is one edit.
 - **No sleeps.** Locators poll, actions wait for their target, and `expect`
   retries until its timeout.
-- **Secrets through `credentials.user(name)`.** Declare them in the config.
-  Never write them in a test.
+- **Give each user a separate session.** A [setup test](/authentication)
+  signs in with `credentials.user(name)` and saves the primary user's
+  session. For a flow like chat, [open a second session](/core#open-a-host-inside-a-test)
+  and check the result in the recipient's session. Never write a password or
+  other secret in a test: declare runner credentials in configuration and pass
+  a second host's secrets through `launch({ secrets })`.
 
 While it iterates, the agent runs only the test it works on, by the line
 its `test(` opens on. With `--action-timeout 5000`, a wrong locator fails

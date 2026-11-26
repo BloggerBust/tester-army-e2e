@@ -459,6 +459,7 @@ export class HeldTestTools {
       attemptDir: runtime.artifacts.dir,
       recorder: attachment.recorder,
       fills: sessionFills(config),
+      attached: true,
       onActionFailed: (cause) => {
         const call = heldTestToolCallScope.getStore();
 

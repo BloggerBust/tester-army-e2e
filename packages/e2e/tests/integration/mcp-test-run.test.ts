@@ -316,10 +316,27 @@ describe('open_session {test}', { timeout: 120_000 }, () => {
       const ran = await invoke('call', { tool: 'run_code', args: { code: "await expect(screen.getByRole('status', 'Counter')).toHaveText('3');" } });
       expect(ran.isError, ran.text).toBe(false);
       const drafted = await invoke('call', { tool: 'test_lines' });
+      const continuation = await invoke('tools', { tool: 'test_lines' });
       expect(drafted.text).toContain(
         `after test tests/counter.e2e.ts:${FAILING} stopped, in order (2 lines):\n\nawait screen.getByRole("button", "Increment").tap();\nawait expect(screen.getByRole('status', 'Counter')).toHaveText('3');\n\nPut them in that test where it stopped`,
       );
       await invoke('close_session');
+
+      expect(continuation.isError, continuation.text).toBe(false);
+      expect(continuation.text).toContain('Use these lines to continue the existing test');
+      expect(continuation.text).not.toMatch(/split the draft into tests/i);
+
+      const recording = await invoke('open_session');
+      expect(recording.isError, recording.text).toBe(false);
+      const draftTool = await invoke('tools', { tool: 'test_lines' });
+      const freshDraft = await invoke('call', { tool: 'test_lines' });
+      await invoke('close_session');
+      expect(draftTool.isError, draftTool.text).toBe(false);
+      expect(draftTool.text).toContain('Split the draft into tests, one behavior each');
+      expect(draftTool.text).not.toContain('continue the existing test');
+      expect(freshDraft.isError, freshDraft.text).toBe(false);
+      expect(freshDraft.text).toContain('Split these lines into tests, one behavior each');
+      expect(freshDraft.text).not.toContain('agent.act');
     });
 
     it('fails a test on a promise it left rejected, and keeps serving', async () => {
@@ -470,6 +487,34 @@ describe('open_session {test}', { timeout: 120_000 }, () => {
       expect(run.exitCode).toBe(0);
       expectReplayed(onlyActStep(run, counter.title), counter.actions[0]!);
       expect(loopCalls).toHaveLength(modelCalls);
+
+      // A fresh session with a configured model includes agent.act guidance in test_lines.
+      const opened = await sessions.open({});
+      const sessionId = /^Session (\S+) open/.exec(opened)?.[1];
+      expect(sessionId, opened).toBeDefined();
+      const drafted = await sessions.call(sessionId!, 'test_lines', {}, { signal: new AbortController().signal });
+      await sessions.close('done');
+      const draftText = drafted.content.find((part) => part.type === 'text')?.text ?? '';
+      expect(drafted.isError, draftText).toBeUndefined();
+      expect(draftText).toContain('Split these lines into tests, one behavior each');
+      expect(draftText).toContain('Prefer agent.act for user flows');
+
+      // A custom executor without a model also enables agent.act guidance in test_lines.
+      const executorSessions = inProcessHost(project, {
+        agents: {
+          default: {
+            executor: { name: 'stub', runStep: async () => ({ status: 'passed', summary: 'ok' }) },
+          },
+        },
+      });
+      const executorOpened = await executorSessions.open({});
+      const executorSessionId = /^Session (\S+) open/.exec(executorOpened)?.[1];
+      expect(executorSessionId, executorOpened).toBeDefined();
+      const executorDraft = await executorSessions.call(executorSessionId!, 'test_lines', {}, { signal: new AbortController().signal });
+      await executorSessions.close('done');
+      const executorDraftText = executorDraft.content.find((part) => part.type === 'text')?.text ?? '';
+      expect(executorDraft.isError, executorDraftText).toBeUndefined();
+      expect(executorDraftText).toContain('Prefer agent.act for user flows');
     });
   });
 

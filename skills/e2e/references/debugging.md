@@ -6,10 +6,12 @@ default.
 ## Contents
 
 - Read the failure
+- Rerunning a test while you fix it
 - Error codes
 - Tools
 - Flaky tests
 - Is it the app?
+- Feedback
 
 ## Read the failure
 
@@ -62,9 +64,8 @@ default.
      screen's route, and tap only to reach a state no URL opens. A device
      session starts on the app's launch screen: take the shortest path from
      there.
-   - Then rerun only that test by `file:line` (SKILL.md, "Rerunning a
-     test while you fix it"; topic `mcp` says when a session must close
-     first).
+   - Then rerun only that test by `file:line` ("Rerunning a test while you
+     fix it" below; topic `mcp` says when a session must close first).
 3. `.e2e/report.json` holds the same facts for scripts, not for reading:
    each step's `events` (`engine`, `poll`, `navigation`) and the attempt's
    `appLog` (each line's `step` is a step `index`) are what the page's step
@@ -92,6 +93,15 @@ jq '.run.results[] | select(.selected and .status != "passed") | .attempts[-1]
    later page `video/video-part<n>.webm` with its own `startedAt`;
    `video/video.mp4` on a device; a provider's file or link); with
    `--debug` every agent step's transcript.
+
+## Rerunning a test while you fix it
+
+- Run by `file:line`, not the whole file; re-check the `test(` line after edits above it.
+- Pass `--action-timeout 5000` so missing locators fail in 5 s instead of 30 s (keep it above the slowest screen load; per-call `{ timeout }` wins; `expect` defaults to 5 s).
+- Keep the replay cache on (`read-write` locally; never pass `--no-cache` on every edit). A failed run keeps every `agent.act` confirmed by a wait or check that passed after it, and reruns only new, changed, failed, or handed-off goals. Give the command a timeout longer than the test (a killed run saves nothing).
+- Do not rename the test, `describe`, file, goal instruction, `params`, or agent context once a goal passes: each is part of the cache key. Fixing locators or assertions keeps recordings.
+- Pass `--retries 0` when retries are enabled (default 1 in CI): outside strict mode, retries never replay.
+- Once green, drop `--action-timeout` and run once with `--no-cache` for agent tests to confirm live execution.
 
 ## Error codes
 
@@ -168,9 +178,13 @@ With `--step`, you won't stop at steps inside an `expect.poll` read or a
 
 - A read (`textContent()`, `count()`) caught a value mid-update: use a
   matcher.
-- Shared data: unique names per run, `afterEach` cleanup, or a `serial`
-  group.
-- App not ready: assert on the element you are about to use, not the
+- Shared data: each test creates its records with run-unique names in a
+  `test.extend` fixture and deletes them after `use()`; with one app-wide
+  state no test can own, `workers: 1`. A test that passes in its file but
+  fails alone by `file:line` depends on an earlier test: give it its own
+  arrange steps, not a `serial` group (topic `writing-tests`, "Each test
+  owns its starting state").
+- App not ready: wait for the element you are about to use, not the
   previous page.
 - An agent judgment asserts exact phrasing: judge the fact, add a
   deterministic `expect` beside it.
@@ -187,3 +201,26 @@ is a product bug or a changed screen, not a flake: reproduce once with
 `--headed`, then fix the app or update locator and expectation together. A
 blocked agent step (`AUTH_CREDENTIAL_UNAVAILABLE`, `ENVIRONMENT_UNAVAILABLE`,
 `SEED_DATA_MISSING`) exits 2 or 3 on purpose: fix the environment.
+
+## Feedback
+
+When e2e itself breaks (`bug`), misleads you (`docs`), or lacks a needed
+capability (`feature`), offer to report it once after working around it or
+giving up. Never report app failures, one-off issues, or outdated e2e versions
+(upgrade with `npx e2e@latest upgrade` first). Search
+[existing issues](https://github.com/e2e-inc/e2e/issues) first
+(`gh issue list -R e2e-inc/e2e --search "<words>"`), and comment on a match
+instead of sending a new report. Never file the issue yourself.
+
+A `bug` needs `--repro` (deterministic steps without app content); without it,
+omit `--repro` so the command prints a prefilled GitHub issue URL for the user
+and sends nothing. Always run with `--dry-run` first, show the user, and send
+only with approval. Never include app content, test files, private URLs, or
+credentials.
+
+```bash
+npx e2e feedback --type bug -m "<one or two sentences>" \
+  --repro "<steps that reproduce it every time>" --error-code LOCATOR_AMBIGUOUS \
+  --task "<what you were doing>" --expected "<...>" --actual "<error message>" \
+  --approach "<what you tried>" --command "<e2e command>" --agent "<agent / model>"
+```

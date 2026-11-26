@@ -132,8 +132,8 @@ Each call has a model-call budget and a default timeout. See
 - Under a [custom executor](/executors#what-the-executor-handles), `assert`
   uses the `act` budgets.
 
-Use `expect` for exact checks, and give each `act` one
-[atomic goal](/core-concepts#goals). When the provider caches prompts,
+Use `expect` for exact checks, and give each `act` the
+steps toward one [goal](/core-concepts#goals). When the provider caches prompts,
 `--debug` shows the cached share of input tokens per step.
 
 ## Next

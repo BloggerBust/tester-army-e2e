@@ -322,23 +322,43 @@ how a replay checks the screen and hands off to the model.
 
 ## Open a host inside a test
 
-A test that `e2e run` runs can open a host for a second session: another
-user, or a phone beside the browser.
+A test can open a second session for another user or device. In this
+browser example, a [setup test](/authentication) saves the sender's login
+as `sender`. The recipient signs in on a separate host pointed at the same
+app. Use test accounts and a conversation reserved for the test.
 
-```ts title="tests/board.e2e.ts"
+```ts title="tests/chat.e2e.ts"
+import { randomUUID } from 'node:crypto';
 import { test } from '@e2e-dev/web';
+import { expect } from 'e2e';
 import { launch } from '@e2e-dev/core';
 import { web } from '@e2e-dev/web/engine';
 
-test('the reviewer sees the note', async ({ app, screen }) => {
-  await app.open('/board');
-  await using host = await launch(web(), { app: { url: 'https://shop.example.com' } });
-  const reviewer = await host.newSession();
-  await reviewer.app.open('/board');
-  await screen.getByLabel('Note').fill('hello');
-  await reviewer.screen.getByText('hello').waitFor();
+test('delivers a message to the recipient', { session: 'sender' }, async ({ app, screen }) => {
+  const message = `Hello ${randomUUID()}`;
+  await using host = await launch(web(), {
+    app: { url: app.baseUrl },
+    secrets: { RECIPIENT_PASSWORD: process.env.RECIPIENT_PASSWORD ?? '' },
+  });
+  const recipient = await host.newSession();
+  await recipient.app.open('/login');
+  await recipient.screen.getByLabel('Email').fill('recipient@example.test');
+  await recipient.screen.getByLabel('Password').fill(host.secret('RECIPIENT_PASSWORD'));
+  await recipient.screen.getByRole('button', 'Sign in').tap();
+  await recipient.screen.getByRole('heading', 'Chat').waitFor();
+  await app.open('/chat');
+
+  await screen.getByLabel('Message').fill(message);
+  await screen.getByRole('button', 'Send').tap();
+
+  await expect(recipient.screen.getByText(message, { exact: true })).toBeVisible();
 });
 ```
+
+If you already captured the recipient's login with `saveState()` on a core
+session, restore it with [`newSession({ state })`](/reference/core#newsession)
+on a host for the same app, engine, and platform. Named runner sessions
+from `session.save()` are restored through the runner's `session` option.
 
 The test's report covers the session:
 

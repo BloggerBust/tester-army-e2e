@@ -473,6 +473,7 @@ export class SessionHost {
         appBase: target.app.base,
         fills: sessionFills(config),
         testRan: test === undefined ? undefined : testLocation(test.pair.test),
+        hasAgent: config.agent.model !== undefined || config.agent.executor !== undefined,
         locator: new LocatorEngine({
           session: attempt.session,
           budget: attempt.budget,

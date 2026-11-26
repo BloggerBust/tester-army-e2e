@@ -108,7 +108,7 @@ The catalog, per session:
 | `type_secret` | Fills a configured secret by name: a credential's password into a password field, a `secrets` entry into any editable input; the plaintext never reaches the agent, and its test line names the credential or secret (`fill(credentials.user(name).password)`, `fill(secrets.get(name))`). Listed when the config declares `credentials` or `secrets` and the engine can fill secrets. |
 | `locate` | Tries a semantic locator with exactly one of `role`, `text`, `label`, `placeholder`, `testId` (`name` only with `role`; `exact` optional; anything else is `INVALID_ARGUMENT`) and returns how many nodes match, which, and the `screen.*` call to write. |
 | `run_code` | Runs JavaScript (`code`, the body of an async function) on the live session, in the server's Node process, with `screen`, `app`, `expect`, `credentials`, `secrets`, `console`, and the engine's fixture (`browser` or `device`) in scope: the objects a test body gets, so every call behaves as it does in a test. Read values (`textContent()`, `allTextContents()`, `count()`, `inputValue()`), compute on them, and act on what you find in one call instead of one call per step. `return` a JSON value to get it back; `console.log` lines come back too. There is no `page`; call the engine's fixture for what `screen` does not reach, such as `browser.evaluate(() => document.title)` or a `browser.route` handler. Actions and matchers on `screen` wait at most `timeout` ms (default 5000). A line that fails throws the error a test gets, with its `code`, which the code may catch; uncaught, it stops the code. Await each line: a failure nothing awaited fails the call. The result lists each line that ran on the app, then what changed on screen; a read shows its value there unless the code returns or logs something, and a configured secret's value shows as `<secret:name>`. |
-| `test_lines` | Every test line the session's actions printed and every line `run_code` passed, in order, as a draft test body, starting with `await app.open();` for the session's own opening (after `open_session {test}`, the lines that continue that test, with no opening); an action without a line shows as a `//` comment. A line's locator matched the target alone on the live screen before the action (role and name first, test id last, narrowed to `{ visible: true }`, a container, or `.nth(i)` with a comment when twins share it); a fill names `credentials.user(name)` or `secrets.get(name)`, never a value; a navigation on the app's origin is written as its path. |
+| `test_lines` | Every test line the session's actions printed and every line `run_code` passed, in order. A fresh session opens the draft with `await app.open()` (or `await app.open(path)` when opened with `path`; omitted if a web target has no app URL). Split a new recording into tests, one behavior each with its checks at the end (topic `writing-tests`, "Structure"). After `open_session {test}`, the lines start with your next action and continue the test where it stopped. After `open_session {attach}`, the lines belong at the pause point of the held test. An action without a line shows as a `//` comment. A line's locator matched the target alone on the live screen before the action (role and name first, test id last, narrowed to `{ visible: true }`, a container, or `.nth(i)` with a comment when twins share it); a fill names `credentials.user(name)` or `secrets.get(name)`, never a value; a navigation on the app's origin is written as its path. |
 | `screenshot` | The masked pixels as an image. With `path` (a `.png` inside the project, relative to its root, not hidden or under a hidden directory), also saves a full-resolution masked capture there and returns its absolute path. |
 | `tap_at` | Taps a point (`x`, `y` in the latest screenshot's pixels) where you aim. An engine without a bare-point tap taps the listed control under it by id instead, and fails on a point on nothing listed. Listed when the engine declares `tap` or a bare-point tap. |
 | `hover_at` | Hovers a point the same way: the bare point, otherwise a listed control under it by id. Listed when the engine declares `hover` or a bare-point hover. |
@@ -184,21 +184,28 @@ looks: `run_code` reads the accessibility tree, not pixels.
 2. Walk the flow one screen at a time, and write each screen's steps into
    the file before you leave it. Do not walk the whole flow first and write
    the test from memory afterwards. Each step is one of two kinds:
-   - An `agent.act` goal, the default for a path that varies: write the goal
-     with the words on screen and its values in `params`, then walk its
-     path in the session. Those actions stay out of the test, and so do the
-     test lines they print.
-   - A `screen` line, for an exact value or interaction: a sign-in form in a
-     setup test, a field that must receive one specific string, an
-     interaction that is the point of the test. Act on the control by node
-     id, then copy the `Test line:` the action printed into the file. Its
-     locator matched that control alone on the live screen. When the action
-     prints `No test line:` instead, the reason says why; for a control no
-     locator found alone, try one with `locate`, or write the line and run
-     it with `run_code`.
+   - An `agent.act` goal, the default for user flows whenever `e2e.config.ts`
+     configures a model or custom executor: write the goal with the words on
+     screen and its values in `params`, then walk its path in the session.
+     Those actions stay out of the test, and so do the test lines they print.
+   - A `screen` line only for low-level mechanics that are themselves under
+     test (such as an empty submit, keyboard shortcut, or drag offset), a
+     sign-in form in a setup test, or a project with no model configured. A
+     value alone is not a reason: a goal takes it in `params`. Act on the
+     control by node id, then copy the `Test line:` the action printed into
+     the file. Its locator matched that control alone on the live screen. When
+     the action prints `No test line:` instead, the reason says why; for a
+     control no locator found alone, try one with `locate`, or write the line
+     and run it with `run_code`.
 
    With several `screen` steps on one screen, take their actions, then add
-   the lines they printed in one edit.
+   the lines they printed in one edit. A `Test line:` repeats one action;
+   it is not the test's final shape. When its locator is already in the
+   test, name it once in a `const` and use the name in both places.
+
+   Reading the app's source tells you the flow; it is not the walk. The
+   names a user sees on the live screen are the locators, and a
+   `data-testid` from the source stays the last resort.
 3. When the outcome shows, add its check to the test's assert block, after
    every step: an `agent.assert`, or an `expect` you ran first with
    `call {tool: "run_code", args: {code: "await expect(screen.getByRole('status')).toHaveText('Saved');"}}`.
@@ -238,16 +245,23 @@ looks: `run_code` reads the accessibility tree, not pixels.
    call    tap, type, select, tap                   the goal's path; its test lines stay out
    call    run_code {code: "await expect(screen.getByRole('status')).toContainText('Invite sent');"}   passed
    edit    + that line, in the assert block
-   write   + test('finds a member by name'), app.open('/settings/members')
+   write   + test('clears the filter with Escape'), app.open('/settings/members')
    call    navigate {url: "/settings/members"}       the new test's fresh start
-   call    type {target: "n40", value: "grace"}     prints the test line below
+   call    type {target: "n40", value: "grace"}     exact key mechanics under test; prints the test line below
            Test line: await screen.getByRole("searchbox", "Search members").fill("grace");
-   edit    + that line, as printed
-   call    run_code {code: "await expect(screen.getByRole('listitem')).toHaveCount(1);"}   passed
+   call    press {target: "n40", key: "Escape"}     prints the test line below
+           Test line: await screen.getByRole("searchbox", "Search members").press("Escape");
+   edit    + those lines, binding the repeated searchbox locator to a const
+   call    run_code {code: "await expect(screen.getByRole('searchbox', 'Search members')).toHaveValue('');"}   passed
    edit    + that line, in the assert block
    ```
+
+   Before the first run, read the file once from the top: each test's
+   checks sit together at its end, each title names one outcome, no
+   locator is written out twice in one test, and no block of steps repeats
+   across tests (topic `writing-tests`, "Structure").
 4. Run only that test:
-   `npx e2e run tests/<feature>.e2e.ts:<line>` (SKILL.md,
+   `npx e2e run tests/<feature>.e2e.ts:<line>` (topic `debugging`,
    "Rerunning a test while you fix it"). On a failure, fix from the run's failure block
    and the trace page (topic `debugging`), then rerun it the same way. To see a screen the evidence leaves out, go
    straight to it instead of walking the flow again from the start:

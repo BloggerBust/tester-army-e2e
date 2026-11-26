@@ -335,9 +335,16 @@ name with the line it was thrown on.
 
 #### `test_lines`
 
-Returns every test line the session's actions printed, and every line
-[`run_code`](#run_code) passed, in order, as a draft test body. Takes no
-arguments.
+Returns, in order, the test lines from session actions and passing
+[`run_code`](#run_code) statements. Takes no arguments.
+
+For a new recording, split the draft into tests with one behavior each
+and check the outcome at the end of each test (when the session's agent
+configures a model or custom executor, the draft also recommends using
+`agent.act` for user flows). If you opened an existing
+test with `open_session {test}`, use the lines to continue that test
+where it stopped. If you attached to a held test with
+`open_session {attach}`, put the lines at the pause point of that test.
 
 Each action's result carries its line after the summary:
 

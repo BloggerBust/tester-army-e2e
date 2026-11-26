@@ -7,7 +7,7 @@ model-call budget, no shared transcript. No agent step, no model calls.
 ## Contents
 
 - Configure a model
-- act: one goal
+- act: one goal per test
 - assert, waitFor, extract: one question
 - Write instructions the model can execute
 - What the model sees
@@ -93,7 +93,7 @@ For signed-in personas, pair an agent with a `session` in a describe block
 repeated per persona; the cache keys every entry by the agent and its
 context, so each persona records and replays its own steps.
 
-## act: one goal
+## act: one goal per test
 
 ```ts
 import { credentials } from 'e2e';
@@ -307,41 +307,35 @@ elsewhere on the current screen.
 
 ## Write instructions the model can execute
 
-- One goal per `act`; goal order is the test's, the path the model's.
-- Keep each goal atomic: one outcome that one check confirms. When two
-  parts of an instruction each leave a state worth checking, they are two
-  goals, each its own `act`. Steps toward a single outcome
-  are the path, not more goals: scrolling to a control, closing a banner,
-  opening the menu that holds it, filling the fields of one form.
-- A split flow fails at the goal that broke. Each goal replays from its own
-  recording and gets its own `maxSteps` and `maxModelCalls`; the test
-  timeout still caps them all.
+- Give each test one behavior and one goal. An `act` instruction can
+  give several steps toward that goal. Name the fields, options, and
+  buttons the test depends on. Specify the order when it matters.
+- Keep arrange actions focused on the starting state. Wait for that
+  state before acting on the behavior under test.
+- Start with one call for the act block. Split at a meaningful screen
+  transition when the next step needs a known state, when a long flow
+  would risk the `maxSteps` or `maxModelCalls` budget, or when a failure
+  in the middle needs its own step boundary. Explain why, then wait for
+  the intermediate screen state. Each call has its own recording and budgets within the
+  test timeout. Verify the complete path together.
 
 ```ts
-// BAD: three goals in one instruction, one recording.
-await agent.act('open the Pro plan, set the seats to {seats}, and check out', { params: { seats: 3 } });
+test('places an order with a saved card', async ({ app, agent, screen }) => {
+  await app.open('/checkout');
 
-// GOOD: arrange with two atomic goals, act with the one under test, assert last.
-test('checks out the Pro plan', async ({ app, agent, screen }) => {
-  await app.open('/plans');
-  await agent.act('open the Pro plan');
-  await agent.act('set the seats to {seats}', { params: { seats: 3 } });
-  await agent.waitFor('the cart shows the Pro plan with 3 seats');
-
-  await agent.act('check out');
+  // The saved card can load after the Payment heading appears.
+  await agent.act('Fill the Shipping address with {address}, then choose Continue to payment.', {
+    params: { address: '12 Market Street' },
+  });
+  await screen.getByRole('radio', 'Test card').waitFor();
+  await agent.act('Select the saved Test card and choose Place order.');
 
   await expect(screen.getByText('Order confirmed')).toBeVisible();
-  await expect(screen.getByText('Pro plan, 3 seats')).toBeVisible();
 });
 ```
 
-Choosing the seats is its own behavior, so it gets its own test that ends
-after `set the seats` and asserts the seat count. Tests follow arrange, act,
-assert, one behavior each (topic `writing-tests`, "Structure").
-
-- Use the words on screen: `'open the Billing tab'`, not `'upgrade'`.
-- Values go in `params`, never expanded: `act('rename to {name}', { params })`.
-- Do not describe mechanics the runner handles: waiting, scrolling, retries.
+- Put test data in `params` and use placeholders in the instruction.
+- Leave routine waiting, scrolling, and retries to the runner.
 - End the test with a check of the outcome. A passing locator or engine
   matcher, `agent.assert`, or wait confirms every `act` before it, which
   lets the cache record them; close an arrange block of `act` goals with a
@@ -451,7 +445,7 @@ matches. Misses and hand-offs use the model; `agent.assert`,
   (`MODEL_PROVIDER_FAILED`, `MODEL_UNAVAILABLE`) implicate nothing and evict
   nothing.
 - While you fix a test, keep the cache on: each rerun replays the goals
-  whose check passed instead of calling the model for them (SKILL.md,
+  whose check passed instead of calling the model for them (topic debugging,
   "Rerunning a test while you fix it"). `--no-cache` is for ruling out a
   stale replay (topic debugging, "Tools"), and for one live run once the
   test passes.

@@ -511,6 +511,8 @@ expect(payload).toEqual({ ok: true, items: [{ sku: 'a' }] });
 #### `toMatchObject`
 
 Requires every property of `expected` to match recursively.
+The matcher returns `void`. Keep the original value if you need to read
+properties after the check.
 
 ```ts
 expect(order).toMatchObject({ customer: { name: 'Ada' }, lines: [{ sku: 'a' }, { sku: 'b' }] });
