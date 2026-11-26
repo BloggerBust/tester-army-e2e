@@ -95,9 +95,14 @@ export function createExploreBody(options: ExploreBodyOptions): TestFn {
         : Object.fromEntries(
             accounts.map((account) => [account.name, { username: account.username, password: credentials.user(account.name).password }]),
           );
-    const ending = await runSteps({ agent, state, accounts, session: options.session, change: options.change, secrets, stepTimeoutMs: options.stepTimeoutMs, remaining: () => deadline - now() });
-    state.end(ending.ended, ending.summary);
-    conclude(state);
+    try {
+      const ending = await runSteps({ agent, state, accounts, session: options.session, change: options.change, secrets, stepTimeoutMs: options.stepTimeoutMs, remaining: () => deadline - now() });
+      state.end(ending.ended, ending.summary);
+      conclude(state);
+    } finally {
+      // A finding tool abandoned at a step deadline may still be saving its screenshot; it lands after the verdict, so it is refused.
+      state.close();
+    }
   };
 }
 

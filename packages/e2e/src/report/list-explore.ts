@@ -81,6 +81,8 @@ export class ExploreView {
   private readonly steps: FinishedStep[] = [];
   private readonly findings: ReportExploreFinding[] = [];
   private open: OpenStep | undefined;
+  /** Findings that arrived after their step ended, shown where they arrived until the next step ends. */
+  private late: ReportExploreFinding[] = [];
   /** What the planner is deciding while no step is open: nothing, the next step, or the closing assessment. */
   private planning: 'step' | 'closing' | undefined;
   private ended: ReportExplore['ended'] | undefined;
@@ -116,12 +118,23 @@ export class ExploreView {
         const open = this.open;
         this.open = undefined;
         this.steps.push({ step: progress.step, actions: open?.actions ?? 0, findings: open?.findings.length ?? 0 });
+        this.late = [];
         break;
       }
-      case 'finding':
-        this.findings.push(progress.finding);
-        this.open?.findings.push(progress.finding);
+      case 'finding': {
+        const { finding } = progress;
+        this.findings.push(finding);
+        if (this.open !== undefined && this.open.step.index === finding.step) {
+          this.open.findings.push(finding);
+          break;
+        }
+        // A finding whose screenshot was still saving when its step ended at the deadline.
+        const at = this.steps.findIndex((entry) => entry.step.index === finding.step);
+        if (at === -1) break;
+        this.steps[at] = { ...this.steps[at]!, findings: this.steps[at]!.findings + 1 };
+        this.late.push(finding);
         break;
+      }
       case 'finished':
         this.planning = undefined;
         this.ended = progress.ended;
@@ -199,11 +212,12 @@ export class ExploreView {
     return lines;
   }
 
-  /** One finding on one line: `⚑ high issue  Title (/path)`. */
+  /** One finding on one line: `⚑ high issue  Title (/path)`, then `· step 1` when that step already ended. */
   findingLine(finding: ReportExploreFinding, indent = ROW_INDENT): string {
     const { pc } = this;
     const location = finding.path === undefined ? '' : pc.dim(` (${bounded(finding.path)})`);
-    return `${indent}${this.severityColor(finding)(`${F_FINDING} ${this.grade(finding)}`)}  ${bounded(collapseText(finding.title))}${location}`;
+    const step = this.late.includes(finding) ? pc.dim(` · step ${finding.step}`) : '';
+    return `${indent}${this.severityColor(finding)(`${F_FINDING} ${this.grade(finding)}`)}  ${bounded(collapseText(finding.title))}${location}${step}`;
   }
 
   /** `high issue`, `low warning`. */
@@ -252,7 +266,11 @@ export class ExploreView {
     if (this.open === undefined) {
       if (this.planning === undefined) return [];
       const what = this.planning === 'closing' ? 'the closing assessment' : `step ${this.steps.length + 1} of ${this.budgets.maxSteps}`;
-      return [`${LIVE_INDENT}${pc.dim(`${F_DOWN_RIGHT} planning ${what}`)}`, `${LIVE_INDENT}  ${waitingRow(pc, now, 'Thinking')}`].slice(0, budget);
+      return [
+        `${LIVE_INDENT}${pc.dim(`${F_DOWN_RIGHT} planning ${what}`)}`,
+        ...this.late.map((finding) => `${LIVE_INDENT}  ${this.findingLine(finding, '')}`),
+        `${LIVE_INDENT}  ${waitingRow(pc, now, 'Thinking')}`,
+      ].slice(0, budget);
     }
     const { step } = this.open;
     const rows = [`${LIVE_INDENT}${pc.dim(`${F_DOWN_RIGHT} ${step.index}  `)}${bounded(step.title)} ${pc.dim(`(step ${step.index} of ${this.budgets.maxSteps})`)}`];
@@ -272,7 +290,7 @@ export class ExploreView {
       ...events
         .filter((event) => event.name !== FINDING_TOOL_EVENT)
         .map((event) => ({ at: event.startedAt, row: eventLine(this.pc, event, { maxWidth }) })),
-      ...(this.open?.findings ?? []).map((finding) => ({ at: finding.reportedAt, row: this.findingLine(finding, '') })),
+      ...[...this.late, ...(this.open?.findings ?? [])].map((finding) => ({ at: finding.reportedAt, row: this.findingLine(finding, '') })),
     ];
     return rows.toSorted((a, b) => (a.at < b.at ? -1 : a.at > b.at ? 1 : 0)).map((entry) => entry.row);
   }

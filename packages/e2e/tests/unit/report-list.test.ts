@@ -2486,6 +2486,44 @@ describe('explore runs', () => {
     expect(header).not.toContain('|capacity|');
   });
 
+  describe('a finding that arrives after its step ended', () => {
+    const LATE = { ...FINDING, reportedAt: '2026-09-11T10:00:34.000Z' };
+    const LATE_LINE = '⚑ high issue  Cart total shows $0.00 with two items (/cart) · step 1';
+
+    function untilStepOneEnded(reporter: ListReporter): void {
+      reporter.handle(runStarted({ targets: ['web'] }));
+      reporter.handle(plan([{ file: 'explore', target: 'web', tests: 1 }]));
+      reporter.handle(testStarted('t1', GOAL, 'web', 'explore'));
+      reporter.handle(explore({ phase: 'started', goal: GOAL, budgets: { maxSteps: 4, timeoutMs: 300_000 } }));
+      reporter.handle(explore({ phase: 'step-started', step: STEP_1 }));
+      reporter.handle(explore({ phase: 'step-finished', step: { ...STEP_1, status: 'exhausted', startedAt: '2026-09-11T10:00:01.000Z', durationMs: 32_000 } }));
+    }
+
+    it('prints it in the log under the row already printed, naming its step', () => {
+      const { lines, output } = capture();
+      const reporter = plainReporter(output);
+      untilStepOneEnded(reporter);
+      reporter.handle(explore({ phase: 'planning', closing: false }));
+      reporter.handle(explore({ phase: 'finding', finding: LATE }));
+      expect(lines.slice(-2)).toEqual(['   × 1  Cart 32.00s ended at its limit', `   ${LATE_LINE}`]);
+    });
+
+    it('shows it in the live window at once, naming its step, while the planner works and through the next step', () => {
+      const frames: string[] = [];
+      const reporter = plainReporter({ write: () => {}, raw: (text) => frames.push(text.replace(ANSI_PATTERN, '')) }, true);
+      untilStepOneEnded(reporter);
+      reporter.handle(explore({ phase: 'planning', closing: false }));
+      reporter.handle(explore({ phase: 'finding', finding: LATE }));
+      expect(frames.at(-1)).toContain(LATE_LINE);
+      expect(frames.at(-1)).toContain('× 1  Cart 32.00s · 1 finding ended at its limit');
+      reporter.handle(explore({ phase: 'step-started', step: STEP_2 }));
+      expect(frames.at(-1)).toContain(LATE_LINE);
+      expect(frames.at(-1)).toContain('Steps  1 done of 4 · step 2 running');
+      reporter.handle(explore({ phase: 'step-finished', step: { ...STEP_2, status: 'passed', startedAt: '2026-09-11T10:00:40.000Z', durationMs: 9_000 } }));
+      expect(frames.at(-1)).not.toContain(LATE_LINE);
+    });
+  });
+
   it('badges the record with the explored target after its test has finished', () => {
     const lines: string[] = [];
     const output = { write: (line: string) => lines.push(line.replace(ANSI_PATTERN, '')), raw: () => {} };

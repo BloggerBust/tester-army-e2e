@@ -482,6 +482,19 @@ describe('the exploration body', () => {
     expect(state.ended).toBe('finished');
   });
 
+  it('takes no finding once it is over, however it ended', async () => {
+    const late = { title: 'Late', kind: 'issue', severity: 3, expected: 'e', actual: 'a', reproduction: ['r'] } as const;
+    const finished = new ExploreState('goal', budgets);
+    await fixtures({ plans: [{ decision: 'step', title: 'Cart', instruction: 'open the cart' }, { decision: 'finish', summary: 'Fine.' }], acts: [{ summary: 'ok' }] }, finished).run();
+    expect(() => finished.addFinding(late)).toThrow(/exploration is over/);
+
+    const cancelled = new ExploreState('goal', budgets);
+    const run = fixtures({ plans: [{ decision: 'step', title: 'Cart', instruction: 'open the cart' }], acts: [{ throws: new AgentError('CANCELLED', 'the step was cancelled') }] }, cancelled).run();
+    await expect(run).rejects.toMatchObject({ code: 'CANCELLED' });
+    expect(() => cancelled.addFinding(late)).toThrow(/exploration is over/);
+    expect(cancelled.findings).toEqual([]);
+  });
+
   it('surfaces a cancelled step and a planner failure as the run error', async () => {
     const cancelled = new ExploreState('goal', budgets);
     await expect(

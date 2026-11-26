@@ -38,6 +38,7 @@ export class ExploreState {
   #ended: ReportExplore['ended'] = 'aborted';
   #summary: string | undefined;
   #open: OpenStep | undefined;
+  #closed = false;
   readonly #listeners: ExploreListener[] = [];
   /** The code change it plans from, with `--changed-since`. */
   readonly change: ReportExploreChange | undefined;
@@ -60,6 +61,11 @@ export class ExploreState {
   /** The agent's closing assessment, once it gave one. */
   get summary(): string | undefined {
     return this.#summary;
+  }
+
+  /** The index of the step in progress, if one is open. */
+  get openStep(): number | undefined {
+    return this.#open?.index;
   }
 
   /** Registers a listener for every change from here on. */
@@ -117,12 +123,19 @@ export class ExploreState {
     return step;
   }
 
-  /** Records one finding against the step in progress, with its evidence screenshot's artifact id when one was kept. */
-  addFinding(input: FindingInput): ReportExploreFinding {
+  /**
+   * Records one finding against the step it was reported in, the step in
+   * progress unless given, with its evidence screenshot's artifact id when
+   * one was kept. Refused once the record is closed, as the verdict is
+   * already given.
+   */
+  addFinding(input: FindingInput, reportedIn: { readonly step: number | undefined } = { step: this.openStep }): ReportExploreFinding {
+    if (this.#closed) throw new Error('the exploration is over; no finding can be recorded');
+    const { step } = reportedIn;
     const finding: ReportExploreFinding = {
       id: uuidv7(this.now()),
       index: this.findings.length,
-      ...(this.#open === undefined ? {} : { step: this.#open.index }),
+      ...(step === undefined ? {} : { step }),
       kind: input.kind,
       severity: input.severity,
       title: clip(input.title, MAX_TITLE_CHARS),
@@ -144,6 +157,16 @@ export class ExploreState {
     this.#ended = ended;
     this.#summary = summary === undefined || summary.trim() === '' ? undefined : clip(summary, MAX_SUMMARY_CHARS);
     this.#notify({ phase: 'finished', ended, summary: this.#summary });
+  }
+
+  /** Whether the record takes no more findings. */
+  get closed(): boolean {
+    return this.#closed;
+  }
+
+  /** Takes no more findings: the exploration is over, however it ended. */
+  close(): void {
+    this.#closed = true;
   }
 
   get issues(): readonly ReportExploreFinding[] {

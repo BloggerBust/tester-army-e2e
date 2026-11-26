@@ -213,6 +213,20 @@ describe('ExploreView', () => {
     expect(view.header('|web|', 'Exploring')).toBe(` ❯ |web| Exploring  ${'日'.repeat(50)}`);
   });
 
+  it('counts a finding on the step it was reported in, also when it arrives after that step ended', () => {
+    const view = new ExploreView(pc, { goal: 'checkout', budgets }, () => 0);
+    const step = (index: number) => ({ index, title: `Step ${index}`, instruction: 'go' });
+    const finished = (index: number) => ({ ...step(index), status: 'exhausted' as const, startedAt: '2026-01-01T00:00:00.000Z', durationMs: 1_000 });
+    const finding = { id: 'f', index: 0, step: 1, kind: 'issue' as const, severity: 4 as const, title: 'Total shows $0.00', expected: 'a total', actual: '$0.00', reproduction: ['open the cart'], reportedAt: '2026-01-01T00:00:01.000Z' };
+    view.progress({ phase: 'step-started', step: step(1) });
+    view.progress({ phase: 'step-finished', step: finished(1) });
+    view.progress({ phase: 'step-started', step: step(2) });
+    view.progress({ phase: 'finding', finding });
+    view.progress({ phase: 'step-finished', step: finished(2) });
+    expect(view.lastStep?.findings).toBe(0);
+    expect(view.record('|web|', true).join('\n')).toMatch(/Step 1 .*1 finding/);
+  });
+
   it('clips a failed step\u2019s CJK summary to the terminal width in columns', () => {
     const restore = withTerminalSize({ rows: 40, columns: 60 });
     try {

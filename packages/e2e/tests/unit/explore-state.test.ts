@@ -63,6 +63,27 @@ describe('ExploreState', () => {
     expect(state.issues).toHaveLength(2);
   });
 
+  it('records a finding against the step it was reported in, also once that step has ended', () => {
+    const state = new ExploreState('goal', { maxSteps: 2, timeoutMs: 300_000 });
+    const reportedIn = { step: state.openStep };
+    state.beginStep('Cart', 'open the cart');
+    expect(state.openStep).toBe(1);
+    const inStep = { step: state.openStep };
+    state.endStep('exhausted');
+    expect(state.openStep).toBeUndefined();
+    state.beginStep('Checkout', 'pay');
+    expect(state.addFinding({ title: 'Late', kind: 'issue', severity: 3, expected: 'e', actual: 'a', reproduction: ['r'] }, inStep).step).toBe(1);
+    expect(state.addFinding({ title: 'Before', kind: 'issue', severity: 3, expected: 'e', actual: 'a', reproduction: ['r'] }, reportedIn).step).toBeUndefined();
+  });
+
+  it('refuses a finding once the record is closed', () => {
+    const state = new ExploreState('goal', { maxSteps: 2, timeoutMs: 300_000 });
+    state.end('time');
+    state.close();
+    expect(() => finding(state)).toThrow(/exploration is over/);
+    expect(state.snapshot().findings).toEqual([]);
+  });
+
   it('opens a step as the report will record it, so the charter the agent runs is the bounded one', () => {
     const state = new ExploreState('goal', { maxSteps: 2, timeoutMs: 300_000 });
     const opened = state.beginStep(`  ${'x'.repeat(400)}  `, 'y'.repeat(5_000));
