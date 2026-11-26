@@ -16,7 +16,7 @@ screen
                       group
                         group #inventory-scroll
                           group
-                            heading "Inventory heading" text="Plain controls, every state exposed" #inventory-header
+                            heading "Inventory heading" text="Plain controls, every state exposed" #inventory-header content-desc="Inventory heading"
                             text "scheme: light" #color-scheme
                             text "orientation: portrait" #orientation
                             text "411x914" #window-size
@@ -29,11 +29,11 @@ screen
                               text "Gestures"
                             tab "Device" #tab-device
                               text "Device"
-                            textbox "Name field" text="Ada Lovelace" value="Ada Lovelace" #name-input placeholder="Type your name"
+                            textbox "Name field" text="Ada Lovelace" value="Ada Lovelace" #name-input content-desc="Name field" placeholder="Type your name"
                             text "name: Ada Lovelace" #name-echo
-                            textbox "Passphrase field" text="Passphrase" [secure] #passphrase-input placeholder="Passphrase"
+                            textbox "Passphrase field" text="Passphrase" [secure] #passphrase-input content-desc="Passphrase field" placeholder="Passphrase"
                             text "passphrase length: 0" #passphrase-length
-                            textbox "Key echo field" text="Key echo" #key-input placeholder="Key echo"
+                            textbox "Key echo field" text="Key echo" #key-input content-desc="Key echo field" placeholder="Key echo"
                             text "key: none" #key-status
                             button "Show focus fields" #show-focus-fields
                               text "Show focus fields"

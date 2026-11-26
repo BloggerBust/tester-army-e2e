@@ -1082,6 +1082,27 @@ getAttribute(name: string): Promise<string | null>;
 const href = await screen.getByRole('link', 'Docs').getAttribute('href');
 ```
 
+On a device, a node carries up to five attributes:
+
+- `label`: the accessibility label. On iOS, that is the device's own label, so
+  an empty field whose placeholder was folded out keeps its full label. On
+  Android, it is the content description, or the node's text when there is no
+  description. An empty Android field showing only its hint has no `label`, and
+  neither does an empty Android field whose content description equals its hint.
+- `resource-id`: the node's test id, which is the Android resource id or the
+  iOS accessibility identifier (what Appium reads as `name`).
+- `class`: the Android class name, or the iOS element type without the
+  `XCUIElementType` prefix, such as `TextField` (what Appium reads as `type`).
+- `content-desc`: Android only. Missing when the content description equals the
+  visible text or hint, because agent-device reports it only when it differs.
+- `placeholder`: present when the platform reports a hint or placeholder.
+
+On an iOS device cloud that serves an Appium page source, agent-device falls
+back to Appium's `name` for both values. `name` is the identifier, or the label
+when an element has no identifier. So `resource-id` and `label` can each return
+the other's value there: an element with a test id and no label reads its test
+id as `label`. For the text a field holds, use `inputValue()`.
+
 #### `isVisible`
 
 ```ts

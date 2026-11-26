@@ -177,7 +177,7 @@ on purpose.
 | `launchApp({ languageAndLocale })` | On iOS, `app.launchArguments: { AppleLanguages: ['fr'], AppleLocale: 'fr_FR' }`, see [Run the app in another language](/mobile#run-the-app-in-another-language) |
 | Jest `globalSetup`, `globalTeardown` | Start dependencies before the run |
 | `device.reverseTcpPort()` | Run `adb reverse` in a CI step |
-| `.getAttributes()` | `.textContent()`, `.inputValue()`, `.isEnabled()`, `.isVisible()`, `.isChecked()`, `.boundingBox()` |
+| `.getAttributes()` | `.textContent()`, `.inputValue()`, `.getAttribute()`, `.isEnabled()`, `.isVisible()`, `.isChecked()`, `.boundingBox()` |
 | `device.setStatusBar()` | `xcrun simctl status_bar`. `toHaveScreenshot` holds the status bar fixed |
 
 ### Not yet

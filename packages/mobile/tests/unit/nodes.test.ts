@@ -59,7 +59,8 @@ describe('snapshot projection', () => {
     expect(secure.inputPurpose).toBe('password');
     expect(byName('Hidden').states).toEqual({ disabled: true, hidden: true });
     expect(byName('About').testId).toBe('ABOUT');
-    expect(byName('About').attributes).toBeUndefined();
+    expect(byName('About').attributes).toMatchObject({ label: 'About', 'resource-id': 'ABOUT' });
+    expect(byName('About').attributes).not.toHaveProperty('placeholder');
     expect(byName('About').selector).toBe('id=ABOUT');
     expect(byName('Search').selector).toBeUndefined();
     expect(byName('Back').rect).toEqual({ x: 0, y: 47, width: 390, height: 44 });
@@ -347,7 +348,7 @@ describe('snapshot projection', () => {
     // A role description outside the vocabulary leaves the class role; an empty description leaves the label as the name.
     expect(plain).toMatchObject({ role: 'group', name: 'Plain' });
     expect(total).toMatchObject({ role: 'text', name: 'Total', text: 'Total' });
-    expect(total?.attributes).toBeUndefined();
+    expect(total?.attributes).not.toHaveProperty('placeholder');
   });
 
   it('reads the role and state React Native spells into an iOS accessibility value, and reports the rest as the value', () => {
@@ -450,6 +451,8 @@ describe('snapshot projection', () => {
     expect(empty.index.map((entry) => entry.node.name)).toEqual(['with-kotlin-multiplatform', 'Name']);
     expect(empty.index[1]?.node).toMatchObject({ role: 'textbox', name: 'Name', attributes: { placeholder: 'Ada Lovelace' } });
     expect(empty.index[1]?.node.children).toBeUndefined();
+    // getAttribute('label') is the device's own label, as Appium reads it, not the folded name.
+    expect(empty.index[1]?.node.attributes?.['label']).toBe('Name, Ada Lovelace');
     // Typed text drops the placeholder from the label and is the value.
     const typed = field('Name', [], { value: 'Grace' });
     expect(typed.index[1]?.node).toMatchObject({ name: 'Name', value: 'Grace' });
@@ -465,7 +468,7 @@ describe('snapshot projection', () => {
     ] as const) {
       const kept = field(label, children, extra).index[1]?.node;
       expect(kept?.name).toBe(label);
-      expect(kept?.attributes).toBeUndefined();
+      expect(kept?.attributes).not.toHaveProperty('placeholder');
       expect(kept?.children).toHaveLength(children.length);
     }
   });

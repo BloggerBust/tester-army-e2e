@@ -16,6 +16,15 @@ import { keyboardBand, projectSnapshot, screenRoot, screenTitle } from '../../sr
 
 const ROOT = path.join(import.meta.dirname, '../fixtures/snapshots');
 const UPDATE = process.env['E2E_GOLDEN_UPDATE'] === '1';
+/**
+ * Attributes the tree leaves out: `resource-id` restates the test id and
+ * `class` is the raw type on every node, which neither the model's text nor
+ * a locator reads. `label` is left out too: Android repeats its content
+ * description or visible text, and iOS repeats its label in the rendered name
+ * or text.
+ * `node-attributes.test.ts` covers them.
+ */
+const RESTATED_ATTRIBUTES = new Set(['label', 'resource-id', 'class']);
 const STATES = ['checked', 'disabled', 'selected', 'expanded', 'pressed', 'focused', 'hidden', 'secure'] as const;
 
 /** One line per node: role, name, text, value, states, test id, and attributes; geometry is left out as capture noise. */
@@ -29,6 +38,7 @@ function render(node: SemanticNode, depth = 0, out: string[] = []): string[] {
   if (states.length > 0) parts.push(`[${states.join(', ')}]`);
   if (node.testId !== undefined) parts.push(`#${node.testId}`);
   for (const [key, value] of Object.entries(node.attributes ?? {}).toSorted(([a], [b]) => (a < b ? -1 : 1))) {
+    if (RESTATED_ATTRIBUTES.has(key)) continue;
     parts.push(`${key}=${JSON.stringify(value)}`);
   }
   out.push(`${'  '.repeat(depth)}${parts.join(' ')}`);

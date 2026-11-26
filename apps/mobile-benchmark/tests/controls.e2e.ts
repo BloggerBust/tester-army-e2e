@@ -60,6 +60,19 @@ test.describe('control inventory', () => {
     expect(await screen.getByTestId('name-input').getAttribute('placeholder')).toBe('Type your name');
   });
 
+  test('getAttribute reads the label, resource id, and class an Appium suite asks for', async ({ platform, screen }) => {
+    const field = screen.getByTestId('name-input');
+    expect(await field.getAttribute('resource-id')).toBe('name-input');
+    await expect(field).toHaveAttribute('label', 'Name field');
+    if (platform === 'ios') {
+      await expect(field).toHaveAttribute('class', 'TextField');
+      expect(await field.getAttribute('content-desc')).toBeNull();
+    } else {
+      await expect(field).toHaveAttribute('class', 'android.widget.EditText');
+      await expect(field).toHaveAttribute('content-desc', 'Name field');
+    }
+  });
+
   // The keyboard stays up on purpose: Return on a secure field makes iOS
   // offer to save the password, a sheet the next test never sees because
   // every attempt relaunches the app.

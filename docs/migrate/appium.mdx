@@ -173,6 +173,12 @@ declares `platforms: ['ios', 'android']` on those tests.
 | `driver.keys('Enter')`, `pressKeyCode(66)` | `.press('Enter')` on the field |
 | `.getText()`, `.getValue()`, `.getAttribute('value')` | `.textContent()`, `.inputValue()` |
 | `.isDisplayed()`, `.isEnabled()`, `.getAttribute('checked')` | `.isVisible()`, `.isEnabled()`, `.isChecked()` |
+| `.getAttribute('label')` | `.getAttribute('label')`. [`getAttribute`](/reference/screen#getattribute) lists what each attribute reads |
+| `.getAttribute('resource-id')`, iOS `.getAttribute('name')` | `.getAttribute('resource-id')`. An iOS element with no identifier has none; read `label`. On an iOS device cloud, `resource-id` and `label` can each return the other's value |
+| Android `.getAttribute('name')`, `.getAttribute('text')` | `.textContent()`. On a node with only a content description, it reads the description |
+| `.getAttribute('class')`, iOS `.getAttribute('type')`, `.getTagName()` | `.getAttribute('class')`. On iOS it drops the `XCUIElementType` prefix: `Button`, not `XCUIElementTypeButton` |
+| `.getAttribute('content-desc')` | `.getAttribute('content-desc')`, Android only |
+| `.getAttribute('hint')` | `.getAttribute('placeholder')` |
 | `.isExisting()` | `(await locator.count()) > 0` |
 | `.getLocation()`, `.getSize()` | `.boundingBox()` |
 | `.waitForDisplayed({ timeout })` | `await expect(locator).toBeVisible({ timeout })`, or `locator.waitFor()` |
@@ -310,7 +316,7 @@ is not a step, so it skips the report and secret redaction.
 
 | Appium | Use today |
 | --- | --- |
-| `.getAttribute()` for a label, id, or class, `.isSelected()`, `.getTagName()` | `toHaveAccessibleName` for a label, `toBeSelected` for the selected state. No read for an id, class, or tag name |
+| `.isSelected()` | `toBeSelected` for the selected state |
 | `pressKeyCode(code)`, `driver.keys('Backspace')` | `.press()` takes `Enter`, `Space`, or one character. Use `.clear()` and `.fill()` |
 | `driver.getWindowRect()`, `mobile: deviceInfo` | `device.viewport()` returns size only. Window position and full device information have no equivalent |
 | `UiScrollable` `scrollToEnd()`, `scrollToBeginning()` | Loop `locator.swipe({ direction: 'down' })` until `allTextContents()` stops changing; `'up'` for the beginning |

@@ -829,7 +829,9 @@ export function cloudDevices(options: { provider: string; device: string; osVers
 
 ### Known device limitations
 
-- `placeholder` is the only attribute a device node has.
+- A device node exposes only `label`, `resource-id`, `class`, `placeholder`,
+  and Android's `content-desc` through `getAttribute()`. See
+  [`getAttribute`](/reference/screen#getattribute).
 - A React Native tab (`accessibilityRole="tab"`) on iOS has role `other`.
   Query it by test id or label and assert `toBeSelected`. Checkboxes,
   radios, and `toBeChecked` work on both platforms.
