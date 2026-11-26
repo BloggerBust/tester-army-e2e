@@ -1,0 +1,2149 @@
+---
+title: E2EConfig
+description: Cada chave de configuração, seu padrão, seu intervalo válido e as variáveis de ambiente.
+"og:image": "https://e2e.com/docs/images/og/reference/config.png?v=6c4dead1fc"
+"twitter:image": "https://e2e.com/docs/images/og/reference/config.png?v=6c4dead1fc"
+---
+
+`e2e.config.ts` configura o runner: os alvos em que os testes rodam, o app que
+cada um testa, os agentes e o cache de replay. Exporte um objeto com
+`satisfies E2EConfig` para verificar o formato e manter os tipos inferidos, ou
+passe-o para [`defineConfig`](#defineconfig). O runner valida a configuração de
+novo ao carregá-la, incluindo intervalos e regras que o TypeScript não consegue
+verificar.
+Para as opções que a maioria dos projetos muda, veja [Configure o projeto](/quickstart#configure-the-project).
+
+```ts title="e2e.config.ts"
+import type { E2EConfig } from 'e2e';
+import { web } from '@e2e-dev/web';
+
+export default {
+  targets: [
+    {
+      name: 'web',
+      engine: web({ browser: 'chromium' }),
+      app: { url: process.env.APP_URL ?? 'http://localhost:3000' },
+    },
+  ],
+} satisfies E2EConfig;
+```
+
+## Referência
+
+### `defineConfig`
+
+Retorna a configuração que recebe. Use a função no lugar de `satisfies E2EConfig`.
+
+```ts title="e2e.config.ts"
+import { defineConfig } from 'e2e';
+import { web } from '@e2e-dev/web';
+
+export default defineConfig({
+  targets: [{ engine: web(), app: { url: 'http://localhost:3000' } }],
+});
+```
+
+- Como com `satisfies E2EConfig`, o editor completa todas as chaves, e uma
+  chave desconhecida no nível superior é um erro de tipo.
+- A configuração mantém o tipo inferido, então `typeof config` ainda funciona
+  como argumento de tipo de [`test.extend`](/reference/test#test-extend).
+- Toda regra abaixo é aplicada quando o runner resolve a configuração, não
+  quando `defineConfig` é chamada.
+
+```ts
+export function defineConfig<const Config extends E2EConfig>(
+  config: Config & { readonly [Key in Exclude<keyof Config, keyof E2EConfig>]: never },
+): Config;
+```
+
+### Nível superior
+
+| Opção | Tipo | Padrão |
+| --- | --- | --- |
+| [`projectId`](#projectid) | `string` | nome do `package.json` |
+| [`targets`](#targets) | `Target[]` | obrigatório |
+| [`tests`](#tests) | `string \| string[]` | `'tests/**/*.e2e.ts'` |
+| [`timeout`](#timeout) | `number` | `120000` |
+| [`launchTimeout`](#launchtimeout) | `number` | `60000` |
+| [`actionTimeout`](#actiontimeout) | `number` | `30000` |
+| [`assertionTimeout`](#assertiontimeout) | `number` | `5000` |
+| [`toPass`](#topass) | `PassOptions` | [Veja os padrões](#topass) |
+| [`cleanupTimeout`](#cleanuptimeout) | `number` | `30000` |
+| [`retries`](#retries) | `number` | `0`, `1` na CI |
+| [`failOnSkippedFailure`](#failonskippedfailure) | `boolean` | `false` |
+| [`maxDuration`](#maxduration) | `number` | - |
+| [`workers`](#workers) | `number` | metade dos núcleos, `1` na CI |
+| [`fullyParallel`](#fullyparallel) | `boolean` | `false` |
+| [`reporters`](#reporters) | `(BuiltinReporter \| Reporter)[]` | `['list']` |
+| [`output`](#output) | `string` | `'.e2e'` |
+| [`artifacts`](#artifacts) | `ArtifactsConfig` | somente local |
+| [`trace`](#trace) | `RecordingMode` | `'retain-on-failure'` |
+| [`video`](#video) | `RecordingMode` | `'off'` |
+| [`agents`](#agents) | `Record<string, AgentConfig>` | `default`, sem modelo |
+| [`filters`](#filters) | `TestFilter[]` | - |
+| [`cache`](#cache) | `CacheMode \| CacheConfig` | `'read-write'`, `'read-only'` na CI |
+| [`credentials`](#credentials) | `Record<string, CredentialConfig>` | - |
+| [`secrets`](#secrets) | `Record<string, SecretConfig>` | - |
+
+A declaração completa é [`E2EConfig`](#e2econfig).
+
+- Uma chave desconhecida em qualquer nível é `INVALID_CONFIG`. Não existe a
+  chave `app` no nível superior: cada alvo declara [o app que testa](#the-app-under-test).
+- Todo valor numérico precisa ser um inteiro seguro.
+- Todo tempo limite em milissegundos, aqui e em `app.command` e `agents`, é
+  no máximo 2147483647 (cerca de 24 dias). Um valor maior é `INVALID_CONFIG`.
+- Uma chave opcional recebe um valor ou fica de fora. Com
+  `exactOptionalPropertyTypes`, `undefined` é um erro de tipo, então
+  `store: process.env.CACHE_URL && createStore(...)` não compila. Em tempo de
+  execução, `undefined` conta como não definido.
+- Os campos do `app` do alvo também aceitam `undefined` nos tipos, então
+  podem ler `process.env` diretamente. Inclua por spread qualquer outra chave
+  que dependa do ambiente só quando ela tiver um valor:
+
+```ts
+export default {
+  targets: [{ engine: web(), app: { url: 'http://localhost:3000' } }],
+  ...(process.env.CACHE_URL === undefined ? {} : { cache: { store: createStore(process.env.CACHE_URL) } }),
+} satisfies E2EConfig;
+```
+
+#### `projectId`
+
+Um id estável para o projeto.
+
+```ts
+projectId: 'acme-web', // default: the root package.json name
+```
+
+- De 1 a 256 caracteres.
+- Sem um `name` no `package.json` da raiz, o id passa a ser
+  `unportable-<sha256 of the project root, 32 hex>`.
+
+#### `tests`
+
+Os globs dos arquivos de teste, relativos à raiz do projeto.
+
+```ts
+tests: ['tests/**/*.e2e.ts', '!tests/wip/**'], // default: 'tests/**/*.e2e.ts'
+```
+
+- Um glob aceita `*`, `?` e um segmento `**` inteiro. `?` corresponde a um
+  ponto de código Unicode, incluindo um emoji.
+- Uma entrada que começa com `!` exclui. O exemplo seleciona todos os arquivos
+  de teste, exceto os que ficam em `tests/wip/`.
+- Um arquivo é selecionado quando um glob de inclusão corresponde a ele e
+  nenhuma exclusão corresponde, qualquer que seja a ordem da lista.
+- A descoberta visita apenas diretórios que podem corresponder. Ela nunca
+  entra em um diretório que uma exclusão pega inteiro, pula `node_modules` e
+  ignora links simbólicos.
+- Um diretório que começa com ponto só é incluído quando um segmento do glob
+  começa com ponto.
+- O padrão seleciona só TypeScript. Para testes em JavaScript, defina
+  `'tests/**/*.e2e.js'` ([JavaScript](#javascript)).
+
+| Lança | Quando |
+| --- | --- |
+| `INVALID_CONFIG` | A lista contém só exclusões. |
+| `INVALID_GLOB` | Uma entrada sem curinga indica um diretório (`'!tests/wip'`). Um glob indica arquivos; o erro nomeia o glob a escrever (`'!tests/wip/**'`). |
+| `NO_TESTS` | Um arquivo passado para `e2e run` é retirado por uma exclusão. O erro nomeia essa entrada. |
+
+#### `timeout`
+
+O prazo de uma tentativa de teste, em milissegundos.
+
+```ts
+timeout: 180_000, // default: 120000
+```
+
+#### `launchTimeout`
+
+O orçamento para a inicialização da engine e o início da tentativa, em
+milissegundos.
+
+```ts
+launchTimeout: 90_000, // default: 60000
+```
+
+#### `actionTimeout`
+
+O orçamento de cada operação da engine, em milissegundos.
+
+```ts
+actionTimeout: 10_000, // default: 30000
+```
+
+- Uma ação do agente direcionada a um elemento é limitada pelo menor valor
+  entre `actionTimeout` e 15 s.
+- A opção `timeout` da própria chamada prevalece sobre esse valor. `timeout: 0`
+  não define prazo para essa chamada; o tempo limite do teste, ou
+  `cleanupTimeout` em `afterEach`, ainda limita a chamada.
+- `--action-timeout <ms>` substitui esse valor em uma execução.
+
+#### `assertionTimeout`
+
+O prazo padrão de `expect`, em milissegundos.
+
+```ts
+assertionTimeout: 10_000, // default: 5000
+```
+
+- A opção `timeout` do próprio matcher prevalece sobre esse valor.
+  `timeout: 0` não define prazo para esse matcher; o tempo limite do teste, ou
+  `cleanupTimeout` em `afterEach`, ainda limita o matcher.
+- `--assertion-timeout <ms>` substitui esse valor em uma execução.
+
+#### `toPass`
+
+O tempo limite e as pausas padrão para
+[tentar um bloco novamente](/reference/expect#retrying-a-block).
+Cada opção da chamada tem precedência sobre o campo correspondente da
+configuração.
+
+```ts
+toPass: { timeout: 10_000, intervals: [100, 250, 500] },
+```
+
+| Opção | Tipo | Padrão |
+| --- | --- | --- |
+| `timeout` | `number` | `0` |
+| `intervals` | `readonly number[]` | `[100, 250, 500, 1000]` |
+
+- `timeout` é um inteiro em milissegundos de 0 a 2147483647.
+  Com `0`, as novas tentativas são limitadas só pelo prazo do teste ou do hook.
+- `intervals` é uma lista não vazia de inteiros positivos em milissegundos.
+  A última pausa se repete.
+
+Valores inválidos ou chaves desconhecidas são informados como `INVALID_CONFIG`
+ao carregar a configuração.
+
+Em `beforeAll`, `afterAll` e na desmontagem de fixtures de worker, os padrões
+configurados valem para `expect.poll` e `toPass`. As novas tentativas são
+limitadas pelo prazo do hook.
+
+#### `cleanupTimeout`
+
+O orçamento de cada hook `afterEach`, de cada desmontagem de fixture e da
+limpeza da engine, em milissegundos.
+
+```ts
+cleanupTimeout: 60_000, // default: 30000
+```
+
+#### `retries`
+
+Novas tentativas por teste.
+
+```ts
+retries: 2, // default: 1 in CI, else 0
+```
+
+- De 0 a 10.
+
+#### `failOnSkippedFailure`
+
+Faz a execução falhar com código de saída 1 quando um teste pula uma nova
+tentativa depois de uma tentativa anterior com falha.
+
+```ts
+failOnSkippedFailure: true, // default: false
+```
+
+- O teste mantém o status `skipped` e o motivo.
+- As falhas dele continuam no relatório, e a CLI as mostra em
+  `Skipped After Failure` com qualquer um dos dois valores.
+- Pulos sem falha anterior, novas tentativas bem-sucedidas e diagnósticos da
+  limpeza da engine não acionam essa opção.
+
+<Note>
+Um pulo depois de um `expect.soft` que falhou não precisa de opção: ele
+[faz a tentativa falhar](/reference/test#members).
+</Note>
+
+#### `maxDuration`
+
+O orçamento de tempo real para rodar os testes, em milissegundos. Ele
+interrompe uma execução que demora demais.
+
+```ts
+export default { targets, maxDuration: 900_000 } satisfies E2EConfig; // default: none
+```
+
+- No máximo 2147483647 (cerca de 24 dias).
+- O relógio começa quando os testes começam. Já a inicialização do app é
+  limitada pelo [`startupTimeout`](#command) do comando do app.
+- Quando o tempo acaba, o runner não despacha mais nada. Os testes em
+  andamento terminam como `interrupted`, e os que não começaram são pulados
+  com a causa `time-limit`. A execução registra um erro `RUN_TIMEOUT` e sai
+  com código 1.
+- `--last-failed` roda em seguida os testes interrompidos e pulados.
+- `--max-duration <ms>` substitui esse valor em uma execução.
+- `e2e explore` ignora esse valor e mantém o próprio `--timeout`.
+
+#### `workers`
+
+Workers em paralelo.
+
+```ts
+workers: 4, // default: 1 in CI, else half the cores
+```
+
+- De 1 a 1024.
+- Localmente, o padrão é `max(1, floor(availableParallelism() / 2))`.
+- Uma engine pode impor um limite menor: `workers` nunca passa do que a
+  engine de um alvo declara.
+- Com mais de um worker, os arquivos de cada alvo começam pelos mais longos,
+  segundo o [histórico de tempos](/ci#cache-the-timings-history). Um arquivo
+  sem tempo registrado começa antes dos que têm tempo. Com `--changed-since`,
+  os arquivos mais prováveis começam antes disso, como diz
+  [Comece pelos mais prováveis](/filters#start-the-likeliest-first).
+
+#### `fullyParallel`
+
+Roda os testes de um mesmo arquivo ao mesmo tempo em workers separados, em
+todos os arquivos.
+
+```ts
+fullyParallel: true, // default: false
+```
+
+- Por padrão, os arquivos rodam em paralelo e os testes de um arquivo rodam
+  em ordem em um único worker.
+- Funciona como [`parallel: true`](/reference/test#parallel) em todos os
+  arquivos. Essa entrada traz as regras para hooks, grupos seriais e
+  `parallel: false`.
+- O `fullyParallel` de um alvo prevalece sobre o da configuração.
+  `--fully-parallel` prevalece sobre os dois.
+- Com um worker, o padrão na CI, os testes continuam rodando um por vez.
+  Defina [`workers`](#workers) acima de 1.
+
+#### `reporters`
+
+Os reporters da execução: ids embutidos e objetos reporter, como as factories
+de `e2e/reporters`.
+
+```ts
+reporters: ['list', 'junit'], // default: ['list']
+```
+
+| Valor | Faz |
+| --- | --- |
+| `'list'`, `list()` | Progresso no terminal, falhas e um resumo da execução. |
+| `'dot'`, `dot()` | Progresso compacto no terminal, falhas e um resumo da execução. |
+| `'line'`, `line()` | Uma linha de progresso no terminal, cada falha assim que acontece e um resumo da execução. |
+| `'junit'`, `junit()` | Escreve `<output>/junit.xml`, ou `outputFile`. |
+| `'markdown'`, `markdown()` | Escreve `<output>/summary.md`, ou `outputFile`. |
+| `'ctrf'`, `ctrf()` | Escreve `<output>/ctrf.json`, ou `outputFile`, no formato CTRF. |
+| `'json'`, `json()` | Imprime o relatório no stdout. Junto com esse reporter, `list`, `dot` ou `line` imprime no stderr, a menos que receba um `stream`. |
+| outro objeto `Reporter` | Roda junto com os embutidos. `--reporter` nunca o remove. |
+
+Um id equivale à factory dele chamada sem opções. Um id desconhecido é
+`INVALID_CONFIG`, assim como dois entre `list`, `dot` e `line` juntos. Veja [Reporters](/reference/reporters).
+
+### targets
+
+Um alvo é uma superfície com nome em que os testes rodam: o app em teste e a
+[engine](#engine) que o controla. `targets` é obrigatório e contém pelo menos
+um.
+
+```ts title="e2e.config.ts"
+targets: [
+  { name: 'chromium', engine: web(), app: { url: 'http://localhost:3000' } },
+  { name: 'firefox', engine: web({ browser: 'firefox' }), app: { url: 'http://localhost:3000' } },
+],
+```
+
+| Opção | Tipo | Padrão |
+| --- | --- | --- |
+| [`name`](#name) | `string` | a plataforma |
+| [`platform`](#platform) | `string` | a plataforma da engine |
+| [`engine`](#engine) | `EngineHandle` | - |
+| [`app`](#the-app-under-test) | `TargetApp` | - |
+| [`trace`](#trace) | `RecordingMode` | o `trace` da configuração |
+| [`video`](#video) | `RecordingMode` | o `video` da configuração |
+| [`fullyParallel`](#fullyparallel) | `boolean` | o da configuração |
+
+- `{ engine: web(), app: { url } }` é um alvo completo.
+- Um teste cujo `platforms` deixa de fora a plataforma do alvo é pulado nesse
+  alvo. Um `test.setup` do qual um teste selecionado depende precisa poder
+  rodar ali, ou a seleção falha com `COLLECTION_ERROR`.
+
+A declaração completa é [`Target`](#target).
+
+#### `name`
+
+O id que `--target`, os relatórios, as sessões e os caminhos de artefatos usam.
+
+```ts
+name: 'chromium', // default: the platform
+```
+
+- Letras ASCII, dígitos, `_`, `-` e `.`, mas não apenas pontos (`.` e `..` são
+  segmentos de caminho).
+- Único entre os alvos. Dois alvos na mesma plataforma precisam de nomes.
+
+#### `platform`
+
+O rótulo da plataforma.
+
+```ts
+platform: 'web', // default: inherited from the engine
+```
+
+- Obrigatório para um alvo sem engine.
+- Quando o alvo e a engine dele indicam uma plataforma, ela precisa ser a
+  mesma nos dois.
+
+#### `engine`
+
+A engine que controla a superfície: `web(...)`, `mobile(...)` ou qualquer
+handle de `defineEngine`.
+
+```ts
+engine: web({ browser: 'firefox' }),
+```
+
+Um alvo sem engine roda por meio de ferramentas do agente e de chamadas
+[`request`](/reference/request) para URLs absolutas. Um alvo com `app` e sem
+engine é `INVALID_CONFIG`.
+
+### O app em teste
+
+Um alvo declara em `app` o app que testa; a engine só o controla. Um alvo de
+navegador indica a URL que abre, e um alvo de dispositivo, o app instalado ou
+o build que inicia. O runner resolve `app` ao carregar a configuração.
+
+```ts title="e2e.config.ts"
+targets: [
+  {
+    name: 'web',
+    engine: web({ viewport: { width: 1440, height: 900 } }),
+    app: {
+      url: 'http://localhost:3000',
+      command: { executable: 'npm', args: ['run', 'dev'] },
+      readyUrl: 'http://localhost:3000/health',
+    },
+  },
+  {
+    name: 'ios',
+    engine: mobile({ platform: 'ios' }),
+    app: {
+      bundleId: 'com.example.app',
+      appPath: './build/App.app',
+      launchArguments: ['-e2e', 'YES'],
+      permissions: { camera: 'grant' },
+    },
+  },
+],
+```
+
+| Opção | Tipo | Padrão |
+| --- | --- | --- |
+| [`url`](#url) | `string` | - |
+| [`bundleId`](#bundleid) | `string` | - |
+| [`appPath`](#apppath) | `string` | - |
+| [`linkBase`](#linkbase) | `string` | - |
+| [`identity`](#identity) | `string` | derivado do app |
+| [`environment`](#environment) | `'test' \| 'staging' \| 'production'` | `'test'` ou `'production'` |
+| [`launchArguments`](#launcharguments) | `string[] \| Record<string, LaunchArgumentValue>` | - |
+| [`permissions`](#permissions) | `Record<string, AppPermissionState> \| 'all'` | - |
+| [`command`](#command) | `CommandConfig` | - |
+| [`readyUrl`](#readyurl) | `string` | `url` |
+
+Cada engine verifica as chaves ao carregar a configuração, com um
+`INVALID_CONFIG` que nomeia o alvo. Um alvo com `app` precisa de uma
+[engine](#engine).
+
+- Um alvo `web()` precisa de `app.url` e recusa `bundleId`, `appPath` e
+  `launchArguments`.
+- Um alvo `mobile()` precisa de `app.bundleId` ou `app.appPath`. `app.url` em
+  um alvo mobile ainda não é suportado.
+- Um alvo `desktop()` precisa de `app.bundleId` ou `app.appPath` e recusa
+  `app.url` e `app.permissions`. Com os dois definidos, o alvo inicia o build
+  de `appPath`, cujo bundle id precisa ser igual a `bundleId`.
+- `app.linkBase` precisa de uma engine que abra links, como `mobile()`.
+- Uma chave desconhecida em `app` ou `app.command` falha com uma sugestão do
+  tipo “você quis dizer”.
+
+<Note>
+As grafias antigas são chaves desconhecidas e falham ao carregar a
+configuração com `INVALID_CONFIG`: `web({ url })` e as outras opções de app de
+`web()` e `mobile()`, `mobile({ app })` (agora `app.bundleId`), uma chave de
+app diretamente no alvo, `app` ou `url` no nível superior e
+[`services`](#services) em qualquer lugar.
+</Note>
+
+#### `url`
+
+A URL base: `app.open()` a abre, e a navegação relativa é resolvida em relação
+a ela.
+
+```ts
+url: 'http://localhost:3000',
+```
+
+- Normalizada pelo WHATWG; sem userinfo, query ou fragmento.
+- Sem esquema, ela recebe `https://`, ou `http://` para um host de loopback.
+- HTTP simples só é aceito para hosts de loopback.
+- Uma URL `file:` abre um arquivo desta máquina em um navegador iniciado
+  localmente: veja [um arquivo como app](#a-file-as-the-app).
+- A porta `0` em `127.0.0.1` ou `[::1]` pede uma [porta livre](#free-ports).
+- A origem dela delimita as credenciais de requisição da engine, e o site
+  dela delimita os frames observados: veja [o site do app](#the-apps-site).
+
+| Lança | Quando |
+| --- | --- |
+| `INVALID_APP_URL` | Porta `0` em qualquer host que não seja `127.0.0.1` ou `[::1]`, incluindo `localhost`. |
+| `INVALID_APP_URL` | Uma URL `file:` com host, ou uma que indique um diretório. |
+| `INVALID_CONFIG` | Uma `url` com porta 0 sem nada para iniciar nela (sem `app.command`). |
+| `INVALID_CONFIG` | Uma URL `file:` em um alvo `web()` com um provedor de navegadores, `connect`, `headers` ou `basicAuth`, ou em uma engine que não declara `fileApps`. |
+
+#### `bundleId`
+
+O app instalado que um dispositivo inicia: um bundle id, um nome de pacote
+Android ou um nome de exibição que o dispositivo resolve (`Settings`). Em um
+alvo `desktop()`, o bundle id ou o nome de um app macOS instalado.
+
+```ts
+bundleId: 'com.example.app',
+```
+
+Um link é `INVALID_CONFIG`: um teste abre um link com `device.openLink`.
+
+#### `appPath`
+
+O build contra o qual a suíte roda, um bundle `.app` do iOS ou um `.apk` do
+Android, resolvido em relação à raiz do projeto. Em um alvo `desktop()`, um
+bundle `.app` do macOS.
+
+```ts
+appPath: './build/App.app',
+```
+
+Sem `bundleId`, o app iniciado é o que esse build instala. Veja
+[a engine de dispositivo](/reference/mobile#engine) para saber quando o build
+é instalado.
+
+#### `linkBase`
+
+Onde `app.open(path)` abre em um alvo de dispositivo: o caminho se junta à
+base do link, e o link abre no app fixado.
+
+```ts
+linkBase: 'https://shop.example.com', // app.open('/orders/42') opens https://shop.example.com/orders/42
+linkBase: 'shopapp://', // app.open('/orders/42') opens shopapp://orders/42
+```
+
+- Uma barra une a base e o caminho; nenhuma barra vem depois de um esquema
+  sozinho (`shopapp://`).
+- Um link absoluto passado para `app.open` abre como foi dado, incluindo um
+  esquema personalizado de app; links `file:`, `data:`, `javascript:`,
+  `view-source:`, `blob:` e `filesystem:` são `POLICY_DENIED`.
+- Sem `linkBase`, `app.open()` em um dispositivo inicia o app e não aceita
+  caminho (`APP_URL_REQUIRED`).
+
+| Lança | Quando |
+| --- | --- |
+| `INVALID_CONFIG` | A engine não abre links (um alvo `web()`), o valor não é uma URL absoluta nem um esquema, tem query ou fragmento (incluindo um `?` ou `#` vazio), tem espaço em branco no início ou no fim, ou indica `file:`, `data:`, `javascript:`, `view-source:`, `blob:` ou `filesystem:`. |
+| `POLICY_DENIED` | `app.open` recebeu um link absoluto com um desses esquemas. |
+
+#### `identity`
+
+A identidade estável que compõe a chave das entradas do cache de replay e das
+sessões.
+
+```ts
+identity: 'checkout-web', // default: the URL's origin and base path, else bundleId, else appPath
+```
+
+Defina um valor estável para reutilizar entradas entre URLs de preview ou
+caminhos de build com versão. Com uma [porta livre](#free-ports), o padrão
+deriva do `:0` declarado, então as entradas do cache e das sessões não mudam
+com a porta.
+
+<Note>
+Apps diferentes precisam ter identidades diferentes. Uma identidade
+compartilhada reproduz gravações de um app no outro.
+</Note>
+
+#### `environment`
+
+Rotula o alvo no relatório e entra no digest da identidade do cache e das
+sessões. Esse valor nunca bloqueia uma execução.
+
+```ts
+environment: 'staging', // default: 'test' for a local host or no URL, else 'production'
+```
+
+- `'test'`, `'staging'` ou `'production'`.
+- Um host local é um host de loopback, `.localhost` ou `.test`.
+
+#### `launchArguments`
+
+Argumentos que toda nova inicialização passa ao app: `app.open()`,
+`app.restart()` e `app.clearState()`. Dê uma lista de strings, os próprios
+argumentos, ou um objeto que mapeia o nome do argumento para o valor. No iOS e
+no macOS, uma entrada vira `-name value`.
+No Android, ela vira um extra de `am start` do tipo do valor: `--es` para uma
+string, `--ez` para um booleano, `--ei` para um número inteiro (`--el` acima do
+`int` do Java), `--ef` para uma fração, `--esa` para uma lista.
+
+```ts
+launchArguments: ['-e2e', 'YES'],
+```
+
+```ts
+launchArguments: { AppleLanguages: ['fr'], AppleLocale: 'fr_FR', e2e: true },
+```
+
+```ts
+type LaunchArgumentValue = string | number | boolean | readonly string[];
+type LaunchArguments = readonly string[] | Readonly<Record<string, LaunchArgumentValue | undefined>>;
+```
+
+- Um valor de objeto é uma string, um número finito com magnitude abaixo de
+  2^53, um booleano ou uma lista de strings. Um nome não tem hífen no início,
+  espaço em branco nem caracteres de controle, e nada contém um caractere
+  NUL. Um valor lido do ambiente pode ser `undefined`: essa entrada fica de
+  fora.
+- A tabela em
+  [Argumentos de inicialização e permissões](/reference/mobile#launch-arguments-and-permissions)
+  mostra cada tipo de valor no iOS e no Android.
+- Argumentos que escolhem um modo de build mudam o que o app é. Dê a cada
+  modo a sua própria `identity`.
+
+| Lança | Quando |
+| --- | --- |
+| `INVALID_CONFIG` | Um item da lista que não é string. Um objeto com um nome vazio, um nome com espaço em branco ou caractere de controle, um valor de outro tipo, um número além de 2^53 - 1 em magnitude, ou um caractere NUL em qualquer lugar. A engine acrescenta regras próprias: veja [a referência mobile](/reference/mobile#launch-arguments-and-permissions). |
+
+#### `permissions`
+
+As permissões que o app tem, por nome.
+
+```ts
+permissions: { camera: 'grant' },
+```
+
+Cada uma é `'grant'`, `'deny'` ou `'reset'`. `permissions: 'all'` concede
+todas as permissões que a engine do alvo consegue conceder.
+
+- Um alvo `mobile()` define cada uma antes de toda nova inicialização. Veja
+  [permissões](/reference/mobile#engine).
+- Um alvo `web()` aceita só `'grant'` e concede a permissão a todas as
+  páginas da tentativa, em qualquer origem. O Chromium headless recusa uma
+  permissão que ficou de fora. Veja
+  [Conceder permissões do navegador](/web#granting-browser-permissions). `'all'`
+  concede cada nome da tabela abaixo para o navegador correspondente.
+
+| Navegador | Nomes |
+| --- | --- |
+| `chromium` | `accelerometer`, `ambient-light-sensor`, `background-sync`, `camera`, `clipboard-read`, `clipboard-write`, `geolocation`, `gyroscope`, `local-fonts`, `local-network-access`, `magnetometer`, `microphone`, `midi`, `midi-sysex`, `notifications`, `payment-handler`, `screen-wake-lock`, `storage-access` |
+| `firefox` | `geolocation`, `local-network-access`, `notifications`, `persistent-storage`, `push`, `screen-wake-lock` |
+| `webkit` | `camera`, `clipboard-read`, `geolocation`, `microphone`, `notifications`, `screen-wake-lock` |
+
+Um provedor de navegadores ou `connect` aceita os nomes de `chromium`: a engine
+controla o navegador por CDP, incluindo o Lightpanda.
+
+#### `command`
+
+O processo que o runner inicia antes do primeiro teste e encerra em todo
+caminho de saída: um servidor de desenvolvimento, ou o Metro para um build de
+debug.
+
+```ts
+command: {
+  executable: 'pnpm',
+  args: ['dev', '--port', '{port}'],
+  inheritEnv: ['STRIPE_*'],
+  startupTimeout: 120_000, // default: 60000
+},
+```
+
+| Campo | Exemplo | Padrão |
+| --- | --- | --- |
+| `executable` | `'npm'` | obrigatório |
+| `args` | `['run', 'dev']` | nenhum |
+| `cwd` | `'apps/web'` | a raiz do projeto |
+| `env` | `{ PORT: '{port}' }` | nenhum |
+| `inheritEnv` | `['STRIPE_*']` | nenhum |
+| `startupTimeout` | `120_000` | `60000` |
+| `shutdownTimeout` | `5_000` | `10000` |
+| `log` | `'.e2e/logs/app.log'` | saída descartada |
+| `reuseExisting` | `true` | `false` |
+
+- `executable` é resolvido com o `PATH` e nunca é interpretado por um shell.
+- `args` são passados literalmente. `{port}` em `args` e nos valores de `env`
+  se expande para a porta de `url`.
+- `cwd` é resolvido a partir da raiz do projeto.
+- O processo filho herda apenas `PATH`, `HOME`, as variáveis de diretório
+  temporário, as variáveis que `inheritEnv` seleciona e `command.env`. Passe
+  explicitamente o que o app precisa.
+- `inheritEnv` aceita nomes exatos ou prefixos terminados em `*` (`'STRIPE_*'`).
+  Ele só copia uma variável quando ela está definida. `env` prevalece sobre um
+  valor herdado.
+- Toda entrada de `args` e todo valor de `env` é uma string. Um valor
+  `undefined` em `env` é descartado.
+- `startupTimeout` é o orçamento da verificação de [`readyUrl`](#readyurl).
+- `shutdownTimeout` é o período de tolerância antes de forçar o encerramento.
+- Em `e2e run`, um comando que sai depois de ficar pronto faz a execução falhar com `APP_UNREACHABLE` se um alvo dependente ainda tiver trabalho pendente.
+  Isso inclui o código de saída 0 e o encerramento por um sinal.
+  O runner interrompe os testes ativos e pula os testes na fila apenas desses alvos.
+  Os alvos que já terminaram o trabalho ignoram a saída.
+- `log` recebe o stdout e o stderr do processo, acrescentados ao fim do
+  arquivo, e é resolvido a partir da raiz do projeto. Ele precisa ficar dentro
+  da raiz do projeto.
+- Com um `log`, os erros de tempo limite de inicialização e de saída do comando
+  citam as linhas acrescentadas desde que o comando começou. Um log de até 40
+  linhas dentro de 8 KiB é citado inteiro. Caso contrário, a citação mantém até
+  20 linhas de cada extremidade, com `[startup output omitted]` entre elas, e,
+  para um log acima de 8 KiB, essas linhas vêm dos primeiros e últimos 4 KiB
+  dele. Um log vazio ou ilegível produz `no output in <log>`. Um log
+  compartilhado pode incluir linhas de outros processos. A citação substitui os
+  valores de `command.env` e `inheritEnv` com pelo menos 4 caracteres por
+  marcadores `<secret:NAME>`. Sem `log`, esses erros pedem que você defina um.
+  Um comando que falha ao iniciar o processo informa o erro de spawn em vez
+  disso.
+- `reuseExisting`: quando a URL de prontidão já responde antes de o comando
+  começar, o runner usa esse processo. Ele não inicia nem encerra nada. A CI
+  ignora essa opção, com um aviso, e sempre inicia o comando.
+- Alvos que declaram o mesmo comando compartilham um processo, verificado no
+  `readyUrl` do primeiro alvo que o declara.
+- O runner nunca encerra um processo que ele não iniciou.
+
+| Lança | Quando |
+| --- | --- |
+| `INVALID_CONFIG` | Um `'*'` sozinho em `inheritEnv`. |
+| `INVALID_CONFIG` | Uma entrada de `args` ou um valor de `env` que não é string, incluindo um número ou uma referência de `secrets.get()`. |
+| `INVALID_CONFIG` | `reuseExisting` em um app cuja `url` pede a porta 0: um processo que já está rodando não consegue servir a porta que a execução atribui. |
+| `APP_URL_REQUIRED` | Um `app.command` sem `app.url` nem `app.readyUrl`, ao carregar a configuração. |
+| `APP_ALREADY_RUNNING` | Sem `reuseExisting`, um `readyUrl` que já responde. |
+| `APP_UNREACHABLE` | O comando falha ao iniciar o processo, o `log` dele não pode ser aberto, `startupTimeout` expira, o comando sai antes de ficar pronto, ou sai inesperadamente durante `e2e run`. |
+
+<Warning>
+`log` guarda a saída bruta, sem nada ocultado. Mantenha o arquivo em um
+diretório ignorado.
+</Warning>
+
+A declaração completa é [`CommandConfig`](#commandconfig).
+
+#### `readyUrl`
+
+A URL consultada repetidamente até `command` ficar pronto, o que acontece
+quando ela responde com um status de 200 a 499.
+
+```ts
+readyUrl: 'http://localhost:3000/health', // default: url
+```
+
+- Obrigatória sem uma `url`.
+- `{port}` nela é a porta de `url`.
+
+#### O site do app
+
+Um teste ou o agente pode abrir qualquer URL http(s) e `about:blank`. Qualquer
+outro esquema (`file:`, `data:`, `javascript:`, `view-source:`, `blob:`) é
+`POLICY_DENIED`. O site de `url` é o domínio registrável dela:
+`app.example.com` e `auth.example.com` são um mesmo site. Frames filhos de
+outro site ficam de fora das observações.
+
+#### Um arquivo como app
+
+```ts
+import { pathToFileURL } from 'node:url';
+
+app: { url: pathToFileURL('dist/index.html').href },
+```
+
+- A URL indica um arquivo, sem host. Um diretório é recusado.
+- A navegação só aceita uma URL `file:` para um arquivo no diretório desse
+  arquivo ou abaixo dele: `app.open('pages/about.html')`. Um arquivo fora
+  desse diretório e qualquer diretório são `POLICY_DENIED`, com os links
+  simbólicos resolvidos. Um caminho que começa com `/` é a raiz do disco,
+  então escreva-o relativo.
+- Esse diretório é o que o agente pode ler. Mantenha o arquivo em uma pasta
+  que contenha só o app, não na raiz de um projeto ao lado do `.env`. Veja
+  [Navegação](/reference/security#navigation).
+- Um arquivo não tem site nem origem. Frames que carregam outro documento
+  ficam de fora das observações, e o `environment` tem `'test'` como padrão.
+- O agente trabalha só com a árvore: ele não recebe captura de tela, já que
+  uma captura poderia mostrar um frame de outro arquivo local. `agent.assert`
+  com `vision: true` julga pela árvore, `vision: 'only'` é `POLICY_DENIED`, e
+  nem `agent.assert` nem uma falha mantém uma captura de tela.
+- Um `command` junto com essa URL precisa de um `readyUrl`, já que um arquivo
+  não responde a nenhuma consulta.
+- O navegador lê o arquivo do disco da própria máquina, então um alvo `web()`
+  com um provedor de navegadores ou `connect` recusa esse arquivo. Uma engine só
+  abre um app de arquivo quando [declara isso](/reference/engine#capabilities).
+- Uma gravação de `agent.act` tem como chave o caminho absoluto do arquivo,
+  então ela só é reproduzida onde o arquivo está nesse caminho.
+
+Os [`headers`](/reference/web#headers) e o
+[`basicAuth`](/reference/web#basicauth) da engine de navegador têm um escopo
+mais restrito: a origem de `url` (esquema, host e porta, incluindo a porta
+livre da execução) mais as origens que você listar. Veja
+[credenciais de requisição](/reference/security#request-credentials).
+
+#### Portas livres
+
+Uma `url` em um endereço de loopback literal com a porta `0`
+(`http://127.0.0.1:0`, `http://[::1]:0`) pede à execução uma porta TCP livre.
+O runner escolhe uma quando a configuração é carregada. Ele substitui a porta
+onde quer que a declaração a tenha usado: na URL base, no `readyUrl` padrão e
+no relatório. O comando precisa receber a porta por `{port}` em `args` ou
+`env`.
+
+```ts title="e2e.config.ts"
+engine: web(),
+app: {
+  url: 'http://127.0.0.1:0',
+  command: { executable: 'pnpm', args: ['dev', '--port', '{port}'], env: { PORT: '{port}' } },
+},
+```
+
+- `localhost:0` é [`INVALID_APP_URL`](#url): ele pode resolver para um
+  endereço diferente daquele ao qual o comando se vincula. Escreva o endereço
+  ao qual o comando vai se vincular.
+- Cada alvo que pede a porta `0` recebe uma porta e um processo próprios. Dois
+  alvos que declaram o mesmo comando em uma porta fixa compartilham um
+  processo.
+- A [`identity`](#identity) padrão deriva do `:0` declarado.
+- Os testes leem a URL alocada em [`app.baseUrl`](/reference/app).
+
+#### services
+
+<Note>
+Esta versão não inicia processos de dependências (um banco de dados, um mock
+de API, um servidor de desenvolvimento que vários alvos compartilham), e
+`services` é uma chave desconhecida onde quer que apareça. Inicie esses
+processos antes da execução, ou faça `app.command` iniciar um script que os
+suba e sirva o app. Uma API de serviços volta em uma versão futura.
+</Note>
+
+### output
+
+O diretório onde fica tudo o que uma execução escreve sobre si mesma,
+resolvido a partir da raiz do projeto.
+
+```ts
+output: 'test-results/e2e', // default: '.e2e'
+```
+
+`--output <dir>` em [`e2e run`](/reference/cli#e2e-run) e `e2e explore`
+substitui esse valor em uma execução.
+
+| Caminho sob a saída | O que |
+| --- | --- |
+| `report.json` | O relatório canônico; `--last-failed` lê o que fica aqui |
+| `junit.xml`, `summary.md`, `ctrf.json` | Os arquivos dos reporters `junit`, `markdown` e `ctrf` |
+| `ai-trace.json` | `--ai-trace` |
+| `timings.json` | Quanto tempo cada arquivo levou, suavizado ao longo das execuções recentes. Uma execução com mais de um worker começa pelos arquivos mais longos com base nele; veja [Faça cache do histórico de tempos](/ci#cache-the-timings-history) |
+| `report-with-reruns.json` | Escrito por uma reexecução com `--last-failed`: a primeira execução e todas as reexecuções desde então como um só relatório, com o mesmo id de execução de `report.json`. Uma execução sem `--last-failed` remove esse arquivo |
+| `results/` | Um diretório por teste: a [página de trace](/debugging#traces) dele, `trace.md`, quando o modo [`trace`](#trace) mantém uma, e as capturas de tela, os vídeos, os downloads e os logs dele, com um `attempt-<n>/` por tentativa. É esvaziado assim que os testes de uma execução começam, então guarda as evidências da execução mais recente e nada que o relatório dela não cite mais. Uma reexecução com `--last-failed` mantém os arquivos que as execuções anteriores citam e escreve as próprias tentativas no `rerun-<n>/` de cada teste |
+| `sessions/` | As sessões `test.setup` criptografadas da execução, apagadas quando ela termina |
+| `videos/<session>/` | Gravações de sessões do [`e2e mcp`](/reference/mcp#recording) |
+
+- Uma execução que termina antes de os testes começarem não escreve nada
+  aqui. Esses casos são uma seleção que não corresponde a nenhum teste
+  (`NO_TESTS`, um `--grep` digitado errado), um erro de coleta, um alvo que
+  não consegue gravar o que pede (`UNSUPPORTED_ARTIFACT`), `NO_LAST_RUN`, um
+  comando do app que falha ao iniciar ou uma interrupção. Os `report.json`,
+  `ai-trace.json` e `results/` da execução anterior ficam como estavam, então
+  `--last-failed` ainda lê a última execução que rodou.
+- Uma sessão do `e2e mcp` escreve os artefatos da tentativa dela em
+  `results/mcp/` e nunca esvazia esse diretório.
+- O cache de replay fica em [`cache.dir`](#dir), qualquer que seja o valor de
+  `output`, então mover os resultados nunca move as gravações.
+- `e2e init` escreve entradas no `.gitignore` apenas para os caminhos padrão
+  de `.e2e/`. Com `output` apontando para outro lugar, adicione você mesmo
+  esse diretório ao `.gitignore`.
+
+Uma execução esvazia e controla parte do diretório de saída. Por isso, o
+carregamento da configuração falha com `INVALID_CONFIG`, nomeando o motivo,
+quando o diretório:
+
+- é a raiz do projeto, ou fica fora dela;
+- é um arquivo, ou um caminho abaixo de um arquivo (um diretório ausente é
+  criado);
+- é o diretório do cache (`cache.dir`, `--cache-dir` ou `E2E_CACHE_DIR`) ou
+  fica dentro dele, ou conteria o diretório do cache em `results/`,
+  `sessions/` ou `videos/`;
+- contém um diretório que um glob de `tests` percorre (`output: 'tests'` com o
+  padrão `tests/**/*.e2e.ts`).
+
+Os caminhos são comparados com os links simbólicos resolvidos. Um caminho
+absoluto escrito por meio de um link simbólico (`/tmp` para `/private/tmp` no
+macOS) indica o mesmo diretório que o destino do link. Um link simbólico cujo
+destino ainda não existe também é seguido, então uma saída que passa por um
+link que aponta para fora da raiz do projeto é recusada.
+
+<Note>
+A flag removida `--artifacts <dir>` falha nomeando o `--output`
+correspondente. O relatório ia para o diretório pai, então
+`--artifacts out/artifacts` equivale a `--output out`. Um diretório pai que não
+pode ser uma saída (a raiz do projeto, ou fora dela) corresponde a
+`--output .e2e`.
+</Note>
+
+### artifacts
+
+`artifacts` diz para onde os artefatos vão, não quais são gerados.
+`{ store }` entrega cada artefato a um armazenamento do host assim que ele é
+produzido; sem um armazenamento, os arquivos ficam somente locais.
+
+```ts
+artifacts: {
+  store: {
+    async put(artifact) {
+      const key = await bucket.upload(artifact.path, artifact.bytes);
+      return { ref: key };
+    },
+  },
+},
+```
+
+| Membro | Retorna |
+| --- | --- |
+| [`store.put`](#put) | `Promise<{ ref }>` |
+| [`store.putLink`](#putlink) | `Promise<{ ref }>` |
+
+- [`trace` e `video`](#recording) escolhem as gravações. O runner salva a
+  captura de tela e o texto da tela de uma falha sempre que a engine consegue.
+- Cada worker constrói o próprio armazenamento a partir do módulo de
+  configuração.
+- Um `put` ou `putLink` que falha nunca faz a execução falhar.
+
+As formas removidas falham com um `INVALID_CONFIG` que nomeia o que as
+substituiu:
+
+| Escrito | Agora |
+| --- | --- |
+| uma lista de tipos (`artifacts: ['screenshot', 'trace']` ou `artifacts.kinds`) | o modo `trace` que ela queria dizer |
+| `artifacts.trace` com `record: 'retries'` | `trace: 'on-all-retries'`, lido junto com uma lista de tipos que contém `trace`, então o par ainda significa só as novas tentativas |
+| `artifacts.video` | a opção `video` |
+
+As declarações estão em [`ArtifactsConfig`](#artifactsconfig).
+
+#### `put`
+
+Recebe cada artefato assim que ele está completo no disco e retorna uma
+referência que o relatório registra como `ref` ao lado do caminho local.
+
+```ts
+async put(artifact) {
+  return { ref: await bucket.upload(artifact.path, artifact.bytes) };
+},
+```
+
+- Obrigatório em todo armazenamento.
+- `artifact.redaction` é o rótulo do relatório. Um armazenamento que só
+  exporta o que o runner garante retém um artefato `incomplete`: um vídeo ou
+  um download que o runner não reescreveu.
+
+#### `putLink`
+
+Recebe um vídeo que um serviço hospedado mantém (a
+[gravação do próprio provedor](#what-a-video-writes)). Um vídeo assim é um
+link sem bytes, então `put` nunca o recebe.
+
+```ts
+async putLink(link) {
+  return { ref: await index.record(link.url, link.attemptId) };
+},
+```
+
+- Opcional. Chamado para cada link depois que a tentativa encerrou a gravação.
+- O `ref` retornado vai para o artefato do relatório, ao lado de `url`.
+- O link de uma tentativa que passou, com `retain-on-failure`, nunca é
+  entregue, já que o relatório também o deixa de fora.
+
+### Gravação
+
+`trace` e `video` escolhem o que é gravado, com um mesmo conjunto de modos.
+
+```ts
+trace: 'on',
+video: 'retain-on-failure',
+targets: [
+  { name: 'chromium', engine: web(), app: { url } },
+  { name: 'firefox', engine: web({ browser: 'firefox' }), app: { url }, video: 'on-first-retry' },
+],
+```
+
+| Opção | Tipo | Padrão |
+| --- | --- | --- |
+| [`trace`](#trace) | `RecordingMode` | `'retain-on-failure'` |
+| [`video`](#video) | `RecordingMode` | `'off'` |
+
+```ts
+/** Which tests keep a trace page, or which attempts record a video. */
+export type RecordingMode = 'off' | 'on' | 'retain-on-failure' | 'on-first-retry' | 'on-all-retries';
+```
+
+| Modo | Página de trace | Vídeo |
+| --- | --- | --- |
+| `off` | nenhuma | nenhum |
+| `on` | todo teste, inclusive os que passam | toda tentativa |
+| `retain-on-failure` | cada teste que falhou, excedeu o tempo limite, foi interrompido ou ficou instável | toda tentativa, mantendo as que não passaram |
+| `on-first-retry` | cada teste cuja primeira nova tentativa rodou | só a primeira nova tentativa, a segunda tentativa |
+| `on-all-retries` | cada teste que teve novas tentativas | toda tentativa depois da primeira |
+
+Os nomes são os modos `use.trace` e `use.video` do Playwright. Em um modo de
+nova tentativa, um teste com `retries: 0` não grava nada, e o mesmo vale para
+uma falha que o runner não tenta novamente, como `LAUNCH_TIMEOUT`. Quando um
+teste assim roda, a execução imprime um aviso por tipo no momento do
+planejamento: nenhum trace (ou vídeo) será gravado para ele.
+
+Quatro lugares definem um modo, da menor para a maior precedência. Cada um
+substitui o anterior, tanto para `trace` quanto para `video`:
+
+1. `trace` ou `video` no nível superior da configuração.
+2. O `trace` ou o `video` de um alvo.
+3. `--trace [mode]` ou `--video [mode]` em [`e2e run`](/reference/cli#e2e-run),
+   acima da configuração e de todos os alvos. Uma flag sem valor é `on`.
+4. A [opção `trace` ou `video`](/reference/test#options) do próprio teste ou
+   describe, e a mais interna prevalece: `test('checkout', { video: 'on' }, ...)`.
+
+- Um grupo serial grava como uma unidade, então os membros dele não podem
+  definir `trace` nem `video` (um `COLLECTION_ERROR`, como `retries`). O valor
+  no `describe` serial, ou em um grupo em volta dele, vale para todos os
+  membros.
+- `e2e explore` é uma única tentativa e usa o modo do alvo, incluindo
+  `--trace` e `--video`, então um modo de nova tentativa não grava nada ali.
+- Uma sessão de `e2e mcp` não escreve trace e nunca grava vídeo pelo modo
+  configurado. As gravações dela são as que `start_recording` e
+  `stop_recording` fazem.
+- `trace` e `video`, no nível superior ou em um alvo, não entram no digest da
+  configuração nem na [chave de cache](/cache#what-must-match) de um replay.
+  Ligar ou desligar um deles nunca invalida replays em cache.
+
+<Note>
+As grafias antigas de trace falham com `INVALID_CONFIG`, que nomeia o modo que
+elas queriam dizer, onde quer que um modo entre (a configuração, um alvo, um
+teste, `--trace`): `'all'` e `{ record: 'all' }` são `'on'`, e `'retries'` e
+`{ record: 'retries' }` são `'on-all-retries'`.
+</Note>
+
+#### `trace`
+
+Quais testes mantêm uma página de trace.
+
+```ts
+trace: 'on', // default: 'retain-on-failure'
+```
+
+- O padrão é o mesmo localmente e na CI.
+- Uma página de trace é markdown, `trace.md` no diretório do teste sob
+  `<output>/results/`, como
+  `.e2e/results/checkout-applies-the-coupon-1a2b3c4d5e6f7a8b/trace.md`: cada
+  passo com o que ele fez, as decisões do cache, o que o app registrou em log
+  e a tela no momento da falha.
+- Funciona em toda engine. [Depuração](/debugging#traces) mostra uma.
+
+#### `video`
+
+Quais tentativas gravam um vídeo.
+
+```ts
+video: 'retain-on-failure', // default: 'off'
+```
+
+- O lugar onde o modo é definido decide o que faz uma engine que não consegue
+  gravar. Veja [Engines que não conseguem gravar](#engines-that-cannot-record).
+- Um vídeo consome CPU e guarda o que a tela mostrou, inclusive segredos,
+  então ele só é gravado quando você o pede.
+
+#### Engines que não conseguem gravar
+
+Antes de qualquer teste começar, a execução avalia cada alvo. O lugar onde um
+modo de `video` foi definido decide o que faz uma engine que não consegue
+gravar vídeo:
+
+- Definido no nível superior da configuração ou com `--video`: o modo vale
+  para os alvos cuja engine consegue gravá-lo. A execução imprime, no momento
+  do planejamento, um aviso que nomeia os alvos que não conseguem, e roda
+  esses alvos sem vídeo.
+- Definido em um alvo, ou em um teste que vai rodar nesse alvo: o modo é
+  obrigatório. Um alvo cuja engine não consegue gravá-lo faz a execução falhar
+  com `UNSUPPORTED_ARTIFACT`, que nomeia o alvo e, quando o modo vem de um
+  teste, o teste.
+
+Só conta um modo que grava em alguma tentativa: uma execução cujos testes
+resolvem todos para `off`, ou para um modo de nova tentativa com
+`retries: 0`, não pede nada à engine.
+
+#### O que um vídeo escreve
+
+| Gravador | Arquivos sob o diretório de artefatos da tentativa |
+| --- | --- |
+| Engine de navegador, screencast do Playwright | `video/video.webm`, um segmento por página que a tentativa mostrou, os seguintes como `video/video-part<n>.webm`. [`web({ screencast })`](/reference/web#options) define o tamanho e a qualidade dos quadros |
+| Engine mobile, agent-device | `video/video.mp4` |
+| A gravação do próprio provedor ([`BrowserProvider.record`](/browser#recording-on-the-provider), [`DeviceProvider.record`](/mobile#hosted-devices)) | o arquivo que o provedor escreveu, como `video/<file>`: o do Kernel é `video/replay.mp4`. Ou um link para uma gravação que o serviço mantém, registrado com `url` no lugar de `path`; o runner nunca baixa essa gravação |
+
+- Cada segmento traz `startedAt`, então `step.startedAt - artifact.startedAt`
+  é o deslocamento de um passo dentro dele.
+- Uma gravação não mascara nada e é registrada com `redaction: 'incomplete'`.
+
+<Note>
+Com `retain-on-failure`, um link fica fora do relatório de uma tentativa que
+passou, mas o serviço ainda guarda a gravação.
+</Note>
+
+### agents
+
+Agentes nomeados, cada um deles um objeto simples: as opções do agente
+embutido, ou `{ executor }` para um cérebro personalizado.
+
+```ts title="e2e.config.ts"
+import type { E2EConfig } from 'e2e';
+import { web } from '@e2e-dev/web';
+import { gateway } from 'ai';
+import { houseBrain } from './house-brain.ts';
+
+export default {
+  targets: [{ engine: web(), app: { url: 'http://localhost:3000' } }],
+  agents: {
+    default: { model: gateway('openai/gpt-6-luna-fast') },
+    ux: { model: gateway('openai/gpt-6-luna-fast'), system: 'Check labels, contrast, and keyboard access.' },
+    thorough: { model: gateway('anthropic/claude-opus-5'), context: 'Verify every claim on screen.' },
+    buyer: {
+      model: gateway('openai/gpt-6-luna-fast'),
+      system: 'You are a first-time buyer.',
+      context: 'Plans are called tiers. Billing lives under Settings.',
+      maxSteps: 40,
+    },
+    house: { executor: houseBrain, model: gateway('openai/gpt-6-luna-fast'), maxModelCalls: 10 },
+  },
+} satisfies E2EConfig;
+```
+
+| Opção | Tipo | Padrão |
+| --- | --- | --- |
+| [`model`](#model) | `ModelInstance` | - |
+| [`judge`](#judge) | `ModelInstance` | `model` |
+| [`context`](#context) | `string` | - |
+| [`system`](#system) | `string` | - |
+| [`tools`](#tools) | `Record<string, AgentTool>` | - |
+| [`executor`](#executor) | `StepExecutor` | o agente embutido |
+| [`maxSteps`](#maxsteps) | `number` | `25` |
+| [`maxModelCalls`](#maxmodelcalls) | `number` | `25` |
+| [`judgmentTimeout`](#judgmenttimeout) | `number` | `30000` |
+| [`maxObservationBytes`](#maxobservationbytes) | `number` | `262144` |
+| [`maxInputTokens`](#maxinputtokens) | `number` | `64000` |
+| [`providerOptions`](#provideroptions) | `ProviderOptions` | - |
+
+- Os testes usam o agente `default`, a menos que você selecione outro: com
+  `e2e run --agent <name>`, uma opção de teste ou de grupo, ou uma chamada
+  `agent.*`. Um teste com `{ agent: ['buyer', 'admin'] }` roda uma vez para
+  cada agente.
+- `default` existe mesmo quando a configuração não declara nenhum agente, mas
+  não tem modelo.
+- Toda entrada parte dos padrões embutidos. Os agentes não herdam uns dos
+  outros: `ux` acima não recebe nenhum `context` de `default`. Uma chave
+  omitida em uma entrada tem o valor padrão, nunca o de outra entrada.
+- Cada worker constrói os próprios agentes a partir deste módulo de
+  configuração.
+- Os nomes podem conter letras ASCII, números, `_`, `-` ou `.`, e nunca são
+  só pontos: um nome é um segmento do caminho dos artefatos.
+
+| Lança | Quando |
+| --- | --- |
+| `INVALID_CONFIG` | Um nome de agente desconhecido na flag `--agent`. |
+| `COLLECTION_ERROR` | Um nome de agente desconhecido em um teste ou grupo. |
+| `INVALID_ARGUMENT` | Um nome de agente desconhecido em uma chamada. |
+
+Veja [Agentes e personas](/agents). As declarações estão em
+[`AgentConfig`](#agentconfig).
+
+#### `model`
+
+Uma instância de modelo do AI SDK. Não há padrão implícito.
+
+```ts
+model: gateway('openai/gpt-6-luna-fast'),
+```
+
+Construa o modelo na sua configuração com um provedor do AI SDK. Todo provedor
+com suporte a chamadas de ferramenta funciona; veja
+[Provedores do AI SDK](/models#ai-sdk-providers). Para login com assinatura,
+use os [modelos `e2e/oauth/*`](/subscriptions).
+
+| Gateway | Construtor | Pacote | Lê |
+| --- | --- | --- | --- |
+| [Vercel AI Gateway](https://vercel.com/docs/ai-gateway) | `gateway('openai/gpt-6-luna-fast')` | `ai` | `AI_GATEWAY_API_KEY` ou, sem ela, um token OIDC da Vercel |
+| [OpenRouter](https://openrouter.ai/models) | `openrouter('openai/gpt-6-luna-fast')` | `@openrouter/ai-sdk-provider` | `OPENROUTER_API_KEY` |
+| Qualquer endpoint compatível com a OpenAI | `createOpenAICompatible({ name, baseURL, apiKey? }).chatModel('llama3.2')` | `@ai-sdk/openai-compatible` | `apiKey`, quando o endpoint precisa de uma |
+| Um provedor diretamente | `openai('gpt-6-luna')`, `anthropic(...)`, ... | `@ai-sdk/openai`, `@ai-sdk/anthropic`, ... | a variável do próprio provedor |
+
+- Os relatórios registram `provider` e `modelId` por passo.
+- Cada worker constrói a própria instância a partir do módulo de configuração.
+  Um digest diferente entre o runner e um worker é
+  `CONFIG_NOT_DETERMINISTIC`.
+- Uma string é `INVALID_CONFIG`, e o erro nomeia o construtor a escrever.
+- Um agente nunca recorre ao modelo de `default`. Veja
+  [Ordem de resolução](#resolution-order).
+
+Veja [Modelos](/models) e [`ModelInstance`](#modelinstance).
+
+#### `judge`
+
+O modelo de `assert`, `waitFor` e `extract` sem exploração. As asserções
+exploratórias embutidas usam `agents.<name>.model`, mesmo quando `judge` está
+definido.
+
+```ts
+judge: gateway('anthropic/claude-opus-5'), // default: model
+```
+
+- Os julgamentos permitem 8192 tokens de saída por chamada.
+- Um julgamento vê a instrução, os parâmetros dela, o contexto do agente e a
+  tela atual com a localização da tela.
+
+Veja [Um juiz próprio](/models#a-judge-of-its-own).
+
+#### `context`
+
+Como o app chama as coisas, informado a toda chamada ao modelo que este agente
+faz, tanto nos turnos de act quanto nos julgamentos.
+
+```ts
+context: 'Plans are called tiers. Billing lives under Settings.',
+```
+
+No máximo 16384 bytes.
+
+#### `system`
+
+Como o agente que age deve trabalhar, acrescentado às regras embutidas.
+Somente o loop de act o lê.
+
+```ts
+system: 'You are a first-time buyer.',
+```
+
+Com `executor`, é `INVALID_CONFIG`: o executor traz o próprio prompt.
+
+#### `tools`
+
+Ferramentas do projeto feitas com `defineTool` (`e2e/agent`), oferecidas ao
+lado do conjunto de ferramentas embutido.
+
+```ts
+tools: { lookupOrder },
+```
+
+Com `executor`, é `INVALID_CONFIG`: o executor traz as próprias ferramentas.
+
+#### `executor`
+
+Um cérebro personalizado para o qual `agent.act()` despacha, no lugar do
+agente embutido.
+
+```ts
+house: { executor: houseBrain, model: gateway('openai/gpt-6-luna-fast'), maxModelCalls: 10 },
+```
+
+- `model`, `judge`, `context` e os orçamentos continuam valendo; os
+  julgamentos precisam de um modelo. [`system`](#system) e [`tools`](#tools)
+  ao lado dele são `INVALID_CONFIG`.
+- `maxModelCalls` limita os turnos de modelo de um passo.
+- Um `model` ou `judge` diferente do que o executor trouxe é
+  `INVALID_CONFIG`.
+
+Veja [Executores personalizados](/executors).
+
+#### `maxSteps`
+
+Ações efetivadas por chamada ao agente.
+
+```ts
+maxSteps: 40, // default: 25
+```
+
+De 1 a 100.
+
+#### `maxModelCalls`
+
+Requisições ao modelo por chamada ao agente.
+
+```ts
+maxModelCalls: 10, // default: 25
+```
+
+De 1 a 100.
+
+#### `judgmentTimeout`
+
+O prazo de uma chamada `assert`, `waitFor` ou `extract`, em milissegundos.
+
+```ts
+judgmentTimeout: 60_000, // default: 30000
+```
+
+Aumente-o para um juiz lento. As operações da engine continuam com
+`actionTimeout`.
+
+#### `maxObservationBytes`
+
+O teto do payload de observação para turnos de act e julgamentos.
+
+```ts
+maxObservationBytes: 524_288, // default: 262144
+```
+
+De 1024 a 16777216.
+
+#### `maxInputTokens`
+
+Tokens de entrada por requisição ao modelo.
+
+```ts
+maxInputTokens: 128_000, // default: 64000
+```
+
+- De 1 a 1000000.
+- Uma tela densa é cortada para caber abaixo desse limite.
+
+#### `providerOptions`
+
+Opções do provedor que toda chamada ao modelo leva, como um nível de esforço
+de raciocínio.
+
+```ts
+providerOptions: { openai: { reasoningEffort: 'low' } },
+```
+
+As chamadas à API Responses da OpenAI e do Azure OpenAI também levam
+`store: false` e uma chave de cache de prompt, a menos que você os defina aqui.
+
+#### Opções removidas
+
+Uma chave desconhecida (o erro nomeia a chave conhecida mais próxima), uma
+chave removida ou um valor em um formato antigo faz o carregamento da
+configuração falhar com `INVALID_CONFIG`:
+
+| Escrito | Agora |
+| --- | --- |
+| um `StepExecutor` sozinho como a entrada | `{ executor }` |
+| `timeout` | `judgmentTimeout` |
+| `maxTurns` (na entrada ou em `createToolLoopExecutor`) | `maxModelCalls` |
+| `limits.maxModelTokensPerCall` no nível superior | `maxInputTokens` em cada agente |
+| `limits.maxAgentContextBytes`, `maxLedgerBytes`, `maxEventsPerStep` no nível superior | removidos; o runner os fixa em 16384 bytes, 8192 bytes e 1000 eventos |
+
+### filters
+
+[Filtros de testes](/filters) que deixam de fora os testes que uma mudança não
+pode afetar, aplicados em ordem quando a execução recebe `--changed-since`.
+
+```ts title="e2e.config.ts"
+import type { E2EConfig } from 'e2e';
+import { web } from '@e2e-dev/web';
+import { gateway } from 'ai';
+import { decisionFilter } from '@e2e-dev/decision';
+
+export default {
+  targets: [{ engine: web(), app: { url: 'http://localhost:3000' } }],
+  filters: [decisionFilter({ model: gateway.decisionModel('typesafe-ai/jev') })],
+} satisfies E2EConfig;
+```
+
+Quais testes sempre rodam está em
+[Filtros de testes](/filters#what-always-runs). Um `name` segue as regras de
+nome de alvo, tem no máximo 256 caracteres e é único entre os `filters`.
+
+| Lança | Quando |
+| --- | --- |
+| `INVALID_CONFIG` | Um `name` inválido, um item que não é `{ name, filter }`, ou uma função não chamada, como `decisionFilter`, no lugar de `decisionFilter({ model })`. |
+
+As declarações estão em [`TestFilter`](#testfilter), exportado de `e2e`.
+
+### credentials
+
+Contas nomeadas. Cada entrada é um nome de usuário e uma senha que o modelo
+nunca vê.
+
+```ts
+credentials: {
+  admin: { username: 'admin@example.com', password: () => readFile('.secrets/admin', 'utf8') },
+},
+```
+
+| Campo | Tipo |
+| --- | --- |
+| [`username`](#username) | `string` |
+| [`password`](#password) | `string \| SecretProvider` |
+
+- Credenciais e segredos são namespaces separados. `secrets.get(name)`
+  retorna apenas uma entrada de `secrets`. A senha de uma credencial só pode
+  ser acessada como `credentials.user(name).password`.
+- O agente, o cache de replay e os relatórios conhecem essa senha como um
+  segredo chamado `<name>.password` (`<secret:admin.password>`). Assim,
+  `credentials.admin` e `secrets.admin` podem existir ao mesmo tempo.
+
+| Lança | Quando |
+| --- | --- |
+| `INVALID_CONFIG` | Uma entrada de `secrets` chamada exatamente `admin.password` ao lado de uma credencial `admin`. |
+| `INVALID_CONFIG` | Duas credenciais cujos nomes correspondem a uma mesma substituição `E2E_USER_<NAME>_*`, como `svc-a` e `svc_a` (veja [Variáveis de ambiente](/reference/environment)). |
+
+Veja [Autenticação](/authentication). As declarações estão em
+[`CredentialConfig`](#credentialconfig).
+
+#### `username`
+
+O nome de usuário da conta, em texto simples.
+
+```ts
+username: 'admin@example.com',
+```
+
+`E2E_USER_<NAME>_USERNAME` prevalece sobre o valor da configuração. Sem
+nenhum dos dois, a entrada é `INVALID_CONFIG`.
+
+#### `password`
+
+A senha da conta: um valor estático ou uma função `SecretProvider`.
+
+```ts
+password: () => readFile('.secrets/admin', 'utf8'),
+```
+
+- Uma senha estática tem pelo menos 6 caracteres (pontos de código), como um
+  [segredo](#secrets), ou é `INVALID_CONFIG`.
+- Um `SecretProvider` roda a cada preenchimento autorizado (uma consulta a um
+  cofre de segredos, um TOTP recém-calculado). O digest da configuração
+  registra esse provedor só pelo nome. Um provedor que retorna menos de 6
+  caracteres faz o preenchimento falhar com `AUTH_CREDENTIAL_UNAVAILABLE`.
+- `E2E_USER_<NAME>_PASSWORD` prevalece sobre os dois.
+
+#### `credentials.user()`
+
+Resolve uma entrada configurada em uma `Credential` dentro de um teste.
+
+```ts
+const admin = credentials.user('admin');
+```
+
+- O nome de usuário é uma string simples. A senha é um `Secret` opaco que o
+  código de teste não consegue ler, aceito apenas por `locator.fill` e pelos
+  parâmetros de `agent.act`.
+- Um nome não configurado lança `AUTH_CREDENTIAL_UNAVAILABLE`.
+
+### secrets
+
+Valores nomeados que o modelo nunca pode ver: chaves de API, tokens, qualquer
+coisa que venha do ambiente.
+
+```ts
+secrets: {
+  apiKey: () => readFile('.secrets/api-key', 'utf8'),
+},
+```
+
+| Entrada | Exemplo | Verificado |
+| --- | --- | --- |
+| um valor estático | `'sk_test_51Hx…'` | no carregamento da configuração |
+| um provedor | `() => readFile('.secrets/api-key', 'utf8')` | a cada preenchimento autorizado |
+
+- Um provedor roda a cada preenchimento autorizado (uma consulta a um cofre de
+  segredos, um TOTP recém-calculado). O digest da configuração registra esse
+  provedor só pelo nome.
+- Uma substituição por `E2E_SECRET_<NAME>` prevalece sobre os dois.
+- Toda entrada precisa resolver para uma string de pelo menos 6 caracteres
+  (pontos de código) ou para uma função; qualquer outra coisa é `INVALID_CONFIG`.
+  O valor de um provedor segue o mesmo mínimo no momento do preenchimento, com
+  `SECRET_UNAVAILABLE`.
+- O mínimo existe por causa da ocultação. Toda ocorrência de um valor vira
+  `<secret:name>`, então um valor mais curto levaria junto texto comum nos
+  relatórios e na saída.
+- Duas entradas cujos nomes correspondem a uma mesma variável, como `api-key`
+  e `api_key`, são `INVALID_CONFIG`.
+
+As declarações estão em [`SecretConfig`](#secretconfig). Veja
+[Segredos que não são senhas](/authentication#secrets-that-are-not-passwords).
+
+#### `secrets.get()`
+
+Retorna o `Secret` opaco de uma entrada configurada.
+
+```ts
+await screen.getByLabel('API key').fill(secrets.get('apiKey'));
+```
+
+- Ele não tem acessor de texto simples e é aceito apenas por `locator.fill` e
+  pelos parâmetros de `agent.act`.
+- O runner preenche o campo, mascara o valor em toda observação e o oculta
+  dos logs, dos traces e do relatório.
+- Um nome não configurado lança `SECRET_UNAVAILABLE`.
+
+#### Segredos em opções da engine
+
+Enquanto `e2e.config.ts` é avaliado, antes de existir qualquer execução,
+`secrets.get(name)` retorna uma referência por nome que uma opção da engine
+pode guardar.
+
+```ts
+engine: web({ basicAuth: { username, password: secrets.get('previewPassword') } }),
+```
+
+- A engine declara essa referência. Quando nenhuma entrada de `secrets` tem esse nome,
+  o carregamento da configuração falha com `INVALID_CONFIG`. A senha de uma
+  credencial não serve: declare sob `secrets` um valor de que uma opção da
+  engine precise.
+- A engine resolve o valor quando cada tentativa começa, então um provedor
+  roda de novo a cada vez. O valor então entra na ocultação da tentativa. Ele
+  vai para a engine, não para a página, então não traz nenhuma das restrições
+  de captura de tela de um preenchimento.
+- O digest registra só o nome.
+- A referência não é o valor. Convertida em string (um template literal,
+  `String()`, `+`, `JSON.stringify`), ela lança `INVALID_CONFIG`. O mesmo
+  vale para uma referência em uma entrada de `args` ou em um valor de `env` de
+  `app.command`, que aceita apenas strings e placeholders. Leia você mesmo de
+  `process.env` um valor de que uma string precise, como a chave de API de um
+  app.
+
+### cache
+
+O modo ou as opções do cache de replay. No modo `read-write`, o cache de
+replay grava um `agent.act()` só depois que uma verificação posterior passa,
+como uma asserção de localizador ou `agent.assert()`.
+
+```ts
+cache: { mode: 'read-write', dir: '.e2e/cache', strict: true },
+```
+
+| Opção | Tipo | Padrão |
+| --- | --- | --- |
+| [`mode`](#mode) | `CacheMode` | `'read-write'`, `'read-only'` na CI |
+| [`store`](#store) | `CacheStore` | o armazenamento em arquivos em `dir` |
+| [`dir`](#dir) | `string` | `'.e2e/cache'` |
+| [`strict`](#strict) | `boolean` | `false` |
+
+Uma string sozinha é a forma curta de `{ mode }`: `cache: 'read-only'`. Veja
+[Cache](/cache). As declarações estão em [`CacheConfig`](#cacheconfig).
+
+#### `mode`
+
+O que o cache de replay lê e escreve.
+
+```ts
+cache: 'read-write', // default: 'read-write' locally, 'read-only' in CI
+```
+
+| Modo | Faz |
+| --- | --- |
+| `'read-write'` | Reproduz entradas e grava novas. |
+| `'read-only'` | Reproduz as entradas existentes e não escreve nenhuma. |
+| `'off'` | Desliga as duas coisas. |
+
+- Um modo explícito substitui o padrão. Defina `'read-write'` explicitamente
+  quando a CI restaurar o cache a partir do próprio serviço de cache dela.
+- `--no-cache` prevalece sobre os dois e desliga o cache na execução.
+
+#### `store`
+
+Um armazenamento de entradas personalizado que substitui o armazenamento em
+arquivos.
+
+```ts
+cache: { store: createStore(cacheUrl) },
+```
+
+- Cada worker constrói o seu.
+- Fica isento do rebaixamento de modo na CI: ele declara a própria confiança
+  por meio de `writable`.
+- `--cache-dir` junto com ele é `INVALID_CONFIG`, e `E2E_CACHE_DIR` é
+  ignorado.
+
+`CacheStore`, `CacheReadResult`, `TraceEntry` e `ActionTrace` são exportados
+de `e2e`.
+
+#### `dir`
+
+O diretório do armazenamento em arquivos, resolvido a partir da raiz do
+projeto.
+
+```ts
+cache: { dir: '.cache/e2e' }, // default: '.e2e/cache'
+```
+
+- Ele fica onde está, seja qual for o valor de `output`.
+- `--cache-dir` e `E2E_CACHE_DIR` o substituem.
+
+#### `strict`
+
+Faz falhar com `REPLAY_STALE` um passo cuja gravação existe, mas não consegue
+mais ser reproduzida, em vez de passar esse passo ao agente.
+
+```ts
+cache: { strict: true }, // default: false
+```
+
+- `--strict-cache` o liga para uma execução.
+- A execução então nunca escreve no cache.
+
+Veja
+[Falhe quando uma gravação estiver desatualizada](/cache#fail-on-a-stale-recording).
+
+#### Faça commit do cache de replay
+
+`e2e init` adiciona `.e2e/cache/` ao `.gitignore`, então fazer commit das
+entradas é uma escolha sua. Remova essa linha para compartilhar replays com a
+CI e com o time. A CI continua `read-only` a menos que `cache: 'read-write'`
+esteja definido. Veja [Cache](/cache#commit-the-replay-cache).
+
+## Limites da execução
+
+O bloco `run.limits` do relatório registra os tetos que uma execução aplicou.
+Não existe uma chave `limits`: dois campos vêm dos agentes, e o runner fixa o
+resto.
+
+| Campo do relatório | Valor |
+| --- | --- |
+| `maxAgentContextBytes` | 16384: o `context` de um agente e o `agentContext` de um teste |
+| `maxLedgerBytes` | 8192: o registro dos passos anteriores que um passo act lê |
+| `maxEventsPerStep` | 1000: eventos registrados por passo |
+| `maxObservationBytes` | o maior `agents.<name>.maxObservationBytes` |
+| `maxModelTokensPerCall` | o maior `agents.<name>.maxInputTokens` |
+
+As opções por chamada só podem reduzir os orçamentos de um agente.
+
+## Variáveis de ambiente
+
+O runner lê um conjunto fechado, listado na página
+[Variáveis de ambiente](/reference/environment). `E2E_USER_<NAME>_USERNAME`
+e `E2E_USER_<NAME>_PASSWORD` substituem uma credencial, `E2E_SECRET_<NAME>`
+um segredo, e `CI` troca os padrões abaixo.
+
+### Ordem de resolução
+
+| Configuração | Ordem |
+| --- | --- |
+| URL base | o `app.url` do alvo, senão `APP_URL_REQUIRED` na primeira navegação. O runner não lê nenhum `APP_URL`; a configuração gerada ao criar a estrutura do projeto lê essa variável por conta própria |
+| Modelo do agente embutido | `agents.<name>.model`, depois `MODEL_UNAVAILABLE` na aquisição de `agent`; um agente nunca recorre ao modelo de `default` |
+| Modelo do executor personalizado | `agents.<name>.model`, senão o modelo que o executor trouxe; dois valores diferentes são `INVALID_CONFIG` |
+| Credencial do modelo | a variável do próprio pacote do provedor ou a chave passada na construção, lida pelo provedor na primeira chamada ao modelo |
+| Nome de usuário e senha da credencial | a variável `E2E_USER_*`, depois o valor da configuração |
+
+O agente embutido verifica a falta de um modelo uma vez por execução, quando a
+fixture `agent` é adquirida pela primeira vez, e encerra a execução com código
+de saída 2. Um [executor](#executor) personalizado pode implementar `act` e
+`assert` sem um modelo. `waitFor` e `extract` ainda precisam de um.
+
+### CI
+
+O modo CI fica ativo a menos que `CI` não esteja definida, esteja em branco ou
+seja `0` ou `false`.
+
+| Configuração | Local | CI |
+| --- | --- | --- |
+| `retries` | `0` | `1` |
+| `workers` | `max(1, floor(availableParallelism() / 2))` | `1` |
+| `cache` | `read-write` | `read-only` quando não definido |
+| `test.only`, `describe.only` | permitido | `ONLY_IN_CI`, código de saída 2 |
+| `command.reuseExisting` | respeitado | ignorado, com um aviso |
+
+## Carregamento
+
+Como o runner encontra a configuração e a carrega, junto com os arquivos que
+ela importa.
+
+### Como o arquivo de configuração é encontrado
+
+- `--config <path>` seleciona um arquivo explícito.
+- Caso contrário, o runner procura `e2e.config.ts`, `e2e.config.mts`,
+  `e2e.config.js` ou `e2e.config.mjs` no diretório de trabalho e em cada
+  diretório pai, até chegar à raiz do repositório.
+- Uma configuração TypeScript prevalece sobre uma JavaScript no mesmo
+  diretório, então o `e2e.config.js` que o `tsc` emite ao lado de
+  `e2e.config.ts` é ignorado.
+- Os dois nomes TypeScript, ou os dois nomes JavaScript, no mesmo diretório
+  são `CONFIG_AMBIGUOUS`.
+- O diretório do arquivo selecionado é a raiz do projeto.
+
+### Arquivos `.env`
+
+O e2e não carrega nenhum arquivo `.env` por conta própria. Carregue um no
+início de `e2e.config.ts` com o `process.loadEnvFile()` do Node. Todo worker
+importa a configuração de novo, então as variáveis também chegam aos workers:
+
+```ts title="e2e.config.ts"
+process.loadEnvFile('.env');
+```
+
+A chamada lança um erro quando o arquivo não existe; proteja-a com
+`existsSync` de `node:fs` quando só algumas máquinas tiverem um. O caminho é
+resolvido a partir do diretório em que o e2e roda, mas os workers começam no
+diretório da configuração. Para rodar a partir de um subdiretório, passe
+`new URL('.env', import.meta.url)` no lugar.
+
+### Formato de módulo
+
+- Os arquivos de configuração e de teste rodam como ESM, seja qual for o valor
+  que o `package.json` mais próximo define em `type`. O mesmo vale para todo
+  arquivo `.ts`, `.mts`, `.tsx` e `.jsx` que eles alcançam: um helper por
+  caminho, um pacote que exporta o código-fonte `.ts` dele por nome, ou um
+  arquivo `.ts` que um arquivo CommonJS carrega com require.
+- Um arquivo `.cts` é CommonJS, escrito com `require`, `import x = require()`
+  e `export =`; as instruções `import` dele não viram chamadas `require`.
+- Um arquivo `.ts` escrito com `require` ou `module.exports` falha ao carregar:
+  dê a ele a extensão `.cts`.
+- JavaScript mantém o formato que o pacote dele declara.
+
+### JavaScript
+
+A configuração e os testes podem ser JavaScript puro, sem `tsconfig.json`:
+
+```js title="e2e.config.js"
+import { web } from '@e2e-dev/web';
+import { gateway } from 'ai';
+
+/** @type {import('e2e').E2EConfig} */
+export default {
+  tests: 'tests/**/*.e2e.js',
+  agents: { default: { model: gateway('openai/gpt-6-luna-fast') } },
+  targets: [{ engine: web(), app: { url: 'http://localhost:3000' } }],
+};
+```
+
+- Chame a configuração de `e2e.config.js` ou `e2e.config.mjs`
+  ([Como o arquivo de configuração é encontrado](#finding-the-config-file)).
+- Escreva módulos ES. Defina `"type": "module"` no `package.json`, ou use a
+  extensão `.mjs` nos arquivos. Sem nenhum dos dois, o Node.js avisa a cada
+  carregamento que reinterpretou o arquivo como ESM.
+- Defina [`tests`](#tests): o padrão seleciona só `*.e2e.ts`. Use
+  `'tests/**/*.e2e.mjs'` para testes `.mjs`. Liste também
+  `'tests/**/*.e2e.ts'` para rodar os dois tipos enquanto migra uma suíte.
+- O comentário `@type` faz o papel de `satisfies E2EConfig`: um editor
+  completa as chaves e mostra a documentação delas. As fixtures de teste
+  recebem os tipos do import de `test`, sem anotação.
+- O runner nunca verifica tipos. Para ver erros no editor, adicione
+  `// @ts-check` a um arquivo, ou `"checkJs": true` a um `jsconfig.json`.
+- Um arquivo JavaScript importa um helper TypeScript pelo nome `.ts` dele
+  (`'./helpers.ts'`), não `.js`; veja [Resolução de imports](#import-resolution).
+  Com `checkJs`, esse import também precisa de `"allowImportingTsExtensions": true`
+  e `"noEmit": true`.
+
+### Resolução de imports
+
+O e2e compila TypeScript e JSX por conta própria. Um import em um arquivo
+desses é resolvido da mesma forma que o TypeScript o resolve:
+
+- `./helper.js` e `./helper` carregam `helper.ts`, e `./view.jsx` carrega
+  `view.tsx`.
+- `./lib` carrega o arquivo que `lib/package.json` indica como `main`, senão
+  `lib/index.ts`.
+- Um import sem caminho relativo que o `tsconfig.json` mapeia por `paths` ou
+  `baseUrl` carrega o arquivo mapeado.
+- Um import `#` ou um export de pacote que nomeia um `./x.js`, `./x.jsx` ou
+  `./x` inexistente carrega o código-fonte `x.ts` ou `x.tsx` correspondente
+  ao ser importado.
+- Um import `#` ou um export de pacote que nomeia um diretório, ou um
+  subcaminho de um pacote sem `exports` que é um diretório (`@acme/db/enums`),
+  carrega o diretório como `./lib` é carregado. Com Yarn PnP, esse subcaminho
+  de pacote ainda falha.
+- Um `require()` de qualquer um dos dois últimos casos falha com o erro que o
+  Node.js reporta.
+- Um import escrito em um arquivo JavaScript é resolvido como o Node.js o
+  resolve.
+
+### `tsconfig.json`
+
+- O `tsconfig.json` é o mais próximo acima do arquivo. Quando esse tem
+  `references` e não inclui o próprio arquivo (como o Vite o escreve), vale a
+  configuração referenciada transitivamente que inclui o arquivo.
+- As referências são visitadas na ordem de declaração, e ciclos são
+  ignorados. Se o arquivo não pertencer a nenhuma delas, a configuração mais
+  próxima continua como fallback.
+- O e2e lê dele `paths`, `baseUrl`, `jsx`, `jsxFactory`,
+  `jsxFragmentFactory`, `jsxImportSource`, `experimentalDecorators`,
+  `emitDecoratorMetadata`, `useDefineForClassFields` (e `target`, que
+  define o padrão dessa opção) e `verbatimModuleSyntax`, uma vez por processo e
+  de novo para cada sessão que o `e2e mcp` abre.
+- Um `tsconfig.json` que o e2e não consegue ler, como um que faz `extends` de
+  um pacote não instalado, é ignorado com um aviso.
+- O TypeScript dentro de um pacote instalado é compilado sem o
+  `tsconfig.json` do projeto.
+
+### O que não compila
+
+- O e2e recusa, nomeando o arquivo e a linha, duas coisas que não consegue
+  compilar: auto-accessors (`accessor x = 1`) e decorators sem
+  `experimentalDecorators`.
+- Cada arquivo é compilado isoladamente, sem informação de tipos. Por isso, um
+  tipo importado sem `import type` falha ao carregar quando o import permanece
+  na saída (o tipo de um membro decorado com `emitDecoratorMetadata`, um tipo
+  reexportado). O erro nomeia o import a mudar.
+- Um arquivo JSON importado sem `with { type: 'json' }` é carregado com o
+  conteúdo já interpretado como export padrão.
+- Stack traces e locais de falha apontam para o código-fonte TypeScript, também
+  através do source map de outro loader (`NODE_OPTIONS=--import tsx`).
+
+## Tipos
+
+### `E2EConfig`
+
+```ts
+export interface E2EConfig {
+  /** Stable project id, 1 through 256 characters; defaults to the root `package.json` name. */
+  projectId?: string;
+  /** The surfaces tests run on; required, at least one, each naming its engine. */
+  targets: readonly Target[];
+  /** Test file globs relative to the project root (`*`, `?`, and a whole `**` segment; a leading `!` excludes); default every `*.e2e.ts` under `tests/`. */
+  tests?: string | readonly string[];
+  /** Test attempt deadline in milliseconds; default 120000. */
+  timeout?: number;
+  /** Engine init and attempt start budget in milliseconds; default 60000. */
+  launchTimeout?: number;
+  /** Budget of every engine operation in milliseconds; default 30000. */
+  actionTimeout?: number;
+  /** Default `expect` deadline in milliseconds; default 5000. */
+  assertionTimeout?: number;
+  /** Default timeout and pauses for `expect(fn).toPass()`. */
+  toPass?: PassOptions;
+  /** Budget of each `afterEach` hook, fixture teardown, and engine cleanup in milliseconds; default 30000. */
+  cleanupTimeout?: number;
+  /** Retries per test, 0 through 10; default 1 in CI, else 0. */
+  retries?: number;
+  /** Fail the run when a test skips a retry after an earlier failed attempt; default false. */
+  failOnSkippedFailure?: boolean;
+  /** Wall-clock budget for running the tests, in milliseconds; default none. */
+  maxDuration?: number;
+  /** Parallel workers, 1 through 1024; default 1 in CI, else half the cores. An engine may cap it lower. */
+  workers?: number;
+  /** Runs the tests of one file at the same time on separate workers; default false. */
+  fullyParallel?: boolean;
+  /** `{ store }` hands every artifact to a host store as it is produced. */
+  artifacts?: ArtifactsConfig;
+  /** Which tests keep a trace page; default `retain-on-failure`. */
+  trace?: RecordingMode;
+  /** Which attempts record a video; default `off`. */
+  video?: RecordingMode;
+  /** The results directory, relative to the project root; default `.e2e`. */
+  output?: string;
+  /** Output renderers and reporter objects; default `['list']`. */
+  reporters?: readonly (BuiltinReporter | Reporter)[];
+  /** Named agents: the built-in agent's options, or `{ executor }` for a custom brain. */
+  agents?: Readonly<Record<string, AgentConfig>>;
+  /** Test filters, in order, run with `--changed-since`: each judges the tests the one before it kept. */
+  filters?: readonly TestFilter[];
+  /** Replay cache mode or options; default `read-write`, `read-only` in CI. */
+  cache?: CacheMode | CacheConfig;
+  /** Named accounts: a username and a password the model never sees. */
+  credentials?: Readonly<Record<string, CredentialConfig>>;
+  /** Named values the model must never see: API keys, tokens, anything sourced from the environment. */
+  secrets?: Readonly<Record<string, SecretConfig>>;
+}
+```
+
+### `Target`
+
+```ts
+/**
+ * One named test target: the app under test and the engine that drives it.
+ * Without an engine, the target supports agent tools and `request` calls to absolute URLs.
+ */
+export interface Target {
+  /** Label in reports and for `--target`; defaults to the platform. */
+  name?: string;
+  /** Platform label; inherited from the engine when omitted. */
+  platform?: string;
+  /** The engine driving the surface. */
+  engine?: EngineHandle;
+  /** The app under test: what it is, where it is served, and the command that starts it. */
+  app?: TargetApp;
+  /** Which tests on this target keep a trace page, in place of the config's `trace`. */
+  trace?: RecordingMode;
+  /** Which attempts on this target record a video, in place of the config's `video`. */
+  video?: RecordingMode;
+  /** Whether this target runs the tests of one file in parallel, in place of the config's `fullyParallel`. */
+  fullyParallel?: boolean;
+}
+```
+
+### `CommandConfig`
+
+```ts
+export interface CommandConfig {
+  /** Resolved with `PATH`; never shell-interpreted. */
+  executable: string;
+  /** Passed verbatim; `{port}` expands to the app's port. */
+  args?: readonly string[];
+  /** Working directory, resolved from the project root. */
+  cwd?: string;
+  /** Added to the inherited set; `{port}` expands in values. */
+  env?: Readonly<Record<string, string>>;
+  /** Variables copied from the runner's environment when set: exact names, or prefixes ending in `*`. */
+  inheritEnv?: readonly string[];
+  /** Ready-probe budget in milliseconds; default 60000. */
+  startupTimeout?: number;
+  /** Grace period before force-kill in milliseconds; default 10000. */
+  shutdownTimeout?: number;
+  /** File that receives the process's stdout and stderr; omitted discards output. */
+  log?: string;
+  /** Use a process already answering the readiness URL instead of spawning; default `false`. */
+  reuseExisting?: boolean;
+}
+```
+
+### `ArtifactsConfig`
+
+```ts
+export interface ArtifactsConfig {
+  /** Host store every produced artifact is handed to; omit it to keep files local only. */
+  store?: ArtifactStore;
+}
+
+export interface ArtifactStore {
+  put(artifact: StoredArtifact): Promise<{ readonly ref: string }>;
+  /** Receives a provider-hosted video as a link; optional. */
+  putLink?(link: StoredArtifactLink): Promise<{ readonly ref: string }>;
+}
+
+/** One produced artifact, handed to `store.put` once it is complete on disk. */
+export interface StoredArtifact {
+  readonly kind: 'screenshot' | 'video' | 'download' | 'log';
+  readonly mediaType: string;
+  readonly bytes: Uint8Array;
+  readonly size: number;
+  readonly sha256: string;
+  /** Report-relative path with `/` separators, stable across runs of the same test. */
+  readonly path: string;
+  /** How much of the file the runner masked, as the report records it. */
+  readonly redaction: 'complete' | 'incomplete';
+  readonly runId: string;
+  readonly testId: string;
+  readonly attemptId: string;
+  /** The step that produced it, when one was running. */
+  readonly stepId?: string;
+  /** When a time-based artifact (a video segment) began recording. */
+  readonly startedAt?: string;
+}
+
+/** One provider-hosted recording, handed to `store.putLink` once the attempt stopped it. */
+export interface StoredArtifactLink {
+  readonly kind: 'video';
+  /** The `http(s)` URL the service serves the recording from. */
+  readonly url: string;
+  readonly mediaType: string;
+  /** A recording masks nothing, so a link is always `incomplete`. */
+  readonly redaction: 'incomplete';
+  readonly runId: string;
+  readonly testId: string;
+  readonly attemptId: string;
+  /** When the recording started, as an ISO timestamp. */
+  readonly startedAt: string;
+  /** The step that was running when the recording was registered, if any. */
+  readonly stepId?: string;
+}
+```
+
+### `AgentConfig`
+
+```ts
+/** A project tool as `defineTool` from `e2e/agent` returns it. */
+export interface AgentTool {
+  readonly tool: object;
+  readonly annotations: { readonly mutates: boolean; readonly platforms?: readonly string[] };
+}
+
+/** The options every agent takes, whichever brain runs its `act` steps. */
+export interface AgentOptions {
+  /** An AI SDK model instance; no implicit default. */
+  model?: ModelInstance;
+  /** Model for `assert`, `waitFor`, and `extract`; defaults to `model`. */
+  judge?: ModelInstance;
+  /** What the app calls things, told to every model call; at most 16384 bytes. */
+  context?: string;
+  /** Committed actions per agent call, 1 through 100; default 25. */
+  maxSteps?: number;
+  /** Model requests per agent call, 1 through 100; default 25. */
+  maxModelCalls?: number;
+  /** Deadline of one `assert`, `waitFor`, or `extract` call in milliseconds; default 30000. */
+  judgmentTimeout?: number;
+  /** Observation payload ceiling for act turns and judgments, 1024 through 16777216; default 262144. */
+  maxObservationBytes?: number;
+  /** Input tokens per model request, 1 through 1000000; default 64000. */
+  maxInputTokens?: number;
+  /** Provider options every model call carries, such as a reasoning effort. */
+  providerOptions?: ProviderOptions;
+}
+
+/** One entry of `agents`: the built-in agent with its options, or a custom brain under `executor`. */
+export type AgentConfig = AgentOptions &
+  (
+    | {
+        /** How the acting agent should work, appended to the built-in rules. */
+        system?: string;
+        /** Project tools from `defineTool`, offered beside the built-in toolset. */
+        tools?: Readonly<Record<string, AgentTool>>;
+      }
+    | {
+        /** A custom brain `agent.act()` dispatches to instead of the built-in agent. */
+        executor: StepExecutor;
+      }
+  );
+```
+
+### `ModelInstance`
+
+```ts
+/**
+ * An AI SDK LanguageModelV2+ instance. Its provider handles transport
+ * and credentials.
+ */
+export interface ModelInstance {
+  /** The AI SDK specification the instance implements. */
+  readonly specificationVersion: string;
+  /** Provider id, recorded per step in the report. */
+  readonly provider: string;
+  /** Model id, recorded per step in the report. */
+  readonly modelId: string;
+  /** The generate call every AI SDK language model implements; what tells a live instance from its three id strings. */
+  readonly doGenerate: (...args: never[]) => unknown;
+}
+```
+
+### `TestFilter`
+
+```ts
+interface TestFilter {
+  /** Names the filter in the report and in errors. */
+  readonly name: string;
+  readonly filter: (tests: readonly TestFilterCandidate[], context: TestFilterContext) => TestFilterResult | Promise<TestFilterResult>;
+}
+
+interface TestFilterCandidate {
+  /** The report's `testId`, and the key `exclude` and `relevance` take. */
+  readonly id: string;
+  /** Project-relative path of the test file. */
+  readonly file: string;
+  /** The describe titles, then the test title. */
+  readonly titlePath: readonly string[];
+  /** The describe chain's tags, then the test's own. */
+  readonly tags: readonly string[];
+  /** Project-relative path of the setup test file that saves the test's session; absent without one. */
+  readonly setupFile?: string;
+}
+
+interface TestFilterContext {
+  /** Absolute project root, spelled as on disk like `changes.root`. */
+  readonly projectRoot: string;
+  /** The change every filter of the run judges. */
+  readonly changes: TestFilterChanges;
+  /** The config file the run loaded, relative to `changes.root` like `changes.files`; `undefined` for a config object or one outside the repository. */
+  readonly configFile?: string | undefined;
+  /** Aborts when the run is interrupted, or with a `TimeoutError` after 5 minutes. */
+  readonly signal: AbortSignal;
+  /** Prints one progress line. */
+  log(line: string): void;
+  /** Replaces every fixed-value secret and credential password in `text`, and any run of 8 or more consecutive characters of one. */
+  redact(text: string): string;
+}
+
+interface TestFilterChanges {
+  /** The merge base of the `--changed-since` ref and `HEAD`. */
+  readonly base: string;
+  /** Absolute path of the repository root, spelled as on disk like `projectRoot`. */
+  readonly root: string;
+  /** Repository-relative POSIX paths of every changed file, uncommitted and untracked files included. Sorted, never empty. */
+  readonly files: readonly string[];
+}
+
+interface TestFilterResult {
+  /** The tests to leave out, by `id`, each with a non-empty reason the report shows. An `id` of a collected test this filter wasn't given is ignored; any other fails the filter. */
+  readonly exclude: Readonly<Record<string, string>>;
+  /** How likely each test is to fail on this change, by `id` as for `exclude`, from 0 to 1; any other score fails the filter. Each target starts the files of the likeliest first, in bands at 75%, 50%, and 25%, and targets go by the band of their best file, ties in config order. A test no filter scores counts as 0, and a test several filters score keeps its highest. */
+  readonly relevance?: Readonly<Record<string, number>>;
+  /** One line about the whole decision. */
+  readonly note?: string;
+}
+```
+
+`TestFilter`, `TestFilterCandidate`, `TestFilterContext`,
+`TestFilterChanges` e `TestFilterResult` são exportados de `e2e`.
+
+Um filtro que lança um erro, retorna um resultado inválido ou roda por mais de
+5 minutos não deixa nada de fora, e um aviso informa isso. Um erro que ele
+lança pode trazer `relevance`, no formato de `TestFilterResult`: a execução
+ainda começa pelos mais prováveis. Veja
+[Filtros de testes](/filters#write-your-own).
+
+### `CredentialConfig`
+
+```ts
+/** One `config.credentials` entry: an account whose password is a secret named `<entry>.password`. */
+export interface CredentialConfig {
+  username: string;
+  password: string | SecretProvider;
+}
+
+type SecretProvider = () => string | Promise<string>;
+
+/** Named test identity. The password remains an opaque Secret. */
+export interface Credential {
+  /** The entry's name in `credentials`. */
+  readonly name: string;
+  /** Plain username. */
+  readonly username: string;
+  /** Opaque; test code cannot read it. */
+  readonly password: Secret;
+  readonly [credentialBrand]: true;
+}
+```
+
+### `SecretConfig`
+
+```ts
+/** One `config.secrets` entry: the value itself, or a provider computing it at fill time. */
+export type SecretConfig = string | SecretProvider;
+
+/**
+ * What a secret is for, which decides where it may be filled: a `password`
+ * goes only into a password field; a `generic-secret` (an API key, a token,
+ * any value from the environment) goes into any editable input.
+ */
+export type SecretPurpose = 'password' | 'generic-secret';
+
+/** Opaque host-side value accepted only by sensitive input sinks. */
+export interface Secret {
+  /** The entry's name in `secrets`, or `<credential>.password` for a credential's password. */
+  readonly name: string;
+  /** Where the value may be filled. */
+  readonly purpose: SecretPurpose;
+  readonly [secretBrand]: true;
+}
+```
+
+### `CacheConfig`
+
+```ts
+/** Replay cache options. */
+export interface CacheConfig {
+  /** Default `read-write`; `read-only` in CI when unset. */
+  mode?: CacheMode;
+  /** Custom entry store; omit it to use the file store at `dir`. */
+  store?: CacheStore;
+  /** File store directory, resolved against the project root; default `.e2e/cache`. */
+  dir?: string;
+  /** Fail a step whose recording no longer replays with `REPLAY_STALE`. Default `false`. */
+  strict?: boolean;
+}
+
+/** Where the replay cache keeps its entries: the file store by default, or a host's own through `cache.store`. */
+export interface CacheStore {
+  readonly writable: boolean;
+  read(keyHash: string): Promise<CacheReadResult>;
+  /** Persists one trace, returning its size, or undefined when not written. */
+  write(keyHash: string, payload: ActionTrace): Promise<{ bytes: number } | undefined>;
+  /**
+   * Evicts one entry, best-effort. Called when a replayed or just-recorded
+   * flow is implicated in a failed attempt: the entry re-records on the next
+   * pass instead of replaying a poisoned flow forever. Optional: a store
+   * without eviction merely stays stale until the next confirmed write.
+   */
+  delete?(keyHash: string): Promise<void>;
+}
+
+export type CacheReadResult =
+  | { readonly status: 'hit'; readonly entry: TraceEntry; readonly bytes: number }
+  | { readonly status: 'miss' }
+  | { readonly status: 'invalid'; readonly reason: string; readonly bytes?: number };
+```

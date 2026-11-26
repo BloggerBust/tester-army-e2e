@@ -168,7 +168,7 @@ translation moves or goes with it in the same change.
 | persona | persona (a persona) |
 | pin (an agent) | fixar (agentes fixados) |
 | custom executor | executor personalizado |
-| budget (steps, model calls) | orçamento |
+| budget (steps, model calls, time) | orçamento |
 | seeded data | dados pré-carregados (pré-carregar) |
 | signed in, start signed in | autenticado, com o login feito |
 | handle (a `Secret`) | referência |
@@ -177,6 +177,26 @@ translation moves or goes with it in the same change.
 | override (a value per run) | substituição |
 | vault | cofre de segredos |
 | collection error | erro de coleta |
+| exit code, exits N | código de saída, sai com código N |
+| stdout, stderr | stdout, stderr (keep in English, o stdout) |
+| usage error | erro de uso |
+| scaffold (a project) | criar a estrutura (de um projeto) |
+| wizard (`e2e init`), its prompts | assistente, perguntas |
+| stored login | login salvo |
+| positional argument | argumento posicional |
+| bare (flag, name, pattern; a value on its own) | sem valor (flag), simples (nome, padrão); sozinho (um `StepExecutor` sozinho) |
+| dry run (`e2e list`) | execução simulada |
+| watch mode | modo watch |
+| serial group | grupo serial |
+| deadline | prazo |
+| teardown (a fixture) | desmontagem |
+| digest | digest (keep in English, o digest) |
+| safe integer, code point | inteiro seguro, ponto de código |
+| symlink | link simbólico |
+| version range, prerelease | intervalo, versão de pré-lançamento |
+| registry, dist-tag | registry, dist-tag (keep in English, o registry, a dist-tag) |
+| opt in, opt out | ativação, desativação |
+| wins (over another value) | prevalece |
 | stored screenshot | captura de tela armazenada |
 | the agent takes over | o agente assume |
 | cache miss | cache miss (keep in English, o cache miss) |

@@ -1,0 +1,1655 @@
+---
+title: CLI
+description: Comandos, flags, formatos de saída e códigos de saída.
+"og:image": "https://e2e.com/docs/images/og/reference/cli.png?v=e0e03be674"
+"twitter:image": "https://e2e.com/docs/images/og/reference/cli.png?v=e0e03be674"
+---
+
+O comando `e2e` cria a estrutura de um projeto, roda, lista e explora testes,
+gerencia o cache de replay, os logins de assinatura e a telemetria, e se
+atualiza. Todo comando aceita `--help`.
+
+<CodeGroup>
+```bash npm
+npx e2e init                              # scaffold a project
+npx e2e run                               # run every test
+npx e2e run tests/signup.e2e.ts --headed  # one file, with a visible browser
+```
+
+```bash pnpm
+pnpm dlx e2e init                              # scaffold a project
+pnpm exec e2e run                              # run every test
+pnpm exec e2e run tests/signup.e2e.ts --headed # one file, with a visible browser
+```
+
+```bash bun
+bunx e2e init                              # scaffold a project
+bunx e2e run                               # run every test
+bunx e2e run tests/signup.e2e.ts --headed  # one file, with a visible browser
+```
+</CodeGroup>
+
+<Note>
+A CLI precisa do Node.js 24.8 ou mais recente (22.22.3 ou mais recente no
+Node.js 22), ou do [Bun](#bun) 1.4.3 ou mais recente. Qualquer gerenciador de
+pacotes a instala: npm, pnpm, Yarn com ou sem Plug'n'Play, ou Bun. Com o Yarn
+Plug'n'Play no Node.js 24.8 até o 24.11.0, um arquivo `.cts` não carrega: o
+Node.js rejeita o código-fonte que o loader do Yarn repassa. O 24.11.1 e as
+versões posteriores carregam esse arquivo.
+</Note>
+
+## Referência
+
+### Ajuda e versão
+
+| Opção | Descrição |
+| --- | --- |
+| `-h`, `--help` | Imprime a ajuda do comando que vem antes da opção e sai com código 0. `e2e help run` equivale a `e2e run --help`. |
+| `-v`, `--version` | Imprime a versão instalada do `e2e` e sai com código 0. |
+
+```console
+$ npx e2e --version
+0.14.0
+```
+
+- A saída é colorida em um terminal ou na CI, e sem cores quando redirecionada
+  por pipe ou quando `NO_COLOR` está definida. `FORCE_COLOR` mantém as cores.
+- O `e2e` sem um comando imprime a ajuda no stderr e sai com código 2.
+- Em um terminal com 52 colunas ou mais de largura, `e2e --help` abre com o
+  logo do e2e em caracteres de bloco. A saída redirecionada por pipe e
+  terminais mais estreitos recebem só o texto.
+- Quando há um `e2e` mais novo no npm, um comando rodado em um terminal
+  termina com a versão, o comando [`e2e upgrade`](#e2e-upgrade) para o
+  gerenciador de pacotes do projeto e um link para dar uma estrela ao e2e no
+  GitHub. O registry é consultado uma vez por dia. Nada é impresso na CI,
+  quando o stderr não é um terminal, em `e2e mcp` e `e2e upgrade`, ou com
+  `E2E_UPDATE_CHECK_DISABLED=1`, `NO_UPDATE_NOTIFIER=1`,
+  `E2E_TELEMETRY_DISABLED=1` ou `DO_NOT_TRACK=1` definida.
+
+### Comandos
+
+| Comando | Descrição |
+| --- | --- |
+| [`e2e init`](#e2e-init) | Cria a estrutura de um projeto |
+| [`e2e login`](#e2e-login) | Faz login em uma assinatura de modelo |
+| [`e2e logout`](#e2e-logout) | Remove um login salvo |
+| [`e2e models`](#e2e-models) | Lista os modelos de um login salvo |
+| [`e2e guide`](#e2e-guide) | Imprime a skill do agente |
+| [`e2e mcp`](#e2e-mcp) | Serve sessões ao vivo por MCP |
+| [`e2e run`](#e2e-run) | Roda os testes |
+| [`e2e explore`](#e2e-explore) | Explora o app rumo a um objetivo |
+| [`e2e list`](#e2e-list) | Imprime os testes que uma execução seleciona |
+| [`e2e doctor`](#e2e-doctor) | Verifica se uma execução pode começar |
+| [`e2e cache`](#e2e-cache) | Inspeciona ou limpa o cache de replay |
+| [`e2e report`](#e2e-report) | Abre o relatório HTML em um navegador |
+| [`e2e upgrade`](#e2e-upgrade) | Atualiza o e2e e os pacotes dele |
+| [`e2e feedback`](#e2e-feedback) | Envia feedback para a equipe do e2e |
+| [`e2e telemetry`](#e2e-telemetry) | Mostra ou alterna a telemetria de uso |
+
+Uma opção sem padrão listado fica desligada, a menos que seja passada.
+
+#### `e2e init`
+
+Cria a estrutura de um projeto e adiciona o `e2e` a `devDependencies`. Ele
+pula os arquivos de configuração e de teste que já existem.
+
+<CodeGroup>
+```bash npm
+npx e2e init --yes
+npx e2e init --yes --gateway openrouter --skills .agents/skills --mcp .mcp.json --install
+```
+
+```bash pnpm
+pnpm dlx e2e init --yes
+pnpm dlx e2e init --yes --gateway openrouter --skills .agents/skills --mcp .mcp.json --install
+```
+
+```bash bun
+bunx e2e init --yes
+bunx e2e init --yes --gateway openrouter --skills .agents/skills --mcp .mcp.json --install
+```
+</CodeGroup>
+
+| Opção | Descrição |
+| --- | --- |
+| `[directory]` | Onde criar a estrutura; o diretório é criado quando não existe. Padrão: o diretório de trabalho. |
+| `-y`, `--yes` | Pula as perguntas. Cada resposta não dada como flag assume o padrão: engine Web, Vercel AI Gateway, skill e configuração do MCP nos dois locais, sem pipeline de CI, sem instalação. |
+| `--example [name]` | Começa a partir de um app de exemplo: `with-vite`, `with-next`, `with-astro`, `with-angular`, `with-expo`, `with-swiftui`, `with-compose`, `with-kotlin-multiplatform`, `with-flutter` ou `with-maui`. O prefixo `with-` é opcional. Sem um nome, lista os exemplos para você escolher. Veja [Começar a partir de um exemplo](#starting-from-an-example). |
+| `--engine <ids>` | As engines de uma configuração nova: `web`, `mobile` ou `none`. Separadas por vírgula ou repetidas; `web,mobile` escreve um alvo para cada uma. Padrão: o assistente pergunta. |
+| `--gateway <id>` | O gateway de modelo para os passos do agente em uma configuração nova: `vercel`, `openrouter`, `openai-compatible`, `chatgpt`, `copilot`, `opencode-console`, `grok` ou `none`. Padrão: o assistente pergunta. |
+| `--endpoint <url>` | URL base para `--gateway openai-compatible`, e implica esse gateway. HTTPS, ou HTTP em um host de loopback. Padrão: o assistente pergunta; `http://127.0.0.1:11434/v1` com `--yes`. |
+| `--skills <dirs>` | Onde instalar a skill do agente: `.agents/skills`, `.claude/skills` ou `none`. `.agents/skills` também adiciona a linha da skill ao `AGENTS.md`, e `.claude/skills`, ao `CLAUDE.md`; `none` não mexe em nenhum dos dois arquivos. Separados por vírgula ou repetidos. Padrão: o assistente pergunta. |
+| `--mcp <files>` | Onde registrar o servidor MCP: `.mcp.json`, `.cursor/mcp.json`, `.codex/config.toml` ou `none`. Separados por vírgula ou repetidos. Padrão: o assistente pergunta. |
+| `--ci <id>` | O pipeline de CI para os testes, um job por plataforma: `github-actions`, `gitlab` ou `none`. Veja [Pipeline de CI](#ci-pipeline). Padrão: o assistente pergunta; `none` com `--yes`. |
+| `--install`, `--no-install` | Se as dependências devem ser instaladas. Padrão: o assistente pergunta; `--no-install` com `--yes`. |
+
+- Uma flag responde à pergunta correspondente, que deixa de aparecer.
+- `--engine`, `--gateway` e `--endpoint` valem só para uma configuração nova.
+  Com `--example`, elas são um erro de uso.
+
+| Código de saída | Quando |
+| --- | --- |
+| 0 | A criação da estrutura terminou, ou o assistente foi cancelado. Cancelar deixa os arquivos intactos e remove um exemplo copiado. |
+| 2 | Um valor de flag desconhecido. Sai antes de qualquer escrita e lista os valores válidos. |
+| 2 | Um `package.json` inválido. Sai antes de qualquer escrita. |
+| 2 | Nenhum terminal no stdin e no stdout, e sem `--yes`. A mensagem cita a flag. |
+| 2 | `--example` sem um nome, com `--yes` ou sem terminal. A mensagem lista os nomes. |
+| 2 | `--example` com um diretório que contém arquivos, ou o download do exemplo falhou. Nada fica para trás. |
+| 2 | A instalação das dependências falhou. |
+| 130 | Ctrl-C ou SIGTERM enquanto o logo é desenhado ou o exemplo é baixado, ou SIGINT durante a instalação das dependências. Um exemplo parcial é removido. |
+
+##### Perguntas
+
+Em um terminal com 52 colunas ou mais de largura, o assistente abre com o
+logo do e2e, que se preenche de ░ a █, começando pelas linhas de cima, em
+cerca de meio segundo. Com `--yes`, na CI, em um terminal dumb ou em um
+terminal com menos de 7 linhas, o logo é impresso de uma vez. A saída
+redirecionada por pipe e terminais mais estreitos nunca mostram o logo.
+
+Em um terminal fora da CI, uma criação de estrutura concluída termina com um
+link para dar uma estrela ao e2e no GitHub, a menos que o init siga direto
+para o comando para o qual foi iniciado.
+
+Para um projeto novo, o assistente pergunta:
+
+- **As engines.** Selecione uma, as duas ou nenhuma. **Web** (Playwright, o
+  padrão) adiciona `@e2e-dev/web`. **Mobile (iOS/Android)** adiciona
+  `@e2e-dev/mobile`, usa iOS por padrão no macOS e Android nos outros
+  sistemas, e abre o app Settings. Sem nenhuma selecionada, nenhuma engine é
+  adicionada, para testes HTTP ou uma engine sua.
+- **Um provedor de modelo ou uma assinatura para os passos do agente:** Vercel
+  AI Gateway, OpenRouter, um endpoint compatível com a OpenAI ou local,
+  ChatGPT, GitHub Copilot, OpenCode Console, SuperGrok ou **Skip for now**
+  (para testes que usam só localizadores). O assistente escreve a
+  configuração e os pacotes sem pedir uma chave de API. Quem usa assinatura
+  faz login depois com [`e2e login`](#e2e-login). Veja [Modelos](/models) e
+  [Assinaturas](/subscriptions).
+- **Onde instalar a skill do agente** (veja [e2e guide](#e2e-guide)).
+  `.agents/skills/` atende Codex, Cursor, Copilot, Gemini CLI, OpenCode e
+  Zed; `.claude/skills/` atende o Claude Code. Os dois vêm pré-selecionados.
+- **Onde registrar o [servidor MCP](/reference/mcp).** `.mcp.json` para o
+  Claude Code, `.cursor/mcp.json` para o Cursor, `.codex/config.toml` para o
+  Codex. Todos vêm pré-selecionados. O Codex carrega a configuração em
+  projetos confiáveis; inicie uma sessão nova depois de instalar as
+  dependências.
+- **Um pipeline de CI** para um projeto com a engine web ou mobile: GitHub
+  Actions ou GitLab CI/CD, com um job para cada plataforma. O assistente
+  pré-seleciona o serviço indicado pelo remote do repositório, pela pasta
+  `.github/` ou pelo `.gitlab-ci.yml`. Veja [Pipeline de CI](#ci-pipeline).
+
+Em um app Next.js, o alvo web inicia o app. Veja
+[Apps Next.js](#nextjs-apps).
+
+Depois que você confirma as mudanças nos arquivos, o assistente pergunta se
+deve instalar as dependências selecionadas. O instalador segue o campo
+`packageManager` ou o lockfile do projeto, depois o gerenciador de pacotes que
+chamou o comando, depois o npm.
+
+##### Arquivos
+
+| Cria | Conteúdo |
+| --- | --- |
+| `package.json` | Criado como um pacote ESM privado quando não existe; caso contrário, recebe só as dependências e os scripts que faltam. Os pacotes irmãos (`@e2e-dev/web`, `@e2e-dev/mobile`) recebem o intervalo com circunflexo da versão lançada com a CLI, ou essa versão exata quando a CLI é uma versão de pré-lançamento. Adiciona um script `test:e2e` que roda `e2e run`, a menos que já exista um |
+| `e2e.config.ts` | Um alvo por engine selecionada, com o app na chave `app` do alvo. O Playwright lê `APP_URL` (padrão `http://localhost:3000`) e o usa em `app.url` e mostra `app.command` em um comentário. Em um app Next.js, define `app.url` e `app.command` em vez disso; veja [Apps Next.js](#nextjs-apps). O mobile define `app: { bundleId: 'Settings' }` no iOS e `com.android.settings` no Android, e `workers: 1`. Com um gateway, `agents.default` é `{ model, system }` |
+| `tests/example.e2e.ts` | Só com uma configuração nova. Um teste que abre o app e passa em qualquer página, mais um teste de agente comentado. Uma configuração de dispositivo recebe uma verificação do Settings em vez disso. Com as duas engines, `tests/web.e2e.ts` e `tests/mobile.e2e.ts` no lugar deste arquivo, cada teste com `platforms` definido como a plataforma do próprio alvo, para que o outro alvo pule esse teste |
+| `.gitignore` | Acrescenta `node_modules/`, `.e2e/results/`, `.e2e/cache/`, `.e2e/sessions/`, `.e2e/report.json`, `.e2e/ai-trace.json`, `.e2e/timings.json`, `.e2e/junit.xml`, `.e2e/summary.md`, `.e2e/ctrf.json`, `.e2e/logs/` e `.e2e/videos/`. Fazer commit do cache é opcional; veja [faça commit do cache de replay](/cache#commit-the-replay-cache) |
+| `.agents/skills/e2e/`, `.claude/skills/e2e/` | `SKILL.md` e um `references/<topic>.md` por tópico do `e2e guide`. Com os dois escolhidos, o diretório do Claude Code é um link simbólico relativo (`../../.agents/skills/e2e`) para a cópia, o layout que o `npx skills add` produz |
+| `AGENTS.md`, `CLAUDE.md` | Acrescenta `End-to-end tests use e2e; read .agents/skills/e2e/SKILL.md before writing or running one.` ao `AGENTS.md` quando a skill está em `.agents/skills/`, e a mesma linha com `.claude/skills/e2e/SKILL.md` ao `CLAUDE.md` quando ela está em `.claude/skills/`. Criados quando não existem; o resto de um arquivo existente fica inalterado. Nenhum dos dois com `--skills none` |
+| `.mcp.json`, `.cursor/mcp.json`, `.codex/config.toml` | Registra o `e2e mcp` sem mudar outros servidores |
+| `.github/workflows/e2e.yml`, `.gitlab-ci.yml` | Com `--ci`: um job para cada plataforma em que os alvos rodam. Na raiz do repositório, também para um projeto em uma subpasta. Veja [Pipeline de CI](#ci-pipeline) |
+
+<a id="nextjs-apps" />
+##### Apps Next.js
+
+O `init` detecta um app Next.js quando o `package.json` tem `next` em
+`dependencies` ou `devDependencies`. O alvo web então roda os scripts do
+próprio app com o gerenciador de pacotes do projeto, e o `init` imprime os
+comandos e a URL que escreveu:
+
+- `app.url` é `http://localhost:<port>`, com a porta tirada da flag `--port`
+  ou `-p` ou da variável `PORT=` do comando `next` no script `dev`, ou 3000
+  se não houver. Nunca é `127.0.0.1`, que
+  [não hidrata](/frameworks/nextjs#fix-next-js-problems) no `next dev`.
+- Localmente, `app.command` roda o script `dev` com `reuseExisting: true`.
+- Quando o app também tem os scripts `build` e `start` na mesma porta,
+  `app.command` roda `start` na CI, sobre o build de produção. Um
+  [pipeline de CI](#ci-pipeline) do `init` roda `build` antes dos testes.
+  Caso contrário, a CI também roda `dev`.
+
+Sem um script `dev`, ou com uma porta que não é um número fixo (como
+`$PORT`) ou que outro comando do script define, o alvo lê `APP_URL` como em
+qualquer outro projeto, e o `init` diz o que definir.
+
+<a id="ci-pipeline" />
+##### Pipeline de CI
+
+`--ci github-actions` ou `--ci gitlab` escreve um pipeline com um job para
+cada plataforma em que os alvos da configuração rodam: web, iOS e Android.
+Uma configuração com alvos web e mobile recebe todos os jobs em um arquivo
+só. Cada job instala as dependências, roda
+`e2e run --target <its targets> --reporter list,junit` e mantém
+`.e2e/report.json`, `.e2e/junit.xml` e `.e2e/results/`.
+
+<CodeGroup>
+```bash npm
+npx e2e init --yes --ci gitlab
+```
+
+```bash pnpm
+pnpm dlx e2e init --yes --ci gitlab
+```
+
+```bash bun
+bunx e2e init --yes --ci gitlab
+```
+</CodeGroup>
+
+| Job | GitHub Actions | GitLab CI/CD |
+| --- | --- | --- |
+| Web | `ubuntu-latest`, com Chromium | A imagem `node` nos runners do GitLab, com Chromium |
+| iOS | `macos-26`: faz o build do app, faz o boot do iPhone 17 Pro da imagem em um runtime do iOS fixado, instala o app | Um Mac autogerenciado: cria um simulador próprio em um runtime fixado |
+| Android | `ubuntu-latest` com KVM: faz o build de um APK Release, roda o APK em um emulador com API 36 | Um runner Linux autogerenciado com KVM: faz o boot de um AVD chamado `e2e` |
+
+| Serviço | Arquivo | Roda | Chave do modelo |
+| --- | --- | --- | --- |
+| GitHub Actions | `.github/workflows/e2e.yml` | Em pull requests e em pushes para a `main` | Um segredo do repositório, passado no `env` do step que roda os testes |
+| GitLab CI/CD | `.gitlab-ci.yml` | Em pipelines de merge request e na branch padrão. O relatório JUnit aparece no merge request | Uma variável de CI/CD, que o GitLab entrega ao job |
+
+- O `init` lê os alvos da configuração nova que escreve, ou carrega uma
+  configuração existente do mesmo jeito que o `e2e run`, depois que você
+  confirma as mudanças e depois da instalação. Quando uma configuração
+  existente ainda assim não carrega, o `init` diz por quê e recorre ao
+  `package.json`: só com a engine web, um job web roda todos os alvos; com a
+  engine mobile, não há pipeline.
+- O job web roda todo alvo que não é iOS nem Android, incluindo testes HTTP,
+  e todos os alvos quando a configuração não tem alvo mobile.
+- Os jobs mobile fazem o build do app. Um app Expo faz o build com
+  `expo run:ios` e com `expo prebuild` e Gradle. Um app React Native puro faz
+  o build do `ios/*.xcworkspace` com `xcodebuild` (pelo Bundler, quando há um
+  `Gemfile`) e roda `android/gradlew`. Qualquer outro app recebe um step de
+  build que falha até você substituir esse step, e o `init` indica o arquivo
+  a editar.
+- Os jobs mobile informam em `E2E_DEVICE` o dispositivo em que fizeram o
+  boot. Um alvo que indica um dispositivo lê essa variável com
+  `device: process.env.E2E_DEVICE` em `mobile()`, para que a execução
+  controle esse dispositivo. Um alvo que não indica nenhum controla o
+  dispositivo inicializado.
+- Os runners hospedados do GitLab não conseguem rodar um simulador nem um
+  emulador, então os jobs mobile do GitLab precisam de runners
+  autogerenciados: defina as `tags` desses runners. Veja
+  [GitLab CI/CD](/ci/gitlab#ios-and-android).
+- O arquivo parte de um template que o pacote traz em `templates/ci/`, um
+  pipeline completo para npm na raiz do repositório e um app Expo. O `init`
+  preenche o template para o seu projeto e mantém os comentários dele.
+- Os jobs usam o gerenciador de pacotes do projeto e a versão do Node em
+  `.nvmrc` ou `.node-version` (24 sem nenhum dos dois). O GitHub lê o
+  arquivo, então usa a versão exata. O GitLab roda o job web na imagem `node`
+  da versão major do arquivo: `node:22` para `22.22.3`. As actions do GitHub
+  são fixadas por commit.
+- O `init` indica o segredo ou a variável a adicionar, como
+  `AI_GATEWAY_API_KEY`, com o comando `gh` ou `glab` que faz isso.
+- Para um projeto em uma subpasta, o arquivo vai para a raiz do repositório e
+  os jobs rodam na subpasta.
+- Quando a configuração serve um build de produção do Next.js (o
+  `app.command` dela roda o script `start`), o job web roda o script `build`
+  antes do `e2e run`.
+- O `init` avisa quando a configuração não tem `app.command`, já que nada
+  mais inicia o app no runner. Ele também avisa sobre um gateway de
+  assinatura, cujo login fica na sua máquina, e sobre um `baseURL` compatível
+  com a OpenAI na sua máquina: com qualquer um dos dois, os passos do agente
+  falham na CI.
+- Um arquivo de pipeline existente fica inalterado. Ao lado de um
+  `.gitlab-ci.yml` existente, o `init` escreve `.gitlab/e2e.gitlab-ci.yml` e
+  imprime as linhas `include:` a adicionar. Os jobs rodam no stage `test`, e
+  o `init` avisa quando os seus `stages:` deixam esse stage de fora. Ao lado
+  de um job com o mesmo nome de um desses jobs (`e2e-web`, `e2e-ios`,
+  `e2e-android`), cada job do e2e ganha `-run` no nome.
+- O `init` nunca escreve através de uma pasta `.github` ou `.gitlab` que seja
+  um link simbólico. Ele avisa e não escreve nada.
+- Um workflow ou `.gitlab-ci.yml` que já roda `e2e run` não recebe nada, nem
+  um projeto sem a engine web ou mobile.
+
+<a id="starting-from-an-example" />
+##### Começar a partir de um exemplo
+
+`--example` copia um dos
+[apps de exemplo](https://github.com/e2e-inc/e2e/tree/main/examples) para um
+diretório novo ou vazio e depois roda o assistente no projeto e2e do exemplo.
+Esse projeto é o próprio diretório para um app web ou Expo, e a pasta `e2e/`
+do diretório para um app nativo. Sem um nome, lista os exemplos para você
+escolher.
+
+<CodeGroup>
+```bash npm
+npx e2e init my-app --example with-expo
+```
+
+```bash pnpm
+pnpm dlx e2e init my-app --example with-expo
+```
+
+```bash bun
+bunx e2e init my-app --example with-expo
+```
+</CodeGroup>
+
+- A CLI baixa o exemplo do GitHub, da tag `e2e@<version>` da CLI que está
+  rodando. Quando essa tag não existe, a CLI usa `main` e avisa.
+- Um diretório que contém só `.git`, `.DS_Store` ou `Thumbs.db` conta como
+  vazio.
+- A configuração, os testes e os scripts do exemplo ficam como estão. O
+  assistente pergunta só sobre a skill, o servidor MCP e a instalação, e
+  adiciona as entradas que faltam no `.gitignore` e a linha da skill no
+  `AGENTS.md` e no `CLAUDE.md`. Em um app nativo, esses arquivos ficam em
+  `e2e/`, então abra seu agente de código ali.
+- O `package.json` do projeto e2e recebe o nome do diretório (com `-e2e` ao
+  lado de um app nativo). `e2e`, `@e2e-dev/web` e `@e2e-dev/mobile` recebem
+  os intervalos que o `init` escreve para um projeto novo.
+- A linha final `Next:` indica o script de teste do exemplo. Um app nativo
+  precisa de um build antes; o `README.md` do app diz como.
+
+##### Rodar o init de novo
+
+- Uma configuração existente e os arquivos de teste existentes ficam
+  inalterados, byte a byte. As respostas sobre engine e gateway valem só para
+  uma configuração nova. Nenhum teste de exemplo é escrito ao lado de uma
+  configuração existente, então um teste de exemplo que você apagou continua
+  apagado.
+- O `package.json` e o `.gitignore` ainda recebem o que falta neles: a
+  dependência de desenvolvimento `e2e`, o script `test:e2e` e as entradas de
+  ignore. Dependências, scripts e entradas existentes ficam como estão.
+- O `init` lê os imports da configuração existente e adiciona os pacotes que
+  faltam no `package.json`, nos intervalos que um projeto novo recebe:
+  `@e2e-dev/web` e `@e2e-dev/mobile` com `@e2e-dev/core`, `ai` com `zod`, e
+  os pacotes de provedor de um gateway que o `init` oferece. Qualquer outro
+  pacote que a configuração importa fica por sua conta, incluindo `zod`
+  sozinho. Um import que o `tsconfig.json` mapeia para um arquivo do projeto
+  por `paths` ou `baseUrl` não é um pacote.
+- Esses intervalos pertencem ao `e2e` que roda o `init`. Quando o
+  `package.json` declara outro `e2e`, como uma versão fixada mais antiga
+  quando você roda `npx e2e@latest init`, o `init` indica os pacotes que
+  faltam e não adiciona nenhum. Instale as dependências e rode o próprio
+  `e2e init` do projeto, ou adicione os pacotes em versões compatíveis com o
+  seu `e2e`. Uma versão exata e um intervalo `^` ou `~` são comparados com a
+  versão que está rodando; qualquer outra especificação, como `workspace:*`,
+  com o `e2e` em `node_modules`.
+- Uma configuração que não pode ser analisada gera um aviso, e os pacotes
+  dela não são verificados.
+- O registro do MCP mantém as configurações extras do servidor e2e, como
+  variáveis de ambiente e tempos limite do cliente, mesmo quando corrige o
+  comando de inicialização. Um registro que já está em dia fica inalterado, byte
+  a byte.
+- Depois que um diretório de skill existe, as execuções seguintes atualizam
+  as cópias que diferem da versão instalada. Elas nunca adicionam um
+  diretório que o projeto não escolheu. `--skills` e `--mcp` indicam os
+  locais exatos em vez disso e deixam os outros como estão.
+- Uma cópia em `.claude/skills/e2e/` de uma versão anterior vira o link
+  simbólico quando contém só os arquivos distribuídos. Uma cópia com outros
+  arquivos continua sendo uma cópia e é atualizada.
+- O `init` nunca escreve através de um diretório de skill que é um link
+  simbólico para outro lugar ou que fica dentro de um. `--yes` pula esse
+  diretório com um aviso que cita o link e para onde ele aponta. Uma
+  execução interativa se oferece para substituir o diretório por uma cópia,
+  ou pelo link no lugar para onde o link aponta.
+- O `AGENTS.md` e o `CLAUDE.md` ficam como estão quando já citam um arquivo
+  de skill instalado. O mesmo vale para um `CLAUDE.md` que é um link
+  simbólico para um `AGENTS.md` com a linha, ou que importa esse arquivo em
+  uma linha própria com `@AGENTS.md`, fora de um bloco de código. Quando o
+  `init` não consegue escrever o `AGENTS.md`, esse `CLAUDE.md` recebe a
+  própria linha. Um arquivo UTF-16 que começa com uma marca de ordem de bytes
+  recebe a linha em UTF-16. O `init` nunca escreve através de um arquivo de
+  instruções que é um link simbólico: um link cujo destino não tem a linha
+  é pulado com um aviso que cita o link e para onde ele aponta. Um diretório
+  no lugar do arquivo, ou um arquivo que o `init` não consegue ler ou
+  escrever, também é pulado com um aviso.
+- Uma cópia com um diretório onde deveria haver um arquivo, ou um arquivo
+  onde deveria haver um diretório, é pulada com um aviso que cita a entrada.
+  O `init` não remove nada para corrigir a cópia.
+- Um arquivo de configuração do MCP alcançado por um link simbólico, ou
+  dentro de um diretório que é um link, é pulado com o mesmo aviso e fica
+  inalterado, então o servidor não é registrado ali. Uma configuração comum
+  é mesclada como de costume.
+
+#### `e2e login`
+
+Faz login em uma assinatura e salva as credenciais em
+`$XDG_CONFIG_HOME/e2e/oauth.json`, por padrão `~/.config/e2e/oauth.json`. Veja
+[Assinaturas](/subscriptions) para a configuração do modelo.
+
+<CodeGroup>
+```bash npm
+npx e2e login openai              # ChatGPT, browser sign-in
+npx e2e login openai --device     # sign in with a device code
+npx e2e login github-copilot --from-gh  # use your GitHub CLI login
+npx e2e login github-copilot --client-id <id> [--enterprise-url <host>]
+npx e2e login opencode-console    # OpenCode Console, device code
+npx e2e login spacexsi            # SuperGrok, device code
+npx e2e login                     # choose a provider
+```
+
+```bash pnpm
+pnpm exec e2e login openai              # ChatGPT, browser sign-in
+pnpm exec e2e login openai --device     # sign in with a device code
+pnpm exec e2e login github-copilot --from-gh  # use your GitHub CLI login
+pnpm exec e2e login github-copilot --client-id <id> [--enterprise-url <host>]
+pnpm exec e2e login opencode-console    # OpenCode Console, device code
+pnpm exec e2e login spacexsi            # SuperGrok, device code
+pnpm exec e2e login                     # choose a provider
+```
+
+```bash bun
+bunx e2e login openai              # ChatGPT, browser sign-in
+bunx e2e login openai --device     # sign in with a device code
+bunx e2e login github-copilot --from-gh  # use your GitHub CLI login
+bunx e2e login github-copilot --client-id <id> [--enterprise-url <host>]
+bunx e2e login opencode-console    # OpenCode Console, device code
+bunx e2e login spacexsi            # SuperGrok, device code
+bunx e2e login                     # choose a provider
+```
+</CodeGroup>
+
+| Opção | Descrição |
+| --- | --- |
+| `[provider]` | A assinatura: `openai`, `github-copilot`, `opencode-console` ou `spacexsi`. `spacexai` e `grok` são aliases de `spacexsi`, aqui e em `logout` e `models`. Padrão: um menu de seleção. |
+| `--device` | ChatGPT: mostra um código para digitar em outro dispositivo em vez de abrir um navegador. |
+| `--from-gh` | GitHub Copilot: reutiliza o token do GitHub CLI autenticado. |
+| `--client-id <id>` | GitHub Copilot: o client id do seu GitHub OAuth App, com o device flow ativado. |
+| `--enterprise-url <host>` | GitHub Copilot: o host do GitHub Enterprise. |
+
+| Código de saída | Quando |
+| --- | --- |
+| 1 | O login falhou. |
+| 2 | Um provedor desconhecido. |
+| 130 | O login foi cancelado. |
+
+#### `e2e logout`
+
+Remove o login salvo de um provedor.
+
+<CodeGroup>
+```bash npm
+npx e2e logout           # pick one of the stored logins
+npx e2e logout openai    # forget one
+```
+
+```bash pnpm
+pnpm exec e2e logout           # pick one of the stored logins
+pnpm exec e2e logout openai    # forget one
+```
+
+```bash bun
+bunx e2e logout           # pick one of the stored logins
+bunx e2e logout openai    # forget one
+```
+</CodeGroup>
+
+| Opção | Descrição |
+| --- | --- |
+| `[provider]` | O login a remover: `openai`, `github-copilot`, `opencode-console` ou `spacexsi`. Padrão: um menu de seleção com os logins salvos. |
+
+#### `e2e models`
+
+Pergunta ao fornecedor quais modelos o login salvo disponibiliza e imprime uma
+linha por modelo. No OpenCode Console, ele pergunta com `OPENCODE_API_KEY`
+quando essa variável está definida.
+
+<CodeGroup>
+```bash npm
+npx e2e models           # every stored login
+npx e2e models openai    # one provider
+```
+
+```bash pnpm
+pnpm exec e2e models           # every stored login
+pnpm exec e2e models openai    # one provider
+```
+
+```bash bun
+bunx e2e models           # every stored login
+bunx e2e models openai    # one provider
+```
+</CodeGroup>
+
+| Opção | Descrição |
+| --- | --- |
+| `[provider]` | `openai`, `github-copilot`, `opencode-console` ou `spacexsi`. Padrão: todos os logins salvos, mais o OpenCode Console quando só `OPENCODE_API_KEY` está definida. |
+
+Cada linha contém:
+
+- o id que `chatgpt()`, `copilot()`, `opencodeConsole()` ou `grok()` recebe;
+- o nome que o fornecedor dá ao modelo;
+- as observações sobre o modelo: níveis de raciocínio, visão, preview,
+  oculto; no Copilot, `not enabled` ou `no chat or responses` quando
+  `copilot()` não consegue chamar o modelo; no OpenCode Console, o plano que
+  disponibiliza o modelo, Zen ou Go.
+
+Só uma chamada descobre se uma conta do Copilot pode usar um modelo listado.
+
+| Código de saída | Quando |
+| --- | --- |
+| 1 | Nenhuma credencial, ou nenhuma para o provedor indicado. A mensagem indica o comando de login. |
+| 1 | A listagem de um de vários logins falhou. Os demais ainda são impressos. |
+| 2 | Um provedor desconhecido. |
+
+Veja [Escolha um modelo](/subscriptions#pick-a-model).
+
+#### `e2e guide`
+
+Imprime a skill que o `init` instala; `npx skills add e2e-inc/e2e`
+instala a mesma skill. Veja [Agentes de código](/coding-agents).
+
+<CodeGroup>
+```bash npm
+npx e2e guide            # the overview
+npx e2e guide setup      # one topic
+```
+
+```bash pnpm
+pnpm exec e2e guide            # the overview
+pnpm exec e2e guide setup      # one topic
+```
+
+```bash bun
+bunx e2e guide            # the overview
+bunx e2e guide setup      # one topic
+```
+</CodeGroup>
+
+| Opção | Descrição |
+| --- | --- |
+| `[topic]` | Um destes: `setup`, `writing-tests`, `agent`, `running`, `explore`, `debugging`, `mcp` ou `bug-bash`. Padrão: a visão geral. Um tópico desconhecido sai com código 2 e lista os válidos. |
+
+O guia vai para o stdout, e uma linha com a versão dele vai para o stderr.
+Essa versão acompanha o projeto, já que o `npx e2e guide` baixa a release
+mais recente quando nada está instalado, e uma instalação global tem a
+própria versão:
+
+| O projeto | `guide` imprime |
+| --- | --- |
+| tem instalada uma versão do e2e diferente da versão da CLI que roda | o guia e os tópicos da versão instalada |
+| tem instalada uma versão anterior ao lançamento do guia | o guia da CLI, e avisa que a versão instalada não traz nenhum |
+| declara uma versão ou um intervalo que deixa a CLI de fora, sem nada instalado | o guia da CLI, e os comandos que imprimem o guia do projeto |
+| tem instalada uma versão que o intervalo do próprio `package.json` deixa de fora | o guia da CLI quando o intervalo inclui a CLI, senão o da versão instalada, e pede que você reinstale |
+
+Um intervalo é lido do jeito que o npm lê. Uma dist-tag, um link de workspace
+ou um alias não indica nenhuma versão, então a linha não acrescenta nada.
+Com um intervalo, instale primeiro: o lockfile escolhe a release, e
+`npx "e2e@^0.23.0" guide` imprime a mais recente do intervalo.
+
+```text
+Guide for e2e 0.24.0, but package.json declares e2e 0.23.0 and no installed copy was found. For the matching guide, run `npm install` and then `npm exec -- e2e guide`, or run `npx e2e@0.23.0 guide`.
+```
+
+#### `e2e mcp`
+
+Um servidor MCP por stdio que dá a um agente de código uma sessão ao vivo no
+app.
+
+<CodeGroup>
+```bash npm
+npx e2e mcp [--config <path>] [--target <name>] [--headed] [--max-sessions <n>]
+```
+
+```bash pnpm
+pnpm exec e2e mcp [--config <path>] [--target <name>] [--headed] [--max-sessions <n>]
+```
+
+```bash bun
+bunx e2e mcp [--config <path>] [--target <name>] [--headed] [--max-sessions <n>]
+```
+</CodeGroup>
+
+| Opção | Descrição |
+| --- | --- |
+| `--config <path>` | A configuração que toda sessão carrega, a menos que `open_session` indique uma. Padrão: o `e2e.config.ts`, `.mts`, `.js` ou `.mjs` mais próximo. |
+| `--target <name>` | O alvo em que toda sessão abre. Padrão: o único alvo, ou o que `open_session` indicar. |
+| `--headed` | Mostra a UI nas sessões cujo `open_session` não define `headed`, quando a engine suporta isso. |
+| `--max-sessions <n>` | Sessões abertas ao mesmo tempo, cada uma com o próprio navegador ou dispositivo, de 1 a 16. Padrão: 4. No [Bun](#bun), 1. |
+
+A página do [servidor MCP](/reference/mcp) cobre essas opções em detalhes,
+além das ferramentas e das regras de sessão.
+
+#### `e2e run`
+
+Roda os testes que a configuração descobre e escreve `report.json` no
+[diretório de saída](/reference/config#output).
+
+<CodeGroup>
+```bash npm
+npx e2e run
+npx e2e run tests/signup.e2e.ts --tag smoke
+npx e2e run tests/signup.e2e.ts:12
+npx e2e run tests/agent
+npx e2e run 'tests/**/*.smoke.e2e.ts'
+npx e2e run --target web,webkit --tag smoke,billing --tag-mode all
+npx e2e run --tag smoke --exclude-tag slow
+npx e2e run --grep checkout --grep-invert '/refund/i'
+npx e2e run --last-failed
+npx e2e run --changed-since origin/main
+npx e2e run --shard 2/3
+npx e2e run --reporter json --workers 4 --retries 2
+npx e2e run --max-failures 3
+npx e2e run --repeat-each 5 --no-cache tests/checkout.e2e.ts
+npx e2e run --reporter list,junit
+```
+
+```bash pnpm
+pnpm exec e2e run
+pnpm exec e2e run tests/signup.e2e.ts --tag smoke
+pnpm exec e2e run tests/signup.e2e.ts:12
+pnpm exec e2e run tests/agent
+pnpm exec e2e run 'tests/**/*.smoke.e2e.ts'
+pnpm exec e2e run --target web,webkit --tag smoke,billing --tag-mode all
+pnpm exec e2e run --tag smoke --exclude-tag slow
+pnpm exec e2e run --grep checkout --grep-invert '/refund/i'
+pnpm exec e2e run --last-failed
+pnpm exec e2e run --changed-since origin/main
+pnpm exec e2e run --shard 2/3
+pnpm exec e2e run --reporter json --workers 4 --retries 2
+pnpm exec e2e run --max-failures 3
+pnpm exec e2e run --repeat-each 5 --no-cache tests/checkout.e2e.ts
+pnpm exec e2e run --reporter list,junit
+```
+
+```bash bun
+bunx e2e run
+bunx e2e run tests/signup.e2e.ts --tag smoke
+bunx e2e run tests/signup.e2e.ts:12
+bunx e2e run tests/agent
+bunx e2e run 'tests/**/*.smoke.e2e.ts'
+bunx e2e run --target web,webkit --tag smoke,billing --tag-mode all
+bunx e2e run --tag smoke --exclude-tag slow
+bunx e2e run --grep checkout --grep-invert '/refund/i'
+bunx e2e run --last-failed
+bunx e2e run --changed-since origin/main
+bunx e2e run --shard 2/3
+bunx e2e run --reporter json --workers 4 --retries 2
+bunx e2e run --max-failures 3
+bunx e2e run --repeat-each 5 --no-cache tests/checkout.e2e.ts
+bunx e2e run --reporter list,junit
+```
+</CodeGroup>
+
+<a id="positional-arguments" />
+
+##### Argumentos posicionais
+
+```bash
+e2e run [files...]
+```
+
+Arquivos de teste, diretórios ou globs relativos à raiz do projeto:
+
+| Posicional | Seleciona |
+| --- | --- |
+| Um caminho de arquivo (`tests/signup.e2e.ts`) | Esse arquivo. |
+| Um diretório (`tests/agent`, `.`) | Todo arquivo de teste descoberto abaixo dele. |
+| Um nome simples (`signup.e2e.ts`, `agent/signup.e2e.ts`, `signup`) | Todo arquivo descoberto cujo caminho termina com ele em um limite de segmento; os dois primeiros selecionam `tests/agent/signup.e2e.ts`. Sem `/` nem `.`, ele corresponde ao nome do arquivo sem as extensões, então `signup` também o seleciona. |
+| Qualquer um destes com `:line` (`tests/signup.e2e.ts:12`, `signup:12`) | Só o teste declarado nessa linha de cada arquivo que ele nomeia: a linha em que a chamada `test(` abre, como um editor ou o `source` de um relatório a mostra. |
+| Um glob entre aspas (`'tests/**/*.smoke.e2e.ts'`) | Todo arquivo descoberto a que ele corresponde, na gramática dos globs `tests` da configuração: `*`, `?` e um segmento `**` inteiro. |
+
+- **Linhas.** Uma linha que nomeia um membro de um grupo serial roda o grupo
+  inteiro. Várias linhas de um arquivo se somam; um arquivo indicado sem
+  linha é selecionado inteiro. Quando nenhum teste está declarado em uma
+  linha indicada, `NO_TESTS` nomeia o posicional e as linhas em que o arquivo
+  declara testes. Um posicional que existe no disco exatamente como escrito é
+  um caminho, mesmo quando termina em `:12`.
+- **Globs.** Chaves, classes de caracteres e extglobs são `INVALID_GLOB` com
+  uma dica, e não um padrão que não corresponde a nada. Não há expansão,
+  então indique um glob por alternativa. `./`, `..`, uma `/` no final e um
+  caminho absoluto dentro do projeto são resolvidos como qualquer caminho
+  posicional. Um arquivo ou diretório existente é selecionado pelo caminho,
+  sejam quais forem os caracteres do nome dele.
+- Os posicionais restringem os globs da configuração e os filtros de tag,
+  plataforma e capacidade; nunca os contornam. Nomes e globs diferenciam
+  maiúsculas de minúsculas em todo sistema operacional. Um caminho fora da
+  raiz do projeto é `COLLECTION_ERROR`.
+- O runner importa todo arquivo de teste descoberto, mesmo quando você
+  seleciona só alguns, para que um teste selecionado encontre a preparação da
+  sessão dele em outro arquivo. Os outros testes comuns continuam fora da
+  seleção. Um erro de coleta faz a execução falhar quando está em um arquivo
+  selecionado, ou em qualquer arquivo de uma execução sem posicionais. Um
+  arquivo que os posicionais deixaram de fora e que falha ao importar ou ao
+  registrar os testes é pulado com um aviso. Assim, um arquivo escrito pela
+  metade em outro lugar não interrompe
+  `npx e2e run tests/login.e2e.ts`. Se a sessão de um teste selecionado ficar
+  sem teste de preparação, o erro nomeia esse arquivo como o lugar onde a
+  preparação pode estar.
+- Um posicional que começa com `-` e não nomeia nenhum arquivo é um erro de
+  uso, código de saída 2. `pnpm test:e2e -- --headed` causa isso: o `--`
+  chega ao e2e, que de outro modo tomaria `--headed` por um arquivo. A
+  mensagem indica a forma direta, `pnpm exec e2e run --headed`. Para o npm,
+  ela é `npm exec -- e2e run --headed`; o npm precisa do separador antes do
+  binário para repassar as flags.
+- Quando não sobra nada para rodar, `NO_TESTS` nomeia a causa: nenhum
+  arquivo correspondeu aos globs (com nomes parecidos, como
+  `tests/login.test.ts`), um posicional não correspondeu a nada (com o
+  caminho mais próximo), um arquivo correspondente não registrou testes, ou
+  todos os testes foram filtrados.
+
+<a id="flags" />
+
+##### Flags
+
+**Seleção**
+
+| Opção | Descrição |
+| --- | --- |
+| `--config <path>` | Caminho explícito da configuração. Padrão: o `e2e.config.ts`, `.mts`, `.js` ou `.mjs` mais próximo (veja [Carregamento](/reference/config#loading)). Um arquivo ausente é `CONFIG_NOT_FOUND`. |
+| `--target <ids>` | Alvos por nome, separados por vírgula ou repetidos. Padrão: todo alvo configurado. Só os comandos de app dos alvos selecionados iniciam. Um ID desconhecido é `UNKNOWN_TARGET`. |
+| `--tag <tags>` | Só os testes com as tags, separadas por vírgula ou repetidas: qualquer uma delas, ou todas com `--tag-mode all`. |
+| `--tag-mode <mode>` | Como várias tags se combinam: `any` ou `all`. Padrão: `any`. |
+| `--exclude-tag <tags>` | Deixa de fora os testes com qualquer uma das tags, separadas por vírgula ou repetidas, seja o que for que `--tag` ou um posicional tenha selecionado. Um grupo serial ainda roda inteiro quando algum membro é selecionado; coloque a tag no `describe` serial para excluir o fluxo. |
+| `--grep <pattern>` | Só os testes cujo título corresponde a uma das expressões regulares; repetível. O título é formado pelos títulos de describe e pelo título do teste, unidos por um espaço (`checkout pays`), sem o arquivo nem as tags. Um padrão simples diferencia maiúsculas de minúsculas; `'/pattern/i'` adiciona flags. Um padrão que não compila é um erro de uso, código de saída 2. |
+| `--grep-invert <pattern>` | Deixa de fora os testes cujo título corresponde a uma das expressões regulares; repetível, com o texto e as formas de `--grep`. Com as duas, a execução mantém o que corresponde a `--grep`, menos o que corresponde a `--grep-invert`. |
+| `--changed-since <ref>` | Roda os [filtros de testes](/filters) configurados sobre a mudança desde a ref: todo arquivo que difere da base de merge entre a ref e `HEAD`, incluindo arquivos sem commit e não rastreados. Cada alvo começa pelos arquivos dos testes que os filtros pontuam como mais prováveis. Sem ela, nenhum filtro roda. Sem filtros configurados, um aviso diz que todos os testes rodam. |
+| `--last-failed` | Só os testes que não passaram na execução anterior; a lista depois destas tabelas diz quais. |
+| `--shard <index/total>` | Roda uma fatia contínua dos testes selecionados, como `2/3`, cortada depois de aplicadas todas as outras flags. As fatias diferem em no máximo um teste. Um grupo serial conta como um e nunca é dividido. Cada shard traz só os testes de preparação de que os próprios testes precisam. Testes pulados não entram no corte: quem informa um deles é o shard que roda o teste mais próximo antes dele, ou então o primeiro shard, de modo que só um shard o informa. Todo shard roda o mesmo comando com um índice diferente. A ordem é a do relatório, então uma suíte é dividida em shards do mesmo jeito em toda máquina. Um shard sem nenhum teste é `NO_TESTS`, a menos que haja `--pass-with-no-tests`. O relatório registra o shard como `run.shard` e marca cada teste que o corte dá a outro shard com `skip.otherShard`. Com `--last-failed`, o corte fatia os testes que não passaram na última execução. Veja [Sharding](/ci#sharding). |
+| `--pass-with-no-tests` | Sai com código 0 em vez de `NO_TESTS` quando nada é selecionado. Uma execução sem nada para rodar não prepara nenhuma engine e não inicia nenhum comando de app ou de serviço. |
+
+**Execução**
+
+| Opção | Descrição |
+| --- | --- |
+| `--headed` | UI visível quando a engine oferece suporte. |
+| `--device <name>` | O simulador, emulador ou telefone em que o alvo mobile selecionado roda nesta execução, no lugar da opção `device` dele: um nome de dispositivo, um UDID de simulador ou um serial de emulador (`emulator-5554`). Ela vale para o único alvo selecionado que aceita um dispositivo; os outros alvos selecionados (`web()`, ou um alvo cujos dispositivos um provedor reserva) continuam rodando como configurados. Com vários alvos selecionados que aceitam um dispositivo, escolha um com `--target`, ou a execução falha com `TARGET_REQUIRED`. Quando nenhum aceita, é `UNSUPPORTED_CAPABILITY`. `e2e login --device` é outra flag. |
+| `--agent <names>` | Roda os testes sem agente fixado uma vez por agente selecionado, separados por vírgula ou repetidos. Padrão: `default`. Para um teste com `{ agent }`, seleciona os nomes em comum quando eles se sobrepõem, senão mantém os do próprio teste. Um nome desconhecido é `INVALID_CONFIG`. |
+| `--retries <n>` | Substitui `config.retries`; um inteiro de 0 a 10. Padrão: a configuração. |
+| `--workers <n>` | Substitui `config.workers`; um inteiro de 1 a 1024. Padrão: a configuração. |
+| `--fully-parallel` | Roda os testes de um arquivo em paralelo em todo alvo, prevalecendo sobre [`fullyParallel`](/reference/config#fullyparallel) na configuração e em um alvo. |
+| `--action-timeout <ms>` | Substitui [`actionTimeout`](/reference/config#actiontimeout) nesta execução; um inteiro de 1 a 2147483647, e qualquer outro valor é um erro de uso, código de saída 2. Padrão: a configuração, senão `30000`. O `timeout` da própria chamada ainda prevalece. Enquanto você escreve um teste, um valor baixo como `5000` faz um localizador errado falhar com `LOCATOR_NOT_FOUND` depois de 5 s em vez de 30 s. |
+| `--assertion-timeout <ms>` | Substitui [`assertionTimeout`](/reference/config#assertiontimeout) nesta execução; um inteiro de 1 a 2147483647, e qualquer outro valor é um erro de uso, código de saída 2. Padrão: a configuração, senão `5000`. O `timeout` do próprio matcher ainda prevalece. |
+| `--max-failures <n>` | Interrompe a execução quando esse número de testes (pelo menos 1) falhou ou excedeu o tempo limite. Nada mais é despachado, e os testes que estão rodando em outros workers terminam `interrupted`. Os testes não iniciados, incluindo o resto do arquivo cujo teste atingiu o limite, são pulados com a causa `failure-limit` e o motivo `run stopped after 3 failures (--max-failures 3)`. Sai com código 1, o código das próprias falhas, não com 130. |
+| `--max-duration <ms>` | Substitui [`maxDuration`](/reference/config#maxduration) em uma execução; um inteiro de 1 a 2147483647. Padrão: a configuração. Sai com código 1, não com 130. |
+| `--repeat-each <n>` | Roda cada teste selecionado esse número de vezes, pelo menos 1. Padrão: `1`. Cada rodada é um resultado próprio, com `repeat` de 0 a `n - 1` e um `id` próprio. O reporter list dá às rodadas seguintes os títulos `(repeat #1)`, `(repeat #2)` e coloca os artefatos delas em um diretório `repeat-<n>`. Os testes de preparação rodam uma vez. Com o cache de replay ligado, a primeira rodada grava e as demais reproduzem; adicione `--no-cache` para chamar o modelo a cada vez. O resumo do `list` ganha uma linha `Repeats` (`1 of 2 tests passed all 5 runs`) e uma linha por teste que não passou em todas as rodadas, nomeando as rodadas que falharam. A página `markdown` traz a mesma contagem. |
+| `--no-cache` | Desliga o cache de replay nesta execução, seja o que for que `config.cache` diga. |
+| `--strict-cache` | Liga `cache.strict` nesta execução. Um passo cuja gravação existe, mas não é mais reproduzida, falha com `REPLAY_STALE` em vez de deixar o agente assumir. As novas tentativas também reproduzem, e a execução nunca escreve no cache. Veja [Falhe quando uma gravação estiver desatualizada](/cache#fail-on-a-stale-recording). |
+| `-u`, `--update-snapshots` | Escreve cada captura de tela armazenada que [`toHaveScreenshot`](/reference/expect#screenshot-matchers) encontra ausente ou diferente, e faz o matcher passar. Sem a flag, uma captura ausente é escrita e falha; na CI, ela só é anexada aos resultados. |
+| `-w`, `--watch` | Roda e depois roda de novo quando um arquivo de teste ou a configuração muda, ou quando você aperta uma tecla. Veja [Modo watch](#watch-mode). |
+| `--step` | Roda o primeiro passo e depois pausa antes de cada passo seguinte até você apertar uma tecla no prompt dele: Enter o roda, `s` mostra a tela, `l` o log do app, `n` roda o resto do teste, `a` o resto da execução, `h` lista as teclas, `q` encerra com o código de saída 130. O tempo em pausa não conta para nenhum tempo limite. Sem um terminal, a execução continua em segundo plano e cada comando retorna no próximo passo pausado, com a tela dele: `--step next` roda o passo, `--step rest` roda o resto, `--step stop` encerra a execução. `--step next`, `rest` e `stop` também retomam ou encerram um teste em um [`screen.pause()`](/debugging#pause-a-test). Roda um worker; é recusada na CI, com `--watch` e com `--workers` acima de 1 (código de saída 2); com o reporter json, precisa de um terminal. Veja [Avance um teste passo a passo](/debugging#step-through-a-test) e [sem um terminal](/debugging#step-through-a-test-without-a-terminal). |
+
+**Saída**
+
+| Opção | Descrição |
+| --- | --- |
+| `--reporter <ids>` | Substitui os reporters embutidos em `config.reporters`, separados por vírgula: `list`, `dot`, `line`, `json`, `junit`, `markdown`, `ctrf`. Padrão: a configuração. Um reporter embutido definido na configuração, como `junit({ outputFile })`, mantém as opções dele. Junto com `json`, os reporters `list`, `dot` e `line` imprimem no stderr. Dois de `list`, `dot` e `line` juntos são `INVALID_CONFIG`. [Outros reporters](/reference/reporters) na configuração continuam rodando. |
+| `--output <dir>` | O diretório de resultados desta execução, prevalecendo sobre a opção [`output`](/reference/config#output) da configuração: o relatório, os arquivos dos reporters, o trace de IA, `results/` e `sessions/`. Padrão: a configuração, senão `.e2e`. É resolvido a partir da raiz do projeto e precisa ser um diretório dentro dela, não a própria raiz; a raiz e os outros diretórios que a execução não pode ocupar (listados lá) são `INVALID_CONFIG`. `results/` é limpo assim que os testes começam; uma reexecução com `--last-failed` mantém o que o relatório anterior nomeia. |
+| `--cache-dir <dir>` | O diretório do cache de replay desta execução, prevalecendo sobre [`E2E_CACHE_DIR`](/reference/environment#replay-cache) e [`cache.dir`](/reference/config#cache). Padrão: `E2E_CACHE_DIR`, senão `cache.dir`, senão `.e2e/cache`. É resolvido a partir da raiz do projeto; `~` ou um `~/` no início é o diretório home. O modo do cache continua como configurado. Com um `cache.store` personalizado, é `INVALID_CONFIG`. |
+| `--timings <file>` | O [histórico de tempos](/ci#cache-the-timings-history) a atualizar quando a execução termina, no lugar de `<output>/timings.json`. Com mais de um worker, os arquivos sem tempo registrado começam primeiro, depois os demais, dos mais longos para os mais curtos. É resolvido a partir da raiz do projeto. Um arquivo ausente ou inválido conta como sem histórico, nunca como erro. |
+| `--debug` | Tempos por fase e uma tabela de passos do agente no stderr depois da execução; veja [Saída de depuração](#debug-output). |
+| `--ai-trace` | Registra toda chamada ao modelo em `<output>/ai-trace.json`; veja [Saída](#output). |
+| `--trace [mode]` | Quais testes mantêm uma página de trace (`<output>/results/<test>/trace.md`): `off`, `on`, `retain-on-failure`, `on-first-retry` ou `on-all-retries`. Padrão: a configuração. `--trace off` não escreve nenhuma página para um teste sem `trace` próprio. Veja [trace](/reference/config#trace). |
+| `--video [mode]` | Quais tentativas gravam um vídeo (WebM em uma engine de navegador, MP4 em uma engine de dispositivo), com os modos de `--trace`. Padrão: a configuração. Só os alvos cuja engine consegue gravar ganham um vídeo; a execução nomeia os outros em um único aviso. Veja [video](/reference/config#video). |
+
+`--trace` e `--video` prevalecem sobre o valor da configuração e de cada
+alvo; o `trace` ou o `video` do próprio teste ainda prevalece. Uma flag sem
+valor é `on`: `--trace` sozinha mantém uma página para cada teste. O valor é
+opcional e guloso: `--trace tests/a.e2e.ts` lê o arquivo como um modo e
+falha. Escreva `--trace=<mode>` ou coloque os arquivos de teste antes da
+flag.
+
+A flag removida `--artifacts <dir>` falha e indica o `--output`
+correspondente: `--artifacts out/artifacts` é `--output out`, e um diretório
+cujo pai é a raiz do projeto ou fica fora dela corresponde a `--output .e2e`.
+
+`--last-failed` seleciona os testes que não passaram na execução anterior.
+Ela os lê do `report.json` que esta execução sobrescreve,
+`<output>/report.json` (`--output`, senão a opção
+[`output`](/reference/config#output) da configuração):
+
+- Testes que falharam, excederam o tempo limite ou foram interrompidos.
+- Testes pulados porque uma preparação, um predecessor serial, um hook ou o
+  worker falhou, ou porque `--max-failures` ou `--max-duration` interrompeu
+  a execução antes.
+- Todo teste selecionado no describe ou no arquivo de um `beforeAll` ou
+  `afterAll` que falhou, naquele alvo; para uma preparação, os testes que
+  consomem a sessão dela. Uma reexecução que roda o hook de novo volta a
+  informá-lo se ele ainda falhar. Uma reexecução que roda qualquer teste do
+  escopo do hook sem que ele falhe resolve a falha.
+- Um teste que outro filtro (`--grep`, `--tag`, `--target`, `--agent`, um
+  posicional) deixa de fora da reexecução continua pendente. O relatório da
+  reexecução traz o último resultado desse teste, e a falha de hook em cujo
+  escopo ele está, em `run.carried`. O próximo `--last-failed` o seleciona de
+  novo, e a página do [`@e2e-dev/github`](/github) fica vermelha até ele
+  passar (⏹️ para um teste que a execução anterior interrompeu). O código de
+  saída e o resumo da própria reexecução contam só o que ela rodou.
+- A reexecução mantém os artefatos que as execuções anteriores nomeiam e
+  escreve os seus em `rerun-<n>/` de cada teste, então nenhuma tentativa
+  sobrescreve os arquivos de uma tentativa anterior.
+- Ao lado do relatório, a reexecução escreve `report-with-reruns.json`: a
+  primeira execução e todas as reexecuções desde então como um único documento
+  report-1, com o mesmo id de execução de `report.json`. Ele mantém os testes
+  que passaram na primeira execução e as tentativas de cada teste ao longo das
+  execuções, então um teste que falhou e depois passou é `flaky`. Se um teste
+  passa a ser membro de um grupo serial, uma falha anterior, de quando ele
+  rodava isolado, ainda torna `flaky` um sucesso posterior. O histórico omite
+  essa tentativa isolada. O histórico descarta os testes que a coleta confirma
+  terem sido removidos. Se uma reexecução de uma execução dividida em shards
+  chega a um teste atribuído a outro shard e o teste falha, o histórico mostra
+  um erro de execução e mantém o teste fora dos totais do shard. Uma execução
+  sem `--last-failed` remove o arquivo de histórico.
+- Um teste é identificado por alvo e agente.
+- Sem relatório, é `NO_LAST_RUN`. Quando nada falhou na execução anterior, a
+  flag não seleciona nada: `NO_TESTS`, a menos que haja `--pass-with-no-tests`.
+
+`--retries` e `--workers` fora do intervalo falham com `INVALID_CONFIG` antes
+de qualquer coisa iniciar, como falharia o valor da configuração. `--target`,
+`--tag`, `--exclude-tag` e `--agent` consideram cada nome uma só vez. Um
+valor vazio (`--tag ''`, ou `--tag "$TAGS"` com a variável não definida) é um
+erro de uso, código de saída 2, nunca uma seleção mais ampla. Um `--reporter`
+vazio é o mesmo erro de uso, nunca uma execução sem reporters.
+
+Os filtros só restringem, e cada um se aplica depois do anterior:
+posicionais, depois `.only`, `--tag`, `--exclude-tag`, `--grep`,
+`--grep-invert`, `--last-failed`, depois as regras de plataforma e de
+capacidade, depois `--shard`. Quando eles não deixam nada para rodar,
+`NO_TESTS` conta os testes que cada filtro removeu e nomeia as tags e os
+padrões. Ele marca cada tag que nenhum teste declara e nomeia a tag declarada
+mais próxima. Com `--changed-since`, os [filtros de testes](/filters)
+configurados rodam por último.
+
+<a id="debug-output" />
+
+##### Saída de depuração
+
+`--debug` acrescenta duas tabelas ao stderr. Os tempos por fase são somados
+entre o runner e todos os workers. A tabela de passos do agente lista cada
+passo do agente na ordem de execução: a divisão por fase, as chamadas ao
+modelo, os tokens e o custo, quando o provedor informou um.
+
+```console
+$ npx e2e run --debug
+...
+[e2e debug] phase timings (wall 14.2s)
+  phase               count   total     avg     max
+  scheduler               1   11.8s   11.8s   11.8s
+  test.body               6   10.1s   1.7s    3.9s
+  session.launch          6    1.1s   183ms   410ms
+  engine.prepare          1   612ms   612ms   612ms
+  collect                 1   420ms   420ms   420ms
+  config.load             1   118ms   118ms   118ms
+  realm.import            1    96ms    96ms    96ms
+  session.close           6    88ms    15ms    31ms
+  engine.init             1    74ms    74ms    74ms
+
+[e2e debug] agent steps (execution order, model openai/gpt-6-luna-fast, total $0.0312)
+  step                                   total   model  observe  action  calls  tokens in/out  cached       cost
+  act "add a todo named groceries"       3.9s    2.8s    410ms   620ms      3  9412/388       61% (5740)   $0.0198
+  assert "the list shows groceries"      1.2s    1.1s     88ms     0ms      1  3120/41        0% (0)       $0.0114
+```
+
+`cached` é a parcela dos tokens de entrada que o provedor serviu do cache de
+prompt dele, `-` quando ele não informa a divisão. O relatório registra o
+mesmo por passo (`model.cacheReadTokens`, `model.cacheWriteTokens`) e por
+execução (`usage.modelCachedTokens`).
+
+<a id="output" />
+
+##### Saída
+
+| Reporter | Escreve |
+| --- | --- |
+| `list` | Progresso no terminal, falhas com trechos de código e um resumo da execução. Em um TTY, o progresso ao vivo mostra o passo atual do agente, os turnos do modelo, as chamadas de ferramenta e trechos do raciocínio; quando o stdout não é um terminal (com pipe, redirecionada, na maioria das CIs), cada teste é impresso ao terminar. A saída termina com o arquivo e a linha de cada teste que falhou, a primeira linha do erro e a página de trace, quando uma foi escrita. Campos não confiáveis são limitados a 8 KiB e têm os caracteres de controle removidos. |
+| `dot` | Uma marca por resultado de teste selecionado, seguida dos detalhes das falhas e de um resumo da execução. Veja [`dot`](/reference/reporters#dot) para as marcas, as cores e a quebra de linha. Com `dot,json`, toda a saída do terminal vai para o stderr. |
+| `line` | Uma linha de progresso, substituída no lugar em um TTY e impressa a cada teste concluído nos outros casos. Uma falha é impressa quando acontece, e o resumo da execução vem em seguida. Veja [`line`](/reference/reporters#line). Com `line,json`, toda a saída do terminal vai para o stderr. |
+| `json` | O documento do relatório no stdout, e nada mais ali, então `e2e run --reporter json \| jq` funciona. É o documento `<output>/report.json`, descrito por `schema/report-v1.schema.json` no pacote. O formato só muda junto com o campo `schemaVersion` (`report-1` hoje). |
+| `junit` | `junit.xml` ao lado do relatório. Um `<testsuite>` por arquivo, um `<testcase>` por par teste-alvo, com o nome `title > path [target]`. Um erro da classe de teste é um `<failure>`, qualquer outro um `<error>`, e um teste pulado um `<skipped>` com o motivo. Um teste interrompido não chegou a um veredito, então é um `<skipped>` cuja mensagem começa com `interrupted:`. Um teste que um [filtro de testes](/filters) deixou de fora é um `<skipped>` cuja mensagem começa com `left out by filter <name>:`; os outros testes que a execução não selecionou não são listados. Os erros no nível da execução formam uma suíte `run`. |
+| `markdown` | `summary.md` ao lado do relatório: contagens, custo, erros e detalhes das falhas, cada um nomeando a página de trace dele quando uma foi mantida. Execuções de exploração mostram os achados. O [`@e2e-dev/github`](/github) usa esse resumo nos comentários de pull request. |
+| `ctrf` | `ctrf.json` ao lado do relatório, no [Common Test Report Format](https://ctrf.io) 0.3.0: um teste por caso de teste do `junit` fora da suíte `run`, com as tentativas anteriores, os passos e os anexos dele. Os erros no nível da execução ficam em `results.errors`, nunca contados como testes. Veja [`ctrf`](/reference/reporters#ctrf). |
+
+Toda execução que chega aos testes escreve, no
+[diretório de saída](/reference/config#output) (`.e2e` por padrão):
+
+- `report.json`, para scripts, quaisquer que sejam os reporters;
+- as páginas de trace que o modo [`trace`](/reference/config#trace) da
+  execução mantém, no diretório de cada teste em `results/`;
+- os arquivos dos reporters ao lado do relatório.
+
+Uma execução encerrada antes dos testes não escreve nenhum deles e deixa os
+arquivos da execução anterior no lugar. Isso inclui um erro de configuração
+ou de coleta, `NO_TESTS`, `NO_LAST_RUN`, `UNSUPPORTED_ARTIFACT`, um comando
+de app que falha ao iniciar e uma interrupção. Os erros dela ficam no
+terminal e no código de saída. Um `junit.xml`, `summary.md` ou `ctrf.json`
+que não pôde ser escrito é uma linha no stderr, nunca um erro da execução.
+
+Os reporters `list`, `dot` e `line` imprimem os erros da execução em
+`Run Errors`. Sem um deles, ou outro reporter
+[interativo](/reference/reporters#interactive), cada erro da execução é
+impresso no stderr como `CODE: message`, também com `json`.
+
+`run.summary` no relatório conta os resultados:
+
+- `discovered` é todo par teste-alvo que o runner coletou, e `selected`, os
+  pares que esta execução escolheu. Os pares deixados de fora estão em
+  `results` como `selected: false`, mas em nenhuma outra contagem.
+- `passed`, `failed` (incluindo os que excederam o tempo limite),
+  `interrupted`, `flaky` e `skipped` contam os resultados selecionados e
+  somam `selected`.
+- `interrupted` é um teste que a execução interrompeu antes do veredito (um
+  sinal, `--max-failures`, `--max-duration` ou um erro no nível da execução,
+  como `MODEL_UNAVAILABLE`), nunca uma falha.
+- `executed` são os resultados selecionados que rodaram pelo menos uma
+  tentativa. Um membro serial rodou uma quando alguma tentativa do grupo
+  chegou até ele: o corpo do teste começou, incluindo um corpo que chamou
+  `test.skip()` ou `test.fixme()`, ou a tentativa falhou nele, como na
+  inicialização. Um membro que um hook com falha, um predecessor com falha ou
+  a interrupção da execução impediu de começar não rodou.
+
+Com `--ai-trace`, a execução também escreve `<output>/ai-trace.json`, um
+banco de dados do devtools do AI SDK. Ele tem uma entrada por ida e volta ao
+modelo: o prompt exato, as definições de ferramentas, a resposta, o uso e os
+metadados do provedor. As observações nele já vêm com os dados sensíveis
+ocultados, e os bytes de imagens e arquivos inline viram contagens de bytes.
+Abra-o com [unbox-ai](https://github.com/e2e-inc/unbox-ai):
+`npx unbox-ai runs .e2e/ai-trace.json` lista as execuções dele. Veja
+[Depurar uma execução](/debugging#agent-steps). As chamadas ao modelo de um
+[filtro de testes](/filters) não são registradas.
+
+<a id="watch-mode" />
+
+##### Modo watch
+
+`--watch` roda a seleção, imprime o resumo e espera em vez de sair.
+
+<CodeGroup>
+```bash npm
+npx e2e run --watch
+npx e2e run --watch tests/checkout.e2e.ts --headed
+```
+
+```bash pnpm
+pnpm exec e2e run --watch
+pnpm exec e2e run --watch tests/checkout.e2e.ts --headed
+```
+
+```bash bun
+bunx e2e run --watch
+bunx e2e run --watch tests/checkout.e2e.ts --headed
+```
+</CodeGroup>
+
+- Um arquivo de teste salvo (um que os globs
+  [`tests`](/reference/config#top-level) da configuração selecionam) roda de
+  novo sozinho e inteiro, no lugar dos posicionais.
+- Um arquivo de código-fonte salvo perto dos testes (um helper ou uma
+  fixture: `.ts`, `.js` ou `.json` nos diretórios que os globs nomeiam, ou ao
+  lado da configuração) ou uma configuração salva roda a seleção de novo.
+- Os dois mantêm os outros filtros da linha de comando e os filtros `p` e
+  `t`.
+- Mudanças durante uma execução esperam por ela e rodam em seguida, juntas.
+  Durante a primeira execução, só a configuração e o diretório dela são
+  observados, já que os diretórios de teste vêm da configuração.
+- Em um terminal, a tela é limpa antes de cada reexecução, e um banner
+  indica o que a disparou.
+- Cada reexecução lê os arquivos do projeto do zero, incluindo os helpers
+  que um teste importa.
+
+Em um terminal, as teclas controlam o modo como no vitest:
+
+| Tecla | Roda |
+| --- | --- |
+| `a`, `enter` | todos os testes que a linha de comando selecionou, com os filtros `p` e `t` limpos |
+| `r` | a seleção de novo, sob os filtros `p` e `t` |
+| `f` | os testes que não passaram na última execução, lidos do relatório dela como `--last-failed` faz, onde quer que estejam; os posicionais e o filtro `p` não os restringem |
+| `u` | a seleção atual com `--update-snapshots` |
+| `p` | pede um posicional (um arquivo, um nome simples, um glob) que as próximas execuções usam para selecionar; vazio o limpa |
+| `t` | pede um padrão de título, como `--grep`; vazio o limpa |
+| `h` | mostra as teclas |
+| `q` | sai |
+
+- Durante uma execução, qualquer uma dessas teclas (e espaço ou `c`) a
+  cancela, como uma interrupção faria. Uma segunda força o cancelamento, e a
+  sessão volta a esperar.
+- Ctrl-C ou Ctrl-D interrompe a execução e encerra a sessão, também de
+  dentro de um prompt `p` ou `t`. Escape faz o mesmo fora de um prompt e,
+  dentro de um, só fecha o prompt. Ctrl-Z suspende o processo como de
+  costume.
+- Toda reexecução é uma execução completa: assim que a configuração carrega,
+  ela escreve `report.json` e os arquivos dos reporters, e inicia e encerra o
+  comando do app, a menos que não tenha nada para rodar. Para manter um
+  servidor de desenvolvimento no ar entre reexecuções, inicie-o você mesmo e
+  defina [`reuseExisting`](/reference/config#command) no comando.
+- `--last-failed` e os filtros de testes valem só para a primeira execução,
+  então uma reexecução nunca chama o modelo de um filtro; uma reexecução que
+  não seleciona nada passa vazia.
+- Ao sair, o código de saída é o da última execução que terminou.
+- Sem um terminal no stdin, só mudanças de arquivo disparam reexecuções.
+
+<Note>
+`--watch` não é para a CI: um processo que nunca sai sozinho trava o job,
+então a flag é recusada quando `CI` está definido. Ela também é recusada com
+`--reporter json` e sai com código 2 depois da primeira execução quando os
+`reporters` da configuração incluem `json`.
+</Note>
+
+##### Sinais
+
+Os sinais escalam.
+
+1. O primeiro `SIGINT` ou `SIGTERM` interrompe. O teste em andamento termina
+   `interrupted`; os hooks `afterEach` dele e o fechamento da sessão rodam
+   dentro do orçamento de limpeza, e todo worker descarta a engine dele. Os
+   testes não iniciados são pulados com a causa `infrastructure-unavailable`
+   e o motivo `run interrupted before execution`. Assim, o relatório lista
+   todos os testes planejados, e `--last-failed` roda de novo os
+   interrompidos e os não iniciados. O runner escreve o relatório e sai
+   com código 130. Uma interrupção antes de qualquer teste começar (durante a
+   coleta, o `prepare` de uma engine ou a inicialização do app) não escreve
+   relatório e deixa o anterior no lugar.
+2. Um segundo sinal força. Os workers descartam as engines na hora e são
+   encerrados à força quando o orçamento de limpeza se esgota. O relatório
+   ainda é escrito, assim como `junit.xml`, `summary.md` e `ctrf.json` quando
+   os reporters `junit`, `markdown` e `ctrf` estão ligados; o
+   `onRunFinished` de um reporter personalizado é abandonado.
+3. Um terceiro sinal sai na hora, depois de matar os grupos de processos de
+   todos os comandos de app que a execução iniciou. Um processo conectado
+   por `reuseExisting` não é tocado.
+
+Um worker cujo runner desaparece descarta a engine dele e sai dentro do
+orçamento de limpeza.
+
+#### `e2e explore`
+
+Uma execução sem arquivo de teste. O agente recebe um objetivo, planeja um
+passo de exploração por vez, relata defeitos pela ferramenta `report_finding`
+e termina com uma avaliação. Veja
+[Explorar sem um teste](/explore).
+
+<CodeGroup>
+```bash npm
+npx e2e explore
+npx e2e explore 'Explore the checkout flow like a first-time buyer and report anything off'
+npx e2e explore --target web --max-steps 4 --headed
+npx e2e explore 'Hunt for broken forms and dead links' --agent thorough --video
+```
+
+```bash pnpm
+pnpm exec e2e explore
+pnpm exec e2e explore 'Explore the checkout flow like a first-time buyer and report anything off'
+pnpm exec e2e explore --target web --max-steps 4 --headed
+pnpm exec e2e explore 'Hunt for broken forms and dead links' --agent thorough --video
+```
+
+```bash bun
+bunx e2e explore
+bunx e2e explore 'Explore the checkout flow like a first-time buyer and report anything off'
+bunx e2e explore --target web --max-steps 4 --headed
+bunx e2e explore 'Hunt for broken forms and dead links' --agent thorough --video
+```
+</CodeGroup>
+
+| Opção | Descrição |
+| --- | --- |
+| `[goal]` | O que explorar, em uma frase. Padrão: `Explore the app and find bugs`. |
+| `--config <path>` | Caminho explícito da configuração, com os erros de `run`. Padrão: a configuração descoberta. Quando nenhuma configuração é encontrada e tanto o stdin quanto o stdout são um terminal, o assistente do [`e2e init`](#e2e-init) roda primeiro no diretório de trabalho. A exploração vem em seguida quando não resta nada a fazer à mão: dependências instaladas, um modelo com a chave definida ou o login feito, e um alvo web (ele nomeia a URL que explora). Caso contrário, o init termina com os passos que faltam e depois o comando `e2e explore` como foi digitado. Sem um terminal, a falta de configuração é `CONFIG_NOT_FOUND`. |
+| `--target <id>` | O único alvo a explorar. Padrão: o primeiro alvo configurado; com vários alvos e sem a flag, ele explora o primeiro e avisa no stderr. Um nome desconhecido é `UNKNOWN_TARGET`. |
+| `--agent <name>` | O agente configurado com o qual explorar. Padrão: `default`. O modelo, o `system`, as ferramentas e o contexto dele são reutilizados. O agente embutido substitui um `StepExecutor` feito à mão, com um aviso. Uma entrada sem modelo, incluindo a de um executor personalizado, é `MODEL_UNAVAILABLE` antes de qualquer coisa iniciar. Um nome desconhecido é `INVALID_CONFIG`. |
+| `--session <name>` | Começa com o login feito. O teste de preparação, nos arquivos de teste da configuração, que declara essa sessão roda primeiro. A exploração restaura o que ele salvou, como faz um teste com `{ session }`. Nenhum outro teste roda. Um nome que nenhum teste de preparação declara é `COLLECTION_ERROR`, que nomeia os declarados, antes de qualquer processo do app iniciar. Veja [Comece com o login feito](/explore#start-signed-in). |
+| `--changed-since <ref>` | Explora a mudança desde a base de merge entre a ref e HEAD. O planejador lê as mensagens de commit e o diff commitado e, em um job `pull_request` do GitHub Actions ou em um pipeline de merge request do GitLab, o título e a descrição do pull request. Sem objetivo, o objetivo é `Explore what this change affects and find bugs in it`, e o planejador pode pular uma mudança que nenhum usuário consegue ver; a execução termina `skipped` e passa. Uma ref vazia, uma que começa com `-` ou uma a partir da qual o git não consegue calcular a mudança é `INVALID_CHANGED_SINCE`. O relatório registra a mudança como `run.explore.change`. Veja [Explore a mudança de um pull request](/explore#explore-a-pull-requests-change) e, para o que o modelo lê, [Segurança](/reference/security#mcp-and-explore). |
+| `--max-steps <n>` | No máximo esse número de passos de exploração, um inteiro de 1 a 100. Padrão: `8`. Fora do intervalo, sai com código 2. |
+| `--timeout <ms>` | O tempo total da execução, um inteiro de 180000 a 7200000. Padrão: `600000`. O último minuto fica reservado para a avaliação final. Fora do intervalo, sai com código 2. |
+| `--headed` | Pede UI visível quando a engine oferece suporte. |
+| `--reporter <ids>` | Como em `run`. Padrão: o valor resolvido da configuração. `list` imprime as linhas da exploração abaixo do resumo, `json` traz o registro no relatório, e `markdown` escreve os achados em `<output>/summary.md`. |
+| `--output <dir>` | Como em `run`. Padrão: a configuração, senão `.e2e`. A captura de tela de evidência de um achado é um artefato da tentativa em `<output>/results`. |
+| `--debug` | Como em `run`: tempos por fase e a tabela de passos do agente. |
+| `--ai-trace` | Como em `run`. |
+| `--trace [mode]` | Como em `run`: uma página de trace da exploração. Padrão: a configuração. |
+| `--video [mode]` | Como em `run`: um vídeo de toda a exploração (WebM em uma engine de navegador, MP4 em uma engine de dispositivo). Padrão: a configuração. Uma engine que não consegue gravar imprime um aviso. |
+
+Para `--trace` e `--video`, uma flag sem valor é `on`, e `retain-on-failure`
+mantém a página ou o vídeo só quando a exploração não passou. A exploração é
+uma única tentativa, então um modo de nova tentativa não grava nada, e um
+aviso na fase de planejamento diz para passar `--trace on` (ou
+`--video on`). Coloque o objetivo antes da flag, ou escreva `--trace=<mode>`
+ou `--video=<mode>`.
+
+##### Relatório
+
+- A execução tem um único resultado, no arquivo virtual `explore`, com o
+  objetivo como título.
+- A exploração abre o app primeiro: a `app.url` do alvo ou, em um
+  dispositivo, o [app fixado](/mobile#point-at-your-app), iniciado do zero.
+  Ela não instala nenhum build, então um alvo de dispositivo local precisa de
+  `app.bundleId`.
+- Com `--session`, o relatório também traz o resultado do teste de
+  preparação. Ele lista os outros testes do projeto como pulados com a causa
+  `filtered`, como `run` lista os testes de um arquivo que nenhum posicional
+  nomeou.
+- A exploração roda com o cache de replay desligado e zero novas tentativas,
+  seja o que for que a configuração diga. Um teste de preparação de
+  `--session` roda como rodaria em `run`, com os agentes, o cache e as novas
+  tentativas da configuração.
+- `<output>/report.json` ganha `run.explore`: o objetivo, os orçamentos, por
+  que a execução terminou (`finished`, `skipped`, `step-limit`, `time`,
+  `stuck` ou `aborted`), a avaliação, a mudança com `--changed-since`
+  (`base` e `files`), os passos e os achados.
+- Os artefatos vão para um diretório nomeado a partir das primeiras palavras
+  do objetivo e de um digest do objetivo, do alvo e do agente, como
+  `<output>/results/explore-check-the-cart-totals-1a2b3c4d5e6f7a8b/`. Uma
+  nova execução do mesmo objetivo no mesmo alvo e agente escreve no mesmo
+  diretório.
+
+##### Orçamentos de passo
+
+Cada passo tem o próprio orçamento: 40 ações e 40 chamadas ao modelo, a
+menos que o agente defina `maxSteps` ou `maxModelCalls` (de 1 a 100). Um
+passo que esgota o orçamento de ações ou de tempo é encerrado no limite, e os
+achados dele ainda contam. Um passo que falha não encerra a execução. Três
+passos seguidos que falham ou ficam bloqueados sem nenhum achado novo
+encerram a execução (`stuck`).
+
+##### Achados
+
+- Um achado do tipo `issue` é um defeito funcional; um `warning` é estético.
+- A gravidade vai de `trivial` (1) a `critical` (5). O relatório lista os
+  achados do tipo issue antes dos do tipo warning, os mais graves primeiro.
+- Cada achado tem a localização, o comportamento esperado e o observado, os
+  passos para reproduzi-lo e uma captura de tela quando a captura é
+  permitida e dá certo.
+
+##### Resultados
+
+| Resultado | Status da execução | Código de saída |
+| --- | --- | --- |
+| Passos rodaram, nenhum achado `issue`, e nem todos os passos ficaram bloqueados | passou | 0 |
+| Pelo menos um achado `issue` | falhou | 1 |
+| Nenhum passo rodou e nada foi encontrado, a menos que o planejador tenha pulado a mudança | bloqueado | 1 |
+| Com `--changed-since`, o planejador pulou uma mudança que nenhum usuário consegue ver | passou | 0 |
+| Todos os passos ficaram bloqueados, sem achado `issue` | bloqueado | 1, 2 ou 3, conforme o primeiro bloqueio |
+| Erro de configuração, da engine ou do provedor de modelo | erro | 2 ou 3 |
+| Ctrl-C | | 130 |
+
+#### `e2e list`
+
+Uma execução simulada: `list` seleciona os testes exatamente como `run` faz,
+imprime uma linha por par teste-alvo e sai. O comando não inicia nenhum
+processo de app, engine ou worker, e não escreve nada.
+
+<CodeGroup>
+```bash npm
+npx e2e list
+npx e2e list tests/signup.e2e.ts
+npx e2e list --tag smoke --target web
+npx e2e list --grep checkout --exclude-tag slow
+npx e2e list --reporter json
+npx e2e list --changed-since origin/main
+```
+
+```bash pnpm
+pnpm exec e2e list
+pnpm exec e2e list tests/signup.e2e.ts
+pnpm exec e2e list --tag smoke --target web
+pnpm exec e2e list --grep checkout --exclude-tag slow
+pnpm exec e2e list --reporter json
+pnpm exec e2e list --changed-since origin/main
+```
+
+```bash bun
+bunx e2e list
+bunx e2e list tests/signup.e2e.ts
+bunx e2e list --tag smoke --target web
+bunx e2e list --grep checkout --exclude-tag slow
+bunx e2e list --reporter json
+bunx e2e list --changed-since origin/main
+```
+</CodeGroup>
+
+| Opção | Descrição |
+| --- | --- |
+| `[files...]` | Como em [`run`](#positional-arguments). |
+| `--config`, `--target`, `--tag`, `--tag-mode`, `--exclude-tag`, `--grep`, `--grep-invert`, `--changed-since`, `--last-failed`, `--shard`, `--pass-with-no-tests` | Como em [`run`](#flags). `--last-failed` lê o `report.json` no diretório [`output`](/reference/config#output) da configuração. Os [filtros de testes](/filters) configurados rodam como em `run`, e as linhas deles vão para o stderr. |
+| `--reporter <id>` | `list` ou `json`. Padrão: `list`. |
+
+| Reporter | Escreve |
+| --- | --- |
+| `list` | Uma linha por par, na ordem de seleção: `file › title [target]`, com o caminho de describe unido por ` › ` (`tests/billing.e2e.ts › checkout › pays [web]`), e depois cada tag declarada como `#tag` (`tests/billing.e2e.ts › checkout › pays [web] #smoke #billing`). Um teste pulado mantém a linha, com `(skipped: <reason>)` no final, e um teste que um filtro de testes deixou de fora termina com `(left out by <filter>: <reason>)`. Os testes de preparação são listados como qualquer outro. |
+| `json` | `{ "pairs": [...] }` no stdout. Cada par traz `id`, `file`, `title`, `titlePath`, `kind` (`test` ou `setup`), `tags` (as tags que o teste declara, `[]` quando não há nenhuma), `source` quando a declaração é conhecida, `session` quando o teste consome uma, `sessions`, `serialId` quando o teste está em um grupo serial, `target`, `agent`, `disposition` (`run`, `skip` ou `filtered` quando um filtro de testes o deixou de fora), `reason` quando pulado ou deixado de fora, e `filter`, o nome do filtro de testes, quando um filtro o deixou de fora. |
+
+Os pares que uma flag de seleção removeu não são listados. [`list` de `e2e/runner`](/reference/runner)
+roda a mesma seleção no processo e também retorna os pares removidos.
+
+#### `e2e doctor`
+
+Verifica se `e2e run` consegue iniciar aqui, sem iniciar nada. Ele carrega a
+configuração, roda as verificações da engine de cada alvo e nomeia o modelo
+para o qual cada agente foi resolvido. Ele não inicia nenhum app, sessão de
+engine ou worker, só o servidor de uma engine que roda em um processo
+próprio, e não faz nenhuma chamada ao modelo, a menos que você passe
+`--check-model`.
+
+<CodeGroup>
+```bash npm
+npx e2e doctor
+npx e2e doctor --json
+npx e2e doctor --check-model
+npx e2e doctor --target web --headed
+```
+
+```bash pnpm
+pnpm exec e2e doctor
+pnpm exec e2e doctor --json
+pnpm exec e2e doctor --check-model
+pnpm exec e2e doctor --target web --headed
+```
+
+```bash bun
+bunx e2e doctor
+bunx e2e doctor --json
+bunx e2e doctor --check-model
+bunx e2e doctor --target web --headed
+```
+</CodeGroup>
+
+| Opção | Descrição |
+| --- | --- |
+| `--config <path>` | Como em [`run`](#flags). |
+| `--target <ids>` | Verifica só esses alvos. Como em [`run`](#flags). |
+| `--headed` | Verifica o que uma execução headed precisa, como o build completo do Chromium em vez do headless shell. |
+| `--check-model` | Chama o modelo de cada agente, e o juiz dele quando é um modelo diferente, uma vez, com um prompt curto e as opções de provedor do agente. Agentes que compartilham o modelo, opções de provedor iguais e `maxInputTokens` compartilham a chamada. Uma resposta que não é o JSON pedido, ou uma recusa, ainda conta como resposta. |
+| `--json` | Imprime o relatório `doctor-1` em vez de uma linha por verificação. |
+
+| Verificação | Status |
+| --- | --- |
+| `node` | `pass`: a versão do Node.js ou do Bun. Em um runtime sem suporte, `--json` ainda imprime um relatório com `node` como `fail`. |
+| `config` | `pass` com `path` e `targets` (`name`, `platform`, `engine`), ou `fail` com o código `CONFIG_*` ou `UNKNOWN_TARGET`. Um `config` com falha é a última verificação. |
+| Verificações da engine, com `target` | O que a engine do alvo informa, como o `browser` da engine web: `pass` quando instalado, `warn` quando a primeira execução vai baixá-lo, `fail` no Linux quando o chromium ou o firefox instalado não consegue resolver as bibliotecas de sistema dele (a mensagem as nomeia e indica a [instalação com `--with-deps`](/reference/web#installing-browsers)), `skip` com um provedor de navegador ou `connect`; ou as verificações do agent-device da engine mobile (`agent-device`, `toolchain`, `ios-runner-cache`, `device` por dispositivo configurado, `target-app`) e `app-path` e, para um provedor de dispositivos, só `device`, como `skip`. Uma engine que não informa nada não adiciona verificação. `engine` é `skip` quando a engine não tem o hook `doctor`, e `fail` quando o hook lançou um erro, excedeu o tempo limite ou retornou uma verificação malformada. |
+| `model`, com `agent` | `model` e `judge` como `provider` e `modelId`, os nomes que a instância do AI SDK informa. `pass` ou `fail` para um modelo de um [`e2e login`](/subscriptions), a partir do login salvo ou da variável de chave de API do provedor, com `login` definido quando os modelos do agente leem um login. `warn` para um modelo do Vercel AI Gateway ou do OpenRouter cuja variável de chave não está definida (`AI_GATEWAY_API_KEY` ou `VERCEL_OIDC_TOKEN`; `OPENROUTER_API_KEY`): os passos do agente que chamam o modelo falham com `MODEL_PROVIDER_FAILED`, a menos que o modelo obtenha a chave de outro jeito, como uma chave passada onde ele é construído ou um projeto da Vercel vinculado. `unknown` para qualquer outro modelo, porque o modelo lê a própria credencial. Com `--check-model`, `pass` quando todos os modelos responderam, senão `fail` com o código de erro, com a mensagem prefixada por `model:` ou `judge:` quando o agente tem os dois. `skip` quando o agente não tem modelo. `unknown` com `executor` quando um executor personalizado traz o próprio agente e não declara modelo nem juiz; qualquer modelo que ele declare é verificado como o de um agente. |
+
+Por padrão, o doctor imprime uma linha por verificação: uma marca, o id da
+verificação, o alvo ou o agente entre colchetes e os detalhes. A última linha
+diz se uma execução pode iniciar e conta os avisos.
+
+Com `--json`, ele imprime o relatório `doctor-1` no stdout: `{ "schemaVersion": "doctor-1", "version", "ok", "checks": [...] }`. Cada verificação traz `id`, `status` (`pass`, `warn`, `fail`, `skip` ou `unknown`) e, quando se aplicam, `target`, `agent`, `code`, `message` e os campos da tabela acima. O JSON Schema vem no pacote como `schema/doctor-v1.schema.json`.
+
+| Código de saída | Quando |
+| --- | --- |
+| 0 | Nenhuma verificação falhou. `warn`, `skip` e `unknown` nunca falham. |
+| 2 | Pelo menos uma verificação falhou. |
+| 130 | Interrompido com Ctrl-C ou SIGTERM. As verificações são interrompidas e o relatório é impresso: a verificação que foi cortada é `fail` com `CANCELLED`, e as verificações seguintes ficam de fora. Um terceiro Ctrl-C sai na hora. |
+
+#### `e2e cache`
+
+Inspeciona ou limpa o cache de replay. Cada subcomando carrega a configuração
+descoberta ou `--config <path>`, lê o diretório que uma execução leria e sai com código 0 em um armazenamento vazio.
+
+<CodeGroup>
+```bash npm
+npx e2e cache ls
+npx e2e cache stats
+npx e2e cache clear
+npx e2e cache ls --config packages/web/e2e.config.ts
+```
+
+```bash pnpm
+pnpm exec e2e cache ls
+pnpm exec e2e cache stats
+pnpm exec e2e cache clear
+pnpm exec e2e cache ls --config packages/web/e2e.config.ts
+```
+
+```bash bun
+bunx e2e cache ls
+bunx e2e cache stats
+bunx e2e cache clear
+bunx e2e cache ls --config packages/web/e2e.config.ts
+```
+</CodeGroup>
+
+| Comando | Imprime |
+| --- | --- |
+| `e2e cache ls` | Uma linha por entrada: o teste e o alvo para os quais ela foi gravada, os 12 primeiros caracteres do digest da instrução, a idade dela e quantas ações um replay rodaria (`(truncated)` quando a gravação atingiu o limite de ações). As linhas são agrupadas por teste, depois por alvo, das mais antigas para as mais novas. |
+| `e2e cache stats` | O diretório do armazenamento, o número de entradas legíveis, o tamanho total delas e o número de arquivos ilegíveis, quando houver algum. |
+| `e2e cache clear` | Apaga todos os arquivos do cache, depois o diretório quando não sobra mais nada nele, e informa quantos arquivos foram apagados. |
+
+| Opção | Descrição |
+| --- | --- |
+| `--config <path>` | Caminho explícito da configuração. Padrão: o `e2e.config.ts`, `.mts`, `.js` ou `.mjs` mais próximo (veja [Carregamento](/reference/config#loading)). |
+| `--cache-dir <dir>` | O diretório do armazenamento. Padrão: `E2E_CACHE_DIR`, senão `cache.dir`, senão `.e2e/cache/`. |
+
+```text
+TEST                             TARGET  INSTRUCTION   AGE  ACTIONS
+tests/billing.e2e.ts::upgrades   web     4f1c0a9d3b62  2h   4
+tests/signup.e2e.ts::signs%20up  web     9ab7715ce004  3d   7 (truncated)
+```
+
+- Uma entrada gravada antes de as entradas terem procedência imprime `-`
+  nessas colunas e ainda é reproduzida.
+- Um arquivo que o armazenamento não consegue ler (truncado, acima do teto
+  de 1 MiB ou de um schema mais novo) é contado à parte no stderr, tratado
+  como um cache miss por uma execução e removido por `clear`.
+- Arquivos que o runner nunca escreveu não são tocados.
+
+<Note>
+Estes comandos leem só o armazenamento em arquivos. Com um `cache.store`
+personalizado, eles saem com código 2 e avisam isso.
+</Note>
+
+#### `e2e upgrade`
+
+Atualiza o `e2e` para a release mais recente, uma dist-tag ou uma versão
+específica. Ele também move os pacotes `@e2e-dev/*` no mesmo `package.json` e
+os instala com o gerenciador de pacotes do projeto. `e2e update` é o mesmo
+comando.
+
+<Note>
+`npx e2e` roda a versão instalada. Quando essa versão ainda não tem o comando
+`upgrade`, rode `npx e2e@latest upgrade` uma vez.
+</Note>
+
+<CodeGroup>
+```bash npm
+npx e2e upgrade             # the latest release
+npx e2e upgrade 0.21.0      # one version
+npx e2e upgrade nightly     # a dist-tag
+npx e2e update --dry-run    # show the plan, change nothing
+```
+
+```bash pnpm
+pnpm exec e2e upgrade             # the latest release
+pnpm exec e2e upgrade 0.21.0      # one version
+pnpm exec e2e upgrade nightly     # a dist-tag
+pnpm exec e2e update --dry-run    # show the plan, change nothing
+```
+
+```bash bun
+bunx e2e upgrade             # the latest release
+bunx e2e upgrade 0.21.0      # one version
+bunx e2e upgrade nightly     # a dist-tag
+bunx e2e update --dry-run    # show the plan, change nothing
+```
+</CodeGroup>
+
+```console
+$ npx e2e upgrade
+Upgrading with npm:
+  e2e              0.19.0 → 0.21.2
+  @e2e-dev/web     0.13.0 → 0.15.2
+  @e2e-dev/kernel  0.1.2 → 0.2.1
+package.json: "e2e": "^0.21.2", "@e2e-dev/web": "^0.15.2", "@e2e-dev/kernel": "^0.2.1"
+$ npm install
+...
+Upgraded: e2e 0.21.2, @e2e-dev/web 0.15.2, @e2e-dev/kernel 0.2.1
+Release notes: https://github.com/e2e-inc/e2e/releases/tag/e2e%400.21.2
+Updated the agent skill in .agents/skills/e2e/ (12 files)
+```
+
+| Opção | Descrição |
+| --- | --- |
+| `[version]` | Uma versão como `0.22.0`, ou uma dist-tag como `latest` ou `nightly`. Intervalos são recusados. Padrão: `latest`. |
+| `--dry-run` | Imprime as versões, as novas especificações, o comando de instalação e as cópias da skill a atualizar, e não muda nada. |
+
+- **O projeto.** O `package.json` mais próximo, do diretório de trabalho
+  para cima, que lista `e2e`.
+- **Em um terminal.** Depois que um novo `e2e` é instalado, vêm o logo do e2e
+  e um link para dar uma estrela ao e2e no GitHub. Não na CI nem em saída
+  redirecionada por pipe.
+- **Versões dos pacotes irmãos.** Cada pacote `@e2e-dev/*` recebe a release
+  dele sob a mesma dist-tag (`latest` para uma versão nomeada), quando os
+  intervalos de peer dessa release aceitam as novas versões. Caso contrário,
+  ele recebe a release mais nova dele que as aceita. Quando nenhuma aceita, o
+  comando sai com código 2. Uma release descontinuada nunca é escolhida, e
+  uma versão de pré-lançamento só quando o `e2e` recebe uma. Uma integração
+  acompanha a engine em que se conecta.
+- **Um peer adicionado.** Um pacote `@e2e-dev/*` de que essas releases
+  dependem como peer, como `@e2e-dev/core` para uma engine, é adicionado ao
+  lado do pacote que precisa dele quando o `package.json` não o lista. O Yarn
+  não instala nenhum peer que o projeto não lista. O pacote adicionado recebe
+  a versão da qual o novo `e2e` depende.
+- **O gerenciador de pacotes.** O que o lockfile do projeto ou o campo
+  `packageManager` nomeia, ou o pnpm na raiz de um workspace do pnpm. Um
+  membro de workspace sem nenhum dos dois usa o da raiz do workspace dele. Um
+  lockfile acima de um projeto que nenhum workspace lista não conta.
+- **A instalação.** As novas especificações vão para o `package.json`, cada
+  uma na seção em que estava, e depois um único `install` resolve todas
+  juntas. O pnpm recebe `--no-frozen-lockfile`, e o Yarn,
+  `YARN_ENABLE_IMMUTABLE_INSTALLS=false`, para que o lockfile possa mudar
+  também na CI. O Ctrl-C chega ao gerenciador de pacotes; o comando espera
+  que ele termine.
+- **Uma instalação que falha.** O `package.json` e qualquer lockfile que a
+  instalação mudou voltam a ser como eram. O `node_modules` pode manter
+  algumas versões novas até a próxima instalação.
+- **O intervalo salvo.** Só um pacote cuja versão instalada muda recebe uma
+  nova especificação: uma versão nomeada ou de pré-lançamento é fixada
+  exatamente, e uma dist-tag mantém o `^` ou o `~` da especificação antiga.
+  `e2e upgrade 0.21.3` sobre uma 0.21.3 já instalada deixa `^0.21.3` como
+  está escrito.
+- **Não tocados.** Um pacote vinculado com `workspace:`, `file:`, `link:`,
+  `catalog:`, um caminho ou uma URL git, e um pacote `@e2e-dev/*` que o
+  registry não tem. Quando o próprio `e2e` está vinculado, o comando sai com código 2.
+- **Nada a fazer.** Quando toda versão instalada já corresponde, o comando
+  não instala nada. Sem `node_modules`, como no Yarn Plug'n'Play, ele compara
+  as especificações do `package.json` no lugar disso.
+- **O registry.** `npm_config_registry` quando o gerenciador de pacotes o
+  define, senão `https://registry.npmjs.org/`.
+- **A skill do agente.** Uma cópia em `.agents/skills/e2e` ou
+  `.claude/skills/e2e` é atualizada para a da versão instalada depois da
+  instalação, e também quando tudo já estava atualizado. Um link simbólico
+  `.claude/skills/e2e` para a cópia em `.agents/skills` acompanha essa cópia.
+  Os arquivos que a nova skill não traz mais ficam. Nada é escrito através de
+  um link simbólico para uma cópia fora do projeto e, sem `node_modules`, como no
+  Yarn Plug'n'Play, o comando indica `e2e init` no lugar disso.
+
+| Código de saída | Quando |
+| --- | --- |
+| 0 | Os pacotes foram instalados ou já estavam na versão de destino, ou `--dry-run` imprimiu o plano. |
+| 2 | Um intervalo, uma versão ou dist-tag desconhecida, nenhum `package.json` que lista `e2e`, um `e2e` vinculado, um pacote irmão sem release que sirva, ou uma instalação que falhou. |
+| 3 | Uma requisição ao registry falhou ou respondeu com um status de erro, ou enviou metadados que o comando não conseguiu ler. |
+| 130 | Ctrl-C ou SIGTERM durante a instalação. O `package.json` e o lockfile voltam a ser como eram. |
+
+#### `e2e feedback`
+
+Envia um relatório sobre o próprio e2e para a equipe do e2e: algo quebrou, a
+documentação ou a skill induziu ao erro, ou falta um recurso. Um agente de
+código pode enviar um quando encontra um problema com o e2e, não com o app em
+teste. Antes, ele mostra ao usuário a saída de `--dry-run` e obtém a
+concordância dele.
+
+<CodeGroup>
+```bash npm
+npx e2e feedback --type bug -m "list ignores --grep" --command "e2e list --grep checkout" \
+  --repro "e2e list --grep checkout lists every test"
+npx e2e feedback --type docs -m "The mcp topic never says how to close a session"
+npx e2e feedback --type feature -m "Need a way to set the viewport per test" --dry-run
+```
+
+```bash pnpm
+pnpm exec e2e feedback --type bug -m "list ignores --grep" --command "e2e list --grep checkout" \
+  --repro "e2e list --grep checkout lists every test"
+pnpm exec e2e feedback --type docs -m "The mcp topic never says how to close a session"
+pnpm exec e2e feedback --type feature -m "Need a way to set the viewport per test" --dry-run
+```
+
+```bash bun
+bunx e2e feedback --type bug -m "list ignores --grep" --command "e2e list --grep checkout" \
+  --repro "e2e list --grep checkout lists every test"
+bunx e2e feedback --type docs -m "The mcp topic never says how to close a session"
+bunx e2e feedback --type feature -m "Need a way to set the viewport per test" --dry-run
+```
+</CodeGroup>
+
+| Opção | Descrição |
+| --- | --- |
+| `-m`, `--message <text>` | Obrigatório. Uma ou duas frases sobre o problema. |
+| `--type <type>` | `bug`, `docs`, `feature` ou `other`. Padrão: `other`. |
+| `--task <text>` | O que você estava tentando fazer. |
+| `--expected <text>` | O que você esperava que acontecesse. |
+| `--actual <text>` | O que aconteceu no lugar disso, com a mensagem de erro. |
+| `--error-code <code>` | O código de erro do e2e envolvido, como `LOCATOR_AMBIGUOUS`. |
+| `--repro <text>` | Para um bug: passos que o reproduzem toda vez, sem conteúdo do app. |
+| `--approach <text>` | O que você tentou, incluindo as alternativas. |
+| `--command <text>` | O comando ou a API do e2e envolvidos. |
+| `--agent <text>` | O agente de código e o modelo que enviam o relatório. |
+| `--allow-outdated` | Envia mesmo quando existe uma release mais nova do e2e. |
+| `--dry-run` | Imprime o evento que seria enviado e não envia nada. |
+
+`--message` aceita no máximo 2000 caracteres, `--command` e `--agent`, 200, e
+`--task`, `--expected`, `--actual`, `--repro` e `--approach`, 1500.
+
+- **Um bug precisa de `--repro`.** Sem ela, o comando não envia nada e, no
+  lugar disso, imprime uma
+  [issue do GitHub](https://github.com/e2e-inc/e2e/issues/new?template=bug_report.yml)
+  pré-preenchida, onde a equipe do e2e pode pedir uma reprodução. Adicione
+  uma reprodução mínima e envie a issue você mesmo.
+- **Releases desatualizadas são recusadas.** Antes de enviar, o comando
+  pergunta ao registry do npm qual é a release mais recente do e2e. Quando a
+  sua é mais antiga, ele sai com código 2 e não envia nada, já que o
+  problema pode já estar corrigido. Atualize com
+  [`e2e upgrade`](#e2e-upgrade), confirme que o problema ainda acontece e
+  envie de novo, ou passe `--allow-outdated`. Com uma variável de desativação
+  definida, o comando pula essa verificação.
+- **Para onde vai.** Um evento `e2e_feedback`, para o mesmo projeto do
+  PostHog que a [telemetria](/telemetry#feedback), com os dados anônimos da
+  máquina que todo evento de telemetria traz.
+- **Desativação.** O feedback só é enviado quando você roda o comando, então
+  um `e2e telemetry disable` salvo não o impede. `E2E_TELEMETRY_DISABLED=1` e
+  `DO_NOT_TRACK=1` impedem: com qualquer uma delas definida, o comando não
+  envia nada, e um relatório que ele enviaria sai com código 2. Assim, um
+  job de CI ou uma frota que desativou a telemetria não envia nada, mesmo
+  quando um agente roda o comando. `--dry-run`,
+  `E2E_TELEMETRY_DEBUG=1` (imprime o evento como `--dry-run`) e um bug sem
+  `--repro` não enviam nada de qualquer forma, então saem com código 0.
+
+| Código de saída | Quando |
+| --- | --- |
+| 0 | O PostHog aceitou o evento, e o comando imprimiu um id de referência. Também `--dry-run`, `E2E_TELEMETRY_DEBUG=1` e `--type bug` sem `--repro`: nenhum deles envia, então saem com código 0 mesmo com uma variável de desativação definida. A verificação de release desatualizada roda primeiro, então uma instalação desatualizada sai com código 2 também nesses casos, a menos que `--allow-outdated` ou uma variável de desativação esteja definida. |
+| 2 | Um valor de texto em branco ou longo demais, uma release desatualizada sem `--allow-outdated` nem uma variável de desativação definida, ou um relatório que seria enviado enquanto `E2E_TELEMETRY_DISABLED=1` ou `DO_NOT_TRACK=1` está definida. |
+| 3 | O PostHog não confirmou o evento. O relatório ainda pode ter chegado, então a mensagem nomeia o id de referência dele. |
+
+<Warning>
+Antes do envio, o valor de toda variável de ambiente cujo nome contém `KEY`,
+`TOKEN`, `SECRET`, `PASS`, `_PWD`, `CREDENTIAL`, `AUTH`, `COOKIE` ou
+`PRIVATE` vira `<secret:NAME>` quando tem seis ou mais caracteres. Esse é o
+mínimo para um segredo de configuração; um valor mais curto reescreveria
+palavras comuns. Tokens Bearer, credenciais em URLs, chaves privadas, JWTs e
+formatos comuns de chave de API viram `<redacted>`. Não cole dados do app,
+conteúdo de páginas nem arquivos de teste.
+</Warning>
+
+#### `e2e telemetry`
+
+Mostra se a telemetria anônima de uso está ligada e alterna esse estado.
+[Telemetria](/telemetry) lista todas as propriedades enviadas.
+
+<CodeGroup>
+```bash npm
+npx e2e telemetry
+npx e2e telemetry disable
+E2E_TELEMETRY_DEBUG=1 npx e2e run
+```
+
+```bash pnpm
+pnpm exec e2e telemetry
+pnpm exec e2e telemetry disable
+E2E_TELEMETRY_DEBUG=1 pnpm exec e2e run
+```
+
+```bash bun
+bunx e2e telemetry
+bunx e2e telemetry disable
+E2E_TELEMETRY_DEBUG=1 bunx e2e run
+```
+</CodeGroup>
+
+| Comando | Efeito |
+| --- | --- |
+| `e2e telemetry`, `e2e telemetry status` | Imprime `Status: enabled`, ou `Status: disabled` com o motivo: a variável definida, a escolha salva ou um diretório de preferências em que não é possível escrever. `status` é o padrão. |
+| `e2e telemetry disable` | Salva a desativação em `~/.config/e2e/telemetry.json` (`$XDG_CONFIG_HOME/e2e/` quando definida, `%APPDATA%\e2e\` no Windows) e imprime o status. |
+| `e2e telemetry enable` | Salva a ativação e imprime o status. Uma variável definida no ambiente ainda prevalece, e o status diz isso. |
+
+- `E2E_TELEMETRY_DISABLED=1` e `DO_NOT_TRACK=1` desligam a telemetria sem
+  mexer no arquivo.
+- `E2E_TELEMETRY_DEBUG=1` imprime todo evento no stderr e não envia nada.
+- O primeiro comando em uma máquina, fora `e2e init` e
+  `e2e telemetry`, imprime um aviso uma única vez. Na CI, nada é impresso e
+  nenhum arquivo é escrito.
+
+#### `e2e report`
+
+Abre o relatório HTML escrito por [`htmlReporter()`](/reference/reporters#htmlreporter)
+no navegador padrão (`<output>/report.html` por padrão). Sai com o código
+`2` quando nenhum arquivo de relatório legível é encontrado ou quando
+`[path]` e `--output` são passados juntos.
+
+<CodeGroup>
+```bash npm
+npx e2e report
+npx e2e report out/custom.html
+npx e2e report --output out
+```
+
+```bash pnpm
+pnpm exec e2e report
+pnpm exec e2e report out/custom.html
+pnpm exec e2e report --output out
+```
+
+```bash bun
+bunx e2e report
+bunx e2e report out/custom.html
+bunx e2e report --output out
+```
+</CodeGroup>
+
+| Argumento ou flag | Significado |
+| --- | --- |
+| `[path]` | Arquivo HTML ou diretório que contém `report.html` (padrão: `<output>/report.html`; mutuamente exclusivo com `--output`) |
+| `--config <path>` | Arquivo de configuração (padrão: o `e2e.config.ts`, `.mts`, `.js` ou `.mjs` mais próximo) |
+| `--output <dir>` | Diretório de resultados que contém `report.html` (padrão: `output` na configuração, senão `.e2e`) |
+
+- Se [`htmlReporter({ outputFile })`](/reference/reporters#htmlreporter) escreve a página em outro lugar, passe esse caminho como `[path]`: `e2e report` verifica só `<output>/report.html`.
+
+## Códigos de saída
+
+| Código | Significado |
+| ---: | --- |
+| 0 | Todos os testes selecionados passaram, foram instáveis ou foram pulados explicitamente |
+| 1 | Falha final de teste ou de preparação, ou tempo limite de teste excedido |
+| 2 | Erro de CLI, de configuração, de coleta, de dependência, de credencial, de configuração do modelo ou de política |
+| 3 | Falha de infraestrutura da engine, do processo do app, do provedor de modelo, de artefatos ou da limpeza; `e2e feedback` que não pôde ser entregue; `e2e upgrade` que não conseguiu alcançar o registry |
+| 4 | Violação de uma invariante interna do runner ou erro não tratado do runner |
+| 130 | Interrompido por um sinal do usuário ou da CI, por `q` em um prompt de `--step` ou `screen.pause()`, ou por `e2e run --step stop` |
+
+- A precedência em uma execução mista é `130 > 4 > 3 > 2 > 1 > 0`. O
+  relatório mantém cada resultado individual; a precedência afeta só o
+  código de saída do processo.
+- Falhas na análise dos argumentos saem com código 2 e um erro de uma linha no
+  stderr.
+
+## Diagnósticos
+
+- Uma mensagem que rejeita um nome sugere o nome válido mais próximo.
+- Chaves das configurações de outros runners (`testDir`, `baseURL`,
+  `webServer`, `projects`) dizem onde essa informação fica aqui.
+- A mensagem de um `import` que falha na configuração ou em um arquivo de
+  teste termina com o comando de instalação ou de adição do gerenciador de
+  pacotes do projeto, ou com os subcaminhos que o pacote exporta.
+- A mensagem de uma credencial de modelo que o provedor rejeita nomeia a
+  variável que o provedor lê.
+
+## Bun
+
+No Bun 1.4.3 ou mais recente, a CLI roda sem Node.js. Quando o Node.js está
+instalado, `bunx e2e` e `bun run` seguem o shebang `node` da CLI e a rodam no
+Node.js. `bunx --bun e2e` e `bun --bun run` a rodam no Bun. Sem Node.js,
+todos eles a rodam no Bun. A engine web roda no Bun.
+`@e2e-dev/mobile`, `@e2e-dev/desktop` e as integrações ainda não foram
+verificados no Bun.
+
+O Bun compila os arquivos de configuração e de teste com o próprio suporte a
+TypeScript. Onde isso difere do Node.js:
+
+- Um import `#` que aponta para um diretório não carrega o index dele. Aponte
+  o import para o arquivo.
+- Um decorator legado em um arquivo `.cts` falha ao carregar. Mova a classe
+  para um arquivo `.ts`.
+- `e2e run --watch` e `e2e mcp` leem `tsconfig.json` uma única vez e
+  carregam uma única vez um arquivo que um `import()` ou `require()` nomeia
+  com um caminho calculado. Reinicie-os depois de editar qualquer um dos
+  dois, ou depois de adicionar um arquivo que um import não encontrou.
+- `e2e mcp` abre uma sessão por vez e ignora `--max-sessions`.
+- [`e2e/runner`](/reference/runner) precisa do Node.js.
+- Um `command` de app com `executable: 'node'` precisa do Node.js, a menos
+  que `bun run` ou `bunx` tenha iniciado a CLI. Eles colocam um `node` que
+  roda o Bun no `PATH`.
+- Um teste que um helper declara depois de um `await` informa a linha no
+  helper.
