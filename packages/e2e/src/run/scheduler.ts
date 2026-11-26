@@ -231,6 +231,8 @@ class SchedulerWorker {
   /** The attempt whose worker stopped answering past its deadline, once the watchdog killed the worker over it. */
   hung: WatchedAttempt | undefined;
   private killTimer: NodeJS.Timeout | undefined;
+  /** The kill timer is the interrupt grace for `unit`, which ends with the unit. */
+  private unitGrace = false;
   private watched: WatchedAttempt | undefined;
   private watchTimer: NodeJS.Timeout | undefined;
   private awaitingPong = false;
@@ -302,13 +304,25 @@ class SchedulerWorker {
    * configured timeouts, so the delay is capped at what a timer can wait:
    * `setTimeout` fires a longer one at once.
    */
-  killAfter(graceMs: number): void {
+  private killAfter(graceMs: number): void {
     if (this.killTimer !== undefined || !this.runner.alive) return;
     this.killTimer = setTimeout(() => {
       this.killed = true;
       this.runner.kill();
     }, Math.min(graceMs, MAX_TIMER_MS));
     this.killTimer.unref();
+  }
+
+  /** Kills the worker if its unit has not ended `graceMs` after an interrupt. */
+  graceUnit(graceMs: number): void {
+    if (this.killTimer !== undefined) return;
+    this.killAfter(graceMs);
+    this.unitGrace = this.killTimer !== undefined;
+  }
+
+  /** The unit ended: the interrupt grace for it no longer applies, other kill timers stand. */
+  endUnitGrace(): void {
+    if (this.unitGrace) this.clearKillTimer();
   }
 
   /** The attempts heard of one of `unit`'s pairs, started on first word of them. */
@@ -331,7 +345,8 @@ class SchedulerWorker {
     return progress;
   }
 
-  clearKillTimer(): void {
+  private clearKillTimer(): void {
+    this.unitGrace = false;
     if (this.killTimer === undefined) return;
     clearTimeout(this.killTimer);
     this.killTimer = undefined;
@@ -738,7 +753,7 @@ class Scheduler {
     this.cancelHolds('the run was interrupted', (_, holder) => holder === worker);
     worker.runner.send({ type: 'interrupt', ...(skip === undefined ? {} : { skip }) });
     if (worker.state === 'busy') {
-      worker.killAfter(this.options.interruptGraceMs);
+      worker.graceUnit(this.options.interruptGraceMs);
       return;
     }
     const queued = worker.queued;
@@ -1102,6 +1117,7 @@ class Scheduler {
         const unit = worker.unit;
         worker.unit = undefined;
         worker.inFlightPair = undefined;
+        worker.endUnitGrace();
         this.updateHeldTime();
         if (unit !== undefined && unit.id !== message.unitId) {
           this.options.events.onRunError({

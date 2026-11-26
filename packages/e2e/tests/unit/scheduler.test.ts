@@ -144,6 +144,8 @@ interface FakeBehaviour {
   readonly onControl?: (message: MainToWorker) => void;
   /** Statuses to report per test id; defaults to passed. */
   readonly status?: Record<string, ResultRecord['status']>;
+  /** How long a worker takes to run each unit it receives. */
+  readonly unitMs?: number;
   /** Unit ids whose worker exits mid-unit instead of finishing. */
   readonly crashOn?: readonly string[];
   /** Unit ids whose worker reports a fatal error instead of finishing, and waits to be killed. */
@@ -367,7 +369,7 @@ class FakeRunner implements UnitRunner {
       if (this.behaviour.exitInsteadOfHang === true) setTimeout(() => this.end('code 7, signal null'), 0);
       return;
     }
-    setTimeout(() => this.completeUnit(message), 0);
+    setTimeout(() => this.completeUnit(message), this.behaviour.unitMs ?? 0);
   }
 
   kill(): void {
@@ -916,6 +918,55 @@ describe('scheduler disposal', () => {
     expect(fleet.killed).toEqual([]);
     expect(fleet.completedDisposals).toEqual([0]);
     expect(collected.results.map((result) => result.status)).toEqual(['passed']);
+  });
+
+  it.each(['retirement', 'final drain'] as const)('gives a worker whose unit outlived an interrupt its shutdown budget during %s', async (path) => {
+    const target = makeTarget('web', 0);
+    const pair = makePair(makeTest('tests/a.e2e.ts', 'a'), target);
+    const fleet = new FakeFleet({
+      unitMs: 190,
+      disposal: { delayMs: 100 },
+      ...(path === 'retirement' ? { status: { [pair.test.id]: 'failed' as const } } : {}),
+    });
+    const interrupt = new AbortController();
+
+    vi.useFakeTimers();
+    const running = run(makeSelection([{ target, pairs: [pair] }]), makeCollection([pair.test.file], [pair]), fleet, {
+      workers: 1, interruptSignal: interrupt.signal, interruptGraceMs: 200, forceGraceMs: 300,
+    });
+    await vi.advanceTimersByTimeAsync(1);
+    expect(fleet.unitsByWorker[0]).toHaveLength(1);
+    interrupt.abort();
+    await vi.runAllTimersAsync();
+    const collected = await running;
+
+    expect(fleet.killed).toEqual([]);
+    expect(fleet.completedDisposals).toEqual([0]);
+    expect(collected.results.map((result) => result.status)).toEqual([path === 'retirement' ? 'failed' : 'passed']);
+  });
+
+  it('keeps the force budget of a worker whose unit ends after a forced interrupt', async () => {
+    const target = makeTarget('web', 0);
+    const pair = makePair(makeTest('tests/a.e2e.ts', 'a'), target);
+    const fleet = new FakeFleet({ unitMs: 190, ignoreTerminate: true, disposal: { delayMs: 500 } });
+    const interrupt = new AbortController();
+    const force = new AbortController();
+
+    vi.useFakeTimers();
+    const running = run(makeSelection([{ target, pairs: [pair] }]), makeCollection([pair.test.file], [pair]), fleet, {
+      workers: 1, interruptSignal: interrupt.signal, forceSignal: force.signal, interruptGraceMs: 10_000, forceGraceMs: 300,
+    });
+    await vi.advanceTimersByTimeAsync(1);
+    interrupt.abort();
+    await vi.advanceTimersByTimeAsync(49);
+    force.abort();
+    await vi.advanceTimersByTimeAsync(290);
+    expect(fleet.killed).toEqual([]);
+
+    await vi.advanceTimersByTimeAsync(20);
+    expect(fleet.killed).toEqual([0]);
+    expect(fleet.completedDisposals).toEqual([]);
+    await running;
   });
 
   it('kills a worker whose disposal outlasts its configured shutdown budget', async () => {
