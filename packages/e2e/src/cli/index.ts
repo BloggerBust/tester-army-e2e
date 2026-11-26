@@ -956,9 +956,11 @@ function createProgram(version: string, telemetry: Telemetry, updateCheck: Updat
         command: Command,
       ) => {
         if (options.config === undefined && !(await initBeforeExplore(telemetry, command))) return;
+        const output = claimRunnerOutput();
         await runToOutcome(telemetry, command, async (signals) => {
           const { explore } = await import('../explore/index.ts');
           return explore({
+            processOutput: output,
             goal,
             configPath: options.config,
             target: options.target,
@@ -978,7 +980,7 @@ function createProgram(version: string, telemetry: Telemetry, updateCheck: Updat
             forceSignal: signals.forceSignal,
             notice: (message) => process.stderr.write(`e2e explore: ${message}\n`),
           });
-        });
+        }).finally(() => output.end());
       },
     );
 

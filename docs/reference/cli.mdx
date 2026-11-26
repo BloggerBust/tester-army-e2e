@@ -1049,7 +1049,7 @@ bunx e2e explore 'Hunt for broken forms and dead links' --agent thorough --video
 | `--max-steps <n>` | Exploration steps at most, an integer 1-100. Default: `8`. Out of range exits 2. |
 | `--timeout <ms>` | The run's wall clock, an integer 180000-7200000. Default: `600000`. The last minute is kept for the closing assessment. Out of range exits 2. |
 | `--headed` | Requests visible UI when the engine supports it. |
-| `--reporter <ids>` | As for `run`. Default: the resolved config value. `list` prints the exploration rows under its summary, `json` carries the record in the report, and `markdown` writes the findings to `<output>/summary.md`. |
+| `--reporter <ids>` | As for `run`. Default: the resolved config value. `list` prints the exploration rows under its summary, `json` carries the record in the report, and `markdown` writes the findings to `<output>/summary.md`. Config logs go to stderr and are redacted once the config's secrets are known. |
 | `--output <dir>` | As for `run`. Default: the config, or `.e2e`. A finding's evidence screenshot is an attempt artifact under `<output>/results`. |
 | `--debug` | As for `run`: phase timings and the agent step table. |
 | `--ai-trace` | As for `run`. |

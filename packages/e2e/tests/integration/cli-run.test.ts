@@ -417,6 +417,35 @@ test('second', () => { console.log('test log'); });
   });
 });
 
+it.each([
+  { source: 'CLI', configured: "'list'", flags: ['--reporter', 'json'] },
+  { source: 'config', configured: 'json()', flags: [] },
+])('keeps explore stdout for the JSON reporter selected by $source', ({ configured, flags }) => {
+  const config = `import { json } from 'e2e/reporters';
+import { extracted, installFakeModel } from '../../helpers/fake-model.ts';
+import { installFakeLoopModel } from '../../helpers/fake-loop-model.ts';
+console.log('loading config: fixture-token');
+let plans = 0;
+` + fakeConfig('{}', `
+  secrets: { token: 'fixture-token' },
+  agents: { default: {
+    model: installFakeLoopModel(() => [{ toolName: 'complete_step', input: { status: 'passed', summary: 'Checked the app.' } }]),
+    judge: installFakeModel(() => extracted(++plans === 1
+      ? { decision: 'step', title: 'Home', instruction: 'Check the home screen', summary: '' }
+      : { decision: 'finish', title: '', instruction: '', summary: 'The home screen passed its check.' })),
+  } },
+  reporters: [${configured}, { name: 'audit', onSummary() { console.log('audit summary'); } }],
+`);
+  const { exitCode, stdout, stderr } = cli({ 'e2e.config.ts': config }, ['explore', 'Check the app', ...flags]);
+  expect(exitCode, stderr).toBe(0);
+  const report = JSON.parse(stdout) as Report1Document;
+  assertValidReport(report);
+  expect(report.run.explore?.ended).toBe('finished');
+  expect(stderr).toMatch(/^loading config: <secret:token>$/mu);
+  expect(stderr).toMatch(/^audit summary$/mu);
+  expect(stdout + stderr).not.toContain('fixture-token');
+});
+
 describe('fixture rules through the CLI', () => {
   const SUPPORT = `import { test as base } from 'e2e';
 

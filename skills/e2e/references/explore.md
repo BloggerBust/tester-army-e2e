@@ -85,6 +85,8 @@ configured secrets are redacted (topic `writing-tests`).
 - `--headed`, `--video`, `--trace`, `--debug`, and `--ai-trace` mean what
   they mean for `e2e run`. The exploration is one attempt, so a retry mode
   records nothing: pass `--trace on`.
+- Config logs go to stderr and are redacted once the config's secrets
+  are known.
 
 The replay cache is off and retries are zero for the exploration. Per-step
 action and model-call budgets default to 40 each; `agents.<name>.maxSteps`
