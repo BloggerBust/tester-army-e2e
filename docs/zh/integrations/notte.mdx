@@ -1,0 +1,92 @@
+---
+title: Notte 浏览器
+sidebarTitle: Notte
+description: 使用 @e2e-dev/notte 的 notte() 浏览器提供方，在 Notte 云浏览器中运行网页端测试目标。
+---
+
+`@e2e-dev/notte` 的 `notte()` 是 [Notte](https://notte.cc) 的[浏览器提供方](/browser#hosted-browsers)。每次测试尝试都有独立的云浏览器会话。测试代码保持不变，只需修改测试目标的 `browser`。
+
+## 设置
+
+安装提供方和 Notte SDK：
+
+<CodeGroup>
+```bash npm
+npm install --save-dev @e2e-dev/notte notte-sdk
+```
+
+```bash pnpm
+pnpm add -D @e2e-dev/notte notte-sdk
+```
+
+```bash bun
+bun add -d @e2e-dev/notte notte-sdk
+```
+</CodeGroup>
+
+将测试目标的 `browser` 设为 `notte()`：
+
+```ts title="e2e.config.ts"
+import type { E2EConfig } from 'e2e';
+import { web } from '@e2e-dev/web';
+import { notte } from '@e2e-dev/notte';
+
+export default {
+  targets: [
+    {
+      name: 'notte',
+      engine: web({ browser: notte() }),
+      app: { url: 'https://staging.example.com' },
+    },
+  ],
+} satisfies E2EConfig;
+```
+
+在启动 `e2e run` 的环境中设置 `NOTTE_API_KEY`，例如将它存为 CI 机密值。从 [Notte 控制台](https://console.notte.cc/apikeys)复制密钥。`workers` 决定同时运行的会话数。云浏览器必须能访问应用，因此 `app.url` 应指向已部署或通过隧道暴露的 URL，而不是 `localhost`。
+
+缺少密钥或 Notte 返回错误时，本次尝试会失败并显示对应消息。
+
+## 选项
+
+`notte(options)` 原样接受 Notte 的会话启动请求体，包括 `solve_captchas`、`proxies`、`browser_type`、`idle_timeout_minutes`、`max_duration_minutes`、`viewport_width` 和 `viewport_height`、`profile`、`user_agent`、`extra_http_headers`、`block_ads`，以及你所用 `notte-sdk` 中 `ApiSessionStartRequest` 的其他字段：
+
+```ts
+web({
+  browser: notte({ solve_captchas: true, proxies: true, idle_timeout_minutes: 5 }),
+})
+```
+
+不包含 `cdp_url` 和托管身份验证字段（`auth_ids`、`auth_retry`、`wait_for_authentication`）：前者指定另一提供方的浏览器，后者会在会话可连接之前就返回它。
+
+## 每次尝试一个会话
+
+提供方仅支持 `attempt` 作用域的租约。Notte 会话拥有一个浏览器上下文，拒绝创建新上下文，而 `worker` 作用域需要新上下文来隔离测试。每次尝试（包括重试）都在全新会话的默认上下文中，使用第一个标签页运行。每个测试都需要等待会话启动，并受[每次尝试独立租约的限制](/browser#hosted-browsers)约束，包括会话相关限制。
+
+## 查看和清理会话
+
+报告器为每个新会话记录 `session <id>, watch at <console URL>`。链接在 Notte 控制台打开该会话，测试期间可实时查看，结束后可回放。查看需要登录控制台，因此可安全地出现在公开 CI 日志中。设置 `NOTTE_API_URL` 后，报告器只记录 `session <id>`，因为提供方无法判断该 API 对应哪个控制台。
+
+无论通过哪条退出路径，每次尝试结束时提供方都会停止其会话。运行结束时，还会停止那些在清理前已终止的工作进程所留下的会话。如果整个运行意外终止，Notte 会在会话闲置 `idle_timeout_minutes` 后关闭它，默认为 3 分钟。Notte 也会在 `max_duration_minutes` 后结束每个会话，默认为 15 分钟；测试耗时更长时需增大此值。
+
+## 下载
+
+`browser.waitForDownload` 与本地行为一致。Notte 将浏览器下载的每个文件按网站建议的文件名保存在会话的文件存储中，提供方再将该名称的文件复制到本次尝试的产物中。
+
+## 与本地浏览器的区别
+
+- Notte 自行响应 JavaScript 对话框：测试的对话框处理器还没来得及接受，`confirm` 就返回 `false`，`prompt` 返回 `null`。
+- 浏览器接受 Windows 组合键。`ControlOrMeta` 跟随运行器的系统，因此在 Mac 上会发送浏览器忽略的 `Meta`。对于也会从 Mac 运行的测试，请写 `Control+A`。
+- `setInputFiles` 支持上传最大 50 MB 的文件，不支持文件夹。
+- 应用必须能从 Notte 云端访问，因此无法加载 `localhost` 地址。将 `app.url` 指向已部署或通过隧道暴露的 URL。
+- 与任何按尝试租用的浏览器一样，`app.clearState()` 和保存的[会话](/authentication)不可用。每次尝试本就从全新会话开始。
+
+## 下一步
+
+<CardGroup cols={2}>
+  <Card title="托管浏览器" icon="globe" href="/browser#hosted-browsers">
+    了解浏览器提供方如何租用浏览器，以及 `'attempt'` 作用域的限制。
+  </Card>
+  <Card title="持续集成" icon="rotate" href="/ci">
+    在 GitHub Actions 或其他 CI 服务中运行测试套件。
+  </Card>
+</CardGroup>

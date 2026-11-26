@@ -1,0 +1,302 @@
+---
+title: サービス
+description: メール API などの依存サービスをアプリの実行前に起動し、テストで使います。
+---
+
+サービスは、メール API、OAuth プロバイダー、データベースなど、アプリが必要とする依存先です。`e2e run` や `e2e explore` を実行すると、各サービスはアプリのコマンドより先に起動し、実行終了時に停止します。[`e2e mcp` と `openHost`](#services-in-e2e-mcp-and-openhost) でもサービスを起動します。
+
+## サービスを定義する
+
+`start` プロパティが非同期ジェネレーターであるオブジェクトを `defineService` に渡します。ジェネレーターは `yield` の前に依存先を起動し、設定とテストは `yield` したオブジェクトをサービスの値として受け取ります。実行終了時には `yield` より後の処理で依存先を停止します。
+
+```ts title="services/email.ts" expandable
+import { randomUUID } from 'node:crypto';
+import { once } from 'node:events';
+import { createServer } from 'node:http';
+import { text } from 'node:stream/consumers';
+import { setTimeout } from 'node:timers/promises';
+import { defineService } from 'e2e';
+
+type Email = {
+  to: string;
+  subject: string;
+};
+
+export const email = defineService({
+  async *start({ signal }) {
+    const emails: Email[] = [];
+
+    const server = createServer(async (request, response) => {
+      emails.push(JSON.parse(await text(request)));
+      response.end();
+    });
+
+    server.listen({ port: 0, host: '127.0.0.1', signal });
+
+    await once(server, 'listening', { signal });
+
+    const serverAddress = server.address();
+
+    if (serverAddress === null || typeof serverAddress === 'string') {
+      throw new Error('The email server has no TCP address.');
+    }
+
+    const received = (address: string) => emails.filter((message) => message.to === address);
+
+    yield {
+      url: `http://127.0.0.1:${serverAddress.port}`,
+      createInbox: () => ({ address: `${randomUUID()}@example.com` }),
+      received,
+      waitForEmail: async (address: string, { subject }: { subject: RegExp }) => {
+        for (let attempt = 0; attempt < 100; attempt++) {
+          const match = received(address).find((message) => subject.test(message.subject));
+
+          if (match !== undefined) {
+            return match;
+          }
+
+          await setTimeout(100);
+        }
+
+        throw new Error(`no email to ${address} with a subject matching ${subject} arrived within 10 seconds`);
+      },
+    };
+
+    server.close();
+
+    await once(server, 'close');
+  },
+});
+```
+
+サービス内で起動・停止するものには `signal` を渡してください。次の場合にシグナルが中断されます。
+
+- Ctrl+C などで起動がキャンセルされた場合、または `startupTimeout`（デフォルト 60 秒）以内にサービスが `yield` しなかった場合。
+- サービスが不要になった後、`yield` より後の処理が `shutdownTimeout`（デフォルト 10 秒）以内に終了しなかった場合。
+- `e2e run` または `e2e explore` のテスト中やサービス停止中に、Ctrl+C が 2 回目に押された場合。
+
+Docker イメージを取得するサービスなどでは、起動や停止により長い時間が必要なことがあります。`defineService` に渡すオブジェクトに `startupTimeout` または `shutdownTimeout` をミリ秒で設定します。[`app.command`](/reference/config#command) と同じ名前です。
+
+```ts
+export const database = defineService({
+  startupTimeout: 180_000, // default: 60000
+  async *start({ signal }) {
+    // ...
+  },
+});
+```
+
+## サービスをアプリに渡す
+
+設定の `services` にサービスを追加し、`env` 関数からアプリにそのアドレスを渡します。
+
+```ts title="e2e.config.ts"
+import { defineConfig } from 'e2e';
+import { web } from '@e2e-dev/web';
+import { email } from './services/email.ts';
+
+export default defineConfig({
+  projectId: 'dev.example.signup',
+  services: { email },
+  targets: [
+    {
+      name: 'web',
+      engine: web(),
+      app: {
+        url: 'http://127.0.0.1:0',
+        command: {
+          executable: 'node',
+          args: ['app/server.mjs'],
+          env: async ({ services }) => ({
+            PORT: '{port}',
+            EMAIL_API_URL: services.email.url,
+          }),
+        },
+      },
+    },
+  ],
+});
+```
+
+サービスはすべてのアプリコマンドより先にキーの順序で起動し、アプリコマンドが終了した後に逆順で停止します。
+
+`env` 関数は実行ごとに 1 回、サービス起動後かつアプリコマンドの起動前に呼び出されます。`env` のその他のルールは、設定リファレンスの [`command`](/reference/config#command) を参照してください。
+
+ここでは `satisfies E2EConfig` ではなく [`defineConfig`](/reference/config#defineconfig) を使うと、`env` の `services` の型が設定から推論されます。
+
+## テストでサービスを使う
+
+設定の型を `test.extend` に渡し、`services` フィクスチャに型を付けます。
+
+```ts title="tests/fixtures.ts"
+import { test as base } from 'e2e';
+import type config from '../e2e.config.ts';
+
+export const test = base.extend<{}, {}, typeof config>({});
+```
+
+`services` は、テスト、フック、どちらのスコープのフィクスチャでも使えます。
+
+```ts title="tests/signup.e2e.ts"
+import { expect } from 'e2e';
+import { test } from './fixtures.ts';
+
+test('signing up sends one welcome email', async ({ app, screen, services }) => {
+  const inbox = await services.email.createInbox();
+
+  await app.open('/');
+  await screen.getByRole('textbox', { name: 'Email' }).fill(inbox.address);
+  await screen.getByRole('button', { name: 'Sign up' }).click();
+
+  const email = await services.email.waitForEmail(inbox.address, { subject: /welcome/i });
+
+  expect(email.subject).toContain('Welcome');
+  expect(await services.email.received(inbox.address)).toHaveLength(1);
+});
+```
+
+各ワーカーは `yield` されたデータのコピーを受け取ります。`yield` した関数はテスト内では非同期関数になるため、`services.email.createInbox()` は Promise を返します。
+テストが呼び出すと、サービスを起動したプロセスが実際の関数を実行し、結果のコピーを返します。`e2e run` ではランナープロセス、`e2e mcp` ではサーバー、`openHost` ではホストのプロセスです。
+
+`e2e run` と `e2e explore` では、すべてのワーカーが同じサービスインスタンスを共有するため、他のテストが送ったメールも見えます。`openHost` ではホストごとに独自のインスタンスを起動します。
+テスト間で共有サービスをリセットすると、たとえば `afterEach` ですべてのメールを削除すると、他のワーカーで同時に実行中のテストのデータも削除されます。サービスから各テストに一意の ID を渡し、その ID でデータを分離してください。上のテストでは、`createInbox()` が一意のアドレスを持つ受信箱を返し、そのアドレス宛てのメールだけを読みます。
+
+## サービスが yield できる値
+
+任意の形のプレーンオブジェクトを `yield` します。内部のデータは [`v8.serialize`](https://nodejs.org/api/v8.html#v8serializevalue) でコピーされます。使える値は次のとおりです。
+
+- プレーンオブジェクト、配列、Map、Set は任意の深さにネストできます。
+- 文字列、数値、真偽値、bigint、`null`、`undefined`、日付、正規表現、`TypeError` などの組み込みエラー、`ArrayBuffer`、`Buffer` などの型付き配列は型を保持します。
+- 関数はプレーンオブジェクトと配列の任意の深さに配置できますが、Map や Set の中には置けません。
+
+それ以外の値は拒否されます。独自のクラスのインスタンスを使う場合は、テストに必要なデータと関数をプレーンオブジェクトに取り出してください。
+
+`defineService` では、拒否される値の多くは型エラーになります。たとえば `URL`、`Promise`、コールバックを受け取る関数、`Map` や `Set` 内の関数です。
+データフィールドのみを持つクラスのインスタンスや、独自の `Error` サブクラスのインスタンスは型チェックを通過します。TypeScript はクラスではなく構造を比較するためです。ただし、実行開始時に `INVALID_SERVICE_VALUE` で失敗します。
+
+`yield` した関数は `this` が `undefined` の状態で実行されます。メソッドが `this` に依存する場合は、`sent: () => inbox.sent()` のようなアロー関数で包んでください。テストからサービスの関数を呼ぶ場合、引数と戻り値には上記のデータ型を使えますが、関数を含めることはできません。
+
+## サービスが失敗したとき
+
+| コード | 発生条件 |
+| --- | --- |
+| [`SERVICE_START_FAILED`](/reference/errors#runner-codes) | `start` が例外を投げる、`yield` せずに終了する、非同期ジェネレーターではない、または `startupTimeout` 以内に `yield` しない場合。起動済みのサービスを停止し、実行が失敗します。`e2e mcp` では代わりに `open_session` が失敗します。`openHost()` はこのエラーで reject されます。 |
+| [`INVALID_SERVICE_VALUE`](/reference/errors#runner-codes) | `yield` した値がプレーンオブジェクトではない、またはコピーできない値を含む場合。 |
+| [`SERVICE_STOP_FAILED`](/reference/errors#runner-codes) | `yield` より後の処理が例外を投げる、2 回目の `yield` を行う、またはサービスの `shutdownTimeout` 以内に終了しない場合。実行はクリーンアップエラーで失敗します。`e2e mcp` では最後のセッションの終了サマリーにクリーンアップの行として含まれます。`openHost` では `host.close()` が返します。 |
+
+## e2e mcp と openHost のサービス
+
+`e2e mcp` は、設定ファイルを使う最初のセッションを開くときにそのサービスを起動し、最後のセッションが閉じるときに停止します。同じファイルを使うすべてのセッションで共有します。
+セッションが開いている間に設定を編集しても、実行中のサービスは変わりません。変更は、そのファイルの最後のセッションが閉じ、新しいセッションが開いた後に反映されます。
+
+[`openHost`](/reference/runner#openhost) はホストを開くときにサービスを起動します。`host.close()` はアプリのプロセスを停止した後、サービスを停止します。
+
+## ローカル API エミュレーターを実行する
+
+サービスでは、サードパーティ API をエミュレートする任意のパッケージを実行できます。[emulate](https://emulate.dev) はその一例で、GitHub、Resend、Stripe などの API のローカルエミュレーターを実行します。以下は Resend エミュレーターの例です。emulate を開発依存関係としてインストールします。
+
+<CodeGroup>
+```bash npm
+npm install --save-dev emulate
+```
+
+```bash pnpm
+pnpm add -D emulate
+```
+
+```bash bun
+bun add -d emulate
+```
+</CodeGroup>
+
+`createEmulator` でエミュレーターを起動します。エミュレーターのオブジェクト全体を `yield` すると、どのテストからも `close()` を呼んで全ワーカーのエミュレーターを停止できてしまいます。`url` など、テストに必要なものだけを `yield` してください。
+
+```ts title="services/resend.ts"
+import { createEmulator } from 'emulate';
+import { defineService } from 'e2e';
+
+export const resend = defineService({
+  async *start() {
+    const emulator = await createEmulator({ service: 'resend', port: 0 });
+
+    yield { url: emulator.url };
+
+    await emulator.close();
+  },
+});
+```
+
+<Accordion title="Resend エミュレーターの設定とテスト">
+
+```ts title="e2e.config.ts"
+import { defineConfig } from 'e2e';
+import { web } from '@e2e-dev/web';
+import { resend } from './services/resend.ts';
+
+export default defineConfig({
+  projectId: 'dev.example.signup',
+  services: { resend },
+  targets: [
+    {
+      name: 'web',
+      engine: web(),
+      app: {
+        url: 'http://127.0.0.1:0',
+        command: {
+          executable: 'node',
+          args: ['app/server.mjs'],
+          env: ({ services }) => ({
+            PORT: '{port}',
+            RESEND_API_KEY: 're_test',
+            RESEND_BASE_URL: services.resend.url,
+          }),
+        },
+      },
+    },
+  ],
+});
+```
+
+```ts title="tests/fixtures.ts"
+import { test as base } from 'e2e';
+import type config from '../e2e.config.ts';
+
+export const test = base.extend<{}, {}, typeof config>({});
+```
+
+テストはエミュレーターの Resend API から送信済みメールを読み取ります。
+
+```ts title="tests/signup.e2e.ts"
+import { randomUUID } from 'node:crypto';
+import { expect } from 'e2e';
+import { test } from './fixtures.ts';
+
+test('signing up sends a welcome email through Resend', async ({ app, screen, services }) => {
+  const address = `ada+${randomUUID()}@example.com`;
+
+  await app.open('/');
+  await screen.getByRole('textbox', { name: 'Email' }).fill(address);
+  await screen.getByRole('button', { name: 'Sign up' }).click();
+  await expect(screen.getByRole('heading', { name: 'Check your inbox' })).toBeVisible();
+
+  const response = await fetch(`${services.resend.url}/emails`);
+  const { data } = await response.json();
+
+  expect(data.filter((email: { to: string[] }) => email.to.includes(address))).toEqual([
+    expect.objectContaining({ to: [address], subject: 'Welcome' }),
+  ]);
+});
+```
+
+</Accordion>
+
+## 次のステップ
+
+<CardGroup cols={2}>
+  <Card title="フィクスチャを書く" icon="puzzle-piece" href="/fixtures">
+    各テストの前にデータを準備し、後でクリーンアップします。
+  </Card>
+  <Card title="設定リファレンス" icon="code" href="/reference/config#services">
+    `services` キーと `env` 関数を確認します。
+  </Card>
+</CardGroup>

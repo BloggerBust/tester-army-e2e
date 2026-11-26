@@ -1,0 +1,190 @@
+---
+title: request
+description: "request 测试夹具：从测试中发送 HTTP 请求，每次调用都作为一个步骤记录在报告中。"
+---
+
+`request` 测试夹具从测试中发送 HTTP 请求。路径相对于测试目标的应用 URL 解析。每次调用都是报告中的一个步骤，读取完整个响应体后才结束。
+
+```ts title="tests/orders.e2e.ts"
+import { expect, test } from 'e2e';
+
+test('creates an order', async ({ request }) => {
+  const created = await request.post('/api/orders', { json: { sku: 'A1' } });
+  expect(created.status).toBe(201);
+  expect(await created.json()).toMatchObject({ sku: 'A1' });
+});
+```
+
+## 参考
+
+| 方法 | 返回值 |
+| --- | --- |
+| [`fetch`](#fetch) | `Promise<WebResponse>` |
+| [`get`](#shorthands) | `Promise<WebResponse>` |
+| [`post`](#shorthands) | `Promise<WebResponse>` |
+| [`put`](#shorthands) | `Promise<WebResponse>` |
+| [`patch`](#shorthands) | `Promise<WebResponse>` |
+| [`delete`](#shorthands) | `Promise<WebResponse>` |
+| [`head`](#shorthands) | `Promise<WebResponse>` |
+
+每个方法都接受 URL 和[选项](#options)，并返回 [`WebResponse`](#webresponse)。
+
+### `fetch`
+
+使用 `options.method` 指定的方法发送请求，默认为 `GET`。
+
+```ts
+const removed = await request.fetch('/api/orders/7', { method: 'DELETE' });
+```
+
+可以指定任意 HTTP 方法名，但不支持 Node 的 `fetch` 无法发送的 `CONNECT`、`TRACE` 和 `TRACK`。e2e 会将方法名转为大写后发送。
+
+### 快捷方法
+
+`get`、`post`、`put`、`patch`、`delete` 和 `head` 使用各自对应的方法发送请求。
+
+```ts
+const found = await request.get('/api/orders?reference=r1');
+```
+
+`GET` 或 `HEAD` 请求不能携带请求体。
+
+### 选项
+
+| 选项 | 类型 | 默认值 |
+| --- | --- | --- |
+| `headers` | `Record<string, string>` | - |
+| `json` | `unknown` | - |
+| `body` | `string` | - |
+| `timeout` | `number` | `actionTimeout` |
+| `redirect` | `'follow' \| 'manual' \| 'error'` | `'follow'` |
+| `method` | `string` | `'GET'` |
+
+- `json` 通过 `JSON.stringify` 序列化后发送；除非 `headers` 设置了内容类型，否则使用 `content-type: application/json`。只接受可安全表示为 JSON 的值：普通对象、数组、字符串、有限数字、布尔值和 `null`。值为 `undefined` 的键、`Date` 和 `secrets.get()` 句柄会被拒绝，而普通的 `JSON.stringify` 会将它们丢弃或转换。
+- `body` 原样发送；除非 `headers` 设置了内容类型，否则使用 `content-type: text/plain;charset=UTF-8`。`json` 和 `body` 只能传一个。尚不支持表单、multipart 和二进制请求体。
+- `timeout` 以毫秒为单位，最大为 2147483647。`0` 表示不设置独立超时，仅由当前测试或钩子的预算限制调用。
+- `redirect` 设置重定向处理方式。`'follow'` 跟随重定向；`'manual'` 原样返回 3xx 响应，包含 `location` 和 `set-cookie` 响应头；`'error'` 在服务器重定向时使调用报错 `ACTION_FAILED`。
+- `method` 仅适用于 `fetch`。
+
+### `WebResponse`
+
+表示 `request` 已读完响应体的 HTTP 响应。网页端引擎的 `route.fetch()` 返回同一类型。[`browser.waitForResponse`](/reference/web#waitforresponse) 返回 `PageResponse`，它在 `WebResponse` 上增加 `request`，并在响应匹配后立即开始读取响应体。
+
+| 成员 | 类型 |
+| --- | --- |
+| `status` | `number` |
+| `url` | `string` |
+| `headers` | `Record<string, string>` |
+| `body()` | `Promise<Buffer>` |
+| `text()` | `Promise<string>` |
+| `json<T>()` | `Promise<T>` |
+
+- `redirect` 为 `'follow'` 时，`url` 是重定向后的 URL；为 `'manual'` 时，则是请求的 URL。
+- `headers` 的名称均为小写。多个 `set-cookie` 值以 `\n` 连接。
+- `text()` 将响应体按 UTF-8 解码。`json()` 解析响应体，未指定类型时返回 `unknown`。指定的类型不会被检查，请使用 [`toMatchSchema`](/reference/expect#matching-a-schema) 验证。
+- 使用 [`toBeOK`](/reference/expect#tobeok) 检查 2xx 状态，或用值匹配器检查具体状态，例如 `expect(response.status).toBe(201)`。
+
+## URL
+
+路径相对于测试目标的 `app.url` 解析，规则与 [`app.open`](/reference/app#open) 相同。绝对 `http` 或 `https` URL 在任何测试目标上都会访问其指定地址。
+
+- 以 `/` 开头的路径从源站根目录开始。若 `app.url` 为 `https://example.com/shop`，`/api/orders` 会访问 `https://example.com/api/orders`。要保留基础路径，请写 ``request.get(`${app.baseUrl}/api/orders`)``。
+- 调用在运行器进程中执行，使用运行器所在的网络。运行器无法访问的应用，`request` 也无法访问，例如位于虚拟机中、运行器只能操作其中浏览器的应用。
+- 网页端引擎的 `headers` 和 `basicAuth` 选项只作用于浏览器。请在调用的 `headers` 中传入相同的值。
+
+| 错误 | 触发条件 |
+| --- | --- |
+| `APP_URL_REQUIRED` | URL 是路径，但测试目标未声明 `app.url`。 |
+| `POLICY_DENIED` | URL 格式不正确，或协议不是 `http`、`https`，包括 `about:blank`。`json` 中包含 `Secret` 也会触发此错误。 |
+| `INVALID_ARGUMENT` | URL 不是非空字符串或包含凭据（`https://user:pass@...`）；选项类型错误，或使用了 `request` 不接受的选项，例如 Playwright 的 `data` 或 `params`；`headers` 不是普通对象；请求头名称或值无效；指定了由 `fetch` 自行设置的 `content-length`、`host`、`sec-fetch-mode`，或 `fetch` 无法发送的 `expect`、`keep-alive`、`transfer-encoding`、`upgrade`；`connection` 既不是 `close` 也不是 `keep-alive`；将 `accept-encoding` 与 `range` 同时使用（此时 `fetch` 会追加 `identity`）；同时设置 `json` 和 `body`；`json` 不能安全表示为 JSON；`GET` 或 `HEAD` 请求带有请求体；`timeout` 为负数或超过 2147483647；`redirect` 不是 `'follow'`、`'manual'` 或 `'error'`；方法不是 HTTP 方法名，或是 `CONNECT`、`TRACE`、`TRACK`。 |
+
+## 步骤和超时
+
+每次调用都是类型为 `resource` 的步骤，以方法和路径作为标签，例如 `POST /api/orders`。标签不包含查询字符串。如果路径属于其他源站，标签也会显示源站。
+
+被上述检查拒绝的调用仍会记录为失败步骤，其 Promise 会拒绝；方法本身不会同步抛出异常。如果被拒绝的是方法或 URL，步骤没有标签，错误消息也不会引用 URL 或请求头的值。
+
+调用同时受自身 `timeout` 和调用代码的预算限制。`timeout` 默认使用 `actionTimeout`，即 30000 毫秒；在测试体中使用测试超时，在 `afterEach` 钩子中使用清理超时。任一预算耗尽时，e2e 都会中止请求。测试时间耗尽时会以通常的超时错误失败。
+
+| 错误 | 触发条件 |
+| --- | --- |
+| `ACTION_FAILED` | 调用超过 `timeout`，服务器在 `redirect: 'error'` 时重定向，或网络失败，例如服务器拒绝连接、主机无法解析。 |
+
+e2e 不会重试调用。当服务器返回 `421 Misdirected Request` 时，Node 的 `fetch` 自身会重新发送一次请求。要重试读取，请使用 [`expect.poll`](/reference/expect#polling-a-value) 包装。
+
+## Cookie 和作用域
+
+`request` 不会发送浏览器的 Cookie，也不会在调用之间保留 Cookie。按照[已登录请求](/api-testing#signed-in-requests)中的示例，通过 `headers` 传入令牌或应用的会话 Cookie。URL 中的凭据会被拒绝。
+
+`request` 是测试级测试夹具。测试体、`beforeEach` 和 `afterEach` 可以使用它，`beforeAll`、`afterAll` 和工作进程级测试夹具不能使用。
+
+## 类型
+
+```ts
+export interface APIRequest {
+  /** Sends a request with `options.method`, GET by default. */
+  fetch(url: string, options?: APIRequestFetchOptions): Promise<WebResponse>;
+  /** Sends a GET request. */
+  get(url: string, options?: APIRequestOptions): Promise<WebResponse>;
+  /** Sends a POST request. */
+  post(url: string, options?: APIRequestOptions): Promise<WebResponse>;
+  /** Sends a PUT request. */
+  put(url: string, options?: APIRequestOptions): Promise<WebResponse>;
+  /** Sends a PATCH request. */
+  patch(url: string, options?: APIRequestOptions): Promise<WebResponse>;
+  /** Sends a DELETE request. */
+  delete(url: string, options?: APIRequestOptions): Promise<WebResponse>;
+  /** Sends a HEAD request. */
+  head(url: string, options?: APIRequestOptions): Promise<WebResponse>;
+}
+
+/** What one `request` call sends beside its URL. */
+export interface APIRequestOptions {
+  /** Request headers. */
+  readonly headers?: Readonly<Record<string, string>>;
+  /** A body sent as JSON, with `content-type: application/json` unless `headers` sets one. Not with `body`. */
+  readonly json?: unknown;
+  /** A body sent as is. Not with `json`. */
+  readonly body?: string;
+  /** Timeout in milliseconds; defaults to `actionTimeout`. 0 sets none of its own, so only the running test's or hook's budget bounds the call. */
+  readonly timeout?: number;
+  /** How redirects are handled; `'follow'` by default. `'manual'` returns the 3xx response as is; `'error'` fails the call with `ACTION_FAILED`. */
+  readonly redirect?: 'follow' | 'manual' | 'error';
+}
+
+/** `request.fetch` options: the method beside the rest. */
+export interface APIRequestFetchOptions extends APIRequestOptions {
+  /** The HTTP method; GET by default. */
+  readonly method?: string;
+}
+
+/**
+ * An HTTP response: what `request` calls, the web engine's
+ * `browser.waitForResponse`, and `route.fetch()` return.
+ */
+export interface WebResponse {
+  /** Response URL. */
+  readonly url: string;
+  /** HTTP status. */
+  readonly status: number;
+  /** Response headers, lower-cased names; `request` and `route.fetch()` join several `set-cookie` values with `\n`, `waitForResponse` leaves cookie headers out. */
+  readonly headers: Readonly<Record<string, string>>;
+  /** Waits for the body and returns its bytes; rejects with `ACTION_FAILED` when the body could not be read. */
+  body(): Promise<Buffer>;
+  /** Waits for the body and parses it as JSON; rejects with `ACTION_FAILED` when the body could not be read. */
+  json<T = unknown>(): Promise<T>;
+  /** Waits for the body and reads it as text; rejects with `ACTION_FAILED` when the body could not be read. */
+  text(): Promise<string>;
+}
+```
+
+## 相关内容
+
+<CardGroup cols={2}>
+  <Card title="API" icon="plug" href="/api-testing">
+    将 API 测试与 UI 测试写在相同文件中，并一起运行。
+  </Card>
+  <Card title="expect" icon="circle-check" href="/reference/expect">
+    用于响应字段和响应体的值匹配器。
+  </Card>
+</CardGroup>

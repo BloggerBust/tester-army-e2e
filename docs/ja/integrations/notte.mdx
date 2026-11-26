@@ -1,0 +1,99 @@
+---
+title: Notte ブラウザ
+sidebarTitle: Notte
+description: "@e2e-dev/notte の notte() ブラウザプロバイダーで、Web ターゲットを Notte のクラウドブラウザで実行します。"
+---
+
+`@e2e-dev/notte` の `notte()` は、[Notte](https://notte.cc) 用の[ブラウザプロバイダー](/browser#hosted-browsers)です。
+テストの各試行に専用のクラウドブラウザセッションを割り当てます。テストはそのままで、ターゲットの `browser` だけを変更します。
+
+## セットアップ
+
+プロバイダーと Notte SDK をインストールします。
+
+<CodeGroup>
+```bash npm
+npm install --save-dev @e2e-dev/notte notte-sdk
+```
+
+```bash pnpm
+pnpm add -D @e2e-dev/notte notte-sdk
+```
+
+```bash bun
+bun add -d @e2e-dev/notte notte-sdk
+```
+</CodeGroup>
+
+ターゲットの `browser` を `notte()` に設定します。
+
+```ts title="e2e.config.ts"
+import type { E2EConfig } from 'e2e';
+import { web } from '@e2e-dev/web';
+import { notte } from '@e2e-dev/notte';
+
+export default {
+  targets: [
+    {
+      name: 'notte',
+      engine: web({ browser: notte() }),
+      app: { url: 'https://staging.example.com' },
+    },
+  ],
+} satisfies E2EConfig;
+```
+
+`e2e run` を起動する環境に `NOTTE_API_KEY` を設定します。CI ではシークレットに保存します。
+キーは [Notte コンソール](https://console.notte.cc/apikeys)からコピーできます。
+`workers` は同時に実行するセッション数です。クラウドブラウザからアプリにアクセスできる必要があるため、`app.url` には `localhost` ではなく、デプロイ済みまたはトンネル経由の URL を指定します。
+
+キーがない場合や Notte でエラーが発生した場合、試行はそのメッセージとともに失敗します。
+
+## オプション
+
+`notte(options)` は Notte のセッション開始リクエストボディをそのまま受け取ります。
+`solve_captchas`、`proxies`、`browser_type`、`idle_timeout_minutes`、`max_duration_minutes`、`viewport_width`、`viewport_height`、`profile`、`user_agent`、`extra_http_headers`、`block_ads` など、使用中の `notte-sdk` の `ApiSessionStartRequest` にあるフィールドを指定できます。
+
+```ts
+web({
+  browser: notte({ solve_captchas: true, proxies: true, idle_timeout_minutes: 5 }),
+})
+```
+
+`cdp_url` とマネージド認証のフィールド（`auth_ids`、`auth_retry`、`wait_for_authentication`）は除外されています。前者は別のプロバイダーのブラウザを指定し、後者は接続可能になる前にセッションを返すためです。
+
+## 試行ごとに 1 つのセッション
+
+このプロバイダーのリースは `attempt` スコープのみです。Notte のセッションはブラウザコンテキストを 1 つ持ち、追加の作成を拒否します。テストの分離に新しいコンテキストが必要な `worker` スコープは使えません。
+リトライを含む各試行は、新しいセッションのデフォルトコンテキストの最初のタブで実行されます。テストごとにセッションの起動時間がかかり、セッションに関する制約を含む[試行ごとのリースの制限](/browser#hosted-browsers)が適用されます。
+
+## セッションの確認とクリーンアップ
+
+レポーターは新しいセッションごとに `session <id>, watch at <console URL>` をログに出力します。リンクを開くと、テスト中はライブで、終了後はリプレイで Notte コンソールのセッションを確認できます。
+コンソールへのサインインが必要なため、公開 CI ログに載せても安全です。`NOTTE_API_URL` が設定されている場合、どのコンソールがその API に対応するか判断できないため、レポーターは `session <id>` のみを出力します。
+
+試行が終了すると、終了経路にかかわらずプロバイダーがセッションを停止します。実行終了時には、停止処理の前に終了したワーカーのセッションも停止します。
+実行自体が強制終了した場合、Notte は `idle_timeout_minutes` の間アクティビティがないセッションを閉じます。デフォルトは 3 分です。また、すべてのセッションは `max_duration_minutes` 経過後に終了します。デフォルトは 15 分なので、長時間のテストでは値を増やしてください。
+
+## ダウンロード
+
+`browser.waitForDownload` はローカルと同じように動作します。Notte はブラウザがダウンロードしたファイルを、サイトが提示した名前でセッションのファイルストレージに保存します。プロバイダーはその名前のファイルを試行のアーティファクトにコピーします。
+
+## ローカルブラウザとの違い
+
+- Notte は JavaScript ダイアログに自動で応答します。テストのダイアログハンドラーが承認する前に、`confirm` は `false`、`prompt` は `null` を返します。
+- ブラウザは Windows のキーの組み合わせを受け取ります。`ControlOrMeta` はランナーの OS に従うため、Mac ではブラウザが無視する `Meta` を送ります。Mac からも実行するテストでは `Control+A` を使ってください。
+- `setInputFiles` は 50 MB までのファイルをアップロードできます。フォルダーは使えません。
+- アプリには Notte のクラウドからアクセスできる必要があり、`localhost` のアドレスは読み込めません。`app.url` にはデプロイ済みまたはトンネル経由の URL を指定します。
+- 試行ごとのリースと同様、`app.clearState()` と保存済みの[セッション](/authentication)は使えません。各試行はすでに新しいセッションで始まります。
+
+## 次のステップ
+
+<CardGroup cols={2}>
+  <Card title="ホスト型ブラウザ" icon="globe" href="/browser#hosted-browsers">
+    ブラウザプロバイダーによるリースの仕組みと、`'attempt'` スコープの制限を確認します。
+  </Card>
+  <Card title="継続的インテグレーション" icon="rotate" href="/ci">
+    GitHub Actions などの CI サービスでテストスイートを実行します。
+  </Card>
+</CardGroup>

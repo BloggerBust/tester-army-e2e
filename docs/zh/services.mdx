@@ -1,0 +1,298 @@
+---
+title: 服务
+description: 在应用运行前启动邮件 API 等依赖服务，并在测试中使用它们。
+---
+
+服务是应用所需的依赖，例如邮件 API、OAuth 提供方或数据库。运行 `e2e run` 或 `e2e explore` 时，每个服务都会在应用命令之前启动，并在运行结束时停止。[`e2e mcp` 和 `openHost`](#services-in-e2e-mcp-and-openhost) 也会启动服务。
+
+## 定义服务
+
+调用 `defineService`，传入一个 `start` 属性为异步生成器的对象。生成器在 `yield` 前启动依赖，配置和测试则将产出的对象作为服务值接收。运行结束时，`yield` 之后的代码负责停止依赖：
+
+```ts title="services/email.ts" expandable
+import { randomUUID } from 'node:crypto';
+import { once } from 'node:events';
+import { createServer } from 'node:http';
+import { text } from 'node:stream/consumers';
+import { setTimeout } from 'node:timers/promises';
+import { defineService } from 'e2e';
+
+type Email = {
+  to: string;
+  subject: string;
+};
+
+export const email = defineService({
+  async *start({ signal }) {
+    const emails: Email[] = [];
+
+    const server = createServer(async (request, response) => {
+      emails.push(JSON.parse(await text(request)));
+      response.end();
+    });
+
+    server.listen({ port: 0, host: '127.0.0.1', signal });
+
+    await once(server, 'listening', { signal });
+
+    const serverAddress = server.address();
+
+    if (serverAddress === null || typeof serverAddress === 'string') {
+      throw new Error('The email server has no TCP address.');
+    }
+
+    const received = (address: string) => emails.filter((message) => message.to === address);
+
+    yield {
+      url: `http://127.0.0.1:${serverAddress.port}`,
+      createInbox: () => ({ address: `${randomUUID()}@example.com` }),
+      received,
+      waitForEmail: async (address: string, { subject }: { subject: RegExp }) => {
+        for (let attempt = 0; attempt < 100; attempt++) {
+          const match = received(address).find((message) => subject.test(message.subject));
+
+          if (match !== undefined) {
+            return match;
+          }
+
+          await setTimeout(100);
+        }
+
+        throw new Error(`no email to ${address} with a subject matching ${subject} arrived within 10 seconds`);
+      },
+    };
+
+    server.close();
+
+    await once(server, 'close');
+  },
+});
+```
+
+将 `signal` 传给服务中需要启动和停止的资源。以下情况会触发中止信号：
+
+- 启动被取消（例如按下 Ctrl+C），或服务未在 `startupTimeout` 内产出值（默认为 60 秒）。
+- 不再需要服务时，`yield` 之后的代码未在 `shutdownTimeout` 内完成（默认为 10 秒）。
+- 在 `e2e run` 或 `e2e explore` 的测试期间或服务停止期间，第二次按下 Ctrl+C。
+
+有些服务需要更长的启动或停止时间，例如需要拉取 Docker 镜像的服务。在传给 `defineService` 的对象上设置 `startupTimeout` 或 `shutdownTimeout`，单位为毫秒，名称与 [`app.command`](/reference/config#command) 中相同：
+
+```ts
+export const database = defineService({
+  startupTimeout: 180_000, // default: 60000
+  async *start({ signal }) {
+    // ...
+  },
+});
+```
+
+## 将服务传给应用
+
+在配置的 `services` 下添加服务，并通过 `env` 函数将其地址传给应用：
+
+```ts title="e2e.config.ts"
+import { defineConfig } from 'e2e';
+import { web } from '@e2e-dev/web';
+import { email } from './services/email.ts';
+
+export default defineConfig({
+  projectId: 'dev.example.signup',
+  services: { email },
+  targets: [
+    {
+      name: 'web',
+      engine: web(),
+      app: {
+        url: 'http://127.0.0.1:0',
+        command: {
+          executable: 'node',
+          args: ['app/server.mjs'],
+          env: async ({ services }) => ({
+            PORT: '{port}',
+            EMAIL_API_URL: services.email.url,
+          }),
+        },
+      },
+    },
+  ],
+});
+```
+
+服务按键的顺序在所有应用命令之前启动，并在应用命令结束后按相反顺序停止。
+
+每次运行只调用一次 `env` 函数，时机在服务启动之后、任何应用命令启动之前。其他 `env` 规则见配置参考中的 [`command`](/reference/config#command)。
+
+这里请使用 [`defineConfig`](/reference/config#defineconfig)，而不是 `satisfies E2EConfig`，这样 `env` 中的 `services` 类型就能从配置推导出来。
+
+## 在测试中使用服务
+
+将配置的类型传给 `test.extend`，为 `services` 测试夹具提供类型：
+
+```ts title="tests/fixtures.ts"
+import { test as base } from 'e2e';
+import type config from '../e2e.config.ts';
+
+export const test = base.extend<{}, {}, typeof config>({});
+```
+
+你可以在测试、钩子以及两种作用域的测试夹具中使用 `services`：
+
+```ts title="tests/signup.e2e.ts"
+import { expect } from 'e2e';
+import { test } from './fixtures.ts';
+
+test('signing up sends one welcome email', async ({ app, screen, services }) => {
+  const inbox = await services.email.createInbox();
+
+  await app.open('/');
+  await screen.getByRole('textbox', { name: 'Email' }).fill(inbox.address);
+  await screen.getByRole('button', { name: 'Sign up' }).click();
+
+  const email = await services.email.waitForEmail(inbox.address, { subject: /welcome/i });
+
+  expect(email.subject).toContain('Welcome');
+  expect(await services.email.received(inbox.address)).toHaveLength(1);
+});
+```
+
+每个工作进程都会收到产出数据的副本。产出的函数在测试中都会变成异步函数，因此 `services.email.createInbox()` 返回一个 Promise。测试调用它时，启动服务的进程执行实际函数，并返回结果的副本。在 `e2e run` 中是运行器进程，在 `e2e mcp` 中是服务器进程，在 `openHost` 中是宿主进程。
+
+在 `e2e run` 和 `e2e explore` 中，所有工作进程共享同一个服务实例，因此一个测试可以看到其他测试发送的邮件。使用 `openHost` 时，每个宿主启动自己的实例。如果在测试之间重置共享服务，例如在 `afterEach` 中清空所有邮件，也会清除其他工作进程中并行测试的数据。请让服务为每个测试分配唯一 ID，并按 ID 隔离数据。在上面的测试中，`createInbox()` 返回地址唯一的收件箱，测试只读取发往该地址的邮件。
+
+## 服务可以产出哪些值
+
+产出任意结构的普通对象。内部数据通过 [`v8.serialize`](https://nodejs.org/api/v8.html#v8serializevalue) 复制，支持以下内容：
+
+- 普通对象、数组、Map 和 Set 可以任意深度嵌套。
+- 字符串、数字、布尔值、bigint、`null`、`undefined`、日期、正则表达式、内置错误（如 `TypeError`）、`ArrayBuffer` 和类型化数组（如 `Buffer`）会保留类型。
+- 函数可以出现在普通对象和数组的任意深度，但不能出现在 Map 或 Set 内。
+
+其他值都会被拒绝。如果使用自定义类实例，请将测试需要的数据和函数提取到普通对象中。
+
+使用 `defineService` 时，大多数不支持的值都会导致类型错误，例如 `URL`、`Promise`、接受回调的函数，或 `Map`、`Set` 中的函数。只有数据字段的类实例，或自定义 `Error` 子类的实例，仍会通过类型检查，因为 TypeScript 比较的是结构而非类，但运行会在启动时报错 `INVALID_SERVICE_VALUE`。
+
+产出的函数执行时，`this` 为 `undefined`。如果方法依赖 `this`，请用箭头函数包装，例如 `sent: () => inbox.sent()`。在测试中调用服务函数时，参数和返回值可以使用上述任意数据类型，但不能包含函数。
+
+## 服务失败时
+
+| 错误码 | 触发条件 |
+| --- | --- |
+| [`SERVICE_START_FAILED`](/reference/errors#runner-codes) | `start` 抛出异常、未产出值就结束、不是异步生成器，或未在 `startupTimeout` 内产出值。已启动的服务会停止，运行失败。在 `e2e mcp` 中则是 `open_session` 失败。`openHost()` 的 Promise 会以此错误拒绝。 |
+| [`INVALID_SERVICE_VALUE`](/reference/errors#runner-codes) | 产出的值不是普通对象，或包含无法复制的值。 |
+| [`SERVICE_STOP_FAILED`](/reference/errors#runner-codes) | `yield` 之后的代码抛出异常、第二次产出值，或未在服务的 `shutdownTimeout` 内完成。运行会以清理错误失败。在 `e2e mcp` 中，最后一个会话的关闭摘要会将其列为清理条目。`openHost` 通过 `host.close()` 返回它。 |
+
+## e2e mcp 和 openHost 中的服务
+
+`e2e mcp` 在某个配置文件的第一个会话打开时启动其服务，在最后一个会话关闭时停止。使用该文件的所有会话共享这些服务。如果会话仍然打开时修改配置，正在运行的服务不会变化。只有该文件的最后一个会话关闭，并打开新会话后，服务修改才会生效。
+
+[`openHost`](/reference/runner#openhost) 在宿主打开时启动服务。`host.close()` 在应用进程停止后停止服务。
+
+## 运行本地 API 模拟器
+
+服务可以运行任何模拟第三方 API 的包。例如 [emulate](https://emulate.dev) 提供 GitHub、Resend 和 Stripe 等 API 的本地模拟器。下面的示例使用其 Resend 模拟器，请先将 emulate 安装为开发依赖项：
+
+<CodeGroup>
+```bash npm
+npm install --save-dev emulate
+```
+
+```bash pnpm
+pnpm add -D emulate
+```
+
+```bash bun
+bun add -d emulate
+```
+</CodeGroup>
+
+使用 `createEmulator` 启动模拟器，不要产出整个模拟器对象，否则任何测试都可以调用其 `close()`，停止所有工作进程使用的模拟器。只产出测试需要的内容，例如 `url`：
+
+```ts title="services/resend.ts"
+import { createEmulator } from 'emulate';
+import { defineService } from 'e2e';
+
+export const resend = defineService({
+  async *start() {
+    const emulator = await createEmulator({ service: 'resend', port: 0 });
+
+    yield { url: emulator.url };
+
+    await emulator.close();
+  },
+});
+```
+
+<Accordion title="Resend 模拟器的配置和测试">
+
+```ts title="e2e.config.ts"
+import { defineConfig } from 'e2e';
+import { web } from '@e2e-dev/web';
+import { resend } from './services/resend.ts';
+
+export default defineConfig({
+  projectId: 'dev.example.signup',
+  services: { resend },
+  targets: [
+    {
+      name: 'web',
+      engine: web(),
+      app: {
+        url: 'http://127.0.0.1:0',
+        command: {
+          executable: 'node',
+          args: ['app/server.mjs'],
+          env: ({ services }) => ({
+            PORT: '{port}',
+            RESEND_API_KEY: 're_test',
+            RESEND_BASE_URL: services.resend.url,
+          }),
+        },
+      },
+    },
+  ],
+});
+```
+
+```ts title="tests/fixtures.ts"
+import { test as base } from 'e2e';
+import type config from '../e2e.config.ts';
+
+export const test = base.extend<{}, {}, typeof config>({});
+```
+
+测试从模拟器的 Resend API 读取已发送的邮件：
+
+```ts title="tests/signup.e2e.ts"
+import { randomUUID } from 'node:crypto';
+import { expect } from 'e2e';
+import { test } from './fixtures.ts';
+
+test('signing up sends a welcome email through Resend', async ({ app, screen, services }) => {
+  const address = `ada+${randomUUID()}@example.com`;
+
+  await app.open('/');
+  await screen.getByRole('textbox', { name: 'Email' }).fill(address);
+  await screen.getByRole('button', { name: 'Sign up' }).click();
+  await expect(screen.getByRole('heading', { name: 'Check your inbox' })).toBeVisible();
+
+  const response = await fetch(`${services.resend.url}/emails`);
+  const { data } = await response.json();
+
+  expect(data.filter((email: { to: string[] }) => email.to.includes(address))).toEqual([
+    expect.objectContaining({ to: [address], subject: 'Welcome' }),
+  ]);
+});
+```
+
+</Accordion>
+
+## 下一步
+
+<CardGroup cols={2}>
+  <Card title="编写测试夹具" icon="puzzle-piece" href="/fixtures">
+    在每个测试前准备数据，并在测试后清理。
+  </Card>
+  <Card title="配置参考" icon="code" href="/reference/config#services">
+    查阅 `services` 键和 `env` 函数。
+  </Card>
+</CardGroup>

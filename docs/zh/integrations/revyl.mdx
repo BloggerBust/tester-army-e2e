@@ -1,0 +1,127 @@
+---
+title: 在 Revyl 上测试移动应用
+sidebarTitle: Revyl
+description: 使用 @e2e-dev/revyl，在 Revyl 托管的 iOS 模拟器和 Android 模拟器上运行移动应用测试。
+---
+
+`@e2e-dev/revyl` 是移动端引擎的托管设备提供方。它为每个工作进程启动一台 Revyl 设备，安装应用，并在运行结束时释放设备。使用标准的 `app`、`screen` 和 `expect` API 即可测试应用的用户流程。
+
+## 安装和身份验证
+
+将集成与移动端引擎一起安装：
+
+<CodeGroup>
+```bash npm
+npm install --save-dev e2e @e2e-dev/mobile @e2e-dev/revyl
+```
+
+```bash pnpm
+pnpm add -D e2e @e2e-dev/mobile @e2e-dev/revyl
+```
+
+```bash bun
+bun add -d e2e @e2e-dev/mobile @e2e-dev/revyl
+```
+</CodeGroup>
+
+在启动 e2e 的环境中设置 `REVYL_API_KEY`。在 CI 中将其存为机密值。缺少它时，租约会在测试开始前失败。
+
+测试运行器只需要 Node.js 和包依赖项，无需 Mac、Xcode 或 Android SDK。单独构建应用，生成压缩为 zip 的 iOS 模拟器 `.app` 或 Android `.apk`，并将其托管在 Revyl 能下载的 `https` URL 上。
+
+## 配置测试目标
+
+在移动端引擎上设置 `device: revyl({ app, device })`。`app` 是构建产物的 `https` URL，`device` 是 Revyl 目录中的设备型号。要测试本地构建，请省略 `app` 并设置测试目标的 `app.appPath`。
+
+```ts title="e2e.config.ts"
+import type { E2EConfig } from 'e2e';
+import { mobile } from '@e2e-dev/mobile';
+import { revyl } from '@e2e-dev/revyl';
+
+export default {
+  targets: [
+    {
+      name: 'ios',
+      engine: mobile({
+        platform: 'ios',
+        device: revyl({ app: 'https://builds.example.com/MyApp-simulator.zip', device: 'iPhone 17 Pro Max', osVersion: 'iOS 27.0' }),
+      }),
+      app: { bundleId: 'com.example.app' },
+    },
+    {
+      name: 'android',
+      engine: mobile({
+        platform: 'android',
+        device: revyl({ app: 'https://builds.example.com/app.apk', device: 'Pixel 7' }),
+      }),
+      app: { bundleId: 'com.example.app' },
+    },
+  ],
+  workers: 2,
+  assertionTimeout: 15_000,
+} satisfies E2EConfig;
+```
+
+Revyl 在启动每台设备时安装 `app`，因此不要在测试目标上设置 `app.appPath`。对于 Android，`bundleId` 是应用的包名。
+
+不设置 `app` 时，每台设备启动后都没有应用，设备提供方会将测试目标的 `app.appPath` 上传并安装到设备：它可以是压缩为 zip 的 iOS 模拟器 `.app` 或 Android `.apk`。不要再为同一构建调用 `device.installApp()`，否则会重复上传。
+
+```ts title="e2e.config.ts"
+{
+  name: 'android-local',
+  engine: mobile({ platform: 'android', device: revyl({ device: 'Pixel 7' }) }),
+  app: { appPath: './build/app-debug.apk', bundleId: 'com.example.app' },
+}
+```
+
+读取 Revyl 设备的屏幕约需 2.5 秒，偶尔超过 5 秒，因此请将 `assertionTimeout` 设为 `15_000`。默认的 5 秒可能导致 `expect` 还没读完一次屏幕就已超时。
+
+## 测试应用流程
+
+除[限制](#limits)中列出的功能外，测试使用的移动端 API 与其他设备相同：
+
+```ts title="tests/checkout.e2e.ts"
+import { expect } from 'e2e';
+import { test } from '@e2e-dev/mobile';
+
+test('opens the cart', async ({ app, screen }) => {
+  await app.open();
+  await screen.getByText('Cart').click();
+  await expect(screen.getByText('Your cart is empty')).toBeVisible();
+  await app.screenshot('cart');
+});
+```
+
+## 选择设备选项
+
+| 选项 | 默认值 | 用途 |
+| --- | --- | --- |
+| `app` | 无，安装测试目标的 `app.appPath` | 构建产物的 `https` URL。Revyl 无法读取本地路径，因此会拒绝它；本地构建请使用 `app.appPath`。 |
+| `device` | 必填 | Revyl 列出的设备型号，例如 `iPhone 17 Pro Max` 或 `Pixel 7`。 |
+| `osVersion` | Revyl 为该型号设置的默认值 | Revyl 列出的系统版本，例如 `iOS 27.0` 或 `Android 14`。 |
+
+未知或无效的选项会使配置加载失败，报错 `INVALID_CONFIG`。
+
+## 限制
+
+- `workers` 不应超过 Revyl 套餐允许的并发设备数。
+- 设备从租用到释放期间持续运行。运行结束或中断时，引擎释放所有已获取的设备。
+- 如果运行器在释放设备前被强制终止，就不会再有命令发送到会话，Revyl 会在闲置 5 分钟后结束它。
+- 如果 agent-device 无法确认会话已结束，释放操作会导致整个运行失败，即使所有测试都已通过。这会发生在 Revyl 会话清理失败时（`cleanupTimeout` 剩余超过 20 秒）、守护进程停止后仍无法确认结束时，或守护进程在运行期间退出时。在 Windows 上，要在守护进程停止前结束会话，`cleanupTimeout` 也必须剩余超过 20 秒，请保留默认的 30 秒。
+- `app` 必须能通过 `https` 访问，且 URL 不含凭据。可以使用预签名的存储 URL。`app` 和 `app.appPath` 只能设置一个。
+- `app.appPath` 构建会分别上传到每台设备的会话，因此 `workers: 4` 会上传 4 次。要只上传一次大型构建，请将它托管在 `https` URL 上，再将该 URL 作为 `app`。
+- 应用运行在 Revyl 的网络中，且不支持端口反向转发，因此无法访问 `localhost` 或你网络中的服务器。请使用它能通过 `https` 访问的服务器。
+- Revyl 设备不录制视频。通过 `--video` 等方式录制视频的尝试会报错 `UNSUPPORTED_CAPABILITY`。请改用 `app.screenshot()` 记录证据。
+- Revyl 在指定坐标处输入文字，请使用 `fill`。`pressSequentially` 和向当前焦点字段输入文字会报错 `UNSUPPORTED_CAPABILITY`。
+- `setAppearance` 和 `setPermission` 支持两个平台，但 Revyl 的 iOS 模拟器拒绝 `camera` 和 `notifications` 权限。`setOrientation` 在 Android 上支持四个方向，在 iOS 上仅支持 `portrait` 和 `landscape-left`。`setLocation` 支持 iOS，`clearKeychain` 仅支持 iOS。
+- 以下 `device` 方法会报错 `UNSUPPORTED_CAPABILITY`：`setNetwork`、`setAirplaneMode`、Android 上的 `setLocation`、`clearLocation`、`setBiometrics`、`enrollBiometrics`、`clipboard` 和 `setClipboard`。`foregroundApp` 在 Android 上失败，`back` 在 iOS 上失败。
+
+## 下一步
+
+<CardGroup cols={2}>
+  <Card title="移动端测试" icon="mobile-screen" href="/mobile">
+    配置应用启动、权限和移动端定位器。
+  </Card>
+  <Card title="移动端 API" icon="code" href="/reference/mobile">
+    查阅 device 测试夹具和提供方契约。
+  </Card>
+</CardGroup>

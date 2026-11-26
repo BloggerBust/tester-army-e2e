@@ -1,0 +1,130 @@
+---
+title: Revyl でモバイルアプリをテストする
+sidebarTitle: Revyl
+description: "@e2e-dev/revyl を使い、Revyl のホスト型 iOS シミュレーターと Android エミュレーターでモバイルアプリのテストを実行します。"
+---
+
+`@e2e-dev/revyl` はモバイルエンジン用のホスト型デバイスプロバイダーです。
+ワーカーごとに Revyl デバイスを起動してアプリをインストールし、実行終了時にデバイスを解放します。
+標準の `app`、`screen`、`expect` API でアプリのユーザーフローをテストできます。
+
+## インストールと認証
+
+モバイルエンジンとともにインテグレーションをインストールします。
+
+<CodeGroup>
+```bash npm
+npm install --save-dev e2e @e2e-dev/mobile @e2e-dev/revyl
+```
+
+```bash pnpm
+pnpm add -D e2e @e2e-dev/mobile @e2e-dev/revyl
+```
+
+```bash bun
+bun add -d e2e @e2e-dev/mobile @e2e-dev/revyl
+```
+</CodeGroup>
+
+e2e を起動する環境に `REVYL_API_KEY` を設定します。CI ではシークレットとして保存してください。設定がない場合、テストの開始前にリースが失敗します。
+
+テストランナーに必要なのは Node.js とパッケージの依存関係だけです。Mac、Xcode、Android SDK は不要です。
+アプリは別途ビルドし、zip 圧縮した iOS シミュレーター用 `.app` または Android の `.apk` を、Revyl がダウンロードできる `https` URL で公開します。
+
+## ターゲットを設定する
+
+モバイルエンジンに `device: revyl({ app, device })` を設定します。`app` はビルドの `https` URL、`device` は Revyl のカタログにあるモデルです。ローカルのビルドをテストする場合は `app` を省略し、ターゲットの `app.appPath` を設定します。
+
+```ts title="e2e.config.ts"
+import type { E2EConfig } from 'e2e';
+import { mobile } from '@e2e-dev/mobile';
+import { revyl } from '@e2e-dev/revyl';
+
+export default {
+  targets: [
+    {
+      name: 'ios',
+      engine: mobile({
+        platform: 'ios',
+        device: revyl({ app: 'https://builds.example.com/MyApp-simulator.zip', device: 'iPhone 17 Pro Max', osVersion: 'iOS 27.0' }),
+      }),
+      app: { bundleId: 'com.example.app' },
+    },
+    {
+      name: 'android',
+      engine: mobile({
+        platform: 'android',
+        device: revyl({ app: 'https://builds.example.com/app.apk', device: 'Pixel 7' }),
+      }),
+      app: { bundleId: 'com.example.app' },
+    },
+  ],
+  workers: 2,
+  assertionTimeout: 15_000,
+} satisfies E2EConfig;
+```
+
+Revyl は各デバイスの起動時に `app` をインストールするため、ターゲットに `app.appPath` は設定しません。Android では `bundleId` はアプリのパッケージ名です。
+
+`app` がない場合、各デバイスはアプリなしで起動し、デバイスプロバイダーがターゲットの `app.appPath` をアップロードしてインストールします。zip 圧縮した iOS シミュレーター用 `.app` または Android の `.apk` を使います。同じビルドに対して `device.installApp()` も呼ぶと二重にアップロードされるため、呼ばないでください。
+
+```ts title="e2e.config.ts"
+{
+  name: 'android-local',
+  engine: mobile({ platform: 'android', device: revyl({ device: 'Pixel 7' }) }),
+  app: { appPath: './build/app-debug.apk', bundleId: 'com.example.app' },
+}
+```
+
+Revyl デバイスの画面読み取りには約 2.5 秒、場合によっては 5 秒以上かかるため、`assertionTimeout` を `15_000` に設定します。デフォルトの 5 秒では、画面を一度も読み取れないうちに `expect` がタイムアウトすることがあります。
+
+## アプリのフローをテストする
+
+[制限](#limits)に記載したものを除き、他のデバイスと同じモバイル API を使えます。
+
+```ts title="tests/checkout.e2e.ts"
+import { expect } from 'e2e';
+import { test } from '@e2e-dev/mobile';
+
+test('opens the cart', async ({ app, screen }) => {
+  await app.open();
+  await screen.getByText('Cart').click();
+  await expect(screen.getByText('Your cart is empty')).toBeVisible();
+  await app.screenshot('cart');
+});
+```
+
+## デバイスのオプションを選ぶ
+
+| オプション | デフォルト | 用途 |
+| --- | --- | --- |
+| `app` | なし。ターゲットの `app.appPath` をインストール | ビルドの `https` URL。Revyl はローカルパスを読み取れないため拒否します。ローカルのビルドには `app.appPath` を使います。 |
+| `device` | 必須 | `iPhone 17 Pro Max` や `Pixel 7` など、Revyl が掲載しているデバイスモデル。 |
+| `osVersion` | モデルに対する Revyl のデフォルト | `iOS 27.0` や `Android 14` など、Revyl が掲載している OS バージョン。 |
+
+不明または無効なオプションがあると、設定の読み込みが `INVALID_CONFIG` で失敗します。
+
+## 制限
+
+- `workers` は Revyl のプランで許可された同時デバイス数以内にします。
+- デバイスはリースから解放まで稼働します。実行の終了時や中断時に、エンジンは取得したすべてのデバイスを解放します。
+- 解放前にランナーが強制終了すると、セッションに新たなコマンドは送られなくなり、Revyl は 5 分間のアイドル後に終了します。
+- agent-device がセッションの終了を確認できない場合、すべてのテストが成功していても解放処理によって実行が失敗します。これは、`cleanupTimeout` が 20 秒を超えて残っている状態で Revyl のセッションクリーンアップが失敗した場合、デーモンの停止後も終了を確認できない場合、または実行中にデーモンが終了した場合に起こります。Windows では、デーモン停止前にセッションを終了するにも `cleanupTimeout` が 20 秒を超えて残っている必要があります。デフォルトの 30 秒を維持してください。
+- `app` は URL に認証情報を含めずに `https` でアクセスできる必要があります。ストレージの署名付き URL も使えます。`app` と `app.appPath` はどちらか一方だけを設定します。
+- `app.appPath` のビルドはデバイスごとのセッションにアップロードされるため、`workers: 4` では 4 回アップロードされます。大きなビルドを一度だけアップロードするには、`https` URL で公開し、`app` に渡してください。
+- アプリは手元のネットワークではなく Revyl のネットワークで動作し、ポートリバースも使えません。`localhost` や手元のネットワークのサーバーにはアクセスできないため、`https` で到達できるサーバーを指定します。
+- Revyl デバイスは動画を記録しません。`--video` などで録画する試行は `UNSUPPORTED_CAPABILITY` で失敗します。証拠の記録には `app.screenshot()` を使ってください。
+- Revyl は座標を指定してテキストを入力します。`fill` を使ってください。`pressSequentially` とフォーカス中のフィールドへの入力は `UNSUPPORTED_CAPABILITY` で失敗します。
+- `setAppearance` と `setPermission` は両プラットフォームで動作しますが、Revyl の iOS シミュレーターでは `camera` と `notifications` の権限が拒否されます。`setOrientation` は Android では 4 方向、iOS では `portrait` と `landscape-left` のみ対応します。`setLocation` は iOS で動作し、`clearKeychain` は iOS のみ対応します。
+- 次の `device` メソッドは `UNSUPPORTED_CAPABILITY` で失敗します。`setNetwork`、`setAirplaneMode`、Android の `setLocation`、`clearLocation`、`setBiometrics`、`enrollBiometrics`、`clipboard`、`setClipboard`。`foregroundApp` は Android で、`back` は iOS で失敗します。
+
+## 次のステップ
+
+<CardGroup cols={2}>
+  <Card title="モバイルテスト" icon="mobile-screen" href="/mobile">
+    アプリの起動、権限、モバイルのロケーターを設定します。
+  </Card>
+  <Card title="モバイル API" icon="code" href="/reference/mobile">
+    device フィクスチャとプロバイダーの契約を確認します。
+  </Card>
+</CardGroup>

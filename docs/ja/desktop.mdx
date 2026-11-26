@@ -1,0 +1,152 @@
+---
+title: デスクトップ
+description: アクセシビリティツリーを通じて、macOS のネイティブデスクトップアプリをテストします。
+---
+
+`@e2e-dev/desktop` はネイティブデスクトップアプリでテストを実行します。[agent-desktop](https://github.com/vercel-labs/agent-desktop) を使い、OS のアクセシビリティツリーを通じてアプリを読み取り、操作します。ブラウザテストと同じ `agent`、`screen`、`expect` API を使えます。
+
+<Note>
+  デスクトップエンジンはプロトタイプで、macOS のみで動作します。デスクトップターゲットを含む設定は Windows と Linux でも読み込めます。`--target` で他のターゲットを選べば、それらを実行できます。デスクトップターゲットを含む実行は、テスト開始前に停止します。
+</Note>
+
+## セットアップ
+
+ランナーとエンジンをインストールします。
+
+<CodeGroup>
+```bash npm
+npm install --save-dev e2e @e2e-dev/desktop
+```
+
+```bash pnpm
+pnpm add --save-dev e2e @e2e-dev/desktop
+```
+
+```bash bun
+bun add --dev e2e @e2e-dev/desktop
+```
+</CodeGroup>
+
+macOS では、e2e を起動するアプリに **システム設定 > プライバシーとセキュリティ** で 2 つの権限を付与する必要があります。対象はターミナル、IDE、または CI エージェントです。
+
+- **アクセシビリティ**：アプリの読み取りと操作に使います。
+- **画面収録**：スクリーンショットに使います。
+
+初回実行時に agent-desktop をダウンロードし、SHA-256 ダイジェストを検証します。Homebrew などでインストール済みのものを使うには、`desktop({ binary: '/path/to/agent-desktop' })` を設定します。
+
+セットアップを確認します。
+
+<CodeGroup>
+```bash npm
+npx e2e doctor
+```
+
+```bash pnpm
+pnpm exec e2e doctor
+```
+
+```bash bun
+bunx e2e doctor
+```
+</CodeGroup>
+
+agent-desktop、両方の権限、`appPath` のビルドを確認します。
+
+## アプリを指定する
+
+ターゲットの `app.appPath` にビルド済みの `.app` バンドルを設定します。または、`app.bundleId` に `com.apple.calculator` など、インストール済みアプリのバンドル ID や名前を指定します。両方を設定した場合は `appPath` のビルドを起動し、そのバンドル ID が `bundleId` と一致する必要があります。
+`app.launchArguments` は起動のたびに渡されます。オブジェクトの各エントリーは iOS と同じく `-name value` になるため、`{ AppleLanguages: ['fr'] }` を指定するとフランス語で起動します。
+
+起動したアプリに渡される環境変数は最小限です。`HOME`、`USER`、`LOGNAME`、`SHELL`、`PATH`、`TMPDIR`、`LANG`、`LC_*`、`__CF_USER_TEXT_ENCODING` と、プロセス追跡用の `E2E_DESKTOP_LAUNCH`、または `bundleId` による起動時の `AGENT_DESKTOP_HOME` のみなので、シークレット、モデルのキー、CI トークンがアプリに漏れることはありません。macOS 標準アプリや `restrict` フラグ付きで署名したビルドは、`appPath` ではなく `bundleId` で起動する必要があります。
+
+```ts title="e2e.config.ts"
+import type { E2EConfig } from 'e2e';
+import { desktop } from '@e2e-dev/desktop';
+
+export default {
+  targets: [
+    {
+      name: 'mac',
+      engine: desktop(),
+      app: { appPath: 'build/MyApp.app' },
+    },
+  ],
+  credentials: {
+    ada: { username: 'ada', password: process.env.ADA_PASSWORD ?? '' },
+  },
+} satisfies E2EConfig;
+```
+
+## テストを書く
+
+`@e2e-dev/desktop` から `test` をインポートします。デフォルトでは `app.open()` はアプリをバックグラウンドに置きます。前面に出ないとウィンドウを表示しないアプリには `desktop({ headed: true })` を使います。
+`e2e run --headed` でも前面で起動しますが、後述の物理入力を有効にするのは `desktop({ headed: true })` のみです。以前にエンジンが起動したインスタンスがあれば、先に終了します。自分で開いたインスタンスには触れず、読み取りも操作もしません。各テストの終了時にアプリを終了し、前回の終了時に保存されたウィンドウも復元しません。
+
+```ts title="tests/sign-in.e2e.ts"
+import { test } from '@e2e-dev/desktop';
+import { credentials, expect } from 'e2e';
+
+test('signs in', async ({ app, screen }) => {
+  const ada = credentials.user('ada');
+  await app.open();
+  await screen.getByRole('textbox', 'Username').fill(ada.username);
+  await screen.getByRole('textbox', 'Password').fill(ada.password);
+  await screen.getByRole('combobox', 'Plan').selectOption('Team');
+  await screen.getByRole('button', 'Sign in').tap();
+  await expect(screen.getByTestId('status')).toContainText('Signed in as ada');
+});
+```
+
+ロールは Web と同じ `textbox`、`checkbox`、`combobox`、`button` を使います。静的テキストのロールは `text` なので、`getByText` で検索します。コントロールの名前は、macOS のアクセシビリティが返すタイトルまたはアクセシビリティラベルです。
+ボタンのタイトルは名前でもテキストでもあるため、`getByText('Sign in')` はボタンと同じ文字列の静的テキストを見つけます。`getByRole('button', 'Sign in')` はボタンだけを見つけます。
+`getByPlaceholder` は未対応です。macOS はプレースホルダーを報告せず、ラベルのないフィールドにはプレースホルダーを名前として使うため、`getByRole('textbox', 'Username')` で検索します。`getByTestId` はコントロールの `AXIdentifier` を検索します。AppKit では `accessibilityIdentifier`、SwiftUI では `.accessibilityIdentifier` です。
+
+`desktop` フィクスチャで、アプリのウィンドウを列挙（`desktop.windows()`）、`screen` が読むウィンドウを選択（`desktop.useWindow(window)`）、アプリを終了（`desktop.closeApp()`）できます。
+
+## Web との違い
+
+| 項目 | デスクトップターゲットの動作 |
+| --- | --- |
+| 入力 | macOS Accessibility API を使ってバックグラウンドで動作するため、マウスとキーボードは自由に使えます。書類ベースのアプリなど、バックグラウンドでウィンドウを開かないアプリには `headed: true` または `--headed` が必要です。 |
+| 物理入力 | `doubleTap`、`hover`、`press`、座標指定のタップ、フォーカス中のフィールドへの入力には `desktop({ headed: true })` が必要です。アプリを前面に出し、実際のポインターとキーボードで入力します。フローティングウィンドウが対象領域に重ならないよう注意してください。 |
+| キー | `press` はアクティブウィンドウのフォーカス中のコントロールにのみキーを送ります（`headed: true`）。名前付きキー、英字、数字、``, . / ; ' [ ] \ - = ` `` に対応し、`!` や `é` など他の文字は拒否します。`ControlOrMeta+q` などのシステムショートカットはブロックします。代わりに `desktop.closeApp()` を使います。 |
+| 選択 | `selectOption` はインデックスではなく選択肢のラベルで照合します。編集可能なコンボボックスには `fill()` を使います。 |
+| ウィンドウ | `screen` は `desktop.useWindow()` で選んだウィンドウ、なければフォーカス中のウィンドウ、それもなければ最初の可視ウィンドウを読みます。シートは含みますが、閉じる・最小化・拡大のウィンドウ枠の操作部は含みません。最小化したウィンドウは非表示として扱い、別の macOS Space にあるウィンドウは読み取れます。 |
+| 読み取り | 開いたウィンドウがないアプリだけを空として読み取ります。画面がロックされている場合やウィンドウツリーが `maxDepth` より深い場合、ロケーターは誤って「見つからない」と判定せず、タイムアウトまで再試行します。ロック中の画面では `app.open()` が失敗します。 |
+| メニューバー | アプリのメニューバーはまだ読み取れません。キーショートカット（`press` + `headed: true`）でメニュー項目を実行します。 |
+| Web コンテンツ | ブラウザウィンドウ、Electron アプリ、Web ビューは未対応です。これらには `@e2e-dev/web` を使います。 |
+| ワーカー | デスクトップターゲットごとに 1 ワーカーに制限されます。`headed: true` のデスクトップターゲットを 2 つ実行する場合、カーソルとキーボードが競合しないよう `workers: 1` に設定します。 |
+| 状態 | `app.clearState()` は未対応です。 |
+| シークレット | パスワードフィールドは値を公開せず、スクリーンショットでは黒く塗りつぶします。状態を読み取れないフィールドは塗りつぶさず、ドットで表示します。読み取り可能なパスワードフィールドを覆えない場合や、ウィンドウが `maxDepth` を超える場合は、保存せずに失敗します。 |
+
+実行終了時に一時的なアクセシビリティ状態をクリーンアップします。途中でアプリやワーカーが強制終了した場合は、次のデスクトップ実行で残ったアプリプロセスを自動的にクリーンアップします。
+
+<Accordion title="デスクトップのその他の注意点">
+- **読み取れないウィンドウ：** 空として扱わないため、`not.toBeVisible()` は成功しません。
+- **大きなフィールド値：** 64 KiB を超える値、または agent-desktop が読み取れなかった値は空として扱います。
+- **ポップアップメニュー：** ポップアップボタンで存在しない選択肢を選ぶと、メニューが開いたままになることがあります。e2e は Escape で閉じようとしますが、アプリに届くのは `headed: true` モードのみです。
+</Accordion>
+
+## オプション
+
+| オプション | 型 | デフォルト |
+| --- | --- | --- |
+| `binary` | `string` | ダウンロードしたリリース |
+| `snapshot` | `'full' \| 'interactive'` | `'full'` |
+| `headed` | `boolean` | `false` |
+| `settle` | `number \| false` | `150` |
+| `maxDepth` | `number` | `24` |
+
+`snapshot: 'interactive'` では、エージェントの観察は静的テキストを除いたコントロールだけを読み取ります。どちらの設定でも、ロケーターと `expect` はウィンドウ全体を読み取ります。
+`settle` はエージェントのアクション後、画面を読み取る前にエンジンが待つ時間で、単位はミリ秒です。`maxDepth` は読み取り時にウィンドウをたどる深さで、1 から 50 を指定します。深くネストしたアプリで一部しか読み取れずロケーターがタイムアウトする場合は、値を増やしてください。
+
+## 次のステップ
+
+<CardGroup cols={2}>
+  <Card title="モバイル" icon="mobile" href="/mobile">
+    同じテストを iOS シミュレーターと Android エミュレーターで実行します。
+  </Card>
+  <Card title="エージェントのステップ" icon="robot" href="/agent-steps">
+    フォーム入力や画面の確認をエージェントに任せます。
+  </Card>
+</CardGroup>

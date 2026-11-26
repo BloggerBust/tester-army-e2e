@@ -1,0 +1,147 @@
+---
+title: 桌面端
+description: 通过辅助功能树测试 macOS 上的原生桌面应用。
+---
+
+`@e2e-dev/desktop` 在原生桌面应用上运行测试。它使用 [agent-desktop](https://github.com/vercel-labs/agent-desktop)，通过操作系统的辅助功能树读取并操作应用。测试使用与浏览器测试相同的 `agent`、`screen` 和 `expect` API。
+
+<Note>
+  桌面端引擎是原型，仅支持 macOS。包含桌面端测试目标的配置仍可在 Windows 和 Linux 上加载，使用 `--target` 选择其他测试目标即可运行它们。如果运行包含桌面端测试目标，则会在任何测试开始前停止。
+</Note>
+
+## 设置
+
+安装运行器和引擎：
+
+<CodeGroup>
+```bash npm
+npm install --save-dev e2e @e2e-dev/desktop
+```
+
+```bash pnpm
+pnpm add --save-dev e2e @e2e-dev/desktop
+```
+
+```bash bun
+bun add --dev e2e @e2e-dev/desktop
+```
+</CodeGroup>
+
+在 macOS 上，启动 e2e 的应用需要在**系统设置 > 隐私与安全性**中获得两项权限。该应用可能是终端、IDE 或 CI 智能体。
+
+- **辅助功能**，用于读取并操作应用。
+- **屏幕录制**，用于截图。
+
+首次运行会下载 agent-desktop 并校验其 SHA-256 摘要。要使用自行安装的版本（例如通过 Homebrew 安装的版本），请设置 `desktop({ binary: '/path/to/agent-desktop' })`。
+
+检查设置：
+
+<CodeGroup>
+```bash npm
+npx e2e doctor
+```
+
+```bash pnpm
+pnpm exec e2e doctor
+```
+
+```bash bun
+bunx e2e doctor
+```
+</CodeGroup>
+
+它会检查 agent-desktop、两项权限和 `appPath` 构建。
+
+## 指定应用
+
+将测试目标的 `app.appPath` 设为已构建的 `.app` 包，或将 `app.bundleId` 设为已安装应用的 bundle ID 或名称，例如 `com.apple.calculator`。同时设置两者时，会启动 `appPath` 构建，且其 bundle ID 必须是 `bundleId`。每次启动都会传入 `app.launchArguments`。与 iOS 一样，对象条目会变为 `-name value`，因此 `{ AppleLanguages: ['fr'] }` 会以法语打开应用。
+
+启动的应用只会收到最小环境变量集：`HOME`、`USER`、`LOGNAME`、`SHELL`、`PATH`、`TMPDIR`、`LANG`、`LC_*`、`__CF_USER_TEXT_ENCODING`，以及用于跟踪进程的 `E2E_DESKTOP_LAUNCH`，或按 `bundleId` 启动时的 `AGENT_DESKTOP_HOME`。因此机密值、模型密钥和 CI 令牌不会泄漏到应用中。macOS 内置应用和带有 `restrict` 签名标志的构建必须通过 `bundleId` 启动，不能使用 `appPath`。
+
+```ts title="e2e.config.ts"
+import type { E2EConfig } from 'e2e';
+import { desktop } from '@e2e-dev/desktop';
+
+export default {
+  targets: [
+    {
+      name: 'mac',
+      engine: desktop(),
+      app: { appPath: 'build/MyApp.app' },
+    },
+  ],
+  credentials: {
+    ada: { username: 'ada', password: process.env.ADA_PASSWORD ?? '' },
+  },
+} satisfies E2EConfig;
+```
+
+## 编写测试
+
+从 `@e2e-dev/desktop` 导入 `test`。默认情况下，`app.open()` 将应用留在后台。对于必须进入前台才显示窗口的应用，请使用 `desktop({ headed: true })`。`e2e run --headed` 也会在前台启动应用，但只有 `desktop({ headed: true })` 会启用下文所述的物理输入。如果引擎之前启动过该应用，会先退出那个实例。你手动打开的实例保持原样，引擎不会读取或操作它。每个测试结束时都会退出应用，也不会恢复应用上次退出时保存的窗口。
+
+```ts title="tests/sign-in.e2e.ts"
+import { test } from '@e2e-dev/desktop';
+import { credentials, expect } from 'e2e';
+
+test('signs in', async ({ app, screen }) => {
+  const ada = credentials.user('ada');
+  await app.open();
+  await screen.getByRole('textbox', 'Username').fill(ada.username);
+  await screen.getByRole('textbox', 'Password').fill(ada.password);
+  await screen.getByRole('combobox', 'Plan').selectOption('Team');
+  await screen.getByRole('button', 'Sign in').tap();
+  await expect(screen.getByTestId('status')).toContainText('Signed in as ada');
+});
+```
+
+角色采用网页端名称：`textbox`、`checkbox`、`combobox`、`button`。静态文本的角色为 `text`，请用 `getByText` 查找。控件名称由 macOS 辅助功能提供，即其标题或辅助功能标签。按钮的标题同时是它的名称和文本，因此 `getByText('Sign in')` 会找到按钮以及相同内容的静态文本；`getByRole('button', 'Sign in')` 则只找到按钮。暂不支持 `getByPlaceholder`：macOS 不报告占位符，而是将无标签字段的占位符作为名称，因此请用 `getByRole('textbox', 'Username')` 查找该字段。`getByTestId` 查找控件的 `AXIdentifier`，对应 AppKit 的 `accessibilityIdentifier` 和 SwiftUI 的 `.accessibilityIdentifier`。
+
+`desktop` 测试夹具可列出应用窗口（`desktop.windows()`）、选择 `screen` 读取的窗口（`desktop.useWindow(window)`），以及退出应用（`desktop.closeApp()`）。
+
+## 与网页端的区别
+
+| 方面 | 桌面端测试目标的行为 |
+| --- | --- |
+| 输入 | 应用通过 macOS Accessibility API 在后台运行，你仍可自由使用鼠标和键盘。不在后台打开窗口的应用（如文档型应用）需要 `headed: true` 或 `--headed`。 |
+| 物理输入 | `doubleTap`、`hover`、`press`、坐标点击和焦点输入需要 `desktop({ headed: true })`。它会将应用置于前台，并使用真实的鼠标和键盘输入。注意浮动窗口不要遮挡目标区域。 |
+| 按键 | `press` 只向活动窗口中获得焦点的控件发送按键（`headed: true`）。支持命名按键、字母、数字和 ``, . / ; ' [ ] \ - = ` ``，拒绝 `!` 或 `é` 等其他字符，并阻止 `ControlOrMeta+q` 等系统快捷键（请改用 `desktop.closeApp()`）。 |
+| 选择 | `selectOption` 按选项标签匹配，不按索引匹配。可编辑的组合框请使用 `fill()`。 |
+| 窗口 | `screen` 读取 `desktop.useWindow()` 选中的窗口，否则读取当前焦点窗口，再否则读取第一个可见窗口。包含附属对话框，但不包含关闭、最小化、缩放等窗口装饰控件。最小化窗口视为隐藏，其他 macOS Space 中的窗口仍可读取。 |
+| 读取 | 只有没有打开窗口的应用才被读取为空。如果屏幕锁定或窗口树深度超过 `maxDepth`，定位器会持续重试直到超时，避免错误地判定元素不存在。屏幕锁定时 `app.open()` 会失败。 |
+| 菜单栏 | 尚不能读取应用菜单栏；请用快捷键触发菜单项（`press` + `headed: true`）。 |
+| 网页内容 | 不支持浏览器窗口、Electron 应用和 WebView，请使用 `@e2e-dev/web`。 |
+| 工作进程 | 每个桌面端测试目标仅限一个工作进程。运行两个 `headed: true` 的桌面端测试目标时，请设置 `workers: 1`，避免争用鼠标和键盘。 |
+| 状态 | 尚不支持 `app.clearState()`。 |
+| 机密值 | 密码字段不会暴露其值，截图中会涂黑。无法读取状态的字段不会涂黑，而是显示圆点。如果截图无法遮盖可读取的密码字段，或窗口超过 `maxDepth`，则会失败而不保存截图。 |
+
+运行退出时会清理临时辅助功能状态。如果应用或工作进程在运行中被强制终止，下次桌面端运行会自动清理残留的应用进程。
+
+<Accordion title="桌面端的其他边界情况">
+- **无法读取的窗口：** 不会被视为空，因此 `not.toBeVisible()` 无法因此通过。
+- **过大的字段值：** 超过 64 KiB 的字段值，或 agent-desktop 无法读取的字段值，会被读取为空。
+- **弹出菜单：** 在弹出按钮中选择不存在的选项可能使菜单保持打开。e2e 会尝试发送 Escape 关闭它，但只有在 `headed: true` 模式下按键才能到达应用。
+</Accordion>
+
+## 选项
+
+| 选项 | 类型 | 默认值 |
+| --- | --- | --- |
+| `binary` | `string` | 下载的发行版 |
+| `snapshot` | `'full' \| 'interactive'` | `'full'` |
+| `headed` | `boolean` | `false` |
+| `settle` | `number \| false` | `150` |
+| `maxDepth` | `number` | `24` |
+
+`snapshot: 'interactive'` 使智能体观察时只读取控件，不读取静态文本；无论此设置为何，定位器和 `expect` 都读取整个窗口。`settle` 是智能体执行动作后、读取屏幕前引擎等待的毫秒数。`maxDepth` 是读取窗口时深入的层级数，范围为 1 到 50；如果嵌套较深的应用只能被部分读取，导致定位器超时，请增大此值。
+
+## 下一步
+
+<CardGroup cols={2}>
+  <Card title="移动端" icon="mobile" href="/mobile">
+    在 iOS 模拟器和 Android 模拟器上运行相同的测试。
+  </Card>
+  <Card title="智能体步骤" icon="robot" href="/agent-steps">
+    让智能体填写表单或检查屏幕。
+  </Card>
+</CardGroup>

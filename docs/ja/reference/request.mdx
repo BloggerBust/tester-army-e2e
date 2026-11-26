@@ -1,0 +1,190 @@
+---
+title: request
+description: "request フィクスチャ：テストから HTTP を呼び出し、各呼び出しをレポートのステップとして記録します。"
+---
+
+`request` フィクスチャはテストから HTTP リクエストを送信します。パスはターゲットのアプリ URL を基準に解決します。各呼び出しはレポートのステップとなり、レスポンスボディ全体を読み終えた時点で終了します。
+
+```ts title="tests/orders.e2e.ts"
+import { expect, test } from 'e2e';
+
+test('creates an order', async ({ request }) => {
+  const created = await request.post('/api/orders', { json: { sku: 'A1' } });
+  expect(created.status).toBe(201);
+  expect(await created.json()).toMatchObject({ sku: 'A1' });
+});
+```
+
+## リファレンス
+
+| メソッド | 戻り値 |
+| --- | --- |
+| [`fetch`](#fetch) | `Promise<WebResponse>` |
+| [`get`](#shorthands) | `Promise<WebResponse>` |
+| [`post`](#shorthands) | `Promise<WebResponse>` |
+| [`put`](#shorthands) | `Promise<WebResponse>` |
+| [`patch`](#shorthands) | `Promise<WebResponse>` |
+| [`delete`](#shorthands) | `Promise<WebResponse>` |
+| [`head`](#shorthands) | `Promise<WebResponse>` |
+
+すべてのメソッドは URL と[オプション](#options)を受け取り、[`WebResponse`](#webresponse) を返します。
+
+### `fetch`
+
+`options.method` で指定したメソッドでリクエストを送ります。デフォルトは `GET` です。
+
+```ts
+const removed = await request.fetch('/api/orders/7', { method: 'DELETE' });
+```
+
+Node の `fetch` が送信できない `CONNECT`、`TRACE`、`TRACK` を除き、任意の HTTP メソッド名を指定できます。e2e は大文字にして送信します。
+
+### 短縮メソッド
+
+`get`、`post`、`put`、`patch`、`delete`、`head` は、それぞれのメソッドでリクエストを送信します。
+
+```ts
+const found = await request.get('/api/orders?reference=r1');
+```
+
+`GET` と `HEAD` のリクエストにボディは指定できません。
+
+### オプション
+
+| オプション | 型 | デフォルト |
+| --- | --- | --- |
+| `headers` | `Record<string, string>` | - |
+| `json` | `unknown` | - |
+| `body` | `string` | - |
+| `timeout` | `number` | `actionTimeout` |
+| `redirect` | `'follow' \| 'manual' \| 'error'` | `'follow'` |
+| `method` | `string` | `'GET'` |
+
+- `json` は `JSON.stringify` を通して送信します。`headers` で指定しない限り、`content-type: application/json` を使います。JSON で安全に表現できるプレーンオブジェクト、配列、文字列、有限の数値、真偽値、`null` のみを受け取ります。値が `undefined` のキー、`Date`、`secrets.get()` のハンドルは拒否します。通常の `JSON.stringify` では、これらは削除または変換されます。
+- `body` はそのまま送信します。`headers` で指定しない限り、`content-type: text/plain;charset=UTF-8` を使います。`json` と `body` はどちらか一方だけを渡します。フォーム、マルチパート、バイナリのボディは未対応です。
+- `timeout` はミリ秒単位で、上限は 2147483647 です。`0` では独自のタイムアウトを設定せず、実行中のテストまたはフックの予算だけが呼び出しを制限します。
+- `redirect` はリダイレクトの処理方法です。`'follow'` は追従し、`'manual'` は `location` と `set-cookie` ヘッダーを含む 3xx レスポンスをそのまま返します。`'error'` はサーバーがリダイレクトすると `ACTION_FAILED` で呼び出しを失敗させます。
+- `method` は `fetch` のみのオプションです。
+
+### `WebResponse`
+
+`request` がボディを読み終えた HTTP レスポンスです。Web エンジンの `route.fetch()` も同じ型を返します。[`browser.waitForResponse`](/reference/web#waitforresponse) は、`WebResponse` に `request` を追加した `PageResponse` を返し、レスポンスが一致するとすぐにボディの読み取りを始めます。
+
+| メンバー | 型 |
+| --- | --- |
+| `status` | `number` |
+| `url` | `string` |
+| `headers` | `Record<string, string>` |
+| `body()` | `Promise<Buffer>` |
+| `text()` | `Promise<string>` |
+| `json<T>()` | `Promise<T>` |
+
+- `url` は、`redirect` が `'follow'` ならリダイレクト後の URL、`'manual'` ならリクエストした URL です。
+- `headers` の名前は小文字です。複数の `set-cookie` の値は `\n` で結合します。
+- `text()` はボディを UTF-8 でデコードします。`json()` は JSON として解析し、型を指定しない限り `unknown` を返します。指定した型の検証は行わないため、[`toMatchSchema`](/reference/expect#matching-a-schema) で確認してください。
+- 2xx のステータスは [`toBeOK`](/reference/expect#tobeok) で、特定の値は `expect(response.status).toBe(201)` などの値マッチャーで確認します。
+
+## URL
+
+パスは [`app.open`](/reference/app#open) と同様に、ターゲットの `app.url` を基準に解決します。絶対 `http` または `https` URL は、どのターゲットでも指定先にアクセスします。
+
+- 先頭の `/` はオリジンを基準にします。`app.url` が `https://example.com/shop` の場合、`/api/orders` は `https://example.com/api/orders` になります。ベースパスを保持するには ``request.get(`${app.baseUrl}/api/orders`)`` と書きます。
+- 呼び出しはランナーのプロセスで、ランナーのネットワークを使って実行されます。ランナーがブラウザだけを操作する仮想マシン内のアプリなど、ランナーから到達できないアプリには `request` もアクセスできません。
+- Web エンジンの `headers` と `basicAuth` オプションはブラウザだけに適用されます。同じ値を呼び出しの `headers` に渡してください。
+
+| エラー | 発生条件 |
+| --- | --- |
+| `APP_URL_REQUIRED` | URL がパスで、ターゲットに `app.url` が宣言されていない場合。 |
+| `POLICY_DENIED` | URL が不正、またはスキームが `http` と `https` 以外の場合。`about:blank` も含みます。`json` に `Secret` がある場合も該当します。 |
+| `INVALID_ARGUMENT` | URL が空でない文字列ではない、または認証情報（`https://user:pass@...`）を含む場合。オプションの型が不正、または Playwright の `data` や `params` など `request` が受け取らないオプションの場合。`headers` がプレーンオブジェクトではない、ヘッダー名や値が不正、`fetch` 自身が設定する `content-length`、`host`、`sec-fetch-mode` を指定した場合。`fetch` が送信できない `expect`、`keep-alive`、`transfer-encoding`、`upgrade` を指定した場合。`connection` が `close` と `keep-alive` 以外の場合。`accept-encoding` と `range` を併用した場合（`fetch` が `identity` を追加するため）。`json` と `body` の両方を設定した、`json` が JSON で安全に表現できない、`GET` や `HEAD` にボディがある場合。`timeout` が負数または 2147483647 を超える、`redirect` が `'follow'`、`'manual'`、`'error'` 以外、メソッドが HTTP メソッド名ではない、または `CONNECT`、`TRACE`、`TRACK` の場合。 |
+
+## ステップとタイムアウト
+
+各呼び出しは種類が `resource` のステップとなり、`POST /api/orders` のようにメソッドとパスでラベル付けされます。ラベルにはクエリ文字列を含めません。別オリジンのパスではオリジンも表示します。
+
+検証で拒否された呼び出しも失敗したステップとして記録され、Promise が reject されます。メソッド自体が同期的に例外を投げることはありません。メソッドや URL が拒否された場合、ステップにラベルは付かず、エラーメッセージに URL やヘッダー値を引用することもありません。
+
+呼び出しは `timeout`（デフォルトは `actionTimeout` の 30000 ミリ秒）と、呼び出し元の予算の両方に制限されます。テスト本体ではテストのタイムアウト、`afterEach` フックではクリーンアップのタイムアウトです。どちらかが尽きると e2e はリクエストを中断します。時間切れのテストは通常のタイムアウトエラーで失敗します。
+
+| エラー | 発生条件 |
+| --- | --- |
+| `ACTION_FAILED` | 呼び出しが `timeout` を超えた、`redirect: 'error'` でサーバーがリダイレクトした、または接続拒否やホストの名前解決失敗などのネットワークエラーが発生した場合。 |
+
+e2e は呼び出しをリトライしません。Node の `fetch` 自体は、サーバーが `421 Misdirected Request` を返すとリクエストを 1 回再送します。読み取りをリトライするには、[`expect.poll`](/reference/expect#polling-a-value) で包んでください。
+
+## Cookie とスコープ
+
+`request` はブラウザの Cookie を送信せず、呼び出し間で Cookie を保持しません。[サインイン済みリクエスト](/api-testing#signed-in-requests)の例のように、トークンやアプリのセッション Cookie を `headers` に渡してください。URL 内の認証情報は拒否されます。
+
+`request` はテストフィクスチャです。テスト本体、`beforeEach`、`afterEach` で使えます。`beforeAll`、`afterAll`、ワーカーフィクスチャでは使えません。
+
+## 型
+
+```ts
+export interface APIRequest {
+  /** Sends a request with `options.method`, GET by default. */
+  fetch(url: string, options?: APIRequestFetchOptions): Promise<WebResponse>;
+  /** Sends a GET request. */
+  get(url: string, options?: APIRequestOptions): Promise<WebResponse>;
+  /** Sends a POST request. */
+  post(url: string, options?: APIRequestOptions): Promise<WebResponse>;
+  /** Sends a PUT request. */
+  put(url: string, options?: APIRequestOptions): Promise<WebResponse>;
+  /** Sends a PATCH request. */
+  patch(url: string, options?: APIRequestOptions): Promise<WebResponse>;
+  /** Sends a DELETE request. */
+  delete(url: string, options?: APIRequestOptions): Promise<WebResponse>;
+  /** Sends a HEAD request. */
+  head(url: string, options?: APIRequestOptions): Promise<WebResponse>;
+}
+
+/** What one `request` call sends beside its URL. */
+export interface APIRequestOptions {
+  /** Request headers. */
+  readonly headers?: Readonly<Record<string, string>>;
+  /** A body sent as JSON, with `content-type: application/json` unless `headers` sets one. Not with `body`. */
+  readonly json?: unknown;
+  /** A body sent as is. Not with `json`. */
+  readonly body?: string;
+  /** Timeout in milliseconds; defaults to `actionTimeout`. 0 sets none of its own, so only the running test's or hook's budget bounds the call. */
+  readonly timeout?: number;
+  /** How redirects are handled; `'follow'` by default. `'manual'` returns the 3xx response as is; `'error'` fails the call with `ACTION_FAILED`. */
+  readonly redirect?: 'follow' | 'manual' | 'error';
+}
+
+/** `request.fetch` options: the method beside the rest. */
+export interface APIRequestFetchOptions extends APIRequestOptions {
+  /** The HTTP method; GET by default. */
+  readonly method?: string;
+}
+
+/**
+ * An HTTP response: what `request` calls, the web engine's
+ * `browser.waitForResponse`, and `route.fetch()` return.
+ */
+export interface WebResponse {
+  /** Response URL. */
+  readonly url: string;
+  /** HTTP status. */
+  readonly status: number;
+  /** Response headers, lower-cased names; `request` and `route.fetch()` join several `set-cookie` values with `\n`, `waitForResponse` leaves cookie headers out. */
+  readonly headers: Readonly<Record<string, string>>;
+  /** Waits for the body and returns its bytes; rejects with `ACTION_FAILED` when the body could not be read. */
+  body(): Promise<Buffer>;
+  /** Waits for the body and parses it as JSON; rejects with `ACTION_FAILED` when the body could not be read. */
+  json<T = unknown>(): Promise<T>;
+  /** Waits for the body and reads it as text; rejects with `ACTION_FAILED` when the body could not be read. */
+  text(): Promise<string>;
+}
+```
+
+## 関連項目
+
+<CardGroup cols={2}>
+  <Card title="API" icon="plug" href="/api-testing">
+    UI テストと同じファイルに API テストを書き、同じ実行で動かします。
+  </Card>
+  <Card title="expect" icon="circle-check" href="/reference/expect">
+    レスポンスのフィールドとボディに使う値マッチャーを確認します。
+  </Card>
+</CardGroup>
