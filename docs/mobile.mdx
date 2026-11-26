@@ -688,10 +688,11 @@ an interrupt `signal`, and a `log` that reaches the reporter.
 
 **`release`** runs after the last worker exits, within `cleanupTimeout`, on
 every exit path: a failure, an interrupt, or a `prepare` that threw. It gets
-the object `acquire` returned, so a provider can keep its own fields on it.
-Only the `DeviceLease` fields reach the workers. When one slot fails to
-lease, the run ends before any test, and the engine still releases every
-lease it got.
+the object `acquire` returned, so a provider can keep its own fields on it,
+and `context` carrying `timeoutMs`, the remaining cleanup budget, in
+milliseconds, when `release` starts. Only the `DeviceLease` fields reach the
+workers. When one slot fails to lease, the run ends before any test, and the
+engine still releases every lease it got.
 
 **`client`** is agent-device client configuration, as JSON data, applied on
 top of the session name and the `daemon` address. A lease that sets

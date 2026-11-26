@@ -103,5 +103,5 @@ test('Wikipedia home screen', async ({ app, screen }) => {
 - e2e 准备测试目标时，每个会话会在租用其槽位的设备时开始。设备准备约需 20 至 50 秒，会话会一直计费到运行释放它，即使没有测试在其上执行。`workers` 与 BrowserStack 测试目标数量的乘积不得超过套餐允许的并行会话数。
 - BrowserStack 会在上传内容最后一次使用后保留 30 天。使用 `https` `app` 的运行会再次上传；复用 `bs://` ID 可跳过上传。
 - 如果运行器在释放设备前被终止，BrowserStack 会在最后一条命令后达到空闲超时时结束会话。
-- 如果 agent-device 无法确认已结束会话，释放操作会导致运行失败，即使所有测试都已通过。可能的原因包括：结束会话超过 agent-device 约 3 秒的关闭时间窗口、守护进程被强制停止、关闭报告丢失，或守护进程在运行期间退出。通过 `build` 和 `sessionName` 在控制台中查找会话。
+- 如果 agent-device 无法确认已结束会话，释放操作会导致运行失败，即使所有测试都已通过。这会在 BrowserStack 会话清理失败（剩余 `cleanupTimeout` 超过 20 秒时）、守护进程停止后仍未确认结束，或守护进程在运行期间退出时发生。在 Windows 上，在停止守护进程前结束会话也需要剩余 `cleanupTimeout` 超过 20 秒（建议保留默认的 30 秒）。通过 `build` 和 `sessionName` 在控制台中查找会话。
 - 不支持设备设置（权限、位置、网络、外观）、系统警报、通过 agent-device 录制和读取设备日志，以及端口反向转发。在 BrowserStack 控制台读取日志，使用 BrowserStack Local 访问你网络中的服务器。

@@ -112,6 +112,8 @@ export interface DeviceReleaseContext {
   readonly env: Readonly<Record<string, string | undefined>>;
   /** Aborts when the cleanup budget is spent. */
   readonly signal: AbortSignal;
+  /** Remaining cleanup budget in milliseconds when `release` starts. */
+  readonly timeoutMs?: number | undefined;
   readonly log: (line: string) => void;
 }
 
@@ -296,7 +298,7 @@ export class LeasedDevices implements DeviceSource {
     const leases = this.held.get(info.targetName);
     this.held.delete(info.targetName);
     if (leases === undefined || leases.length === 0) return;
-    const context = { runId: info.runId, targetName: info.targetName, env: info.env, signal: info.signal, log: (line: string) => info.log(`${provider.name}: ${line}`) };
+    const context = { runId: info.runId, targetName: info.targetName, env: info.env, signal: info.signal, timeoutMs: info.timeoutMs, log: (line: string) => info.log(`${provider.name}: ${line}`) };
     await allOrFirstFailure(
       leases.map((lease) => () => provider.release(lease, context)),
       `device provider "${provider.name}" could not release a device`,

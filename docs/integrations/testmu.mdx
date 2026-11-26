@@ -228,9 +228,12 @@ An attempt that records [video](/reference/config#video) gets:
   command.
 - **Unconfirmed release fails the run.** A release fails the run when
   agent-device can't confirm it ended the device session, even when every
-  test passed: a forced daemon stop, a lost shutdown report, or a daemon that
-  exited during the run. Find the session on the dashboard by its `build` and
-  `sessionName`.
+  test passed. This happens when TestMu AI session cleanup fails (with more
+  than 20 seconds of `cleanupTimeout` remaining) or goes unconfirmed across
+  daemon stop, or when the daemon exits during the run. On Windows, ending the
+  session before daemon stop also requires more than 20 seconds of remaining
+  `cleanupTimeout` (keep the default 30 seconds). Find the session on the
+  dashboard by its `build` and `sessionName`.
 - **Device settings and logs.** Device settings (permissions, location,
   network, appearance), system alerts, recording and device logs through
   agent-device, and port reverse are not available. Read logs on the TestMu

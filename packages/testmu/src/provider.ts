@@ -95,7 +95,8 @@ export interface TestmuOptions {
  * TestMu AI devices for `mobile({ device: testmu({ device, osVersion, app }) })`:
  * one hosted device and isolated agent-device daemon per worker slot. Allocating
  * the lease starts the TestMu AI session, which installs `app`; releasing it
- * stops the daemon, which ends the session.
+ * ends the session via the daemon before stopping it (falling back to daemon
+ * stop if the RPC does not confirm release).
  */
 export function testmu(options: TestmuOptions): DeviceProvider {
   rejectUnknownKeys('testmu()', options, OPTION_KEYS);

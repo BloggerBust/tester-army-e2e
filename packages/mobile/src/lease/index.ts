@@ -7,13 +7,13 @@
  */
 
 import { mkdtemp, rm } from 'node:fs/promises';
-import { createAgentDeviceClient } from 'agent-device';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { createAgentDeviceClient, isAgentDeviceError, type LeaseScopedOptions } from 'agent-device';
 import { deviceSelection, type DeviceClientConfig } from '../bindings.ts';
 import type { DeviceLease, DeviceReleaseContext, DeviceRequest } from '../provider.ts';
 import { installedIdentity } from '../support.ts';
-import { startDriver, stopDriver } from './daemon.ts';
+import { ProviderReleaseWarningError, releaseLease, startDriver, stopDriver } from './daemon.ts';
 import { LEASE_TTL_MS, startHeartbeat } from './heartbeat.ts';
 
 export { agentDevicePlugin, type AgentDevicePlugin } from './plugin.ts';
@@ -57,36 +57,58 @@ export interface AgentDeviceLeaseRequest {
 /** `acquire` and `release` of a `DeviceProvider` backed by agent-device leases. */
 export interface AgentDeviceLeases {
   acquire(request: DeviceRequest, lease: AgentDeviceLeaseRequest): Promise<DeviceLease>;
-  /** Stops the lease's daemon, and throws unless agent-device confirms it ended the lease's session. */
+  /** Releases the lease via its daemon when running, stops the daemon, and throws unless agent-device confirms it ended the lease's session. */
   release(lease: DeviceLease, context: DeviceReleaseContext): Promise<void>;
 }
 
-/** One lease's daemon; `ended` once its stop confirmed the session ended, so a retried release only cleans up. */
+const DEFAULT_RELEASE_BUDGET_MS = 30_000;
+const RELEASE_RPC_TIMEOUT_MS = 12_000;
+/** Skip the RPC when less than this remains, because a cancelled RPC can delete the daemon's lease record just before `daemon stop` inspects it. */
+const MIN_RELEASE_RPC_MS = 5_000;
+/** Reserve time `daemon stop` may need after a hung provider DELETE: graceful drain, then SIGTERM and SIGKILL. */
+const STOP_RESERVE_MS = 15_000;
+
+function releaseRpcBudgetMs(timeoutMs: number | undefined): number {
+  if (timeoutMs === undefined) return 0;
+  // Above 30 s, keep the 18 s (DEFAULT_RELEASE_BUDGET_MS - RELEASE_RPC_TIMEOUT_MS) stop reserve and give the rest to slow provider DELETEs.
+  const rpc = Math.max(
+    Math.min(RELEASE_RPC_TIMEOUT_MS, timeoutMs - STOP_RESERVE_MS),
+    timeoutMs - (DEFAULT_RELEASE_BUDGET_MS - RELEASE_RPC_TIMEOUT_MS),
+  );
+  return rpc >= MIN_RELEASE_RPC_MS ? rpc : 0;
+}
+
+type LeaseLifecycle =
+  | { stage: 'acquiring' }
+  | { stage: 'held' | 'session-ended'; readonly scope: LeaseScopedOptions }
+  | { stage: 'stopped' };
+
+/** One lease's daemon lifecycle: RPC release moves `'held'` to `'session-ended'`, stop moves it to `'stopped'`, so a retry skips finished steps. */
 interface Held {
-  dir: string;
-  stateDir: string;
-  env: NodeJS.ProcessEnv;
+  readonly dir: string;
+  readonly stateDir: string;
+  readonly env: NodeJS.ProcessEnv;
+  lifecycle: LeaseLifecycle;
   stopHeartbeat?: () => Promise<void>;
   releasing?: Promise<void> | undefined;
-  ended?: boolean;
 }
 
 /**
  * Leases from `options.provider` for a `DeviceProvider`: one isolated
  * agent-device daemon per lease, allocated with `retainOnClose` so closing
- * the engine session keeps it, renewed while held, and stopped on release,
- * which ends the session at the service.
+ * the engine session keeps it, renewed while held, and ended via RPC on
+ * release before stopping the daemon (falling back to daemon stop).
  */
 export function agentDeviceLeases({ provider, label }: AgentDeviceLeaseOptions): AgentDeviceLeases {
   const held = new Map<string, Held>();
 
   /** One release per lease, shared by every caller; a failed one may be tried again. */
-  function release(id: string | undefined, resource: Held, signal: AbortSignal): Promise<void> {
+  function release(id: string | undefined, resource: Held, signal: AbortSignal, timeoutMs: number | undefined): Promise<void> {
     resource.releasing ??= (async () => {
       await resource.stopHeartbeat?.();
-      if (resource.ended !== true) {
-        await stopDriver(resource.stateDir, resource.env, id, label, signal);
-        resource.ended = true;
+      if (resource.lifecycle.stage !== 'stopped') {
+        await endLeaseDaemon(id, resource, label, signal, timeoutMs);
+        resource.lifecycle = { stage: 'stopped' };
       }
       await rm(resource.dir, { recursive: true, force: true });
       if (id !== undefined) held.delete(id);
@@ -100,7 +122,7 @@ export function agentDeviceLeases({ provider, label }: AgentDeviceLeaseOptions):
       request.signal.throwIfAborted();
       const dir = await mkdtemp(join(tmpdir(), `e2e-${provider}-`));
       const home = join(dir, 'home');
-      const resource: Held = { dir, stateDir: join(dir, 'state'), env: daemonEnv({ ...request.env, ...env }, home) };
+      const resource: Held = { dir, stateDir: join(dir, 'state'), env: daemonEnv({ ...request.env, ...env }, home), lifecycle: { stage: 'acquiring' } };
       const leaseBackend: 'ios-instance' | 'android-instance' = request.platform === 'ios' ? 'ios-instance' : 'android-instance';
       const allocated = { platform: request.platform, target: 'mobile' as const, ...selectors };
       let id: string | undefined;
@@ -121,10 +143,11 @@ export function agentDeviceLeases({ provider, label }: AgentDeviceLeaseOptions):
           },
         }, resource.env, label);
         id = grant.leaseId;
+        const scope = { tenant: grant.tenantId, runId: grant.runId, leaseId: grant.leaseId, leaseBackend, leaseProvider: provider };
+        resource.lifecycle = { stage: 'held', scope };
         held.set(id, resource);
         if (request.signal.aborted) throw new Error('cancelled');
         if (!grant.retainOnClose) throw new Error(`agent-device did not acknowledge retainOnClose. Closing the engine session could end the ${label} lease before run-end release`);
-        const scope = { tenant: grant.tenantId, runId: grant.runId, leaseId: grant.leaseId, leaseBackend, leaseProvider: provider };
         resource.stopHeartbeat = await startHeartbeat(resource.stateDir, scope, request.log);
         request.log(`lease ${id}: ${summary}`);
         // The worker's client is created with these fields: the scope picks the lease, and the selectors match the session it holds.
@@ -134,7 +157,7 @@ export function agentDeviceLeases({ provider, label }: AgentDeviceLeaseOptions):
       } catch (cause) {
         // The engine releases only leases `acquire` returned.
         try {
-          await release(id, resource, AbortSignal.timeout(30_000));
+          await release(id, resource, AbortSignal.timeout(DEFAULT_RELEASE_BUDGET_MS), DEFAULT_RELEASE_BUDGET_MS);
         } catch (cleanup) {
           throw new AggregateError([cause, cleanup], `${label} lease failed: ${messageOf(cause)}; cleanup also failed: ${messageOf(cleanup)}`, { cause: cleanup });
         }
@@ -143,7 +166,7 @@ export function agentDeviceLeases({ provider, label }: AgentDeviceLeaseOptions):
     },
     async release(lease, context) {
       const resource = held.get(lease.id);
-      if (resource) await release(lease.id, resource, context.signal);
+      if (resource) await release(lease.id, resource, context.signal, context.timeoutMs);
     },
   };
 }
@@ -191,6 +214,58 @@ function daemonEnv(env: DeviceRequest['env'], home: string): NodeJS.ProcessEnv {
   }
   result.AGENT_DEVICE_HOME = home;
   return result;
+}
+
+async function endLeaseDaemon(
+  id: string | undefined,
+  resource: Held,
+  label: string,
+  signal: AbortSignal,
+  timeoutMs: number | undefined,
+): Promise<void> {
+  let releaseError: unknown;
+  const { lifecycle } = resource;
+  const rpcBudgetMs = releaseRpcBudgetMs(timeoutMs);
+  if (lifecycle.stage === 'held' && rpcBudgetMs > 0) {
+    // Reserve STOP_RESERVE_MS for `stopDriver` so a hung provider DELETE never exhausts `signal` before `daemon stop` spawns and exits.
+    const rpcTimeout = new AbortController();
+    const timer = setTimeout(
+      () => rpcTimeout.abort(new DOMException('Timed out waiting for lease RPC release', 'TimeoutError')),
+      rpcBudgetMs,
+    );
+    timer.unref?.();
+    const rpcSignal = AbortSignal.any([signal, rpcTimeout.signal]);
+    try {
+      if (await releaseLease(resource.stateDir, lifecycle.scope, rpcSignal)) {
+        lifecycle.stage = 'session-ended';
+      }
+    } catch (error) {
+      releaseError = rpcTimeout.signal.aborted
+        ? new Error(`Timed out after ${rpcBudgetMs} ms waiting for lease RPC release`, { cause: error })
+        : error;
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+  try {
+    await stopDriver(resource.stateDir, resource.env, id, label, signal, {
+      sessionEnded: lifecycle.stage === 'session-ended',
+    });
+  } catch (stopError) {
+    // When the daemon died mid-run, `stopDriver` already reports the missing daemon for the lease.
+    const daemonNotRunning =
+      isAgentDeviceError(releaseError) && releaseError.details?.reason === 'daemon-not-running';
+    if (releaseError !== undefined && !daemonNotRunning) {
+      throw new AggregateError(
+        [releaseError, stopError],
+        `${label} lease release failed: ${messageOf(releaseError)}; ${messageOf(stopError)}`,
+        { cause: stopError },
+      );
+    }
+    throw stopError;
+  }
+  // Warnings from `leases.release` mean agent-device already ran provider teardown and the service rejected it; daemon stop cannot retry it.
+  if (releaseError instanceof ProviderReleaseWarningError) throw releaseError;
 }
 
 function messageOf(cause: unknown): string {

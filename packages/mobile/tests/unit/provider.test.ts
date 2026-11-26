@@ -10,7 +10,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { OperationContext, ProviderRecordContext, ProviderRecording, ProviderRecordingResult, ProviderRecordingStopContext } from '@e2e-dev/core/engine';
-import type { DeviceLease, DeviceProvider, DeviceRequest } from '../../src/provider.ts';
+import type { DeviceLease, DeviceProvider, DeviceReleaseContext, DeviceRequest } from '../../src/provider.ts';
 import { boot, harness, poolVariableIn, PROJECT_ROOT, type Harness } from '../helpers/harness.ts';
 import { ignoreTrace, noSecrets } from '../helpers/secrets.ts';
 
@@ -25,6 +25,7 @@ function deferred<T = void>(): { promise: Promise<T>; resolve: (value: T | Promi
 function provider(options: { failSlot?: number; installedApp?: string; failRelease?: boolean } = {}) {
   const acquired: DeviceRequest[] = [];
   const released: DeviceLease[] = [];
+  const releaseContexts: DeviceReleaseContext[] = [];
   const impl: DeviceProvider = {
     name: 'toy-cloud',
     async acquire(request) {
@@ -38,12 +39,13 @@ function provider(options: { failSlot?: number; installedApp?: string; failRelea
         ...(options.installedApp === undefined ? {} : { installedApp: options.installedApp }),
       };
     },
-    async release(lease) {
+    async release(lease, context) {
       released.push(lease);
+      releaseContexts.push(context);
       if (options.failRelease === true) throw new Error('stop failed');
     },
   };
-  return { impl, acquired, released };
+  return { impl, acquired, released, releaseContexts };
 }
 
 const prepareInfo = (env: NodeJS.ProcessEnv, slots: number, log: (line: string) => void = () => undefined) => ({
@@ -205,6 +207,7 @@ describe('device provider', () => {
     expect(cloud.released).toEqual([
       { id: 'lease-0', device: 'sim-0', daemon: { baseUrl: 'https://0.example', authToken: 'token-0' } },
     ]);
+    expect(cloud.releaseContexts.map((releaseContext) => releaseContext.timeoutMs)).toEqual([5_000]);
   });
 
   it.each(['missing', 'revoked'] as const)('closes a leased session when reuse permission is %s', async (permission) => {

@@ -99,7 +99,8 @@ export interface BrowserStackOptions {
  * BrowserStack devices for `mobile({ device: browserstack({ device, osVersion, app }) })`:
  * one real device and isolated agent-device daemon per worker slot. The
  * session starts, and installs `app`, when the daemon allocates the lease;
- * releasing the lease stops the daemon, which ends the session.
+ * releasing the lease ends the session via the daemon before stopping it
+ * (falling back to daemon stop if the RPC does not confirm release).
  */
 export function browserstack(options: BrowserStackOptions): DeviceProvider {
   if (typeof options !== 'object' || options === null || Array.isArray(options)) {

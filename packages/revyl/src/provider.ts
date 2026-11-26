@@ -42,8 +42,9 @@ export interface RevylOptions {
 /**
  * Revyl devices for `mobile({ device: revyl({ app, device }) })`: one hosted
  * device and isolated agent-device daemon per worker slot. Allocating the
- * lease starts the Revyl device, which installs `app`; releasing it stops the
- * daemon, which ends the device session.
+ * lease starts the Revyl device, which installs `app`; releasing it ends the
+ * device session via the daemon before stopping it (falling back to daemon
+ * stop if the RPC does not confirm release).
  */
 export function revyl(options: RevylOptions): DeviceProvider {
   rejectUnknownKeys('revyl()', options, OPTION_KEYS);
