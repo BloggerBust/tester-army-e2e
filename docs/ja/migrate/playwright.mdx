@@ -303,7 +303,7 @@ export const test = base.extend<{ accountPage: AccountPage }>({
 | Playwright | 現在使える方法 |
 | --- | --- |
 | `projects[].retries`, `projects[].timeout` | グループのオプション |
-| `--debug`、VS Code 拡張機能 | `--step --headed` でキー入力まで各ステップを停止。`screen.debug()` でツリーを表示 |
+| `--debug`、VS Code 拡張機能 | `--step --headed` は最初のステップを実行し、以降のステップをキー入力まで停止。`screen.debug()` でツリーを表示 |
 | オプションフィクスチャ、`extend` での `page` や `context` の上書き | フィクスチャ内の `process.env`。別名の新しいフィクスチャ |
 | `const response = await page.goto()` | ページ遷移前に `browser.waitForResponse` を開始 |
 | Playwright の `Reporter` クラス、外部のレポーター | `onEvent` と `onRunFinished` を持つ[カスタムレポーター](/reference/reporters#custom-reporters)。ダッシュボードには `junit.xml` |

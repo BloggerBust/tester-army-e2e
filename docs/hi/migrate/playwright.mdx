@@ -324,7 +324,7 @@ export const test = base.extend<{ accountPage: AccountPage }>({
 | Playwright | अभी क्या इस्तेमाल करें |
 | --- | --- |
 | `projects[].retries`, `projects[].timeout` | ग्रुप पर ऑप्शन |
-| `--debug`, VS Code एक्सटेंशन | `--step --headed` कीबोर्ड का बटन दबाने तक हर स्टेप पर रुकता है; `screen.debug()` ट्री प्रिंट करता है |
+| `--debug`, VS Code एक्सटेंशन | `--step --headed` पहला स्टेप चलाता है, फिर उसके बाद हर स्टेप को कीबोर्ड का बटन दबाने तक रोकता है; `screen.debug()` ट्री प्रिंट करता है |
 | ऑप्शन फ़िक्स्चर, `extend` में `page` या `context` ओवरराइड करना | फ़िक्स्चर में `process.env`; अपने नाम से एक नया फ़िक्स्चर |
 | `const response = await page.goto()` | नेविगेशन से पहले `browser.waitForResponse` शुरू करें |
 | Playwright `Reporter` क्लास, थर्ड-पार्टी रिपोर्टर | `onEvent` और `onRunFinished` के साथ [कस्टम रिपोर्टर](/reference/reporters#custom-reporters); डैशबोर्ड के लिए `junit.xml` |

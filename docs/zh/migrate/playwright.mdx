@@ -303,7 +303,7 @@ export const test = base.extend<{ accountPage: AccountPage }>({
 | Playwright | 目前可用的方式 |
 | --- | --- |
 | `projects[].retries`, `projects[].timeout` | 组上的选项 |
-| `--debug`、VS Code 扩展 | `--step --headed` 在每个步骤等待按键后继续；`screen.debug()` 输出语义树 |
+| `--debug`、VS Code 扩展 | `--step --headed` 会先执行第一步，然后让后续每一步等待按键后继续；`screen.debug()` 输出语义树 |
 | 选项测试夹具，在 `extend` 中覆盖 `page` 或 `context` | 测试夹具中的 `process.env`；使用独立名称的新测试夹具 |
 | `const response = await page.goto()` | 在导航前启动 `browser.waitForResponse` |
 | Playwright `Reporter` 类、第三方报告器 | 带有 `onEvent` 和 `onRunFinished` 的[自定义报告器](/reference/reporters#custom-reporters)；供仪表盘使用的 `junit.xml` |
