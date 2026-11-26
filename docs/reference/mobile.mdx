@@ -259,8 +259,8 @@ mobile({ platform: 'ios', transition: 800 }); // default: 500
 
 If the control changes during the wait, the action finds it again within its timeout before acting.
 
-`back`, `home`, `shake`, `alert`, `dismissKeyboard`, `setOrientation`, and `fold` on
-[`device`](#device) change the screen, so they count as actions for this
+`back`, `home`, `pressRemote`, `pressButton`, `shake`, `alert`, `dismissKeyboard`,
+`setOrientation`, and `fold` on [`device`](#device) change the screen, so they count as actions for this
 budget the way a tap does. A control that arrives with the screen they reveal
 waits out the budget before the next action lands on it.
 
@@ -516,6 +516,7 @@ test('offline banner', { platforms: ['android'] }, async ({ app, device, screen 
 | [`home`](#home) | `Promise<void>` |
 | [`back`](#back) | `Promise<void>` |
 | [`pressRemote`](#pressremote) | `Promise<void>` |
+| [`pressButton`](#pressbutton) | `Promise<void>` |
 | [`shake`](#shake) | `Promise<void>` |
 | [`alert`](#alert) | `Promise<void>` |
 | [`dismissKeyboard`](#dismisskeyboard) | `Promise<void>` |
@@ -524,7 +525,7 @@ test('offline banner', { platforms: ['android'] }, async ({ app, device, screen 
 | [`setClipboard`](#setclipboard) | `Promise<void>` |
 
 Every async method is a recorded step named `device.<method>`, bounded by
-`config.actionTimeout`. `back`, `home`, `pressRemote`, `shake`, `alert`, `dismissKeyboard`,
+`config.actionTimeout`. `back`, `home`, `pressRemote`, `pressButton`, `shake`, `alert`, `dismissKeyboard`,
 `setOrientation`, and `fold` count as actions for the
 [`transition`](#transition) budget. Each entry below shows its member's
 declaration; the types they use are under [Types](#device-fixture).
@@ -1048,6 +1049,38 @@ await device.pressRemote('play-pause');
 Most Android TV remotes carry one Play button that toggles: that is
 `play-pause`. `play` is the dedicated Play key.
 
+#### `pressButton`
+
+```ts
+/**
+ * Presses one hardware button: `'volume-up'`, `'volume-down'`, or
+ * `'power'`. An Android emulator or phone takes all three, and a physical
+ * iPhone or iPad the volume buttons; an iOS simulator, an Android TV, and
+ * any other device or button is `UNSUPPORTED_CAPABILITY`. A name outside
+ * the list is `INVALID_ARGUMENT`.
+ * It resolves once the press is sent, with no volume level or screen state,
+ * so assert on what the screen shows next.
+ */
+pressButton(button: HardwareButton): Promise<void>;
+```
+
+```ts
+await device.pressButton('volume-up');
+await expect(screen.getByRole('slider', { name: 'Media' })).toBeVisible();
+```
+
+On Android a volume press opens the system volume panel over the app, so
+the next read shows its sliders until the panel hides itself a few seconds
+later. `power` turns the screen off, and the screen cannot be read until it
+is on again: a read or an action times out. Two quick `power` presses can
+trigger the phone's double-press shortcut, which opens the camera on a stock
+emulator, instead of waking the app.
+
+| Throws | When |
+| --- | --- |
+| `INVALID_ARGUMENT` | `button` is not one of the three names. Nothing is sent to the device. |
+| `UNSUPPORTED_CAPABILITY` | The device cannot press that button: an iOS simulator, an Android TV, `power` on an iPhone or iPad, or a hosted device whose WebDriver backend does not expose the button. |
+
 #### `shake`
 
 ```ts
@@ -1512,6 +1545,9 @@ export type RemoteKey =
   | 'fast-forward'
   | 'next'
   | 'previous';
+
+/** A hardware button `device.pressButton` takes. */
+export type HardwareButton = 'volume-up' | 'volume-down' | 'power';
 
 /** Orientations `setOrientation` accepts. */
 export type DeviceOrientation = 'portrait' | 'portrait-upside-down' | 'landscape-left' | 'landscape-right';

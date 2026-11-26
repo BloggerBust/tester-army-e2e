@@ -16,4 +16,5 @@ export type { ViewportSize } from '@e2e-dev/core/engine';
 export type { BiometricSensor, Device, DeviceOrientation, DeviceSession, DeviceSessionClient, ForegroundApp } from './device.ts';
 export type { DeviceSelection } from './bindings.ts';
 export type { RemoteKey } from './remote.ts';
+export type { HardwareButton } from './buttons.ts';
 export type { MobileFixtures } from './fixtures.ts';

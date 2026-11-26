@@ -37,4 +37,7 @@ viewport.height = 800;
 void device.pressRemote('menu');
 // @ts-expect-error pressRemote takes the lowercase remote keys, not the keyboard's capitalised names
 void device.pressRemote('Menu');
+void device.pressButton('volume-up');
+// @ts-expect-error pressButton takes the closed list of phone buttons; mute and the media keys are not on it
+void device.pressButton('mute');
 void ('play-pause' satisfies RemoteKey);

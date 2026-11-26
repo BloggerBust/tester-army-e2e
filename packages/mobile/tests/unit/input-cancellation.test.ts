@@ -77,3 +77,49 @@ it.each(['caller abort', 'input deadline', 'device fixture abort'] as const)('ca
     rmSync(stateDir, { recursive: true, force: true });
   }
 });
+
+it('cancels a hardware button press still pending when the input budget runs out', async () => {
+  const stateDir = mkdtempSync(path.join(tmpdir(), 'e2e-input-cancel-'));
+  let releaseRequest!: () => void;
+  let markStarted!: () => void;
+  let markFinished!: () => void;
+  const pendingRequest = new Promise<void>((resolve) => { releaseRequest = resolve; });
+  const started = new Promise<void>((resolve) => { markStarted = resolve; });
+  const finished = new Promise<void>((resolve) => { markFinished = resolve; });
+  let delivered = 0;
+  const client = createAgentDeviceClient({ session: 'input-cancel', stateDir }, {
+    transport: async (request, context) => {
+      if (request.command === 'snapshot') return { ok: true, data: SETTINGS_SNAPSHOT };
+      if (request.command === 'open') return { ok: true, data: { appName: 'Settings', appBundleId: 'com.apple.Preferences' } };
+      if (request.command === 'hardware-button') {
+        markStarted();
+        await pendingRequest;
+        if (context?.signal?.aborted !== true) delivered += 1;
+        markFinished();
+      }
+      return { ok: true, data: {} };
+    },
+  });
+  const engine = buildEngine(new AgentDeviceSurface({ platform: 'android', transition: 0, settle: false }, () => client));
+  const operation: OperationContext = { signal: new AbortController().signal, timeoutMs: 30000, runId: 'run', attemptId: 'a1', origin: 'test' };
+  try {
+    await boot({ engine, app: { bundleId: 'com.android.settings' } });
+    await engine.session!.restart!(operation);
+    const device = engine.fixtures!['device']!({
+      fixture: (_name: string, value: object) => value,
+      signal: new AbortController().signal,
+      timeouts: { action: 100 },
+    } as unknown as EngineFixtureContext) as Device;
+    const rejected = expect(device.pressButton('power')).rejects.toMatchObject({ code: 'ACTION_MAY_HAVE_COMMITTED' });
+    await started;
+    await rejected;
+    // The external request resumes after the input budget ran out.
+    releaseRequest();
+    await finished;
+    expect(delivered).toBe(0);
+  } finally {
+    releaseRequest();
+    await engine.dispose!({ signal: new AbortController().signal, timeoutMs: 1000 });
+    rmSync(stateDir, { recursive: true, force: true });
+  }
+});

@@ -9,6 +9,7 @@ import type { AgentDeviceClient as DeviceSessionClient } from 'agent-device';
 import type { EngineFixtureContext, Locator, ViewportSize } from '@e2e-dev/core/engine';
 import { appLabel, linkLabel, linkTarget } from './links.ts';
 import { pressRemote, requireRemoteKey, type RemoteKey } from './remote.ts';
+import { pressButton, requireHardwareButton, type HardwareButton } from './buttons.ts';
 import type { DevicePermission, MobilePlatform, PermissionState } from './options.ts';
 import type { DeviceSelection } from './bindings.ts';
 import { unsupported } from './support.ts';
@@ -202,6 +203,16 @@ export interface Device {
    * `UNSUPPORTED_CAPABILITY`. A name outside the list is `INVALID_ARGUMENT`.
    */
   pressRemote(key: RemoteKey): Promise<void>;
+  /**
+   * Presses one hardware button: `'volume-up'`, `'volume-down'`, or
+   * `'power'`. An Android emulator or phone takes all three, and a physical
+   * iPhone or iPad the volume buttons; an iOS simulator, an Android TV, and
+   * any other device or button is `UNSUPPORTED_CAPABILITY`. A name outside
+   * the list is `INVALID_ARGUMENT`.
+   * It resolves once the press is sent, with no volume level or screen state,
+   * so assert on what the screen shows next.
+   */
+  pressButton(button: HardwareButton): Promise<void>;
   /**
    * Shakes the device once: the simulator's shake gesture on an iPhone or
    * iPad simulator, a swing of the accelerometer on an Android phone or
@@ -399,6 +410,11 @@ export function createDeviceFixture(surface: AgentDeviceSurface, context: Engine
       const input = surface.inputBudget('device.pressRemote', { timeoutMs: context.timeouts.action, signal: context.signal });
       await surface.screenCommand('device.pressRemote', (client) => input.send(() => pressRemote(client, key, surface.selection())), context.signal);
     },
+    async pressButton(button) {
+      requireHardwareButton(button);
+      const input = surface.inputBudget('device.pressButton', { timeoutMs: context.timeouts.action, signal: context.signal });
+      await surface.screenCommand('device.pressButton', (client) => input.send((signal) => pressButton(client, button, surface.selection(), signal)), context.signal);
+    },
     async shake() {
       await surface.screenCommand('device.shake', (client) => client.command.shake(surface.selection()), context.signal);
     },
@@ -447,6 +463,8 @@ export function createDeviceFixture(surface: AgentDeviceSurface, context: Engine
     home: action,
     back: action,
     pressRemote: { ...action, label: (key) => key },
+    // A JavaScript caller can pass a key code; the label must still be text, so the step records the refusal.
+    pressButton: { ...action, label: (button) => String(button) },
     shake: action,
     alert: { ...action, label: (value) => value },
     dismissKeyboard: action,

@@ -2385,6 +2385,36 @@ describe('device fixture', () => {
     expect(h.fake.methods()).toContain('command.tvRemote');
   });
 
+  it.each(['volume-up', 'volume-down', 'power'] as const)('device.pressButton(%j) presses that agent-device hardware button on the selected device', async (button) => {
+    const h = harness({ platform: 'android', device: 'emulator-5554', bundleId: 'com.example.app' });
+    await openAttempt(h);
+    const before = h.fake.calls.length;
+    await expect(fixture(h).pressButton(button)).resolves.toBeUndefined();
+    expect(h.fake.calls.slice(before).map((call) => [call.method, call.args])).toEqual([['command.hardwareButton', { platform: 'android', serial: 'emulator-5554', button }]]);
+  });
+
+  it.each(['VolumeUp', 'volume up', 'mute', 'sleep', 'media-play-pause', 'toString', '', 3])('device.pressButton refuses %j, a name outside the list, before any device call', async (button) => {
+    const h = harness();
+    await openAttempt(h);
+    const before = h.fake.calls.length;
+    await expect(fixture(h).pressButton(button as never)).rejects.toMatchObject({ code: 'INVALID_ARGUMENT', message: expect.stringContaining('not a hardware button; press one of volume-up, volume-down, power') });
+    expect(h.fake.calls).toHaveLength(before);
+    // The recorder labels the step before the method runs, and redacts the label as text.
+    expect(declared?.pressButton?.label?.(button as never)).toBe(String(button));
+  });
+
+  it('maps agent-device\'s refusal of a simulator\'s hardware button to UNSUPPORTED_CAPABILITY with its hint', async () => {
+    const h = harness();
+    await openAttempt(h);
+    // agent-device 0.21.42's own refusal on an iOS simulator, as an iPhone 18 Pro simulator returned it.
+    const hint = 'hardware-button volume is supported on physical iPhone and iPad; iOS Simulators refuse because XCUIDevice exposes no volume press there.';
+    h.fake.respond('command.hardwareButton', () => {
+      throw new AppError('UNSUPPORTED_OPERATION', 'hardware-button is not supported on this device', { reason: 'unsupported-device-kind', hint });
+    });
+    await expect(fixture(h).pressButton('volume-up')).rejects.toMatchObject({ code: 'UNSUPPORTED_CAPABILITY', message: expect.stringContaining(hint) });
+    expect(h.fake.methods()).toContain('command.hardwareButton');
+  });
+
   describe('viewport', () => {
     it.each(['ios', 'android'] as const)('reads the %s viewport as a recorded resource without capturing pixels', async (platform) => {
       const h = harness({ platform });
@@ -3126,7 +3156,7 @@ describe('device fixture', () => {
     expect(h.fake.lastArgs('interactions.scroll')).toEqual({ direction: 'down', postGestureStabilization: false });
   });
 
-  it('counts a back, home, remote press, shake, alert, keyboard, rotation, or fold as an action, so a control that arrives with it waits out the transition budget', async () => {
+  it('counts a back, home, remote or hardware button press, shake, alert, keyboard, rotation, or fold as an action, so a control that arrives with it waits out the transition budget', async () => {
     autoAdvanceTimers();
     const h = harness({ transition: 120 });
     await openAttempt(h);
@@ -3137,6 +3167,7 @@ describe('device fixture', () => {
       () => device.home(),
       () => device.pressRemote('menu'),
       () => remoteTool(h, 'select'),
+      () => device.pressButton('volume-up'),
       () => device.shake(),
       () => device.alert('accept'),
       () => device.dismissKeyboard(),
@@ -3478,6 +3509,7 @@ describe('device fixture', () => {
       // A remote reaches the launcher, so a test presses it with no app open.
       () => selected.pressRemote('home'),
       () => remoteTool(h, 'home'),
+      () => selected.pressButton('volume-up'),
       // iOS refuses going offline before any command, so the radios are Android's.
       ...(platform === 'ios' ? [
         () => selected.enrollBiometrics('touchid', true),
