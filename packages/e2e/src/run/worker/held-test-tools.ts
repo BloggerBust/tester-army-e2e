@@ -21,7 +21,7 @@ import { sessionRecordings } from '@e2e-dev/core/lib/run/recordings';
 import { StepRecorder } from '@e2e-dev/core/lib/run/steps';
 import type { SessionCatalog } from '../../session-tools/catalog.ts';
 import type { SessionRecorder } from '../../session-tools/recording.ts';
-import { actionResult, catalogLine, describeToolDetail, errorResult, invokeTool, redactResult, unavailableSessionTool } from '../../session-tools/tools.ts';
+import { actionResult, catalogLine, describeToolDetail, errorResult, firstScreenLine, invokeTool, redactResult, unavailableSessionTool } from '../../session-tools/tools.ts';
 import { sessionFills, sessionSecretLines, sessionSecretParams } from '../../session-tools/secrets.ts';
 import { heldTestToolCallScope } from './held-test-tool-scope.ts';
 import type { StepAttachmentRequest, StepAttachmentResponse, StepHoldMessage } from './protocol.ts';
@@ -173,7 +173,7 @@ export class HeldTestTools {
         attachment.catalog = openedCatalog;
 
         try {
-          const firstScreen = screen.initial(await openedCatalog.context.observe());
+          const firstScreen = firstScreenLine(screen, await openedCatalog.context.observe());
 
           return { catalog: openedCatalog, observation: firstScreen };
         } catch (cause) {

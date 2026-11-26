@@ -6,7 +6,7 @@ import { createGrammarTools } from '@e2e-dev/core/lib/agent/primitives';
 import { ScreenPresenter } from '@e2e-dev/core/lib/agent/screen-update';
 import { TestError } from '@e2e-dev/core/lib/internal/errors';
 import { createSessionCatalog } from '../../src/session-tools/catalog.ts';
-import { catalogLine, describeToolDetail, errorResult, invokeTool, resultFromOutput, toolJsonSchema } from '../../src/session-tools/tools.ts';
+import { catalogLine, describeToolDetail, errorResult, firstScreenLine, invokeTool, resultFromOutput, toolJsonSchema } from '../../src/session-tools/tools.ts';
 import { fakeExecutorContext } from '../helpers/fake-executor-context.ts';
 
 const extra = { signal: new AbortController().signal };
@@ -39,6 +39,22 @@ describe('catalogLine', () => {
     const tool = { ...tap, description: `Uses ${secret}. More details.` };
     expect(catalogLine('tap', tool, false, (value) => value.replaceAll(secret, '<secret:token>')))
       .toBe('- tap {target, times?}: Uses <secret:token>.');
+  });
+});
+
+describe('firstScreenLine', () => {
+  const observation = { revision: 'b1', text: '#n1 document "Home"\n #n2 button "Save"', truncated: false, path: '/', viewport: { width: 1280, height: 720 } };
+
+  it('names the screen, says results are changes against it, and points at observe', () => {
+    expect(firstScreenLine(new ScreenPresenter(), observation)).toBe(
+      'Screen: revision b1, path /, 2 nodes, not listed. Action results report changes against it; call {tool: "observe"} lists its nodes.',
+    );
+  });
+
+  it('points at screenshot when the screen has no tree to list', () => {
+    expect(firstScreenLine(new ScreenPresenter(), { ...observation, text: '[semantic capture unavailable: no nodes were read]', treeUnavailable: true })).toBe(
+      'Screen: revision b1, path /, semantic capture unavailable; call {tool: "screenshot"} shows it.',
+    );
   });
 });
 

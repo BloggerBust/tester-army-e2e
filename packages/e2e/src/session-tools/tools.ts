@@ -19,7 +19,9 @@ import type { JSONSchema7, Tool, ToolExecutionOptions, ToolSet } from 'ai';
 import type { z } from 'zod';
 import { loadAiSdk, loadAiSdkIfInstalled, loadedAiSdk } from '@e2e-dev/core/lib/agent/ai-sdk';
 import { GRAMMAR_TOOL_NAMES } from '@e2e-dev/core/lib/agent/action-names';
+import type { ExecutorObservation } from '@e2e-dev/core/lib/agent/executor';
 import { isFailedResult } from '@e2e-dev/core/lib/agent/loop-guards';
+import type { ScreenPresenter } from '@e2e-dev/core/lib/agent/screen-update';
 import { codedMessage, ConfigurationError, errorMessage, InfrastructureError } from '@e2e-dev/core/lib/internal/errors';
 import { describeIssue } from '@e2e-dev/core/lib/internal/standard-schema';
 import { redactError } from '@e2e-dev/core/lib/run/secrecy';
@@ -87,6 +89,16 @@ export function redactResult(result: McpToolResult, redact: (text: string) => st
     ...result,
     content: result.content.map((part) => (part.type === 'text' ? { type: 'text', text: redact(part.text) } : part)),
   };
+}
+
+/**
+ * What a session's opening says of its first screen: which one it is, that
+ * later results are changes against it, and the tool that shows it.
+ */
+export function firstScreenLine(screen: Pick<ScreenPresenter, 'unlisted'>, observation: ExecutorObservation): string {
+  const named = `Screen: ${screen.unlisted(observation)}`;
+  if (observation.treeUnavailable === true) return `${named}; call {tool: "screenshot"} shows it.`;
+  return `${named}, not listed. Action results report changes against it; call {tool: "observe"} lists its nodes.`;
 }
 
 /** How much of a description the catalog shows per tool: its first sentence, bounded. */

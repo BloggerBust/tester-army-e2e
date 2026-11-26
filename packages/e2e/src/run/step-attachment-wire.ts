@@ -84,7 +84,7 @@ type AttachmentResult = Omit<Extract<AttachReply, { type: 'result' }>['result'],
   readonly errorCode?: string;
 };
 
-/** The summary, catalog, and first screen for a new attachment. */
+/** The summary, catalog, and the line naming the first screen for a new attachment. */
 export type HeldTestOpening = Extract<AttachReply, { type: 'opening' }>['opening'];
 
 /** One connection to a held attempt. */

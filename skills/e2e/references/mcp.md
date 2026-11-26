@@ -70,6 +70,9 @@ Everything a session does is a catalog tool run through
   one page (pass it whenever you know the page), `headed: true` when the
   user wants to watch, `test` to run one test first (Fixing a failing test),
   `attach` for a held test. Each session has its own browser or device.
+  The reply names the first screen (path, node count) without listing it,
+  and action results report changes against it: `observe` when you need
+  its nodes.
 - `observe`: one node per line as `#id role "name" ...`, plus the path. Node
   ids are valid only for the newest observation.
 - The grammar verbs (`tap`, `type`, `press`, `select`, `check`, `scroll`,
@@ -227,7 +230,7 @@ session runs the test and stops where it failed:
    test runs the way `e2e run` runs it: hooks, fixtures, and the body.
 2. Read the text above the session summary: the outcome, the error code and
    message, the failing line, the URL, and the nodes nearest a locator that
-   matched nothing. The screen below it is where the test stopped.
+   matched nothing. The session is on the screen where the test stopped.
 3. `observe` and `locate` on that screen to find the right name or the
    missing step. Act out the test's next lines with `call`, so the rerun
    finds no second mistake; where a printed `Test line:` differs from the

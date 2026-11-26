@@ -2,7 +2,7 @@
  * The lines a session that ran a test opens with: how the test ended, the
  * failure with the line it came from and the code around it, the nodes on
  * screen nearest what a failed locator asked for, the steps that ran, and
- * what to do next from the screen the session shows below them.
+ * what to do next from the screen the session is on.
  */
 
 import path from 'node:path';
@@ -81,10 +81,10 @@ function stepLine(step: StepRecord, nesting: string): string {
 function nextSteps(test: StandaloneTest, outcome: StandaloneTestOutcome): string {
   const teardown = 'Its afterEach hooks and fixture teardown run at close_session.';
   if (outcome.status === 'passed' || outcome.status === 'skipped') {
-    return `The session is on the screen the test ended on, shown below. ${teardown}`;
+    return `The session is on the screen the test ended on. ${teardown}`;
   }
   // A file that declares one test names it whatever lines an edit adds above it.
   const alone = test.file.tests.filter((each) => each.kind === 'test').length === 1;
   const rerun = alone ? test.pair.test.file : testLocation(test.pair.test);
-  return `The session is on the screen where the test stopped, shown below: observe and locate from here, and act out the test's next lines to check them too, then fix the test file. ${teardown} To run the fixed test from the start, close_session, then open_session {test: "${rerun}"}.`;
+  return `The session is on the screen where the test stopped: observe and locate from here, and act out the test's next lines to check them too, then fix the test file. ${teardown} To run the fixed test from the start, close_session, then open_session {test: "${rerun}"}.`;
 }

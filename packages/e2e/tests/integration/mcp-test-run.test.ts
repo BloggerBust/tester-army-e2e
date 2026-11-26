@@ -265,9 +265,9 @@ describe('open_session {test}', { timeout: 120_000 }, () => {
       const opened = await invoke('open_session', { test: `tests/counter.e2e.ts:${PASSING}` });
       expect(opened.isError, opened.text).toBe(false);
       expect(opened.text).toMatch(new RegExp(`^Test "counts to one" \\(tests/counter\\.e2e\\.ts:${PASSING}\\) passed after \\S+; 3 steps ran\\.\n`));
-      expect(opened.text).toContain('The session is on the screen the test ended on, shown below. Its afterEach hooks and fixture teardown run at close_session.\n\nSession ');
+      expect(opened.text).toContain('The session is on the screen the test ended on. Its afterEach hooks and fixture teardown run at close_session.\n\nSession ');
+      expect(opened.text).toMatch(/\n\nScreen: revision b\d+, path \/, \d+ nodes, not listed\..*$/);
       // The screen is the test's last, not the app URL opened afresh.
-      expect(opened.text).toContain('status "Counter" text="1"');
       expect(await observe()).toContain('status "Counter" text="1"');
       expect(existsSync(marker)).toBe(false);
       const closed = await invoke('close_session');
@@ -294,7 +294,7 @@ describe('open_session {test}', { timeout: 120_000 }, () => {
       expect(opened.text).toMatch(/\nOn screen, closest to what the locator asked for:\n {2}#n\d+ button "Increment".*\n/);
       expect(opened.text).toContain(`\n  3. ✗ locator.tap getByRole("button", name: "Incremnt") LOCATOR_NOT_FOUND (tests/counter.e2e.ts:${MISSING_TAP})\n`);
       expect(opened.text).toContain(`To run the fixed test from the start, close_session, then open_session {test: "tests/counter.e2e.ts:${FAILING}"}.`);
-      expect(opened.text).toContain('status "Counter" text="1"');
+      expect(opened.text).toMatch(/\n\nScreen: revision b\d+, path \/, \d+ nodes, not listed\./);
       expect(await observe()).toContain('status "Counter" text="1"');
       // The session goes on as a session from the failure.
       const located = await invoke('call', { tool: 'locate', args: { role: 'button', name: 'Increment' } });
@@ -307,9 +307,10 @@ describe('open_session {test}', { timeout: 120_000 }, () => {
       const fixed = await invoke('open_session', { test: `tests/counter.e2e.ts:${FAILING}` });
       expect(fixed.isError, fixed.text).toBe(false);
       expect(fixed.text).toMatch(/^Test "taps a button that is not there" \(tests\/counter\.e2e\.ts:\d+\) passed/);
-      expect(fixed.text).toContain('status "Counter" text="2"');
-      // Test lines carry on from the test, by the ids on the screen it opened with; the test's own steps print none.
-      const increment = /#(n\d+) button "Increment"/.exec(fixed.text)?.[1];
+      const screen = await observe();
+      expect(screen).toContain('status "Counter" text="2"');
+      // Test lines carry on from the test, by the ids on the screen it stopped on; the test's own steps print none.
+      const increment = /#(n\d+) button "Increment"/.exec(screen)?.[1];
       const tapped = await invoke('call', { tool: 'tap', args: { target: increment } });
       expect(tapped.text.split('\n')[1], tapped.text).toBe('Test line: await screen.getByRole("button", "Increment").tap();');
       // So do the statements run_code passes there.
@@ -368,7 +369,7 @@ describe('open_session {test}', { timeout: 120_000 }, () => {
       const opened = await invoke('open_session', { test: `tests/sloppy.e2e.ts:${lineOf(SLOPPY, "test('outlives its timeout'")}` });
       expect(opened.text).toMatch(/^Test "outlives its timeout" .* timed out after \S+; 1 step ran\.\nTEST_TIMEOUT: test timed out after 1000 ms in phase body\n/);
       expect(opened.text).not.toContain("app.open('/about')");
-      expect(opened.text).toContain('heading "Home"');
+      expect(await observe()).toContain('heading "Home"');
       // Past the time the body's last line would have run: it ran out of budget and opened nothing.
       await new Promise((resolve) => setTimeout(resolve, 1_500));
       const observed = await observe();

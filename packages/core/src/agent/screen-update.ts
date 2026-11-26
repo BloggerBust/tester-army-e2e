@@ -1,8 +1,9 @@
 /**
  * What the built-in agent tells the model about the screen, and how much.
  *
- * The first look at a screen goes out whole. Every look after it is compared
- * with the screen the model already holds and rendered as the difference:
+ * The first look at a screen goes out whole, unless the reader asks for
+ * listings itself (`unlisted`). Every look after it is compared with that
+ * screen and rendered as the difference:
  * the lines that appeared, the lines that changed, the lines that went away.
  * Node ids are stable for as long as an element exists, so a line the model
  * saw earlier still names the same element, and a diff is a complete update
@@ -32,7 +33,7 @@ const MAX_DIFF_SHARE = 0.5;
 /** Every full screen is introduced by this phrase; the transcript elision looks for it. */
 export const FULL_SCREEN_PATTERN = /Current screen \(revision /;
 
-/** The screen as the model last received it, indexed for comparison. */
+/** The screen later updates are compared with: the last one sent, or the one `unlisted` named. */
 interface ShownScreen {
   readonly revision: string;
   /** Node lines in document order, without indentation or focus; the truncation marker is not a node. */
@@ -180,11 +181,26 @@ export class ScreenPresenter {
     return path !== undefined && this.seen?.path !== undefined && path !== this.seen.path;
   }
 
-  /** The step's first screen, whole. */
-  initial(observation: ExecutorObservation): string {
+  /** Takes a screen as the one later updates are compared with. */
+  private hold(observation: ExecutorObservation): void {
     this.shown = observation.treeUnavailable === true ? undefined : indexScreen(observation);
     this.seen = { tabs: observation.tabs, path: observation.path ?? this.seen?.path };
+  }
+
+  /** The step's first screen, whole. */
+  initial(observation: ExecutorObservation): string {
+    this.hold(observation);
     return renderFull(observation);
+  }
+
+  /**
+   * The step's first screen by revision, location, and size only, for a
+   * reader that asks for the listing when it wants one. Later updates report
+   * against it all the same, so the caller has to say it was not listed.
+   */
+  unlisted(observation: ExecutorObservation): string {
+    this.hold(observation);
+    return describeScreen(observation);
   }
 
   /**
@@ -333,11 +349,13 @@ function describeCounts(diff: readonly string[]): string {
 
 /** One full screen, headed so the elision can find it later. */
 function renderFull(observation: ExecutorObservation): string {
-  if (observation.treeUnavailable === true) {
-    return `${CURRENT_SCREEN}revision ${observation.revision}${describeLocation(observation)}, ${NO_TREE}):\n${observation.text}`;
-  }
-  const nodes = indexScreen(observation).nodes;
-  return `${CURRENT_SCREEN}revision ${observation.revision}${describeLocation(observation)}, ${String(nodes)} nodes):\n${observation.text}`;
+  return `${CURRENT_SCREEN}${describeScreen(observation)}):\n${observation.text}`;
+}
+
+/** A screen by its revision, where it is, and how much it lists. */
+function describeScreen(observation: ExecutorObservation): string {
+  const listed = observation.treeUnavailable === true ? NO_TREE : `${String(indexScreen(observation).nodes)} nodes`;
+  return `revision ${observation.revision}${describeLocation(observation)}, ${listed}`;
 }
 
 /**

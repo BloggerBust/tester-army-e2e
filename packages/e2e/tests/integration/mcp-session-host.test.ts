@@ -140,7 +140,7 @@ describe('SessionHost', { timeout: 60_000 }, () => {
     const device = host(() => fake, { app: { bundleId: 'com.example.greeter' } });
     const text = await device.open({});
     expect(text).toContain('App: com.example.greeter, launched fresh.');
-    expect(text).toContain('button "Greet"');
+    expect(text).toMatch(/\n\nScreen: revision \S+, path \/, \d+ nodes, not listed\..*$/);
     const methods = fake.operations.map((operation) => operation.method);
     expect(methods.indexOf('session.restart')).toBeGreaterThan(-1);
     expect(methods.indexOf('session.restart')).toBeLessThan(methods.indexOf('observe'));
@@ -199,7 +199,7 @@ describe('SessionHost', { timeout: 60_000 }, () => {
     const opened = await Promise.all([pair.open({}), pair.open({})]);
     const [first, second] = opened.map(sessionId) as [string, string];
     expect(first).not.toBe(second);
-    expect(opened[0]).toContain(`Pass session "${first}" to every tools, call, and close_session; with several sessions open, a call without it fails.`);
+    expect(opened[0]).toContain(`Pass session "${first}" to tools, call, and close_session.`);
     await expect(pair.open({})).rejects.toMatchObject({
       code: 'SESSION_OPEN',
       message: `no session slot is free (e2e mcp --max-sessions 2): ${first} on "kiosk", ${second} on "kiosk"; close_session one first`,
@@ -240,7 +240,7 @@ describe('SessionHost', { timeout: 60_000 }, () => {
       message: `target "kiosk" gets its engine instance from a package, so every session shares it, and session ${first} is driving it; create the engine in the config or a file it imports by path, or close_session ${first} first`,
     });
     await shared.close('done');
-    expect(await shared.open({})).toContain('button "Submit"');
+    expect(await shared.open({})).toContain('\n\nScreen: revision ');
     await shared.close('done');
   });
 
@@ -265,7 +265,7 @@ describe('SessionHost', { timeout: 60_000 }, () => {
     await expect(shared.open({})).rejects.toMatchObject({ code: 'ENGINE_IN_USE' });
     released.open();
     await expect(failing).rejects.toThrow(/screen unavailable/);
-    expect(await shared.open({})).toContain('button "Submit"');
+    expect(await shared.open({})).toContain('\n\nScreen: revision ');
     await shared.close('done');
   });
 
@@ -291,7 +291,7 @@ describe('SessionHost', { timeout: 60_000 }, () => {
     released.open();
     expect(await closing).toContain(`Session ${id} closed (done)`);
     expect(await again).toBe(await closing);
-    expect(await single.open({})).toContain('button "Submit"');
+    expect(await single.open({})).toContain('\n\nScreen: revision ');
     await single.close('done');
   });
 
@@ -470,7 +470,7 @@ describe('SessionHost', { timeout: 60_000 }, () => {
     expect(fake.stats()).toMatchObject({ attemptsStarted: 1, attemptsEnded: 1, disposes: 1 });
     broken = false;
     const text = await flaky.open({});
-    expect(text).toContain('button "Submit"');
+    expect(text).toContain('\n\nScreen: revision ');
     await flaky.close('done');
     expect(fake.stats()).toMatchObject({ attemptsStarted: 2, attemptsEnded: 2, disposes: 2 });
   });

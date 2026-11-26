@@ -128,6 +128,16 @@ describe('ScreenPresenter', () => {
     expect(recovered).not.toContain('Screen changes');
   });
 
+  it('names the first screen without listing it, and reports later changes against it', () => {
+    const presenter = new ScreenPresenter();
+    expect(presenter.unlisted(screen('b1', HOME, { path: '/' }))).toBe('revision b1, path /, 6 nodes');
+    expect(presenter.update(screen('b2', HOME, { path: '/' }))).toContain('Screen unchanged since revision b1');
+    const changed = presenter.update(screen('b3', [...HOME, ' #new button "New"'], { path: '/' }));
+    expect(changed).toContain('Screen changes since revision b2');
+    expect(changed).toContain('added #new button "New"');
+    expect(changed).not.toContain(HOME[1]);
+  });
+
   it('sends the first screen whole, with its revision, path, and size', () => {
     const presenter = new ScreenPresenter();
     const text = presenter.initial(screen('b1', HOME, { path: '/' }));

@@ -43,7 +43,7 @@ import { SessionRegistry } from './sessions.ts';
 import { describeTestOutcome } from './test-outcome.ts';
 import { SessionUsage, type McpSessionSummary, type SessionEndedBy } from './usage.ts';
 import { runCodeApi } from '../session-tools/run-code.ts';
-import { actionResult, catalogLine, toolSignature, defineMcpTool, describeToolDetail, errorResult, invokeTool, redacting, redactResult, textResult, unavailableSessionTool, type McpToolCallExtra, type McpToolResult, type McpToolSpec } from '../session-tools/tools.ts';
+import { actionResult, catalogLine, toolSignature, defineMcpTool, describeToolDetail, errorResult, firstScreenLine, invokeTool, redacting, redactResult, textResult, unavailableSessionTool, type McpToolCallExtra, type McpToolResult, type McpToolSpec } from '../session-tools/tools.ts';
 
 /** How long one session may live, whatever happens. */
 const SESSION_TTL_MS = 4 * 60 * 60 * 1000;
@@ -52,6 +52,8 @@ const SESSION_IDLE_MS = 30 * 60 * 1000;
 /** How long the attempt outlives its step, so a step that hit the TTL is still closed in order. */
 const CLOSE_GRACE_MS = 60 * 1000;
 const SESSION_INSTRUCTION = 'Interactive session: a coding agent drives the app over MCP.';
+/** The `session` argument of every tool that takes one. */
+const SESSION_ARGUMENT = 'Session ID from open_session; optional while one session is open';
 /** Where an agent reads how to write a test, said in the server's instructions and every session's opening. */
 export const READ_WRITING_GUIDE = 'Before you write or edit a test, read the writing-tests guide: the resource e2e://guide/writing-tests, or npx e2e guide writing-tests in a shell.';
 
@@ -183,8 +185,8 @@ export class SessionHost {
 
   /**
    * Opens a session and returns its opening text: the summary, the catalog,
-   * and the first screen. `signal` is the request's: a client that cancels
-   * it, or disconnects, aborts the open and what it started.
+   * and the line that names the first screen. `signal` is the request's: a
+   * client that cancels it, or disconnects, aborts the open and what it started.
    */
   open(options: OpenSessionOptions, signal?: AbortSignal): Promise<string> {
     const { attach, target, config, test, engine, app } = options;
@@ -367,7 +369,7 @@ export class SessionHost {
     );
   }
 
-  /** Opens an attachment and returns its summary, catalog, and first screen. */
+  /** Opens an attachment and returns its summary, catalog, and the line that names its screen. */
   private async openAttachment(id: string, attach: string, usage: SessionUsage, request?: AbortSignal): Promise<string> {
     const opening = request === undefined ? this.shutdown.signal : AbortSignal.any([this.shutdown.signal, request]);
     const connect = this.options.connectAttachment;
@@ -648,12 +650,14 @@ export class SessionHost {
    * before it opened the app left none. The test's own lines are in its
    * file, so the session's first line is the agent's first action. The
    * observation goes through the catalog's context, which keeps it for that
-   * action's line.
+   * action's line. The opening names the screen without listing it: a whole
+   * page is most of an opening's size, and an agent that navigates or runs
+   * code first never reads it.
    */
   private async firstScreen(live: LiveSession, open: boolean, path: string | undefined): Promise<string> {
     if (!open) {
       try {
-        return live.screen.initial(await live.step.run(() => live.catalog.context.observe()));
+        return firstScreenLine(live.screen, await live.step.run(() => live.catalog.context.observe()));
       } catch (cause) {
         return `No screen to show: ${errorMessage(cause)}`;
       }
@@ -674,10 +678,10 @@ export class SessionHost {
       live.catalog.lines.opened();
     }
     const observation = await live.step.run(() => live.catalog.context.observe());
-    return live.screen.initial(observation);
+    return firstScreenLine(live.screen, observation);
   }
 
-  /** The summary, the catalog, and the screen, after how the session's test ran when it ran one. */
+  /** The summary, the catalog, and the line that names the screen, after how the session's test ran when it ran one. */
   private openingText(live: LiveSession, config: ResolvedConfig, screen: string, outcome: string | undefined): string {
     const engine = live.target.engine;
     const lines = [
@@ -687,7 +691,7 @@ export class SessionHost {
     lines.push(...appLines(live.target, outcome !== undefined, Object.keys(live.attempt.fixtures.services)));
     lines.push(...sessionSecretLines(config));
     lines.push(
-      `Pass session "${live.id}" to every tools, call, and close_session; with several sessions open, a call without it fails.`,
+      `Pass session "${live.id}" to tools, call, and close_session.`,
     );
     // The actions go by name and arguments alone: there are many, each says what it does, and `tools` holds the rest.
     const entries = Object.entries(live.catalog.tools);
@@ -703,7 +707,7 @@ export class SessionHost {
       lines.push(`- ${toolSignature('run_code', runCode)}: JavaScript with loops, variables, and return values. Use it for most of the work: one call that reads, computes, acts, and asserts, in place of many single actions. A read's value shows in the result unless the code returns or logs. Its API:`, ...runCodeApi({ attempt: () => live.attempt, engineFixtures: Object.keys(live.target.engine?.fixtures ?? {}) }).map((line) => `  ${line}`));
     }
     lines.push(
-      'Node ids ("n42") are valid only for the newest observation; every action reports what changed on screen and the test line that repeats it (test_lines returns them all), and observe shows the whole screen. Call close_session when you are done.',
+      'Node ids ("n42") are valid only for the newest observation. Every action prints the test line that repeats it. Call close_session when you are done.',
       READ_WRITING_GUIDE,
     );
     return `${lines.join('\n')}\n\n${screen}`;
@@ -733,61 +737,57 @@ export class SessionHost {
     return defineMcpTool({
       name: 'open_session',
       description: [
-        'Open a live session on one target of an e2e project.',
-        'For a standalone session, the target config determines the engine, app URL or pinned app, and any app command.',
-        'In a project without an e2e config file, pass engine and app. For example,',
-        '{engine: "@e2e-dev/web", app: {url: "http://localhost:3000"}}.',
-        'Pass test to run one test first. You can inspect the screen where it passed or failed.',
-        'If it failed, the failure and its line appear before the catalog.',
-        'To use a held test, pass only attach, for example {attach: "k3f9"}.',
-        'The reply includes a session ID, the catalog, and the first observation.',
-        'Pass the session ID to later calls. Use call {tool: "observe"} to see the current screen.',
+        'Open a live session on one target of an e2e project. The reply has the session ID and its tools.',
+        "The target's config decides the engine, the app URL or pinned app, and any app command.",
+        'In a project without an e2e config file, pass engine and app: {engine: "@e2e-dev/web", app: {url: "http://localhost:3000"}}.',
+        'Pass test to run one test first; the session opens on the screen where it passed or failed, and a failure and its line lead the reply.',
+        'To use a held test, pass only attach: {attach: "k3f9"}.',
       ].join(' '),
       inputSchema: z.object({
-        attach: z.string().min(1).optional().describe('Pass only attach with the ID from the pause header'),
+        attach: z.string().min(1).optional().describe('The ID from a pause header; excludes every other argument'),
         target: z.string().min(1).optional().describe('Target name from the config; required when the config declares several'),
         config: z.string().min(1).optional().describe("Path to an e2e config file, absolute or relative to the server's working directory; default: the nearest e2e.config.ts, .mts, .js, or .mjs"),
         headed: z
           .boolean()
           .optional()
-          .describe('Show the browser or simulator, when the engine supports it; pass true when the user wants to watch. Default: headless, unless the server was started with --headed'),
+          .describe('Show the browser or simulator; pass true when the user wants to watch. Default: headless, unless the server was started with --headed'),
         path: z
           .string()
           .min(1)
           .optional()
-          .describe('Where on the app URL to open instead of its root, when the task names a page: "/settings/members". The first observation is that page, so no navigate is needed'),
+          .describe('The page of the app URL to open instead of its root: "/settings/members"'),
         test: z
           .string()
           .min(1)
           .optional()
-          .describe('One test to run in the session first, named the way npx e2e run takes it: tests/checkout.e2e.ts:12, where 12 is the line its test( call is on (not a failing line inside it), or a file or name that selects one test. The session then stays on the screen where the test stopped; afterEach hooks and fixture teardown run at close_session. To rerun after editing the test, close_session and open_session with test again'),
+          .describe('One test to run first, named as npx e2e run takes it: tests/checkout.e2e.ts:12 (the line of its test( call, not a failing line inside it), or a file or name that selects one test. afterEach hooks and fixture teardown run at close_session. To rerun an edited test, close_session and open_session with test again'),
         engine: z
           .union([
             z.string().min(1),
             z
               .object({
-                package: z.string().min(1).describe('The package, with a subpath when the factory lives on one: @e2e-dev/mobile, @e2e-dev/testmu/web'),
+                package: z.string().min(1).describe('The package, with a subpath when the factory lives on one: @e2e-dev/testmu/web'),
                 export: z.string().min(1).optional().describe('The export to call; default: the default export'),
                 options: z
                   .record(z.string(), z.unknown())
                   .optional()
-                  .describe('What the factory is called with, as in an e2e.config.ts. A value of this same {package, export?, options?} shape is called first and replaced by its result'),
+                  .describe('What the factory is called with, as in an e2e.config.ts'),
               })
               .strict(),
           ])
           .optional()
           .describe(
-            'Only where the project has no config file: the engine to open a session on, as a config would build it. A package name calls its default export with no options: "@e2e-dev/web". An object passes options, and an option can be another factory call, which is how an engine gets a device or browser provider: {package: "@e2e-dev/mobile", options: {platform: "ios"}}, or {package: "@e2e-dev/mobile", options: {platform: "ios", device: {package: "@e2e-dev/limrun", export: "limrun", options: {region: "eu"}}}} for mobile({platform: "ios", device: limrun({region: "eu"})}). A package not installed fails with the command that installs it. Excludes target, config, and test',
+            'Only where the project has no config file: the engine to open on. A package name calls its default export with no options: "@e2e-dev/web". An object passes options, and an option of this same shape is called first and replaced by its result, which is how an engine gets a device or browser provider: {package: "@e2e-dev/mobile", options: {platform: "ios", device: {package: "@e2e-dev/limrun", export: "limrun", options: {region: "eu"}}}}. Excludes target, config, and test',
           ),
         app: z
           .object({
             url: z.string().min(1).optional().describe('The URL the session opens, and the base of relative navigation'),
-            bundleId: z.string().min(1).optional().describe('An installed app a device launches: its bundle id, package, or display name'),
-            appPath: z.string().min(1).optional().describe("A build a device installs and launches: an .app, .ipa, or .apk, relative to the server's working directory"),
+            bundleId: z.string().min(1).optional().describe('An installed app to launch: its bundle id, package, or display name'),
+            appPath: z.string().min(1).optional().describe("A build to install and launch: an .app, .ipa, or .apk, relative to the server's working directory"),
           })
           .strict()
           .optional()
-          .describe('With engine: the app under test, as a target declares it in an e2e.config.ts. @e2e-dev/web needs url; @e2e-dev/mobile needs bundleId or appPath'),
+          .describe('With engine: the app under test. @e2e-dev/web needs url; @e2e-dev/mobile needs bundleId or appPath'),
       }).strict(),
       readOnly: false,
       call: async (args, extra) => textResult(await this.open(args, extra.signal)),
@@ -797,11 +797,10 @@ export class SessionHost {
   private catalogSpec(): McpToolSpec {
     return defineMcpTool({
       name: 'tools',
-      description:
-        "List the tools a session can run through call: observe, the grammar its engine honors (one tool per action the engine declares, type_secret when a secret is configured, and screenshot and the point tools), locate, run_code (JavaScript run on the test API, against the live app), test_lines (the test line each action printed and the lines run_code passed, as a draft test body), start_recording and stop_recording when the engine records video, and the project's own tools. With tool, shows that tool's full description and the JSON Schema of its arguments.",
+      description: "List the tools a session runs through call, one line each. With tool, shows that tool's full description and the JSON Schema of its arguments.",
       inputSchema: z.object({
         tool: z.string().min(1).optional().describe('A catalog tool name, for its full contract'),
-        session: z.string().min(1).optional().describe('Session id from open_session; may be omitted only while one session is open'),
+        session: z.string().min(1).optional().describe(SESSION_ARGUMENT),
       }).strict(),
       readOnly: true,
       call: async (args) => textResult(await this.catalog(args.session, args.tool)),
@@ -812,11 +811,11 @@ export class SessionHost {
     return defineMcpTool({
       name: 'call',
       description:
-        "Run one tool of a session by name, with its arguments as an object: call {tool: \"tap\", args: {target: \"n42\"}, session: \"<id>\"}. The arguments may also sit beside tool: call {tool: \"tap\", target: \"n42\"}. The session's catalog (from open_session or tools) names the tools and their arguments. Actions report what changed on screen and the test line that repeats them; node ids are valid only for the newest observation.",
+        'Run one tool of a session by name, with its arguments as an object: call {tool: "tap", args: {target: "n42"}, session: "<id>"}. The arguments may also sit beside tool: call {tool: "tap", target: "n42"}. open_session and tools name the tools and their arguments.',
       inputSchema: z.object({
-        tool: z.string().min(1).describe('A catalog tool name, e.g. "observe", "tap", "locate", "screenshot"'),
+        tool: z.string().min(1).describe('A tool of the session, e.g. "observe", "tap"'),
         args: z.record(z.string(), z.unknown()).optional().describe("The tool's arguments; omit for a tool without any"),
-        session: z.string().min(1).optional().describe('Session id from open_session; may be omitted only while one session is open'),
+        session: z.string().min(1).optional().describe(SESSION_ARGUMENT),
       }).catchall(z.unknown()),
       readOnly: false,
       call: ({ tool, args, session, ...beside }, extra) => {
@@ -832,10 +831,9 @@ export class SessionHost {
   private closeSpec(): McpToolSpec {
     return defineMcpTool({
       name: 'close_session',
-      description: 'Close a live session. For a standalone session, save any active recording, end the attempt, ' +
-        'and stop the engine and app processes started for it. For an attached session, detach and leave the test held.',
+      description: 'Close a session: saves a running recording and stops the engine and the app processes started for it. An attached session detaches and leaves its test held.',
       inputSchema: z.object({
-        session: z.string().min(1).optional().describe('Session id from open_session; may be omitted only while one session is open'),
+        session: z.string().min(1).optional().describe(SESSION_ARGUMENT),
       }).strict(),
       readOnly: false,
       call: async (args) => textResult(await this.close('closed by the agent', args.session)),

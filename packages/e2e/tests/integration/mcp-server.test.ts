@@ -190,7 +190,7 @@ describe('e2e mcp', { timeout: 120_000 }, () => {
     expect(callTool.inputSchema).toMatchObject({ type: 'object', required: ['tool'] });
     expect(tools.find((tool) => tool.name === 'tools')?.annotations).toMatchObject({ readOnlyHint: true });
     expect(tools.find((tool) => tool.name === 'open_session')?.inputSchema).toMatchObject({ properties: { target: {}, config: {}, headed: { type: 'boolean' } } });
-    expect(client.getInstructions()).toContain('call {tool, args} runs any catalog tool');
+    expect(client.getInstructions()).toContain('call {tool, args} runs one of those tools');
     expect(client.getInstructions()).toContain('Several sessions can be open at once');
     expect(client.getInstructions()).toContain('Before you write or edit a test, read the writing-tests guide: the resource e2e://guide/writing-tests, or npx e2e guide writing-tests in a shell.');
 
@@ -271,8 +271,9 @@ describe('e2e mcp', { timeout: 120_000 }, () => {
       'stop_recording',
     ].toSorted());
     expect(opened.text).toMatch(/^- locate \{role\?, name\?, text\?, label\?, placeholder\?, testId\?, exact\?\}: .* \[read-only\]$/m);
-    expect(opened.text).toMatch(/Current screen \(revision b\d+, path \/, \d+ nodes\):/);
-    expect(opened.text).toContain('button "Increment"');
+    // The opening names the screen; observe lists it.
+    expect(opened.text).toMatch(/\n\nScreen: revision b\d+, path \/, \d+ nodes, not listed\..*$/);
+    expect(opened.text).not.toContain('button "Increment"');
     const sessionId = /^Session (\S+) open/.exec(opened.text)![1]!;
 
     const listed = await invoke('tools');
@@ -387,7 +388,7 @@ describe('e2e mcp', { timeout: 120_000 }, () => {
     expect(second.isError, second.text).toBe(false);
     const secondId = /^Session (\S+) open/.exec(second.text)![1]!;
     expect(secondId).not.toBe(sessionId);
-    expect(second.text).toContain(`Pass session "${secondId}" to every tools, call, and close_session; with several sessions open, a call without it fails.`);
+    expect(second.text).toContain(`Pass session "${secondId}" to tools, call, and close_session.`);
     const unnamed = await call('observe');
     expect(unnamed.isError).toBe(true);
     expect(unnamed.text).toMatch(new RegExp(`^SESSION_REQUIRED: 2 sessions are open; pass session to name one: ${sessionId} on "web", ${secondId} on "web"`));
@@ -430,7 +431,7 @@ describe('e2e mcp', { timeout: 120_000 }, () => {
 
     const reopened = await invoke('open_session', { target: 'web', config: 'e2e.config.ts' });
     expect(reopened.isError, reopened.text).toBe(false);
-    expect(reopened.text).toContain('button "Increment"');
+    expect(reopened.text).toMatch(/\n\nScreen: revision b\d+, path \/, \d+ nodes, not listed\..*$/);
     const closed = await invoke('close_session');
     expect(closed.isError, closed.text).toBe(false);
   });
@@ -442,8 +443,8 @@ describe('e2e mcp', { timeout: 120_000 }, () => {
 
     const opened = await invoke('open_session', { path: '/echo' });
     expect(opened.isError, opened.text).toBe(false);
-    expect(opened.text).toMatch(/Current screen \(revision b\d+, path \/echo, \d+ nodes\):/);
-    expect(opened.text).toContain('textbox "Token"');
+    expect(opened.text).toMatch(/\n\nScreen: revision b\d+, path \/echo, \d+ nodes, not listed\..*$/);
+    expect((await call('observe')).text).toContain('textbox "Token"');
     const drafted = await call('test_lines');
     expect(drafted.text.split('\n').filter((line) => line.startsWith('await '))).toEqual(['await app.open("/echo");']);
     const closed = await invoke('close_session');
@@ -522,7 +523,7 @@ describe('e2e mcp', { timeout: 120_000 }, () => {
     const opened = await invoke('open_session', { config: 'custom.config.ts', target: 'kiosk' });
     expect(opened.isError, opened.text).toBe(false);
     expect(opened.text).toContain('platform kiosk, engine fake');
-    expect(opened.text).toContain('button "Start order"');
+    expect((await call('observe')).text).toContain('button "Start order"');
     expect(opened.text).toContain('- seed_data {tenant}: Seed a tenant with demo data.');
     expect(opened.text).toContain('- count_nodes: Count the nodes on screen. [read-only]');
     const names = catalogNames(opened.text);
@@ -610,14 +611,14 @@ describe('e2e mcp', { timeout: 120_000 }, () => {
       const opened = await open({ engine: '@e2e-dev/web', app: { url: app.url } });
       expect(opened.isError, opened.text).toBe(false);
       expect(opened.text).toMatch(/^Session \S+ open on target "web" \(platform web, engine web [^)]+\), headless; no config file: one target on @e2e-dev\/web, every other setting at its default\./);
-      expect(opened.text).toContain('button "Increment"');
+      expect(opened.text).toMatch(/\n\nScreen: revision b\d+, path \/, \d+ nodes, not listed\..*$/);
       const closed = (await other.callTool({ name: 'close_session', arguments: {} })) as { isError?: boolean };
       expect(closed.isError).not.toBe(true);
 
       const dual = await open({ engine: 'dual-engine', app: { url: app.url } });
       expect(dual.isError, dual.text).toBe(false);
       expect(dual.text).toMatch(/^Session \S+ open on target "web" \(platform web, engine web [^)]+\), headless; no config file: one target on dual-engine, every other setting at its default\./);
-      expect(dual.text).toContain('button "Increment"');
+      expect(dual.text).toMatch(/\n\nScreen: revision b\d+, path \/, \d+ nodes, not listed\..*$/);
       const closedDual = (await other.callTool({ name: 'close_session', arguments: {} })) as { isError?: boolean };
       expect(closedDual.isError).not.toBe(true);
     } finally {

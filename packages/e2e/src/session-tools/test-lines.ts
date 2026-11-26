@@ -210,7 +210,7 @@ export class SessionTestLines {
           : 'Split the draft into tests, one behavior each. Arrange the starting state, act, then check the outcome at the end. A check of a screen the flow later leaves belongs to its own test. Name a locator a test repeats.';
     return {
       description:
-        "Every test line this session's actions printed so far, in order: the screen.* and app.* calls that repeat each action, with a comment where an action has none, and the lines run_code passed. " +
+        "The test lines this session's actions printed so far, in order, as a draft test body. They are the screen.* and app.* calls that repeat each action, with a comment where an action has none, and the lines run_code passed. " +
         guidance +
         ' See topic writing-tests, Structure.',
       inputSchema: z.object({}).strict(),

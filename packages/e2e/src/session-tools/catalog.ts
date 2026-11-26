@@ -172,14 +172,14 @@ async function saveScreenshot(
 
 /**
  * The session's `observe`: the whole screen, every time. Action results
- * report what changed since the screen the agent last received, as they do
+ * report what changed since the last screen, as they do
  * for the testing agent; a coding agent that asks to look wants everything,
  * and the presenter takes that screen as the new baseline for later changes.
  */
 function fullObserveTool(context: Pick<StepExecutorContext, 'observe'>, screen: Pick<ScreenPresenter, 'initial'>): ToolSet[string] {
   return {
     description:
-      'Look at the whole current screen: every node with its id, role, name, and state. Action results report only what changed since the screen you last received; call this to see everything again or after waiting for something in progress.',
+      'Look at the whole current screen: every node with its id, role, name, and state. Action results report only what changed since the last screen; call this to list everything, or after waiting for something in progress.',
     inputSchema: z.object({}).strict(),
     execute: async () => screen.initial(await context.observe()),
   };
@@ -189,7 +189,7 @@ function fullObserveTool(context: Pick<StepExecutorContext, 'observe'>, screen: 
 function locateTool(locator: CatalogOptions['locator'], session: Pick<TargetSession, 'read'>, redaction: NodeRedaction): ToolSet[string] {
   return {
     description:
-      'Try a semantic locator against the live screen before writing it into a test: screen.getByRole(role, name), getByText, getByLabel, getByPlaceholder, or getByTestId. Returns how many nodes match and which, plus the test code to use. Exactly one of role, text, label, placeholder, or testId; name narrows a role query. Matching is exact unless exact is false.',
+      'Try a semantic locator against the live screen before writing it into a test. It runs screen.getByRole(role, name), getByText, getByLabel, getByPlaceholder, or getByTestId, and returns how many nodes match and which, plus the test code to use. Exactly one of role, text, label, placeholder, or testId; name narrows a role query. Matching is exact unless exact is false.',
     inputSchema: z.object({
       role: z.string().min(1).optional().describe('ARIA role, e.g. "button", "textbox", "link"'),
       name: z.string().min(1).optional().describe('Accessible name, with role'),

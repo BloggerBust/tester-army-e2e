@@ -52,10 +52,9 @@ export interface ServeOptions {
 }
 
 const INSTRUCTIONS = `e2e is a local-first end-to-end test runner; this server drives an e2e project's app (its e2e.config.ts) live.
-Call open_session (optionally with a target, a config path, path to open on one page of the app, and headed: true when the user wants to watch) to get a session, its tool catalog, and the first observation. A project with no e2e config file still opens one: pass engine, the engine package to drive ({engine: "@e2e-dev/web", app: {url: "http://localhost:3000"}}; {engine: {package: "@e2e-dev/mobile", options: {platform: "ios"}}, app: {bundleId: "<app>"}}). Then call {tool, args} runs any catalog tool: observe, the grammar its engine honors (each action answers with the test line that repeats it), type_secret, locate, run_code (runs JavaScript on the test API, with loops, reads, and assertions in one call), test_lines (those lines and the ones run_code passed, in order, as a draft test body), screenshot, start_recording and stop_recording when the engine records video (a video of the app for a pull request), and the project's own tools; tools lists them, tools {tool} shows one tool's arguments. close_session when done.
-Several sessions can be open at once. Each parallel agent can open a standalone session with a separate browser or device.
-Pass the session ID from open_session to tools, call, and close_session.
-${READ_WRITING_GUIDE} Write the test (tests/*.e2e.ts) while you walk the flow, adding each step to the file as you take it, and run it with npx e2e run tests/x.e2e.ts; npx e2e run without files runs the whole suite. To fix a failing test, open_session {test: "tests/x.e2e.ts:12"} runs it in a session and stops on the screen where it failed. Resources e2e://guide and e2e://guide/{topic} hold the writing guide.`;
+open_session returns a session ID and the session's tools. call {tool, args} runs one of those tools; call {tool: "observe"} lists the screen. close_session when done.
+Several sessions can be open at once, so each parallel agent can open its own browser or device. Pass the session ID from open_session to tools, call, and close_session.
+${READ_WRITING_GUIDE} Write the test (tests/*.e2e.ts) while you walk the flow, adding each step to the file as you take it, and run it with npx e2e run tests/x.e2e.ts. To fix a failing test, open_session {test: "tests/x.e2e.ts:12"} runs it in a session and stops on the screen where it failed. Resources e2e://guide and e2e://guide/{topic} hold the guides.`;
 
 type LogLevel = 'info' | 'warning' | 'error';
 
