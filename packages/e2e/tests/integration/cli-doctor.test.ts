@@ -147,7 +147,7 @@ describe('e2e doctor', () => {
     expect(doctor({ 'e2e.config.ts': config() }, [], { TOOLCHAIN: 'leak' }).stdout).not.toContain('sk_live_generic_4242');
   });
 
-  it('starts no service', () => {
+  it('starts no service and calls no env function', () => {
     const { exitCode } = doctorJson({
       'e2e.config.ts': `import { appendFileSync } from 'node:fs';
 import { defineConfig, defineService } from 'e2e';
@@ -167,7 +167,16 @@ export default defineConfig({
       name: 'plain',
       platform: 'fake',
       engine: createFakeEngine({}).engine,
-      app: { url: 'http://127.0.0.1:4000' },
+      app: {
+        url: 'http://127.0.0.1:4000',
+        command: {
+          executable: 'node',
+          env: () => {
+            appendFileSync('events.log', 'env\\n');
+            return {};
+          },
+        },
+      },
     },
   ],
 });

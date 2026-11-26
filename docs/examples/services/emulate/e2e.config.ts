@@ -14,11 +14,11 @@ export default defineConfig({
         command: {
           executable: 'node',
           args: ['app/server.mjs'],
-          env: {
+          env: ({ services }) => ({
             PORT: '{port}',
             RESEND_API_KEY: 're_test',
-            RESEND_BASE_URL: 'http://localhost:4008',
-          },
+            RESEND_BASE_URL: services.resend.url,
+          }),
         },
       },
     },

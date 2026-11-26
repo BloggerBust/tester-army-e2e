@@ -1556,22 +1556,48 @@ export interface Expect extends ExpectCall {
   stringMatching(sample: string | RegExp): AsymmetricMatcher;
 }
 
-export interface CommandConfig {
+/**
+ * The function form of `CommandConfig.env`.
+ *
+ * TypeScript compares the parameters of a function type one way, so a
+ * config from `defineConfig`, whose `env` reads its own services, wouldn't be
+ * an `E2EConfig`. It compares a method's parameters both ways, so the
+ * function is declared as a method and read back by name.
+ */
+type CommandEnvFunction<Services> = {
+  env(context: { readonly services: Services }): Readonly<Record<string, string>> | Promise<Readonly<Record<string, string>>>;
+}['env'];
+
+/**
+ * Configuration for an app command. `Services` is the type of `services`
+ * passed to an `env` function.
+ */
+export interface CommandConfig<Services = Readonly<Record<string, unknown>>> {
   /** Resolved with `PATH`; never shell-interpreted. */
   executable: string;
   /** Passed verbatim; `{port}` expands to the app's port. */
   args?: readonly string[];
   /** Working directory, resolved from the project root. */
   cwd?: string;
-  /** Added to the inherited set; `{port}` expands in values. */
-  env?: Readonly<Record<string, string>>;
+  /**
+   * Added to the inherited set, with `{port}` expanded in values. An `env`
+   * function is called after services start and before any app commands start.
+   * The call happens one time per run in `e2e run` and `e2e explore`, one time
+   * per session in `e2e mcp`, and one time per host in `openHost`. The function
+   * still runs when `reuseExisting` is set and a process is already running.
+   * The running process doesn't get the returned variables, and a notice is
+   * printed. The function receives the same `services` object tests get. The
+   * returned variables are validated the same way as an `env` object. Targets
+   * with the same command and the same variables share one process.
+   */
+  env?: Readonly<Record<string, string>> | CommandEnvFunction<Services>;
   /**
    * Variables copied from the runner's environment when set: exact names, or
    * prefixes ending in `*` (`'STRIPE_*'`). `env` wins over an inherited value.
    * A bare `'*'` is `INVALID_CONFIG`.
    */
   inheritEnv?: readonly string[];
-  /** Ready-probe budget in milliseconds; default 60000. Expiry is `APP_UNREACHABLE`. */
+  /** Milliseconds the `env` function gets to return, and then the ready probe gets; default 60000 each. Expiry is `APP_UNREACHABLE`. */
   startupTimeout?: number;
   /** Grace period before force-kill in milliseconds; default 10000. */
   shutdownTimeout?: number;
@@ -1622,9 +1648,10 @@ export type ResolvedLaunchArguments = readonly string[] | LaunchArgumentValues;
  * `url` it opens; a device target names the installed app (`bundleId`) or
  * the build (`appPath`) it launches. Each engine checks the fields its
  * platform needs at config load. `command` and `readyUrl` start the app for
- * this target alone.
+ * this target alone. `Services` is the type of `services` passed to a
+ * `command.env` function.
  */
-export interface TargetApp {
+export interface TargetApp<Services = Readonly<Record<string, unknown>>> {
   /**
    * Base URL of an addressable app: `app.open()` opens it and relative
    * navigation resolves against it. WHATWG-normalized; no userinfo, query, or
@@ -1698,7 +1725,7 @@ export interface TargetApp {
    * same command share one process, probed at the first declaring target's
    * `readyUrl`. A release build has no command.
    */
-  command?: CommandConfig | undefined;
+  command?: CommandConfig<Services> | undefined;
   /**
    * URL polled until `command` is ready (a 200-499 status); defaults to
    * `url`, and is required without one. `{port}` in it is the port of `url`.
@@ -1712,8 +1739,10 @@ export interface TargetApp {
  * with no `engine` the target runs agent tools and `request` calls to
  * absolute URLs, and everything runs opaque.
  * The app under test is the target's `app`; the engine only drives it.
+ * `Services` is the type of `services` passed to an `app.command.env`
+ * function.
  */
-export interface Target {
+export interface Target<Services = Readonly<Record<string, unknown>>> {
   /** Label in reports and for `--target`; defaults to the platform. */
   name?: string;
   /**
@@ -1724,7 +1753,7 @@ export interface Target {
   /** The engine driving the surface: `web(...)`, `mobile(...)`, or any `defineEngine` handle. */
   engine?: EngineHandle;
   /** The app under test: what it is, where it is served, and the command that starts it. */
-  app?: TargetApp;
+  app?: TargetApp<Services>;
   /**
    * Which attempts on this target keep a trace, in place of the config's
    * `trace`; `--trace` and a test's own `trace` win over it.
@@ -1973,12 +2002,14 @@ export type AgentConfig = AgentOptions &
  * The project half of `E2EConfig`: targets, agents, the replay cache,
  * secrets, budgets, and output. The test runner and `@e2e-dev/core` both resolve
  * it; `E2EConfig` adds the runner's reporters, test filters, and services.
+ * `Services` is the type of `services` passed to a target's
+ * `app.command.env` function.
  */
-export interface ProjectConfig {
+export interface ProjectConfig<Services = Readonly<Record<string, unknown>>> {
   /** Stable project id, 1 through 256 characters; defaults to the root `package.json` name. */
   projectId?: string;
   /** The surfaces tests run on; required, at least one, each naming its engine. */
-  targets: readonly Target[];
+  targets: readonly Target<Services>[];
   /** Test file globs relative to the project root (`*`, `?`, and a whole `**` segment; a leading `!` excludes); default every `*.e2e.ts` under `tests/`. */
   tests?: string | readonly string[];
   /** Test attempt deadline in milliseconds; default 120000. */

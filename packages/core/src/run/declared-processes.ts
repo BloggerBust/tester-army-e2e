@@ -4,14 +4,14 @@
  * server share one process.
  */
 
+import type { SpawnedCommand } from '../config/command.ts';
 import type { ResolvedTarget } from '../config/resolve.ts';
 import { canonicalDigest } from '../internal/ids.ts';
-import type { CommandConfig } from '../types.ts';
 
 /** One app command to start, named after the first target that declared it. */
 export interface DeclaredCommand {
   readonly label: string;
-  readonly command: CommandConfig;
+  readonly command: SpawnedCommand;
   /** The readiness probe of the first declaring target; a shared server is up when it answers. */
   readonly readyUrl: string;
   /** The command's identity: how it spawns, not where it is probed. A URL declared with port 0 spawns with its allocated port, so each allocation is its own. */
@@ -20,16 +20,32 @@ export interface DeclaredCommand {
   readonly targetNames: readonly string[];
 }
 
-/** Every distinct app command in target order; identity is the command alone, not where it is probed. */
-export function declaredCommands(targets: readonly ResolvedTarget[]): readonly DeclaredCommand[] {
+/**
+ * Every distinct app command in target order; identity is the command alone,
+ * not where it is probed. `envs` maps each target name to the variables its
+ * `env` function returned, replacing the function in the command.
+ */
+export function declaredCommands(targets: readonly ResolvedTarget[], envs: ReadonlyMap<string, Readonly<Record<string, string>>>): readonly DeclaredCommand[] {
   const commands = new Map<string, DeclaredCommand & { targetNames: string[] }>();
+
   for (const target of targets) {
-    const { command, readyUrl } = target.app;
-    if (command === undefined || readyUrl === undefined) continue;
+    const { command: declared, readyUrl } = target.app;
+
+    if (declared === undefined || readyUrl === undefined) {
+      continue;
+    }
+
+    const { env, ...rest } = declared;
+    const command: SpawnedCommand = { ...rest, env: typeof env === 'function' ? envs.get(target.name) : env };
     const key = canonicalDigest(command);
     const existing = commands.get(key);
-    if (existing !== undefined) existing.targetNames.push(target.name);
-    else commands.set(key, { label: `target "${target.name}" command`, command, readyUrl, key, targetNames: [target.name] });
+
+    if (existing !== undefined) {
+      existing.targetNames.push(target.name);
+    } else {
+      commands.set(key, { label: `target "${target.name}" command`, command, readyUrl, key, targetNames: [target.name] });
+    }
   }
+
   return [...commands.values()];
 }

@@ -101,7 +101,7 @@ describe('SharedAppProcesses', { timeout: 30_000 }, () => {
       { ci: false },
       AbortSignal.any([signal, teardown.signal]),
       new DebugTrace(false),
-      trackStarts(pool),
+      { pool: trackStarts(pool) },
     );
     starting.push(opening.catch(() => undefined));
     return opening;

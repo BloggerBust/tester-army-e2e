@@ -247,7 +247,12 @@ time, and stops it after the `yield`.
 - `e2e run` and `e2e explore` start services in key order before the app
   commands and stop them in reverse order afterward. In `e2e mcp` and
   `openHost`, a config with services fails with `INVALID_CONFIG`.
-- Pass the service's address to the app in `command.env`, with a fixed port.
+- Pass the service's address to the app from an `env` function,
+  `env: ({ services }) => ({ EMAIL_URL: services.email.url })`, so the service
+  can listen on port 0. Write the config with `defineConfig` so `services` is
+  typed there. With `reuseExisting`, an app that's already running doesn't
+  get the variables, and a notice is printed, so give its services fixed
+  ports.
 - Pass `signal` to anything the service starts. Set `startupTimeout` (60 s by
   default) or `shutdownTimeout` (10 s by default) on a slow service.
 - Tests read the values through the `services` fixture. Each yielded function

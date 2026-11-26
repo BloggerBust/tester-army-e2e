@@ -232,9 +232,11 @@ export interface TestFilterResult {
 
 /**
  * The config an `e2e.config.ts` default-exports, through `defineConfig` or
- * ending in `satisfies E2EConfig`.
+ * ending in `satisfies E2EConfig`. `Services` is the type of `services`
+ * passed to a target's `app.command.env` function, inferred by `defineConfig`
+ * from `services`.
  */
-export interface E2EConfig extends ProjectConfig {
+export interface E2EConfig<Services = Readonly<Record<string, unknown>>> extends ProjectConfig<Services> {
   /**
    * The run's reporters: built-in ids, each its factory from
    * `e2e/reporters` with no options, and reporter objects. `list`, `dot`, and
@@ -247,10 +249,11 @@ export interface E2EConfig extends ProjectConfig {
   filters?: readonly TestFilter[];
   /**
    * Dependencies of the app under test, keyed by name and defined with
-   * `defineService`. During `e2e run` and `e2e explore`, services start in key order before the
-   * app commands and stop in reverse order afterward, with one instance
-   * shared across all workers. Tests read their values through the `services`
-   * fixture.
+   * `defineService`. `e2e run` and `e2e explore` start them in key order
+   * before the app commands, share one instance of each across all workers,
+   * and stop them in reverse order after the app commands. Tests read their values through
+   * the `services` fixture, and an `app.command.env` function receives them
+   * through its argument.
    */
   services?: ServiceMap;
 }

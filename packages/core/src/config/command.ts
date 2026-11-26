@@ -19,6 +19,9 @@ import { describeValue, timerMs } from './validate.ts';
  */
 export type Readiness = { readonly readyUrl: string } | { readonly waitForExit: true };
 
+/** A command ready to spawn, with any `env` function already resolved to a plain object. */
+export type SpawnedCommand = Omit<CommandConfig, 'env'> & { readonly env?: Readonly<Record<string, string>> | undefined };
+
 /** The keys of a `CommandConfig`, kept equal to the type by the compiler. */
 const COMMAND_KEYS: readonly string[] = Object.keys({
   executable: true,
@@ -84,7 +87,8 @@ function inheritPattern(value: unknown, label: string): string {
  * would make the readiness loop spin without a deadline. An `env` entry
  * whose value is `undefined` is dropped, as `spawn` drops it:
  * `env: { KEY: process.env.KEY }` with the variable unset starts the process
- * without it.
+ * without it. An `env` function is kept as is. The run calls it before
+ * app commands start and validates the returned object then.
  */
 export function normalizeCommand(command: CommandConfig, label: string): CommandConfig {
   if (!isRecord(command)) throw new ConfigurationError('INVALID_CONFIG', `${label} must be an object`);
@@ -97,15 +101,13 @@ export function normalizeCommand(command: CommandConfig, label: string): Command
     throw new ConfigurationError('INVALID_CONFIG', `${label}.args must be an array of strings`);
   }
   const strings = args?.map((arg: unknown, index) => commandString(arg, `${label}.args[${index}]`));
-  if (env !== undefined && !isRecord(env)) {
-    throw new ConfigurationError('INVALID_CONFIG', `${label}.env must be an object of variable name to string`);
+
+  if (env !== undefined && typeof env !== 'function' && !isRecord(env)) {
+    throw new ConfigurationError('INVALID_CONFIG', `${label}.env must be an object of variable names to strings, like { PORT: '3000' }, or a function that returns one`);
   }
-  const variables =
-    env === undefined
-      ? undefined
-      : Object.entries(env)
-          .filter(([, entry]) => entry !== undefined)
-          .map(([key, entry]) => [key, commandString(entry, `${label}.env.${key}`)] as const);
+
+  const variables = env === undefined || typeof env === 'function' ? env : envVariables(env, `${label}.env`);
+
   if (inheritEnv !== undefined && !Array.isArray(inheritEnv)) {
     throw new ConfigurationError('INVALID_CONFIG', `${label}.inheritEnv must be an array of variable names`);
   }
@@ -124,13 +126,27 @@ export function normalizeCommand(command: CommandConfig, label: string): Command
       executable,
       args: strings === undefined ? undefined : Object.freeze(strings),
       cwd,
-      env: variables === undefined ? undefined : Object.freeze(Object.fromEntries(variables)),
+      env: variables,
       inheritEnv: inherit === undefined ? undefined : Object.freeze(inherit),
       startupTimeout,
       shutdownTimeout,
       log,
       reuseExisting,
     }),
+  );
+}
+
+/**
+ * Validates an `env` object and returns a frozen copy with every `undefined`
+ * entry dropped. Every remaining value must be a string.
+ */
+export function envVariables(env: Readonly<Record<string, unknown>>, label: string): Readonly<Record<string, string>> {
+  return Object.freeze(
+    Object.fromEntries(
+      Object.entries(env)
+        .filter(([, entry]) => entry !== undefined)
+        .map(([key, entry]) => [key, commandString(entry, `${label}.${key}`)]),
+    ),
   );
 }
 
@@ -144,8 +160,16 @@ export function checkLog(command: CommandConfig, label: string, projectRoot: str
   }
 }
 
-/** A command as it enters the config digest: env values reduced to their names. */
+/**
+ * A command as it enters the config digest: env values reduced to their
+ * names. An `env` function is omitted because its variable names aren't
+ * known before the run calls it.
+ */
 export function digestCommand(command: CommandConfig) {
   const { env, ...rest } = command;
-  return obj({ ...rest, env: env === undefined ? undefined : Object.fromEntries(Object.keys(env).map((key) => [key, { envName: key }])) });
+
+  return obj({
+    ...rest,
+    env: env === undefined || typeof env === 'function' ? undefined : Object.fromEntries(Object.keys(env).map((key) => [key, { envName: key }])),
+  });
 }

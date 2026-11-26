@@ -391,6 +391,16 @@ describe('SessionHost', { timeout: 60_000 }, () => {
     await external.close('done');
   });
 
+  it('names an env function as one, without listing its variables', async () => {
+    writeStartupScripts(dir);
+    const command = { executable: process.execPath, args: ['server.cjs', '{port}'], env: () => ({ DATABASE_URL: 'postgres://app:db-pass-1234@127.0.0.1:55432/app' }) };
+    const started = host(engines().next, { app: { url: 'http://127.0.0.1:0', command } });
+    const text = await started.open({});
+    expect(text).toMatch(/Process: app\.command \S+ \(ready at [^;)]+; env from a function\)/);
+    expect(text).not.toContain('DATABASE_URL');
+    await started.close('done');
+  });
+
   it('cancels a session still opening when it shuts down, waits for it, and admits none meanwhile', async () => {
     const loading = gate();
     const fakes = engines();

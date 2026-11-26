@@ -4,17 +4,22 @@
  * already started, the start and stop limits abort their signal, a service
  * cancelled while it starts still stops, the yielded value is checked, tests
  * in worker processes and in the runner process call service functions and
- * get copies back, `e2e list` and the config digest start none, and
- * `e2e mcp` and `openHost` refuse a config with services.
+ * get copies back, an `env` function reads the services once per run,
+ * `e2e list` and the config digest start none, and `e2e mcp` and `openHost`
+ * refuse a config with services.
  */
 
+import { once } from 'node:events';
 import { existsSync, readFileSync } from 'node:fs';
+import { createServer } from 'node:http';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { defineEngine } from '@e2e-dev/core/lib/engine/index';
+import { InfrastructureError } from '@e2e-dev/core/lib/internal/errors';
 import { defineService } from '../../src/index.ts';
 import type { CommandConfig, E2EConfig, RunEvent, Service } from '../../src/index.ts';
 import { createFakeEngine, FAKE_APP } from '../helpers/fake-engine.ts';
+import { freePort } from '../helpers/free-port.ts';
 import { hostHarness } from '../helpers/open-host.ts';
 import { createProject, listProject, runExisting, runExistingWithConfigFile, runProject, type FixtureProject, type RunOutcome } from '../helpers/run-project.ts';
 
@@ -58,7 +63,8 @@ export const logged = (name: string) =>
   });
 `;
 
-const CONFIG = `import { defineConfig } from 'e2e';
+const CONFIG = `import { appendFileSync } from 'node:fs';
+import { defineConfig } from 'e2e';
 import { createFakeEngine } from '../../helpers/fake-engine.ts';
 import { logged } from './services.ts';
 
@@ -76,7 +82,10 @@ export default defineConfig({
           executable: ${JSON.stringify(process.execPath)},
           args: ['server.cjs'],
           shutdownTimeout: 2000,
-          env: { PORT: '{port}', ALPHA_URL: 'http://alpha.test' },
+          env: ({ services }) => {
+            appendFileSync(new URL('./events.log', import.meta.url), 'env\\n');
+            return { PORT: '{port}', ALPHA_URL: services.alpha.url };
+          },
         },
       },
     },
@@ -102,13 +111,13 @@ const runErrors = (outcome: RunOutcome) => outcome.report.run.errors.map(({ code
 const failureOf = (outcome: RunOutcome, title: string): string | undefined =>
   outcome.results.find((result) => result.test.title === title)?.attempts.at(-1)?.error?.message;
 
-/** A fake target whose app command runs `server.cjs` on a free port, with `env` as its env. */
-function commandTarget(env: NonNullable<CommandConfig['env']>) {
+/** A fake target whose app command runs `server.cjs` on a free port, with `env` as its env and `extra` on top. */
+function commandTarget(env: NonNullable<CommandConfig['env']>, extra: Partial<CommandConfig> = {}) {
   return {
     name: 'fake',
     platform: 'fake',
     engine: createFakeEngine().engine,
-    app: { url: 'http://127.0.0.1:0', command: { executable: process.execPath, args: ['server.cjs'], shutdownTimeout: 2000, env } },
+    app: { url: 'http://127.0.0.1:0', command: { executable: process.execPath, args: ['server.cjs'], shutdownTimeout: 2000, env, ...extra } },
   };
 }
 
@@ -118,13 +127,6 @@ const eventLines = (project: Pick<FixtureProject, 'dir'>): string[] => readFileS
 const PASSING_TEST = `import { test } from 'e2e';
 test('passes', async () => {});
 `;
-
-/** An `onEvent` that aborts `interrupt`, as a first Ctrl+C does, once the service `name` has started. */
-const interruptOnceStarted = (interrupt: AbortController, name: string) => (event: RunEvent): void => {
-  if (event.type === 'setup' && event.state === 'finished' && event.step.kind === 'service' && event.step.label === `service "${name}"`) {
-    interrupt.abort();
-  }
-};
 
 describe('services', { timeout: 60_000 }, () => {
   const projects: FixtureProject[] = [];
@@ -169,6 +171,7 @@ test('calls a function that throws', async ({ services }) => {
     expect(events.filter((line) => !line.includes(' record '))).toEqual([
       'start alpha',
       'start beta',
+      'env',
       `app start ${port} http://alpha.test`,
       'app stop',
       'stop beta',
@@ -550,6 +553,313 @@ test('reads each type', async ({ services }) => {
     expect(outcome.results.map((result) => [result.status, failureOf(outcome, result.test.title)])).toEqual([['passed', undefined]]);
   });
 
+  it('calls an env function once, after the services start, with {port} expanded', async () => {
+    const project = createProject({ 'server.cjs': SERVER, 'tests/a.e2e.ts': PASSING_TEST });
+
+    projects.push(project);
+
+    const seen: unknown[] = [];
+    const notices: string[] = [];
+
+    const outcome = await runExisting(project, {
+      runOptions: {
+        onEvent: (event: RunEvent) => {
+          if (event.type === 'notice') {
+            notices.push(event.message);
+          }
+        },
+      },
+      config: {
+        services: {
+          alpha: defineService({
+            async *start() {
+              yield { url: 'http://alpha.test' };
+            },
+          }),
+        },
+        targets: [
+          commandTarget(({ services }) => {
+            seen.push(services);
+            return { PORT: '{port}', ALPHA_URL: (services['alpha'] as { url: string }).url };
+          }),
+        ],
+      },
+    });
+
+    expect(seen).toEqual([{ alpha: { url: 'http://alpha.test' } }]);
+    expect(readFileSync(path.join(project.dir, 'events.log'), 'utf8')).toBe(`app start ${outcome.config?.ports['fake']} http://alpha.test\napp stop\n`);
+    expect(runErrors(outcome)).toEqual([]);
+    // The runner started the app itself, so it got the variables and there's nothing to warn about.
+    expect(notices.filter((notice) => notice.includes("didn't get the variables"))).toEqual([]);
+  });
+
+  it.each([
+    { returned: () => ({ PORT: 4000 }), message: 'target "fake" app.command.env.PORT must be a string, got' },
+    { returned: () => 'PORT=4000', message: 'target "fake" app.command.env must return an object of variable names to strings, like { PORT: \'3000\' }, got a string' },
+    { returned: () => new Map([['PORT', '4000']]), message: 'target "fake" app.command.env must return an object of variable names to strings, like { PORT: \'3000\' }, got an object' },
+    {
+      returned: () => {
+        throw new Error('no port today');
+      },
+      message: 'target "fake" app.command.env threw: no port today',
+    },
+  ])('fails the run before spawning when an env function returns $message', async ({ returned, message }) => {
+    const project = createProject({ 'server.cjs': SERVER, 'tests/a.e2e.ts': PASSING_TEST });
+
+    projects.push(project);
+
+    // @ts-expect-error -- each case returns what the env type refuses, so the runner's own check is what fails the run.
+    const outcome = await runExisting(project, { config: { targets: [commandTarget(returned)] } });
+
+    expect(runErrors(outcome)).toEqual([{ code: 'INVALID_CONFIG', message: expect.stringContaining(message) }]);
+    expect(existsSync(path.join(project.dir, 'events.log'))).toBe(false);
+  });
+
+  it('keeps the code of an error an env function throws with one', async () => {
+    const project = createProject({ 'server.cjs': SERVER, 'tests/a.e2e.ts': PASSING_TEST });
+
+    projects.push(project);
+
+    const outcome = await runExisting(project, {
+      config: {
+        targets: [
+          commandTarget(() => {
+            throw new InfrastructureError('APP_UNREACHABLE', 'the database is down');
+          }),
+        ],
+      },
+    });
+
+    expect(runErrors(outcome)).toEqual([{ code: 'APP_UNREACHABLE', message: 'the database is down' }]);
+  });
+
+  it('fails the run as a config error when an env function passes a service a value it cannot copy', async () => {
+    const project = createProject({ 'server.cjs': SERVER, 'tests/a.e2e.ts': PASSING_TEST });
+
+    projects.push(project);
+
+    const outcome = await runExisting(project, {
+      config: {
+        services: {
+          alpha: defineService({
+            async *start() {
+              yield { take: (value: string) => value };
+            },
+          }),
+        },
+        targets: [
+          commandTarget(async ({ services }) => {
+            const alpha = services['alpha'] as { take(value: unknown): Promise<string> };
+            return { PORT: '{port}', ALPHA: await alpha.take(() => 'not data') };
+          }),
+        ],
+      },
+    });
+
+    expect(runErrors(outcome)).toEqual([{ code: 'INVALID_CONFIG', message: expect.stringContaining('target "fake" app.command.env threw: services.alpha.take()') }]);
+    expect(outcome.exitCode).toBe(2);
+  });
+
+  it.each([
+    { order: 'the long budget first', names: ['long', 'short'] },
+    { order: 'the short budget first', names: ['short', 'long'] },
+  ])('holds each target that shares an env function to its own startupTimeout, with $order', async ({ names }) => {
+    const project = createProject({ 'server.cjs': SERVER, 'tests/a.e2e.ts': PASSING_TEST });
+
+    projects.push(project);
+
+    const env = async () => {
+      await new Promise((resolve) => setTimeout(resolve, 300));
+      return { PORT: '{port}' };
+    };
+
+    const target = (name: string) => ({ ...commandTarget(env, { startupTimeout: name === 'long' ? 5000 : 100 }), name });
+
+    const outcome = await runExisting(project, { config: { targets: names.map(target) } });
+
+    expect(runErrors(outcome)).toEqual([{ code: 'APP_UNREACHABLE', message: 'target "short" app.command.env didn\'t return within 100 ms' }]);
+  });
+
+  it('calls an env function that two targets share once, and starts one process when it returns the same variables', async () => {
+    const port = await freePort();
+    const project = createProject({ 'server.cjs': SERVER, 'tests/a.e2e.ts': PASSING_TEST });
+
+    projects.push(project);
+
+    let calls = 0;
+
+    const command = {
+      executable: process.execPath,
+      args: ['server.cjs'],
+      shutdownTimeout: 2000,
+      env: () => {
+        calls += 1;
+        return { PORT: String(port), ALPHA_URL: 'shared' };
+      },
+    };
+
+    const outcome = await runExisting(project, {
+      config: {
+        targets: [
+          { name: 'a', platform: 'fake', engine: createFakeEngine().engine, app: { url: `http://127.0.0.1:${port}`, command } },
+          { name: 'b', platform: 'fake', engine: createFakeEngine().engine, app: { url: `http://127.0.0.1:${port}`, command } },
+        ],
+      },
+    });
+
+    expect(calls).toBe(1);
+    expect(readFileSync(path.join(project.dir, 'events.log'), 'utf8')).toBe(`app start ${port} shared\napp stop\n`);
+    expect(outcome.results.map((result) => result.status)).toEqual(['passed', 'passed']);
+  });
+
+  it('starts one process for each set of variables the env functions return', async () => {
+    const ports = [await freePort(), await freePort()];
+    const project = createProject({ 'server.cjs': SERVER, 'tests/a.e2e.ts': PASSING_TEST });
+
+    projects.push(project);
+
+    const target = (name: string, port: number) => ({
+      name,
+      platform: 'fake',
+      engine: createFakeEngine().engine,
+      app: {
+        readyUrl: `http://127.0.0.1:${port}`,
+        command: { executable: process.execPath, args: ['server.cjs'], shutdownTimeout: 2000, env: () => ({ PORT: String(port), ALPHA_URL: name }) },
+      },
+    });
+
+    const outcome = await runExisting(project, { config: { targets: ports.map((port, index) => target(`t${index}`, port)) } });
+
+    expect(eventLines(project).toSorted()).toEqual([`app start ${ports[0]} t0`, `app start ${ports[1]} t1`, 'app stop', 'app stop'].toSorted());
+    expect(outcome.results.map((result) => result.status)).toEqual(['passed', 'passed']);
+  });
+
+  it('calls an env function when reuseExisting uses a process that is already running', async () => {
+    const port = await freePort();
+    const server = createServer((_request, response) => response.end('ready')).listen(port, '127.0.0.1');
+
+    await once(server, 'listening');
+
+    const project = createProject({ 'server.cjs': SERVER, 'tests/a.e2e.ts': PASSING_TEST });
+
+    projects.push(project);
+
+    let calls = 0;
+    const notices: string[] = [];
+
+    try {
+      const outcome = await runExisting(project, {
+        runOptions: {
+          onEvent: (event: RunEvent) => {
+            if (event.type === 'notice') {
+              notices.push(event.message);
+            }
+          },
+        },
+        config: {
+          targets: [
+            {
+              name: 'fake',
+              platform: 'fake',
+              engine: createFakeEngine().engine,
+              app: {
+                url: `http://127.0.0.1:${port}`,
+                command: {
+                  executable: process.execPath,
+                  args: ['server.cjs'],
+                  reuseExisting: true,
+                  env: () => {
+                    calls += 1;
+                    return { PORT: String(port) };
+                  },
+                },
+              },
+            },
+          ],
+        },
+      });
+
+      expect(outcome.results.map((result) => result.status)).toEqual(['passed']);
+      expect(calls).toBe(1);
+      expect(existsSync(path.join(project.dir, 'events.log'))).toBe(false);
+      expect(notices.filter((notice) => notice.includes("didn't get the variables from the target's env function"))).toHaveLength(1);
+    } finally {
+      server.close();
+    }
+  });
+
+  it('drops an undefined value an env function returns, so the app keeps the variable it inherits', async () => {
+    const project = createProject({ 'server.cjs': SERVER, 'tests/a.e2e.ts': PASSING_TEST });
+
+    projects.push(project);
+
+    const outcome = await runExisting(project, {
+      config: {
+        targets: [
+          // @ts-expect-error -- the type takes strings only on purpose, so a TypeScript config handles an unset variable itself. The runner still drops an undefined value, so a JavaScript config that reads process.env keeps working.
+          commandTarget(() => ({ PORT: '{port}', ALPHA_URL: undefined }), { inheritEnv: ['ALPHA_URL'] }),
+        ],
+      },
+      runOptions: { env: { ...process.env, CI: '', ALPHA_URL: 'inherited' } },
+    });
+
+    expect(runErrors(outcome)).toEqual([]);
+    expect(eventLines(project)).toEqual([`app start ${outcome.config?.ports['fake']} inherited`, 'app stop']);
+  });
+
+  it('fails with APP_UNREACHABLE when an env function does not return within startupTimeout, and stops the services', async () => {
+    const events: string[] = [];
+
+    const outcome = await runInProcess(
+      { 'server.cjs': SERVER, 'tests/a.e2e.ts': PASSING_TEST },
+      {
+        services: {
+          alpha: defineService({
+            async *start() {
+              yield {};
+              events.push('stop alpha');
+            },
+          }),
+        },
+        targets: [commandTarget(() => new Promise(() => undefined), { startupTimeout: 200 })],
+      },
+    );
+
+    expect(runErrors(outcome)).toEqual([{ code: 'APP_UNREACHABLE', message: 'target "fake" app.command.env didn\'t return within 200 ms' }]);
+    expect(events).toEqual(['stop alpha']);
+    expect(outcome.results.some((result) => result.status === 'passed')).toBe(false);
+  });
+
+  it('stops waiting for an env function and stops the services when the run is interrupted', async () => {
+    const interrupt = new AbortController();
+    const events: string[] = [];
+
+    const outcome = await runInProcess(
+      { 'server.cjs': SERVER, 'tests/a.e2e.ts': PASSING_TEST },
+      {
+        services: {
+          alpha: defineService({
+            async *start() {
+              yield {};
+              events.push('stop alpha');
+            },
+          }),
+        },
+        targets: [
+          commandTarget(() => {
+            interrupt.abort();
+            return new Promise(() => undefined);
+          }),
+        ],
+      },
+      { interruptSignal: interrupt.signal },
+    );
+
+    expect(outcome.status).toBe('interrupted');
+    expect(runErrors(outcome)).toEqual([]);
+    expect(events).toEqual(['stop alpha']);
+  });
+
   it('stops the services that started when a later one fails to start, and starts no app command', async () => {
     const project = createProject({ 'server.cjs': SERVER, 'tests/a.e2e.ts': PASSING_TEST });
 
@@ -877,7 +1187,7 @@ test('reads each type', async ({ services }) => {
     const events: string[] = [];
 
     const outcome = await runInProcess(
-      { 'tests/a.e2e.ts': PASSING_TEST },
+      { 'server.cjs': SERVER, 'tests/a.e2e.ts': PASSING_TEST },
       {
         services: {
           first: defineService({
@@ -896,8 +1206,14 @@ test('reads each type', async ({ services }) => {
             },
           }),
         },
+        targets: [
+          commandTarget(() => {
+            interrupt.abort();
+            return {};
+          }),
+        ],
       },
-      { interruptSignal: interrupt.signal, forceSignal: force.signal, onEvent: interruptOnceStarted(interrupt, 'second') },
+      { interruptSignal: interrupt.signal, forceSignal: force.signal },
     );
 
     expect(runErrors(outcome)).toEqual([]);
@@ -909,7 +1225,7 @@ test('reads each type', async ({ services }) => {
     const aborted: boolean[] = [];
 
     const outcome = await runInProcess(
-      { 'tests/a.e2e.ts': PASSING_TEST },
+      { 'server.cjs': SERVER, 'tests/a.e2e.ts': PASSING_TEST },
       {
         services: {
           alpha: defineService({
@@ -919,8 +1235,14 @@ test('reads each type', async ({ services }) => {
             },
           }),
         },
+        targets: [
+          commandTarget(() => {
+            interrupt.abort();
+            return {};
+          }),
+        ],
       },
-      { interruptSignal: interrupt.signal, onEvent: interruptOnceStarted(interrupt, 'alpha') },
+      { interruptSignal: interrupt.signal },
     );
 
     expect(outcome.status).toBe('interrupted');
@@ -934,7 +1256,7 @@ test('reads each type', async ({ services }) => {
     const startedAt = Date.now();
 
     const outcome = await runInProcess(
-      { 'tests/a.e2e.ts': PASSING_TEST },
+      { 'server.cjs': SERVER, 'tests/a.e2e.ts': PASSING_TEST },
       {
         services: {
           first: defineService({
@@ -953,8 +1275,14 @@ test('reads each type', async ({ services }) => {
             },
           }),
         },
+        targets: [
+          commandTarget(() => {
+            interrupt.abort();
+            return {};
+          }),
+        ],
       },
-      { interruptSignal: interrupt.signal, forceSignal: force.signal, onEvent: interruptOnceStarted(interrupt, 'second') },
+      { interruptSignal: interrupt.signal, forceSignal: force.signal },
     );
 
     expect(outcome.status).toBe('interrupted');
@@ -1135,8 +1463,9 @@ test('reads each type', async ({ services }) => {
     expect(stopped).toBe(true);
   });
 
-  it('lists tests without starting a service', async () => {
+  it('lists tests without starting a service or calling an env function', async () => {
     let started = false;
+    let called = false;
 
     const { pairs, project } = await listProject({ 'tests/a.e2e.ts': PASSING_TEST }, {
       config: {
@@ -1148,6 +1477,12 @@ test('reads each type', async ({ services }) => {
             },
           }),
         },
+        targets: [
+          commandTarget(() => {
+            called = true;
+            return {};
+          }),
+        ],
       },
     });
 
@@ -1155,9 +1490,10 @@ test('reads each type', async ({ services }) => {
 
     expect(pairs.map((pair) => pair.title)).toEqual(['passes']);
     expect(started).toBe(false);
+    expect(called).toBe(false);
   });
 
-  it('keeps the config digest, and with it the replay cache, when services are added', () => {
+  it('keeps the config digest, and with it the replay cache, when services or an env function are added', () => {
     const service = defineService({
       async *start() {
         yield {};
@@ -1170,6 +1506,7 @@ test('reads each type', async ({ services }) => {
     const plain = digest({ targets: [{ name: 'fake', platform: 'fake', engine, app }] });
 
     expect(digest({ services: { service }, targets: [{ name: 'fake', platform: 'fake', engine, app }] })).toBe(plain);
+    expect(digest({ targets: [{ name: 'fake', platform: 'fake', engine, app: { ...app, command: { ...app.command, env: () => ({}) } } }] })).toBe(plain);
   });
 
   it('refuses an engine fixture named services', () => {

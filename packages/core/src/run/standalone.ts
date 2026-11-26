@@ -156,7 +156,7 @@ export async function openWorker<Sessions extends EngineSessions, Extra>(
       runId, hostId: options.hostId, projectRoot: config.projectRoot, env: options.env, signal, headed: options.headed, notice,
     });
     const hooks = { ci: config.ci, env: options.env, notice: (message: string) => notice('app', message) };
-    processes = await startDeclaredProcesses([target], config.projectRoot, hooks, signal, debug, options.processes);
+    processes = await startDeclaredProcesses([target], config.projectRoot, hooks, signal, debug, { pool: options.processes });
     if (signal.aborted) throw new InfrastructureError('CANCELLED', `opening a host on target "${target.name}" was cancelled`);
     executor = policy.sessions({
       config, target, runId, hostId: options.hostId, artifactsRoot: layout.results, sessionStore,

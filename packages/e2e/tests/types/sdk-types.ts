@@ -1284,9 +1284,9 @@ defineEngine<{}, 'ios'>({ name: 'tv', version: '1.0.0', spiVersion: 1 });
 // @ts-expect-error the literal 'worker' requires isolation: 'worker' in the spec
 defineEngine<{}, string, 'worker'>({ name: 'tv', version: '1.0.0', spiVersion: 1 });
 
-// The config type passed to test.extend types the services fixture from the
-// config's services. Data keeps its type, and each function of a service's
-// value becomes an async function.
+// defineConfig types the services an app.command.env function receives from
+// the config's services. Data keeps its type, and each function of a
+// service's value becomes an async function.
 const mailbox = defineService({
   async *start({ signal }) {
     signal satisfies AbortSignal;
@@ -1303,10 +1303,35 @@ const mailbox = defineService({
 
 const servicesConfig = defineConfig({
   services: { mailbox },
-  targets: [{ engine: paneEngine, app: { url: 'http://127.0.0.1:0' } }],
+  targets: [
+    {
+      engine: paneEngine,
+      app: {
+        url: 'http://127.0.0.1:0',
+        command: {
+          executable: 'node',
+          env: async ({ services }) => {
+            services.mailbox.url satisfies string;
+            services.mailbox.clear() satisfies Promise<void>;
+            services.mailbox.count('ada') satisfies Promise<number>;
+            services.mailbox.admin.reset() satisfies Promise<boolean>;
+            // An async function's promise isn't wrapped in a second one.
+            void services.mailbox.admin.reset().then((reset) => reset satisfies boolean);
+            services.mailbox.sentAt[0] satisfies Date | undefined;
+            // @ts-expect-error the config has no service called sms
+            void services.sms;
+            // @ts-expect-error count takes a string
+            void services.mailbox.count(1);
+
+            return { PORT: '{port}', MAILBOX_URL: services.mailbox.url };
+          },
+        },
+      },
+    },
+  ],
 });
 
-// It types the fixture in tests, hooks, and fixtures of both scopes.
+// The config type passed to test.extend types the services fixture in tests, hooks, and fixtures of both scopes.
 const servicesTest = test.extend<{}, {}, typeof servicesConfig>();
 
 servicesTest.beforeEach(async ({ services }) => {
@@ -1319,18 +1344,11 @@ servicesTest.beforeAll(async ({ services }) => {
 
 servicesTest('reads a service', async ({ services, pane }) => {
   (await services.mailbox.count('ada')) satisfies number;
-  services.mailbox.clear() satisfies Promise<void>;
-  services.mailbox.admin.reset() satisfies Promise<boolean>;
-  // An async function's promise isn't wrapped in a second one.
-  void services.mailbox.admin.reset().then((reset) => reset satisfies boolean);
-  services.mailbox.sentAt[0] satisfies Date | undefined;
 
   await pane.goto(services.mailbox.url);
 
   // @ts-expect-error a function of a service's value returns a promise in a test
   services.mailbox.count('ada') satisfies number;
-  // @ts-expect-error count takes a string
-  void services.mailbox.count(1);
   // @ts-expect-error the config has no service called sms
   void services.sms;
 });
@@ -1354,8 +1372,43 @@ test('reads a service without the config type', async ({ services }) => {
   void services['mailbox'].url;
 });
 
-// satisfies E2EConfig still takes a config with services.
-void ({ services: { mailbox }, targets: [{ engine: paneEngine }] } satisfies E2EConfig);
+// A config without services hands env and tests an empty record.
+defineConfig({
+  targets: [
+    {
+      engine: paneEngine,
+      app: {
+        url: 'http://127.0.0.1:0',
+        command: {
+          executable: 'node',
+          env: ({ services }) => {
+            // @ts-expect-error the config has no services
+            void services.mailbox;
+
+            return { PORT: '{port}' };
+          },
+        },
+      },
+    },
+  ],
+});
+
+// satisfies E2EConfig still takes a config with services, and env sees them untyped.
+void ({
+  services: { mailbox },
+  targets: [
+    {
+      engine: paneEngine,
+      app: {
+        url: 'http://127.0.0.1:4000',
+        command: {
+          executable: 'node',
+          env: ({ services }) => ({ MAILBOX: String(services['mailbox']) }),
+        },
+      },
+    },
+  ],
+} satisfies E2EConfig);
 
 // A config from defineConfig is still an E2EConfig.
 void (servicesConfig satisfies E2EConfig);
@@ -1475,10 +1528,41 @@ defineService({
   },
 });
 
-// defineConfig refuses a key E2EConfig doesn't have, as satisfies E2EConfig does.
+defineConfig({
+  targets: [
+    {
+      engine: paneEngine,
+      app: {
+        url: 'http://127.0.0.1:0',
+        command: {
+          executable: 'node',
+          // @ts-expect-error env returns string values
+          env: () => ({ PORT: 4000 }),
+        },
+      },
+    },
+  ],
+});
+
+// defineConfig takes the config's type as its first type argument.
+type PaneOnlyConfig = { readonly targets: readonly [{ readonly engine: typeof paneEngine }] };
+defineConfig<PaneOnlyConfig>({ targets: [{ engine: paneEngine }] });
+
+// defineConfig refuses a key E2EConfig doesn't have, as satisfies E2EConfig does, and still types env from services.
 defineConfig({
   services: { mailbox },
-  targets: [{ engine: paneEngine }],
+  targets: [
+    {
+      engine: paneEngine,
+      app: {
+        url: 'http://127.0.0.1:0',
+        command: {
+          executable: 'node',
+          env: ({ services }) => ({ MAILBOX_URL: services.mailbox.url }),
+        },
+      },
+    },
+  ],
   // @ts-expect-error E2EConfig has no key called bogus
   bogus: true,
 });

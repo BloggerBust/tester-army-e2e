@@ -61,7 +61,7 @@ import { nextRerunDir, pruneArtifacts } from '@e2e-dev/core/lib/run/artifacts';
 import { carryForward, fileDurationKey, lastFailedIds, readLastRun, readWithReruns, reportArtifactPaths, retainCollectedHistory, type RerunCollection } from './last-run.ts';
 import { loadTimings, writeTimings } from './timings.ts';
 import { childProcessSpawner } from './worker/handle.ts';
-import { NO_SERVICES, startServices, type RunServices } from './services.ts';
+import { copyServiceValues, NO_SERVICES, startServices, type RunServices } from './services.ts';
 import { setSecretRegistry } from '@e2e-dev/core/lib/secrets';
 import type { RecordingMode } from '@e2e-dev/core/lib/types';
 import type { BuiltinReporter, E2EConfig, Reporter } from '../run-types.ts';
@@ -1145,8 +1145,8 @@ export async function run(options: RunOptions = {}): Promise<RunOutcome> {
         }),
     };
 
-    // Start configured services before app commands so they're ready when the
-    // app boots. Each service runs as a setup step.
+    // Start configured services before app commands, each as a setup step,
+    // because a command's `env` function can read their values.
     const serviceStep = (name: string) => ({ kind: 'service' as const, label: `service "${name}"` });
 
     if (hasWork) {
@@ -1168,7 +1168,10 @@ export async function run(options: RunOptions = {}): Promise<RunOutcome> {
       return;
     }
 
-    processes = hasWork ? await startDeclaredProcesses(targets, config.projectRoot, processHooks, interrupted, debug) : undefined;
+    processes = hasWork
+      ? await startDeclaredProcesses(targets, config.projectRoot, processHooks, interrupted, debug, { services: copyServiceValues(services.wire, services.call) })
+      : undefined;
+
     // A run cancelled while the app was starting runs no test: the interrupt
     // alone decides the outcome.
     if (interrupted.aborted) return;

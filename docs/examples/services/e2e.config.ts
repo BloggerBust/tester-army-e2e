@@ -14,10 +14,10 @@ export default defineConfig({
         command: {
           executable: 'node',
           args: ['app/server.mjs'],
-          env: {
+          env: async ({ services }) => ({
             PORT: '{port}',
-            EMAIL_API_URL: 'http://127.0.0.1:4010',
-          },
+            EMAIL_API_URL: services.email.url,
+          }),
         },
       },
     },

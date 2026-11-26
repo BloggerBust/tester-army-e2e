@@ -346,7 +346,7 @@ describe('resolveConfig', () => {
       PORT: '3000',
     });
     expect(() => resolveApp({ url, command: { executable: 'node', env: ['PORT=3000'] } } as never)).toThrow(
-      'target "web" app.command.env must be an object of variable name to string',
+      'target "web" app.command.env must be an object of variable names to strings, like { PORT: \'3000\' }, or a function that returns one',
     );
     expect(() => resolveApp({ url, command: { executable: 'node', env: { PORT: 3000 } } } as never)).toThrow(
       expect.objectContaining({ code: 'INVALID_CONFIG', message: 'target "web" app.command.env.PORT must be a string, got 3000' }),

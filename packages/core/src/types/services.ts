@@ -1,6 +1,6 @@
 /**
  * Types for configured services, including the input to `defineService` and
- * the values tests receive.
+ * the values tests and `env` functions receive.
  * Re-exported from `types.ts`.
  */
 
@@ -38,7 +38,7 @@ export type Service<Value extends object = object> = {
   shutdownTimeout?: number;
   /**
    * Starts the dependency and stops it when the run ends. This async generator
-   * yields the service value once, and tests receive it.
+   * yields the service value once, and the config and tests receive it.
    */
   start(context: ServiceStartContext): AsyncGenerator<Value, void, undefined>;
 };
@@ -127,7 +127,7 @@ export type ServiceValue<Value> = Value extends (...args: infer Args) => infer R
         ? { [Key in keyof Value]: ServiceValue<Value[Key]> }
         : Value;
 
-/** Service values from `Services`, keyed by name, as tests receive them. */
+/** Service values from `Services`, keyed by name, as tests and `env` functions receive them. */
 export type ServiceValues<Services> = {
   readonly [Name in keyof Services]: Services[Name] extends Service<infer Value> ? ServiceValue<Value> : never;
 };

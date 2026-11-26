@@ -10,9 +10,9 @@ service starts before the app commands and stops at the end of the run.
 ## Define a service
 
 Call `defineService` with an object whose `start` property is an async
-generator. The generator starts the dependency before `yield`, and tests
-receive the yielded object as the service's value. When the run ends,
-everything after `yield` stops the dependency:
+generator. The generator starts the dependency before `yield`, and the config
+and tests receive the yielded object as the service's value. When the run
+ends, everything after `yield` stops the dependency:
 
 ```ts title="services/email.ts" expandable
 import { randomUUID } from 'node:crypto';
@@ -36,14 +36,20 @@ export const email = defineService({
       response.end();
     });
 
-    server.listen({ port: 4010, host: '127.0.0.1', signal });
+    server.listen({ port: 0, host: '127.0.0.1', signal });
 
     await once(server, 'listening', { signal });
+
+    const serverAddress = server.address();
+
+    if (serverAddress === null || typeof serverAddress === 'string') {
+      throw new Error('The email server has no TCP address.');
+    }
 
     const received = (address: string) => emails.filter((message) => message.to === address);
 
     yield {
-      url: 'http://127.0.0.1:4010',
+      url: `http://127.0.0.1:${serverAddress.port}`,
       createInbox: () => ({ address: `${randomUUID()}@example.com` }),
       received,
       waitForEmail: async (address: string, { subject }: { subject: RegExp }) => {
@@ -94,8 +100,8 @@ export const database = defineService({
 
 ## Pass the service to the app
 
-Add the service under `services` in your config and pass its address to the
-app in `env`:
+Add the service under `services` in your config, and pass its address to the
+app from an `env` function:
 
 ```ts title="e2e.config.ts"
 import { defineConfig } from 'e2e';
@@ -114,10 +120,10 @@ export default defineConfig({
         command: {
           executable: 'node',
           args: ['app/server.mjs'],
-          env: {
+          env: async ({ services }) => ({
             PORT: '{port}',
-            EMAIL_API_URL: 'http://127.0.0.1:4010',
-          },
+            EMAIL_API_URL: services.email.url,
+          }),
         },
       },
     },
@@ -127,6 +133,13 @@ export default defineConfig({
 
 Services start in key order before any app commands, and stop in reverse order
 after the app commands finish.
+
+The `env` function is called one time per run, after services start and before
+any app commands start. For the other `env` rules, see
+[`command`](/reference/config#command) in the config reference.
+
+Use [`defineConfig`](/reference/config#defineconfig) instead of
+`satisfies E2EConfig` here so `services` in `env` is typed from your config.
 
 ## Use the service in tests
 
@@ -239,7 +252,7 @@ import { defineService } from 'e2e';
 
 export const resend = defineService({
   async *start() {
-    const emulator = await createEmulator({ service: 'resend', port: 4008 });
+    const emulator = await createEmulator({ service: 'resend', port: 0 });
 
     yield { url: emulator.url };
 
@@ -267,11 +280,11 @@ export default defineConfig({
         command: {
           executable: 'node',
           args: ['app/server.mjs'],
-          env: {
+          env: ({ services }) => ({
             PORT: '{port}',
             RESEND_API_KEY: 're_test',
-            RESEND_BASE_URL: 'http://localhost:4008',
-          },
+            RESEND_BASE_URL: services.resend.url,
+          }),
         },
       },
     },
@@ -319,6 +332,6 @@ test('signing up sends a welcome email through Resend', async ({ app, screen, se
     Set up test data before each test and clean it up after.
   </Card>
   <Card title="Config reference" icon="code" href="/reference/config#services">
-    The `services` key and its rules.
+    The `services` key and the `env` function.
   </Card>
 </CardGroup>

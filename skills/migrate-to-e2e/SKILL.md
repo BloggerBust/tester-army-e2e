@@ -139,7 +139,7 @@ once and the progress file says so; later sessions skip this step.
      - Keep anything the CI job already starts (like a CI service container
        or a setup step) in CI.
      - Define the rest with `defineService` in `services`, and pass their
-       addresses to the app in `app.command.env`
+       addresses to the app from an `app.command.env` function
        (https://e2e.com/docs/services).
 
      List both in `MIGRATION.md`.

@@ -37,8 +37,9 @@ export function appLines(target: ResolvedTarget, ranTest: boolean): string[] {
 function describeCommand(command: CommandConfig, readyUrl: string): string {
   const facts = [`ready at ${printableUrl(readyUrl)}`];
   if (command.reuseExisting === true) facts.push('reuseExisting: a server already answering there is used instead of starting one');
-  const env = Object.keys(command.env ?? {});
-  if (env.length > 0) facts.push(`env ${env.join(', ')}`);
+  const env = typeof command.env === 'function' ? undefined : Object.keys(command.env ?? {});
+  if (env === undefined) facts.push('env from a function');
+  else if (env.length > 0) facts.push(`env ${env.join(', ')}`);
   if (command.inheritEnv !== undefined && command.inheritEnv.length > 0) facts.push(`inherits ${command.inheritEnv.join(', ')}`);
   if (command.cwd !== undefined) facts.push(`cwd ${command.cwd}`);
   if (command.log !== undefined) facts.push(`log ${command.log}`);

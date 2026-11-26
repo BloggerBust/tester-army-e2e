@@ -7,7 +7,7 @@ import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { InfrastructureError } from '@e2e-dev/core/lib/internal/errors';
 import { ManagedProcess, stopsSettled } from '@e2e-dev/core/lib/run/managed-process';
-import type { CommandConfig } from '@e2e-dev/core/lib/types';
+import type { SpawnedCommand } from '@e2e-dev/core/lib/config/command';
 import { freePort } from '../helpers/free-port.ts';
 
 describe('ManagedProcess', () => {
@@ -215,7 +215,7 @@ describe('ManagedProcess stall diagnostics', () => {
   });
   const log = path.join('out', 'services.log');
   /** A budget of one second on a fake clock: the test lets the child print, then moves the clock past it. */
-  const stalled = (script: string, extra: Partial<CommandConfig> = {}): CommandConfig => ({
+  const stalled = (script: string, extra: Partial<SpawnedCommand> = {}): SpawnedCommand => ({
     executable: process.execPath,
     args: ['-e', script],
     startupTimeout: 1_000,
@@ -701,7 +701,7 @@ describe('ManagedProcess env', () => {
   });
 
   /** Runs a command that writes its own environment to `env.json` in the project root, and reads it back. */
-  const envOf = async (extra: Partial<CommandConfig>, runEnv?: NodeJS.ProcessEnv): Promise<Record<string, string>> => {
+  const envOf = async (extra: Partial<SpawnedCommand>, runEnv?: NodeJS.ProcessEnv): Promise<Record<string, string>> => {
     await new ManagedProcess(
       'app.command',
       { executable: process.execPath, args: ['-e', `require('node:fs').writeFileSync('env.json', JSON.stringify(process.env))`], cwd: dir, ...extra },

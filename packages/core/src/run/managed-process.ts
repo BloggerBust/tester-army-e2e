@@ -4,14 +4,15 @@ import { spawn, type ChildProcess } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { stripVTControlCharacters } from 'node:util';
-import type { Readiness } from '../config/command.ts';
+import type { Readiness, SpawnedCommand } from '../config/command.ts';
 import { InfrastructureError } from '../internal/errors.ts';
 import { createRedactor } from '../internal/redact.ts';
 import { sleep } from '../internal/time.ts';
-import type { CommandConfig } from '../types.ts';
 
 const INHERITED_ENV = ['PATH', 'HOME', 'TMPDIR', 'TMP', 'TEMP', 'SystemRoot', 'COMSPEC'] as const;
 
+/** How long an app command gets to become ready, and its `env` function gets to return, when `startupTimeout` isn't set. */
+export const DEFAULT_STARTUP_TIMEOUT_MS = 60_000;
 /** Readiness polling starts fast and backs off; a booting server answers late, not on a schedule. */
 const READY_POLL_MIN_MS = 25;
 const READY_POLL_MAX_MS = 250;
@@ -43,7 +44,7 @@ const REDACTED_ENV_MIN_LENGTH = 4;
  * too. `inherited` is what `inheritEnv` copied.
  */
 function childEnv(
-  command: CommandConfig,
+  command: SpawnedCommand,
   source: NodeJS.ProcessEnv,
 ): { env: Record<string, string>; inherited: [string, string][] } {
   const fold = process.platform === 'win32' ? (name: string) => name.toUpperCase() : (name: string) => name;
@@ -165,7 +166,7 @@ export class ManagedProcess {
 
   constructor(
     private readonly label: string,
-    private readonly command: CommandConfig,
+    private readonly command: SpawnedCommand,
     private readonly projectRoot: string,
     private readonly readiness: Readiness,
     private readonly hooks: ManagedProcessHooks = {},
@@ -211,7 +212,7 @@ export class ManagedProcess {
     if (aborted()) return;
     // Without a URL to probe, the process exiting 0 is the readiness event.
     const readyUrl = 'readyUrl' in this.readiness ? this.readiness.readyUrl : undefined;
-    const startupTimeout = this.command.startupTimeout ?? 60_000;
+    const startupTimeout = this.command.startupTimeout ?? DEFAULT_STARTUP_TIMEOUT_MS;
     const deadline = Date.now() + startupTimeout;
     if (readyUrl !== undefined) {
       const reuse = this.command.reuseExisting === true && this.hooks.ci !== true;
