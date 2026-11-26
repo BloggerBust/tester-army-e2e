@@ -2,14 +2,16 @@
 
 import { discoverConfig, loadConfigModule, missingConfigError } from '../config/load.ts';
 import { resolveConfig, type ResolvedRunConfig } from '../config/resolve-run.ts';
-import { ConfigurationError, type SerializedError } from '@e2e-dev/core/lib/internal/errors';
+import { classifyError, ConfigurationError, errorMessage, serializeError, type SerializedError } from '@e2e-dev/core/lib/internal/errors';
+import { NEVER_ABORTS } from '@e2e-dev/core/lib/internal/time';
 import type { TestFixtures } from '@e2e-dev/core/lib/types';
 import type { E2EConfig, Report } from '../run-types.ts';
 import { allocateTargetPorts } from './app-ports.ts';
-import { registerProviderKeys, registerStaticSecrets } from '@e2e-dev/core/lib/run/secrecy';
+import { processSecrets, registerProviderKeys, registerStaticSecrets } from '@e2e-dev/core/lib/run/secrecy';
 import { warnOfNodeDebug } from './node-debug.ts';
 import { selectTarget } from './select-target.ts';
 import { openStandaloneHost } from './standalone-kinds.ts';
+import { copyServiceValues, startServices } from './services.ts';
 import type { StepProgress, StepRecord } from '@e2e-dev/core/lib/run/steps';
 import { reserveHostedRun } from './public-ownership.ts';
 import { redactOpening } from '@e2e-dev/core/lib/run/redact-opening';
@@ -25,7 +27,7 @@ export interface OpenHostOptions {
   /** Cancels provisioning, initialization, and every session's operations. Close still releases resources. */
   readonly signal?: AbortSignal | undefined;
   readonly headed?: boolean | undefined;
-  /** Progress outside steps: provisioning, leases, and app processes. Must not throw. */
+  /** Progress outside steps: provisioning, leases, services, and app processes. Must not throw. */
   readonly onNotice?: ((target: string, message: string) => void) | undefined;
 }
 
@@ -50,7 +52,7 @@ export interface E2EHost<Fixtures extends object = Record<string, unknown>> exte
   readonly target: string;
   /** One opening, live, or closing hosted session per process; open sequentially. */
   openSession(options: OpenSessionOptions): Promise<E2ESession<Fixtures>>;
-  /** Cancels/ends a pending or active session, then disposes the worker and releases resources once. */
+  /** Cancels or ends a pending or active session, then disposes the worker, stops its app processes, stops its services, and releases resources once. */
   close(): Promise<readonly SerializedError[]>;
 }
 
@@ -69,7 +71,7 @@ export interface E2ESession<Fixtures extends object = Record<string, unknown>> e
   close(): Promise<readonly SerializedError[]>;
 }
 
-/** Opens the worker-scoped owner of preparation, app processes, and engine initialization. */
+/** Opens a worker-scoped host that handles preparation, services, app processes, and engine initialization. */
 export async function openHost<Fixtures extends object = Record<string, unknown>>(
   options: OpenHostOptions = {},
 ): Promise<E2EHost<Fixtures>> {
@@ -85,27 +87,52 @@ async function openHostWorker<Fixtures extends object>(options: OpenHostOptions)
     registerProviderKeys(env);
     warnOfNodeDebug();
     const loaded = await loadHostConfig(cwd, options.config, env);
-
-    if (loaded.services.length > 0) {
-      const names = loaded.services.map(([name]) => name).join(', ');
-
-      throw new ConfigurationError('INVALID_CONFIG', `openHost doesn't start services, and this config declares services (${names}). Run these tests with e2e run instead.`);
-    }
-
     registerStaticSecrets(loaded.allSecrets);
     const { config, target } = await allocateTargetPorts(loaded, selectTarget(loaded, options.target, 'pass `target` to openHost'));
+    const signal = options.signal ?? NEVER_ABORTS;
+    const notice = (message: string): void => options.onNotice?.('service', processSecrets.redact(message));
+
+    // Services start before the app command, since its `env` function reads
+    // them. openHost doesn't handle signals, so nothing forces a service to stop.
+    const services = await startServices(config.services, signal, NEVER_ABORTS, {
+      starting: () => undefined,
+      ready: (name, durationMs) => notice(`service "${name}" started in ${durationMs} ms`),
+      stopFailed: (cause) => notice(`cleanup after a failed start: ${errorMessage(cause)}`),
+    }, config);
+
     const host = await openStandaloneHost({
-      config, target, headed: options.headed ?? false, env,
-      signal: options.signal ?? new AbortController().signal,
+      config, target, headed: options.headed ?? false, env, signal,
+      services: copyServiceValues(services.wire, services.call),
       ...(options.onNotice === undefined ? {} : { notice: options.onNotice }),
+    }).catch(async (cause: unknown) => {
+      await services.stop((failure) => notice(`cleanup after a failed start: ${errorMessage(failure)}`));
+
+      throw cause;
     });
-    const close = async (): Promise<readonly SerializedError[]> => {
+
+    const closeHost = async (): Promise<readonly SerializedError[]> => {
       try {
-        return await host.close();
+        // The host stops its app processes, and the services stop after them.
+        const errors = [...await host.close()];
+
+        await services.stop((cause) => {
+          errors.push(serializeError(classifyError(cause), { phase: 'cleanup', projectRoot: config.projectRoot, redact: processSecrets.redact }));
+        });
+
+        return errors;
       } finally {
         release();
       }
     };
+
+    let closing: Promise<readonly SerializedError[]> | undefined;
+
+    const close = (): Promise<readonly SerializedError[]> => {
+      closing ??= closeHost();
+
+      return closing;
+    };
+
     return {
       runId: host.runId, target: target.name, close,
       [Symbol.asyncDispose]: () => dispose(close, 'host'),
@@ -113,7 +140,7 @@ async function openHostWorker<Fixtures extends object>(options: OpenHostOptions)
         if (typeof sessionOptions.name !== 'string') throw new ConfigurationError('INVALID_CONFIG', 'a hosted session requires a string name');
         const attempt = await host.openAttempt({
           name: sessionOptions.name,
-          signal: sessionOptions.signal ?? new AbortController().signal,
+          signal: sessionOptions.signal ?? NEVER_ABORTS,
           timeoutMs: sessionOptions.timeout ?? config.timeout,
           agent: sessionOptions.agent,
           ...(sessionOptions.onStep === undefined ? {} : { onProgress: sessionOptions.onStep }),

@@ -5,14 +5,17 @@
  * cancelled while it starts still stops, the yielded value is checked, tests
  * in worker processes and in the runner process call service functions and
  * get copies back, an `env` function reads the services once per run,
- * `e2e list` and the config digest start none, and `e2e mcp` and `openHost`
- * refuse a config with services.
+ * `e2e list` and the config digest start none, `e2e mcp` sessions on one
+ * config file share one start, and `openHost` starts them for its host.
  */
 
+import { spawn } from 'node:child_process';
 import { once } from 'node:events';
-import { existsSync, readFileSync } from 'node:fs';
+import { appendFileSync, existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { createServer } from 'node:http';
 import path from 'node:path';
+import { setTimeout as sleep } from 'node:timers/promises';
+import { fileURLToPath } from 'node:url';
 import { afterEach, describe, expect, it } from 'vitest';
 import { defineEngine } from '@e2e-dev/core/lib/engine/index';
 import { InfrastructureError } from '@e2e-dev/core/lib/internal/errors';
@@ -20,13 +23,14 @@ import { defineService } from '../../src/index.ts';
 import type { CommandConfig, E2EConfig, RunEvent, Service } from '../../src/index.ts';
 import { createFakeEngine, FAKE_APP } from '../helpers/fake-engine.ts';
 import { freePort } from '../helpers/free-port.ts';
-import { hostHarness } from '../helpers/open-host.ts';
+import { credentials, hostHarness, secrets } from '../helpers/open-host.ts';
 import { createProject, listProject, runExisting, runExistingWithConfigFile, runProject, type FixtureProject, type RunOutcome } from '../helpers/run-project.ts';
 
 const resolveModule = new URL('../../dist/config/resolve-run.js', import.meta.url).href;
 const { resolveConfig } = (await import(resolveModule)) as typeof import('../../src/config/resolve-run.ts');
 const sessionModule = new URL('../../dist/mcp/session.js', import.meta.url).href;
 const { SessionHost } = (await import(sessionModule)) as typeof import('../../src/mcp/session.ts');
+const CLI = fileURLToPath(new URL('../../dist/cli/bin.js', import.meta.url));
 
 /** An app that logs its start, with `PORT` and `ALPHA_URL`, and its stop, then serves on `PORT`. */
 const SERVER = `const { appendFileSync } = require('node:fs');
@@ -120,6 +124,70 @@ function commandTarget(env: NonNullable<CommandConfig['env']>, extra: Partial<Co
     app: { url: 'http://127.0.0.1:0', command: { executable: process.execPath, args: ['server.cjs'], shutdownTimeout: 2000, env, ...extra } },
   };
 }
+
+/**
+ * A config on the fake engine whose `alpha` and `beta` services and app
+ * command log to `events.log` in `dir`, as `CONFIG` does. The app runs
+ * `SERVER` on `port`, so sessions that open on it share one process.
+ * `failing` names a service that throws as it starts, or `env` for an env
+ * function that throws.
+ */
+function loggingConfig(dir: string, port: number, failing?: string): E2EConfig {
+  const log = (line: string): void => appendFileSync(path.join(dir, 'events.log'), `${line}\n`);
+
+  const service = (name: string): Service =>
+    defineService({
+      async *start() {
+        log(`start ${name}`);
+
+        if (name === failing) {
+          throw new Error(`${name} is down`);
+        }
+
+        yield {
+          url: `http://${name}.test`,
+          record: (what: string) => {
+            log(`${name} record ${what}`);
+
+            return what.length;
+          },
+        };
+
+        log(`stop ${name}`);
+      },
+    });
+
+  return {
+    services: { alpha: service('alpha'), beta: service('beta') },
+    targets: [
+      {
+        name: 'kiosk',
+        platform: 'kiosk',
+        engine: createFakeEngine().engine,
+        app: {
+          url: `http://127.0.0.1:${port}`,
+          command: {
+            executable: process.execPath,
+            args: ['server.cjs'],
+            shutdownTimeout: 2000,
+            env: ({ services }) => {
+              log('env');
+
+              if (failing === 'env') {
+                throw new Error('env is down');
+              }
+
+              return { PORT: String(port), ALPHA_URL: (services['alpha'] as { url: string }).url };
+            },
+          },
+        },
+      },
+    ],
+  };
+}
+
+/** A JSON-RPC message from `e2e mcp`: the answer to the request with `id`, or a notification without one. */
+type McpMessage = { readonly id?: number; readonly result?: { readonly isError?: boolean; readonly content: readonly { readonly text: string }[] } };
 
 /** The lines of `events.log` in the project. */
 const eventLines = (project: Pick<FixtureProject, 'dir'>): string[] => readFileSync(path.join(project.dir, 'events.log'), 'utf8').trim().split('\n');
@@ -1518,47 +1586,233 @@ test('reads each type', async ({ services }) => {
   describe('openHost', () => {
     const harness = hostHarness();
 
-    it('refuses a config with services', async () => {
+    it('starts services before the app command, hands them to a session, and stops the app and then the services at close', async () => {
+      const port = await freePort();
+
+      writeFileSync(path.join(harness.dir(), 'server.cjs'), SERVER);
+
+      const host = await harness.host(createFakeEngine().engine, { config: loggingConfig(harness.dir(), port) });
+      const appStart = `app start ${port} http://alpha.test`;
+
+      expect(eventLines({ dir: harness.dir() })).toEqual(['start alpha', 'start beta', 'env', appStart]);
+
+      const session = await host.openSession({ name: 'reads a service' });
+      const alpha = session.fixtures.services['alpha'] as { url: string; record(what: string): Promise<number> };
+
+      expect(alpha.url).toBe('http://alpha.test');
+      expect(await alpha.record('from the session')).toBe('from the session'.length);
+      expect(await session.close()).toEqual([]);
+
+      expect(await host.close()).toEqual([]);
+      expect(eventLines({ dir: harness.dir() })).toEqual([
+        'start alpha',
+        'start beta',
+        'env',
+        appStart,
+        'alpha record from the session',
+        'app stop',
+        'stop beta',
+        'stop alpha',
+      ]);
+    });
+
+    it('lets a service read credentials and secrets while it starts and while it stops', async () => {
       const engine = createFakeEngine().engine;
-      let started = false;
+      const reads: string[] = [];
 
-      const config = harness.config(engine, {
-        services: {
-          inbox: defineService({
-            async *start() {
-              started = true;
-              yield {};
-            },
-          }),
-        },
+      const host = await harness.host(engine, {
+        config: harness.config(engine, {
+          credentials: { admin: { username: 'ada', password: 'admin-password-1' } },
+          secrets: { apiKey: 'api-key-value-1' },
+          services: {
+            inbox: defineService({
+              async *start() {
+                reads.push(`start ${credentials.user('admin').username} ${secrets.get('apiKey').name}`);
+                yield {};
+                reads.push(`stop ${credentials.user('admin').username} ${secrets.get('apiKey').name}`);
+              },
+            }),
+          },
+        }),
       });
 
-      await expect(harness.host(engine, { config })).rejects.toMatchObject({
-        code: 'INVALID_CONFIG',
-        message: "openHost doesn't start services, and this config declares services (inbox). Run these tests with e2e run instead.",
+      expect(await host.close()).toEqual([]);
+      expect(reads).toEqual(['start ada apiKey', 'stop ada apiKey']);
+    });
+
+    it('returns the same result when close is called twice, and stops each service once', async () => {
+      const engine = createFakeEngine().engine;
+      const stops: string[] = [];
+
+      const host = await harness.host(engine, {
+        config: harness.config(engine, {
+          services: {
+            inbox: defineService({
+              async *start() {
+                yield {};
+                stops.push('stop inbox');
+                throw new Error('could not flush the inbox');
+              },
+            }),
+          },
+        }),
       });
-      expect(started).toBe(false);
+
+      const first = await host.close();
+      const second = await host.close();
+
+      expect(first).toEqual([expect.objectContaining({ code: 'SERVICE_STOP_FAILED', message: 'service "inbox" failed to stop: could not flush the inbox', phase: 'cleanup' })]);
+      expect(second).toBe(first);
+      expect(stops).toEqual(['stop inbox']);
+    });
+
+    it.each([
+      {
+        failing: 'beta',
+        error: { code: 'SERVICE_START_FAILED', message: 'service "beta" failed to start: beta is down' },
+        events: ['start alpha', 'start beta', 'stop alpha'],
+      },
+      {
+        failing: 'env',
+        error: { code: 'INVALID_CONFIG', message: 'target "kiosk" app.command.env threw: env is down' },
+        events: ['start alpha', 'start beta', 'env', 'stop beta', 'stop alpha'],
+      },
+    ])('stops the services that started when the host fails to open because $error.message', async ({ failing, error, events }) => {
+      const port = await freePort();
+
+      writeFileSync(path.join(harness.dir(), 'server.cjs'), SERVER);
+
+      await expect(harness.host(createFakeEngine().engine, { config: loggingConfig(harness.dir(), port, failing) })).rejects.toMatchObject(error);
+
+      expect(eventLines({ dir: harness.dir() })).toEqual(events);
+
+      const reopened = await harness.host(createFakeEngine().engine, { config: harness.config(createFakeEngine().engine) });
+
+      expect(await reopened.close()).toEqual([]);
     });
   });
 
   describe('e2e mcp', () => {
-    it('refuses to open a session on a config with services', async () => {
-      const project = createProject({});
+    /** A project with `SERVER` and `files`, and a session host whose sessions load `loggingConfig` fresh from it, as a config file loads. */
+    function mcpProject(port: number, files: Readonly<Record<string, string>> = {}, failing?: string) {
+      const project = createProject({ 'server.cjs': SERVER, ...files });
 
       projects.push(project);
 
-      let started = false;
+      const host = new SessionHost({
+        locateConfig: () => path.join(project.dir, 'e2e.config.ts'),
+        loadConfig: async (configPath) => ({ ...resolveConfig(loggingConfig(project.dir, port, failing), { projectRoot: project.dir, env: {}, configPath }), configPath }),
+        loadEngineConfig: async () => {
+          throw new Error('no engine sessions here');
+        },
+        env: {},
+        headed: false,
+        log: () => undefined,
+        maxSessions: 2,
+      });
+
+      return { project, host };
+    }
+
+    /** The id an opening text names. */
+    const sessionId = (opening: string): string => /^Session (\S+) open/.exec(opening)?.[1] ?? '';
+
+    it('starts services with the first session on a config file, shares them with the next, and stops them after the last one closes', async () => {
+      const port = await freePort();
+      const { project, host } = mcpProject(port);
+
+      const first = await host.open({});
+      const appStart = `app start ${port} http://alpha.test`;
+
+      expect(eventLines(project)).toEqual(['start alpha', 'start beta', 'env', appStart]);
+      expect(first).toContain('Services: alpha, beta.');
+
+      const second = await host.open({});
+
+      expect(eventLines(project)).toEqual(['start alpha', 'start beta', 'env', appStart, 'env']);
+
+      await host.close('done', sessionId(first));
+
+      expect(eventLines(project)).toEqual(['start alpha', 'start beta', 'env', appStart, 'env']);
+
+      await host.close('done', sessionId(second));
+
+      expect(eventLines(project)).toEqual(['start alpha', 'start beta', 'env', appStart, 'env', 'app stop', 'stop beta', 'stop alpha']);
+    });
+
+    it('hands the services to an env function and to a test that open_session runs', async () => {
+      const port = await freePort();
+
+      const { project, host } = mcpProject(port, {
+        'tests/reads.e2e.ts': `import { test } from 'e2e';
+test('reads a service', async ({ services }) => {
+  const alpha = services['alpha'] as { url: string; record(what: string): Promise<number> };
+  if (alpha.url !== 'http://alpha.test') {
+    throw new Error('alpha.url is ' + alpha.url);
+  }
+  await alpha.record('from the test');
+});
+`,
+      });
+
+      const opening = await host.open({ test: 'tests/reads.e2e.ts' });
+
+      expect(opening).toMatch(/passed/);
+
+      await host.closeAll('done');
+
+      expect(eventLines(project)).toEqual([
+        'start alpha',
+        'start beta',
+        'env',
+        `app start ${port} http://alpha.test`,
+        'alpha record from the test',
+        'app stop',
+        'stop beta',
+        'stop alpha',
+      ]);
+    });
+
+    it('hands the services to run_code, whose function calls run in the server process', async () => {
+      const port = await freePort();
+      const { project, host } = mcpProject(port);
+
+      const id = sessionId(await host.open({}));
+
+      const result = await host.call(
+        id,
+        'run_code',
+        { code: "return { url: services.alpha.url, recorded: await services.alpha.record('from run_code') };" },
+        { signal: new AbortController().signal },
+      );
+
+      await host.closeAll('done');
+
+      expect(result.isError).not.toBe(true);
+      expect(JSON.stringify(result.content)).toContain(String.raw`{\"url\":\"http://alpha.test\",\"recorded\":13}`);
+      expect(eventLines(project)).toContain('alpha record from run_code');
+    });
+
+    it('lets a service read credentials and secrets while it starts and while it stops', async () => {
+      const project = createProject({ 'server.cjs': SERVER });
+
+      projects.push(project);
+
+      const reads: string[] = [];
 
       const config: E2EConfig = {
+        credentials: { admin: { username: 'ada', password: 'admin-password-1' } },
+        secrets: { apiKey: 'api-key-value-1' },
         services: {
           inbox: defineService({
             async *start() {
-              started = true;
+              reads.push(`start ${credentials.user('admin').username} ${secrets.get('apiKey').name}`);
               yield {};
+              reads.push(`stop ${credentials.user('admin').username} ${secrets.get('apiKey').name}`);
             },
           }),
         },
-        targets: [{ name: 'kiosk', platform: 'kiosk', engine: createFakeEngine().engine, app: FAKE_APP }],
+        targets: [{ name: 'fake', platform: 'fake', engine: createFakeEngine().engine, app: FAKE_APP }],
       };
 
       const host = new SessionHost({
@@ -1573,12 +1827,197 @@ test('reads each type', async ({ services }) => {
         maxSessions: 1,
       });
 
-      await expect(host.open({})).rejects.toMatchObject({
-        code: 'INVALID_CONFIG',
-        message: "e2e mcp doesn't start services, and this config declares services (inbox). Run these tests with e2e run instead.",
+      await host.close('done', sessionId(await host.open({})));
+
+      expect(reads).toEqual(['start ada apiKey', 'stop ada apiKey']);
+    });
+
+    it('starts the services again for a session that opens after the last one closed', async () => {
+      const port = await freePort();
+      const { project, host } = mcpProject(port);
+
+      await host.close('done', sessionId(await host.open({})));
+
+      const id = sessionId(await host.open({}));
+      const result = await host.call(id, 'run_code', { code: "return await services.alpha.record('again');" }, { signal: new AbortController().signal });
+
+      await host.closeAll('done');
+
+      const appStart = `app start ${port} http://alpha.test`;
+
+      expect(result.isError).not.toBe(true);
+      expect(eventLines(project)).toEqual([
+        'start alpha',
+        'start beta',
+        'env',
+        appStart,
+        'app stop',
+        'stop beta',
+        'stop alpha',
+        'start alpha',
+        'start beta',
+        'env',
+        appStart,
+        'alpha record again',
+        'app stop',
+        'stop beta',
+        'stop alpha',
+      ]);
+    });
+
+    /** `e2e mcp` running in `dir` over stdio, with a client that sends requests and tool calls to it. */
+    async function mcpServer(dir: string) {
+      const server = spawn(process.execPath, [CLI, 'mcp'], { cwd: dir, env: { ...process.env, CI: '' }, stdio: ['pipe', 'pipe', 'pipe'] });
+      const output = { stderr: '' };
+
+      server.stderr.on('data', (chunk: Buffer) => {
+        output.stderr += chunk.toString();
       });
-      expect(started).toBe(false);
+
+      const exited = new Promise<number | null>((resolve) => server.once('exit', resolve));
+      const replies = new Map<number, (message: McpMessage) => void>();
+
+      let buffered = '';
+
+      server.stdout.on('data', (chunk: Buffer) => {
+        buffered += chunk.toString();
+
+        const lines = buffered.split('\n');
+
+        buffered = lines.pop() ?? '';
+
+        for (const line of lines) {
+          const message = JSON.parse(line) as McpMessage;
+
+          if (message.id !== undefined) {
+            replies.get(message.id)?.(message);
+          }
+        }
+      });
+
+      let nextId = 0;
+
+      const request = async (method: string, params: object) => {
+        nextId += 1;
+
+        const reply = new Promise<McpMessage>((resolve) => replies.set(nextId, resolve));
+
+        server.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: nextId, method, params })}\n`);
+
+        return reply;
+      };
+
+      const callTool = async (name: string, args: object): Promise<string> => {
+        const reply = await request('tools/call', { name, arguments: args });
+        const text = reply.result?.content.map((part) => part.text).join('\n') ?? '';
+
+        expect(reply.result?.isError, `${text}\n${output.stderr}`).not.toBe(true);
+
+        return text;
+      };
+
+      await request('initialize', { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 'services', version: '0.0.0' } });
+
+      server.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', method: 'notifications/initialized' })}\n`);
+
+      return { server, output, exited, request, callTool };
+    }
+
+    it('stops the app and then the services when the client closes stdin with sessions open, and leaves no process behind', async () => {
+      const port = await freePort();
+
+      const project = createProject({
+        'services.ts': SERVICES,
+        'server.cjs': SERVER,
+        'e2e.config.ts': CONFIG.replace("url: 'http://127.0.0.1:0'", `url: 'http://127.0.0.1:${port}'`),
+      });
+
+      projects.push(project);
+
+      const { server, output, exited, callTool } = await mcpServer(project.dir);
+
+      try {
+        const first = sessionId(await callTool('open_session', {}));
+
+        await callTool('open_session', {});
+
+        expect(await callTool('call', { session: first, tool: 'run_code', args: { code: "return await services.alpha.record('over stdio');" } })).toContain('10');
+
+        server.stdin.end();
+
+        expect(await Promise.race([exited, sleep(20_000).then(() => 'running')]), output.stderr).toBe(0);
+      } finally {
+        if (server.exitCode === null) {
+          server.kill('SIGKILL');
+        }
+      }
+
+      const appStart = `app start ${port} http://alpha.test`;
+
+      expect(eventLines(project)).toEqual(['start alpha', 'start beta', 'env', appStart, 'env', 'alpha record over stdio', 'app stop', 'stop beta', 'stop alpha']);
+      await expect(fetch(`http://127.0.0.1:${port}`)).rejects.toThrow();
+    });
+
+    it('finishes stopping the services that started before it exits, when the client closes stdin while a service is still starting', async () => {
+      const project = createProject({
+        'services.ts': `import { appendFileSync } from 'node:fs';
+import { setTimeout as sleep } from 'node:timers/promises';
+import { defineService } from 'e2e';
+
+const log = (line: string) => appendFileSync(new URL('./events.log', import.meta.url), line + '\\n');
+
+export const alpha = defineService({
+  async *start() {
+    log('start alpha');
+    yield { url: 'http://alpha.test' };
+    // Longer than the CLI waits for leftover work after the command returns.
+    await sleep(3000);
+    log('stop alpha');
+  },
+});
+
+export const beta = defineService({
+  async *start({ signal }) {
+    log('start beta');
+    await sleep(60_000, undefined, { signal });
+    yield {};
+  },
+});
+`,
+        'server.cjs': SERVER,
+        'e2e.config.ts': CONFIG.replace("import { logged } from './services.ts';", "import { alpha, beta } from './services.ts';").replace("services: { alpha: logged('alpha'), beta: logged('beta') },", 'services: { alpha, beta },'),
+      });
+
+      projects.push(project);
+
+      const { server, output, exited, request } = await mcpServer(project.dir);
+
+      try {
+        void request('tools/call', { name: 'open_session', arguments: {} });
+
+        await expect.poll(() => (existsSync(path.join(project.dir, 'events.log')) ? eventLines(project) : []), { timeout: 20_000 }).toEqual(['start alpha', 'start beta']);
+
+        server.stdin.end();
+
+        expect(await Promise.race([exited, sleep(20_000).then(() => 'running')]), output.stderr).toBe(0);
+      } finally {
+        if (server.exitCode === null) {
+          server.kill('SIGKILL');
+        }
+      }
+
+      expect(eventLines(project)).toEqual(['start alpha', 'start beta', 'stop alpha']);
+    });
+
+    it('fails open_session with SERVICE_START_FAILED when a service fails to start, and leaves nothing running', async () => {
+      const port = await freePort();
+      const { project, host } = mcpProject(port, {}, 'beta');
+
+      await expect(host.open({})).rejects.toMatchObject({ code: 'SERVICE_START_FAILED', message: 'service "beta" failed to start: beta is down' });
+
+      expect(eventLines(project)).toEqual(['start alpha', 'start beta', 'stop alpha']);
       expect(host.isOpen).toBe(false);
     });
   });
 });
+

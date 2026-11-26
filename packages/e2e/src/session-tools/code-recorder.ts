@@ -109,7 +109,7 @@ export class Recorder {
     if (known !== undefined) return known as T;
     // Not `real` itself: a frozen fixture's members could not be answered with their wrappers.
     const proxy = new Proxy(typeof real === 'function' ? () => undefined : {}, {
-      get: (_, key) => (typeof key === 'symbol' ? own(real, key) : this.member(real, key, /^\d+$/.test(key) ? `${text}[${key}]` : `${text}.${key}`)),
+      get: (_, key) => (typeof key === 'symbol' ? own(real, key) : this.member(real, key, memberText(text, key))),
       apply: (_, __, args: unknown[]) => this.call(real, undefined, text, args),
       set: (_, key, value) => Reflect.set(real, key, value, real),
       has: (_, key) => Reflect.has(real, key),
@@ -184,7 +184,7 @@ export class Recorder {
     }
     if (!isData(value, 0)) return this.wrap(value, text);
     this.sources.set(value, text);
-    if (depth < MAX_DEPTH && isPlainObject(value)) for (const [key, item] of Object.entries(value)) this.given(item, `${text}.${key}`, depth + 1);
+    if (depth < MAX_DEPTH && isPlainObject(value)) for (const [key, item] of Object.entries(value)) this.given(item, memberText(text, key), depth + 1);
     return value;
   }
 
@@ -341,6 +341,15 @@ const ANSWERING_ACTIONS: ReadonlySet<string> = new Set(['screenshot']);
 /** The first name of a line's text: the object in scope it starts from. */
 function rootOf(text: string): string {
   return /^[A-Za-z_$][\w$]*/.exec(text)?.[0] ?? '';
+}
+
+/** Spells member `key` of `text` the way code would read it: `a.b`, `a[0]`, or `a["eu-west"]`. */
+function memberText(text: string, key: string): string {
+  if (/^\d+$/.test(key)) {
+    return `${text}[${key}]`;
+  }
+
+  return IDENTIFIER.test(key) ? `${text}.${key}` : `${text}[${JSON.stringify(key)}]`;
 }
 
 /** Whether a function is code the caller wrote to be called, and not a class or a built-in passed by name. */

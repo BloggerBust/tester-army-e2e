@@ -142,7 +142,7 @@ await screen.getByRole('button', 'Increment').tap();`,
     expect(host.text).toMatch(/^Returned: \["object","function","file\.txt"\]\n/);
     const page = await runCode("await page.goto('/')");
     expect(page.isError).toBe(true);
-    expect(page.text).toMatch(/^Failed: ReferenceError: page is not defined \(line 1:\d+\); the code has screen, app, expect, credentials, secrets, browser, console, /);
+    expect(page.text).toMatch(/^Failed: ReferenceError: page is not defined \(line 1:\d+\); the code has screen, app, expect, credentials, secrets, services, browser, console, /);
     const member = await runCode("const title = 1;\nawait screen.evaluate('document.title')");
     expect(member.isError).toBe(true);
     expect(member.text).toMatch(/^Failed: TypeError: screen\.evaluate is not a function \(line 2:\d+\)\n/);

@@ -94,8 +94,8 @@ Full reference: docs/reference/mcp.mdx.
 Use `run_code` for most of the work in a session. One call reads the
 screen, computes on what it read, acts, and asserts, where single actions
 take one call each and an `observe` between them. `screen`, `app`,
-`expect`, `credentials`, `secrets`, and the engine's fixture (`browser` or
-`device`) are in scope; there is no `page`.
+`expect`, `credentials`, `secrets`, `services`, and the engine's fixture
+(`browser` or `device`) are in scope; there is no `page`.
 
 - A step that repeats (rows of a list, a form with many fields): loop over
   it in one call.

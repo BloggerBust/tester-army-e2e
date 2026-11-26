@@ -245,8 +245,10 @@ that starts the dependency, yields a plain object of data and functions one
 time, and stops it after the `yield`.
 
 - `e2e run` and `e2e explore` start services in key order before the app
-  commands and stop them in reverse order afterward. In `e2e mcp` and
-  `openHost`, a config with services fails with `INVALID_CONFIG`.
+  commands and stop them in reverse order afterward. `e2e mcp` starts them
+  with the first session on a config file and stops them when the last one
+  closes. `openHost` starts them when the host opens and stops them in
+  `host.close()`.
 - Pass the service's address to the app from an `env` function,
   `env: ({ services }) => ({ EMAIL_URL: services.email.url })`, so the service
   can listen on port 0. Write the config with `defineConfig` so `services` is
@@ -256,10 +258,12 @@ time, and stops it after the `yield`.
 - Pass `signal` to anything the service starts. Set `startupTimeout` (60 s by
   default) or `shutdownTimeout` (10 s by default) on a slow service.
 - Tests read the values through the `services` fixture. Each yielded function
-  becomes async and runs in the runner (`await services.email.createInbox()`).
-  Yielding a class instance fails with `INVALID_SERVICE_VALUE`.
-- All workers share one instance, so filter for data the test created, such
-  as emails sent to a unique inbox.
+  becomes async and runs in the process that started the services
+  (`await services.email.createInbox()`). Yielding a class instance fails
+  with `INVALID_SERVICE_VALUE`.
+- In `e2e run`, all workers share one instance, and each `openHost` host
+  starts its own. Filter for data the test created, such as emails sent to a
+  unique inbox.
 
 Full reference: docs/services.mdx (online: https://e2e.com/docs/services).
 

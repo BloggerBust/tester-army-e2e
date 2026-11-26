@@ -88,8 +88,9 @@ installed `e2e` version. To set it up by hand:
 </Tabs>
 
 If your target defines an `app.command`, the session starts your app and
-prints its URL and port. The config reads the MCP server's environment, not
-your agent's shell.
+prints its URL and port. The first session on a config file starts its
+[services](/services), and the last one to close stops them. The config reads
+the MCP server's environment, not your agent's shell.
 
 ## Try it without a config
 

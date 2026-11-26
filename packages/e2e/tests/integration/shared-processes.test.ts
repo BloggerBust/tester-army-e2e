@@ -1,5 +1,5 @@
 /**
- * `SharedAppProcesses` under `startDeclaredProcesses`, the one flow a run and
+ * `SharedProcesses` under `startDeclaredProcesses`, the one flow a run and
  * a live session both start app processes through: attempts on fresh loads
  * of one config share its app command, whatever else each opens, a process
  * that is stopping is started afresh only once it is gone, and a shared
@@ -20,7 +20,7 @@ import { startupLog, writeStartupScripts } from '../helpers/startup-scripts.ts';
 const provisionModule = '@e2e-dev/core/lib/run/provision';
 const { startDeclaredProcesses } = (await import(provisionModule)) as typeof import('@e2e-dev/core/lib/run/provision');
 const poolModule = '@e2e-dev/core/lib/run/process-pool';
-const { SharedAppProcesses } = (await import(poolModule)) as typeof import('@e2e-dev/core/lib/run/process-pool');
+const { SharedProcesses } = (await import(poolModule)) as typeof import('@e2e-dev/core/lib/run/process-pool');
 const resolveModule = new URL('../../dist/config/resolve-run.js', import.meta.url).href;
 const { resolveConfig } = (await import(resolveModule)) as typeof import('../../src/config/resolve-run.ts');
 const debugModule = '@e2e-dev/core/lib/internal/debug';
@@ -29,7 +29,7 @@ const { DebugTrace } = (await import(debugModule)) as typeof import('@e2e-dev/co
 /** How long a test waits for the app process to start: vitest's 1 s default is too short on a loaded machine. */
 const PROCESS_POLL = { timeout: 5_000 };
 
-describe('SharedAppProcesses', { timeout: 30_000 }, () => {
+describe('SharedProcesses', { timeout: 30_000 }, () => {
   let dir: string;
   let port: number;
   let url: string;
@@ -76,7 +76,7 @@ describe('SharedAppProcesses', { timeout: 30_000 }, () => {
     );
 
   /** Tracks the pool's actual starts and shares each stop with teardown. */
-  const trackStarts = (pool: InstanceType<typeof SharedAppProcesses>): ProcessPool => ({
+  const trackStarts = (pool: InstanceType<typeof SharedProcesses>): ProcessPool => ({
     acquire: (key, launch, signal) => pool.acquire(key, (scope) => {
       const pending = launch(scope).then((processes) => {
         let stopping: Promise<void> | undefined;
@@ -90,7 +90,7 @@ describe('SharedAppProcesses', { timeout: 30_000 }, () => {
   });
 
   const start = (
-    pool: InstanceType<typeof SharedAppProcesses>,
+    pool: InstanceType<typeof SharedProcesses>,
     config: ReturnType<typeof load>,
     name = 't0',
     signal: AbortSignal = new AbortController().signal,
@@ -122,7 +122,7 @@ require('./server.cjs');
   it('shares the app command sessions on fresh loads both declare, whatever page each opens', async () => {
     /** A fresh load of one config: t0 opens the app's root, t1 a page of it, on one command. */
     const config = () => load({ app: { url, command } }, { app: { url: `${url}/m`, command } });
-    const pool = new SharedAppProcesses();
+    const pool = new SharedProcesses();
     const first = await start(pool, config());
     const second = await start(pool, config(), 't1');
     const third = await start(pool, config());
@@ -137,7 +137,7 @@ require('./server.cjs');
 
   it('waits for a process that is stopping before it starts it again', async () => {
     const config = load({ app: { url, command } });
-    const pool = new SharedAppProcesses();
+    const pool = new SharedProcesses();
     const first = await start(pool, config);
     const stopping = first.stop(() => undefined);
     const second = await start(pool, config);
@@ -150,7 +150,7 @@ require('./server.cjs');
 
   it('keeps starting a shared process when the attempt that began it is aborted while another waits', async () => {
     const config = load({ app: { url, command } });
-    const pool = new SharedAppProcesses();
+    const pool = new SharedProcesses();
     const aborted = new AbortController();
     const first = start(pool, config, 't0', aborted.signal);
     const second = start(pool, config);
@@ -166,7 +166,7 @@ require('./server.cjs');
   it('aborts a hung start once every attempt waiting on it gave up, stopping the process it started', async () => {
     // The server answers, but the readiness probe never does: the start hangs with the process up.
     const config = load({ app: { url, readyUrl: 'http://127.0.0.1:1/', command: { ...command, startupTimeout: 600_000 } } });
-    const pool = new SharedAppProcesses();
+    const pool = new SharedProcesses();
     const cancel = new AbortController();
     const opening = start(pool, config, 't0', cancel.signal);
     await expect.poll(serving, PROCESS_POLL).toBe(true);
@@ -193,7 +193,7 @@ require('./server.cjs');
       fs.writeFileSync('stopping', 'started');
       setInterval(() => { if (fs.existsSync('release-stop')) process.exit(0); }, 10);
     `) } });
-    const first = await start(new SharedAppProcesses(), config);
+    const first = await start(new SharedProcesses(), config);
     const stopping = first.stop(() => undefined);
     let cleaning: Promise<void> | undefined;
     try {
@@ -233,7 +233,7 @@ require('./server.cjs');
         process.exit(0);
       }, 100);`),
     } });
-    void start(new SharedAppProcesses(), config);
+    void start(new SharedProcesses(), config);
     await expect.poll(serving, PROCESS_POLL).toBe(true);
   });
 });

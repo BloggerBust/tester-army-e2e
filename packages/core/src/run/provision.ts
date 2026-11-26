@@ -271,7 +271,7 @@ export interface ProcessHooks extends Omit<ManagedProcessHooks, 'unexpectedExit'
 
 /** The values `env` functions read, and the pool that starts or shares each app command. */
 type DeclaredProcessOptions = {
-  readonly services?: Readonly<Record<string, unknown>>;
+  readonly services?: Readonly<Record<string, unknown>> | undefined;
   readonly pool?: ProcessPool | undefined;
 };
 

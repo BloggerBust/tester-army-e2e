@@ -674,6 +674,43 @@ ${CONFIG.replace('  video: true,', `  video: true,
     expect(await held.exited).toBe(0);
   });
 
+  it("reads the config's services in attached run_code and calls their functions in the run's process", async () => {
+    const config = `import { appendFileSync } from 'node:fs';
+${CONFIG.replace('export default {', `const inbox = {
+  async *start() {
+    yield {
+      url: 'http://inbox.test',
+      record: (what: string) => {
+        appendFileSync('events.log', 'record ' + what + '\\n');
+
+        return what.length;
+      },
+    };
+  },
+};
+
+export default {
+  services: { inbox },`)}`;
+
+    const dir = project(`await screen.pause(); ${STEP}`, config);
+    const held = await pause(dir);
+    const { client } = await mcp(dir);
+
+    await openSession(client, { attach: held.id });
+
+    const ran = await invoke(client, 'call', {
+      tool: 'run_code',
+      args: { code: "return { url: services.inbox.url, length: await services.inbox.record('attached') };" },
+    });
+
+    expect(ran.isError, ran.text).toBe(false);
+    expect(ran.text).toContain('{"url":"http://inbox.test","length":8}');
+    expect(readFileSync(path.join(dir, 'events.log'), 'utf8')).toBe('record attached\n');
+
+    expect(e2e(dir, 'run', '--step', 'next').status).toBe(0);
+    expect(await held.exited).toBe(0);
+  });
+
   it('fills configured secrets only into authorized fields and redacts their values', async () => {
     const dir = project('await screen.pause();');
     const held = await pause(dir);

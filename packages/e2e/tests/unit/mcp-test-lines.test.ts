@@ -537,6 +537,16 @@ describe('SessionTestLines', () => {
     expect(drafted('await app.browser.open();')).toBe('app, screen');
   });
 
+  it("asks the draft's test body for services, whether a line starts from them or only passes them along", () => {
+    const drafted = (line: string): string => {
+      const lines = new SessionTestLines({ query: locateQuery, resolve: async () => [], read: async () => ({ ref: { id: 'x', revision: 'x' } }), redact: (text) => text, engineFixtures: ['browser'] });
+      lines.ran([line]);
+      return /async \(\{ ([^}]*) \}\)/.exec(lines.draft())?.[1] ?? '';
+    };
+    expect(drafted('await services["my-mail"].createInbox();')).toBe('app, screen, services');
+    expect(drafted('await browser.setViewport(services.layout.size);')).toBe('app, screen, browser, services');
+  });
+
   it('hands the caller the observation it asked for, tree or not, and keeps the context live', async () => {
     let resolutions = 0;
     const base = fakeExecutorContext().context;

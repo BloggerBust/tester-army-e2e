@@ -3,14 +3,15 @@
  * generator runs up to `yield` before app commands start and resumes after
  * they stop.
  *
- * Workers receive a copy of the yielded values. Each yielded function becomes
- * an async function that sends calls to the runner process, where the real
- * function runs and returns the result.
+ * Workers and sessions receive a copy of the yielded values. Each yielded
+ * function becomes an async function that sends calls to the process that
+ * started the service, where the real function runs and returns the result.
  */
 
 import { deserialize, serialize } from 'node:v8';
 import { errorMessage, InfrastructureError, ConfigurationError, TestError } from '@e2e-dev/core/lib/internal/errors';
 import { isPlainObject } from '@e2e-dev/core/lib/internal/options';
+import { holdSecretRegistry, type SecretRegistry } from '@e2e-dev/core/lib/secrets';
 import type { Service } from '@e2e-dev/core/lib/types';
 
 /** Marker returned when a wait ends because the runner stopped waiting. */
@@ -107,13 +108,19 @@ export const NO_SERVICES: RunServices = {
  *
  * When `force` aborts (a second Ctrl+C), the active service's stop signal
  * aborts along with the signals of any remaining services.
+ *
+ * `e2e mcp` and `openHost` start services before a session holds the
+ * config's secrets, so they pass `registry`, which is held while the start
+ * and stop code run. `e2e run` installs it for the whole run instead.
  */
 export async function startServices(
   services: readonly (readonly [string, Service])[],
   signal: AbortSignal,
   force: AbortSignal,
   hooks: ServiceHooks,
+  registry?: SecretRegistry,
 ): Promise<RunServices> {
+  const hold = (): (() => void) => (registry === undefined ? () => undefined : holdSecretRegistry(registry));
   const started: StartedService[] = [];
   // A null prototype keeps a service named `__proto__` as a plain key.
   const values: Record<string, unknown> = Object.create(null);
@@ -122,6 +129,7 @@ export async function startServices(
 
   const stop = async (onFailure: (cause: unknown) => void): Promise<void> => {
     const stopping = started.splice(0).toReversed();
+    const release = hold();
 
     // A forced stop aborts every service's signal right away, since one
     // service's stop code can wait on another that stops after it.
@@ -147,8 +155,11 @@ export async function startServices(
       }
     } finally {
       force.removeEventListener('abort', abortAll);
+      release();
     }
   };
+
+  const release = hold();
 
   try {
     for (const [name, service] of services) {
@@ -225,6 +236,8 @@ export async function startServices(
     await stop((failure) => hooks.stopFailed(failure));
 
     throw cause;
+  } finally {
+    release();
   }
 }
 

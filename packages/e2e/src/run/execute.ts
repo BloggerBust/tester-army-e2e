@@ -771,14 +771,15 @@ export class TargetExecutor extends EngineSessions implements SerialHost {
         services: this.services,
       });
       if (hold !== undefined) {
-        const tools = new HeldTestTools(
-          agentRuntime,
-          this.options.runId,
-          this.target,
-          this.options.headed,
-          video !== undefined,
-          this.options.events?.onNotice,
-        );
+        const tools = new HeldTestTools({
+          runtime: agentRuntime,
+          runId: this.options.runId,
+          target: this.target,
+          headed: this.options.headed,
+          runRecordsVideo: video !== undefined,
+          notice: this.options.events?.onNotice,
+          services: this.services,
+        });
         heldTools = tools;
         const screens = {
           ledger: sessionLedger(session, this.config.allSecrets),

@@ -37,6 +37,17 @@ type Attachment = {
   running: boolean;
 };
 
+/** What a held test's tool calls run with: the attempt's runtime, its target, and how the run was started. */
+type HeldTestToolsOptions = {
+  readonly runtime: AgentContext;
+  readonly runId: string;
+  readonly target: ResolvedTarget;
+  readonly headed: boolean;
+  readonly runRecordsVideo: boolean;
+  readonly notice: ((message: string) => void) | undefined;
+  readonly services: Readonly<Record<string, unknown>>;
+};
+
 type RecordingSave = {
   readonly text?: string | undefined;
   readonly error?: unknown;
@@ -47,23 +58,16 @@ export class HeldTestTools {
   private attachment: Attachment | undefined;
   private readonly saves: Promise<RecordingSave>[] = [];
 
-  constructor(
-    private readonly runtime: AgentContext,
-    private readonly runId: string,
-    private readonly target: ResolvedTarget,
-    private readonly headed: boolean,
-    private readonly runRecordsVideo: boolean,
-    private readonly notice: ((message: string) => void) | undefined,
-  ) {}
+  constructor(private readonly options: HeldTestToolsOptions) {}
 
   /** The ID of the attempt running in this worker. */
   get attemptId(): string {
-    return this.runtime.attempt.attemptId;
+    return this.options.runtime.attempt.attemptId;
   }
 
   /** The test title and target name, redacted for the attachment. */
   get attachmentLabels(): StepHoldMessage['attachmentLabels'] {
-    const { redact, attempt, target } = this.runtime;
+    const { redact, attempt, target } = this.options.runtime;
 
     return {
       title: redact(attempt.titlePath.join(' › ')),
@@ -82,7 +86,7 @@ export class HeldTestTools {
 
   /** Handles an attachment request and redacts its reply before sending it. */
   async request(requestId: string, request: StepAttachmentRequest): Promise<StepAttachmentResponse> {
-    const { redact } = this.runtime;
+    const { redact } = this.options.runtime;
 
     try {
       switch (request.kind) {
@@ -145,7 +149,7 @@ export class HeldTestTools {
       throw new ConfigurationError('INVALID_ARGUMENT', 'this test already has an attachment');
     }
 
-    const { attempt, redact, target } = this.runtime;
+    const { attempt, redact, target } = this.options.runtime;
     const controller = new AbortController();
     const signal = AbortSignal.any([controller.signal, attempt.signal]);
     const screen = new ScreenPresenter();
@@ -180,9 +184,9 @@ export class HeldTestTools {
       const title = attempt.titlePath.join(' › ');
       const summary = [
         `Attached to ${attachId}, "${title}" on target "${target.name}".`,
-        ...sessionSecretLines(this.runtime.config),
+        ...sessionSecretLines(this.options.runtime.config),
       ].join('\n');
-      const engine = this.target.engine;
+      const engine = this.options.target.engine;
 
       return {
         kind: 'attach',
@@ -193,7 +197,7 @@ export class HeldTestTools {
             name: redact(engine.name),
             version: redact(engine.version),
           },
-          headed: this.headed,
+          headed: this.options.headed,
           projectTools: [...catalog.project].map(redact),
           summary: redact(summary),
           catalog: Object.entries(catalog.tools).map(([name, tool]) =>
@@ -242,7 +246,7 @@ export class HeldTestTools {
       return undefined;
     }
 
-    const { config, redact } = this.runtime;
+    const { config, redact } = this.options.runtime;
     const saving = withTimeout(
       attachment.recorder.saveOnClose(),
       config.cleanupTimeout,
@@ -252,14 +256,14 @@ export class HeldTestTools {
         const text = recording === undefined ? undefined : redact(recording);
 
         if (text !== undefined) {
-          this.notice?.(text);
+          this.options.notice?.(text);
         }
 
         return { text };
       },
       (cause: unknown): RecordingSave => {
         const text = redact(`The running recording could not be saved: ${errorMessage(cause)}`);
-        this.notice?.(text);
+        this.options.notice?.(text);
 
         return { text, error: cause };
       },
@@ -284,7 +288,7 @@ export class HeldTestTools {
       return tool;
     }
 
-    throw unavailableSessionTool(this.runtime.target.name, catalog, name);
+    throw unavailableSessionTool(this.options.runtime.target.name, catalog, name);
   }
 
   /** Runs one call at a time and releases its queue slot as soon as it is cancelled. */
@@ -331,7 +335,7 @@ export class HeldTestTools {
       throw abortError(callSignal, cancelledError);
     }
 
-    const { artifacts, config, redact, redactCut } = this.runtime;
+    const { artifacts, config, redact, redactCut } = this.options.runtime;
     const { signal } = attachment;
     const budget = {
       get signal() {
@@ -340,7 +344,7 @@ export class HeldTestTools {
       deadline: new Deadline(Number.POSITIVE_INFINITY),
     };
 
-    const session = this.runtime.engine.session;
+    const session = this.options.runtime.engine.session;
     const { startVideo, stopVideo } = session.artifacts;
 
     if (startVideo !== undefined && stopVideo !== undefined) {
@@ -350,14 +354,14 @@ export class HeldTestTools {
             throw abortError(budget.signal, cancelledError);
           }
 
-          if (this.runRecordsVideo) {
+          if (this.options.runRecordsVideo) {
             throw new ConfigurationError(
               'UNSUPPORTED_CAPABILITY',
               `The run already records this test. Run video is written to ${path.join(artifacts.dir, 'video')}.`,
             );
           }
 
-          if (sessionRecordings(session, this.target.name).spanRunning) {
+          if (sessionRecordings(session, this.options.target.name).spanRunning) {
             throw new ConfigurationError('UNSUPPORTED_CAPABILITY', 'The test already has a recording started by app.startRecording().');
           }
         },
@@ -368,7 +372,7 @@ export class HeldTestTools {
         operation: (timeoutMs) => ({
           signal: AbortSignal.timeout(timeoutMs),
           timeoutMs,
-          runId: this.runId,
+          runId: this.options.runId,
           attemptId: this.attemptId,
           origin: 'test',
         }),
@@ -378,7 +382,7 @@ export class HeldTestTools {
 
     const engine = this.locator(budget);
     const { debug: _debug, ...runtime } = {
-      ...this.runtime,
+      ...this.options.runtime,
       engine,
       steps: new StepRecorder(this.attemptId, { redact }),
     };
@@ -475,7 +479,7 @@ export class HeldTestTools {
         }
       },
       runCode: {
-        // A held test's attempt builds `app` alone, so the code gets no engine fixture to call.
+        // A held test's attempt only builds `app` and `services`, so the code doesn't get an engine fixture.
         engineFixtures: [],
         attempt: (requestSignal) => {
           const statementBudget = new AttemptBudget(requestSignal ?? signal, new Deadline(Number.POSITIVE_INFINITY));
@@ -486,16 +490,17 @@ export class HeldTestTools {
             agentRuntime: { ...runtime, engine: locator, steps },
             budget: statementBudget,
             session,
-            runId: this.runId,
+            runId: this.options.runId,
             attemptId: this.attemptId,
             fixtures: {
               app: createApp({
                 config,
                 steps,
-                target: this.target,
+                target: this.options.target,
                 session,
                 artifacts,
               }, locator),
+              services: this.options.services,
             },
           };
         },
@@ -507,13 +512,13 @@ export class HeldTestTools {
 
   /** Creates a locator over the held session with the attachment's budget. */
   private locator(budget: Pick<AttemptBudget, 'signal' | 'deadline'>): LocatorEngine {
-    const { config, redact } = this.runtime;
+    const { config, redact } = this.options.runtime;
 
     return new LocatorEngine({
-      session: this.runtime.engine.session,
+      session: this.options.runtime.engine.session,
       budget,
       redact,
-      runId: this.runId,
+      runId: this.options.runId,
       attemptId: this.attemptId,
       actionTimeout: config.actionTimeout,
       assertionTimeout: config.assertionTimeout,

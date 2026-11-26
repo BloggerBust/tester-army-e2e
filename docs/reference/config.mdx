@@ -1354,9 +1354,9 @@ export default defineConfig({
 
 `start` is an async generator. In it, you start the dependency, yield one time
 with the value you want tests to get, and stop the dependency after the
-`yield`. The code after `yield` runs when the run ends. `{ signal }` is passed
-to `start`. The signal aborts when starting or stopping takes too long (see
-[`ServiceStartContext`](#service)).
+`yield`. The code after `yield` runs when the services are no longer needed.
+`{ signal }` is passed to `start`. The signal aborts when starting or stopping
+takes too long (see [`ServiceStartContext`](#service)).
 
 On a service, `startupTimeout` and `shutdownTimeout` are the time limits in
 milliseconds for starting (default 60000) and stopping (default 10000).
@@ -1365,8 +1365,9 @@ Service lifecycle:
 
 - `e2e run` and `e2e explore`: services start in key order before any app
   commands and stop in reverse order after the app commands stop.
-- `e2e mcp` and `openHost`: services aren't started. When the config defines
-  services, both fail with `INVALID_CONFIG`.
+- `e2e mcp`: services start with the first session on a config file and stop
+  when the last session on that file closes.
+- `openHost`: services start when the host opens and stop in `host.close()`.
 
 If a service fails to start, any services already started are stopped.
 
@@ -1378,7 +1379,6 @@ and in the argument to an [`env` function](#command) on `app.command`. See
 | Throws | When |
 | --- | --- |
 | `INVALID_CONFIG` | At config load, `services` isn't a plain object, an entry isn't a plain object with a `start` function, or an entry has an unknown key. |
-| `INVALID_CONFIG` | `open_session` in `e2e mcp`, or `openHost`, is called with a config that defines services. |
 | `SERVICE_START_FAILED` | `start` throws, finishes without yielding, isn't an async generator, or doesn't yield within its `startupTimeout`. |
 | `INVALID_SERVICE_VALUE` | The yielded value isn't a plain object, contains a value that can't be copied, like a custom class instance, or contains a function inside a map or a set. See [What a service can yield](/services#what-a-service-can-yield). |
 | `SERVICE_STOP_FAILED` | The code after `yield` throws, yields a second time, or doesn't finish within the service's `shutdownTimeout`. |
@@ -1931,8 +1931,9 @@ export type Service<Value extends object = object> = {
    */
   shutdownTimeout?: number;
   /**
-   * Starts the dependency and stops it when the run ends. This async generator
-   * yields the service value once, and the config and tests receive it.
+   * Starts the dependency and stops it when it's no longer needed. This async
+   * generator yields the service value once, and the config and tests receive
+   * it.
    */
   start(context: ServiceStartContext): AsyncGenerator<Value, void, undefined>;
 };

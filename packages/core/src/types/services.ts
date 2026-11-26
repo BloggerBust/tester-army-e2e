@@ -37,8 +37,9 @@ export type Service<Value extends object = object> = {
    */
   shutdownTimeout?: number;
   /**
-   * Starts the dependency and stops it when the run ends. This async generator
-   * yields the service value once, and the config and tests receive it.
+   * Starts the dependency and stops it when it's no longer needed. This async
+   * generator yields the service value once, and the config and tests receive
+   * it.
    */
   start(context: ServiceStartContext): AsyncGenerator<Value, void, undefined>;
 };

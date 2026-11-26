@@ -832,9 +832,10 @@ export interface TestFixtures {
   /** HTTP calls, each one a step; a path resolves against the app URL. */
   readonly request: APIRequest;
   /**
-   * Values yielded by the config's `services`, keyed by name. Each worker
-   * receives a copy of the data, and each function becomes an async function
-   * called in the runner process.
+   * Values yielded by the config's `services`, keyed by name. Each worker, each
+   * `e2e mcp` session, and each `openHost` host receives a copy of the data
+   * (sessions on one host share the same copy). Each function becomes an async
+   * function called in the process that started the services.
    */
   readonly services: Readonly<Record<string, unknown>>;
 }

@@ -1,12 +1,12 @@
 /**
  * The session's `run_code`: JavaScript run against the live app, in the
  * server's own Node process, on the objects a test body gets. `screen`,
- * `app`, `expect`, `credentials`, `secrets`, and the engine's fixtures
- * (`browser`, `device`) are the real ones, so a line waits, matches, and
- * fails as it does in a test, and a line that passes here is one a test can
- * hold. `code-recorder.ts` stands between the code and those objects only to
- * write down the test line each call spells, for the result and
- * `test_lines`.
+ * `app`, `expect`, `credentials`, `secrets`, `services`, and the engine's
+ * fixtures (`browser`, `device`) are the real ones, so a line waits,
+ * matches, and fails as it does in a test, and a line that passes here is
+ * one a test can hold. `code-recorder.ts` stands between the code and those
+ * objects only to write down the test line each call spells, for the result
+ * and `test_lines`.
  *
  * The code has the authority of a test file: nothing confines it. A coding
  * agent that can write a test and run it has that authority already. What
@@ -42,7 +42,7 @@ const FILENAME = 'run_code';
 
 /** The parts of the attempt the code's objects are built from. */
 type RunCodeAttempt = Pick<StandaloneAttempt, 'agentRuntime' | 'budget' | 'session' | 'runId' | 'attemptId'> & {
-  readonly fixtures: Pick<StandaloneAttempt['fixtures'], 'app'>;
+  readonly fixtures: Pick<StandaloneAttempt['fixtures'], 'app' | 'services'>;
 };
 
 /** What the session hands `run_code`. */
@@ -107,6 +107,7 @@ const RUN_CODE_API: readonly string[] = [
   "locator: the same getBy* queries, filter({ has: locator }), or(locator), first(), last(), nth(i); actions tap(), click(), doubleTap(), longPress(), fill(text), pressSequentially(text), clear(), press(key), check(), uncheck(), selectOption(value), hover(), dragTo(locator), scrollIntoView(), swipe({ direction: 'down' }), scrollUntilVisible(locator), waitFor(), screenshot(label?); reads textContent(), allTextContents(), count(), inputValue(), getAttribute(name), isVisible(), isHidden(), isEnabled(), isDisabled(), isChecked(), boundingBox().",
   'expect(locator): toBeVisible, toBeHidden, toBeEnabled, toBeDisabled, toBeEditable, toBeChecked, toHaveText, toContainText, toHaveValue, toHaveAttribute, toHaveCount, toHaveAccessibleName, toHaveRole, with .not. expect(value): toBe, toEqual, toContain, toMatch, toHaveLength, toBeGreaterThan, toBeLessThan, toBeTruthy.',
   'app: open(path?), restart(), clearState(), back().',
+  "services: the config's services by name, the same as the services fixture. Their functions are async, so await them: await services.email.sent().",
   "Secrets: fill(credentials.user('name').password) and fill(secrets.get('name')) fill a configured value; credentials.user('name').username is the username. The names are the ones open_session lists.",
 ];
 
@@ -221,9 +222,9 @@ async function runCode(options: RunCodeOptions, args: RunCodeArgs, signal: Abort
 
 /**
  * The objects the code has in scope, each wrapped so its calls are recorded:
- * the attempt's `app` and engine fixtures, a `screen` wired like the
- * attempt's own whose lines wait `timeout` by default, and `expect`,
- * `credentials`, and `secrets` as a test imports them.
+ * the attempt's `app`, `services`, and engine fixtures, a `screen` wired
+ * like the attempt's, with lines that wait `timeout` by default, and
+ * `expect`, `credentials`, and `secrets` as a test imports them.
  */
 function objects(options: RunCodeSession, attempt: RunCodeAttempt, timeout: number | undefined, recorder: Recorder, soft: SoftFailures): Record<string, unknown> {
   // The call's own timeout is the default it asked for; without one a line waits as the config says, or the tool's default when that is shorter.
@@ -249,10 +250,30 @@ function objects(options: RunCodeSession, attempt: RunCodeAttempt, timeout: numb
   const secrets: Secrets = { get: (name) => secretIn(config, name) };
   // A soft failure is the call's, not the attempt's: on a held test the attempt's own would fail the test once it goes on.
   const softly = (actual: unknown, message?: string): unknown => softened(Reflect.apply(expect, undefined, [actual, message]) as object, soft);
-  const real: Record<string, unknown> = { screen, app: attempt.fixtures.app, expect: Object.assign((actual: unknown, message?: string): unknown => Reflect.apply(expect, undefined, [actual, message]), expect, { soft: softly }), credentials, secrets };
-  for (const name of fixtureNames(options)) real[name] = Reflect.get(attempt.fixtures, name);
+
+  const real: Record<string, unknown> = {
+    screen,
+    app: attempt.fixtures.app,
+    expect: Object.assign((actual: unknown, message?: string): unknown => Reflect.apply(expect, undefined, [actual, message]), expect, { soft: softly }),
+    credentials,
+    secrets,
+    services: attempt.fixtures.services,
+  };
+
+  for (const name of fixtureNames(options)) {
+    real[name] = Reflect.get(attempt.fixtures, name);
+  }
+
   return Object.fromEntries(
-    Object.entries(real).map(([name, value]) => [name, (typeof value === 'object' || typeof value === 'function') && value !== null ? recorder.wrap(value, name, BUILT_IN.some((own) => own === name) && name !== 'app') : value]),
+    Object.entries(real).map(([name, value]) => {
+      if ((typeof value === 'object' || typeof value === 'function') && value !== null) {
+        const reads = BUILT_IN.some((own) => own === name) && name !== 'app' && name !== 'services';
+
+        return [name, recorder.wrap(value, name, reads)];
+      }
+
+      return [name, value];
+    }),
   );
 }
 
@@ -287,7 +308,7 @@ function softened<E extends object>(expectation: E, soft: SoftFailures): E {
 }
 
 /** The names the code always has, which an engine's fixture of the same name does not replace. */
-const BUILT_IN = ['screen', 'app', 'expect', 'credentials', 'secrets'] as const;
+const BUILT_IN = ['screen', 'app', 'expect', 'credentials', 'secrets', 'services'] as const;
 
 /** The globals the code gets the call's own of. */
 const SHADOWED = ['console', 'queueMicrotask'] as const;

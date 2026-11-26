@@ -126,8 +126,8 @@ const SESSION_OPTION_KEYS = ['state', 'signal'] as const;
 const RETAINED_STEPS = 500;
 /**
  * Core fixtures omitted from a session: test-scoped fixtures and `services`,
- * which are only started by `e2e run` and `e2e explore`. Every other built-in
- * fixture is exposed on the session.
+ * which are only started by `e2e run`, `e2e explore`, `e2e mcp`, and
+ * `openHost`. Every other built-in fixture is exposed on the session.
  */
 const TEST_FIXTURES = new Set([
   ...Object.entries(CORE_FIXTURES).flatMap(([name, fixture]) => (fixture.scope === 'test' ? [name] : [])),

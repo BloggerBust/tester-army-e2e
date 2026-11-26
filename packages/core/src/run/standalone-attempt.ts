@@ -261,7 +261,7 @@ export async function launchAttempt<Sessions extends EngineSessions, Extra>(
   const base = {
     config, target, session: opened, steps, runId, attemptId, attempt, artifacts: artifacts.sink,
     priorSteps: () => steps.completed(), agent: options.agent, saveSession: undefined,
-    models: new WorkerModels((error) => recordFailure(error, 'body')), debug: worker.debug,
+    models: new WorkerModels((error) => recordFailure(error, 'body')), debug: worker.debug, services: executor.services,
   };
   let acquired: ReturnType<typeof createFixtures>;
   let extra: Extra;

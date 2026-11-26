@@ -249,11 +249,12 @@ export interface E2EConfig<Services = Readonly<Record<string, unknown>>> extends
   filters?: readonly TestFilter[];
   /**
    * Dependencies of the app under test, keyed by name and defined with
-   * `defineService`. `e2e run` and `e2e explore` start them in key order
-   * before the app commands, share one instance of each across all workers,
-   * and stop them in reverse order after the app commands. Tests read their values through
-   * the `services` fixture, and an `app.command.env` function receives them
-   * through its argument.
+   * `defineService`. Services start in key order before the app commands and
+   * stop in reverse order after the app commands. `e2e run` and `e2e explore`
+   * share one instance of each across all workers, `e2e mcp` shares one
+   * across sessions open on one config file, and each `openHost` host starts
+   * its own. Tests read their values through the `services` fixture, and an
+   * `app.command.env` function receives them through its argument.
    */
   services?: ServiceMap;
 }

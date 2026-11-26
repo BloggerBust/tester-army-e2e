@@ -6,6 +6,8 @@ description: Start dependencies like an email API before your app runs and use t
 A service is a dependency your app needs, like an email API, an OAuth
 provider, or a database. When you run `e2e run` or `e2e explore`, each
 service starts before the app commands and stops at the end of the run.
+Services also start in
+[`e2e mcp` and `openHost`](#services-in-e2e-mcp-and-openhost).
 
 ## Define a service
 
@@ -175,16 +177,18 @@ test('signing up sends one welcome email', async ({ app, screen, services }) => 
 Each worker gets a copy of the yielded data. Any function you yield becomes
 an async function in tests, so `services.email.createInbox()` returns a
 promise.
-When a test calls it, the runner process runs the real function and sends
-back a copy of the result.
+When a test calls it, the process that started the services runs the real
+function and sends back a copy of the result. That's the runner process in
+`e2e run`, the server in `e2e mcp`, and the host's process in `openHost`.
 
-All workers share the same service instance, so one test can see emails sent
-by other tests. If you reset the service between tests (for example, clearing
-every email in `afterEach`), you also clear data for tests running in other
-workers at the same time. Instead, have the service give each test a unique ID
-and keep each test's data apart by that ID. In the test above, `createInbox()`
-returns an inbox with a unique address, and the test reads only the emails
-sent to it.
+In `e2e run` and `e2e explore`, all workers share the same service instance,
+so one test can see emails sent by other tests. With `openHost`, each host
+starts its own instance. If you reset a shared service between tests (for
+example, clearing every email in `afterEach`), you also clear data for tests
+running in other workers at the same time. Instead, have the service give
+each test a unique ID and keep each test's data apart by that ID. In the test
+above, `createInbox()` returns an inbox with a unique address, and the test
+reads only the emails sent to it.
 
 ## What a service can yield
 
@@ -217,9 +221,20 @@ any of the data types above, but they can't contain functions.
 
 | Code | When |
 | --- | --- |
-| [`SERVICE_START_FAILED`](/reference/errors#runner-codes) | `start` throws, finishes without yielding, isn't an async generator, or doesn't yield within its `startupTimeout`. Any services that already started are stopped, and the run fails. |
+| [`SERVICE_START_FAILED`](/reference/errors#runner-codes) | `start` throws, finishes without yielding, isn't an async generator, or doesn't yield within its `startupTimeout`. Any services that already started are stopped, and the run fails. In `e2e mcp`, `open_session` fails instead. `openHost()` rejects with this error. |
 | [`INVALID_SERVICE_VALUE`](/reference/errors#runner-codes) | The yielded value isn't a plain object, or it contains a value that can't be copied. |
-| [`SERVICE_STOP_FAILED`](/reference/errors#runner-codes) | The code after `yield` throws, yields a second time, or doesn't finish within the service's `shutdownTimeout`. The run fails with a cleanup error. |
+| [`SERVICE_STOP_FAILED`](/reference/errors#runner-codes) | The code after `yield` throws, yields a second time, or doesn't finish within the service's `shutdownTimeout`. The run fails with a cleanup error. In `e2e mcp`, the last session's close summary includes it as a cleanup line. `openHost` returns it from `host.close()`. |
+
+## Services in e2e mcp and openHost
+
+`e2e mcp` starts a config file's services when the first session on it opens
+and stops them when the last one closes. All sessions on that file share them.
+If you edit the config while sessions on it are open, the running services
+don't change. Your changes to the services apply after the last session on
+that file closes and a new one opens.
+
+[`openHost`](/reference/runner#openhost) starts the services when the host
+opens. `host.close()` stops them after the app processes stop.
 
 ## Run a local API emulator
 

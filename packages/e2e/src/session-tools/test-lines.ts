@@ -706,9 +706,9 @@ const IMPORTED: ReadonlySet<string> = new Set(['expect', 'credentials', 'secrets
 /** The fixtures a draft's lines start from, `app` and `screen` first, so the test body asks for each one. */
 function fixturesIn(body: readonly string[], engine: readonly string[]): readonly string[] {
   const declared = new Set(body.flatMap((line) => /^const ([A-Za-z_$][\w$]*) = /.exec(line)?.[1] ?? []));
-  const named = body.flatMap((line) => /^(?:const [A-Za-z_$][\w$]* = )?await (?:expect\()?([A-Za-z_$][\w$]*)[.(]/.exec(line)?.[1] ?? []);
+  const named = body.flatMap((line) => /^(?:const [A-Za-z_$][\w$]* = )?await (?:expect\()?([A-Za-z_$][\w$]*)[.([]/.exec(line)?.[1] ?? []);
   // `expect` and the secret handles are imports, not fixtures.
-  // An engine's fixture may be an argument, as in `expect(browser)`, where no line starts from it.
-  const passed = engine.filter((name) => body.some((line) => new RegExp(`(?<![.\\w$'"\`])${name.replaceAll('$', '\\$')}(?=[.(),\\s])`).test(line)));
+  // An engine's fixture or `services` may be an argument, as in `expect(browser)`, where no line starts from it.
+  const passed = [...engine, 'services'].filter((name) => body.some((line) => new RegExp(`(?<![.\\w$'"\`])${name.replaceAll('$', '\\$')}(?=[.(),\\s])`).test(line)));
   return [...new Set(['app', 'screen', ...[...named, ...passed].filter((name) => !declared.has(name) && !IMPORTED.has(name))])];
 }

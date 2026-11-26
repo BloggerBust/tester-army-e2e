@@ -268,7 +268,7 @@ call {tool: "run_code", args: {code: "const rows = screen.getByRole('listitem');
 
 | Input | Does |
 | --- | --- |
-| `code` | The body of an async function. `screen`, `app`, `expect`, `credentials`, `secrets`, `console`, and the engine's fixture (`browser` or `device`) are in scope. A session attached to a held test has no engine fixture. |
+| `code` | The body of an async function. `screen`, `app`, `expect`, `credentials`, `secrets`, `services`, `console`, and the engine's fixture (`browser` or `device`) are in scope. A session attached to a held test doesn't have an engine fixture. |
 | `timeout` | Optional. How long each action or matcher on `screen` waits by default, in ms, 1 through 120000. Without it: `5000`, or the config's timeout when shorter. |
 
 ```txt

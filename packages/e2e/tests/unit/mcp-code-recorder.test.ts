@@ -193,6 +193,15 @@ describe('run_code recorder', () => {
     expect(sources(polled.outcomes)).toEqual(['await screen.poll(() => page.text()); // the function brings none of the variables run_code declared: declare the ones it uses']);
   });
 
+  it('spells a member whose name a dot cannot reach in brackets, in a call and in data passed along', async () => {
+    const recorder = recording();
+    const services = recorder.wrap({ 'my-mail': { createInbox: () => Promise.resolve('ada@example.com'), regions: { 'eu-west': { name: 'Ireland' } } } }, 'services');
+    const page = recorder.wrap({ use: (_value: object) => Promise.resolve() }, 'page');
+    await services['my-mail'].createInbox();
+    await page.use(services['my-mail'].regions['eu-west']);
+    expect(sources(recorder.outcomes)).toEqual(['await services["my-mail"].createInbox();', 'await page.use(services["my-mail"].regions["eu-west"]);']);
+  });
+
   it("writes a credential's username by its name", async () => {
     const recorder = new Recorder((text) => text, () => 1, (text) => (text === 'ada@example.com' ? "credentials.user('admin').username" : undefined));
     await recorder.wrap(fakeScreen(), 'screen', true).getByRole('textbox').fill('ada@example.com');

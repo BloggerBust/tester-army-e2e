@@ -1,9 +1,9 @@
 /**
  * The app half of `open_session`'s summary: where the app is, the port the
- * session assigned, and the process it brought up for it, so an agent never
- * reads the config to learn what is listening. Nothing that may carry a
- * secret is printed: `args` are left out, `env` and `inheritEnv` are named
- * without values, and the readiness URL loses userinfo and query.
+ * session assigned, and the services and process it started, so an agent
+ * doesn't need to read the config to learn what's listening. Nothing that
+ * may carry a secret is printed: `args` are left out, `env` and `inheritEnv`
+ * are named without values, and the readiness URL loses userinfo and query.
  */
 
 import type { ResolvedTarget } from '@e2e-dev/core/lib/config/resolve';
@@ -12,24 +12,37 @@ import { printableUrl } from '@e2e-dev/core/lib/internal/urls';
 import type { CommandConfig } from '@e2e-dev/core/lib/types';
 
 /**
- * The `App:` and `Process:` lines for a session on `target`. `ranTest` is
- * whether the session ran a test first, which launched a pinned app itself.
+ * Returns the `App:`, `Services:`, and `Process:` lines for a session on
+ * `target`. `ranTest` is true when the session ran a test first and that
+ * test launched the pinned app. `services` lists the config's services the
+ * session holds.
  */
-export function appLines(target: ResolvedTarget, ranTest: boolean): string[] {
+export function appLines(target: ResolvedTarget, ranTest: boolean, services: readonly string[]): string[] {
   const { app } = target;
   const lines: string[] = [];
+
   if (app.base !== undefined) {
     const assigned = app.portRequest?.port;
+
     lines.push(`App: ${app.base.href}${assigned === undefined ? '' : ` (port ${assigned}, assigned for the declared port 0)`}.`);
   } else if (launchesPinnedApp(target)) {
     const pinned = app.bundleId ?? app.appPath;
+
     lines.push(ranTest ? `App: ${pinned}.` : `App: ${pinned}, launched fresh.`);
   }
+
+  if (services.length > 0) {
+    lines.push(`Services: ${services.join(', ')}. Every session open on this config file shares them.`);
+  }
+
   if (app.command !== undefined && app.readyUrl !== undefined) {
-    lines.push(`Process: ${describeCommand(app.command, app.readyUrl)} e2e starts no other app process for this session; a database or other service the app uses runs outside e2e.`);
+    const outside = services.length > 0 ? '' : '; a database or other service the app uses runs outside e2e';
+
+    lines.push(`Process: ${describeCommand(app.command, app.readyUrl)} e2e starts no other app process for this session${outside}.`);
   } else if (app.base !== undefined) {
     lines.push('Process: none; the target declares no app.command, so the app runs outside e2e.');
   }
+
   return lines;
 }
 
