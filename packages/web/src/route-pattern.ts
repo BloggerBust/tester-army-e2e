@@ -1,4 +1,8 @@
-/** The method-narrowed form `route` and `waitForResponse` accept; `url-glob.ts` reads its URL half. */
+/**
+ * The patterns `route`, `unroute`, `waitForResponse`, and `waitForRequest`
+ * accept: a URL pattern, optionally narrowed to one method, which
+ * `url-glob.ts` reads the URL half of, and for the two waits a predicate.
+ */
 
 import { types } from 'node:util';
 import {
@@ -27,22 +31,34 @@ const HTTP_METHOD = /^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$/;
  * the calling member in errors.
  */
 export function toRoutePattern(api: string, pattern: unknown): NormalizedRoutePattern {
+  return normalize(api, pattern, 'a string, RegExp, or { method, url }');
+}
+
+/**
+ * Validates a `waitForResponse` or `waitForRequest` pattern: a predicate the
+ * test wrote, returned as is for the wait to call with each candidate, or a
+ * route pattern as `toRoutePattern` reads one.
+ */
+export function toWaitPattern<Predicate extends (candidate: never) => unknown>(
+  api: string,
+  pattern: string | RegExp | { readonly method: string; readonly url: string | RegExp } | Predicate,
+): NormalizedRoutePattern | Predicate {
+  if (typeof pattern === 'function') return pattern;
+  return normalize(api, pattern, 'a string, RegExp, { method, url }, or a predicate function');
+}
+
+/** `toRoutePattern` with the accepted shapes its errors name. */
+function normalize(api: string, pattern: unknown, shapes: string): NormalizedRoutePattern {
   if (typeof pattern === 'string' || types.isRegExp(pattern)) {
     return { method: undefined, url: toTextPattern(pattern as TextMatch) };
   }
   if (typeof pattern !== 'object' || pattern === null || Array.isArray(pattern)) {
-    throw new TestError(
-      'INVALID_ARGUMENT',
-      `${api} pattern must be a string, RegExp, or { method, url }; got ${describe(pattern)}`,
-    );
+    throw new TestError('INVALID_ARGUMENT', `${api} pattern must be ${shapes}; got ${describe(pattern)}`);
   }
   rejectUnknownKeys(`${api} pattern`, pattern, ['method', 'url'], 'INVALID_ARGUMENT');
   const { method, url } = pattern as { method?: unknown; url?: unknown };
   if (method === undefined && url === undefined) {
-    throw new TestError(
-      'INVALID_ARGUMENT',
-      `${api} pattern must be a string, RegExp, or { method, url }; got ${describe(pattern)}`,
-    );
+    throw new TestError('INVALID_ARGUMENT', `${api} pattern must be ${shapes}; got ${describe(pattern)}`);
   }
   if (method === undefined) {
     throw new TestError('INVALID_ARGUMENT', `${api} pattern requires method`);
@@ -73,12 +89,15 @@ export function toRoutePattern(api: string, pattern: unknown): NormalizedRoutePa
 
 /**
  * A route or URL pattern as steps name it: a string quoted, a RegExp as its
- * literal, a method-narrowed pattern as `POST` plus its URL pattern. Invalid
+ * literal, a method-narrowed pattern as `POST` plus its URL pattern, a
+ * predicate as `predicate`. Invalid
  * non-RegExp shapes render as a description because the label runs before the
  * call validates its arguments.
  */
 export function patternLabel(pattern: unknown): string {
   if (typeof pattern === 'string') return JSON.stringify(pattern);
+  // Never the function's source: a predicate may close over test data.
+  if (typeof pattern === 'function') return 'predicate';
   if (types.isRegExp(pattern)) return String(pattern);
   if (typeof pattern === 'object' && pattern !== null && 'method' in pattern) {
     const method = (pattern as { method?: unknown }).method;

@@ -481,8 +481,9 @@ export type WebInitScript = string | { readonly path: string } | (() => unknown)
 
 - What reads or acts on a page acts on the active tab: `goto`, `reload`,
   `back`, `forward`, `url`, `title`, `waitForURL`, `locator`, `frameLocator`,
-  `evaluate`, `waitForResponse`, `waitForDownload`, `keyboard`, `mouse`, the
-  `expect(browser)` matchers, and every `screen` query.
+  `evaluate`, `waitForResponse`, `waitForRequest`, `waitForDownload`,
+  `keyboard`, `mouse`, the `expect(browser)` matchers, and every `screen`
+  query.
 - What belongs to the browser covers every tab: `cookies`, `setCookies`,
   `clearCookies`, `route`, `unroute`, `unrouteAll`, `onDialog`, and
   `addInitScript`.
@@ -519,7 +520,8 @@ export type WebInitScript = string | { readonly path: string } | (() => unknown)
 | [`route`](#route) | `Promise<void>` |
 | [`unroute`](#unroute) | `Promise<void>` |
 | [`unrouteAll`](#unrouteall) | `Promise<void>` |
-| [`waitForResponse`](#waitforresponse) | `Promise<WebResponse>` |
+| [`waitForResponse`](#waitforresponse) | `Promise<PageResponse>` |
+| [`waitForRequest`](#waitforrequest) | `Promise<WebRequest>` |
 | [`cookies`](#cookies) | `Promise<Cookie[]>` |
 | [`setCookies`](#setcookies) | `Promise<void>` |
 | [`clearCookies`](#clearcookies) | `Promise<void>` |
@@ -545,7 +547,7 @@ The [config](/reference/config) sets each member's budget:
   `locator` and `frameLocator` touch no page and take none.
 
 A `{ timeout }` option overrides the budget on `goto`, `reload`, `back`,
-`forward`, `waitForResponse`, `waitForPopup`, `waitForDownload`, and `waitForDownloads`, capped
+`forward`, `waitForResponse`, `waitForRequest`, `waitForPopup`, `waitForDownload`, and `waitForDownloads`, capped
 by the test deadline (`cleanupTimeout` in `afterEach`); `0` waits until it. `url`, `title`, `evaluate`, `addInitScript`, `route`,
 `unroute`, `unrouteAll`, `cookies`, `setCookies`, `clearCookies`, `setViewport`,
 `emulateMedia`, `setNetwork`, `onDialog`, `newTab`, the `BrowserTab` methods, `keyboard.*`, `mouse.*`, and `webmcp.*` take no override.
@@ -610,8 +612,8 @@ await browser.waitForURL(/\/orders\/\d+$/, { timeout: 15_000 });
   spaces in a glob's path and query match the URL as the browser encodes it. The empty string
   matches any URL.
 - `expect(browser).toHaveURL` reads `*` and `{` as themselves, as Playwright's
-  does; [`route`](#route), `unroute`, and `waitForResponse` read the same
-  globs as this wait.
+  does; [`route`](#route), `unroute`, `waitForResponse`, and `waitForRequest`
+  read the same globs as this wait.
 - A `RegExp` tests the full URL.
 
 | Throws | When |
@@ -729,10 +731,10 @@ It does not follow redirects, which could take it past the navigation rule.
 - The pattern is a string or a `RegExp`, read as [`waitForURL`](#waitforurl)
   reads one: a string is a glob in Playwright's grammar (`?` literal, `{a,b}`
   either) resolved against the base URL, so one with no wildcard is an exact
-  URL. `unroute` and `waitForResponse` take the same patterns.
+  URL. `unroute`, `waitForResponse`, and `waitForRequest` take the same patterns.
 - `{ method, url }` narrows the pattern to one HTTP method too. `method` is
   case-insensitive, `url` keeps the string or `RegExp` grammar above, and
-  `unroute` and `waitForResponse` take the same form.
+  `unroute`, `waitForResponse`, and `waitForRequest` take the same form.
 - A route whose method does not match steps aside for the routes registered
   before it, then the network, as if its URL had not matched.
 - A method pattern matches that method exactly: a `GET` route does not answer
@@ -799,20 +801,31 @@ export interface RouteMatcher {
   readonly method: string;
   /**
    * The URL pattern: a string using the same grammar as a plain `route`
-   * pattern, or a `RegExp`. `route` and `waitForResponse` match requests
-   * against it; `unroute` compares it structurally.
+   * pattern, or a `RegExp`. `route`, `waitForResponse`, and `waitForRequest`
+   * match requests against it; `unroute` compares it structurally.
    */
   readonly url: string | RegExp;
 }
 
+/** A request the page made: what a route handler reads as `route.request` and `waitForRequest` returns. */
+export interface WebRequest {
+  /** Request URL. */
+  readonly url: string;
+  /** HTTP method, as the page sent it. */
+  readonly method: string;
+  /**
+   * Request headers, lower-cased names. The cookie headers the browser adds
+   * on its own are there only when a route intercepts the request, so always
+   * in `route.request`.
+   */
+  readonly headers: Readonly<Record<string, string>>;
+  /** Request body as text; absent when the request has none. */
+  readonly postData?: string;
+}
+
 export interface WebRoute {
   /** The intercepted request. */
-  readonly request: {
-    readonly url: string;
-    readonly method: string;
-    readonly headers: Readonly<Record<string, string>>;
-    readonly postData?: string;
-  };
+  readonly request: WebRequest;
   /** Reads upstream without deciding the route or following redirects. */
   fetch(): Promise<WebResponse>;
   /** Fulfills the intercepted request once. */
@@ -853,35 +866,62 @@ await browser.unrouteAll();
 
 #### `waitForResponse`
 
-Waits for a response that matches a pattern, in the [`route`](#route) pattern
-syntax.
+Waits for a response on the active tab matching a [`route`](#route) pattern or
+a predicate.
 
 ```ts
-const response = await browser.waitForResponse('**/api/orders');
-expect(response.status).toBe(201);
+const [created] = await Promise.all([
+  browser.waitForResponse({ method: 'POST', url: '**/api/orders' }),
+  screen.getByRole('button', 'Place order').tap(),
+]);
+expect(created.status).toBe(201);
+
+const [ready] = await Promise.all([
+  browser.waitForResponse(
+    async (response) =>
+      response.url.endsWith('/api/jobs/42') &&
+      response.status === 200 &&
+      (await response.json<{ state: string }>()).state === 'done',
+    { timeout: 15_000 }, // default: actionTimeout
+  ),
+  screen.getByRole('button', 'Run job').tap(),
+]);
+expect(ready.request.method).toBe('GET');
 ```
 
-```ts
-const created = browser.waitForResponse({ method: 'POST', url: '**/api/orders' });
-await screen.getByRole('button', 'Place order').tap();
-expect((await created).status).toBe(201);
-```
-
-- A `{ method, url }` pattern matches only a response to that method;
-  responses to another method pass it by.
-- The deadline bounds the match: the response resolves as soon as its headers
-  arrive.
-- `body()`, `text()`, and `json()` wait for the body on a budget of their own,
-  `config.actionTimeout` capped by the test deadline.
-- `url`, `status`, and `headers` are always readable.
-- A genuinely empty body reads as an empty `Buffer` from `body()` and `''`
-  from `text()`; `json()` rejects it.
+- Start the wait before the action that triggers the request, usually in
+  `Promise.all`. It also works before the first `browser.goto` or `app.open`.
+- Pass a URL glob string, a `RegExp`, `{ method, url }`, or a predicate
+  function. Patterns use the same rules as [`route`](#route).
+- A predicate runs once per response with a `PageResponse` and returns
+  `boolean | Promise<boolean>`. At runtime, any truthy value matches. Async
+  predicates can run at the same time on several responses, and the first to
+  match wins, as in Playwright.
+- If a predicate throws or rejects, the step fails with that error unchanged.
+  An e2e error keeps its code, so a failed `expect` throws `ASSERTION_FAILED`
+  and an unreadable body throws `ACTION_FAILED`. Any other throw fails with
+  `ERROR`.
+- With a pattern, or a predicate that does not read the body, the wait resolves
+  as soon as response headers arrive.
+- Inside a predicate, `body()`, `text()`, and `json()` share the wait's
+  timeout. A body the page never finishes reading, such as a stream or an
+  unclosed response, can hold the predicate until the timeout, as in
+  Playwright. When the wait settles, e2e cancels body reads still pending on
+  passed-over responses.
+- On the returned `PageResponse`, `body()`, `text()`, and `json()` each use
+  `config.actionTimeout`, capped by the test deadline.
+- `url`, `status`, `headers`, and `request` are properties, not methods, and
+  are always readable without waiting for the body. Only `body()`, `text()`,
+  and `json()` are methods.
+- On an empty body, `body()` returns an empty `Buffer`, `text()` returns `''`,
+  and `json()` rejects.
+- Traces label the step with the pattern, or `predicate` for a function.
 
 | Throws | When |
 | --- | --- |
-| `INVALID_ARGUMENT` | A pattern that is not a string, `RegExp`, or `{ method, url }`; a glob that nests a `{` or leaves a `{` or `}` unmatched; a `{ method, url }` pattern with a missing or extra key, a method that is not an HTTP method, or a `url` that is not a string or `RegExp`. |
+| `INVALID_ARGUMENT` | A pattern that is not a string, `RegExp`, `{ method, url }`, or function; a glob that nests a `{` or leaves a `{` or `}` unmatched; a `{ method, url }` pattern with a missing or extra key, a method that is not an HTTP method, or a `url` that is not a string or `RegExp`; an option other than `timeout`, such as Playwright's `signal`. |
 | `APP_URL_REQUIRED` | A relative pattern on a target with no `app.url`. |
-| `ACTION_FAILED` | Nothing matches inside the deadline. From `body()`, `text()`, and `json()`: a body still streaming when their budget runs out, or a body the browser could not read (a connection reset short of the declared `Content-Length`, a request the page aborted, or a redirect, whose body the browser never keeps), instead of an empty string. |
+| `ACTION_FAILED` | No response matches before the timeout. From `body()`, `text()`, or `json()`: a body that does not finish within their budget, or a body the browser cannot read, such as a connection cut short of `Content-Length`, an aborted request, or a redirect whose body the browser never keeps, instead of returning an empty string. |
 
 ```ts
 /**
@@ -902,7 +942,52 @@ export interface WebResponse {
   /** Waits for the body and reads it as text; rejects with `ACTION_FAILED` when the body could not be read. */
   text(): Promise<string>;
 }
+
+/** What `waitForResponse` returns and its predicate reads: a `WebResponse` and the request it answers. */
+export interface PageResponse extends WebResponse {
+  /** The request this response answers. */
+  readonly request: WebRequest;
+}
 ```
+
+#### `waitForRequest`
+
+Waits for a request on the active tab matching a [`route`](#route) pattern or
+a predicate. It resolves when the page sends the request, before any response
+arrives.
+
+```ts
+const [order] = await Promise.all([
+  browser.waitForRequest({ method: 'POST', url: '**/api/orders' }),
+  screen.getByRole('button', 'Place order').tap(),
+]);
+expect(JSON.parse(order.postData ?? '{}')).toEqual({ sku: 'A-1', quantity: 2 });
+
+const [search] = await Promise.all([
+  browser.waitForRequest(
+    (request) => new URL(request.url).searchParams.get('q') === 'shoes',
+    { timeout: 10_000 }, // default: actionTimeout
+  ),
+  screen.getByRole('searchbox').fill('shoes'),
+]);
+expect(search.method).toBe('GET');
+```
+
+- Start the wait before the action that triggers the request, usually in
+  `Promise.all`. It also works before the first `browser.goto` or `app.open`.
+- Returns a [`WebRequest`](#route), the same type as `route.request`: `url`,
+  `method`, `headers`, and optional `postData`. Every field is a property.
+  `headers` has lower-cased names. The cookie headers the browser adds on its
+  own are there only when a [`route`](#route) intercepts the request.
+- A predicate runs once per request with a `WebRequest`. Truthy matching,
+  concurrent async predicates, thrown errors, and the `predicate` trace label
+  work the same way as in [`waitForResponse`](#waitforresponse).
+
+| Throws | When |
+| --- | --- |
+| `INVALID_ARGUMENT` | Any pattern shape or option [`waitForResponse`](#waitforresponse) refuses, including any option other than `timeout`. |
+| `APP_URL_REQUIRED` | A relative pattern on a target with no `app.url`. |
+| `ACTION_FAILED` | No request matches before the timeout. |
 
 #### `cookies`
 
@@ -1377,7 +1462,8 @@ The package exports these types for typing config helpers and fixtures:
 `BrowserReleaseContext`, `BrowserProviderDownloads`,
 `BrowserDownloadContext`, `PlaywrightLiveSurface`, `Browser`, `FrameScreen`,
 `BrowserExpectation`, `WebRoute`, `RouteFulfillResponse`,
-`RouteContinueOverrides`, `RouteMatcher`, `WebResponse`, `Cookie`, `CookieFields`,
+`RouteContinueOverrides`, `RouteMatcher`, `WebRequest`, `WebResponse`,
+`PageResponse`, `Cookie`, `CookieFields`,
 `CookieFilter`, `Dialog`, and `DialogHandler`.
 
 The runtime exports are `web`, [`surfaceOf`](#surfaceof), and `test`,
@@ -1495,8 +1581,8 @@ export interface WebOptions {
 ```ts
 /**
  * The browser the attempt drives, showing one active tab. Navigation, reads,
- * `locator`, `frameLocator`, `evaluate`, `waitForResponse`, `waitForDownload`,
- * the keyboard and mouse, `expect(browser)`, and `screen` act on the active
+ * `locator`, `frameLocator`, `evaluate`, `waitForResponse`, `waitForRequest`,
+ * `waitForDownload`, the keyboard and mouse, `expect(browser)`, and `screen` act on the active
  * tab; cookies, routes, and dialog handlers cover the whole browser, every
  * tab included. A tab the app opens (a `target="_blank"` link,
  * `window.open`) joins `tabs()` but does not become active on its own:
@@ -1553,11 +1639,26 @@ export interface Browser extends Expectable<BrowserExpectation> {
   unroute(pattern: string | RegExp | RouteMatcher): Promise<void>;
   /** Removes all routes registered by this browser fixture, preserving the configured headers. */
   unrouteAll(): Promise<void>;
-  /** Waits for a matching response, optionally narrowed to one HTTP method. */
+  /**
+   * Waits for a response on the active tab matching a URL pattern, a
+   * `{ method, url }` matcher, or a predicate. The predicate runs per response
+   * until one returns or resolves to a truthy value; throwing fails the wait
+   * with the predicate's own error.
+   */
   waitForResponse(
-    pattern: string | RegExp | RouteMatcher,
+    pattern: string | RegExp | RouteMatcher | ((response: PageResponse) => boolean | Promise<boolean>),
     options?: { timeout?: number },
-  ): Promise<WebResponse>;
+  ): Promise<PageResponse>;
+  /**
+   * Waits for a request on the active tab matching a URL pattern, a
+   * `{ method, url }` matcher, or a predicate, and resolves when the page sends
+   * it before any response arrives. Predicate matching and errors work the
+   * same way as in `waitForResponse`.
+   */
+  waitForRequest(
+    pattern: string | RegExp | RouteMatcher | ((request: WebRequest) => boolean | Promise<boolean>),
+    options?: { timeout?: number },
+  ): Promise<WebRequest>;
   /**
    * Returns every cookie of the browser, or only those a request to `urls`
    * (one URL or several) would carry. A relative URL resolves against the

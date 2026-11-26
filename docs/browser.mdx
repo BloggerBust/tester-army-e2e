@@ -49,8 +49,9 @@ await expect(screen.getByText('$42.00')).toBeVisible();
 - An `expect` that fails in a handler fails the test, at the next step or
   at the end of the test.
 
-Start `browser.waitForResponse` before the request. This also works before
-the first `browser.goto` or `app.open`:
+Start `browser.waitForResponse` before the action that triggers the request,
+usually in `Promise.all`. It also works before the first `browser.goto` or
+`app.open`:
 
 ```ts
 const [response] = await Promise.all([
@@ -59,6 +60,13 @@ const [response] = await Promise.all([
 ]);
 expect(response.status).toBe(201);
 ```
+
+Use `browser.waitForRequest` to resolve when the page sends the request, before
+any response arrives. Both methods accept a URL glob, a `RegExp`,
+`{ method, url }`, or a predicate function such as
+`(response) => response.request.method === 'POST' && response.status === 201`.
+See [`waitForResponse`](/reference/web#waitforresponse) and
+[`waitForRequest`](/reference/web#waitforrequest).
 
 ## Handle a dialog
 

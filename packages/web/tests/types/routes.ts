@@ -1,6 +1,6 @@
 /** Compile-time assertions for route decisions: the options each one takes, and the ones it refuses at runtime too. */
 import type { WebResponse as CoreWebResponse } from '@e2e-dev/core';
-import type { Browser, Dialog, RouteContinueOverrides, RouteFulfillResponse, RouteMatcher, WebResponse, WebRoute } from '../../src/index.ts';
+import type { Browser, Dialog, PageResponse, RouteContinueOverrides, RouteFulfillResponse, RouteMatcher, WebRequest, WebResponse, WebRoute } from '../../src/index.ts';
 
 ({ json: { ok: true }, contentType: 'application/vnd.quote+json' }) satisfies RouteFulfillResponse;
 ({ path: 'fixtures/quote.json', status: 201 }) satisfies RouteFulfillResponse;
@@ -41,6 +41,25 @@ declare const fromWeb: WebResponse;
 declare const fromCore: CoreWebResponse;
 void (fromWeb satisfies CoreWebResponse);
 void (fromCore satisfies WebResponse);
+// A wait takes a predicate over what it returns, sync or async, Playwright's `(response) => boolean | Promise<boolean>`.
+void (browser.waitForResponse((response) => response.request.method === 'POST' && response.status === 201) satisfies Promise<PageResponse>);
+void (browser.waitForResponse(async (response) => (await response.json<{ ready: boolean }>()).ready, { timeout: 0 }) satisfies Promise<PageResponse>);
+void (browser.waitForRequest('**/api/orders') satisfies Promise<WebRequest>);
+void (browser.waitForRequest({ method: 'POST', url: '**/api/orders' }) satisfies Promise<WebRequest>);
+void (browser.waitForRequest((request) => request.postData?.includes('sku') === true) satisfies Promise<WebRequest>);
+// What `waitForResponse` returns is still a `WebResponse`, so `toBeOK` and helpers typed with it take it.
+declare const pageResponse: PageResponse;
+void (pageResponse satisfies CoreWebResponse);
+// A route handler reads the same request type `waitForRequest` returns.
+void (({} as WebRoute['request']) satisfies WebRequest);
+// @ts-expect-error a predicate returns a boolean, not the response
+void browser.waitForResponse((response) => response);
+// @ts-expect-error the response's request is a property, not Playwright's `request()`
+void browser.waitForResponse((response) => response.request().method() === 'POST');
+// @ts-expect-error `route` takes no predicate
+void browser.route((url: URL) => url.pathname === '/api', () => {});
+// @ts-expect-error a wait takes `timeout` only, not Playwright's `signal`
+void browser.waitForRequest('**/api', { signal: AbortSignal.timeout(1) });
 // @ts-expect-error a method-narrowed pattern needs its url
 void browser.route({ method: 'POST' }, () => {});
 // @ts-expect-error clearing routes takes no options

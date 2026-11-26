@@ -595,11 +595,14 @@ describe('browser route and waitForResponse decisions', () => {
     ['browser.route', (pattern: unknown) => untyped(browser.route, pattern, () => undefined)],
     ['browser.unroute', (pattern: unknown) => untyped(browser.unroute, pattern)],
     ['browser.waitForResponse', (pattern: unknown) => untyped(browser.waitForResponse, pattern)],
+    ['browser.waitForRequest', (pattern: unknown) => untyped(browser.waitForRequest, pattern)],
   ] as const;
 
   it.each(members)('%s rejects invalid method-narrowed patterns', (api, call) => {
     const cases = [
-      [{}, 'must be a string, RegExp, or { method, url }; got an object'],
+      [{}, api.startsWith('browser.waitFor')
+        ? 'must be a string, RegExp, { method, url }, or a predicate function; got an object'
+        : 'must be a string, RegExp, or { method, url }; got an object'],
       [{ method: 'POST' }, 'requires url'],
       [{ url: '**/api/orders' }, 'requires method'],
       [{ method: '', url: '**/api/orders' }, 'got ""'],

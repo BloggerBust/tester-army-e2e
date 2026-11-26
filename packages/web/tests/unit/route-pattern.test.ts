@@ -4,6 +4,7 @@ import {
   routeMethodMatches,
   routePatternsEqual,
   toRoutePattern,
+  toWaitPattern,
 } from '../../src/route-pattern.ts';
 import { urlPattern } from '../../src/url-glob.ts';
 
@@ -65,7 +66,27 @@ describe('routeUrlMatches and routeMethodMatches', () => {
   });
 });
 
+describe('toWaitPattern', () => {
+  it('returns a predicate as is and validates every other pattern as a route pattern', () => {
+    const predicate = (response: { status: number }) => response.status === 201;
+    expect(toWaitPattern('browser.waitForResponse', predicate)).toBe(predicate);
+    expect(toWaitPattern('browser.waitForRequest', { method: 'post', url: '**/a' })).toEqual(
+      toRoutePattern('browser.route', { method: 'post', url: '**/a' }),
+    );
+  });
+
+  it('names the predicate among the shapes it takes', () => {
+    expect(() => toWaitPattern('browser.waitForRequest', 42 as unknown as string)).toThrow(
+      'browser.waitForRequest pattern must be a string, RegExp, { method, url }, or a predicate function; got 42',
+    );
+  });
+});
+
 describe('patternLabel', () => {
+  it('names a predicate without its source', () => {
+    expect(patternLabel((response: { status: number }) => response.status === 201)).toBe('predicate');
+  });
+
   it('names a string, a regexp, and a method-narrowed pattern', () => {
     expect(patternLabel('**/api/orders')).toBe('"**/api/orders"');
     expect(patternLabel(/api\/orders$/)).toBe('/api\\/orders$/');

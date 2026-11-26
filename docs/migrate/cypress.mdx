@@ -124,7 +124,7 @@ Planned gaps are on the roadmap, and Not yet gaps have no date. Not planned gaps
 | `have.class`, `have.css`, `have.prop`, `be.empty` | `expect(browser).toHaveClass(locator, /regexp/)`, `expect(locator).toBeEmpty()` for an empty field or a node with no text (Cypress's `be.empty` means no child nodes); else `expect.poll(() => browser.evaluate(...))` |
 | `.trigger()`, `cy.scrollTo()` | `hover()`, `dragTo()`, `scrollIntoView()`; for other synthetic events use `browser.evaluate` |
 | `cy.intercept({ headers })` and other header matchers | Check `route.request.headers` in the handler, else call `route.fallback()` |
-| `cy.wait('@alias')`, `.its('request.body')`, `@alias.all` | Start `browser.waitForResponse(pattern)` before the action; read the request in a `browser.route` handler |
+| `cy.wait('@alias')`, `.its('request.body')`, `@alias.all` | Start `browser.waitForResponse` or `browser.waitForRequest` before the action with a pattern or predicate, then parse the raw `postData` string on `response.request` or the returned `WebRequest`. For `@alias.all`, record each request in a `browser.route` handler |
 | `Cypress.on('uncaught:exception')` | An app error doesn't fail a test. To fail on one, collect `window.onerror` in `browser.addInitScript`, then assert the list is empty with `browser.evaluate` |
 | `--browser chrome`, `edge`, `electron`, `before:browser:launch` | `web({ browser: 'chromium' })`, or attach to your own Chrome with `web({ connect: { cdpEndpoint } })` |
 | `cypress open`, time-travel snapshots | `npx e2e run --headed --watch`, or `--step`; the [trace page](/debugging#traces) shows each step after the run |

@@ -32,9 +32,11 @@ export type {
   CookieFields,
   CookieFilter,
   FrameScreen,
+  PageResponse,
   RouteContinueOverrides,
   RouteFulfillResponse,
   RouteMatcher,
+  WebRequest,
   WebResponse,
   WebRoute,
 } from './browser.ts';

@@ -1,6 +1,6 @@
 /**
  * The web engine's one URL pattern grammar, Playwright's. `browser.waitForURL`,
- * `route`, `unroute`, and `waitForResponse` read every string as a URL glob,
+ * `route`, `unroute`, `waitForResponse`, and `waitForRequest` read every string as a URL glob,
  * so one with no wildcard matches that URL exactly, and a RegExp against the
  * full URL. `expect(browser).toHaveURL` compares a string exactly
  * (`urlMatches` in core): Playwright's `toHaveURL` never reads a glob, so only
@@ -21,7 +21,7 @@ export interface UrlPattern {
 }
 
 /**
- * Compiles a `waitForURL`, `route`, `unroute`, or `waitForResponse` pattern as
+ * Compiles a `waitForURL`, `route`, `unroute`, `waitForResponse`, or `waitForRequest` pattern as
  * Playwright's `urlMatches` does: a string is a URL glob, the empty string
  * matches any URL, and a RegExp tests the full URL. A string with no `*`, `{`,
  * `}`, or `\` matches the one URL it resolves to. `base` is read only for a

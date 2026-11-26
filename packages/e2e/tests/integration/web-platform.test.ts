@@ -474,18 +474,41 @@ test('a URL glob prints as written', async ({ app, browser }) => {
 });
 `;
 
-// A predicate, which Playwright accepts and a migrated test may still pass, is
-// refused instead of reading as a pattern that matches everything. An option
-// the call does not take is refused instead of leaving it on its default.
+// A route predicate, which Playwright accepts and a migrated test may still
+// pass, is refused instead of reading as a pattern that matches everything;
+// the two waits take one, as Playwright's do. An option the call does not
+// take is refused instead of leaving it on its default.
 const URL_PATTERNS = `import { test } from '@e2e-dev/web';
 import { expect } from 'e2e';
 
 const toOther: any = (url: URL) => url.pathname === '/other';
 const flag = (name, value) => JSON.parse(JSON.stringify({ [name]: value, timeout: 300 }));
 
-test('waitForResponse with a predicate', async ({ app, browser }) => {
+test('waitForResponse and waitForRequest with a predicate', async ({ app, browser }) => {
   await app.open();
-  await Promise.all([browser.waitForResponse(toOther, { timeout: 2_000 }), browser.goto('/flags')]);
+  const [response, request] = await Promise.all([
+    browser.waitForResponse(async (candidate) => candidate.url.endsWith('/api/flags') && (await candidate.json()).betaBoard === false),
+    browser.waitForRequest((candidate) => candidate.url.endsWith('/api/flags') && candidate.method === 'GET'),
+    browser.goto('/flags'),
+  ]);
+  expect(response.status).toBe(200);
+  expect(response.request.url).toBe(request.url);
+});
+
+test('a predicate that throws fails with its own error', async ({ app, browser }) => {
+  await app.open();
+  await Promise.all([
+    browser.waitForResponse(() => { throw new TypeError('predicate bug'); }),
+    browser.goto('/flags'),
+  ]);
+});
+
+test('an expect in a predicate fails as an assertion', async ({ app, browser }) => {
+  await app.open();
+  await Promise.all([
+    browser.waitForRequest((candidate) => { expect(candidate.method).toBe('POST'); return true; }),
+    browser.goto('/flags'),
+  ]);
 });
 
 test('route with a predicate', async ({ app, browser, screen }) => {
@@ -526,6 +549,16 @@ test('an option toHaveTitle does not take is refused', async ({ app, browser }) 
 test('an option waitForURL does not take is refused', async ({ app, browser }) => {
   await app.open();
   await browser.waitForURL('/', flag('waitUntil', 'load'));
+});
+
+test('an option waitForResponse does not take is refused', async ({ app, browser }) => {
+  await app.open();
+  await browser.waitForResponse('**/api/flags', flag('signal', null));
+});
+
+test('an option waitForRequest does not take is refused', async ({ app, browser }) => {
+  await app.open();
+  await browser.waitForRequest('**/api/flags', flag('signal', null));
 });
 `;
 
@@ -859,8 +892,28 @@ describe('web platform integration', () => {
     );
   });
 
+  it('waits for a response and a request a predicate accepts, labeled as a predicate', () => {
+    const result = resultByTitle(outcome, 'waitForResponse and waitForRequest with a predicate');
+    expect(result.status).toBe('passed');
+    const waits = result.attempts[0]!.steps.filter((step) => step.api === 'browser.waitForResponse' || step.api === 'browser.waitForRequest');
+    expect(waits.map(({ api, label, status }) => ({ api, label, status }))).toEqual([
+      { api: 'browser.waitForResponse', label: 'predicate', status: 'passed' },
+      { api: 'browser.waitForRequest', label: 'predicate', status: 'passed' },
+    ]);
+  });
+
   it.each([
-    ['waitForResponse with a predicate', 'browser.waitForResponse'],
+    ['a predicate that throws fails with its own error', 'browser.waitForResponse', 'ERROR', 'predicate bug'],
+    ['an expect in a predicate fails as an assertion', 'browser.waitForRequest', 'ASSERTION_FAILED', 'POST'],
+  ])('%s', (title, api, code, message) => {
+    const result = resultByTitle(outcome, title);
+    expect(result.status).toBe('failed');
+    const attempt = result.attempts[0]!;
+    expect(attempt.error).toMatchObject({ code, message: expect.stringContaining(message) });
+    expect(attempt.steps.find((step) => step.status === 'failed')?.api).toBe(api);
+  });
+
+  it.each([
     ['route with a predicate', 'browser.route'],
     ['unroute with a predicate', 'browser.unroute'],
   ])('%s fails with INVALID_ARGUMENT at %s', (title, api) => {
@@ -875,6 +928,8 @@ describe('web platform integration', () => {
   it.each([
     ['an option toHaveTitle does not take is refused', 'expect.toHaveTitle options has no key "ignoreCase"'],
     ['an option waitForURL does not take is refused', 'browser.waitForURL options has no key "waitUntil"'],
+    ['an option waitForResponse does not take is refused', 'browser.waitForResponse options has no key "signal"'],
+    ['an option waitForRequest does not take is refused', 'browser.waitForRequest options has no key "signal"'],
   ])('%s', (title, message) => {
     const result = resultByTitle(outcome, title);
     expect(result.status).toBe('failed');
