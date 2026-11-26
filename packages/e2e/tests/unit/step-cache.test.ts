@@ -1402,6 +1402,20 @@ describe('cache.strict and a step whose key changed under its recording', () => 
     expect(session.cacheInfo).toMatchObject({ mode: 'missed', reason: 'no-entry' });
   });
 
+  it('lists the store again on the next miss after a listing fails', async () => {
+    const context = await rekeyedContext(recordedPayload(exampleStep));
+    const keyHashes = vi
+      .spyOn(FileCacheStore.prototype, 'keyHashes')
+      .mockRejectedValueOnce(Object.assign(new Error('too many open files'), { code: 'EMFILE' }));
+    try {
+      await expect(makeSession(context, makeHost(['/'])).begin()).resolves.toBeUndefined();
+      await expect(makeSession(context, makeHost(['/'])).begin()).rejects.toMatchObject({ code: 'REPLAY_STALE' });
+      expect(keyHashes).toHaveBeenCalledTimes(2);
+    } finally {
+      keyHashes.mockRestore();
+    }
+  });
+
   it('runs live against an entry recorded before the occurrence fields were, which could be another call of the instruction', async () => {
     const { testId, targetId, instructionDigest: digest } = exampleStep;
     const session = makeSession(await rekeyedContext(recordedPayload({ testId, targetId, instructionDigest: digest })), makeHost(['/']));

@@ -13,7 +13,8 @@
  * Only the file store can be listed. The listing is read once per worker
  * and target, on the first strict miss that asks, and kept: every entry
  * written since has a key the run derives, so it is a hit rather than a
- * candidate here.
+ * candidate here. A listing that fails is not kept, so the next miss lists
+ * again.
  */
 
 import type { ResolvedCacheConfig } from '../config/resolve.ts';
@@ -44,7 +45,10 @@ export class StoredRecordings {
     if (key === undefined) return undefined;
     let listing: ReadonlyMap<string, readonly string[]>;
     try {
-      this.listing ??= this.list();
+      this.listing ??= this.list().catch((cause: unknown) => {
+        this.listing = undefined;
+        throw cause;
+      });
       listing = await this.listing;
     } catch {
       return undefined;
