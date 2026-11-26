@@ -1,6 +1,5 @@
 /** Runner-side secret redaction. */
 
-import { AsyncResource } from 'node:async_hooks';
 import { StringDecoder } from 'node:string_decoder';
 import { MIN_SECRET_LENGTH, secretLength } from '../config/secrets.ts';
 import { escapeRegexpChar } from './regexp.ts';
@@ -96,7 +95,7 @@ function compile(values: readonly (readonly [string, string])[], wholeOnly: Read
       ? text.split(known).map((piece, index) => (index % 2 === 1 ? piece : rewrite(piece))).join('')
       : rewrite(text);
 
-  // Keep secrets and redaction markers intact when splitting output between writers.
+  // Move the boundary to the end of any secret match or marker it intersects.
   const safeRedactionBoundary = (text: string, offset: number): number => {
     let start = 0;
     const pieces = text.includes(MARKER_OPEN) ? text.split(known) : [text];
@@ -785,7 +784,6 @@ export class SecretLedger {
     return cut;
   }
 
-
   safeRedactionBoundary(text: string, offset: number): number {
     return this.compile().safeRedactionBoundary(text, offset);
   }
@@ -814,144 +812,129 @@ export class SecretLedger {
   }
 }
 
-/** Continuation bytes still needed by the UTF-8 sequence at the end of a buffer. */
-function missingUtf8Bytes(bytes: Uint8Array): number {
-  let index = bytes.length - 1;
-  while (index >= 0 && bytes.length - index <= 3 && (bytes[index]! & 0xc0) === 0x80) index--;
-  if (index < 0) return 0;
-  const lead = bytes[index]!;
-  const width = (lead & 0xf8) === 0xf0 ? 4 : (lead & 0xf0) === 0xe0 ? 3 : (lead & 0xe0) === 0xc0 ? 2 : 1;
-  return Math.max(0, width - (bytes.length - index));
+/**
+ * Tracks a boundary between successive writes.
+ * Create it with `{ prefix: 0 }` and pass it to subsequent
+ * `push` and `flush` calls until the output reaches the boundary.
+ */
+export interface StreamBoundary {
+  /** Length of the returned text before the boundary. */
+  prefix: number;
+  /** Length of the buffered input before the boundary. */
+  remaining?: number;
 }
 
-type RedactedPiece<Writer> = { write: Writer; text: string };
-
 /**
- * Redacts a stream as if its text had arrived in one piece, even when a
- * secret, a `<secret:name>` marker, or a UTF-8 character spans writes.
- * Buffered text can be assigned a writer so it reaches the same destination
- * when a later write or `flush()` releases it.
+ * Redaction for text that arrives in pieces, as a stream writes it, so a
+ * value split across two writes is still caught. Each `push` returns what is
+ * safe to pass on and holds back the rest: the tail a later piece could
+ * complete into a value or a `<secret:name>` marker, as the ledger measures
+ * it. Bytes are decoded as UTF-8 with a character split across byte pieces
+ * kept whole; a string piece ends an unfinished character first, as a
+ * terminal shows the bytes Node wrote before it. `flush` releases what is
+ * held, redacted, when the stream ends. The pieces together redact to
+ * exactly what the whole text would.
  */
-export class StreamRedactor<Writer extends (text: string) => void = (text: string) => void> {
+export class StreamRedactor {
   private readonly decoder = new StringDecoder('utf8');
   private held = '';
-  private readonly destinations: { start: number; end: number; write: Writer }[] = [];
-  private partial: { remaining: number; write: Writer | undefined } | undefined;
-  private offset = 0;
-  private activeDelivery: (() => void)[] | undefined;
 
-  constructor(
-    private readonly ledger: SecretLedger,
-    private readonly defaultWriter?: Writer,
-  ) {}
+  constructor(private readonly ledger: SecretLedger) {}
 
-  push(chunk: string | Uint8Array, write?: Writer): string {
-    return this.drainBuffer(this.bufferChunk(chunk, write));
+  /**
+   * Returns the redacted text that is safe to release and updates the boundary
+   * if provided.
+   */
+  push(chunk: string | Uint8Array, boundary?: StreamBoundary): string {
+    if (boundary) boundary.prefix = 0;
+    if (chunk.length === 0) return '';
+
+    const firstWriteAfterBoundary =
+      boundary !== undefined && boundary.remaining === undefined;
+    const endsPendingSequence =
+      typeof chunk === 'string' ||
+        (firstWriteAfterBoundary && (chunk[0]! & 0xc0) !== 0x80);
+    const decoderTail = endsPendingSequence ? this.decoder.end() : '';
+
+    if (boundary) boundary.remaining ??= this.held.length + decoderTail.length;
+
+    const text =
+      this.held + decoderTail +
+        (typeof chunk === 'string' ? chunk : this.decoder.write(chunk));
+    const cut = this.safeCutoff(text, boundary);
+
+    this.held = text.slice(cut);
+    return this.release(text.slice(0, cut), boundary);
   }
 
-  /** Returns false when the writer needs to pause, or true when output is buffered or can continue. */
-  writeTo(chunk: string | Uint8Array, sink: Writer, deliver: (writes: readonly RedactedPiece<Writer>[]) => boolean): boolean {
-    let accepted = true;
-    const finish = (writes: RedactedPiece<Writer>[], tail: string) => {
-      if (tail !== '' || writes.length === 0) writes.push({ write: sink, text: tail });
-      accepted = deliver(writes);
-    };
-    this.drainBuffer(this.bufferChunk(chunk), this.activeDelivery === undefined ? finish : AsyncResource.bind(finish));
-    return accepted;
+  /**
+   * Redacts and returns the remaining buffered text
+   */
+  flush(boundary?: StreamBoundary): string {
+    const text = this.held + this.decoder.end();
+    this.held = '';
+    return this.release(text, boundary);
   }
 
-  /** Buffers the chunk and returns the length of the prefix safe to drain. */
-  private bufferChunk(chunk: string | Uint8Array, write?: Writer): number {
-    if (chunk.length === 0) return 0;
-    const partial = this.partial;
-    if (partial !== undefined) {
-      let count = 0;
-      if (typeof chunk !== 'string') {
-        while (count < partial.remaining && count < chunk.length && (chunk[count]! & 0xc0) === 0x80) count++;
-        this.append(this.decoder.write(chunk.subarray(0, count)), partial.write);
-        partial.remaining -= count;
-        chunk = chunk.subarray(count);
-      }
-      if (partial.remaining > 0) {
-        if (chunk.length === 0) return 0;
-        this.append(this.decoder.end(), partial.write);
-      }
-      this.partial = undefined;
-    }
-    const decoded = typeof chunk === 'string' ? this.decoder.end() + chunk : this.decoder.write(chunk);
-    this.append(decoded, write);
-    if ((write !== undefined || this.defaultWriter !== undefined) && typeof chunk !== 'string') {
-      const remaining = missingUtf8Bytes(chunk);
-      if (remaining > 0) this.partial = { remaining, write };
-    }
-    return this.ledger.holdFrom(this.held);
-  }
+  /**
+   * Determines how much text can be safely released without splitting
+   * a character at the boundary.
+   */
+  private safeCutoff(text: string, boundary?: StreamBoundary): number {
+    const cut = this.ledger.holdFrom(text);
 
-  /** Releases the remaining redacted text, decoding an incomplete UTF-8 sequence as a replacement character. */
-  flush(): string {
-    this.append(this.decoder.end(), this.partial?.write);
-    this.partial = undefined;
-    return this.drainBuffer(this.held.length);
-  }
+    const splitsCharacterAtBoundary =
+      boundary !== undefined &&
+      cut > 0 &&
+      cut === boundary.remaining &&
+      text.codePointAt(cut - 1)! > 0xffff;
 
-  private append(text: string, write: Writer | undefined): void {
-    if (write !== undefined && text.length > 0) {
-      const start = this.offset + this.held.length;
-      const last = this.destinations.at(-1);
-      if (last?.end === start && last.write === write) last.end += text.length;
-      else this.destinations.push({ start, end: start + text.length, write });
-    }
-    this.held += text;
-  }
+    if (splitsCharacterAtBoundary) {
+      const firstHalf = text[cut - 1]!;
+      const redactedPrefix = this.ledger.redact(text.slice(0, cut));
 
-  private drainBuffer(cut: number, finish?: (writes: RedactedPiece<Writer>[], tail: string) => void): string {
-    const text = this.held.slice(0, cut);
-    this.held = this.held.slice(cut);
-    if (this.activeDelivery === undefined && (text === '' || this.destinations.length === 0)) {
-      const safe = this.ledger.redact(text);
-      finish?.([], safe);
-      return safe;
-    }
-    const pendingWrites: RedactedPiece<Writer>[] = [];
-    const base = this.offset;
-    this.offset += cut;
-    let start = 0;
-    let unassigned = '';
-    while (this.destinations.length > 0) {
-      const next = this.destinations[0]!;
-      if (next.start >= this.offset) break;
-      const from = next.start <= base + start ? start : this.ledger.safeRedactionBoundary(text, next.start - base);
-      if (from > start) {
-        const earlier = this.ledger.redact(text.slice(start, from));
-        if (this.defaultWriter === undefined) unassigned += earlier;
-        else pendingWrites.push({ write: this.defaultWriter, text: earlier });
-      }
-      const end = next.end >= this.offset ? cut : this.ledger.safeRedactionBoundary(text, next.end - base);
-      start = Math.max(from, end);
-      if (start > from) pendingWrites.push({ write: next.write, text: this.ledger.redact(text.slice(from, start)) });
-      if (next.end > this.offset) break;
-      this.destinations.shift();
-    }
-    if (this.destinations.length === 0) this.offset = 0;
-    const rest = this.ledger.redact(text.slice(start));
-    if (finish === undefined && this.defaultWriter !== undefined && rest !== '') {
-      pendingWrites.push({ write: this.defaultWriter, text: rest });
-    }
-    const deliver = () => {
-      if (finish !== undefined) return finish(pendingWrites, unassigned + rest);
-      for (const { write, text: piece } of pendingWrites) write(piece);
-    };
-    if (this.activeDelivery !== undefined) this.activeDelivery.push(deliver);
-    else {
-      // A reporter can write again while receiving output. Deliver that write after this batch.
-      const queue = [deliver];
-      this.activeDelivery = queue;
-      try {
-        for (const send of queue) send();
-      } finally {
-        this.activeDelivery = undefined;
+      // If the first half was redacted, the prefix would end in '>'.
+      if (redactedPrefix.endsWith(firstHalf)) {
+        return cut - 1;
       }
     }
-    return this.defaultWriter === undefined ? unassigned + rest : '';
+
+    return cut;
+  }
+
+  /**
+   * Redacts text that is safe to release and updates the boundary if provided.
+   */
+  private release(text: string, boundary: StreamBoundary | undefined): string {
+    if (!boundary) return this.ledger.redact(text);
+
+    boundary.prefix = 0;
+    boundary.remaining ??= text.length;
+
+    const boundaryOffset = boundary.remaining;
+    if (boundaryOffset === 0) return this.ledger.redact(text);
+
+    boundary.remaining = Math.max(0, boundaryOffset - text.length);
+
+    if (boundaryOffset >= text.length) {
+      const redactedText = this.ledger.redact(text);
+      boundary.prefix = redactedText.length;
+      return redactedText;
+    }
+
+    let splitOffset = this.ledger.safeRedactionBoundary(text, boundaryOffset);
+
+    const splitsCharacterAtBoundary =
+      splitOffset === boundaryOffset &&
+      text.codePointAt(boundaryOffset - 1)! > 0xffff;
+
+    if (splitsCharacterAtBoundary) {
+      splitOffset = this.ledger.safeRedactionBoundary(text, boundaryOffset - 1);
+    }
+
+    const redactedPrefix = this.ledger.redact(text.slice(0, splitOffset));
+    boundary.prefix = redactedPrefix.length;
+
+    return redactedPrefix + this.ledger.redact(text.slice(splitOffset));
   }
 }

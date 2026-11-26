@@ -148,25 +148,163 @@ describe('RunnerOutput', () => {
     expect(stderr()).toBe('config error: <secret:apiToken>\n');
   });
 
-  it('keeps the config destination across a split UTF-8 character and a change of view', async () => {
-    const { out, ledger, stdout, stderr } = output();
-    ledger.register('token', 'a synthetic phrase');
-    const glyph = Buffer.from('🌲');
-    out.write('stdout', 'first ');
-    await out.withholdDuring(async () => {
-      out.write('stdout', 'config ');
-      out.write('stdout', glyph.subarray(0, 2));
-    });
-    out.leaveStdout();
-    const live: string[] = [];
-    out.showThrough({ show: (_stream, text) => live.push(text), showHanded: () => {}, end: () => {} });
-    out.write('stdout', glyph.subarray(2));
-    out.write('stdout', ' last');
-    out.end();
-    expect(stdout()).toBe('config 🌲');
-    expect(live.join('')).toBe('first  last');
+  it.each([
+    {
+      name: 'sends the whole emoji to the reporter when its UTF-8 bytes span two writes',
+      before: Buffer.from([0xf0, 0x9f]),
+      after: Buffer.from([0x98, 0x80]),
+      terminal: '',
+      viewer: '\u{1f600}',
+    },
+    {
+      name: 'sends the whole emoji to the reporter when it spans two string writes',
+      before: '\ud83d',
+      after: '\ude00',
+      terminal: '',
+      viewer: '\u{1f600}',
+    },
+    {
+      name: 'leaves a replacement character on the terminal when a string follows truncated bytes',
+      before: Buffer.from([0xf0, 0x9f]),
+      after: 'next',
+      terminal: '�',
+      viewer: 'next',
+    },
+    {
+      name: 'leaves a replacement character on the terminal when ASCII bytes follow truncated bytes',
+      before: Buffer.from([0xf0, 0x9f]),
+      after: Buffer.from('next'),
+      terminal: '�',
+      viewer: 'next',
+    },
+    {
+      name: 'keeps the replacement character on the terminal when the stream ends after an empty write',
+      before: Buffer.from([0xf0, 0x9f]),
+      after: '',
+      terminal: '�',
+      viewer: '',
+    },
+    {
+      name: 'keeps an existing redaction marker on the terminal when the reporter attaches between its two parts',
+      before: '<sec',
+      after: 'ret:apiKey>',
+      terminal: '<secret:apiKey>',
+      viewer: '',
+    },
+  ])('$name', ({ before, after, terminal, viewer }) => {
+    const { out, ledger, stderr } = output();
+
+    ledger.register('apiKey', 'secret');
+    ledger.register('phrase', 'a synthetic phrase');
+    const shown: string[] = [];
+
+    out.write('stderr', before);
     expect(stderr()).toBe('');
+
+    out.showThrough({
+      show(_stream, text) {
+        shown.push(Buffer.from(text).toString());
+      },
+      showHanded() {},
+      end() {},
+    });
+    out.write('stderr', after);
+    out.end();
+
+    expect(stderr()).toBe(terminal);
+    expect(shown.join('')).toBe(viewer);
   });
+
+  it.each([
+    {
+      name: 'sends the whole emoji to the reporter when the redactor would release only its first half',
+      before: '\ud83d',
+      secret: false,
+      terminal: '',
+      viewer: '\u{1f600}',
+    },
+    {
+      name: 'keeps the redaction marker on the terminal when a secret ends with the first half of an emoji',
+      before: 'abcdef\ud83d',
+      secret: true,
+      terminal: '<secret:edge>',
+      viewer: '�',
+    },
+  ])('$name', ({ before, secret, terminal, viewer }) => {
+    const { out, ledger, stderr } = output();
+
+    ledger.register('phrase', 'synthetic phrase');
+    if (secret) ledger.register('edge', before);
+    // Pad the second write so the cutoff would fall between the two halves of the emoji.
+    const filler = 'x'.repeat(ledger.maxFormLength - 2);
+    const shown: string[] = [];
+
+    out.write('stderr', before);
+    expect(stderr()).toBe('');
+
+    out.showThrough({
+      show(_stream, text) {
+        shown.push(Buffer.from(text).toString());
+      },
+      showHanded() {},
+      end() {},
+    });
+    out.write('stderr', '\ude00' + filler);
+    out.end();
+
+    expect(stderr()).toBe(terminal);
+    expect(shown.join('')).toBe(viewer + filler);
+  });
+
+  it.each([
+    { outcome: 'success', highWaterMark: 1, accepted: false, failure: undefined },
+    { outcome: 'failure', highWaterMark: 1, accepted: false, failure: new Error('terminal write failed') },
+    { outcome: 'success', highWaterMark: 1024, accepted: true, failure: undefined },
+    { outcome: 'failure', highWaterMark: 1024, accepted: true, failure: new Error('terminal write failed') },
+  ])(
+    'calls back once when the terminal finishes a write shared with the reporter ($outcome, highWaterMark $highWaterMark)',
+    async ({ highWaterMark, accepted, failure }) => {
+      const terminal = delayedTerminal(highWaterMark);
+
+      const ledger = new SecretLedger();
+      const out = new RunnerOutput({ stdout: terminal.write, stderr: terminal.write }, ledger);
+      ledger.register('phrase', 'a synthetic phrase');
+
+      if (failure) terminal.stream.once('error', () => {});
+      const live = `live\n${'x'.repeat(256)}`;
+      const shown: string[] = [];
+      const completions: (Error | undefined)[] = [];
+
+      out.write('stderr', 'config ');
+      out.showThrough({
+        show(_stream, text) {
+          shown.push(text);
+        },
+        showHanded() {},
+        end() {},
+      });
+      expect(terminal.chunks.join('')).toBe('');
+
+      const returned = out.write('stderr', live, (error?: Error | null) => {
+        completions.push(error ?? undefined);
+      });
+      await new Promise<void>((resolve) => process.nextTick(resolve));
+
+      expect(returned).toBe(accepted);
+      expect(terminal.chunks.join('')).toBe('config ');
+      expect(completions).toEqual([]);
+
+      terminal.acknowledge(failure);
+      await new Promise<void>((resolve) => process.nextTick(resolve));
+
+      expect(completions).toEqual([failure]);
+
+      out.end();
+
+      expect(terminal.chunks.join('')).toBe('config ');
+      expect(shown.join('')).toBe(live);
+    },
+  );
 
   it('releases pending output in stream order across a config load', async () => {
     const { out, ledger, stdout } = output();
@@ -194,29 +332,6 @@ describe('RunnerOutput', () => {
     expect({ accepted, calls }).toEqual({ accepted: false, calls: 0 });
     terminal.acknowledge();
     expect(calls).toBe(1);
-    out.end();
-  });
-
-  it.each([
-    { slow: 'config', firstError: undefined },
-    { slow: 'runtime', firstError: new Error('config write failed') },
-  ])('waits for both destinations when the $slow stream is backed up', async ({ slow, firstError }) => {
-    const config = delayedTerminal(slow === 'config' ? 1 : 1024);
-    const runtime = delayedTerminal(slow === 'runtime' ? 1 : 1024);
-    const out = new RunnerOutput({ stdout: config.write, stderr: runtime.write }, new SecretLedger());
-    await out.withholdDuring(async () => { out.write('stdout', Buffer.from([0xc3])); });
-    out.leaveStdout();
-    const results: (Error | undefined)[] = [];
-    const accepted = out.write('stdout', Buffer.from([0xa9, 0x21]), (error) => results.push(error ?? undefined));
-    expect([config.chunks, runtime.chunks]).toEqual([['é'], ['!']]);
-    expect(accepted).toBe(false);
-    const [first, last] = slow === 'config' ? [runtime, config] : [config, runtime];
-    if (firstError !== undefined) first.stream.once('error', () => {});
-    first.acknowledge(firstError);
-    await new Promise<void>((resolve) => process.nextTick(resolve));
-    expect(results).toEqual([]);
-    last.acknowledge();
-    expect(results).toEqual([firstError]);
     out.end();
   });
 
@@ -248,8 +363,8 @@ describe('RunnerOutput', () => {
     expect(callbacks).toEqual([]);
     await new Promise<void>((resolve) => process.nextTick(resolve));
     expect(callbacks).toEqual(['reporter']);
-    expect(stderr()).toBe('config ');
-    expect(live.join('')).toBe('before ' + after + 'warning\n');
+    expect(stderr()).toBe('before config ');
+    expect(live.join('')).toBe(after + 'warning\n');
   });
 
   it('withholds what was printed while a config failed to load, and passes what follows', async () => {

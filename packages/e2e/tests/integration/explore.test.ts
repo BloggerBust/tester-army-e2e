@@ -1002,16 +1002,21 @@ try {
       return child;
     }
 
-    it('is redacted with the secrets the config declares', () => {
+    it.each([
+      { reporter: 'list', shown: 'stdout', quiet: 'stderr' },
+      { reporter: 'json', shown: 'stderr', quiet: 'stdout' },
+    ] as const)('is redacted with the secrets the config declares ($reporter)', ({ reporter, shown, quiet }) => {
       const child = runDriver(`import { defineEngine } from 'e2e/engine';
 const token = '${TOKEN}';
 console.log(\`config console.log: \${token}\`);
 export default {
   targets: [{ name: 'headless', platform: 'test', engine: defineEngine({ name: 'noop', version: '1', spiVersion: 1 }) }],
   secrets: { apiToken: token },
+  reporters: ['${reporter}'],
 };
 `);
-      expect(child.stdout).toContain('config console.log: <secret:apiToken>');
+      expect(child[shown]).toContain('config console.log: <secret:apiToken>');
+      expect(child[quiet]).not.toContain('config console.log:');
       expect(child.stderr).toContain('explore rejected: UNKNOWN_TARGET');
       expect(`${child.stdout}\n${child.stderr}`).not.toContain(TOKEN);
     });

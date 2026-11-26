@@ -437,7 +437,7 @@ let plans = 0;
 it.each([
   { source: 'CLI', configured: "'list'", flags: ['--reporter', 'json'] },
   { source: 'config', configured: 'json()', flags: [] },
-])('keeps explore stdout for the JSON reporter selected by $source', ({ configured, flags }) => {
+])('writes only the JSON report to stdout during explore ($source reporter selection)', ({ configured, flags }) => {
   const config = exploreConfig(
     "console.log('loading config: fixture-token');",
     `secrets: { token: 'fixture-token' },
@@ -455,13 +455,11 @@ it.each([
 
 it.each(['run', 'explore'])('keeps buffered config diagnostics on stderr during %s', (command) => {
   const log = `console.error('CONFIG-DIAGNOSTIC');
-process.stdout.write('config tail: fixture al');`;
-  const settings = `secrets: { token: 'fixture alpha beta' },
+process.stdout.write('config tail: fi');
+setImmediate(() => process.stdout.write('xture alpha beta\\nLIVE-ONLY\\n'));`;
+  const settings = `secrets: { short: 'fixture', token: 'fixture alpha beta' },
   reporters: [
     'json',
-    { name: 'writer', onEvent(event) {
-      if (event.type === 'run-started') process.stdout.write('pha beta\\nLIVE-ONLY\\n');
-    } },
     { name: 'viewer', interactive: true, received: '',
       onEvent(event) { if (event.type === 'output') this.received += event.text; },
       onSummary() { console.error('viewer received: ' + JSON.stringify(this.received)); },
@@ -479,7 +477,7 @@ process.stdout.write('config tail: fixture al');`;
   expect(stderr).toContain('viewer received: "\\nLIVE-ONLY\\n"');
   expect(stdout).not.toMatch(/CONFIG-DIAGNOSTIC|config tail|LIVE-ONLY/);
   expect(stderr.match(/LIVE-ONLY/g)).toHaveLength(1);
-  expect(stdout + stderr).not.toMatch(/fixture al|pha beta/);
+  expect(stdout + stderr).not.toMatch(/tail: fi|fixture al|xture alpha| alpha beta/);
 });
 
 describe('fixture rules through the CLI', () => {
