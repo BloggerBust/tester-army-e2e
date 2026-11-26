@@ -280,7 +280,7 @@ export async function pollReads(options: PollReadsOptions): Promise<void> {
     await sleep(Math.min(pollDelay(now - startedAt), deadline.remaining(now)), options.signal);
     readAt = Date.now();
     if (negated && deadline.expired(readAt)) {
-      if (holds(readAt)) return;
+      if (holds(Math.min(readAt, deadline.endsAt))) return;
       throw await options.onTimeout();
     }
   }

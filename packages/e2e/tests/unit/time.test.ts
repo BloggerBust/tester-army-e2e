@@ -531,6 +531,30 @@ describe('pollCondition', () => {
     await settled;
   });
 
+  it('counts a negation as held only until the deadline when the sleep before the last read wakes late', async () => {
+    vi.useFakeTimers();
+    const startedAt = Date.now();
+    const reads: number[] = [];
+    const promise = pollCondition({
+      deadline: new Deadline(3_000),
+      signal: new AbortController().signal,
+      negated: true,
+      evaluate: async () => {
+        reads.push(Date.now() - startedAt);
+        return Date.now() - startedAt < 2_050;
+      },
+      onTimeout: () => new Error('negation timed out'),
+    });
+    const settled = expect(promise).rejects.toThrow('negation timed out');
+    // The last read at 2.9 s sleeps until the deadline; a loaded event loop wakes it 150 ms late.
+    await vi.advanceTimersByTimeAsync(2_950);
+    vi.setSystemTime(Date.now() + 150);
+    await vi.advanceTimersByTimeAsync(10_000);
+    await settled;
+    expect(reads.find((at) => at >= 2_050)).toBe(2_100);
+    expect(reads.at(-1)).toBe(2_900);
+  });
+
   it('ends on a read cut off within the longest read time of the deadline, and fails on one that hung with more left', async () => {
     vi.useFakeTimers();
     const cut = new EngineError('OPERATION_TIMEOUT', 'locate timed out', { retryable: false });
