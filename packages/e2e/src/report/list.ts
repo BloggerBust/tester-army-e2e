@@ -500,6 +500,9 @@ export class ListReporter {
         break;
       case 'run-error':
         this.errors.push(event.error);
+        // A setup step that fails ends as a run error, with no `finished`.
+        this.inFlight = undefined;
+        this.window.redraw();
         break;
       case 'run-interrupted':
         this.runInterrupted(event);

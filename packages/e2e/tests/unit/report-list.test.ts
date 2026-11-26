@@ -996,6 +996,20 @@ describe('ListReporter', () => {
       expect(lines.find((line) => line.includes('Duration'))).not.toContain('startup');
     });
 
+    it('takes down a setup step that failed with a run error, so an interrupt after it does not name it', () => {
+      const chunks: string[] = [];
+      const lines: string[] = [];
+      const reporter = plainReporter({ write: (line) => lines.push(line), raw: (text) => chunks.push(text) }, true);
+      reporter.handle(runStarted());
+      const app = { kind: 'app', label: 'target "chromium" command', url: 'http://127.0.0.1:4310/' } as const;
+      reporter.handle({ type: 'setup', step: app, state: 'started' });
+      expect(chunks.at(-1)).toContain('starting target "chromium" command');
+      reporter.handle({ type: 'run-error', error: { category: 'infrastructure', code: 'APP_UNREACHABLE', message: 'the app command exited with code 1', retryable: false, phase: 'launch' } });
+      expect(chunks.at(-1)).not.toContain('starting');
+      reporter.handle({ type: 'run-interrupted', mode: 'graceful' });
+      expect(lines.join('\n')).not.toContain('interrupted while starting');
+    });
+
   });
 
   describe('serial groups', () => {
