@@ -177,7 +177,11 @@ In a Next.js app, the web target starts the app. See
 
 After you confirm the file changes, the wizard asks whether to install the
 selected dependencies. The installer follows the project's `packageManager`
-field or lockfile, then the invoking package manager, then npm.
+field or lockfile, or its workspace root's for a workspace member. The
+fallback is the invoking package manager, then npm; a workspace member falls
+back the same way, with a warning, when its workspace root's manager is not
+installed. pnpm gets `--no-frozen-lockfile`, and Yarn
+`YARN_ENABLE_IMMUTABLE_INSTALLS=false`, so the lockfile can change in CI too.
 
 ##### Files
 

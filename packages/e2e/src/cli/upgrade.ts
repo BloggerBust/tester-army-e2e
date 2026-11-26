@@ -15,7 +15,7 @@ import path from 'node:path';
 import picocolors from 'picocolors';
 import { z } from 'zod';
 import { installedPackage } from '../internal/installed-package.ts';
-import { detectWorkspacePackageManager, execCommand, LOCKFILE_NAMES, type PackageManager } from '../internal/package-manager.ts';
+import { detectWorkspacePackageManager, execCommand, installCommand, LOCKFILE_NAMES, type PackageManager } from '../internal/package-manager.ts';
 import { isCiMode } from '@e2e-dev/core/lib/config/resolve';
 import { insideProjectRoot, realpathOfExisting } from '@e2e-dev/core/lib/internal/paths';
 import { DEPENDENCY_SECTIONS, RUNNER } from '../internal/project-package.ts';
@@ -177,7 +177,7 @@ async function upgradeOrThrow(options: UpgradeOptions, facts: UpgradeFacts): Pro
   const width = Math.max(...plan.map((entry) => entry.name.length));
   for (const entry of plan) out(`  ${entry.name.padEnd(width)}  ${describeChange(entry)}`);
   const manifestName = relative(cwd, project.manifestPath);
-  const args = installArgs(manager);
+  const { args, env: installEnv } = installCommand(manager);
   out(picocolors.dim(`${manifestName}: ${changing.map((entry) => `"${entry.name}": "${entry.request}"`).join(', ')}`));
   out(picocolors.dim(`$ ${manager} ${args.join(' ')}`));
   if (options.dryRun === true) {
@@ -192,7 +192,7 @@ async function upgradeOrThrow(options: UpgradeOptions, facts: UpgradeFacts): Pro
   const lockfiles = snapshotLockfiles([project.dir, root]);
   writeFileSync(project.manifestPath, serializePackage(withRequests(project.manifest, changing), project.original), 'utf8');
   const { result, interrupted } = await whileIgnoringSignals(() =>
-    (options.spawn ?? spawnInstall)(manager, args, project.dir, { ...env, YARN_ENABLE_IMMUTABLE_INSTALLS: 'false' }),
+    (options.spawn ?? spawnInstall)(manager, args, project.dir, { ...env, ...installEnv }),
   );
   const stopped = interrupted || result.signal === 'SIGINT' || result.signal === 'SIGTERM';
   if (result.error !== undefined || result.status !== 0 || stopped) {
@@ -490,14 +490,6 @@ function withRequests(manifest: Manifest, entries: readonly Planned[]): Manifest
     return [[section, { ...block, ...Object.fromEntries(moved) }] as const];
   });
   return { ...manifest, ...Object.fromEntries(sections) };
-}
-
-/**
- * The install that resolves the edited package.json. pnpm would refuse the
- * changed specs under a frozen lockfile, its default in CI.
- */
-function installArgs(manager: PackageManager): string[] {
-  return manager === 'pnpm' ? ['install', '--no-frozen-lockfile'] : ['install'];
 }
 
 function spawnInstall(command: string, args: readonly string[], cwd: string, env: NodeJS.ProcessEnv): SpawnOutcome {

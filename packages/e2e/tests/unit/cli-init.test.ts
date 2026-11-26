@@ -79,7 +79,7 @@ function writeCopy(location: string, content?: string): void {
 }
 
 /** A completed `spawnSync` result with the given exit status. */
-function spawnResult(status: number): ReturnType<typeof spawnSync> {
+function spawnResult(status: number | null): ReturnType<typeof spawnSync> {
   return { pid: 1, output: [], stdout: Buffer.alloc(0), stderr: Buffer.alloc(0), status, signal: null };
 }
 
@@ -665,7 +665,7 @@ describe('e2e init', () => {
     expect(clack.select).toHaveBeenCalledWith(expect.objectContaining({ message: expect.stringContaining('No API key needed during setup'), initialValue: 'vercel' }));
     expect(clack.confirm).toHaveBeenCalledWith(expect.objectContaining({ message: 'Install dependencies with npm?' }));
     expect(spawnSync).toHaveBeenCalledExactlyOnceWith('npm', ['install'], {
-      cwd: dir, stdio: 'inherit', shell: process.platform === 'win32',
+      cwd: dir, env: expect.objectContaining({ YARN_ENABLE_IMMUTABLE_INSTALLS: 'false' }), stdio: 'inherit', shell: process.platform === 'win32',
     });
     expect(output()).toContain('Next: APP_URL=http://localhost:3000 npm run test:e2e');
   });
@@ -907,7 +907,64 @@ describe('e2e init', () => {
     }
     vi.mocked(clack.confirm).mockResolvedValueOnce(true).mockResolvedValueOnce(true);
     await init(dir);
-    expect(spawnSync).toHaveBeenCalledWith('pnpm', ['install'], expect.objectContaining({ cwd: dir }));
+    expect(spawnSync).toHaveBeenCalledWith('pnpm', ['install', '--no-frozen-lockfile'], expect.objectContaining({ cwd: dir }));
+  });
+
+  it.each([
+    ['pnpm', ['install', '--no-frozen-lockfile'], { private: true }, { 'pnpm-workspace.yaml': 'packages:\n  - apps/*\n', 'pnpm-lock.yaml': '' }],
+    ['yarn', ['install'], { private: true, packageManager: 'yarn@4.5.0', workspaces: ['apps/*'] }, { '.yarnrc.yml': '', 'yarn.lock': '__metadata:\n  version: 8\n' }],
+  ] as const)('installs a workspace member with %s, the manager of its workspace root', async (manager, install, rootManifest, rootFiles) => {
+    writeFileSync(path.join(dir, 'package.json'), JSON.stringify(rootManifest));
+    for (const [name, content] of Object.entries(rootFiles)) writeFileSync(path.join(dir, name), content);
+    const project = path.join(dir, 'apps', 'web');
+    mkdirSync(project, { recursive: true });
+    writeFileSync(path.join(project, 'package.json'), JSON.stringify({ name: 'web', type: 'module' }));
+    expect((await init(project, { yes: true, install: true })).exitCode).toBe(0);
+    expect(vi.mocked(spawnSync).mock.calls.map(([command, args]) => [command, args])).toEqual([[manager, ['--version']], [manager, install]]);
+    expect(spawnSync).toHaveBeenNthCalledWith(1, manager, ['--version'], { cwd: dir, stdio: 'ignore', shell: process.platform === 'win32' });
+    expect(spawnSync).toHaveBeenLastCalledWith(manager, install, {
+      cwd: project, env: expect.objectContaining({ YARN_ENABLE_IMMUTABLE_INSTALLS: 'false' }), stdio: 'inherit', shell: process.platform === 'win32',
+    });
+    expect(output()).toContain(`${manager} test:e2e`);
+    expect(output()).not.toContain('was not found');
+  });
+
+  it.each([
+    ['one level down', 'apps/*', ['apps', 'new']],
+    ['two levels down', 'apps/**', ['apps', 'a', 'b']],
+  ] as const)('finds the workspace manager from the workspace root for a member folder %s that does not exist yet', async (_case, glob, segments) => {
+    writeFileSync(path.join(dir, 'package.json'), JSON.stringify({ private: true, packageManager: 'pnpm@10.0.0' }));
+    writeFileSync(path.join(dir, 'pnpm-workspace.yaml'), `packages: ['${glob}']\n`);
+    const project = path.join(dir, ...segments);
+    vi.mocked(spawnSync).mockImplementationOnce((_command, _args, options) => {
+      expect(existsSync(project)).toBe(false);
+      return existsSync(String(options?.cwd)) ? spawnResult(0) : { ...spawnResult(null), error: new Error('spawnSync pnpm ENOENT') };
+    });
+    expect((await init(project, { yes: true })).exitCode).toBe(0);
+    expect(spawnSync).toHaveBeenCalledExactlyOnceWith('pnpm', ['--version'], expect.objectContaining({ cwd: dir }));
+    expect(output()).toContain('pnpm test:e2e');
+    expect(output()).not.toContain('was not found');
+    expect(existsSync(path.join(project, 'package.json'))).toBe(true);
+  });
+
+  it.each([
+    ['is missing', (): ReturnType<typeof spawnSync> => ({ ...spawnResult(null), error: new Error('spawnSync pnpm ENOENT') })],
+    ['does not run', (): ReturnType<typeof spawnSync> => spawnResult(1)],
+  ] as const)('keeps the invoking manager for a workspace member when the workspace manager %s', async (_case, probe) => {
+    writeFileSync(path.join(dir, 'package.json'), JSON.stringify({ private: true, packageManager: 'pnpm@10.0.0' }));
+    writeFileSync(path.join(dir, 'pnpm-workspace.yaml'), 'packages:\n  - apps/*\n');
+    const project = path.join(dir, 'apps', 'web');
+    mkdirSync(project, { recursive: true });
+    vi.mocked(spawnSync).mockImplementationOnce(() => {
+      expect(existsSync(path.join(project, 'package.json'))).toBe(false);
+      return probe();
+    });
+    expect((await init(project, { yes: true, install: true })).exitCode).toBe(0);
+    expect(spawnSync).toHaveBeenNthCalledWith(1, 'pnpm', ['--version'], expect.anything());
+    expect(spawnSync).toHaveBeenLastCalledWith('npm', ['install'], expect.objectContaining({ cwd: project }));
+    expect(spawnSync).toHaveBeenCalledTimes(2);
+    expect(output()).toContain('This workspace uses pnpm, which was not found on this machine; continuing with npm');
+    expect(output()).toContain('npm run test:e2e');
   });
 
   it('keeps the scaffold and returns a failure when installation fails', async () => {

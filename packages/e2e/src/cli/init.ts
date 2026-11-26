@@ -10,6 +10,7 @@ import {
   detectPackageManager,
   detectWorkspacePackageManager,
   execCommand,
+  installCommand,
   readPackageManifest,
   runScriptCommand,
   type PackageManager,
@@ -374,7 +375,11 @@ export async function init(root: string, options: InitOptions = {}): Promise<Ini
   );
   if (isCancelled(mcpFiles)) return cancel();
   facts.mcp = mcpFiles.length > 0;
-  const manager = detectPackageManager(cwd, pkg.manifest.packageManager);
+  // A workspace member takes its workspace root's manager when this machine has it, and is treated as a standalone project otherwise.
+  const own = detectPackageManager(cwd, pkg.manifest.packageManager);
+  const workspace = detectWorkspacePackageManager(cwd);
+  const manager = workspace.manager === own || isInstalled(workspace.manager, workspace.root) ? workspace.manager : own;
+  if (manager !== workspace.manager) clack.log.warn(`This workspace uses ${workspace.manager}, which was not found on this machine; continuing with ${manager}`);
   let mcpRegistrations: ReturnType<typeof planMcpRegistration>['registrations'];
   try {
     const plan = planMcpRegistration(cwd, mcpFiles, manager);
@@ -554,7 +559,11 @@ export async function init(root: string, options: InitOptions = {}): Promise<Ini
       clack.log.info(`${CACHE_IGNORE_ENTRY} is ignored; committing agent.act replays is opt-in, see ${DOCS_URL}/cache#commit-the-replay-cache`);
     }
   }
-  const installed = install ? spawnSync(manager, ['install'], { cwd, stdio: 'inherit', shell: process.platform === 'win32' }) : undefined;
+  let installed: ReturnType<typeof spawnSync> | undefined;
+  if (install) {
+    const { args, env } = installCommand(manager);
+    installed = spawnSync(manager, args, { cwd, env: { ...process.env, ...env }, stdio: 'inherit', shell: process.platform === 'win32' });
+  }
   // After the install, so an existing config's engines load; the user's config runs only once they agreed to the changes.
   if (writesCi) {
     await writePipeline({
@@ -800,6 +809,11 @@ function describeApp(app: FrameworkApp, manager: PackageManager): string {
 function servedBuild(manifest: FrameworkManifest, config: string): string | undefined {
   const scripts = productionScripts(manifest);
   return scripts !== undefined && configRunsScript(config, scripts.start) ? scripts.build : undefined;
+}
+
+/** Whether `manager` runs in the workspace root, which exists before init writes and where a Corepack shim picks the workspace's version. */
+function isInstalled(manager: PackageManager, workspaceRoot: string): boolean {
+  return spawnSync(manager, ['--version'], { cwd: workspaceRoot, stdio: 'ignore', shell: process.platform === 'win32' }).status === 0;
 }
 
 /** The major version of the pnpm on this machine, for `pnpm/action-setup`; `latest` when it cannot be read. */

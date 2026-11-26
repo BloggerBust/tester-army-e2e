@@ -7,6 +7,7 @@ import {
   detectPackageManager,
   detectWorkspacePackageManager,
   execCommand,
+  installCommand,
   runScriptCommand,
   type PackageManager,
 } from '../../src/internal/package-manager.ts';
@@ -129,5 +130,14 @@ describe('manager commands', () => {
       ['yarn test:e2e', 'yarn e2e guide', 'yarn add -D ai'],
       ['bun run test:e2e', 'bun run e2e guide', 'bun add -d ai'],
     ]);
+  });
+
+  it.each([
+    ['npm', ['install']],
+    ['pnpm', ['install', '--no-frozen-lockfile']],
+    ['yarn', ['install']],
+    ['bun', ['install']],
+  ] as const)('installs with %s so that the lockfile can change in CI', (manager, args) => {
+    expect(installCommand(manager)).toEqual({ args, env: { YARN_ENABLE_IMMUTABLE_INSTALLS: 'false' } });
   });
 });
