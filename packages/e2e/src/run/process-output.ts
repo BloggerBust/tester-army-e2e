@@ -259,7 +259,10 @@ export class RunnerOutput {
     private readonly terminal: Readonly<Record<OutputStream, TerminalWrite>>,
     ledger: SecretLedger,
   ) {
-    this.redactors = { stdout: new StreamRedactor(ledger), stderr: new StreamRedactor(ledger) };
+    this.redactors = {
+      stdout: new StreamRedactor(ledger, (text) => this.emit('stdout', text)),
+      stderr: new StreamRedactor(ledger, (text) => this.emit('stderr', text)),
+    };
     this.passRedactors = { stdout: new StreamRedactor(ledger), stderr: new StreamRedactor(ledger) };
     this.printRedactors = { stdout: new StreamRedactor(ledger), stderr: new StreamRedactor(ledger) };
   }
@@ -279,7 +282,7 @@ export class RunnerOutput {
       if (callback !== undefined) process.nextTick(callback);
       return true;
     }
-    return this.emit(stream, this.redactors[stream].push(chunk), callback);
+    return this.redactors[stream].writeTo(chunk, (text) => this.emit(stream, text, callback));
   }
 
   /**
@@ -291,7 +294,11 @@ export class RunnerOutput {
   withholdDuring<T>(load: () => Promise<T>): Promise<T> {
     return this.loadHold.during(
       load,
-      (stream, chunk) => this.write(stream, chunk),
+      (stream, chunk) => {
+        const terminal = this.terminal[stream === 'stdout' ? this.stdoutTo : stream];
+        const text = this.redactors[stream].push(chunk, terminal);
+        if (text !== '') this.emit(stream, text);
+      },
       (line) => this.emit('stderr', `e2e: [warning] ${line}\n`),
     );
   }

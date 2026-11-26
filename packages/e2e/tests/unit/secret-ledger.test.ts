@@ -587,6 +587,15 @@ describe('StreamRedactor', () => {
       expect(stream.flush()).toBe('<secret:apiKey>');
     });
 
+    it('keeps an existing marker with the writer that started it', () => {
+      const stream = new StreamRedactor(new SecretLedger([['apiKey', 'secret']]));
+      const log: string[] = [];
+      const first = stream.push('<secret:api', (text) => log.push(text));
+      const rest = stream.push('Key> done\n') + stream.flush();
+      expect(log.join('')).toBe('<secret:apiKey>');
+      expect(first + rest).toBe(' done\n');
+    });
+
     it('releases a lone < whole once ordinary text follows it', () => {
       const stream = new StreamRedactor(short());
       expect(stream.push('see <')).toBe('');

@@ -457,8 +457,7 @@ prints under `stdout | runner` or `stderr | runner`. Both streams print
 where `list` does: stdout, or stderr beside `json`. Without `list`, `dot`, `line`,
 or another [interactive](/reference/reporters#interactive) reporter, output
 prints on stderr as written, so stdout holds only what a reporter prints
-there. Output from the config load prints on stderr before the
-run header, or a warning replaces it if the load fails.
+there. If the config fails to load, a warning is displayed.
 
 The runner [redacts](/reference/security#redaction) secret values. The
 report doesn't include console output, so use `expect` or an artifact for

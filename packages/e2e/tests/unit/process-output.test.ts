@@ -133,6 +133,85 @@ describe('RunnerOutput', () => {
     expect(stderr()).toBe('config error: <secret:apiToken>\n');
   });
 
+  it('keeps the config destination across a split UTF-8 character and a change of view', async () => {
+    const { out, ledger, stdout, stderr } = output();
+    ledger.register('token', 'a synthetic phrase');
+    const glyph = Buffer.from('🌲');
+    out.write('stdout', 'first ');
+    await out.withholdDuring(async () => {
+      out.write('stdout', 'config ');
+      out.write('stdout', glyph.subarray(0, 2));
+    });
+    out.leaveStdout();
+    const live: string[] = [];
+    out.showThrough({ show: (_stream, text) => live.push(text), showHanded: () => {}, end: () => {} });
+    out.write('stdout', glyph.subarray(2));
+    out.write('stdout', ' last');
+    out.end();
+    expect(stdout()).toBe('config 🌲');
+    expect(live.join('')).toBe('first  last');
+    expect(stderr()).toBe('');
+  });
+
+  it('releases pending output in stream order across a config load', async () => {
+    const { out, ledger, stdout } = output();
+    ledger.register('token', 'a synthetic phrase');
+    out.write('stdout', 'before ');
+    await out.withholdDuring(async () => { out.write('stdout', 'config '); });
+    out.write('stdout', 'after');
+    out.end();
+    expect(stdout()).toBe('before config after');
+  });
+
+  it('preserves backpressure and the write callback when runtime output releases a config diagnostic', async () => {
+    let completed: (() => void) | undefined;
+    const terminal = (_text: string | Uint8Array, callback?: () => void): boolean => {
+      completed = callback;
+      return false;
+    };
+    const out = new RunnerOutput({ stdout: terminal, stderr: terminal }, new SecretLedger([['token', 'a synthetic phrase']]));
+    await out.withholdDuring(async () => { out.write('stderr', 'config '); });
+    let calls = 0;
+    expect(out.write('stderr', 'runtime '.repeat(40), () => { calls++; })).toBe(false);
+    await new Promise<void>((resolve) => process.nextTick(resolve));
+    expect(calls).toBe(0);
+    completed?.();
+    expect(calls).toBe(1);
+    out.end();
+  });
+
+  it('keeps runtime output in order when the reporter triggers a warning during delivery', async () => {
+    const { out, ledger, stderr } = output();
+    ledger.register('token', 'a synthetic phrase');
+    out.write('stderr', 'before ');
+    await out.withholdDuring(async () => { out.write('stderr', 'config '); });
+    const live: string[] = [];
+    const writer = new AsyncLocalStorage<string>();
+    const callbacks: (string | undefined)[] = [];
+    let accepted: boolean | undefined;
+    out.showThrough({
+      show(_stream, text) {
+        live.push(text);
+        if (live.length === 1) {
+          accepted = writer.run('reporter', () =>
+            out.captured(() => out.write('stderr', 'warning\n', () => callbacks.push(writer.getStore()))),
+          );
+        }
+      },
+      showHanded() {},
+      end() {},
+    });
+    const after = 'after\n' + 'x'.repeat(64);
+    out.write('stderr', after);
+    out.end();
+    expect(accepted).toBe(true);
+    expect(callbacks).toEqual([]);
+    await new Promise<void>((resolve) => process.nextTick(resolve));
+    expect(callbacks).toEqual(['reporter']);
+    expect(stderr()).toBe('config ');
+    expect(live.join('')).toBe('before ' + after + 'warning\n');
+  });
+
   it('withholds what was printed while a config failed to load, and passes what follows', async () => {
     const { out, stdout, stderr } = output();
     await expect(

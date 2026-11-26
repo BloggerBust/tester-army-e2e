@@ -1,5 +1,6 @@
 /** Runner-side secret redaction. */
 
+import { AsyncResource } from 'node:async_hooks';
 import { StringDecoder } from 'node:string_decoder';
 import { MIN_SECRET_LENGTH, secretLength } from '../config/secrets.ts';
 import { escapeRegexpChar } from './regexp.ts';
@@ -29,6 +30,7 @@ interface Compiled {
   readonly redact: (text: string) => string;
   /** `redact` for text cut short at a length limit; see `SecretLedger.redactCut`. */
   readonly redactCut: (text: string) => string;
+  readonly safeRedactionBoundary: (text: string, offset: number) => number;
   /** `redact` that also rewrites fragments of values; see `SecretLedger.redactFragments`. */
   readonly redactFragments: (text: string) => string;
   /** Every occurrence of every value, leftmost first and never overlapping: the matches `redact` rewrites. Absent with no values. */
@@ -68,6 +70,7 @@ function compile(values: readonly (readonly [string, string])[], wholeOnly: Read
     return {
       redact: (text) => text,
       redactCut: (text) => text,
+      safeRedactionBoundary: (_text, offset) => offset,
       redactFragments: (text) => text,
       pattern: undefined,
       maxFormLength: 0,
@@ -92,6 +95,26 @@ function compile(values: readonly (readonly [string, string])[], wholeOnly: Read
     text.includes(MARKER_OPEN)
       ? text.split(known).map((piece, index) => (index % 2 === 1 ? piece : rewrite(piece))).join('')
       : rewrite(text);
+
+  // Keep secrets and redaction markers intact when splitting output between writers.
+  const safeRedactionBoundary = (text: string, offset: number): number => {
+    let start = 0;
+    const pieces = text.includes(MARKER_OPEN) ? text.split(known) : [text];
+    for (const [index, piece] of pieces.entries()) {
+      const end = start + piece.length;
+      if (start < offset && offset < end) {
+        if (index % 2 === 1) return end;
+        pattern.lastIndex = 0;
+        for (let match = pattern.exec(piece); match !== null && start + match.index < offset; match = pattern.exec(piece)) {
+          const after = start + match.index + match[0].length;
+          if (after > offset) return after;
+        }
+        break;
+      }
+      start = end;
+    }
+    return offset;
+  };
   const valueKeys = entries.map(([, value]) => readingKey(value).key);
   // A reader trims a value's leading whitespace as it trims any text's, so a cut part may begin past it.
   const leadingForms = entries.map(([, value], index) => {
@@ -136,6 +159,7 @@ function compile(values: readonly (readonly [string, string])[], wholeOnly: Read
   return {
     redact,
     redactCut,
+    safeRedactionBoundary,
     redactFragments,
     pattern,
     maxFormLength: Math.max(...patterns.map(({ maxLength }) => maxLength)),
@@ -761,6 +785,11 @@ export class SecretLedger {
     return cut;
   }
 
+
+  safeRedactionBoundary(text: string, offset: number): number {
+    return this.compile().safeRedactionBoundary(text, offset);
+  }
+
   private compile(): Compiled {
     this.sync();
     // A provider key that is also a secret of the run comes after it here, so the run's name and its fragments win.
@@ -785,6 +814,16 @@ export class SecretLedger {
   }
 }
 
+/** Continuation bytes still needed by the UTF-8 sequence at the end of a buffer. */
+function missingUtf8Bytes(bytes: Uint8Array): number {
+  let index = bytes.length - 1;
+  while (index >= 0 && bytes.length - index <= 3 && (bytes[index]! & 0xc0) === 0x80) index--;
+  if (index < 0) return 0;
+  const lead = bytes[index]!;
+  const width = (lead & 0xf8) === 0xf0 ? 4 : (lead & 0xf0) === 0xe0 ? 3 : (lead & 0xe0) === 0xc0 ? 2 : 1;
+  return Math.max(0, width - (bytes.length - index));
+}
+
 /**
  * Redaction for text that arrives in pieces, as a stream writes it, so a
  * value split across two writes is still caught. Each `push` returns what is
@@ -799,22 +838,113 @@ export class SecretLedger {
 export class StreamRedactor {
   private readonly decoder = new StringDecoder('utf8');
   private held = '';
+  private readonly destinations: { start: number; end: number; write: (text: string) => void }[] = [];
+  private partial: { remaining: number; write: ((text: string) => void) | undefined } | undefined;
+  private offset = 0;
+  private activeDelivery: { write: (text: string) => void; text: string }[] | undefined;
 
-  constructor(private readonly ledger: SecretLedger) {}
+  constructor(
+    private readonly ledger: SecretLedger,
+    private readonly defaultWriter?: (text: string) => void,
+  ) {}
 
-  /** Redacts and returns what `chunk` completes; the rest waits for the next piece or `flush`. */
-  push(chunk: string | Uint8Array): string {
-    if (chunk.length === 0) return '';
-    const text = this.held + (typeof chunk === 'string' ? this.decoder.end() + chunk : this.decoder.write(chunk));
-    const cut = this.ledger.holdFrom(text);
-    this.held = text.slice(cut);
-    return this.ledger.redact(text.slice(0, cut));
+  push(chunk: string | Uint8Array, write?: (text: string) => void): string {
+    return this.drainBuffer(this.bufferChunk(chunk, write));
+  }
+
+  /** Returns false when the writer needs to pause, or true when output is buffered or can continue. */
+  writeTo(chunk: string | Uint8Array, sink: (text: string) => boolean): boolean {
+    let accepted = true;
+    const write = this.activeDelivery === undefined ? sink : AsyncResource.bind(sink);
+    this.drainBuffer(this.bufferChunk(chunk), (text) => { accepted = write(text); });
+    return accepted;
+  }
+
+  /** Buffers the chunk and returns the length of the prefix safe to drain. */
+  private bufferChunk(chunk: string | Uint8Array, write?: (text: string) => void): number {
+    if (chunk.length === 0) return 0;
+    const partial = this.partial;
+    if (partial !== undefined) {
+      let count = 0;
+      if (typeof chunk !== 'string') {
+        while (count < partial.remaining && count < chunk.length && (chunk[count]! & 0xc0) === 0x80) count++;
+        this.append(this.decoder.write(chunk.subarray(0, count)), partial.write);
+        partial.remaining -= count;
+        chunk = chunk.subarray(count);
+      }
+      if (partial.remaining > 0) {
+        if (chunk.length === 0) return 0;
+        this.append(this.decoder.end(), partial.write);
+      }
+      this.partial = undefined;
+    }
+    const decoded = typeof chunk === 'string' ? this.decoder.end() + chunk : this.decoder.write(chunk);
+    this.append(decoded, write);
+    if ((write !== undefined || this.defaultWriter !== undefined) && typeof chunk !== 'string') {
+      const remaining = missingUtf8Bytes(chunk);
+      if (remaining > 0) this.partial = { remaining, write };
+    }
+    return this.ledger.holdFrom(this.held);
   }
 
   /** Redacts and returns whatever is held, an unfinished character included; nothing more will follow. */
   flush(): string {
-    const text = this.held + this.decoder.end();
-    this.held = '';
-    return this.ledger.redact(text);
+    this.append(this.decoder.end(), this.partial?.write);
+    this.partial = undefined;
+    return this.drainBuffer(this.held.length);
+  }
+
+  private append(text: string, write: ((text: string) => void) | undefined): void {
+    if (write !== undefined && text.length > 0) {
+      const start = this.offset + this.held.length;
+      const last = this.destinations.at(-1);
+      if (last?.end === start && last.write === write) last.end += text.length;
+      else this.destinations.push({ start, end: start + text.length, write });
+    }
+    this.held += text;
+  }
+
+  private drainBuffer(cut: number, finish?: (text: string) => void): string {
+    const text = this.held.slice(0, cut);
+    this.held = this.held.slice(cut);
+    if (this.activeDelivery === undefined && (text === '' || this.destinations.length === 0)) {
+      const safe = this.ledger.redact(text);
+      finish?.(safe);
+      return safe;
+    }
+    const pendingWrites = this.activeDelivery ?? [];
+    const base = this.offset;
+    this.offset += cut;
+    let start = 0;
+    let unassigned = '';
+    while (this.destinations.length > 0) {
+      const next = this.destinations[0]!;
+      if (next.start >= this.offset) break;
+      const from = next.start <= base + start ? start : this.ledger.safeRedactionBoundary(text, next.start - base);
+      if (from > start) {
+        const earlier = this.ledger.redact(text.slice(start, from));
+        if (this.defaultWriter === undefined) unassigned += earlier;
+        else pendingWrites.push({ write: this.defaultWriter, text: earlier });
+      }
+      const end = next.end >= this.offset ? cut : this.ledger.safeRedactionBoundary(text, next.end - base);
+      start = Math.max(from, end);
+      if (start > from) pendingWrites.push({ write: next.write, text: this.ledger.redact(text.slice(from, start)) });
+      if (next.end > this.offset) break;
+      this.destinations.shift();
+    }
+    if (this.destinations.length === 0) this.offset = 0;
+    const rest = this.ledger.redact(text.slice(start));
+    if (finish !== undefined) pendingWrites.push({ write: finish, text: unassigned + rest });
+    else if (this.defaultWriter !== undefined && rest !== '') pendingWrites.push({ write: this.defaultWriter, text: rest });
+    if (this.activeDelivery === undefined) {
+      // A reporter can write again while receiving output. Deliver that write after this batch.
+      this.activeDelivery = pendingWrites;
+      try {
+        for (const { write, text: piece } of pendingWrites) write(piece);
+      } finally {
+        this.activeDelivery = undefined;
+      }
+    }
+    return this.defaultWriter === undefined ? unassigned + rest : '';
   }
 }
