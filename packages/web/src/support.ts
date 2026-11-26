@@ -5,6 +5,7 @@ import { setTimeout } from 'node:timers/promises';
 import type { ElementHandle, FrameLocator, Locator as PwLocator, Mouse, Page } from 'playwright-core';
 import { EngineError, withinCleanupBudget, type EngineCleanupContext, type Momentum, type ScrollDirection, type ViewportPoint, type ViewportSize } from '@e2e-dev/core/engine';
 import { ConfigurationError, InfrastructureError, TestError } from '@e2e-dev/core/engine';
+import type { ClockHost } from './clock.ts';
 
 export const DEFAULT_VIEWPORT = { width: 1280, height: 720 } as const;
 
@@ -583,10 +584,17 @@ async function wheelRendered(page: Page, deltaX: number, deltaY: number): Promis
   await page.evaluate(nextRenderedFrame);
 }
 
-/** Page-side: resolves after the next rendered frame, or at once in a hidden document. */
+/**
+ * Page-side: resolves after the next rendered frame, or at once in a hidden
+ * document. It runs in the page's main world, where Playwright's clock
+ * replaces the timers, so it takes the native ones the clock keeps: a paused
+ * clock would otherwise hold every scroll until its timeout.
+ */
 function nextRenderedFrame(): Promise<void> {
   if (document.visibilityState === 'hidden') return Promise.resolve();
-  return new Promise((resolve) => requestAnimationFrame(() => window.setTimeout(resolve, 0)));
+  // oxlint-disable-next-line no-underscore-dangle -- Playwright's name for its page clock, which keeps the native timers
+  const native = (window as ClockHost).__pwClock?.builtins ?? window;
+  return new Promise((resolve) => native.requestAnimationFrame(() => native.setTimeout(resolve, 0)));
 }
 
 /** Where a wheel reaches a node, and the box it read when it was not blocked. */

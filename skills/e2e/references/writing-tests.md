@@ -725,6 +725,11 @@ the opener is gone. `tabs()`, `newTab()`, `tab.activate()`, and
   the network fails, and a navigation to a page no cache holds is
   `ACTION_FAILED`; a page its service worker cached still loads. Every test
   starts online.
+- `clock`: Playwright's `page.clock` for every tab: `install({ time? })`,
+  `pauseAt(time)`, `resume()`, `runFor(ticks)`, `fastForward(ticks)`,
+  `setFixedTime(time)`, `setSystemTime(time)`. Install and pause before
+  `app.open`, then `runFor` to fire the page's timers; only the page's time
+  moves, the test's timeouts and `expect` polling keep real time.
 - `onDialog('accept' | 'dismiss' | handler)`: awaited; resolves to an async
   unsubscribe. Register it before the tap that opens the dialog. A handler
   gets `{ type, message, accept(text?), dismiss() }`, where `type` is

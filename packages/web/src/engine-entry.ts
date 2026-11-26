@@ -11,6 +11,7 @@ export type { PlaywrightLiveSurface, WebEngine } from './engine.ts';
 export type { WebBasicAuth, WebConnectOptions, WebOptions, WebScreencastOptions } from './surface.ts';
 export type { WebInitScript } from './init-scripts.ts';
 export type { WebMedia } from './media.ts';
+export type { BrowserClock, ClockTicks, ClockTime } from './clock.ts';
 export type {
   BrowserDownloadContext,
   BrowserLease,

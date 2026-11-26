@@ -69,6 +69,7 @@ import { CLOSED_SHADOW_ROOTS_INIT_SCRIPT, CLOSED_SHADOW_ROOTS_KEY } from './clos
 import { MODAL_ORDER_INIT_SCRIPT } from './modal-dialogs.ts';
 import { ConfiguredInitScripts, type WebInitScript } from './init-scripts.ts';
 import type { WebMedia } from './media.ts';
+import { applyClockCall, readClockNow, type ClockCall, type ClockHost } from './clock.ts';
 import { SECURE_FIELD_SELECTOR, type RawNodeData } from './read-node.ts';
 import { readSelector, takeReadsFunction } from './read-selector.ts';
 import { credentialOrigins, httpCredentials, installConfiguredHeaders, lowercaseNames, configuredHeadersFor } from './protected-app.ts';
@@ -168,6 +169,9 @@ export interface WebScreencastOptions {
   /** JPEG quality of each captured frame, 0 through 100; Playwright's default when unset. */
   readonly quality?: number;
 }
+
+/** One entry of an attempt's document setup: an init script, or a clock call. */
+type DocumentSetup = { readonly script: string } | { readonly clock: ClockCall };
 
 /**
  * Options of the browser engine: how it drives the app. The app itself
@@ -354,8 +358,15 @@ export class PlaywrightSurface {
   /** The configured media features, which every attempt starts from. */
   private readonly media: WebMedia;
   private readonly configuredInitScripts: ConfiguredInitScripts;
-  /** The attempt's init scripts, configured then added, applied to each context the attempt opens. */
-  private initScripts: string[] = [];
+  /**
+   * What every document of the attempt runs before the page's own scripts,
+   * in the order it was added: the configured init scripts, then the test's
+   * init scripts and successful clock calls. Each context the attempt opens
+   * applies it, so a replacement context gives its documents the same order.
+   */
+  private documentSetup: DocumentSetup[] = [];
+  /** Whether the attempt called `browser.clock`, even a call that failed after Playwright installed it. */
+  private clockState = { used: false };
   private app: EngineAppInfo = {};
   private projectRoot = '';
   private headed = false;
@@ -583,8 +594,11 @@ export class PlaywrightSurface {
     const granted = grantedPermissions(this.browserName, this.app);
     this.latch = new ErrorLatch();
     const dialogs = new DialogRouter(this.latch);
+    const documentSetup: DocumentSetup[] = initScripts.map((script) => ({ script }));
+    const clockState = { used: false };
     this.routes = routes;
-    this.initScripts = initScripts;
+    this.documentSetup = documentSetup;
+    this.clockState = clockState;
     this.dialogs = dialogs;
     const session = new AttemptSession({
       artifactsDir: context.artifactsDir,
@@ -607,7 +621,11 @@ export class PlaywrightSurface {
       configure: async (target) => {
         await target.addInitScript(CLOSED_SHADOW_ROOTS_INIT_SCRIPT);
         await target.addInitScript(MODAL_ORDER_INIT_SCRIPT);
-        for (const script of initScripts) await target.addInitScript(script);
+        // A fresh context has no document yet, so a clock call only registers the clock's script and its log.
+        for (const setup of documentSetup) {
+          if ('script' in setup) await target.addInitScript(setup.script);
+          else await applyClockCall(target.clock, setup.clock);
+        }
         target.setDefaultTimeout(CONTEXT_DEFAULT_TIMEOUT_MS);
         target.on('dialog', (dialog) => { void dialogs.dispatch(dialog); });
         installAppLog(target, context.appLog, {
@@ -619,6 +637,7 @@ export class PlaywrightSurface {
         if (granted.length > 0) await grantPermissions(target, granted, this.app.allPermissions === true);
         for (const stored of routes) await target.route(stored.predicate, stored.handler);
       },
+      clockUsed: () => clockState.used,
       ...(persistent === undefined ? {} : { persistent }),
       record: this.leases?.recorder(context.attemptId),
     });
@@ -686,8 +705,42 @@ export class PlaywrightSurface {
   /** Adds one attempt-scoped init script to the current context, for every document it creates from now on. */
   async addInitScript(source: string): Promise<void> {
     const context = this.requireContext();
-    this.initScripts.push(source);
+    this.documentSetup.push({ script: source });
     await context.addInitScript(source);
+  }
+
+  /**
+   * Runs one clock call on the current context and logs it for a context
+   * that replaces this one. Playwright logs the call for the context's next
+   * documents before it runs it, so the call is logged whether it succeeds
+   * or fails, and a replacement context replays what a new document would.
+   * The attempt counts as using the clock from the start of the call:
+   * Playwright installs the clock before a call can fail. The log is the one
+   * this attempt started with, so a call that resolves after its step timed
+   * out never reaches the next attempt's.
+   */
+  async clock(call: ClockCall): Promise<void> {
+    const setup = this.documentSetup;
+    const { clock } = this.requireContext();
+    this.clockState.used = true;
+    try {
+      await applyClockCall(clock, call);
+    } finally {
+      setup.push({ clock: call });
+    }
+  }
+
+  /**
+   * The latest time a page clock of the current context reads, across every
+   * frame, or undefined when none has one yet. Playwright runs a call in
+   * every frame and fails it when one frame refuses, so the latest decides.
+   */
+  async clockNow(): Promise<number | undefined> {
+    const frames = this.requireContext().pages().flatMap((page) => page.frames());
+    // A frame that detaches or navigates while it is read has no clock to compare with.
+    const times = await Promise.all(frames.map((frame) => frame.evaluate(readClockNow).catch(() => undefined)));
+    const read = times.filter((time) => typeof time === 'number');
+    return read.length === 0 ? undefined : Math.max(...read);
   }
 
   // --- network routes shared with the browser fixture ---
@@ -1606,6 +1659,8 @@ function measureViewportIntersection(element: Element): Promise<ViewportIntersec
       resolve({ intersects: ratio > 0, ratio });
     });
     observer.observe(element);
-    view.requestAnimationFrame(() => {});
+    // The native frame: under Playwright's clock, the page's own would queue a timer in the page's fake clock.
+    // oxlint-disable-next-line no-underscore-dangle -- Playwright's name for its page clock, which keeps the native timers
+    ((view as ClockHost).__pwClock?.builtins ?? view).requestAnimationFrame(() => {});
   });
 }

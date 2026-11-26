@@ -24,6 +24,8 @@ interface SessionOptions {
   readonly contextOptions: BrowserContextOptions;
   readonly acquire: (signal: AbortSignal) => Promise<Browser>;
   readonly configure: (context: BrowserContext) => Promise<void>;
+  /** Whether a test moved the page clock this attempt, which a CDP reconnect cannot carry. */
+  readonly clockUsed: () => boolean;
   /** Starts the browser provider's own recording of the attempt's browser, when it records; the attempt records the screencast otherwise. */
   readonly record?: ((signal: AbortSignal) => Promise<LeaseRecording>) | undefined;
   readonly persistent?: {
@@ -208,6 +210,10 @@ export class AttemptSession {
         const previous = this.current();
         this.observed = false;
         await this.transition(previous, remaining(), async () => {
+          // The open documents keep their fake clock, but Playwright's clock
+          // script and state belonged to the old connection: replaying the
+          // calls would run their timers again, so the attempt fails instead.
+          if (this.options.clockUsed()) throw recoveryFailed('the page clock cannot be carried across a reconnect');
           await this.video.pageClosing();
           return attachPersistent(persistent.reconnect, remaining(), previous.identity);
         }, true);

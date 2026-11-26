@@ -345,6 +345,26 @@ const MEDIA = `<!doctype html>
 </html>`;
 
 /**
+ * Time as the page reads it: the instant it loaded, a timer due a second
+ * after load, and an element far below the fold for scrolling and viewport
+ * reads under a paused clock.
+ */
+const CLOCK = `<!doctype html>
+<html>
+<head><title>Fixture Clock</title></head>
+<body style="margin:0">
+<output id="loaded"></output>
+<output id="timer">waiting</output>
+<div style="height:3000px"></div>
+<p id="footer">Footer</p>
+<script>
+document.getElementById('loaded').textContent = new Date().toISOString();
+setTimeout(() => { document.getElementById('timer').textContent = 'fired'; }, 1000);
+</script>
+</body>
+</html>`;
+
+/**
  * A form for the screenshot caret test: light-DOM editables, a secure field,
  * an editable inside a closed shadow root whose own stylesheet asks for a red
  * caret, and an iframe holding one more input.
@@ -419,6 +439,7 @@ const PAGES: Readonly<Record<string, string>> = {
   '/rows': ROWS,
   '/media': MEDIA,
   '/pwa': PWA,
+  '/clock': CLOCK,
 };
 
 /** Delay before `/slow` answers, long enough for a caller to cancel first. */

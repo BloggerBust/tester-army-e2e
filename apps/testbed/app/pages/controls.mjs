@@ -9,6 +9,7 @@ const nav = [
   { path: '/controls', label: 'Controls' },
   { path: '/scroll', label: 'Scroll' },
   { path: '/browser', label: 'Browser' },
+  { path: '/clock', label: 'Clock' },
   { path: '/speed', label: 'Speed' },
   { path: '/about', label: 'About' },
 ];
@@ -304,6 +305,47 @@ const pages = {
          sessionStorage.setItem('loads', String(loads));
          document.querySelector('output[aria-label="Loads"]').textContent = 'loads: ' + loads;
          document.querySelector('output[aria-label="Random"]').textContent = 'random: ' + (Math.random() === 0.5 ? 'seeded' : 'unseeded');
+       </script>`,
+  }),
+
+  // Everything on it runs on the page's time: today's date, a countdown on
+  // an interval, a session timeout half an hour out, and a progress bar
+  // drawn on animation frames. `browser.clock` makes each one deterministic.
+  '/clock': () => ({
+    title: 'Clock',
+    body: `<h1>Clock</h1>
+       <output aria-label="Today"></output>
+       <output aria-label="Offer"></output>
+       <button id="claim">Claim offer</button>
+       <output aria-label="Session">Signed in</output>
+       <output aria-label="Progress">0%</output>
+       <script>
+         document.querySelector('output[aria-label="Today"]').textContent =
+           new Date().toLocaleDateString('en-US', { dateStyle: 'long', timeZone: 'UTC' });
+         const offer = document.querySelector('output[aria-label="Offer"]');
+         const claim = document.getElementById('claim');
+         let left = 10;
+         const showOffer = () => {
+           offer.textContent = left > 0 ? 'Offer ends in ' + left + 's' : 'Offer expired';
+           claim.disabled = left === 0;
+         };
+         showOffer();
+         const countdown = setInterval(() => {
+           left -= 1;
+           showOffer();
+           if (left === 0) clearInterval(countdown);
+         }, 1000);
+         setTimeout(() => {
+           document.querySelector('output[aria-label="Session"]').textContent = 'Session expired';
+         }, 30 * 60 * 1000);
+         const progress = document.querySelector('output[aria-label="Progress"]');
+         const started = performance.now();
+         const draw = (now) => {
+           const share = Math.min(1, (now - started) / 1000);
+           progress.textContent = Math.round(share * 100) + '%';
+           if (share < 1) requestAnimationFrame(draw);
+         };
+         requestAnimationFrame(draw);
        </script>`,
   }),
 

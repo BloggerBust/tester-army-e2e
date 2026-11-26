@@ -129,7 +129,7 @@ Planned gaps are on the roadmap, and Not yet gaps have no date. Not planned gaps
 | `--browser chrome`, `edge`, `electron`, `before:browser:launch` | `web({ browser: 'chromium' })`, or attach to your own Chrome with `web({ connect: { cdpEndpoint } })` |
 | `cypress open`, time-travel snapshots | `npx e2e run --headed --watch`, or `--step`; the [trace page](/debugging#traces) shows each step after the run |
 | `before()` and `after()` that drive the app | UI setup in `beforeEach`, cleanup in `afterEach`; sign-in in a top-level `test.setup` that saves a session |
-| `cy.clock()`, `cy.tick()` | A fake-timers script loaded with `browser.addInitScript({ path })`, driven by `browser.evaluate` |
+| `cy.clock(now)`, `cy.tick(ms)` | `browser.clock.install({ time })`, then `browser.clock.pauseAt()` a later time, which stops timers; `browser.clock.runFor(ms)` |
 | `cy.request()` with the browser's cookies | Send `browser.cookies(url)` in the `cookie` header of a `request` call, see [Signed-in requests](/api-testing#signed-in-requests) |
 
 ### Not yet

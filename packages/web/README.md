@@ -117,7 +117,7 @@ engine: web({
 ## The `browser` fixture
 
 The engine contributes `browser`: navigation, routes, cookies, dialogs, frames,
-downloads, keyboard and mouse, plus `expect(browser).toHaveURL()` and
+downloads, keyboard and mouse, the page clock (`browser.clock`), plus `expect(browser).toHaveURL()` and
 `toHaveTitle()` and `toHaveClass()`. Import `test` from this package to have it
 typed; it is the same runtime `test` as `e2e`'s.
 

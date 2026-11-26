@@ -195,6 +195,23 @@ await expect(screen.getByText('You are offline')).toBeVisible();
 page no cache holds fails with `ACTION_FAILED`. See
 [`setNetwork`](/reference/web#setnetwork).
 
+## Control time
+
+`browser.clock` sets the time the page reads and runs its timers on your
+command, as Playwright's `page.clock` does. Install it before the page
+opens, then pause it:
+
+```ts
+await browser.clock.install({ time: new Date('2024-02-02T08:00:00Z') });
+await browser.clock.pauseAt(new Date('2024-02-02T09:00:00Z'));
+await app.open('/offer');
+await browser.clock.runFor('00:10'); // fires every timer due in 10 seconds
+await expect(screen.getByText('Offer expired')).toBeVisible();
+```
+
+The clock covers every tab and holds for the rest of the test. Your test's
+own timeouts and waits keep real time. See [clock](/reference/web#clock).
+
 ## Cookies
 
 ```ts

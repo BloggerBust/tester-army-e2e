@@ -247,7 +247,7 @@ How recovery runs:
 
 | Throws | When |
 | --- | --- |
-| `ENGINE_FAILURE` | A document loaded without the closed shadow DOM hook while disconnected. |
+| `ENGINE_FAILURE` | A document loaded without the closed shadow DOM hook while disconnected, or the attempt used [`browser.clock`](#clock), which recovery cannot carry. |
 | `OPERATION_TIMEOUT` | Endpoint resolution, attachment, setup, and dispatch exhausted their shared timeout. |
 | `CANCELLED` | The caller or the attempt cancelled. |
 
@@ -485,8 +485,8 @@ export type WebInitScript = string | { readonly path: string } | (() => unknown)
   `keyboard`, `mouse`, the `expect(browser)` matchers, and every `screen`
   query.
 - What belongs to the browser covers every tab: `cookies`, `setCookies`,
-  `clearCookies`, `route`, `unroute`, `unrouteAll`, `onDialog`, and
-  `addInitScript`.
+  `clearCookies`, `route`, `unroute`, `unrouteAll`, `onDialog`,
+  `addInitScript`, and [`clock`](#clock).
 - `setViewport` sizes the active tab and every tab opened after it.
 - [`emulateMedia`](#media-emulation) changes media on all open and future tabs.
 - [`setNetwork`](#setnetwork) takes every tab and service worker offline.
@@ -537,6 +537,7 @@ export type WebInitScript = string | { readonly path: string } | (() => unknown)
 | [`keyboard`](#keyboard) | `{ press, down, up, type }` |
 | [`mouse`](#mouse) | `{ move, wheel, down, up }` |
 | [`webmcp`](#webmcp) | `{ tools, callTool }` |
+| [`clock`](#clock) | `BrowserClock` |
 
 The [config](/reference/config) sets each member's budget:
 
@@ -550,7 +551,7 @@ A `{ timeout }` option overrides the budget on `goto`, `reload`, `back`,
 `forward`, `waitForResponse`, `waitForRequest`, `waitForPopup`, `waitForDownload`, and `waitForDownloads`, capped
 by the test deadline (`cleanupTimeout` in `afterEach`); `0` waits until it. `url`, `title`, `evaluate`, `addInitScript`, `route`,
 `unroute`, `unrouteAll`, `cookies`, `setCookies`, `clearCookies`, `setViewport`,
-`emulateMedia`, `setNetwork`, `onDialog`, `newTab`, the `BrowserTab` methods, `keyboard.*`, `mouse.*`, and `webmcp.*` take no override.
+`emulateMedia`, `setNetwork`, `onDialog`, `newTab`, the `BrowserTab` methods, `keyboard.*`, `mouse.*`, `webmcp.*`, and `clock.*` take no override.
 
 #### `goto`
 
@@ -1366,6 +1367,78 @@ export interface WebMcpTool {
 | `INVALID_ARGUMENT` | `callTool`: `name` is not a non-empty string, or `input` is not a JSON object. |
 | `INVALID_CONFIG` | `web({ webmcp: true })` with `connect`, a browser provider, or WebKit. |
 
+#### `clock`
+
+`browser.clock` controls time in the attempt's pages: `Date`, `performance`,
+timers, `requestAnimationFrame`, and `requestIdleCallback`. It is
+Playwright's `page.clock`, with the same methods and arguments.
+
+```ts
+await browser.clock.install({ time: new Date('2024-02-02T08:00:00Z') });
+await browser.clock.pauseAt(new Date('2024-02-02T09:00:00Z'));
+await app.open('/offer');
+await browser.clock.runFor(3000); // fires every timer due in 3 seconds
+await browser.clock.fastForward('30:00'); // jumps 30 minutes, firing each due timer once
+```
+
+| Method | What it does |
+| --- | --- |
+| `install({ time? })` | Fakes the time functions, starting at `time` (default: now). The clock runs on in real time. |
+| `pauseAt(time)` | Fast-forwards to `time` and stops there. Timers fire only through `runFor` and `fastForward`. |
+| `resume()` | Lets a paused clock run on in real time. |
+| `runFor(ticks)` | Advances the clock, firing every timer due on the way. |
+| `fastForward(ticks)` | Jumps ahead, firing each due timer at most once. |
+| `setFixedTime(time)` | Holds `Date.now()` and `new Date()` at `time`. Timers keep running. |
+| `setSystemTime(time)` | Changes the wall time without firing a timer. |
+
+- A `time` is epoch milliseconds, a string `new Date()` parses in the
+  runner's process, or a `Date`. `ticks` are milliseconds, or `'ss'`,
+  `'mm:ss'`, or `'hh:mm:ss'`.
+- Every other method installs the clock first if it isn't, as Playwright
+  does: it starts at the Unix epoch, 1970-01-01, so call `install({ time })`
+  first unless the next call sets the time. Install before `app.open` so the
+  page loads on it; a page already open gets the clock at once.
+- The clock covers every tab and frame, the ones the app opens included.
+  It holds through navigation, `app.restart()`, and `app.clearState()`, and
+  ends with the attempt.
+- `app.clearState()` and session restore replay the clock's calls on the new
+  context, as a new document does: a call that failed, such as a `runFor`
+  whose timer threw, counts, and a refused `pauseAt` does not. A paused or
+  fixed clock comes back as it was. A running one loses the real time that
+  passed before the clear.
+- Only the page's time moves. The test's timeouts, `expect` polling, and the
+  agent's waits keep real time, so a paused clock never holds a step.
+- A [CDP recovery](#recovering-a-cdp-transport) after the attempt used the clock fails the
+  attempt with `ENGINE_FAILURE`: the open pages keep their clock but the
+  reconnected browser cannot restore it.
+- A timer loop that never finishes, such as a 1 ms interval under
+  `runFor('10:00:00')`, stops the call at `actionTimeout` with
+  `ACTION_FAILED`.
+
+```ts
+/** A point in time: epoch milliseconds, a string `Date` parses, or a `Date`. */
+export type ClockTime = number | string | Date;
+
+/** A span of time: milliseconds, or a `'ss'`, `'mm:ss'`, or `'hh:mm:ss'` string. */
+export type ClockTicks = number | string;
+
+export interface BrowserClock {
+  install(options?: { time?: ClockTime }): Promise<void>;
+  fastForward(ticks: ClockTicks): Promise<void>;
+  runFor(ticks: ClockTicks): Promise<void>;
+  pauseAt(time: ClockTime): Promise<void>;
+  resume(): Promise<void>;
+  setFixedTime(time: ClockTime): Promise<void>;
+  setSystemTime(time: ClockTime): Promise<void>;
+}
+```
+
+| Throws | When |
+| --- | --- |
+| `INVALID_ARGUMENT` | A time that is not a finite number, a parsable non-empty string, or a valid `Date`; ticks that are negative or outside `'hh:mm:ss'`; an unknown `install` option; `pauseAt` before the clock's current time. |
+| `EVALUATE_FAILED` | A timer the page ran during `runFor`, `fastForward`, or `pauseAt` threw. The message carries the page's error. |
+| `ACTION_FAILED` | The call ran past `actionTimeout`. |
+
 ## Installing browsers
 
 The package pins `playwright-core` to an exact version, so the engine always
@@ -1461,7 +1534,7 @@ The package exports these types for typing config helpers and fixtures:
 `BrowserProviderScope`, `BrowserRequest`, `BrowserLease`,
 `BrowserReleaseContext`, `BrowserProviderDownloads`,
 `BrowserDownloadContext`, `PlaywrightLiveSurface`, `Browser`, `FrameScreen`,
-`BrowserExpectation`, `WebRoute`, `RouteFulfillResponse`,
+`BrowserExpectation`, `BrowserClock`, `ClockTime`, `ClockTicks`, `WebRoute`, `RouteFulfillResponse`,
 `RouteContinueOverrides`, `RouteMatcher`, `WebRequest`, `WebResponse`,
 `PageResponse`, `Cookie`, `CookieFields`,
 `CookieFilter`, `Dialog`, and `DialogHandler`.
@@ -1732,6 +1805,8 @@ export interface Browser extends Expectable<BrowserExpectation> {
     /** Calls one tool and resolves with what its `execute` resolved to. */
     callTool(name: string, input?: { readonly [key: string]: JsonValue } | null): Promise<JsonValue>;
   };
+  /** Controls time in the attempt's pages. See [clock](#clock). */
+  readonly clock: BrowserClock;
 }
 ```
 

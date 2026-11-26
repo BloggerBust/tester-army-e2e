@@ -68,12 +68,14 @@ function session(options: {
   artifactsDir?: string;
   viewport?: { width: number; height: number } | null;
   media?: WebMedia;
+  clockUsed?: () => boolean;
 } = {}) {
   return new AttemptSession({
     artifactsDir: options.artifactsDir ?? tmpdir(), viewport: options.viewport === undefined ? { width: 320, height: 200 } : options.viewport, contextOptions: {}, screencast: {},
     media: options.media ?? {},
     acquire: async () => { throw new Error('persistent attempts never acquire the shared browser'); },
     configure: options.configure ?? (async () => undefined),
+    clockUsed: options.clockUsed ?? (() => false),
     persistent: { provision: options.provision ?? (() => 'provisioned'), reconnect: options.reconnect ?? (() => 'existing'), usedContexts: options.used ?? new Set() },
   });
 }
@@ -150,6 +152,7 @@ describe('AttemptSession', () => {
       artifactsDir: tmpdir(), viewport: { width: 320, height: 200 }, contextOptions: {}, screencast: {}, media: {},
       acquire: async () => ({ newContext: async () => context }) as unknown as Browser,
       configure: async () => undefined,
+      clockUsed: () => false,
     });
     await owner.start(new AbortController().signal);
     expect(await owner.ensurePage()).toBe(opened);
@@ -167,6 +170,7 @@ describe('AttemptSession', () => {
       media: {},
       acquire: async () => ({ newContext: async () => context }) as unknown as Browser,
       configure: async () => undefined,
+      clockUsed: () => false,
     });
     await owner.start(new AbortController().signal);
     const opening = expect(Promise.all([owner.ensurePage(), owner.ensurePage()])).resolves.toEqual([opened, opened]);
@@ -440,6 +444,24 @@ describe('AttemptSession', () => {
     const waiter = expect(first.run(operation(), 'waiter', dispatch)).rejects.toMatchObject({ code: 'CANCELLED' });
     controller.abort();
     await Promise.all([owner, waiter]);
+    expect(dispatch).not.toHaveBeenCalled();
+    await first.close(cleanup());
+  });
+
+  it('fails recovery without reconnecting once the attempt moved the page clock', async () => {
+    const browser = remote('current');
+    vi.mocked(connectCdp).mockResolvedValue(browser.browser);
+    const reconnect = vi.fn(() => 'existing');
+    const first = session({ reconnect, clockUsed: () => true });
+    await first.start(new AbortController().signal);
+    browser.disconnect();
+    const dispatch = vi.fn(async () => undefined);
+    const failure = { code: 'ENGINE_FAILURE', message: 'CDP recovery failed: the page clock cannot be carried across a reconnect' };
+    await expect(first.run(operation(), 'read', dispatch)).rejects.toMatchObject(failure);
+    // The failed recovery is the attempt's state: the next operation gets the same error, still without reconnecting.
+    await expect(first.run(operation(), 'read', dispatch)).rejects.toMatchObject(failure);
+    expect(reconnect).not.toHaveBeenCalled();
+    expect(connectCdp).toHaveBeenCalledTimes(1);
     expect(dispatch).not.toHaveBeenCalled();
     await first.close(cleanup());
   });
