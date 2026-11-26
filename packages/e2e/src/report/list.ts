@@ -63,7 +63,7 @@ import {
 } from './format.ts';
 import { leftOutTests } from './left-out.ts';
 import { ExploreView } from './list-explore.ts';
-import { isShownEvent, type ConfiguredModel, type FileGroup, type PausedTest, type ReplayNotice, type RunningTest, type TestLine } from './list-model.ts';
+import { currentStep, isShownEvent, type ConfiguredModel, type FileGroup, type PausedTest, type ReplayNotice, type RunningTest, type TestLine } from './list-model.ts';
 import { pauseLinePrinter, replayLine, replayNotices, stepLine, stepPromptRows } from './list-steps.ts';
 import { LiveWindow } from './live-window.ts';
 import type { TerminalProgress } from './progress.ts';
@@ -778,7 +778,9 @@ export class ListReporter {
       title,
       startedMs: Date.now(),
       executing: true,
-      current: undefined,
+      open: new Map(),
+      attemptId: undefined,
+      attemptIndex: undefined,
       steps: this.pairs.get(key)?.steps ?? [],
       ran: this.stepping ? (this.pairs.get(key)?.ran ?? []) : undefined,
     });
@@ -797,15 +799,26 @@ export class ListReporter {
     const running = this.pairs.get(pairKey(event.testId, event.agent, event.target, event.repeat));
     if (running === undefined) return;
     const { progress } = event;
+    // A stream without identity has one step open at a time, as before identity existed.
+    const stepId = progress.identity?.stepId ?? '';
+    const current = running.open.get(stepId);
     switch (progress.phase) {
       case 'start': {
         const { api, label, kind } = progress;
-        running.current = { api, label, kind, actor: progress.identity?.actor, events: [], replaying: false, activity: undefined };
+        const attemptId = progress.identity?.attemptId;
+        const attemptIndex = progress.identity?.attemptIndex;
+        if (attemptIndex !== undefined && running.attemptIndex !== undefined && attemptIndex < running.attemptIndex) break;
+        if (attemptId !== running.attemptId) {
+          running.open.clear();
+          running.attemptId = attemptId;
+          running.attemptIndex = attemptIndex;
+        }
+        running.open.delete(stepId);
+        running.open.set(stepId, { api, label, kind, actor: progress.identity?.actor, events: [], replaying: false, activity: undefined });
         this.window.redraw();
         break;
       }
       case 'event': {
-        const { current } = running;
         this.explore?.action(progress.event);
         if (current === undefined) break;
         // The event ends whatever was announced; until the next announcement
@@ -818,21 +831,19 @@ export class ListReporter {
         break;
       }
       case 'activity': {
-        const { current } = running;
         if (current === undefined) break;
         current.activity = progress.activity;
         this.window.redraw();
         break;
       }
       case 'replay': {
-        const { current } = running;
         if (current === undefined) break;
         current.replaying = progress.active;
         this.window.redraw();
         break;
       }
       case 'end': {
-        running.current = undefined;
+        running.open.delete(stepId);
         const { api, label, status, durationMs, modelCalls } = progress;
         const step = { api, label, status, durationMs, modelCalls, actor: progress.identity?.actor };
         running.ran?.push(step);
@@ -1184,7 +1195,8 @@ export class ListReporter {
     if (this.progress !== undefined) return this.progress.rows?.() ?? [];
     const running = [...this.pairs.values()].filter((test) => test.executing);
     if (this.explore !== undefined) {
-      return this.explore.liveRows(this.exploreBadge(), running[0]?.current?.events, this.summaryRows(false), Date.now(), room);
+      const events = running[0] === undefined ? undefined : currentStep(running[0])?.events;
+      return this.explore.liveRows(this.exploreBadge(), events, this.summaryRows(false), Date.now(), room);
     }
     const footer = this.waiting === undefined ? [] : stepPromptRows(this.pc, this.waiting).slice(0, terminalRows() - 1);
 
