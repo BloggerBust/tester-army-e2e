@@ -16,6 +16,7 @@ import type { InMemoryAttempts } from './execute.ts';
 import type { SessionStore } from '@e2e-dev/core/lib/run/sessions';
 import type { SpawnUnitRunner, UnitRunner, UnitRunnerEvents } from './unit-runner.ts';
 import { pairKey } from './units.ts';
+import { copyServiceValues, type RunServices } from './services.ts';
 import type { MainToWorker, RunUnitMessage, WirePair } from './worker/protocol.ts';
 import { TargetWorker, type ResolvedUnitPairs, type TargetWorkerDeps } from './worker/session.ts';
 
@@ -40,6 +41,8 @@ export interface InProcessRunnerOptions {
   readonly debug: DebugTrace;
   /** See `TargetWorkerDeps.holdSteps`. */
   readonly holdSteps: boolean;
+  /** Started services from the runner. Each worker receives a copy of their values, the same as a worker process. */
+  readonly services: Pick<RunServices, 'wire' | 'call'>;
   /** The environment each target's workers run with; see `EngineInitInfo.env`. */
   readonly envFor: (targetName: string) => Readonly<Record<string, string | undefined>>;
 }
@@ -186,6 +189,7 @@ class InProcessRunner implements UnitRunner {
       debug: this.options.debug,
       holdSteps: this.options.holdSteps,
       inMemory: this.options.inMemory,
+      services: copyServiceValues(this.options.services.wire, this.options.services.call),
       resolvePairs: (unit, reusable) =>
         resolveFromSelection(
           this.options.selection,

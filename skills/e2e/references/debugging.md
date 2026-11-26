@@ -74,6 +74,7 @@ Full reference: docs/debugging.mdx.
 | `STEP_TIMEOUT`, `STEP_BUDGET_EXHAUSTED` | Goal too big or ambiguous | Split the goal, use on-screen wording; raise `maxSteps` or `maxModelCalls` |
 | `REPLAY_STALE` | `--strict-cache` or `cache.strict`, and a committed recording no longer replays | Rerun read-write with the knob the message names off, commit the changed entry |
 | `APP_UNREACHABLE`, `APP_ALREADY_RUNNING` | The app failed readiness or its command exited; something already serves `url` (often an `e2e mcp` session's app) | Check `app.url`, the port, `app.command.log`; `close_session` first |
+| `SERVICE_START_FAILED`, `INVALID_SERVICE_VALUE`, `SERVICE_STOP_FAILED` | A service's `start` threw, never yielded, or ran past `startupTimeout`; it yielded something other than plain data and functions; its stop code threw or ran past `shutdownTimeout` | Fix the service the message names; pass `signal` to what it starts (topic `setup`) |
 | `SESSION_UNAVAILABLE`, `SESSION_CONTRACT` | `session: 'x'` with no setup saving `x`; a setup that skipped a declared name | Add or fix the `test.setup` |
 | `POLICY_DENIED` | A non-http(s) URL, a password into a non-password field, or reading a secure field's value | Assert the outcome, not the value |
 | `UNSUPPORTED_CAPABILITY` | A fixture or action the engine lacks (`browser` on a device) | Declare `platforms: ['web']`; drop the call |

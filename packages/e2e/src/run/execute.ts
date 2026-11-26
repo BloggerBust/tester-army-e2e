@@ -187,7 +187,7 @@ export class TargetExecutor extends EngineSessions implements SerialHost {
     this.models = new WorkerModels((error) => {
       options.events?.onRunAbort?.({ error: serializeError(error) });
     });
-    this.workerFixtures = new WorkerFixturePool(options.target);
+    this.workerFixtures = new WorkerFixturePool(options.target, this.services);
     this.suiteAttempts = { host: this, config: options.config, models: this.models, runErrors: this.runErrors };
     this.realms = new RealmManager({
       targetName: options.target.name,
@@ -768,6 +768,7 @@ export class TargetExecutor extends EngineSessions implements SerialHost {
         debug: this.debug,
         models: this.models,
         test: { file: pair.test.file, titlePath: pair.test.titlePath, writtenScreenshots: this.writtenScreenshots },
+        services: this.services,
       });
       if (hold !== undefined) {
         const tools = new HeldTestTools(

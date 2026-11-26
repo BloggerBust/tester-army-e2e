@@ -286,11 +286,13 @@ confirm the runner collects and executes the intended test.
   the test files import, never in a test file, which reloads after a
   failure.
 - **Typing across targets:** `as const satisfies E2EConfig` on the config,
-  then `base.extend<{}, {}, typeof config>()`.
+  then `base.extend<{}, {}, typeof config>()`. Passing `typeof config` also
+  types the `services` fixture.
 
 Built-in fixtures: `app` and `screen` always; `agent` with a configured
 model (else `MODEL_UNAVAILABLE`, topic `agent`); `request` for HTTP calls;
-`platform` (`web`, `ios`, `android`, or an engine's label); `browser` from
+`platform` (`web`, `ios`, `android`, or an engine's label); `services`, the
+values the config's services yield (topic `setup`); `browser` from
 `@e2e-dev/web`, `device` from `@e2e-dev/mobile`, `desktop` from
 `@e2e-dev/desktop`; `session` only in `test.setup`. `app` opens the app
 (`open(path?)`, `back()`, `restart()`, `clearState()`), takes screenshots,

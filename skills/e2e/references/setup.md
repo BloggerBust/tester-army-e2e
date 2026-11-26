@@ -163,9 +163,7 @@ The target declares the app; the engine only drives it (`web({ url })` and
 `mobile({ app })` are unknown keys). The target's `app` takes `url` (required
 on a `web()` target), `bundleId` or `appPath` (a device target needs one),
 `command` and `readyUrl` to start and probe the app, and `launchArguments`,
-`permissions`, `environment`, `identity`. There is no `services` key: start
-dependency processes before the run, or have `app.command` start a script
-that brings them up and serves the app.
+`permissions`, `environment`, `identity`.
 
 `web()` takes `browser` (`'chromium'` by default, `'firefox'`, `'webkit'`, or
 a hosted `BrowserProvider`), `viewport` (default 1280x720), `headers`,
@@ -238,6 +236,27 @@ opened on `127.0.0.1` or `[::1]` unless that host is in `allowedDevOrigins`;
 the App Router's empty `role="alert"` route announcer means
 `getByRole('alert')` needs a text filter. Full reference:
 docs/frameworks/nextjs.mdx.
+
+### Start the app's dependencies as services
+
+Put dependencies the app needs (an email API, an OAuth provider, a database)
+in `services`. Each is a `defineService({ async *start({ signal }) { ... } })`
+that starts the dependency, yields a plain object of data and functions one
+time, and stops it after the `yield`.
+
+- `e2e run` and `e2e explore` start services in key order before the app
+  commands and stop them in reverse order afterward. In `e2e mcp` and
+  `openHost`, a config with services fails with `INVALID_CONFIG`.
+- Pass the service's address to the app in `command.env`, with a fixed port.
+- Pass `signal` to anything the service starts. Set `startupTimeout` (60 s by
+  default) or `shutdownTimeout` (10 s by default) on a slow service.
+- Tests read the values through the `services` fixture. Each yielded function
+  becomes async and runs in the runner (`await services.email.createInbox()`).
+  Yielding a class instance fails with `INVALID_SERVICE_VALUE`.
+- All workers share one instance, so filter for data the test created, such
+  as emails sent to a unique inbox.
+
+Full reference: docs/services.mdx (online: https://e2e.com/docs/services).
 
 ## Environment variables the runner reads
 

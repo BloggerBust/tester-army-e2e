@@ -398,6 +398,9 @@ importers:
       e2e:
         specifier: workspace:*
         version: link:../packages/e2e
+      emulate:
+        specifier: 0.14.0
+        version: 0.14.0
       typescript:
         specifier: 7.0.2
         version: 7.0.2
@@ -3710,6 +3713,10 @@ packages:
 
   emoji-regex@8.0.0:
     resolution: {integrity: sha512-MSjYzcWNOA0ewAHpz0MxpYFvwg6yjy1NG3xteoqz644VCo/RPgnr1/GGt+ic3iJTzQ8Eu3TdM14SawnVUmGE6A==}
+
+  emulate@0.14.0:
+    resolution: {integrity: sha512-mlM/PJ34ynD2OTGVBvy+8/F7gEDwkHWmpqLG/JetaDmaqifkHtCw2VMmXTKBy6Zwa5yvCziLvyyvmAoVeuPZoA==}
+    hasBin: true
 
   encodeurl@1.0.2:
     resolution: {integrity: sha512-TPJXq8JqFaVYm2CWmPvnP2Iyo4ZSM7/QKcSmuMLDObfpH5fi7RUGmd/rTDf+rut/saiDiQEeVTNgAmJEdAOx0w==}
@@ -8368,6 +8375,12 @@ snapshots:
   electron-to-chromium@1.5.428: {}
 
   emoji-regex@8.0.0: {}
+
+  emulate@0.14.0:
+    dependencies:
+      commander: 14.0.3
+      picocolors: 1.1.1
+      yaml: 2.9.1
 
   encodeurl@1.0.2: {}
 

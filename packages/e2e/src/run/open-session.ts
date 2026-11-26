@@ -1,8 +1,7 @@
 /** Hosted test runners keep a worker alive while opening isolated per-test attempts. */
 
 import { discoverConfig, loadConfigModule, missingConfigError } from '../config/load.ts';
-import { type ResolvedConfig } from '@e2e-dev/core/lib/config/resolve';
-import { resolveConfig } from '../config/resolve-run.ts';
+import { resolveConfig, type ResolvedRunConfig } from '../config/resolve-run.ts';
 import { ConfigurationError, type SerializedError } from '@e2e-dev/core/lib/internal/errors';
 import type { TestFixtures } from '@e2e-dev/core/lib/types';
 import type { E2EConfig, Report } from '../run-types.ts';
@@ -86,6 +85,13 @@ async function openHostWorker<Fixtures extends object>(options: OpenHostOptions)
     registerProviderKeys(env);
     warnOfNodeDebug();
     const loaded = await loadHostConfig(cwd, options.config, env);
+
+    if (loaded.services.length > 0) {
+      const names = loaded.services.map(([name]) => name).join(', ');
+
+      throw new ConfigurationError('INVALID_CONFIG', `openHost doesn't start services, and this config declares services (${names}). Run these tests with e2e run instead.`);
+    }
+
     registerStaticSecrets(loaded.allSecrets);
     const { config, target } = await allocateTargetPorts(loaded, selectTarget(loaded, options.target, 'pass `target` to openHost'));
     const host = await openStandaloneHost({
@@ -134,7 +140,7 @@ async function dispose(close: () => Promise<readonly SerializedError[]>, owner: 
 }
 
 /** Each host gets fresh file-config engine instances; a value resolves against cwd. */
-async function loadHostConfig(cwd: string, config: string | E2EConfig | undefined, env: NodeJS.ProcessEnv): Promise<ResolvedConfig> {
+async function loadHostConfig(cwd: string, config: string | E2EConfig | undefined, env: NodeJS.ProcessEnv): Promise<ResolvedRunConfig> {
   if (typeof config === 'object') return resolveConfig(config, { projectRoot: cwd, env });
   const discovered = discoverConfig(cwd, config);
   if (discovered.configPath === undefined) throw missingConfigError(cwd);

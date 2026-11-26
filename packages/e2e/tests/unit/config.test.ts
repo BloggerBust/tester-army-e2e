@@ -1543,3 +1543,61 @@ describe('discoverConfig', () => {
     });
   });
 });
+
+describe('services', () => {
+  it.each([
+    { services: [], message: 'services must be a plain object keyed by name, like services: { email: defineService({ ... }) }' },
+    { services: 'email', message: 'services must be a plain object keyed by name, like services: { email: defineService({ ... }) }' },
+    { services: { email: {} }, message: 'services.email must be a service from defineService({ async *start() { ... } })' },
+    { services: { email: { start: 'http://email.test' } }, message: 'services.email must be a service from defineService({ async *start() { ... } })' },
+    { services: { email: null }, message: 'services.email must be a service from defineService({ async *start() { ... } })' },
+    {
+      services: {
+        email: {
+          async *start() {
+            yield {};
+          },
+          stop: () => undefined,
+        },
+      },
+      message: 'services.email has unknown key "stop"',
+    },
+    {
+      services: {
+        email: {
+          startupTimeout: '2m',
+          async *start() {
+            yield {};
+          },
+        },
+      },
+      message: 'services.email.startupTimeout must be a positive safe integer of milliseconds, got "2m"',
+    },
+    {
+      services: {
+        email: {
+          shutdownTimeout: 0,
+          async *start() {
+            yield {};
+          },
+        },
+      },
+      message: 'services.email.shutdownTimeout must be a positive safe integer of milliseconds, got 0',
+    },
+  ])('refuses $message', ({ services, message }) => {
+    expect(() => resolve(invalid({ services }))).toThrow(expect.objectContaining({ code: 'INVALID_CONFIG', message: expect.stringContaining(message) }));
+  });
+
+  it('keeps the services in key order', () => {
+    const service = {
+      async *start() {
+        yield {};
+      },
+    };
+
+    expect(resolve({ services: { beta: service, alpha: service } }).services).toEqual([
+      ['beta', service],
+      ['alpha', service],
+    ]);
+  });
+});

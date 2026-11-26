@@ -21,8 +21,10 @@ import { StreamRedactor } from '@e2e-dev/core/lib/internal/redact';
 import { ConfigLoadHold, writtenChunk } from '../process-output.ts';
 import { processSecrets, registerStaticSecrets, staticSecretLedger } from '@e2e-dev/core/lib/run/secrecy';
 import { SessionStore } from '@e2e-dev/core/lib/run/sessions';
+import { copyServiceValues, type ServiceReply } from '../services.ts';
 import type {
   ChildProcessInbound,
+  ChildProcessOutbound,
   OutputMessage,
   RunUnitMessage,
   WirePair,
@@ -55,7 +57,7 @@ const FLUSH_GRACE_MS = 2_000;
  * `attempt-deadline` sent right before one that blocks the loop, would never
  * leave.
  */
-function send(message: WorkerToMain): Promise<void> {
+function send(message: ChildProcessOutbound): Promise<void> {
   const taken = new Promise<void>((resolve) => {
     try {
       if (process.send === undefined || !process.connected) resolve();
@@ -145,6 +147,10 @@ function captureOutput(pairInFlight: () => OutputMessage['pair']): () => void {
     for (const flush of flushes) flush();
   };
 }
+
+/** Pending service calls waiting for a `service-reply`, keyed by request id. */
+const serviceCalls = new Map<string, (reply: ServiceReply) => void>();
+let serviceCallCount = 0;
 
 function fatal(cause: unknown): void {
   send({ type: 'fatal', error: serializeError(classifyError(cause)) });
@@ -236,6 +242,16 @@ async function bootstrap(
     resolvePairs,
     debug,
     holdSteps: message.holdSteps,
+    services: copyServiceValues(message.services, (call, args) => {
+      serviceCallCount += 1;
+
+      const requestId = String(serviceCallCount);
+      const reply = new Promise<ServiceReply>((resolve) => serviceCalls.set(requestId, resolve));
+
+      void send({ type: 'service-call', requestId, call, args });
+
+      return reply;
+    }),
   };
 }
 
@@ -314,6 +330,14 @@ function main(): void {
       worker.start();
       return;
     }
+
+    if (message.type === 'service-reply') {
+      serviceCalls.get(message.requestId)?.(message.reply);
+      serviceCalls.delete(message.requestId);
+
+      return;
+    }
+
     worker?.handle(message);
   });
 }

@@ -1,6 +1,6 @@
 /**
  * One pool for every fixture a piece of test code reads: the built-in ones
- * (`agent`, `app`, `screen`, `platform`, `request`, `session`), the target engine's, and
+ * (`agent`, `app`, `screen`, `platform`, `request`, `services`, `session`), the target engine's, and
  * the `test.extend()` chain it was registered through. Each has a scope, and
  * code sees the fixtures that live at least as long as it does: a test and
  * its per-test hooks see test and worker fixtures, a suite hook and a worker
@@ -26,12 +26,13 @@ export function attemptBuiltIns(fixtures: object): BuiltInReader {
 }
 
 /**
- * The built-in fixtures of code with no attempt behind it: the ones the
- * target alone decides (`platform`). Any other fails with the error
- * `unavailable` returns, which says why no attempt is behind the code.
+ * Returns a built-in fixture reader for code running without an attempt.
+ * Only fixtures derived from the target or worker (`platform` and
+ * `services`) are available. Reading any other fixture throws the error
+ * returned by `unavailable`.
  */
-export function attemptlessBuiltIns(target: BuiltInTarget, unavailable: (name: string) => Error): BuiltInReader {
-  const builtIns = builtInFixtures(target);
+export function attemptlessBuiltIns(target: BuiltInTarget, services: Readonly<Record<string, unknown>>, unavailable: (name: string) => Error): BuiltInReader {
+  const builtIns = builtInFixtures(target, services);
   return (name) => {
     if (builtIns.needsAttempt(name)) throw unavailable(name);
     return builtIns.attemptless(name);
@@ -153,8 +154,9 @@ export class WorkerFixturePool {
 
   private readonly builtInFixtures: BuiltInFixtures;
 
-  constructor(target: BuiltInTarget) {
-    this.builtInFixtures = builtInFixtures(target);
+  /** `services` holds the service values started by the worker's entry point for the `services` fixture. */
+  constructor(target: BuiltInTarget, services: Readonly<Record<string, unknown>> = {}) {
+    this.builtInFixtures = builtInFixtures(target, services);
   }
 
   /**
@@ -209,9 +211,9 @@ export class WorkerFixturePool {
   }
 
   /**
-   * Built-in `name` as a worker fixture receives it: its value when the
-   * target alone decides it, else an object that forwards to the attempt or
-   * suite hook running at the time it is used.
+   * Returns built-in fixture `name` for a worker fixture. If the value comes
+   * from the target or worker, it's returned directly. Otherwise, it returns
+   * an object that forwards to the attempt or suite hook running at the time.
    */
   builtIn(name: string): unknown {
     return this.builtInFixtures.needsAttempt(name) ? this.forwarder(name) : this.builtInFixtures.attemptless(name);

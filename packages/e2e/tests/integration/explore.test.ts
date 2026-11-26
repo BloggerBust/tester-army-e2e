@@ -14,7 +14,7 @@ import { defineTool } from '@e2e-dev/core/lib/agent/public';
 import type { StepExecutor } from '@e2e-dev/core/lib/agent/executor';
 import { explore, type ExploreOptions, type ExploreOutcome } from '../../src/explore/index.ts';
 import { FINDING_TOOL_NAME } from '../../src/explore/executor.ts';
-import type { RunEvent } from '../../src/index.ts';
+import { defineService, type RunEvent } from '../../src/index.ts';
 import type { ModelInstance } from '@e2e-dev/core/lib/types';
 import { installFakeLoopModel, loopCalls, nodeIdFor, type LoopCall, type LoopToolCall } from '../helpers/fake-loop-model.ts';
 import { extracted, fakeCalls, installFakeModel, type FakeCall } from '../helpers/fake-model.ts';
@@ -319,6 +319,38 @@ describe('e2e explore', () => {
     expect(outcome.status).toBe('passed');
     expect(outcome.report.run.explore!.findings[0]).toMatchObject({ kind: 'warning', severity: 1 });
     expect(outcome.notices).toEqual([]);
+  }, 120_000);
+
+  it("starts the config's services before it explores and stops them after", async () => {
+    const events: string[] = [];
+
+    const model = installExploreModel({
+      plan: () => {
+        events.push('plan');
+
+        return { decision: 'finish', summary: 'Looked around.' };
+      },
+      loop: () => [{ toolName: 'complete_step', input: { status: 'passed', summary: 'unused' } }],
+    });
+
+    const outcome = await runExplore(project, app, model, {
+      rawConfig: {
+        targets: [{ name: 'web', engine: web(), app: { url: app.url } }] as never,
+        agents: { default: { model } },
+        services: {
+          inbox: defineService({
+            async *start() {
+              events.push('start inbox');
+              yield {};
+              events.push('stop inbox');
+            },
+          }),
+        },
+      },
+    });
+
+    expect(outcome.report.run.errors).toEqual([]);
+    expect(events).toEqual(['start inbox', 'plan', 'stop inbox']);
   }, 120_000);
 
   it('redacts a registered secret value the goal spells out from the title, artifact names, report, and model input', async () => {

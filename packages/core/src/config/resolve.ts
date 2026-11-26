@@ -166,6 +166,7 @@ const TOP_LEVEL_KEYS = new Set([
   'reporters',
   'agents',
   'filters',
+  'services',
   'cache',
   'credentials',
   'secrets',
@@ -994,7 +995,7 @@ function resolveAgents(
 }
 
 function computeConfigDigest(
-  raw: ProjectConfig & { readonly reporters?: unknown; readonly filters?: unknown },
+  raw: ProjectConfig & { readonly reporters?: unknown; readonly filters?: unknown; readonly services?: unknown },
   projectId: string,
   targets: readonly ResolvedTarget[],
 ): string {
@@ -1018,7 +1019,8 @@ function computeConfigDigest(
   // a target, decides which worker runs a test, never what the test does.
   // A test filter decides what runs before any worker starts and never
   // changes what a test does, so adding one leaves the replays valid, like
-  // a reporter.
+  // a reporter. A service is a dependency the app uses at runtime, so it
+  // isn't included in the digest either.
   // `targets` digest by declaration below and never enter the clone: an
   // engine holds `secrets.get()` handles, which refuse to serialize.
   const {
@@ -1026,6 +1028,7 @@ function computeConfigDigest(
     maxDuration: _maxDuration,
     fullyParallel: _fullyParallel,
     filters: _filters,
+    services: _services,
     artifacts: _artifacts,
     output: _output,
     trace: _trace,

@@ -304,7 +304,7 @@ test('gadget only', { platforms: ['fake'] }, async ({ gadget }) => log('body:' +
         expect(named.outcome.report.run.errors.map(({ code, message }) => ({ code, message }))).toEqual([
           {
             code: 'COLLECTION_ERROR',
-            message: expect.stringMatching(/^tests\/support\.ts:\d+: fixture "gadget" names "gadget": target "plain" has no "gadget" fixture; available: agent, app, platform, request, screen, session \(engine fake contributes no fixtures\)$/),
+            message: expect.stringMatching(/^tests\/support\.ts:\d+: fixture "gadget" names "gadget": target "plain" has no "gadget" fixture; available: agent, app, platform, request, screen, services, session \(engine fake contributes no fixtures\)$/),
           },
         ]);
       } finally {

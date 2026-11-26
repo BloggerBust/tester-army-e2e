@@ -141,6 +141,7 @@
               "community-packages",
               "tools",
               "fixtures",
+              "services",
               "executors",
               "filters"
             ]

@@ -22,6 +22,7 @@ export const RUNTIME_EXPORTS: readonly string[] = [
   'beforeAll',
   'afterAll',
   'defineConfig',
+  'defineService',
   'expect',
   'credentials',
   'secrets',

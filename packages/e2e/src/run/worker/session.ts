@@ -64,6 +64,8 @@ export interface TargetWorkerDeps {
   readonly inMemory?: InMemoryAttempts | undefined;
   /** Whether steps wait for the runner's `step-release` (`e2e run --step`). Pauses always wait. */
   readonly holdSteps: boolean;
+  /** This worker's copy of the started service values. See `TargetExecutorOptions.services`. */
+  readonly services: Readonly<Record<string, unknown>>;
 }
 
 /** Transport callbacks a target worker needs. */
@@ -138,6 +140,7 @@ export class TargetWorker {
         workerSlot: deps.workerSlot,
         env: deps.env,
         isolated: deps.isolated,
+        services: deps.services,
         interruptSignal: this.interruptController.signal,
         hold: {
           ask: (step, signal, reads, tools) => this.holdStep(step, signal, reads, tools),

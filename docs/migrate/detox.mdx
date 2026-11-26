@@ -43,6 +43,7 @@ For a migration that spans several sessions, the [`migrate-to-e2e` skill](/codin
 | `devices.<name>.device.type` | `mobile({ device: 'iPhone 17' })` |
 | `configurations` | `targets`, one engine per platform |
 | Jest `maxWorkers` | `workers`, one per device |
+| Jest `globalSetup`, `globalTeardown` | [Services](/services), or start dependencies before the run |
 | `apps.<name>.launchArgs` | `app.launchArguments` on the target. Use an object with the same keys, or a list of strings for each platform. On Android, each key is a separate typed extra on the launch intent. Detox puts all keys as strings in one `launchArgs` bundle extra, so change code that reads `getIntent().getBundleExtra("launchArgs")`. On iOS, each key is a `UserDefaults` argument: `false` becomes `NO`, and a string such as `a b` or `-1` gets quotes. If the app reads `ProcessInfo.processInfo.arguments`, use the list format. Nested objects are not supported |
 | `launchApp({ permissions })` | `app.permissions` on the target: `grant`, `deny`, `reset` for `YES`, `NO`, `unset`. More names are [planned](#planned) |
 
@@ -175,7 +176,6 @@ on purpose.
 | `permissions` for `health`, `homekit`, `speech`, `faceid`, `userTracking`; values `always`, `inuse`, `limited` | Tap the prompt's button, or `device.alert('accept')` |
 | `device.sendUserNotification()`, `.pinch()` | `client.apps.push()`, `client.interactions.pinch()` on [`unstable_raw`](/reference/mobile#unstable_raw) |
 | `launchApp({ languageAndLocale })` | On iOS, `app.launchArguments: { AppleLanguages: ['fr'], AppleLocale: 'fr_FR' }`, see [Run the app in another language](/mobile#run-the-app-in-another-language) |
-| Jest `globalSetup`, `globalTeardown` | Start dependencies before the run |
 | `device.reverseTcpPort()` | Run `adb reverse` in a CI step |
 | `.getAttributes()` | `.textContent()`, `.inputValue()`, `.getAttribute()`, `.isEnabled()`, `.isVisible()`, `.isChecked()`, `.boundingBox()` |
 | `device.setStatusBar()` | `xcrun simctl status_bar`. `toHaveScreenshot` holds the status bar fixed |

@@ -124,8 +124,15 @@ const LAUNCH_APP_KEYS = ['url', 'bundleId', 'appPath', 'linkBase', 'identity', '
 const SESSION_OPTION_KEYS = ['state', 'signal'] as const;
 /** The finished steps a session keeps, what its agent reads as the steps before its own; a bot's session runs for days. */
 const RETAINED_STEPS = 500;
-/** The core fixtures that belong to a test. A session has no test, so it exposes every other built-in fixture. */
-const TEST_FIXTURES = new Set(Object.entries(CORE_FIXTURES).flatMap(([name, fixture]) => (fixture.scope === 'test' ? [name] : [])));
+/**
+ * Core fixtures omitted from a session: test-scoped fixtures and `services`,
+ * which are only started by `e2e run` and `e2e explore`. Every other built-in
+ * fixture is exposed on the session.
+ */
+const TEST_FIXTURES = new Set([
+  ...Object.entries(CORE_FIXTURES).flatMap(([name, fixture]) => (fixture.scope === 'test' ? [name] : [])),
+  'services',
+]);
 
 /**
  * Launches `engine`: prepares it (a first-run browser download, a device

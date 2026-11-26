@@ -68,8 +68,8 @@ See the [command reference](/reference/config#command) for all options and
 log truncation details.
 
 <Note>
-e2e only starts `app.command`. Start databases, mocks, or other sidecar
-services beforehand, or wrap them in a single startup script.
+To start a database, an API mock, or another dependency before the app, add
+it as a [service](/services).
 </Note>
 
 ### Let the runner pick the port

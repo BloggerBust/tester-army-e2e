@@ -30,6 +30,7 @@ export type {
   WorkerFixtureDefinition,
   WorkerFixtures,
 } from './types/fixtures.ts';
+export type { CopyableServiceValue, Service, ServiceMap, ServiceStartContext, ServiceValue, ServiceValues } from './types/services.ts';
 export type {
   Credential,
   CredentialConfig,
@@ -830,6 +831,12 @@ export interface TestFixtures {
   readonly platform: string;
   /** HTTP calls, each one a step; a path resolves against the app URL. */
   readonly request: APIRequest;
+  /**
+   * Values yielded by the config's `services`, keyed by name. Each worker
+   * receives a copy of the data, and each function becomes an async function
+   * called in the runner process.
+   */
+  readonly services: Readonly<Record<string, unknown>>;
 }
 
 export interface SetupFixtures extends TestFixtures {
@@ -1965,7 +1972,7 @@ export type AgentConfig = AgentOptions &
 /**
  * The project half of `E2EConfig`: targets, agents, the replay cache,
  * secrets, budgets, and output. The test runner and `@e2e-dev/core` both resolve
- * it; `E2EConfig` adds the runner's reporters and test filters.
+ * it; `E2EConfig` adds the runner's reporters, test filters, and services.
  */
 export interface ProjectConfig {
   /** Stable project id, 1 through 256 characters; defaults to the root `package.json` name. */

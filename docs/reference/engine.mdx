@@ -144,7 +144,7 @@ rules:
 | `isolation` | Anything but `'attempt'` or `'worker'`. |
 | `keyboard`, `state`, `artifacts`, `session` | An unknown key or a non-function member. `keyboard` without `type` and `press`; `state` without both `capture` and `restore`; `artifacts` without `screenshot`; `startVideo` without `stopVideo`, or the reverse. |
 | `secrets` | Not an array of `secrets.get()` handles. |
-| `fixtures` | Not an object, a fixture that is not a factory function, or a fixture name that is not a lower-camel identifier or shadows `agent`, `app`, `screen`, `platform`, `request`, or `session`. |
+| `fixtures` | Not an object, a fixture that is not a factory function, or a fixture name that is not a lower-camel identifier or shadows `agent`, `app`, `screen`, `platform`, `request`, `services`, or `session`. |
 
 <Note>
 `artifacts.startTrace` and `artifacts.stopTrace` were removed from the

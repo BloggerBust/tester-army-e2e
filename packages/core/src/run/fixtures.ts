@@ -88,6 +88,8 @@ export interface AttemptEnvironment {
    * test (`e2e mcp`).
    */
   readonly test?: { readonly file: string; readonly titlePath: readonly string[]; readonly writtenScreenshots: WrittenScreenshots };
+  /** Values of services started by the worker's entry point for the `services` fixture. Empty when omitted. */
+  readonly services?: Readonly<Record<string, unknown>> | undefined;
 }
 
 /** Builds the lazy fixture graph for one attempt. */
@@ -255,7 +257,7 @@ export function createFixtures(environment: AttemptEnvironment): AttemptFixtures
   const context: CoreFixtureContext = { environment, engine, screenContext, agentRuntime };
   const factories: Record<string, () => unknown> = {};
   for (const [name, fixture] of Object.entries(CORE_FIXTURES)) {
-    factories[name] = 'ofTarget' in fixture ? () => fixture.ofTarget(environment.target) : () => fixture.create(context);
+    factories[name] = 'ofWorker' in fixture ? () => fixture.ofWorker({ target: environment.target, services: environment.services ?? {} }) : () => fixture.create(context);
   }
   Object.assign(factories, contributedFactories(environment, engine, screenContext));
   // Accessors: a fixture is built on first touch, whether or not the test body reaches it, and kept.
@@ -293,14 +295,21 @@ export type BuiltInTarget = Pick<ResolvedTarget, 'name' | 'platform' | 'fixtureS
   readonly engine?: Pick<NonNullable<ResolvedTarget['engine']>, 'name' | 'isolation' | 'fixtures'> | undefined;
 };
 
+/** What a worker fixture is built from: the target and the worker's service values. */
+type WorkerFixtureContext = {
+  readonly target: Pick<BuiltInTarget, 'platform'>;
+  readonly services: Readonly<Record<string, unknown>>;
+};
+
 /**
- * One core fixture: its scope, and how it is built. Most are built from the
- * attempt (`create`); one the target alone decides (`ofTarget`) needs no
- * attempt, so code that outlives every attempt can read it.
+ * Definition for one core fixture: its scope and how it's built. Most
+ * fixtures are built from an attempt (`create`). Fixtures built with
+ * `ofWorker` depend only on the target and the worker's service values, so
+ * they don't need an attempt and can be read by code that outlives attempts.
  */
 type CoreFixture<Value> = { readonly scope: CoreFixtureScope } & (
   | { create(context: CoreFixtureContext): Value }
-  | { ofTarget(target: Pick<BuiltInTarget, 'platform'>): Value }
+  | { ofWorker(worker: WorkerFixtureContext): Value }
 );
 
 /**
@@ -320,8 +329,9 @@ export const CORE_FIXTURES: { readonly [Name in keyof CoreFixtureValues]: CoreFi
   },
   app: { scope: 'engine', create: ({ environment, engine }) => createApp(environment, engine) },
   screen: { scope: 'engine', create: ({ screenContext }) => createScreen(screenContext) },
-  platform: { scope: 'worker', ofTarget: (target) => target.platform },
+  platform: { scope: 'worker', ofWorker: ({ target }) => target.platform },
   request: { scope: 'test', create: ({ environment, engine }) => createRequest({ environment, actionTimeout: () => engine.actionTimeout }) },
+  services: { scope: 'worker', ofWorker: ({ services }) => services },
   session: {
     scope: 'test',
     create: ({ environment }) => ({
@@ -347,10 +357,10 @@ function coreFixture(name: string): CoreFixture<unknown> | undefined {
   return Object.hasOwn(CORE_FIXTURE, name) ? CORE_FIXTURE[name] : undefined;
 }
 
-/** Whether reading `name` takes an attempt: true of every fixture but a core one the target alone decides. */
+/** Returns true when reading `name` requires an attempt, which is every fixture except core fixtures derived from the target or worker. */
 function needsAttempt(name: string): boolean {
   const fixture = coreFixture(name);
-  return fixture === undefined || !('ofTarget' in fixture);
+  return fixture === undefined || !('ofWorker' in fixture);
 }
 
 /**
@@ -372,7 +382,7 @@ export interface BuiltInFixtures {
    * Undefined when no target has a built-in fixture of that name.
    */
   scope(name: string): FixtureScope | 'unresolved' | undefined;
-  /** Whether reading `name` takes an attempt on the engine: every built-in but the ones the target alone decides. */
+  /** Returns true when reading `name` requires an engine attempt, which is every built-in except those derived from the target or worker. */
   needsAttempt(name: string): boolean;
   /** The value of a built-in that needs no attempt. */
   attemptless(name: string): unknown;
@@ -380,8 +390,8 @@ export interface BuiltInFixtures {
   missing(name: string, available: readonly string[]): string;
 }
 
-/** The built-in fixtures of `target`. */
-export function builtInFixtures(target: BuiltInTarget): BuiltInFixtures {
+/** Returns the built-in fixtures for `target` with the worker's `services` values. */
+export function builtInFixtures(target: BuiltInTarget, services: Readonly<Record<string, unknown>> = {}): BuiltInFixtures {
   const contributed = Object.keys(target.engine?.fixtures ?? {});
   const engineScope: FixtureScope = target.engine?.isolation === 'worker' ? 'worker' : 'test';
   return {
@@ -394,7 +404,7 @@ export function builtInFixtures(target: BuiltInTarget): BuiltInFixtures {
     needsAttempt: (name) => (contributed.includes(name) || !target.fixtureScopes.has(name)) && needsAttempt(name),
     attemptless(name) {
       const fixture = coreFixture(name);
-      return fixture !== undefined && 'ofTarget' in fixture ? fixture.ofTarget(target) : undefined;
+      return fixture !== undefined && 'ofWorker' in fixture ? fixture.ofWorker({ target, services }) : undefined;
     },
     missing: (name, available) => unknownFixtureMessage(target, name, available),
   };

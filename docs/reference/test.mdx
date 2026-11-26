@@ -496,7 +496,8 @@ export const test = base.extend<{ device: Device }>(); // types only
   2. [Worker fixtures](#worker-fixtures), which are available in `beforeAll`
      and `afterAll`. `device`, `app`, and `screen` from `@e2e-dev/mobile` are
      typed here.
-  3. The config's type (`typeof config`), for the fixtures of every target.
+  3. The config's type (`typeof config`), used to type fixtures from the
+     config.
      See [Engine fixtures across targets](#engine-fixtures-across-targets).
 
 #### `describe`
@@ -664,7 +665,7 @@ The module is re-imported for every retry, serial group, and setup test, so
 It receives [worker fixtures](#worker-fixtures) only:
 
 - The [built-in fixtures](#fixtures) whose scope is worker on the target:
-  `platform`, and on a mobile target `device`, `app`, and `screen`.
+  `platform`, `services`, and on a mobile target `device`, `app`, and `screen`.
 - The worker fixtures of the `test` it was registered through. The ones it
   names are set up, and the ones declared with `auto: true`.
 
@@ -1008,6 +1009,7 @@ scope on each engine.
 | [`screen`](/reference/screen) | `Screen` | test | worker |
 | `platform` | `string` | worker | worker |
 | [`request`](/reference/request) | `APIRequest` | test | test |
+| [`services`](#services) | `Record<string, unknown>` | worker | worker |
 | [`session`](#test-setup) | `SetupSession` | test | test |
 | [`browser`](/reference/web) | `Browser` | test | - |
 | [`device`](/reference/mobile#device) | `Device` | - | worker |
@@ -1046,6 +1048,43 @@ Built-in fixtures are lazy. Destructuring in the parameter list acquires
 them before the body's first statement. [Your own
 fixtures](#your-own-fixtures) are set up before the first `beforeEach`.
 </Note>
+
+#### `services`
+
+Values yielded by the config's [`services`](/reference/config#services),
+keyed by name. Each worker receives a copy of the data. Each yielded
+function becomes an async function that calls the original in the runner
+process and resolves to a copy of the result.
+
+```ts
+import { expect, test as base } from 'e2e';
+import type config from '../e2e.config.ts';
+
+const test = base.extend<{}, {}, typeof config>();
+
+test('signing up sends one welcome email', async ({ app, screen, services }) => {
+  const inbox = await services.email.createInbox();
+
+  await app.open('/');
+  await screen.getByRole('textbox', { name: 'Email' }).fill(inbox.address);
+  await screen.getByRole('button', { name: 'Sign up' }).click();
+
+  const email = await services.email.waitForEmail(inbox.address, { subject: /welcome/i });
+
+  expect(email.subject).toContain('Welcome');
+  expect(await services.email.received(inbox.address)).toHaveLength(1);
+});
+```
+
+All workers share one instance of each service, so a test can observe state
+created by other tests. In the example above, the test creates an inbox with a
+unique address and counts only the emails sent to it.
+
+| Throws | When |
+| --- | --- |
+| `INVALID_ARGUMENT` | An argument is a function, a custom class instance, or another value that can't be copied. |
+| The function's error | The function throws in the runner process. |
+| `Error` | The return value is a function, a custom class instance, or another value that can't be copied. |
 
 #### Your own fixtures
 
@@ -1567,6 +1606,12 @@ export interface TestFixtures {
   readonly platform: string;
   /** HTTP calls, each one a step; a path resolves against the app URL. */
   readonly request: APIRequest;
+  /**
+   * Values yielded by the config's `services`, keyed by name. Each worker
+   * receives a copy of the data, and each function becomes an async function
+   * called in the runner process.
+   */
+  readonly services: Readonly<Record<string, unknown>>;
 }
 
 export interface SetupFixtures extends TestFixtures {
@@ -1593,6 +1638,12 @@ export type FixtureScope = 'test' | 'worker';
 export interface WorkerFixtures {
   /** The target's platform label: `web`, `ios`, `android`, or an engine's own string. */
   readonly platform: string;
+  /**
+   * Values yielded by the config's `services`, keyed by name. Each worker
+   * receives a copy of the data, and each function becomes an async function
+   * called in the runner process.
+   */
+  readonly services: Readonly<Record<string, unknown>>;
 }
 
 /** @deprecated `beforeAll` and `afterAll` receive the worker fixtures: use `WorkerFixtures`. */

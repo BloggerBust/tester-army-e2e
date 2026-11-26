@@ -5,12 +5,13 @@ import { existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { WARNED_TSCONFIGS_ENV, warnedTsconfigs } from '../../config/tsconfig.ts';
 import { InfrastructureError } from '@e2e-dev/core/lib/internal/errors';
+import type { ServiceCaller } from '../services.ts';
 import type { SpawnUnitRunner, UnitRunner, UnitRunnerEvents } from '../unit-runner.ts';
 import type {
   ChildProcessInbound,
+  ChildProcessOutbound,
   MainToWorker,
   WorkerBootstrap,
-  WorkerToMain,
 } from './protocol.ts';
 
 /**
@@ -33,15 +34,17 @@ function resolveEntry(): { path: string; execArgv: string[] } {
 export type ChildProcessSpawnOptions = Omit<WorkerBootstrap, 'targetName' | 'workerSlot'> & {
   /** The environment each target's workers are spawned with. */
   readonly envFor: (targetName: string) => NodeJS.ProcessEnv;
+  /** Handles a worker's call to a service function. */
+  readonly callService: ServiceCaller;
 };
 
 /** Creates the spawn factory the scheduler uses for child-process execution. */
 export function childProcessSpawner(options: ChildProcessSpawnOptions): SpawnUnitRunner {
-  const { envFor, ...bootstrap } = options;
+  const { envFor, callService, ...bootstrap } = options;
   return (targetName, workerSlot, events) =>
     new ChildProcessRunner(
       { ...bootstrap, targetName, workerSlot },
-      { projectRoot: bootstrap.projectRoot, env: envFor(targetName) },
+      { projectRoot: bootstrap.projectRoot, env: envFor(targetName), callService },
       events,
     );
 }
@@ -54,7 +57,7 @@ class ChildProcessRunner implements UnitRunner {
 
   constructor(
     bootstrap: WorkerBootstrap,
-    spawn: { projectRoot: string; env: NodeJS.ProcessEnv },
+    spawn: { projectRoot: string; env: NodeJS.ProcessEnv; callService: ServiceCaller },
     events: UnitRunnerEvents,
   ) {
     const entry = resolveEntry();
@@ -65,7 +68,20 @@ class ChildProcessRunner implements UnitRunner {
       // Collecting read the project's tsconfig.json files first; the worker warns only about ones it reaches on its own.
       env: { ...spawn.env, [WARNED_TSCONFIGS_ENV]: warnedTsconfigs() },
     });
-    this.child.on('message', (message) => events.onMessage(message as WorkerToMain));
+    this.child.on('message', (message) => {
+      const outbound = message as ChildProcessOutbound;
+
+      if (outbound.type !== 'service-call') {
+        events.onMessage(outbound);
+
+        return;
+      }
+
+      // Handle service calls directly in the runner process so they don't reach the scheduler.
+      void spawn
+        .callService(outbound.call, outbound.args)
+        .then((reply) => this.post({ type: 'service-reply', requestId: outbound.requestId, reply }));
+    });
     this.exit = new Promise<void>((resolve) => {
       // 'close', not 'exit': it fires once the IPC channel has drained, so
       // every message the worker sent (its shutdown-done included) has been

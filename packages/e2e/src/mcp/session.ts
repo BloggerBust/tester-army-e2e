@@ -28,6 +28,7 @@ import { SharedAppProcesses } from '@e2e-dev/core/lib/run/process-pool';
 import { outputLayout } from '@e2e-dev/core/lib/run/output';
 import { processSecrets, registerStaticSecrets } from '@e2e-dev/core/lib/run/secrecy';
 import { openStandaloneAttempt, type OneShotAttempt } from '../run/standalone-kinds.ts';
+import type { ResolvedRunConfig } from '../config/resolve-run.ts';
 import type { StandaloneAttempt } from '@e2e-dev/core/lib/run/standalone-attempt';
 import { selectStandaloneTest, testLocation } from '../run/standalone-test.ts';
 import { createSessionCatalog, isGrammarVerb, type SessionCatalog } from '../session-tools/catalog.ts';
@@ -124,7 +125,7 @@ export interface SessionHostOptions {
    */
   readonly loadConfig: (configPath: string, graph: string) => Promise<LoadedConfig>;
   /** Builds the config of a session opened with `engine`; throws where the project has a config file. */
-  readonly loadEngineConfig: (session: EngineSession) => Promise<ResolvedConfig>;
+  readonly loadEngineConfig: (session: EngineSession) => Promise<ResolvedRunConfig>;
   /** Holds what the process prints while `load` evaluates a config and registers its secrets; by default nothing is held. */
   readonly withholdOutput?: (<T>(load: () => Promise<T>) => Promise<T>) | undefined;
   readonly env: NodeJS.ProcessEnv;
@@ -404,6 +405,13 @@ export class SessionHost {
       registerStaticSecrets(fresh.allSecrets);
       return fresh;
     });
+
+    if (loaded.services.length > 0) {
+      const names = loaded.services.map(([name]) => name).join(', ');
+
+      throw new ConfigurationError('INVALID_CONFIG', `e2e mcp doesn't start services, and this config declares services (${names}). Run these tests with e2e run instead.`);
+    }
+
     // A session is its own run: a URL declared with port 0 gets a port here,
     // for the opened target alone, so another target's URL cannot fail the open.
     // An engine session has one target, whatever `--target` names in a config.

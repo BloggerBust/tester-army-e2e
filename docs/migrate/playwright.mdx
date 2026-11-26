@@ -46,6 +46,7 @@ A Playwright key such as `testDir`, `baseURL`, `use`, `webServer`, or
 | --- | --- |
 | `use.baseURL`, `webServer` | `app: { url, command }` on the target, see [Starting your app](/web#starting-your-app) |
 | `webServer.reuseExistingServer` | `app.command: { reuseExisting: true }`; CI ignores it |
+| `globalSetup`, `globalTeardown`, a `webServer` array | [Services](/services) for the dependencies, or a script around the run |
 | `projects` | `targets`, one engine instance each |
 | `testDir`, `testMatch`, `testIgnore` | `tests`, globs from the project root; a leading `!` excludes |
 | `retries`, `workers`, `timeout` | the same names, with [other defaults](#defaults-that-differ); `workers` is an integer |
@@ -309,7 +310,6 @@ purpose. Use the workaround, or keep the test in Playwright.
 | `testInfo.attach()` | `app.screenshot(label)` attaches a screenshot |
 | `test.info()`, `testInfo` in hooks and fixtures, `annotations` | Your own fixture or module state; an issue id in the title or a tag |
 | `mergeTests()` | One chain of `extend` calls |
-| `globalSetup`, `globalTeardown`, a `webServer` array | A script around the run, or one `app.command` that starts every process |
 | `projects[].testMatch`, `testDir`, `testIgnore`, `grep` | `platforms` or tags on the tests, or one run for each target |
 | `--ui`, `npx playwright show-report`, `--reporter html` | `--watch --headed`; `npx e2e report` (opens `<output>/report.html` written by `htmlReporter()`) |
 | `test.describe.fixme()`, `test.fixme(title, details, body)` | `{ timeout }` or `{ skip: 'fixme' }` on the test or group, with any `tags` from the details beside it, reported with skip cause `explicit`, not `fixme` |

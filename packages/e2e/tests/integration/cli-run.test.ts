@@ -447,7 +447,7 @@ export const test = base.extend<{ workspace: string }>({
       /^tests\/a\.e2e\.ts:4: afterEach hook takes the rest property "\.\.\.rest"/,
     );
     expect(collectionError({ 'tests/a.e2e.ts': `${header}test('one', () => {});\n\ntest('typo', async ({ workspce }) => void workspce);\n` })).toMatch(
-      /^tests\/a\.e2e\.ts:5: test "typo" names "workspce": target "fake" has no "workspce" fixture; available: agent, app, gadget, platform, request, screen, session, workspace \(engine fake contributes gadget\); did you mean "workspace"\?$/,
+      /^tests\/a\.e2e\.ts:5: test "typo" names "workspce": target "fake" has no "workspce" fixture; available: agent, app, gadget, platform, request, screen, services, session, workspace \(engine fake contributes gadget\); did you mean "workspace"\?$/,
     );
     expect(collectionError({ 'tests/a.e2e.ts': `${header}test.beforeAll(({ platform }) => void platform);\n\ntest.beforeAll(({ gadget }) => void gadget);\ntest('one', () => {});\n` })).toMatch(
       /^tests\/a\.e2e\.ts:5: beforeAll hook names "gadget", a test fixture on target "fake"/,

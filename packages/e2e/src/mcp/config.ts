@@ -2,8 +2,7 @@
 
 import path from 'node:path';
 import { discoverConfig, loadConfigModule, missingConfigError } from '../config/load.ts';
-import { type ResolvedConfig } from '@e2e-dev/core/lib/config/resolve';
-import { resolveConfig } from '../config/resolve-run.ts';
+import { resolveConfig, type ResolvedRunConfig } from '../config/resolve-run.ts';
 import { ConfigurationError } from '@e2e-dev/core/lib/internal/errors';
 import type { TargetApp } from '@e2e-dev/core/lib/types';
 import { loadEngine, type EngineLookup, type FactoryRef } from './default-engine.ts';
@@ -15,7 +14,7 @@ export interface ProjectOptions {
 }
 
 /** A config loaded from a file: what sessions on a project share. A session opened with `engine` has none. */
-export type LoadedConfig = ResolvedConfig & { readonly configPath: string };
+export type LoadedConfig = ResolvedRunConfig & { readonly configPath: string };
 
 /** The absolute path of a project's config, found without evaluating it. */
 export function locateProjectConfig(options: ProjectOptions): string {
@@ -44,7 +43,7 @@ export interface EngineSession extends FactoryRef {
 export async function loadEngineConfig(
   options: ProjectOptions & { readonly env: NodeJS.ProcessEnv } & Pick<EngineLookup, 'enginesDir'>,
   session: EngineSession,
-): Promise<ResolvedConfig> {
+): Promise<ResolvedRunConfig> {
   const { configPath } = discoverConfig(options.cwd, options.configPath);
   if (configPath !== undefined) {
     throw new ConfigurationError(

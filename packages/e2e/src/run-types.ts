@@ -5,7 +5,7 @@
 
 import type { RunEvent, RunExitCode, RunStatus } from './run/events.ts';
 import type { Report1Document } from './report/build.ts';
-import type { ProjectConfig } from '@e2e-dev/core/lib/types';
+import type { ProjectConfig, ServiceMap } from '@e2e-dev/core/lib/types';
 
 /** The reporters the runner ships, named by id; each is a `Reporter` on the same contract. */
 export type BuiltinReporter = 'list' | 'dot' | 'line' | 'json' | 'junit' | 'markdown' | 'ctrf';
@@ -245,4 +245,12 @@ export interface E2EConfig extends ProjectConfig {
   reporters?: readonly (BuiltinReporter | Reporter)[];
   /** Test filters, in order, run with `--changed-since`: each judges the tests the one before it kept. */
   filters?: readonly TestFilter[];
+  /**
+   * Dependencies of the app under test, keyed by name and defined with
+   * `defineService`. During `e2e run` and `e2e explore`, services start in key order before the
+   * app commands and stop in reverse order afterward, with one instance
+   * shared across all workers. Tests read their values through the `services`
+   * fixture.
+   */
+  services?: ServiceMap;
 }

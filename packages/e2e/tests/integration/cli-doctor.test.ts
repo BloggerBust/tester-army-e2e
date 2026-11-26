@@ -5,7 +5,7 @@
  */
 
 import { spawn, spawnSync } from 'node:child_process';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Ajv2020 } from 'ajv/dist/2020.js';
@@ -145,6 +145,37 @@ describe('e2e doctor', () => {
     const leaked = doctorJson({ 'e2e.config.ts': config() }, ['--target', 'checked'], { TOOLCHAIN: 'leak' });
     expect(leaked.report.checks.find((check) => check.id === 'toolchain')?.message).toBe('token <secret:stripe-key> rejected');
     expect(doctor({ 'e2e.config.ts': config() }, [], { TOOLCHAIN: 'leak' }).stdout).not.toContain('sk_live_generic_4242');
+  });
+
+  it('starts no service', () => {
+    const { exitCode } = doctorJson({
+      'e2e.config.ts': `import { appendFileSync } from 'node:fs';
+import { defineConfig, defineService } from 'e2e';
+import { createFakeEngine } from '../../helpers/fake-engine.ts';
+
+const inbox = defineService({
+  async *start() {
+    appendFileSync('events.log', 'start inbox\\n');
+    yield {};
+  },
+});
+
+export default defineConfig({
+  services: { inbox },
+  targets: [
+    {
+      name: 'plain',
+      platform: 'fake',
+      engine: createFakeEngine({}).engine,
+      app: { url: 'http://127.0.0.1:4000' },
+    },
+  ],
+});
+`,
+    });
+
+    expect(exitCode).toBe(0);
+    expect(existsSync(path.join(projects.at(-1)?.dir ?? '', 'events.log'))).toBe(false);
   });
 
   it('stops at a config that does not load, with its error code', () => {

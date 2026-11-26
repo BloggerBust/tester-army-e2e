@@ -19,6 +19,7 @@ import type { McpToolResult } from '../../session-tools/tools.ts';
 import type { HeldTestOpening } from '../step-attachment-wire.ts';
 import type { StepHold } from '../step-hold.ts';
 import type { StepProgress } from '@e2e-dev/core/lib/run/steps';
+import type { ServiceReply, ServiceWire } from '../services.ts';
 
 /** One runnable pair on the wire; the worker resolves the test function. */
 export interface WirePair {
@@ -41,7 +42,10 @@ export interface WorkerBootstrapMessage {
 }
 
 /** Everything a child-process worker can receive. */
-export type ChildProcessInbound = WorkerBootstrapMessage | MainToWorker;
+export type ChildProcessInbound = WorkerBootstrapMessage | ServiceReplyMessage | MainToWorker;
+
+/** Everything a child-process worker can send. */
+export type ChildProcessOutbound = ServiceCallMessage | WorkerToMain;
 
 export interface WorkerBootstrap {
   readonly configPath: string;
@@ -77,6 +81,8 @@ export interface WorkerBootstrap {
   readonly aiTrace: boolean;
   /** Whether each top-level step waits for the runner's `step-release` (`e2e run --step`). */
   readonly holdSteps: boolean;
+  /** Serialized service values from the runner for the `services` fixture. */
+  readonly services: ServiceWire;
 }
 
 export interface RunUnitMessage {
@@ -189,6 +195,13 @@ type StepAttachmentRequestMessage = {
 type StepAttachmentCancelMessage = {
   readonly type: 'step-attachment-cancel';
   readonly requestId: string;
+};
+
+/** Reply to a `service-call` message. */
+type ServiceReplyMessage = {
+  readonly type: 'service-reply';
+  readonly requestId: string;
+  readonly reply: ServiceReply;
 };
 
 export type MainToWorker =
@@ -343,6 +356,20 @@ type StepAttachmentReplyMessage = {
   readonly type: 'step-attachment-reply';
   readonly requestId: string;
   readonly response: StepAttachmentResponse;
+};
+
+/**
+ * Request from a test to call a service function. The runner runs the real
+ * function and replies with a `service-reply`. Service calls don't have a
+ * timeout because the test's deadline covers them.
+ */
+type ServiceCallMessage = {
+  readonly type: 'service-call';
+  readonly requestId: string;
+  /** The function's index in `ServiceWire.functions`. */
+  readonly call: number;
+  /** The arguments, serialized in base64. */
+  readonly args: string;
 };
 
 /** The hold `holdId` names ended without a release: its step was abandoned, or its attempt ended. */

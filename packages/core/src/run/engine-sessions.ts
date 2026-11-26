@@ -41,6 +41,8 @@ export interface EngineSessionsOptions {
   readonly interruptSignal: AbortSignal;
   readonly debug?: DebugTrace;
   readonly events?: { onNotice?(message: string): void };
+  /** Values of services started by the worker's entry point for the `services` fixture. Empty when omitted. */
+  readonly services?: Readonly<Record<string, unknown>> | undefined;
 }
 
 /**
@@ -84,6 +86,8 @@ export class EngineSessions {
   }
   readonly interruptSignal: AbortSignal;
   readonly debug: DebugTrace;
+  /** See `EngineSessionsOptions.services`. */
+  readonly services: Readonly<Record<string, unknown>>;
 
   protected readonly runErrors: RunError[] = [];
   protected readonly sessionIdentity: SessionIdentity;
@@ -94,6 +98,7 @@ export class EngineSessions {
     this.target = options.target;
     this.interruptSignal = options.interruptSignal;
     this.debug = options.debug ?? new DebugTrace(false);
+    this.services = options.services ?? {};
     this.sessionIdentity = targetIdentity(options.target);
   }
 

@@ -373,17 +373,17 @@ export const test = base.extend<{ gadget: unknown; workspace: string }, { databa
     [
       'a test.for body that names a fixture the target does not have',
       `${IMPORT}test.for([[1, 2]])('pair %#', async ([a, b], { workspce }: { workspce: unknown }) => void [a, b, workspce]);\n`,
-      'test "pair 0" names "workspce": target "fake" has no "workspce" fixture; available: agent, app, database, gadget, platform, request, screen, session, workspace (engine fake contributes gadget); did you mean "workspace"?',
+      'test "pair 0" names "workspce": target "fake" has no "workspce" fixture; available: agent, app, database, gadget, platform, request, screen, services, session, workspace (engine fake contributes gadget); did you mean "workspace"?',
     ],
     [
       'an unknown fixture name',
       `${IMPORT}test('typo', async ({ workspce }: { workspce: unknown }) => void workspce);\n`,
-      'test "typo" names "workspce": target "fake" has no "workspce" fixture; available: agent, app, database, gadget, platform, request, screen, session, workspace (engine fake contributes gadget); did you mean "workspace"?',
+      'test "typo" names "workspce": target "fake" has no "workspce" fixture; available: agent, app, database, gadget, platform, request, screen, services, session, workspace (engine fake contributes gadget); did you mean "workspace"?',
     ],
     [
       "another runner's fixture",
       `${IMPORT}test.afterEach(async ({ page }: { page: unknown }) => void page);\ntest('ported', () => {});\n`,
-      'afterEach hook names "page": target "fake" has no "page" fixture; available: agent, app, database, gadget, platform, request, screen, session, workspace (engine fake contributes gadget); there is no Playwright page: open the app with app.open() and find elements through screen; browser-only APIs are on the browser fixture of a Playwright target',
+      'afterEach hook names "page": target "fake" has no "page" fixture; available: agent, app, database, gadget, platform, request, screen, services, session, workspace (engine fake contributes gadget); there is no Playwright page: open the app with app.open() and find elements through screen; browser-only APIs are on the browser fixture of a Playwright target',
     ],
     [
       'a suite hook that names a test fixture',
