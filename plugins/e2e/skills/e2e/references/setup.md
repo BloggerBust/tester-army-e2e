@@ -464,7 +464,9 @@ export default {
 - `screen`, `expect`, `app`, `agent` work unchanged; `test` from
   `@e2e-dev/mobile` types the `device` fixture (`installApp`, `openLink`,
   `setPermission`, `setNetwork`, `setAppearance`, `clearKeychain`, `fold`
-  for a foldable's hinge (iPhone Duo, Android foldable emulators), `locator`, more). Portable suites declare
+  for a foldable's hinge (iPhone Duo, Android foldable emulators), `lock` and
+  `unlock` for the screen (Android 11+, iOS simulator; `unlock` enters no PIN or
+  passcode and refuses a lock that asks for one), `locator`, more). Portable suites declare
   `platforms: ['ios', 'android']`.
 - `device.pressButton('volume-up' | 'volume-down' | 'power')` presses a
   hardware button as a step: all three on an Android phone or emulator,

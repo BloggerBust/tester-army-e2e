@@ -226,6 +226,40 @@ export interface Device {
    * shake is sent, so assert on what the app shows next.
    */
   shake(): Promise<void>;
+  /**
+   * Locks the screen and resolves once the device reports it locked: the
+   * sleep key on an Android phone or tablet, the lock button on an iPhone or
+   * iPad simulator. A screen that is already locked stays locked. A lock
+   * that asks for a PIN, pattern, password, or passcode is locked too, but
+   * `unlock()` refuses it, so the device stays locked until someone unlocks
+   * it by hand: use Swipe on Android and no passcode on iOS.
+   * `UNSUPPORTED_CAPABILITY` on a device agent-device cannot lock (a physical
+   * iPhone or iPad, a TV, a device a provider drives through a backend that
+   * has no lock command), and on an Android device whose screen lock is set
+   * to None, which has no lock screen to show. Android 11 to 15 do not
+   * report that setting, so there the sleep key is sent, the display turns
+   * off, and the lock fails with `ENGINE_FAILURE` after about 5 seconds.
+   * Android 10 and older do not report the lock type either, so a lock or
+   * an unlock that would change the state fails with `ENGINE_FAILURE`
+   * before any key is sent.
+   */
+  lock(): Promise<void>;
+  /**
+   * Unlocks the screen and resolves once the device reports it unlocked.
+   * Nothing brings an app to the front: check the screen you expect next.
+   * Android wakes the screen and dismisses
+   * the keyguard, an iOS simulator swipes up from the bottom edge. A display
+   * that is off turns on even when the screen is not locked (Android always
+   * sends its wake key); an unlocked screen that is on stays as it is. The
+   * exception is an iPhone simulator with an always-on display, such as the
+   * iPhone 17 Pro: the unlock can leave its display off, and on iOS 26.5 the
+   * text a later fill types does not reach the app. It never
+   * enters a PIN, pattern, password, or passcode: a lock that asks for one is
+   * `UNSUPPORTED_CAPABILITY`, and so is a device agent-device cannot lock (a
+   * physical iPhone or iPad, a TV, a device a provider drives through a
+   * backend that has no lock command).
+   */
+  unlock(): Promise<void>;
   /** Accepts or dismisses the visible system alert. */
   alert(action: 'accept' | 'dismiss'): Promise<void>;
   /**
@@ -442,6 +476,12 @@ export function createDeviceFixture(surface: AgentDeviceSurface, context: Engine
     async shake() {
       await surface.screenCommand('device.shake', (client) => client.command.shake(surface.selection()), context.signal);
     },
+    async lock() {
+      await surface.screenCommand('device.lock', (client) => client.command.lockScreen({ ...surface.selection(), action: 'lock' }), context.signal);
+    },
+    async unlock() {
+      await surface.screenCommand('device.unlock', (client) => client.command.lockScreen({ ...surface.selection(), action: 'unlock' }), context.signal);
+    },
     async alert(action) {
       await surface.screenCommand('device.alert', (client) => client.command.alert({ ...surface.selection(), action }), context.signal);
     },
@@ -490,6 +530,8 @@ export function createDeviceFixture(surface: AgentDeviceSurface, context: Engine
     // A JavaScript caller can pass a key code; the label must still be text, so the step records the refusal.
     pressButton: { ...action, label: (button) => String(button) },
     shake: action,
+    lock: action,
+    unlock: action,
     alert: { ...action, label: (value) => value },
     dismissKeyboard: action,
     isKeyboardShown: action,

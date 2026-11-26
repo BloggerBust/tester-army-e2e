@@ -204,6 +204,7 @@ declares `platforms: ['ios', 'android']` on those tests.
 | `driver.url('myapp://x')`, `mobile: deepLink` | `device.openLink('myapp://x')` |
 | `driver.back()`, `driver.hideKeyboard()`, `pressKeyCode` for Home | `app.back()`, `device.dismissKeyboard()`, `device.home()` |
 | `mobile: pressButton` with `volumeUp` or `volumeDown`, `pressKeyCode` for power or volume | [`device.pressButton('volume-up')`](/reference/mobile#pressbutton), `'volume-down'`, `'power'`; not on an iOS simulator |
+| `driver.lock()`, `driver.unlock()`, `mobile: lock`, `mobile: unlock` | [`device.lock()`](/reference/mobile#lock), [`device.unlock()`](/reference/mobile#unlock); Android 11 or newer, or an iOS simulator. For `lock(seconds)`, wait between the two |
 | `driver.isKeyboardShown()` | `device.isKeyboardShown()`. It reads the screen as it is now: after an action that opens or closes the keyboard, poll it with `expect.poll` |
 | `driver.getPageSource()` | `screen.tree()`, or `screen.debug()` to print it |
 | `driver.getWindowSize()` | [`device.viewport()`](/reference/mobile#viewport), `{ width, height }` in CSS pixels |
@@ -330,7 +331,6 @@ is not a step, so it skips the report and secret redaction.
 | --- | --- |
 | `driver.getLogs('logcat')`, `'syslog'`, `'crashlog'` | Run `adb logcat` or `xcrun simctl spawn <udid> log stream` from a hook |
 | `driver.queryAppState(id)` | Partial: `device.isAppInstalled(id)` for installed, `device.foregroundApp()` for the app in front. Running in the background has no equivalent |
-| `driver.lock()`, `unlock()` | `client.command.hardwareButton` through [`unstable_raw`](/reference/mobile#unstable_raw) |
 | `driver.openNotifications()`, `mobile: pushNotification` | `screen.swipe({ from, to })` from the top edge; `xcrun simctl push` from Node |
 | `driver.pushFile()`, `pullFile()`, `pullFolder()` | `adb push`, `adb pull`, or `xcrun simctl addmedia` from Node; local devices only |
 | `driver.getAlertText()` | `screen.getByRole('alert').textContent()` on iOS, `getByText` on Android |
@@ -346,7 +346,7 @@ is not a step, so it skips the report and secret redaction.
 | `appium:autoAcceptAlerts`, `appium:autoDismissAlerts` | Set `app.permissions`, or call `device.alert('accept')` |
 | Webview contexts: `getContexts()`, `switchContext()`, CSS selectors, `execute(js)` | Query the webview's accessibility nodes with `getByText` and `getByRole` |
 | Mobile web: `browserName: 'Safari'` or `'Chrome'` | A `web()` target at a [phone viewport](/web#viewports), layout only |
-| `appium:unlockType`, `unlockKey` | Keep the device unlocked |
+| `appium:unlockType`, `unlockKey` | Keep the device unlocked. `device.unlock()` enters no PIN or passcode |
 | `driver.getPageSource()` as XML | No XML export. `screen.tree()` returns the tree as text, and `client.capture.snapshot()` through [`unstable_raw`](/reference/mobile#unstable_raw) returns its nodes. Keep XML consumers in Appium |
 | `performActions()` with several fingers or waypoints | Single gestures, or `client.interactions.gesture` through [`unstable_raw`](/reference/mobile#unstable_raw) |
 | `mobile: shell`, `getPerformanceData()` | Run `adb` or `simctl` from Node with `device.unstable_raw.deviceId`; local devices only |

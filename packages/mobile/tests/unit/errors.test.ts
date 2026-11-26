@@ -51,6 +51,13 @@ describe('error translation', () => {
         'device.setClipboard',
       ),
     ).toMatchObject({ code: 'UNSUPPORTED_CAPABILITY' });
+    // An agent-device 0.21.42 daemon, as a provider may pin, has no lock-screen runtime and says so as COMMAND_FAILED.
+    expect(
+      translateError(
+        new AppError('COMMAND_FAILED', 'lock-screen has no runtime execution on the generic route', { reason: 'generic-route-runtime-missing' }),
+        'device.lock',
+      ),
+    ).toMatchObject({ code: 'UNSUPPORTED_CAPABILITY', message: expect.stringContaining('lock-screen has no runtime execution') });
   });
 
   it('keeps a timeout the device reports under ENGINE_FAILURE with its text and hint, never OPERATION_TIMEOUT', () => {

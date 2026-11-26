@@ -259,8 +259,8 @@ mobile({ platform: 'ios', transition: 800 }); // default: 500
 
 If the control changes during the wait, the action finds it again within its timeout before acting.
 
-`back`, `home`, `pressRemote`, `pressButton`, `shake`, `alert`, `dismissKeyboard`,
-`setOrientation`, and `fold` on [`device`](#device) change the screen, so they count as actions for this
+`back`, `home`, `pressRemote`, `pressButton`, `shake`, `lock`, `unlock`, `alert`,
+`dismissKeyboard`, `setOrientation`, and `fold` on [`device`](#device) change the screen, so they count as actions for this
 budget the way a tap does. A control that arrives with the screen they reveal
 waits out the budget before the next action lands on it.
 
@@ -518,6 +518,8 @@ test('offline banner', { platforms: ['android'] }, async ({ app, device, screen 
 | [`pressRemote`](#pressremote) | `Promise<void>` |
 | [`pressButton`](#pressbutton) | `Promise<void>` |
 | [`shake`](#shake) | `Promise<void>` |
+| [`lock`](#lock) | `Promise<void>` |
+| [`unlock`](#unlock) | `Promise<void>` |
 | [`alert`](#alert) | `Promise<void>` |
 | [`dismissKeyboard`](#dismisskeyboard) | `Promise<void>` |
 | [`isKeyboardShown`](#iskeyboardshown) | `Promise<boolean>` |
@@ -525,7 +527,7 @@ test('offline banner', { platforms: ['android'] }, async ({ app, device, screen 
 | [`setClipboard`](#setclipboard) | `Promise<void>` |
 
 Every async method is a recorded step named `device.<method>`, bounded by
-`config.actionTimeout`. `back`, `home`, `pressRemote`, `pressButton`, `shake`, `alert`, `dismissKeyboard`,
+`config.actionTimeout`. `back`, `home`, `pressRemote`, `pressButton`, `shake`, `lock`, `unlock`, `alert`, `dismissKeyboard`,
 `setOrientation`, and `fold` count as actions for the
 [`transition`](#transition) budget. Each entry below shows its member's
 declaration; the types they use are under [Types](#device-fixture).
@@ -1085,6 +1087,8 @@ later. `power` turns the screen off, and the screen cannot be read until it
 is on again: a read or an action times out. Two quick `power` presses can
 trigger the phone's double-press shortcut, which opens the camera on a stock
 emulator, instead of waking the app.
+To lock the screen and wait until the device reports it locked, use
+[`lock`](#lock), then [`unlock`](#unlock).
 
 | Throws | When |
 | --- | --- |
@@ -1115,6 +1119,84 @@ An app reads the shake the way it reads one on a real device: a React Native dev
 | --- | --- |
 | `UNSUPPORTED_CAPABILITY` | The device is not one agent-device can shake: a physical device, a TV or watch target, or a device a provider drives through its own backend, such as a WebDriver session or a provider's own iOS simulator. |
 | `ENGINE_FAILURE` | The Android emulator's console refused the shake, as an image with no accelerometer does. |
+
+#### `lock`
+
+```ts
+/**
+ * Locks the screen and resolves once the device reports it locked: the
+ * sleep key on an Android phone or tablet, the lock button on an iPhone or
+ * iPad simulator. A screen that is already locked stays locked. A lock
+ * that asks for a PIN, pattern, password, or passcode is locked too, but
+ * `unlock()` refuses it, so the device stays locked until someone unlocks
+ * it by hand: use Swipe on Android and no passcode on iOS.
+ * `UNSUPPORTED_CAPABILITY` on a device agent-device cannot lock (a physical
+ * iPhone or iPad, a TV, a device a provider drives through a backend that
+ * has no lock command), and on an Android device whose screen lock is set
+ * to None, which has no lock screen to show. Android 11 to 15 do not
+ * report that setting, so there the sleep key is sent, the display turns
+ * off, and the lock fails with `ENGINE_FAILURE` after about 5 seconds.
+ * Android 10 and older do not report the lock type either, so a lock or
+ * an unlock that would change the state fails with `ENGINE_FAILURE`
+ * before any key is sent.
+ */
+lock(): Promise<void>;
+```
+
+```ts
+try {
+  await device.lock();
+} finally {
+  await device.unlock();
+}
+await expect(screen.getByText('Welcome back')).toBeVisible();
+```
+
+To lock the screen for a time, as Appium's `lock(seconds)` does, wait between `lock()` and `unlock()`.
+
+On an iPhone simulator with an always-on display, such as the iPhone 17 Pro, `unlock()` can leave the display off while the device reports it unlocked: the lock dims the display instead of turning it off, and the unlock swipe dismisses the lock screen without waking it. Taps and screen reads still work, but a screenshot shows the last frame before the display went off, and on iOS 26.5 every later `fill` on that simulator fails its read-back for the rest of the run. An iPhone without an always-on display, such as the iPhone 16e, is not affected. The cause is in agent-device's iOS unlock.
+
+The engine never unlocks the device for you. A test that fails while the screen is locked leaves it locked for the next test on that device, so unlock in a `finally` block or in `afterEach`. Both methods run on the app session: after [`closeApp`](#closeapp) they fail with `APP_NOT_OPEN` until `openApp` opens an app, so unlock before you close the app.
+
+| Throws | When |
+| --- | --- |
+| `UNSUPPORTED_CAPABILITY` | The device is not one agent-device can lock: a physical iPhone or iPad, an Android TV or Apple TV, or a device a provider drives through its own backend with no lock command. |
+| `UNSUPPORTED_CAPABILITY` | The Android device's screen lock is set to None, on Android 16 or newer. The message says so; set any other screen lock, such as Swipe, in Settings > Security. |
+| `ACTION_FAILED` | `actionTimeout` expired before the device reported the screen locked. On an Android device with a PIN, pattern, or password and "Power button instantly locks" off, the keyguard waits for "Lock after screen timeout", up to one minute; raise `actionTimeout` or turn that setting on. |
+| `ENGINE_FAILURE` | The device did not report the screen locked: on Android within 5 seconds, plus the "Lock after screen timeout" delay up to one minute. On Android 11 to 15 with the screen lock set to None, this is the failure, with the message `still reports the keyguard hidden`, and the display is left off. |
+| `ENGINE_FAILURE` | Android 10 or older, on an unlocked screen: agent-device cannot read the lock type (`Unable to read the screen lock type`), and no key is sent. |
+
+#### `unlock`
+
+```ts
+/**
+ * Unlocks the screen and resolves once the device reports it unlocked.
+ * Nothing brings an app to the front: check the screen you expect next.
+ * Android wakes the screen and dismisses
+ * the keyguard, an iOS simulator swipes up from the bottom edge. A display
+ * that is off turns on even when the screen is not locked (Android always
+ * sends its wake key); an unlocked screen that is on stays as it is. The
+ * exception is an iPhone simulator with an always-on display, such as the
+ * iPhone 17 Pro: the unlock can leave its display off, and on iOS 26.5 the
+ * text a later fill types does not reach the app. It never
+ * enters a PIN, pattern, password, or passcode: a lock that asks for one is
+ * `UNSUPPORTED_CAPABILITY`, and so is a device agent-device cannot lock (a
+ * physical iPhone or iPad, a TV, a device a provider drives through a
+ * backend that has no lock command).
+ */
+unlock(): Promise<void>;
+```
+
+```ts
+await device.unlock();
+```
+
+| Throws | When |
+| --- | --- |
+| `UNSUPPORTED_CAPABILITY` | The lock asks for a PIN, pattern, password, or passcode. The message names it; unlock the device by hand, or remove the credential. |
+| `UNSUPPORTED_CAPABILITY` | The device is not one agent-device can lock: a physical iPhone or iPad, an Android TV or Apple TV, or a device a provider drives through its own backend with no lock command. An Android device whose screen lock is set to None is not refused: `unlock()` wakes it. |
+| `ENGINE_FAILURE` | The device still reported the screen locked after the unlock. |
+| `ENGINE_FAILURE` | Android 10 or older, on a locked screen: agent-device cannot read the lock type (`Unable to read the screen lock type`), and no key is sent. |
 
 #### `alert`
 

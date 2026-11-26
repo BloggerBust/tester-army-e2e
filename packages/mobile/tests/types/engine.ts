@@ -41,3 +41,11 @@ void device.pressButton('volume-up');
 // @ts-expect-error pressButton takes the closed list of phone buttons; mute and the media keys are not on it
 void device.pressButton('mute');
 void ('play-pause' satisfies RemoteKey);
+
+void (true satisfies Exact<Device['lock'], () => Promise<void>>);
+void (true satisfies Exact<Device['unlock'], () => Promise<void>>);
+void (true satisfies Exact<EntryDevice['lock'], () => Promise<void>>);
+void (true satisfies Exact<EntryDevice['unlock'], () => Promise<void>>);
+void (true satisfies Exact<MobileFixtures['device']['lock'], () => Promise<void>>);
+// @ts-expect-error lock takes no duration, unlike Appium's lock(seconds): wait between lock() and unlock().
+void device.lock(5);

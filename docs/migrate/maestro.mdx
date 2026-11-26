@@ -110,6 +110,7 @@ Calls on `device` run only on a device, so a test that uses it declares
 | `stopApp`, `killApp` | `device.closeApp()`, a force stop; `app.restart()` to stop the app and launch it again |
 | `clearKeychain`, `openLink`, `setLocation`, `setAirplaneMode`, `setOrientation`, `setClipboard` | the same on `device`, such as `device.openLink(url)`. `clearKeychain` is iOS simulator only, `setAirplaneMode(true)` Android 11 or newer. For `travel`, loop `device.setLocation` |
 | `back`, `pressKey: Home`, `hideKeyboard`, `setDarkMode` | `app.back()`, `device.home()`, `device.dismissKeyboard()`, `device.setAppearance('dark')` |
+| `pressKey: lock` | [`device.lock()`](/reference/mobile#lock) on Android 11 or newer or an iOS simulator; [`device.unlock()`](/reference/mobile#unlock) to come back |
 | `pressKey: Remote Dpad Up`, `Down`, `Left`, `Right`, `Remote Dpad Center` | `device.pressRemote('up')`, `'down'`, `'left'`, `'right'`, `'select'` |
 | `pressKey: Remote Media Play Pause`, `Remote Media Stop`, `Remote Media Next`, `Remote Media Previous`, `Remote Media Rewind`, `Remote Media Fast Forward`, `Remote Menu` | `device.pressRemote('play-pause')`, `'stop'`, `'next'`, `'previous'`, `'rewind'`, `'fast-forward'`, `'menu'`; the [remote keys](/reference/engine#keys) list the rest |
 | `pressKey: volume up`, `volume down`, `power` | [`device.pressButton('volume-up')`](/reference/mobile#pressbutton), `'volume-down'`, `'power'`; not on an iOS simulator |
@@ -180,7 +181,6 @@ on purpose.
 | `maestro hierarchy` as a terminal command | A one-line test that calls `screen.debug()` |
 | `--device-locale` | `app.launchArguments: { AppleLanguages: ['de'], AppleLocale: 'de_DE' }` on iOS, see [Run the app in another language](/mobile#run-the-app-in-another-language); on Android, set the device language before the run |
 | Maestro Cloud | Your [CI](/ci) with a [hosted device provider](/mobile#hosted-devices) |
-| `pressKey: lock` | `client.command.hardwareButton` on [`unstable_raw`](/reference/mobile#unstable_raw). On Android, [`device.pressButton('power')`](/reference/mobile#pressbutton) turns the screen off |
 | JUnit `properties`, a JUnit path with `--output` | Ids in tags or the title; copy `.e2e/junit.xml` after the run |
 
 ### Not yet

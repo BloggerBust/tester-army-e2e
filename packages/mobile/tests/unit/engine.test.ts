@@ -3163,7 +3163,7 @@ describe('device fixture', () => {
     expect(h.fake.lastArgs('interactions.scroll')).toEqual({ direction: 'down', postGestureStabilization: false });
   });
 
-  it('counts a back, home, remote or hardware button press, shake, alert, keyboard, rotation, or fold as an action, so a control that arrives with it waits out the transition budget', async () => {
+  it('counts a back, home, remote or hardware button press, shake, lock, unlock, alert, keyboard, rotation, or fold as an action, so a control that arrives with it waits out the transition budget', async () => {
     autoAdvanceTimers();
     const h = harness({ transition: 120 });
     await openAttempt(h);
@@ -3176,6 +3176,8 @@ describe('device fixture', () => {
       () => remoteTool(h, 'select'),
       () => device.pressButton('volume-up'),
       () => device.shake(),
+      () => device.lock(),
+      () => device.unlock(),
       () => device.alert('accept'),
       () => device.dismissKeyboard(),
       () => device.setOrientation('landscape-left'),
@@ -3321,6 +3323,8 @@ describe('device fixture', () => {
     await device.home();
     await device.back();
     await device.shake();
+    await device.lock();
+    await device.unlock();
     await device.alert('accept');
     await device.dismissKeyboard();
     expect(await device.clipboard()).toBe('pasted');
@@ -3342,6 +3346,8 @@ describe('device fixture', () => {
       ['command.home', { platform: 'ios' }],
       ['command.back', { settle: true, settleQuietMs: 150 }],
       ['command.shake', { platform: 'ios' }],
+      ['command.lockScreen', { platform: 'ios', action: 'lock' }],
+      ['command.lockScreen', { platform: 'ios', action: 'unlock' }],
       ['command.alert', { platform: 'ios', action: 'accept' }],
       ['command.keyboard', { action: 'dismiss' }],
       ['command.clipboard', { platform: 'ios', action: 'read' }],
@@ -3831,6 +3837,89 @@ describe('device fixture', () => {
       code: 'UNSUPPORTED_CAPABILITY',
       message: expect.stringContaining(hint),
     });
+  });
+
+  it('locks and unlocks the selected device through agent-device\'s one lock-screen command', async () => {
+    const android = harness({ platform: 'android', device: 'emulator-5554', bundleId: 'com.example.app' });
+    await openAttempt(android);
+    android.fake.respond('command.lockScreen', (args) => ({
+      action: 'lock-screen',
+      state: (args as { action: string }).action === 'lock' ? 'locked' : 'unlocked',
+      message: 'done',
+    }));
+    const before = android.fake.calls.length;
+    await expect(fixture(android).lock()).resolves.toBeUndefined();
+    await expect(fixture(android).unlock()).resolves.toBeUndefined();
+    expect(android.fake.calls.slice(before).map((call) => [call.method, call.args])).toEqual([
+      ['command.lockScreen', { platform: 'android', serial: 'emulator-5554', action: 'lock' }],
+      ['command.lockScreen', { platform: 'android', serial: 'emulator-5554', action: 'unlock' }],
+    ]);
+  });
+
+  it('maps agent-device\'s lock-screen refusals to UNSUPPORTED_CAPABILITY with a message that names the cause and the way out', async () => {
+    // agent-device 0.21.43's own refusals, as its daemon and the iOS runner raise them.
+    const refusals = [
+      {
+        platform: 'ios' as const,
+        method: 'lock' as const,
+        error: new AppError('UNSUPPORTED_OPERATION', 'Runtime operation lock-screen is unavailable', {
+          reason: 'unsupported-device-kind',
+          hint: 'lock-screen is supported on iPhone and iPad simulators only.',
+        }),
+        cause: 'lock-screen is supported on iPhone and iPad simulators only.',
+      },
+      {
+        platform: 'android' as const,
+        method: 'lock' as const,
+        error: new AppError('UNSUPPORTED_OPERATION', 'The screen lock of Pixel 9 is set to None, so there is no lock screen to show', {
+          reason: 'lock-screen-disabled',
+          dispatched: 'no',
+          hint: 'Set a screen lock other than None in Settings > Security > Screen lock (Swipe needs no credential), then retry.',
+        }),
+        cause: 'set to None',
+      },
+      {
+        platform: 'android' as const,
+        method: 'unlock' as const,
+        error: new AppError('UNSUPPORTED_OPERATION', 'The screen lock of Pixel 9 asks for a credential (pin), which lock-screen unlock does not enter', {
+          reason: 'lock-screen-secure',
+          credentialType: 'pin',
+          dispatched: 'no',
+          hint: 'unlock never enters a credential. Unlock the device by hand, or remove its screen lock in Settings > Security, then retry.',
+        }),
+        cause: 'asks for a credential (pin)',
+      },
+      {
+        platform: 'ios' as const,
+        method: 'unlock' as const,
+        error: new AppError('UNSUPPORTED_OPERATION', 'The simulator asks for a passcode, which lock-screen unlock does not enter', {
+          runnerErrorCode: 'LOCK_SCREEN_SECURE',
+          reason: 'lock-screen-secure',
+          dispatched: 'unknown',
+          hint: 'Enter the passcode by hand, or turn it off in Settings > Face ID & Passcode, then retry.',
+        }),
+        cause: 'asks for a passcode',
+      },
+    ];
+    for (const refusal of refusals) {
+      const h = harness(refusal.platform === 'android' ? { platform: 'android', bundleId: 'com.example.app' } : {});
+      await openAttempt(h);
+      h.fake.respond('command.lockScreen', () => {
+        throw refusal.error;
+      });
+      const failure = fixture(h)[refusal.method]();
+      await expect(failure).rejects.toMatchObject({ code: 'UNSUPPORTED_CAPABILITY', message: expect.stringContaining(refusal.cause) });
+      await expect(failure).rejects.toMatchObject({ message: expect.stringContaining(`Hint: ${String(refusal.error.details?.hint)}`) });
+    }
+  });
+
+  it('reports a lock state the device never confirmed as ENGINE_FAILURE, with agent-device\'s message', async () => {
+    const h = harness({ platform: 'android', bundleId: 'com.example.app' });
+    await openAttempt(h);
+    h.fake.respond('command.lockScreen', () => {
+      throw new AppError('COMMAND_FAILED', 'Pixel 9 still reports the keyguard hidden', { reason: 'lock-screen-unverified', dispatched: 'unknown' });
+    });
+    await expect(fixture(h).lock()).rejects.toMatchObject({ code: 'ENGINE_FAILURE', message: expect.stringContaining('still reports the keyguard hidden') });
   });
 
   it('measures toBeInViewport against the unfolded screen after fold', async () => {
