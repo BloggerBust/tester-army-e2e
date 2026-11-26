@@ -850,9 +850,15 @@ await screen.getByRole('textbox', 'Notes').press('ControlOrMeta+a');
 A key is zero or more modifiers and one key, joined with `+`, as the
 [key grammar](/reference/engine#keys) lists them. `Shift++` presses `+`.
 
+On the web engine, a character that is not on a US keyboard (`é`, `中`) is
+pressed in Chromium only. The page gets the same `keydown`, `input`, and
+`keyup` as for any key, with an empty `code` and a `keyCode` of 0. Enter it
+with [`fill`](#fill) or [`pressSequentially`](#presssequentially) in Firefox and
+WebKit.
+
 | Throws | When |
 | --- | --- |
-| `UNSUPPORTED_CAPABILITY` | A key the platform lacks. |
+| `UNSUPPORTED_CAPABILITY` | A key the platform lacks. On the web engine, a character that is not on a US keyboard, in Firefox or WebKit. |
 
 #### `check`
 

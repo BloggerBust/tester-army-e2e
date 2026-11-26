@@ -122,13 +122,16 @@ test.describe('locator misc 2', { platforms: ['web'], tags: ['playwright'] }, ()
     await expect(browser.locator('#text')).toHaveValue('Hello');
   });
 
-  test('press should throw on unknown keys', async ({ screen, browser }) => {
-    await browser.goto(content(`<input type='text' value='hello' />`));
+  // Playwright throws on 'ё' and '😊' too. The e2e key grammar takes any single
+  // character, so in Chromium the web engine presses the ones Playwright has no key for.
+  test('press should throw on unknown keys and type characters off the US layout', async ({ screen, browser }) => {
+    await browser.goto(content(`<input type='text' />`));
     const locator = screen.getByRole('textbox');
-    for (const key of ['NotARealKey', 'ё', '😊']) {
-      const error = await locator.press(key).catch((e: unknown) => e);
-      expect(error).toEqual(expect.any(Error));
-      expect((error as Error).message).toContain(key);
-    }
+    const error = await locator.press('NotARealKey').catch((e: unknown) => e);
+    expect(error).toEqual(expect.any(Error));
+    expect((error as Error).message).toContain('NotARealKey');
+    await locator.press('ё');
+    await locator.press('😊');
+    await expect(locator).toHaveValue('ё😊');
   });
 });

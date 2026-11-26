@@ -26,6 +26,8 @@ let browser: Browser;
 let focus: ReturnType<typeof vi.fn<() => Promise<boolean>>>;
 let press: ReturnType<typeof vi.fn<(key: string) => Promise<void>>>;
 let type: ReturnType<typeof vi.fn<(text: string) => Promise<void>>>;
+let attach: ReturnType<typeof vi.fn<() => Promise<unknown>>>;
+let send: ReturnType<typeof vi.fn<(method: string, params: { type: string; key: string }) => Promise<void>>>;
 
 beforeEach(async () => {
   artifactsDir = mkdtempSync(path.join(tmpdir(), 'e2e-surface-lifecycle-'));
@@ -33,6 +35,8 @@ beforeEach(async () => {
   focus = vi.fn(async () => true);
   press = vi.fn(async (_key: string) => undefined);
   type = vi.fn(async (_text: string) => undefined);
+  send = vi.fn(async (_method: string, _params: { type: string; key: string }) => undefined);
+  attach = vi.fn(async () => ({ send, detach: async () => undefined }));
   const page = {
     // The tab listeners the session installs on every page it shows.
     on: () => undefined,
@@ -43,6 +47,7 @@ beforeEach(async () => {
     viewportSize: () => ({ width: 1280, height: 720 }),
     frames: () => [{ evaluate: focus }],
     keyboard: { press, type },
+    context: () => ({ newCDPSession: attach }),
     screencast: {
       start: async ({ path: file, onFrame }: { path: string; onFrame?: () => void }) => { writeFileSync(file, 'recording'); onFrame?.(); },
       stop: async () => undefined,
@@ -163,6 +168,40 @@ it('rejects a focus read from a context replaced before typing dispatches', asyn
   await rejected;
   expect(press).not.toHaveBeenCalled();
   expect(type).not.toHaveBeenCalled();
+});
+
+it.each([
+  ['cancelled', 'CANCELLED'],
+  ['past its deadline', 'ACTION_MAY_HAVE_COMMITTED'],
+  ['on a replaced context', 'NODE_STALE'],
+] as const)('sends no key of a character press when its CDP session opens %s', async (ending, code) => {
+  await surface.open('https://example.test/', operation());
+  let release!: () => void;
+  let entered!: () => void;
+  const paused = new Promise<void>((resolve) => { release = resolve; });
+  const reached = new Promise<void>((resolve) => { entered = resolve; });
+  attach.mockImplementationOnce(async () => { entered(); await paused; return { send, detach: async () => undefined }; });
+  const controller = new AbortController();
+  const pending = surface.pressKey('é', { ...operation(), signal: controller.signal, ...(ending === 'past its deadline' ? { timeoutMs: 50 } : {}) });
+  const rejected = expect(pending).rejects.toMatchObject({ code });
+  try {
+    if (ending !== 'past its deadline') await reached;
+    if (ending === 'cancelled') controller.abort();
+    if (ending === 'on a replaced context') await surface.reset(operation());
+    else await rejected;
+  } finally {
+    release();
+  }
+  await rejected;
+  await new Promise<void>((resolve) => setImmediate(resolve));
+  expect(send).not.toHaveBeenCalled();
+});
+
+it('sends a character press as CDP key events once its session opens on the live context', async () => {
+  await surface.open('https://example.test/', operation());
+  await surface.pressKey('é', operation());
+  expect(send.mock.calls.map(([method, params]) => `${method} ${params.type} ${params.key}`)).toEqual(['Input.dispatchKeyEvent keyDown é', 'Input.dispatchKeyEvent keyUp é']);
+  expect(press).not.toHaveBeenCalled();
 });
 
 it('refuses headers or basicAuth from a runner that passes no app origin', async () => {

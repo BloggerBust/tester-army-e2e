@@ -49,6 +49,7 @@ import { matchesText } from '@e2e-dev/core/engine';
 import { classifyActionError, classifyInputError, dispatchLocatorAction, dispatchPointerAction } from './actions.ts';
 import { BrowserConnection, connectCdp, defaultChromiumSandbox, isBrowserName, type BrowserLaunchOptions, type BrowserName } from './browser-connection.ts';
 import { grantedPermissions, grantPermissions } from './permissions.ts';
+import { pressCharacter, pressCharacterOn, requireCharacterPress } from './press-character.ts';
 import { AttemptSession, type AttemptTab, type StorageState } from './attempt-session.ts';
 import type { CdpEndpointResolver } from './cdp-recovery.ts';
 import { webmcpLaunch } from './webmcp.ts';
@@ -64,7 +65,7 @@ import { captureObservation } from './observation-capture.ts';
 import { maskOptions, secureFieldMasks } from './observe.ts';
 import { SHOWN_SELECTOR } from './shown-selector.ts';
 import { withHiddenCaret } from './screenshot-caret.ts';
-import { connectionAbort, withOperationDeadline, type OperationBound } from './operation-budget.ts';
+import { withOperationDeadline, type OperationBound } from './operation-budget.ts';
 import { CLOSED_SHADOW_ROOTS_INIT_SCRIPT, CLOSED_SHADOW_ROOTS_KEY } from './closed-shadow.ts';
 import { MODAL_ORDER_INIT_SCRIPT } from './modal-dialogs.ts';
 import { ConfiguredInitScripts, type WebInitScript } from './init-scripts.ts';
@@ -1270,10 +1271,12 @@ export class PlaywrightSurface {
         }
         const session = this.requireSession();
         const { refs } = session;
+        const character = action.kind === 'press' ? requireCharacterPress(action.key, this.browserName) : undefined;
         return refs.lookup(ref).then(async (target) => {
           currentOperation.signal.throwIfAborted();
           try {
-            await dispatchLocatorAction(target, action, currentOperation, (other) => refs.lookup(other));
+            if (character === undefined) await dispatchLocatorAction(target, action, currentOperation, (other) => refs.lookup(other));
+            else await pressCharacterOn(target, page, character, currentOperation, session.checkpoint(currentOperation.signal, action.kind));
           } catch (cause) {
             // The input went out and its own tab closed: closing was what it did.
             if (dispatchedInput(cause) && session.tabClosed(page)) return;
@@ -1304,13 +1307,8 @@ export class PlaywrightSurface {
     return this.acted(operation, this.guard(operation, 'keyboard.type', async (currentOperation) => {
       const session = this.requireSession();
       session.requireObservation();
-      const token = session.token();
+      const checkpoint = session.checkpoint(currentOperation.signal, 'keyboard.type');
       const page = this.requirePage();
-      /** A delayed focus read or key must not continue input into a retired connection. */
-      const checkpoint = (): void => {
-        if (currentOperation.signal.aborted) throw connectionAbort(currentOperation.signal, 'keyboard.type');
-        session.check(token);
-      };
       await this.requireEditableFocus(page);
       checkpoint();
       if (options.replace) {
@@ -1325,9 +1323,12 @@ export class PlaywrightSurface {
 
   /** Sends one key to whatever holds focus, in the contract's key grammar Playwright shares. */
   pressKey(key: string, operation: OperationContext): Promise<void> {
-    return this.acted(operation, this.guard(operation, 'keyboard.press', () => {
-      this.requireSession().requireObservation();
-      return this.requirePage().keyboard.press(key);
+    return this.acted(operation, this.guard(operation, 'keyboard.press', (currentOperation) => {
+      const session = this.requireSession();
+      session.requireObservation();
+      const character = requireCharacterPress(key, this.browserName);
+      const page = this.requirePage();
+      return character === undefined ? page.keyboard.press(key) : pressCharacter(page, character, session.checkpoint(currentOperation.signal, 'keyboard.press'));
     }, classifyInputError));
   }
 

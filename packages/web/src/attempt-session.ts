@@ -118,6 +118,18 @@ export class AttemptSession {
     }
   }
 
+  /**
+   * A check for between the steps of one input: a delayed focus read or key
+   * must not continue input past the operation's end or into a retired connection.
+   */
+  checkpoint(signal: AbortSignal, label: string): () => void {
+    const token = this.token();
+    return () => {
+      if (signal.aborted) throw connectionAbort(signal, label);
+      this.check(token);
+    };
+  }
+
   /** An observation commits its references and freshness together against the same generation. */
   observedGeneration(token: object): void {
     this.check(token);
