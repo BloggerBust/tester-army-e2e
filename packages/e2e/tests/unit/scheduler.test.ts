@@ -150,6 +150,16 @@ interface FakeBehaviour {
   readonly crashOn?: readonly string[];
   /** Unit ids whose worker reports a fatal error instead of finishing, and waits to be killed. */
   readonly fatalOn?: readonly string[];
+  /** Unit ids whose worker reports a fatal error and then still finishes the unit, as one flushing its last messages. */
+  readonly fatalBeforeDone?: readonly string[];
+  /** Workers spawned below this index report a fatal error and then still become ready. */
+  readonly fatalBeforeReadyBelow?: number;
+  /** The worker that finished `afterUnit` reports a fatal error `delayMs` later, while idle. */
+  readonly fatalWhenIdle?: { readonly afterUnit: string; readonly delayMs: number };
+  /** A killed worker exits this long after the kill, as a process closes some time after its signal. */
+  readonly killExitMs?: number;
+  /** How long the worker takes to run a unit, by unit id; overrides `unitMs`. */
+  readonly unitMsById?: Record<string, number>;
   /** Targets whose workers exit instead of becoming ready. */
   readonly failInit?: readonly string[];
   /** Workers spawned from this index on exit instead of becoming ready, whatever their target. */
@@ -262,6 +272,8 @@ class FakeRunner implements UnitRunner {
   private exited = false;
   private blocked = false;
   private disposing = false;
+  /** Killed, with its exit still to come: it takes no more messages. */
+  private dying = false;
 
   constructor(
     private readonly index: number,
@@ -281,8 +293,12 @@ class FakeRunner implements UnitRunner {
         if (index < signalled.workers) this.end(`code null, signal ${signalled.signal}`, signalled.signal);
         return;
       }
-      if (behaviour.failInit?.includes(targetName) === true || index >= (behaviour.failInitFrom ?? Infinity)) this.end('init failed');
-      else this.events.onMessage({ type: 'ready' });
+      if (behaviour.failInit?.includes(targetName) === true || index >= (behaviour.failInitFrom ?? Infinity)) {
+        this.end('init failed');
+        return;
+      }
+      if (index < (behaviour.fatalBeforeReadyBelow ?? 0)) this.reportFatal();
+      this.events.onMessage({ type: 'ready' });
     }, 0);
   }
 
@@ -291,7 +307,7 @@ class FakeRunner implements UnitRunner {
   }
 
   send(message: MainToWorker): void {
-    if (this.exited) return;
+    if (this.exited || this.dying) return;
     if (message.type !== 'run-unit') {
       this.fleet.controlMessages.push(message.type);
       this.fleet.controls.push({ worker: this.index, message });
@@ -369,12 +385,18 @@ class FakeRunner implements UnitRunner {
       if (this.behaviour.exitInsteadOfHang === true) setTimeout(() => this.end('code 7, signal null'), 0);
       return;
     }
-    setTimeout(() => this.completeUnit(message), this.behaviour.unitMs ?? 0);
+    setTimeout(() => this.completeUnit(message), this.behaviour.unitMsById?.[message.unitId] ?? this.behaviour.unitMs ?? 0);
   }
 
   kill(): void {
     this.fleet.killed.push(this.index);
-    this.end('killed');
+    const exitMs = this.behaviour.killExitMs;
+    if (exitMs === undefined) {
+      this.end('killed');
+      return;
+    }
+    this.dying = true;
+    setTimeout(() => this.end('killed'), exitMs);
   }
 
   private async completeUnit(message: RunUnitMessage): Promise<void> {
@@ -383,6 +405,7 @@ class FakeRunner implements UnitRunner {
       this.events.onMessage({ type: 'fatal', error: serializeError(classifyError(new Error('engine exploded'))) });
       return;
     }
+    if (this.behaviour.fatalBeforeDone?.includes(message.unitId) === true) this.reportFatal();
     const crash = this.behaviour.crashOn?.includes(message.unitId) === true;
     for (const pair of message.pairs) {
       if (crash) {
@@ -424,6 +447,16 @@ class FakeRunner implements UnitRunner {
       });
     }
     this.events.onMessage({ type: 'unit-done', unitId: message.unitId, runErrors: [] });
+    const fatal = this.behaviour.fatalWhenIdle;
+    if (fatal?.afterUnit === message.unitId) {
+      setTimeout(() => {
+        if (!this.exited && !this.dying) this.reportFatal();
+      }, fatal.delayMs);
+    }
+  }
+
+  private reportFatal(): void {
+    this.events.onMessage({ type: 'fatal', error: serializeError(classifyError(new Error('stray exception'))) });
   }
 
   private end(detail: string, signal: NodeJS.Signals | null = null): void {
@@ -1518,6 +1551,78 @@ describe('scheduler fault handling', () => {
     for (const result of collected.results) expect(result.status).toBe('skipped');
     // Boot failures stop after the retry budget rather than spawning forever.
     expect(fleet.spawned.length).toBeLessThanOrEqual(3);
+  });
+
+  it('dispatches no unit to an idle worker that reported a fatal error and has not exited yet', async () => {
+    const target = makeTarget('web', 0);
+    const setups = ['first', 'second'].map((name) =>
+      makePair(makeTest(`tests/${name}.setup.e2e.ts`, name, { kind: 'setup', sessions: [name], id: `setup::${name}` }), target),
+    );
+    const ordinary = makePair(makeTest('tests/a.e2e.ts', 'a'), target);
+    const pairs = [...setups, ordinary];
+    // The first worker dies idle between its setup and the second setup ungating the ordinary unit.
+    const fleet = new FakeFleet({
+      fatalWhenIdle: { afterUnit: 'setup::web::setup::first', delayMs: 5 },
+      unitMsById: { 'setup::web::setup::second': 10 },
+      killExitMs: 20,
+    });
+
+    vi.useFakeTimers();
+    const running = run(makeSelection([{ target, pairs }]), makeCollection(pairs.map((pair) => pair.test.file), pairs), fleet, { workers: 2 });
+    await vi.runAllTimersAsync();
+    const collected = await running;
+
+    expect(fleet.killed).toEqual([0]);
+    const result = collected.results.find((entry) => entry.test.id === ordinary.test.id);
+    expect([result?.status, result?.skip?.reason]).toEqual(['passed', undefined]);
+    expect(collected.runErrors.map((entry) => entry.error.message)).toEqual(['stray exception']);
+  });
+
+  it('dispatches no unit to a worker that reported a fatal error and then finished its unit', async () => {
+    const target = makeTarget('web', 0);
+    const pairs = ['a', 'b'].map((name) => makePair(makeTest(`tests/${name}.e2e.ts`, name), target));
+    const fleet = new FakeFleet({ fatalBeforeDone: ['file::web::tests/a.e2e.ts'], killExitMs: 20 });
+
+    vi.useFakeTimers();
+    const running = run(makeSelection([{ target, pairs }]), makeCollection(pairs.map((pair) => pair.test.file), pairs), fleet, { workers: 1 });
+    await vi.runAllTimersAsync();
+    const collected = await running;
+
+    expect(fleet.killed).toEqual([0]);
+    expect(collected.results.map((result) => [result.test.title, result.status, result.skip?.reason])).toEqual([
+      ['a', 'passed', undefined],
+      ['b', 'passed', undefined],
+    ]);
+  });
+
+  it('dispatches no unit to a worker that reported a fatal error and then became ready', async () => {
+    const target = makeTarget('web', 0);
+    const pair = makePair(makeTest('tests/a.e2e.ts', 'a'), target);
+    const fleet = new FakeFleet({ fatalBeforeReadyBelow: 1, killExitMs: 20 });
+
+    vi.useFakeTimers();
+    const running = run(makeSelection([{ target, pairs: [pair] }]), makeCollection([pair.test.file], [pair]), fleet, { workers: 1 });
+    await vi.runAllTimersAsync();
+    const collected = await running;
+
+    expect(fleet.killed).toEqual([0]);
+    expect(fleet.spawned).toHaveLength(2);
+    expect(collected.results.map((result) => [result.status, result.skip?.reason])).toEqual([['passed', undefined]]);
+  });
+
+  it('fails the target when its workers keep reporting a fatal error before becoming ready', async () => {
+    const target = makeTarget('web', 0);
+    const pair = makePair(makeTest('tests/a.e2e.ts', 'a'), target);
+    const fleet = new FakeFleet({ fatalBeforeReadyBelow: 2, killExitMs: 20 });
+
+    vi.useFakeTimers();
+    const running = run(makeSelection([{ target, pairs: [pair] }]), makeCollection([pair.test.file], [pair]), fleet, { workers: 1 });
+    await vi.runAllTimersAsync();
+    const collected = await running;
+
+    expect(fleet.spawned).toHaveLength(2);
+    expect(collected.runErrors.map((error) => error.error.code)).toEqual(['ERROR', 'ERROR', 'WORKER_INIT_FAILED']);
+    expect(collected.results.map((result) => [result.status, result.skip?.cause])).toEqual([['skipped', 'infrastructure-unavailable']]);
   });
 
   it('fails a target whose worker dies holding a setup unit, without deadlocking', async () => {
