@@ -103,6 +103,18 @@ describe('e2e/core', { timeout: 60_000 }, () => {
     await expect(opened.newSession()).rejects.toMatchObject({ code: 'WORKER_PROTOCOL' });
   });
 
+  it('closes a host whose failed launch could not end its attempt, and throws the cleanup failure from close', async () => {
+    const fake = createFakeEngine({
+      onStartAttempt: (_context, index) => { if (index === 0) throw new Error('launch broke'); },
+      onEndAttempt: () => { throw new Error('isolation did not close'); },
+    });
+    const opened = await host(fake.engine);
+    await expect(opened.newSession()).rejects.toThrow('launch broke');
+    await expect(opened.newSession()).rejects.toMatchObject({ code: 'WORKER_PROTOCOL' });
+    expect(fake.stats()).toMatchObject({ attemptsStarted: 1, attemptsEnded: 1, disposes: 1 });
+    await expect(opened.close()).rejects.toThrow('closing the host failed: attempt end failed: isolation did not close');
+  });
+
   it('runs past screen.pause() right away in a program', async () => {
     const fake = createFakeEngine({ scene: shop });
     const opened = await host(fake.engine, { app: FAKE_APP });

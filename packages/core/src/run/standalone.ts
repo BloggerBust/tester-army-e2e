@@ -200,12 +200,17 @@ export async function openWorker<Sessions extends EngineSessions, Extra>(
     try {
       reservation = reserveAttempt(worker, policy, sessionOptions);
     } catch (cause) { return Promise.reject(cause); }
-    const pending = launchAttempt(worker, policy, reservation, async ({ cleanup }) => {
+    let launchRetires = false;
+    const pending = launchAttempt(worker, policy, reservation, async ({ cleanup, launchErrors }) => {
       if (cleanup === 'complete') {
         state = { phase: 'idle' };
         return;
       }
-      state = { phase: 'retired' };
+      // Recorded before teardown counts its own failures, which alone decide engine reuse.
+      errors.push(...launchErrors ?? []);
+      // A failed launch stays opening until it releases publication, so close() waits for it.
+      if (state.phase === 'opening') launchRetires = true;
+      else state = { phase: 'retired' };
       hostEnd.abort();
       await teardown();
     }).then(
@@ -215,7 +220,7 @@ export async function openWorker<Sessions extends EngineSessions, Extra>(
       },
       (cause: unknown) => {
         reservation.publication?.release();
-        state = { phase: 'idle' };
+        state = launchRetires ? { phase: 'retired' } : { phase: 'idle' };
         throw cause;
       },
     );

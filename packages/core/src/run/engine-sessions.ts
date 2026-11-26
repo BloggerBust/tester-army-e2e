@@ -192,12 +192,18 @@ export class EngineSessions {
     }
   }
 
-  /** Starts one attempt on the engine, restores the planned session, and starts the planned video. */
+  /**
+   * Starts one attempt on the engine, restores the planned session, and
+   * starts the planned video. A launch that fails ends what it opened;
+   * `onCleanupFailure` hears when that fails too, and the launch's own error
+   * is still the one thrown.
+   */
   async launchSession(
     plan: SessionPlan,
     attemptId: string,
     artifactsDir: string,
     signal: AbortSignal,
+    onCleanupFailure: (cause: unknown) => void = () => undefined,
   ): Promise<TargetSession> {
     // The engine booted in init() once per worker; the adapter is per-attempt
     // so refs never cross attempts.
@@ -260,7 +266,7 @@ export class EngineSessions {
       // The attempt's isolation is open, or a timed-out startAttempt may still
       // open it: end it within the cleanup budget, or the retry opens a second
       // one. An engine without startAttempt makes this a no-op.
-      await this.endAttempt(session, attemptId).catch(() => undefined);
+      await this.endAttempt(session, attemptId).catch(onCleanupFailure);
       throw cause;
     }
     return session;

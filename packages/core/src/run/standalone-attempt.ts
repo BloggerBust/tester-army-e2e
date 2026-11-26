@@ -159,6 +159,8 @@ export interface AttemptReservation {
 /** What the host learns when an attempt's close settles. */
 export interface AttemptClosed {
   readonly cleanup: AttemptRecord['cleanup'];
+  /** A failed launch's cleanup failures, which no session's close returns. */
+  readonly launchErrors?: readonly SerializedError[];
 }
 
 /**
@@ -187,8 +189,10 @@ export function reserveAttempt<Sessions extends EngineSessions, Extra>(
 /**
  * Launches the reserved attempt and hands back its fixtures. A launch that
  * fails has already ended what it opened, the same as a run's retry relies
- * on; the worker stays usable. `onClosed` runs once when `close` settles,
- * before `close` returns, so the host can retire a worker whose cleanup failed.
+ * on; the worker stays usable unless that ending failed. `onClosed` runs once
+ * when `close` settles, before `close` returns, or before a failed launch
+ * rejects when its cleanup failed, so the host can retire a worker whose
+ * cleanup failed.
  */
 export async function launchAttempt<Sessions extends EngineSessions, Extra>(
   worker: AttemptWorker<Sessions>,
@@ -229,13 +233,25 @@ export async function launchAttempt<Sessions extends EngineSessions, Extra>(
     return { status: classifyAttemptStatus(error, step?.status === 'timed-out', error.code === 'CANCELLED'), error };
   };
   const video = options.video ?? attemptVideo(target.video, 0);
-  session = await executor.launchSession({ session: options.state, recordings: { trace: undefined, video } }, attemptId, artifacts.dir, attemptSignal);
+  /** Rejects the launch, retiring the worker first when ending what it opened failed. */
+  const failLaunch = async (cause: unknown, cleanup: AttemptRecord['cleanup']): Promise<never> => {
+    if (cleanup === 'failed') await onClosed({ cleanup, launchErrors: attemptErrors });
+    throw cause;
+  };
+  let launchCleanup: AttemptRecord['cleanup'] = 'complete';
+  try {
+    session = await executor.launchSession(
+      { session: options.state, recordings: { trace: undefined, video } }, attemptId, artifacts.dir, attemptSignal,
+      (cause) => { launchCleanup = 'failed'; recordFailure(cause, 'cleanup'); },
+    );
+  } catch (cause) { return failLaunch(cause, launchCleanup); }
   const opened = session;
   const closeOpened = (record: ClosingRecord): Promise<void> =>
     executor.closeSession(opened, { attemptId, video }, record, artifacts.sink, attemptErrors);
   if (attemptSignal.aborted) {
-    await closeOpened({ status: 'interrupted', cleanup: 'complete' });
-    throw new InfrastructureError('CANCELLED', 'opening the e2e session was cancelled');
+    const record: ClosingRecord = { status: 'interrupted', cleanup: 'complete' };
+    await closeOpened(record);
+    return failLaunch(new InfrastructureError('CANCELLED', 'opening the e2e session was cancelled'), record.cleanup);
   }
   opened.appLog.route((event, at) => steps.recordAppEvent(event, at));
   // Launch was the worker's work; the test's deadline starts once its fixtures exist.
@@ -255,8 +271,9 @@ export async function launchAttempt<Sessions extends EngineSessions, Extra>(
       : policy.launched({ worker, attemptId, session: opened, steps, artifacts, fixtureBase: base, signal: attemptSignal, redact });
   } catch (cause) {
     end.abort();
-    await closeOpened({ status: 'failed', cleanup: 'complete' });
-    throw cause;
+    const record: ClosingRecord = { status: 'failed', cleanup: 'complete' };
+    await closeOpened(record);
+    return failLaunch(cause, record.cleanup);
   }
   const { deadline } = budget;
   let timedOut = false;

@@ -398,8 +398,10 @@ across different hosts and whether the config is a file or a value.
   `session.close()` before opening the next session on the same host.
 - A launch that fails or is cancelled ends what it opened and leaves the host
   usable, as a run keeps its worker for the retry.
-- A session whose engine cleanup failed closes the host permanently, since
-  its isolation is uncertain; open a new host.
+- A session or failed launch whose engine cleanup failed closes the host
+  permanently, since its isolation is uncertain; open a new host. A session's
+  cleanup failure comes back from `session.close()`, a failed launch's from
+  `host.close()`.
 
 | Throws | When |
 | --- | --- |
