@@ -1,0 +1,159 @@
+---
+title: Migrar do Selenium
+description: Reescreva fluxos do Selenium em TypeScript com localizadores, asserções que tentam novamente e objetivos do agente.
+"og:image": "https://e2e.com/docs/images/og/migrate/selenium.png?v=32737f50da"
+"twitter:image": "https://e2e.com/docs/images/og/migrate/selenium.png?v=32737f50da"
+---
+
+import { SetupPrompt } from '../../snippets/setup-prompt-card.jsx';
+
+export const migrationPrompt = `Migre os testes do Selenium deste projeto para o e2e, um fluxo por vez. Documentação: \`https://e2e.com/docs/migrate/selenium.md\`
+
+1. Leia o guia de migração acima. Ele mapeia a configuração do Selenium e as chamadas do WebDriver para o e2e, e lista o que o e2e ainda não tem.
+2. Os testes do e2e são em TypeScript. Se a suíte do Selenium for em Java, Python ou outra linguagem, me pergunte onde o novo projeto de testes deve ficar, por exemplo uma pasta \`e2e/\` com o próprio \`package.json\`.
+3. Se esse projeto não tiver uma configuração do e2e (\`e2e.config.ts\`, \`.mts\`, \`.js\` ou \`.mjs\`), rode \`npx e2e init --yes\` (ou o equivalente em pnpm ou bun) nele. Ele escreve uma configuração e um teste de exemplo, e ainda não instala nada.
+4. Leia a skill do e2e (\`npx e2e guide\` a exibe, \`npx e2e guide <topic>\` exibe um tópico) e siga-a em todos os passos abaixo.
+5. Se você rodou o init, me pergunte qual modelo usar nos passos do agente: uma assinatura do ChatGPT, GitHub Copilot, OpenCode Console ou SuperGrok, uma chave de API ou um modelo local. Configure o modelo com o pacote do provedor dele. Se o modelo exigir login, me passe o comando \`npx e2e login\` e espere até eu confirmar.
+6. Defina no \`app\` do alvo a URL que todo \`driver.get\` usava e, se a suíte inicia o app, o comando que o inicia. Mova senhas e tokens para \`credentials\` ou \`secrets\`.
+7. Instale as dependências.
+8. Liste os page objects e os fluxos que os usam, e me pergunte qual mover primeiro. Sugira um page object e os fluxos dele.
+9. Reescreva esses fluxos como arquivos \`.e2e.ts\` em \`tests/\` (o e2e roda \`tests/**/*.e2e.ts\` por padrão) com as tabelas do guia. Confira “O que o e2e ainda não tem” antes de portar um fluxo. Se essa seção listar uma chamada de que o fluxo precisa, use a alternativa de “Use hoje” ou deixe o fluxo no Selenium e diga por quê. Prefira consultas por papel, rótulo e test id a CSS e XPath. Substitua toda espera e todo \`Thread.sleep\` por uma asserção de localizador. Restrinja consultas que correspondem a vários nós. Transforme o código de preparação do page object em uma fixture.
+10. Mantenha a navegação e as asserções finais determinísticas, com \`app.open()\` e asserções de localizador. Onde uma sequência de interações roteirizadas quebra com frequência, proponha um objetivo \`agent.act\` no lugar dela.
+11. Rode os novos arquivos com \`npx e2e run <file>\` e corrija-os até eles passarem. Mantenha os testes do Selenium até eu confirmar que eles podem ser removidos.
+12. Resuma quais fluxos foram movidos, quais ficaram no Selenium e por quê.`;
+
+O e2e substitui uma suíte do Selenium por testes em TypeScript. Os
+localizadores encontram nós por papel e rótulo, e as asserções tentam
+novamente até passar ou estourar o tempo limite. Uma suíte em Java ou Python
+precisa ser reescrita, então rode as duas suítes e mova um fluxo por vez.
+
+<SetupPrompt>
+
+<Prompt description={migrationPrompt} children={migrationPrompt} actions={["copy", "cursor"]} />
+
+</SetupPrompt>
+
+Para uma migração que se estende por várias sessões, a [skill `migrate-to-e2e`](/coding-agents#migrate-an-existing-suite) registra o que foi movido em um arquivo de progresso e mantém a suíte antiga rodando até você aposentar cada teste.
+
+## Porte a configuração
+
+<Note>Instale o e2e com o [Início rápido](/quickstart). Só as chamadas do agente precisam de um modelo, então o exemplo abaixo roda sem um.</Note>
+
+| Selenium | e2e |
+| --- | --- |
+| A URL em todo `driver.get` | `app: { url }` no alvo e, depois, caminhos relativos |
+| Iniciar o app em um script | `app: { url, command }`, veja [Iniciar seu app](/web#starting-your-app) |
+| Um driver por navegador | Um alvo para cada build de `web({ browser })`, `chromium`, `firefox` ou `webkit`, não Chrome, Edge ou Safari |
+| Selenium Grid | `workers` para execuções em paralelo, um [provedor de navegadores](/browser#hosted-browsers) para Chromium hospedado |
+| Senhas de `System.getenv` | `credentials` ou `secrets` na configuração, veja [Autenticação](/authentication) |
+
+## Reescreva um fluxo
+
+```java title="Selenium"
+driver.get("http://localhost:3000/login");
+WebDriverWait wait = new WebDriverWait(driver, Duration.ofSeconds(10));
+wait.until(visibilityOfElementLocated(By.id("username"))).sendKeys("admin@example.test");
+driver.findElement(By.id("password")).sendKeys(System.getenv("ADMIN_PASSWORD"));
+driver.findElement(By.xpath("//button[contains(., 'Sign in')]")).click();
+wait.until(urlContains("/dashboard"));
+assertEquals("Welcome back, admin!",
+    driver.findElement(By.cssSelector(".greeting")).getText());
+```
+
+```ts title="e2e"
+import { test } from '@e2e-dev/web';
+import { expect, credentials } from 'e2e';
+
+test('signs in', async ({ app, screen, browser }) => {
+  const admin = credentials.user('admin');
+  await app.open('/login');
+  await screen.getByLabel('Username').fill(admin.username);
+  await screen.getByLabel('Password').fill(admin.password);
+  await screen.getByRole('button', 'Sign in').tap();
+  await expect(browser).toHaveURL('/dashboard');
+  await expect(screen.getByRole('status')).toHaveText('Welcome back, admin!');
+});
+```
+
+## Mapeie cada chamada do WebDriver
+
+| Selenium | e2e |
+| --- | --- |
+| `driver.get(url)`, `navigate().back()`, `.forward()`, `.refresh()` | `app.open(path)`, `app.back()`, `browser.forward()`, `browser.reload()` |
+| `getCurrentUrl()`, `getTitle()`, `manage().addCookie`, `getScreenshotAs` | `browser.url()`, `browser.title()`, `browser.setCookies`, `app.screenshot('label')` |
+| `By.id('x')` | `browser.locator('#x')`, ou `'[id="x"]'` quando o id tem `:`, `.`, `$` ou começa com um dígito |
+| `By.name`, `By.cssSelector`, `By.xpath` | `browser.locator('[name="x"]')`, `browser.locator('css or xpath')` |
+| `By.linkText`, `By.partialLinkText` | `screen.getByRole('link', { name })`, `name: /part/` |
+| `findElements(...).size()`, `.get(n)` | `await locator.count()`, `locator.nth(n)` |
+| `.click()`, `.clear()`, `Actions.moveToElement`, `Actions.dragAndDrop` | `.tap()`, `.clear()`, `.hover()`, `.dragTo(target)` |
+| `.sendKeys('text')` | `.fill('text')` substitui o conteúdo, `.pressSequentially('text')` acrescenta ao final |
+| `.sendKeys(Keys.ENTER)`, `Actions.keyDown(CONTROL).sendKeys('a')` | `.press('Enter')`, `.press('ControlOrMeta+a')` |
+| `.sendKeys(path)` em um input de arquivo, `new Select(el).selectByVisibleText` | `.setInputFiles(path)`, `.selectOption({ label })` |
+| `.getText()`, `.isDisplayed()`, `.getDomAttribute(name)` | `.textContent()`, `.isVisible()`, `.getAttribute(name)` |
+| `.getAttribute('value')`, `.getAttribute('checked')` | `.inputValue()`, `.isChecked()`. O `.getAttribute()` do e2e lê o atributo do DOM, não a propriedade |
+| `wait.until(visibilityOf(...))`, `textToBe(...)`, `urlContains(...)` | `expect(locator).toBeVisible()`, `.toHaveText(...)`, `expect(browser).toHaveURL(/.../)` |
+| `switchTo().frame()`, `switchTo().alert().accept()` | `browser.frameLocator('#frame')`, `browser.onDialog('accept')` antes da ação |
+| `switchTo().window(handle)`, `getWindowHandles()`, `switchTo().newWindow()` | `tab.activate()`, `browser.tabs()`, `browser.newTab()`; `browser.waitForPopup(() => trigger)` para uma aba que o app abre, veja [Abas](/reference/web#tabs) |
+| `executeScript(script, args)` | `browser.evaluate(fn, arg)`, só JSON na entrada e na saída |
+| Page objects | Uma fixture de `test.extend`, ou um objetivo para `agent.act`, veja [Page objects](/page-object-model) |
+
+## O que o e2e ainda não tem
+
+“Planejado” está no roadmap, e “Ainda não” fica sem data. “Não planejado” é o
+que o e2e deixa de fora de propósito.
+
+### Planejado
+
+| Selenium | Use hoje |
+| --- | --- |
+| `executeScript(script, element)`, `getDomProperty`, `getCssValue` | Uma ação de localizador como `.tap()` ou `.scrollIntoView()`, ou `browser.evaluate` com um seletor CSS |
+| `element.findElement(By.cssSelector)`, `$('a').$('b')` do WebdriverIO | Um único seletor `browser.locator('a >> b')`, ou consultas `getBy*` encadeadas |
+| `ChromeOptions.addArguments`, `setBinary`, `Proxy`, `acceptInsecureCerts` | Inicie o Chrome ou o Edge com as flags e depois conecte-se com `web({ connect })` |
+| `@BeforeSuite`, `@AfterSuite`, fixtures do pytest com escopo de sessão, `onPrepare` do WebdriverIO | Uma vez por execução: o script que `app.command` inicia, ou um wrapper em volta de `e2e run`. Uma vez por arquivo: `beforeAll` e `afterAll`. Login: um `test.setup` de nível superior que salva uma sessão |
+| BrowserStack ou Sauce Labs para web | Seu próprio [provedor de navegadores](/browser#write-a-provider), se o fornecedor tiver um endpoint CDP |
+| `manage().logs()`, listeners de requisição, geolocalização | Modifique a página em `browser.addInitScript`, registre as requisições em `browser.route` |
+| `setNetworkConditions` | Para offline, [`browser.setNetwork('offline')`](/reference/web#setnetwork). Não há limitação de banda nem simulação de latência, então mantenha esses testes no Selenium |
+
+### Ainda não
+
+| Selenium | Use hoje |
+| --- | --- |
+| `new RemoteWebDriver(gridUrl)`, Firefox ou Safari em nós remotos | `web({ connect })` para um endpoint CDP. Rode alvos `firefox` e `webkit` localmente |
+| Dois drivers em um teste, `multiremote` do WebdriverIO | Controle o segundo usuário pela API do app |
+| `getPageSource()`, `getLocalStorage()`, `getSessionStorage()` | `browser.evaluate`, como `() => localStorage.getItem('k')` |
+| Bindings para Java, Python, C# ou Ruby | Os testes são em TypeScript ou JavaScript |
+
+### Não planejado
+
+| Selenium | Use em vez disso |
+| --- | --- |
+| Arquivos de feature do Cucumber | Reescreva cada cenário como um teste. Um passo muitas vezes cabe em um único objetivo `agent.act` |
+| `Thread.sleep`, `Actions.pause`, `wait.until(elementToBeClickable(...))` | Uma asserção de localizador sobre o estado pelo qual você espera. Cada ação espera pelo próprio nó |
+| `switchTo().alert()` depois que o diálogo abre, `alertIsPresent()` | `browser.onDialog(handler)` antes da ação que abre o diálogo |
+| Safari real, modo IE | `webkit` é o build mais próximo do Safari. Mantenha os testes de modo IE no Selenium |
+| `executeCdpCommand`, `DevTools.send`, SDKs que recebem o driver | Mantenha esses testes no Selenium. Uma chamada direta ao driver não é registrada nem ocultada |
+| Relatórios do Allure | Passe o XML do reporter `junit` para o Allure, ou use `htmlReporter()` |
+
+## O que é diferente de propósito
+
+- `findElement` pega a primeira correspondência. O e2e falha com
+  `LOCATOR_AMBIGUOUS` quando há várias, então restrinja com `.filter()`,
+  `.first()` ou `.nth()`.
+- Não há espera implícita. Ações e asserções esperam por conta própria, até
+  `actionTimeout` e `assertionTimeout`.
+- Cada teste recebe um contexto de navegador novo, não um driver
+  compartilhado. Para fazer login uma única vez, use `test.setup` e
+  `{ session }`, veja [Autenticação](/authentication).
+- O tamanho da página vem de `web({ viewport })`, não de `setSize` nem de
+  `maximize()`.
+
+## Próximos passos
+
+<CardGroup cols={2}>
+  <Card title="Conceitos principais" icon="pen-to-square" href="/core-concepts">
+    Objetivos, asserções e localizadores em vez de seletores roteirizados.
+  </Card>
+  <Card title="Referência de screen" icon="crosshairs" href="/reference/screen">
+    Todas as consultas, refinamentos, ações e leituras.
+  </Card>
+</CardGroup>

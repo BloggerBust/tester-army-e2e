@@ -206,6 +206,26 @@ translation moves or goes with it in the same change.
 | vendor | fornecedor |
 | on-screen keyboard | teclado virtual |
 | drawn (content the tree doesn't show) | desenhado |
+| port (a config or a test), migration guide | portar (porte, portado), guia de migração |
+| spec (a test file) | spec (keep in English, a spec) |
+| flow (a Maestro or Selenium test) | fluxo |
+| page object | page object (keep in English, o page object) |
+| capabilities (Appium) | capabilities (keep in English, as capabilities) |
+| command chain (Cypress) | cadeia de comandos |
+| workaround | alternativa |
+| roadmap | roadmap (keep in English, o roadmap) |
+| What e2e doesn't have yet: Planned, Not yet, Not planned | O que o e2e ainda não tem: Planejado, Ainda não, Não planejado |
+| Use today, Use instead (migration table columns) | Use hoje, Use em vez disso |
+| match (noun), to match | correspondência, corresponder |
+| query (a `screen` query) | consulta |
+| scripted (selectors, taps) | roteirizado |
+| launch (an app), launch arguments | iniciar, inicialização; argumentos de inicialização |
+| runtime permission | permissão de tempo de execução |
+| wizard, checkout (a purchase flow) | assistente passo a passo, finalização de compra |
+| retire (an old test) | aposentar |
+| request, response, header (HTTP) | requisição, resposta, cabeçalho |
+| handler, stub | handler, stub (keep in English, o handler, o stub) |
+| case-sensitive, case-insensitive | diferencia maiúsculas de minúsculas, sem diferenciar maiúsculas de minúsculas |
 | step (a CI YAML step) | step (keep in English, o step); an e2e test step stays passo |
 | pipeline, merge request | pipeline, merge request (keep in English, o pipeline, o merge request) |
 | runner (a CI machine), self-managed runner, runner image | runner (o runner), runner autogerenciado, imagem do runner |

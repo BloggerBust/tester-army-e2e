@@ -1,0 +1,425 @@
+---
+title: Migrar do Playwright
+description: Rode o e2e ao lado do Playwright e migre os testes um arquivo por vez.
+"og:image": "https://e2e.com/docs/images/og/migrate/playwright.png?v=e01f34cedb"
+"twitter:image": "https://e2e.com/docs/images/og/migrate/playwright.png?v=e01f34cedb"
+---
+
+import { SetupPrompt } from '../../snippets/setup-prompt-card.jsx';
+
+export const migrationPrompt = `Migre os testes do Playwright deste projeto para o e2e, uma spec por vez. Documentação: \`https://e2e.com/docs/migrate/playwright.md\`
+
+1. Leia o guia de migração acima. Ele mapeia as chaves de configuração, as APIs e as flags da CLI do Playwright que funcionam no e2e, e lista o que o e2e ainda não tem.
+2. Se o projeto não tiver uma configuração do e2e (\`e2e.config.ts\`, \`.mts\`, \`.js\` ou \`.mjs\`), rode \`npx e2e init --yes\` (ou o equivalente em pnpm ou bun). Ele escreve uma configuração e um teste de exemplo, e ainda não instala nada.
+3. Leia a skill do e2e (\`npx e2e guide\` a exibe, \`npx e2e guide <topic>\` exibe um tópico) e siga-a em todos os passos abaixo.
+4. Se você rodou o init, me pergunte qual modelo usar nos passos do agente: uma assinatura do ChatGPT, GitHub Copilot, OpenCode Console ou SuperGrok, uma chave de API ou um modelo local. Configure o modelo com o pacote do provedor dele. Se o modelo exigir login, me passe o comando \`npx e2e login\` e espere até eu confirmar.
+5. Porte \`playwright.config.ts\` para a configuração do e2e com a tabela de configuração do guia. Mantenha \`@playwright/test\` instalado e os dois padrões de arquivo separados.
+6. Instale as dependências.
+7. Liste as specs do Playwright e me pergunte qual mover primeiro. Sugira um fluxo cujos passos mudam com frequência, como um assistente passo a passo ou uma finalização de compra.
+8. Confira cada API do Playwright dessa spec em “O que o e2e ainda não tem”. Use a entrada de “Use hoje” ou “Use em vez disso”, ou deixe esse teste no Playwright e me diga por quê. Depois, reescreva a spec como um arquivo \`.e2e.ts\` em \`tests/\` (o e2e roda \`tests/**/*.e2e.ts\` por padrão). Mapeie cada chamada de \`page\` para \`screen\`, \`app\` ou \`browser\` com o guia. Onde uma consulta do Playwright correspondia a um trecho do texto, adicione \`{ exact: false }\` ou uma RegExp.
+9. Mantenha a navegação e as asserções finais determinísticas, com \`app.open()\` e asserções de localizador. Onde uma sequência de interações roteirizadas quebra com frequência, proponha um objetivo \`agent.act\` no lugar dela.
+10. Rode o novo arquivo com \`npx e2e run <file>\` e corrija-o até ele passar. Mantenha a spec do Playwright até eu confirmar que ela pode ser removida.
+11. Resuma quais testes foram movidos, quais ficaram no Playwright e por quê.`;
+
+O e2e pode rodar ao lado do Playwright em um mesmo projeto enquanto você move
+os testes um arquivo por vez. O `@e2e-dev/web` traz o próprio
+`playwright-core`, em versão fixa, então a versão do seu `@playwright/test`
+continua sendo escolha sua. O e2e lê `e2e.config.ts` e encontra
+`tests/**/*.e2e.ts` por padrão, então mantenha os dois padrões de arquivo
+separados.
+
+<SetupPrompt>
+
+<Prompt description={migrationPrompt} children={migrationPrompt} actions={["copy", "cursor"]} />
+
+</SetupPrompt>
+
+Para uma migração que se estende por várias sessões, a [skill `migrate-to-e2e`](/coding-agents#migrate-an-existing-suite) registra o que foi movido em um arquivo de progresso e mantém a suíte antiga rodando até você aposentar cada teste.
+
+## Porte a configuração
+
+<Note>Instale o e2e e configure um modelo com o [Início rápido](/quickstart).</Note>
+
+Uma chave do Playwright como `testDir`, `baseURL`, `use`, `webServer` ou
+`projects` falha com uma mensagem que indica a chave do e2e a usar. A
+[referência da configuração](/reference/config) lista todas as chaves.
+
+| Playwright | e2e |
+| --- | --- |
+| `use.baseURL`, `webServer` | `app: { url, command }` no alvo, veja [Iniciar seu app](/web#starting-your-app) |
+| `webServer.reuseExistingServer` | `app.command: { reuseExisting: true }`; a CI ignora essa opção |
+| `projects` | `targets`, uma instância de engine em cada |
+| `testDir`, `testMatch`, `testIgnore` | `tests`, globs a partir da raiz do projeto; um `!` no início exclui |
+| `retries`, `workers`, `timeout` | os mesmos nomes, com [outros padrões](#defaults-that-differ); `workers` é um inteiro |
+| `expect.timeout`, `use.actionTimeout`, `globalTimeout` | `assertionTimeout`, `actionTimeout`, `maxDuration`; o relógio de `maxDuration` começa com os testes, não com a inicialização do app |
+| `expect.toPass` | [`toPass`](/reference/config#topass) no nível superior |
+| `maxFailures`, `use.headless: false` | `--max-failures <n>` e `--headed` na CLI |
+| `reporter`, `outputDir` | `reporters: ['list', 'junit', htmlReporter()]`, com `htmlReporter` de `@e2e-dev/html-reporter`; também `dot`, `line`, `json`, `markdown` e `ctrf`; `output`, padrão `.e2e` |
+| `use.viewport`, `deviceScaleFactor`, `locale`, `timezoneId`, `colorScheme`, `reducedMotion`, `userAgent`, `testIdAttribute` | as mesmas chaves em `web({ ... })` |
+| `use.browserName`, `httpCredentials`, `extraHTTPHeaders` | `web({ browser, basicAuth, headers })`; `basicAuth` e `headers` valem só para a origem do app, [`credentialOrigins`](/reference/web#credentialorigins) adiciona outras |
+| `chromium.connectOverCDP(url)` | `web({ connect: { cdpEndpoint: () => url } })`, só chromium |
+| `use.trace`, `use.video` | `trace`, `video`: um modo na configuração, em um alvo ou em um teste. `web({ screencast: { size } })` define o tamanho do vídeo |
+| `use.permissions` | `app.permissions` no alvo, veja [Conceder permissões do navegador](/web#granting-browser-permissions) |
+| `use.storageState` de um projeto `setup` | `test.setup` com `session.save(name)`, depois `{ session }` em um teste, veja [Autenticação](/authentication) |
+| `use.storageState: { cookies }` com valores fixos | `browser.setCookies(cookies)` em uma fixture |
+
+## Reescreva uma spec
+
+Comece por um fluxo cujos passos mudam com frequência, como um assistente
+passo a passo ou uma finalização de compra. Testes estáveis do Playwright podem
+ficar onde estão.
+
+```ts title="Playwright"
+import { test, expect } from '@playwright/test';
+
+test('checkout', async ({ page }) => {
+  await page.goto('/cart');
+  await page.getByRole('button', { name: 'Checkout' }).click();
+  await page.getByLabel('Card number').fill('4242424242424242');
+  await page.getByLabel('Expiry').fill('12/30');
+  await page.getByLabel('CVC').fill('123');
+  await page.getByRole('button', { name: 'Pay' }).click();
+  await expect(page.getByRole('heading')).toHaveText('Order confirmed');
+});
+```
+
+```ts title="e2e"
+import { test } from '@e2e-dev/web';
+import { expect } from 'e2e';
+
+test('checkout', async ({ app, agent, screen }) => {
+  await app.open('/cart');
+  await agent.act('pay with the test card 4242 4242 4242 4242, expiry 12/30, CVC 123');
+  await expect(screen.getByRole('heading')).toHaveText('Order confirmed');
+});
+```
+
+O agente faz os passos da finalização de compra e se adapta quando o formulário
+muda. Um teste também pode continuar totalmente determinístico, com uma linha
+`screen.getBy*` para cada linha `page.getBy*`.
+
+## Mapeie cada API
+
+Toda linha funciona hoje. Para uma API que não está aqui, confira
+[O que o e2e ainda não tem](#what-e2e-doesnt-have-yet). Chamadas em `browser`
+só rodam em um navegador, então um teste que faz essas chamadas declara
+`platforms: ['web']` e os outros alvos pulam esse teste.
+
+<AccordionGroup>
+<Accordion title="Localizadores">
+
+| Playwright | e2e |
+| --- | --- |
+| `page.getByRole`, `getByLabel`, `getByText`, `getByTestId`, `getByPlaceholder` | igual em `screen`; uma string corresponde ao [texto inteiro](#what-differs-on-purpose) |
+| `getByAltText(alt)` | `getByRole('image', alt)` |
+| `filter({ hasText, hasNotText, has, hasNot })`, `first()`, `last()`, `nth(i)`, `count()`, `or()`, `all()` | igual |
+| `page.locator(selector)`, `page.frameLocator(selector)` | igual em `browser`; CSS, `xpath=` e cadeias `>>` funcionam |
+| `page.click(selector)`, `page.fill(selector, value)`, `page.waitForSelector(selector)` | `browser.locator(selector).tap()`, `.fill(value)`, `.waitFor()` |
+
+</Accordion>
+<Accordion title="Ações">
+
+| Playwright | e2e |
+| --- | --- |
+| `click()`, `dblclick()` | `tap()`, `doubleTap()`; `click()` e `dblclick()` são aliases |
+| `click({ button: 'right' })`, `click({ delay })` | `secondaryTap()`, `longPress({ duration })` |
+| `click({ position })`, `click({ modifiers })`, `click({ clickCount: 3 })` | `tap({ position })`, `tap({ modifiers })`, `tap({ count: 3 })` |
+| `fill()`, `pressSequentially()`, `clear()`, `focus()`, `blur()`, `hover()`, `check()`, `uncheck()`, `dragTo()`, `setInputFiles(path)`, `selectOption({ label })` ou `{ value }` | igual, sem `force`, `trial` ou `position` |
+| `setInputFiles({ name, mimeType, buffer })` | Só na web. Passe um objeto simples apenas com `name`, `mimeType` e `buffer`. |
+| `press(key)` | igual para um caractere ou uma [tecla nomeada](/reference/engine#keys); `browser.keyboard.press` depois de `focus()` para um código de tecla |
+| `innerText()`, `allInnerTexts()`, `scrollIntoViewIfNeeded()` | `textContent()`, `allTextContents()`, `scrollIntoView()` |
+| `textContent()`, `allTextContents()`, `inputValue()`, `getAttribute()`, `boundingBox()`, `isVisible()`, `isHidden()`, `isEnabled()`, `isDisabled()`, `isChecked()`, `waitFor({ state })` | igual |
+| `page.keyboard.press`, `type`, `down`, `up`; `page.mouse.move`, `wheel`, `down`, `up` | igual em `browser.keyboard` e `browser.mouse` |
+| `page.mouse.click(x, y)`, `page.mouse.dblclick(x, y)`, `page.dragAndDrop(source, target)` | `screen.tapAt({ x, y })`, `screen.doubleTapAt({ x, y })`, `source.dragTo(target)` |
+
+</Accordion>
+<Accordion title="Asserções">
+
+| Playwright | e2e |
+| --- | --- |
+| `toBeVisible()`, `toBeHidden()`, `toBeEnabled()`, `toBeDisabled()`, `toBeChecked()`, `toBeFocused()`, `toBeAttached()`, `toBeInViewport()`, `toHaveText()`, `toContainText()`, `toHaveValue()`, `toHaveAttribute()`, `toHaveCount()`, `toHaveAccessibleName()`, `toHaveRole()`, `toBeEditable()` | igual, com `{ visible }`, `{ enabled }`, `{ editable }`, `{ checked }`, `{ attached }`, `{ ratio }` e `{ ignoreCase }`; `toBeInViewport` considera fora do viewport um elemento de tamanho zero e [é diferente em um dispositivo](/reference/expect#tobeinviewport) |
+| `toBeEmpty()` | igual, com `{ timeout }` |
+| `toHaveId(id)`, `toContainClass(name)` | `toHaveAttribute('id', id)`, `toHaveAttribute('class', RegExp)` |
+| `expect(page).toHaveURL()`, `toHaveTitle()` | `expect(browser).toHaveURL()`, `toHaveTitle()` |
+| `expect(page).toHaveScreenshot()`, `expect(locator).toHaveScreenshot()` | `expect(screen).toHaveScreenshot()` e a forma com localizador, veja [Comparação visual](/visual-testing) |
+| `expect(value)` com `toBe()`, `toEqual()`, `toMatchObject()`, `toContain()`, `toHaveLength()`, `toHaveProperty()`, `toMatch()` e os matchers de veracidade e de números | igual, veja [matchers de valor](/reference/expect#value-matchers) |
+| `expect(locator, 'message')`, `expect(page, 'message').toHaveScreenshot()`, `expect(value, 'message')` | igual, `expect(screen, 'message')` para a página; a falha começa com a mensagem, veja [matchers de localizador](/reference/expect#locator-matchers) |
+| `expect.any()`, `anything()`, `objectContaining()`, `arrayContaining()`, `stringMatching()`, `stringContaining()`, `expect.poll()`, `expect.soft()` | igual |
+| `expect.poll(read, { intervals })` | igual. Veja [Fazer polling de um valor](/reference/expect#polling-a-value) |
+| `expect(response).toBeOK()` | igual, sobre o que `request`, `waitForResponse` e `route.fetch()` retornam. Veja [`toBeOK`](/reference/expect#tobeok) |
+| `expect(fn).toPass(options?)` | igual. Veja [Tentar um bloco novamente](/reference/expect#retrying-a-block) |
+
+</Accordion>
+<Accordion title="Navegação e app">
+
+| Playwright | e2e |
+| --- | --- |
+| `page.goto(path)` | `app.open(path)`; `browser.goto(url, { waitUntil, timeout })` para as opções |
+| `page.goBack()`, `goForward()`, `reload()`, `url()`, `title()`, `setViewportSize()` | `browser.back()`, `forward()`, `reload()`, `url()`, `title()`, `setViewport()` |
+| `page.waitForURL(url)` | `browser.waitForURL(url)` com um glob, uma `RegExp` ou uma URL exata |
+| `page.screenshot()` | `app.screenshot(label)`, uma captura do viewport anexada ao relatório |
+| `locator.screenshot()` | `locator.screenshot(label)`, uma captura da parte do elemento encontrado que está dentro do viewport, anexada ao relatório |
+| Um `context` novo para cada teste | igual para cada tentativa; `app.restart()` o recria, `app.clearState()` também limpa o armazenamento |
+
+</Accordion>
+<Accordion title="Rede e navegador">
+
+| Playwright | e2e |
+| --- | --- |
+| `page.route(pattern, handler)`, `unroute()`, `unrouteAll()` | igual em `browser`; um padrão é uma `RegExp`, um glob de URL resolvido em relação à URL do app, ou `{ method, url }` para um método HTTP |
+| `route.fulfill()`, `continue()`, `fallback()`, `abort()`, `fetch()` | igual, veja [`route`](/reference/web#route) para as opções de cada um |
+| `page.waitForResponse(pattern)` | `browser.waitForResponse(pattern)` com os mesmos globs de URL |
+| `page.on('dialog')`, `page.waitForEvent('download')` | `browser.onDialog('accept')` ou um handler; `browser.waitForDownload(() => trigger)` |
+| `page.waitForEvent('popup')` | `browser.waitForPopup(() => trigger)`, que torna ativa a nova aba, veja [Abas](/reference/web#tabs) |
+| `context.pages()`, `context.newPage()`, `page.bringToFront()` | `browser.tabs()`, `browser.newTab()`, `tab.activate()`; sem o evento `context.on('page')` |
+| `page.evaluate(fn, arg)` | `browser.evaluate(fn, arg)`, JSON na entrada e na saída |
+| `page.webmcp.tools()`, `page.webmcp.callTool(name, input)` | igual em `browser.webmcp`, com `web({ webmcp: true })` no lugar do argumento de inicialização ou das preferências; só o frame principal, veja [WebMCP](/reference/web#webmcp) |
+| `page.addInitScript()`, `page.emulateMedia({ colorScheme, reducedMotion })` | `browser.addInitScript()` ou `web({ initScripts })`; `browser.emulateMedia()` |
+| `context.addCookies()`, `cookies(urls)`, `clearCookies()` | `browser.setCookies()`, `browser.cookies(urls)`, `browser.clearCookies()` |
+| `context.setOffline(true)` | [`browser.setNetwork('offline')`](/reference/web#setnetwork), `'online'` para voltar |
+| A fixture `request`: `get()`, `post()`, `put()`, `patch()`, `delete()`, `head()`, `fetch()` | igual em [`request`](/reference/request): `{ json }` para `data` (essa opção recusa um valor `undefined` ou uma `Date`), os parâmetros de consulta na URL para `params`, `{ redirect: 'manual' }` para `maxRedirects: 0`, `status` e `headers` como propriedades. A fixture não guarda cookies entre chamadas: passe um token ou um cookie de sessão em `headers` |
+| `page.request`, que compartilha os cookies da página | `request` com um cabeçalho `cookie` vindo de `browser.cookies(url)`, veja [Requisições autenticadas](/api-testing#signed-in-requests) |
+
+</Accordion>
+<Accordion title="Estrutura de testes">
+
+| Playwright | e2e |
+| --- | --- |
+| `import { test, expect } from '@playwright/test'` | `import { test } from '@e2e-dev/web'` e `import { expect } from 'e2e'` |
+| `{ page }` em um teste | `{ screen, app, browser }` |
+| `test()`, `test.describe()`, `test.only`, `test.fail()`, `test.skip(title, fn)`, `test.skip(condition, reason)`, `test.fixme(title, fn)`, `test.fixme(condition, reason)` | igual, mas um grupo serial recebe `skip` no grupo em vez disso; as formas condicionais funcionam dentro do corpo de um teste ou em `beforeEach` |
+| `test.setTimeout()` | igual dentro do corpo de um teste, em `beforeEach` ou em `beforeAll` (o tempo limite do próprio hook); `afterEach` e `afterAll` não podem chamá-lo. Em um callback de `describe`, passe `{ timeout }` para `test.describe` em vez disso. Não existe `0` para desligar o tempo limite: passe um valor grande |
+| `test.slow()`, `test.slow(condition, description)` | igual dentro do corpo de um teste ou em `beforeEach`: triplica o tempo limite em vigor do teste; em `beforeAll`, o tempo limite do próprio hook. Uma vez por tentativa, como no Playwright. No nível do describe (em qualquer forma) é um `COLLECTION_ERROR`: chame-o em um `beforeEach` |
+| `beforeEach`, `afterEach`, `beforeAll`, `afterAll` | igual, sem título; `beforeAll` e `afterAll` recebem fixtures de worker, não `browser`, `app` ou `screen` |
+| `test.describe.skip`, `test.describe.serial`, `describe.configure({ mode: 'serial', retries, timeout })` | `test.describe(title, { skip, serial, retries, timeout }, fn)` |
+| `fullyParallel` na configuração ou em um projeto, `--fully-parallel` | igual, na configuração ou em um alvo |
+| `describe.configure({ mode: 'parallel' })`, `test.describe.parallel` | `describe.configure({ parallel: true })` ou `{ parallel: true }` em um `describe`, veja [`parallel`](/reference/test#parallel) |
+| `describe.configure({ mode: 'default' })` | `describe.configure({ parallel: false })` ou `{ parallel: false }` em um `describe` |
+| `test.fail()` em um describe | `test.describe.fail(title, fn)` ou `{ fail: 'reason' }` no grupo; para uma condição, `test.fail(condition, 'reason')` em um `beforeEach` |
+| `test.describe.only()` | igual, ou `{ only: true }` no grupo; a CI o rejeita com `ONLY_IN_CI`, como faz com `test.only` |
+| `{ tag: '@smoke' }` | `{ tags: ['smoke'] }` em um teste ou grupo |
+| `test.extend({ fixture })` | o mesmo formato, preparado sob demanda: um teste, um hook ou uma fixture recebe as fixtures que nomeia no primeiro parâmetro |
+| Fixtures `[fn, { scope: 'worker' }]` | igual, tipadas com o segundo argumento de tipo de `extend` |
+| Fixtures `[fn, { auto: true }]` | igual, em qualquer um dos escopos |
+| Sobrescrever uma fixture, `page: async ({ page }, use) => {}` | igual para `app`, `screen`, `browser` e suas próprias fixtures, veja [Estender uma fixture](/reference/test#extending-a-fixture) |
+| `page.pause()` | `screen.pause()`, com `--headed` para ver o navegador |
+
+</Accordion>
+<Accordion title="CLI">
+
+| Playwright | e2e |
+| --- | --- |
+| `npx playwright test tests/login.spec.ts:12` | `npx e2e run tests/login.e2e.ts:12`; um diretório, um nome simples ou um glob também seleciona |
+| `--project web`, `--list` | `--target web`, `npx e2e list` |
+| `--grep`, `--grep-invert`, `--headed`, `--retries`, `--workers`, `--config`, `--output`, `--reporter`, `--trace`, `--shard`, `--repeat-each`, `--max-failures`, `--last-failed`, `--pass-with-no-tests`, `-u` | igual; das flags curtas, só `-u` |
+| `npx playwright install` | `npx @e2e-dev/web install`; uma execução também instala um navegador ausente |
+
+</Accordion>
+</AccordionGroup>
+
+## Porte os page objects
+
+Um page object recebe `screen` para consultas e ações, e `browser` para
+teclado, mouse, seletores CSS e `evaluate`. Forneça-o como uma fixture:
+
+```ts title="tests/page-models/account-page.ts"
+import type { Locator, Screen } from 'e2e';
+import type { Browser } from '@e2e-dev/web';
+
+export class AccountPage {
+  readonly accountName: Locator;
+
+  constructor(
+    readonly screen: Screen,
+    readonly browser: Browser,
+  ) {
+    this.accountName = screen.getByTestId('account-name');
+  }
+
+  async filterByNote(note: string) {
+    await this.screen.getByRole('button', 'Filter').click();
+    await this.screen.getByRole('button', 'Note').click();
+    await this.browser.keyboard.type(note);
+  }
+}
+```
+
+```ts title="tests/fixtures.ts"
+import { test as base } from '@e2e-dev/web';
+import { AccountPage } from './page-models/account-page.ts';
+
+export const test = base.extend<{ accountPage: AccountPage }>({
+  accountPage: async ({ screen, browser }, use) => {
+    await use(new AccountPage(screen, browser));
+  },
+});
+```
+
+Uma fixture que nomeia `browser` faz todo teste que a usa rodar só na web, veja
+[Mantenha-o portável](/page-object-model#keep-it-portable). Tire `newPage()` e
+`page.close()` dos hooks: toda tentativa começa em um contexto novo.
+
+## O que o e2e ainda não tem
+
+“Planejado” está no roadmap. “Ainda não” fica sem data. “Não planejado” foi
+deixado de fora de propósito. Use a alternativa ou mantenha o teste no
+Playwright.
+
+### Planejado
+
+<AccordionGroup>
+<Accordion title="Localizadores e ações">
+
+| Playwright | Use hoje |
+| --- | --- |
+| `locator.and()`, `filter({ visible })` | Um seletor de `browser.locator`, ou uma consulta de `screen` dentro do escopo |
+| `locator.evaluate()`, `expect(locator).toHaveClass()`, `toHaveCSS()`, `dispatchEvent()` | `browser.evaluate(fn, selector)`; `expect(browser).toHaveClass(locator, cls)` |
+| `selectOption([...])`, `hover({ position })` | `browser.evaluate` para uma seleção múltipla; `browser.mouse` com `boundingBox()` |
+
+</Accordion>
+<Accordion title="Asserções">
+
+| Playwright | Use hoje |
+| --- | --- |
+| `{ fullPage, clip }`, `snapshotPathTemplate`, `ignoreSnapshots` | O viewport ou um localizador em `toHaveScreenshot`; uma tag e `--exclude-tag` para pular testes visuais |
+| `expect.configure()` | `{ timeout }` em cada chamada |
+| `@axe-core/playwright` | axe-core por meio de `browser.addInitScript({ path: 'node_modules/axe-core/axe.min.js' })`, depois `axe.run()` em `browser.evaluate` |
+| `.resolves`, `.rejects`, `toThrow()`, `toStrictEqual()`, `toContainEqual()`, `toBeInstanceOf()`, `expect.closeTo()` | `await` primeiro, ou capture o erro e faça uma asserção sobre ele; `toEqual`; `toContain`, que compara por igualdade profunda; `toBeCloseTo` |
+| Um matcher de localizador com `.not` que passa na primeira leitura | Ele passa depois que a condição se mantém por 1 s. O inverso positivo passa na primeira leitura: `toBeHidden()`, `toBeDisabled()`, `toBeChecked({ checked: false })` |
+| `expect.extend()` | Uma função auxiliar assíncrona que chama `expect` |
+
+</Accordion>
+<Accordion title="Navegação, rede e navegador">
+
+| Playwright | Use hoje |
+| --- | --- |
+| `devices['iPhone 15']`, `isMobile`, `hasTouch` | `web({ viewport, userAgent, deviceScaleFactor })`; um alvo mobile para toque real |
+| `waitForFunction()` | `expect.poll` sobre `browser.evaluate` |
+| `waitForResponse(predicate)`, `waitForRequest()`, `page.on('request')`, `response.ok()` | `browser.waitForResponse(pattern)`, ou `{ method, url }` para filtrar pelo método da requisição, depois verifique a resposta no teste, `status` para `ok()`. Para requisições, um handler de `browser.route` que registra `route.request` e depois chama `route.fallback()` |
+| `route.fulfill({ response })`, `route.abort(code)`, `route.fetch(options)`, `request.postDataJSON()` | `status`, `headers` e `body` de `route.fetch()`; `JSON.parse(route.request.postData)` |
+| `page.addLocatorHandler()` | Feche o overlay em `beforeEach`, ou defina o cookie de consentimento do overlay com `browser.setCookies` |
+| `page.on('console')`, `page.on('pageerror')`, `page.clock` | Um `browser.addInitScript` que registra em um array de `window`, ou que substitui `Date` por um stub |
+| `setGeolocation()`, `grantPermissions()` | Um stub com `browser.addInitScript`; `app.permissions` no alvo |
+| `ignoreHTTPSErrors`, `proxy`, `channel`, `launchOptions` | Sirva o app por `http`; inicie o navegador você mesmo e conecte-se com `web({ connect })` |
+
+</Accordion>
+<Accordion title="Estrutura de testes, relatórios e CLI">
+
+| Playwright | Use hoje |
+| --- | --- |
+| `test.step()`, `testInfo.attach()` | Cada chamada já é um passo nomeado no relatório; `app.screenshot(label)` anexa uma captura de tela |
+| `test.info()`, `testInfo` em hooks e fixtures, `annotations` | Sua própria fixture ou um estado de módulo; um id de issue no título ou em uma tag |
+| `mergeTests()` | Uma cadeia de chamadas de `extend` |
+| `globalSetup`, `globalTeardown`, um array `webServer` | Um script em volta da execução, ou um `app.command` que inicia todos os processos |
+| `projects[].testMatch`, `testDir`, `testIgnore`, `grep` | `platforms` ou tags nos testes, ou uma execução para cada alvo |
+| `--ui`, `npx playwright show-report`, `--reporter html` | `--watch --headed`; `npx e2e report` (abre o `<output>/report.html` escrito por `htmlReporter()`) |
+| `test.describe.fixme()`, `test.fixme(title, details, body)` | `{ timeout }` ou `{ skip: 'fixme' }` no teste ou grupo, com as eventuais `tags` dos detalhes ao lado, registrado no relatório com a causa do skip `explicit`, não `fixme` |
+| `test.skip(callback, description)`, `test.fixme(callback, description)` | `test.skip(condition, reason)` ou `test.fixme(condition, reason)` dentro do corpo, ou `platforms` no teste |
+| `failOnFlakyTests`, `use.navigationTimeout`, `--timeout`, `--quiet` | `run.summary.flaky` em `report.json`; `browser.goto(url, { timeout })`; `timeout` na configuração |
+| O reporter `blob` e `merge-reports` | Um relatório para cada shard |
+| A imagem Docker do Playwright | A imagem da versão do `playwright-core` que o `@e2e-dev/web` fixa, ou `npx @e2e-dev/web install chromium --with-deps` |
+| `test.use({ ... })` em um arquivo ou describe | Opções do runner no grupo, opções da engine em um alvo, `browser.setViewport` em tempo de execução |
+| `projects[].dependencies`, `teardown` | Um `test.setup` de nível superior para o login; um script em volta da execução |
+| O reporter `github` | `github()` publica um comentário no pull request |
+
+</Accordion>
+</AccordionGroup>
+
+### Ainda não
+
+| Playwright | Use hoje |
+| --- | --- |
+| `projects[].retries`, `projects[].timeout` | Opções em um grupo |
+| `--debug`, a extensão do VS Code | `--step --headed` roda o primeiro passo e depois segura cada passo seguinte até você apertar uma tecla; `screen.debug()` exibe a árvore |
+| Fixtures de opção, sobrescrever `page` ou `context` em `extend` | `process.env` na fixture; uma nova fixture com nome próprio |
+| `const response = await page.goto()` | Inicie `browser.waitForResponse` antes da navegação |
+| Uma classe `Reporter` do Playwright, reporters de terceiros | Um [reporter personalizado](/reference/reporters#custom-reporters) com `onEvent` e `onRunFinished`; `junit.xml` para um dashboard |
+| `browser.newContext()` para um segundo usuário | Controle o segundo usuário pela API com `request` |
+| `page.exposeFunction()`, `addStyleTag()`, `innerHTML()`, `page.viewportSize()` | `browser.evaluate` |
+| `routeFromHAR()`, `routeWebSocket()`, `page.setExtraHTTPHeaders()` | Um `browser.route` para cada endpoint ou cabeçalho; um `browser.addInitScript` que substitui `WebSocket` por um stub |
+| `emulateMedia({ media, forcedColors, contrast })` | - |
+| `npx playwright show-trace`, `trace.zip`, `context.tracing` | `trace.md` no diretório do teste em `.e2e/results/`. Um trace é uma página markdown, sem zip e sem visualizador |
+
+### Não planejado
+
+| Playwright | Use em vez disso |
+| --- | --- |
+| `selectOption('pro')` por valor | `selectOption({ value: 'pro' })`. Uma string simples corresponde só ao rótulo |
+| `use.storageState: 'file.json'`, `context.storageState({ path })` | `test.setup` e `{ session }`. [Sessões duram uma execução](#what-differs-on-purpose), então não há arquivo |
+| `page.waitForTimeout(ms)`, `page.waitForNavigation()` | Uma asserção de localizador sobre o estado pelo qual você espera; `browser.waitForURL(url)` |
+| `--only-changed` | `--changed-since <ref>` com um [filtro de testes](/filters) em `filters` |
+| `page.$()`, `$eval()`, `elementHandle()`, valores de `evaluate` que não são JSON, `locator.page()` | Localizadores, e `browser.evaluate` com JSON na entrada e na saída, que o relatório registra e oculta. Passe `browser` para um page object |
+| Um diálogo sem handler, descartado silenciosamente | `browser.onDialog('dismiss')`. Um diálogo não tratado faz o próximo passo falhar |
+| `page.goto('data:...')`, `'file://...'` | `route.fulfill({ body, contentType: 'text/html' })` em uma URL do app. Só `http` e `https` abrem |
+| `getByRole(role, { includeHidden })` | `browser.locator('role=button[include-hidden=true]')`. Uma consulta por papel segue a árvore de acessibilidade |
+| `--grep @smoke` para uma tag, uma regex posicional, `file:line:column` | `--tag smoke`; um glob ou um nome simples; `file:line` |
+| `locator.locator(selector)` | Uma consulta de `screen` dentro do escopo, como `card.getByRole('button', { name: 'Close' })`, ou um seletor de `browser.locator`, como `'.card >> .close'` |
+| `getByTitle()` | `browser.locator('[title="Close"]')`. Um título é um atributo do DOM, então não tem consulta em `screen` |
+| `page.waitForLoadState()` | Uma asserção sobre o que a próxima página mostra. Uma navegação espera por `load`, e cada ação e asserção espera pelo seu nó |
+| `npx playwright codegen`, o Inspector | [`npx e2e mcp`](/mcp-server) deixa um agente de código controlar o app enquanto escreve o teste; `screen.debug()` exibe a árvore |
+| `{ force: true }`, `{ trial: true }` | `tap({ position })` pula as verificações de acionabilidade; `toBeVisible()` e `toBeEnabled()` para uma simulação |
+| `ariaSnapshot()`, `toMatchAriaSnapshot()`, `toMatchSnapshot()` | `expect(await screen.tree()).toContain(...)`; um arquivo de fixture e `toEqual` |
+| `keyboard.insertText()`, `inputValue()` em um `<label>` | `fill()`; o próprio controle, localizado com `getByLabel` |
+| `use.connectOptions`, os modos de trace `retain-on-first-failure` e `retain-on-failure-and-retries` | `web({ connect })` por CDP, só chromium; `retain-on-failure` |
+
+## O que é diferente de propósito
+
+- Uma string corresponde ao texto inteiro, diferenciando maiúsculas de
+  minúsculas. O nome do `getByRole`, o `getByLabel`, o `getByPlaceholder` e o
+  `getByText` do Playwright correspondem a uma substring, sem diferenciar
+  maiúsculas de minúsculas. Passe `{ exact: false }` ou uma `RegExp` para um
+  trecho. Veja [consultas](/reference/screen#queries).
+
+  ```ts
+  // <button>Save changes</button>, <label>Email address <input></label>
+  screen.getByRole('button', 'Save');                  // no match
+  screen.getByRole('button', { name: 'Save', exact: false });    // matches
+  screen.getByRole('button', 'save changes');          // no match, case differs
+  screen.getByLabel('Email');                                    // no match
+  ```
+- Leituras de texto retornam o texto renderizado. `textContent()`, `toHaveText`
+  e `toContainText` leem o que `innerText` retorna, então o texto oculto fica
+  de fora e `text-transform` se aplica. Veja [leituras de localizador](/reference/screen#locator-reads).
+  `toBeEmpty`, por outro lado, mantém a regra do Playwright, então um nó com
+  texto oculto não está vazio.
+- `toHaveRole` usa o vocabulário de `getByRole`, então `paragraph`, `generic`
+  e os outros papéis que esse vocabulário deixa de fora são erros de tipo, e
+  `img` é lido como `image`. O matcher compara o papel que a árvore lê, onde um
+  editor `contenteditable` é um `textbox`.
+- Um localizador é estrito. Uma ação, uma leitura ou um matcher positivo sobre
+  várias correspondências resulta em `LOCATOR_AMBIGUOUS`, enquanto
+  `page.click(selector)` e `isVisible()` do Playwright pegam a primeira.
+  Restrinja com `filter` ou `first()`.
+- `.not.toBeChecked()` passa em um botão ou em um título. Consulte o controle
+  pelo papel dele, para que a asserção falhe quando o controle mudar de tipo.
+- Se uma leitura de `expect.poll` lança um erro, a leitura é tentada novamente.
+- Para `toPass`, você vê no relatório só os passos de dentro de cada repetição do bloco.
+- Sessões duram uma execução. `test.setup` salva o estado com um nome e
+  `{ session }` restaura esse estado. O arquivo é criptografado e apagado na
+  limpeza, então não existe um `.auth/user.json` para reutilizar.
+- Os testes não recebem um `Page` bruto, porque nada feito nele é registrado,
+  ocultado ou mascarado. `surfaceOf(engine)` serve para
+  [executores personalizados](/executors#driving-the-page-yourself), não para código de teste.
+
+## Padrões diferentes
+
+| Configuração | Playwright | e2e |
+| --- | --- | --- |
+| Tempo limite do teste | 30 s | 120 s, `timeout` |
+| Tempo limite de ação | nenhum | 30 s, `actionTimeout` |
+| Tempo limite do expect | 5 s | 5 s, `assertionTimeout` |
+| Tempo limite de navegação | nenhum | 120 s, o orçamento do teste |
+| Novas tentativas | 0 | 1 na CI, 0 localmente |
+| Workers | metade dos núcleos de CPU | 1 na CI, metade dos núcleos de CPU localmente |
+| Trace | `off` (`on-first-retry` na configuração gerada) | `retain-on-failure` |
+
+## Próximos passos
+
+<CardGroup cols={2}>
+  <Card title="Conceitos principais" icon="pen-to-square" href="/core-concepts">
+    Objetivos, asserções e localizadores em vez de seletores roteirizados.
+  </Card>
+  <Card title="Referência da engine web" icon="masks-theater" href="/reference/web">
+    Todas as opções e todos os métodos de `browser`.
+  </Card>
+</CardGroup>

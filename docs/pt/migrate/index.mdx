@@ -1,0 +1,83 @@
+---
+title: Migrar para o e2e
+sidebarTitle: Visão geral
+description: Mova uma suíte de Playwright, Cypress, Selenium, Appium, Detox, Maestro ou TesterArmy para o e2e, um teste por vez.
+---
+
+Um guia de migração mapeia a configuração, a API e os comandos de um runner de
+testes para o e2e. Ele também lista o que o e2e ainda não tem: o que está
+planejado, o que está sem data e o que o e2e deixa de fora de propósito, com
+uma alternativa quando existe uma. Um teste sem alternativa fica no runner
+antigo. Mantenha a suíte antiga instalada enquanto você move um teste por
+vez, para que as duas suítes continuem verdes.
+
+## Escolha seu runner
+
+<CardGroup cols={2}>
+  <Card title="Playwright" icon="/images/integrations/playwright.svg" href="/migrate/playwright">
+    Web. Todas as chaves de configuração, chamadas de `page` e flags da CLI, mapeadas para o e2e.
+  </Card>
+  <Card title="Cypress" icon="/images/integrations/cypress.svg" href="/migrate/cypress">
+    Web. Cadeias de comandos viram testes assíncronos. Seus atributos `data-cy` permanecem.
+  </Card>
+  <Card title="Selenium" icon="/images/integrations/selenium.svg" href="/migrate/selenium">
+    Web. Chamadas do WebDriver e page objects, reescritos em TypeScript.
+  </Card>
+  <Card title="Appium" icon="/images/integrations/appium.png" href="/migrate/appium">
+    Mobile. Capabilities, seletores e comandos `mobile:`, sem servidor.
+  </Card>
+  <Card title="Detox" icon="/images/integrations/detox.png" href="/migrate/detox">
+    Mobile. O build do seu app e os testIDs, sem o framework do Detox.
+  </Card>
+  <Card title="Maestro" icon="/images/integrations/maestro.svg" href="/migrate/maestro">
+    Mobile. Fluxos em YAML viram testes em TypeScript.
+  </Card>
+  <Card title="TesterArmy" icon="/images/integrations/testerarmy.png" href="/migrate/testerarmy">
+    Web e mobile. Testes salvos viram passos do agente no seu repositório.
+  </Card>
+</CardGroup>
+
+## Mova um teste por vez
+
+<Note>Instale o e2e primeiro com o [Início rápido](/quickstart). Só os passos do agente precisam de um modelo.</Note>
+
+Os testes do e2e rodam no Node, em TypeScript por padrão. Para testes em
+[JavaScript](/reference/config#javascript), defina `tests` para incluí-los.
+Para uma suíte em Java, Python ou nativa, instale o e2e em uma pasta `e2e/`
+com um `package.json` próprio.
+
+Cada guia segue os mesmos passos:
+
+1. Porte a configuração. A URL base, o comando do app e os dispositivos do
+   runner antigo viram um alvo em `e2e.config.ts`.
+2. Reescreva um teste como um arquivo `.e2e.ts` em `tests/`. Mantenha
+   separados os padrões de arquivo dos dois runners, para que nenhum deles
+   rode os testes do outro.
+3. Rode o novo teste com `npx e2e run <file>` até ele passar.
+4. Apague o teste antigo quando confiar no novo.
+
+## Deixe um agente migrar a suíte
+
+Para mover um teste com um agente de código, copie o prompt do agente no topo
+do guia do seu runner. Para uma migração ao longo de várias sessões, use a
+[skill `migrate-to-e2e`](/coding-agents#migrate-an-existing-suite). Ela
+registra o progresso em um arquivo `MIGRATION.md` e mantém a suíte antiga
+rodando.
+
+## Migre de um runner sem guia
+
+O WebdriverIO para web não tem guia. Mapeie as chamadas de WebDriver do
+WebdriverIO com o guia do [Selenium](/migrate/selenium). O mapeamento é
+parcial: nenhum guia cobre a API do próprio WebdriverIO. Para o WebdriverIO
+com Appium em um app mobile, veja [Migrar do Appium](/migrate/appium).
+
+## Próximos passos
+
+<CardGroup cols={2}>
+  <Card title="Conceitos principais" icon="pen-to-square" href="/core-concepts">
+    Objetivos, asserções e localizadores em vez de seletores roteirizados.
+  </Card>
+  <Card title="Agentes de código" icon="robot" href="/coding-agents">
+    A skill do e2e, o servidor MCP e como um agente escreve um teste.
+  </Card>
+</CardGroup>

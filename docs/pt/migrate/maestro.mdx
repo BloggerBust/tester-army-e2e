@@ -1,0 +1,237 @@
+---
+title: Migrar do Maestro
+description: Leve os fluxos do Maestro para TypeScript com localizadores, asserções e objetivos do agente.
+"og:image": "https://e2e.com/docs/images/og/migrate/maestro.png?v=227549ed41"
+"twitter:image": "https://e2e.com/docs/images/og/migrate/maestro.png?v=227549ed41"
+---
+
+import { SetupPrompt } from '../../snippets/setup-prompt-card.jsx';
+
+export const migrationPrompt = `Migre os fluxos do Maestro deste projeto para o e2e, um fluxo por vez. Documentação: \`https://e2e.com/docs/migrate/maestro.md\` e \`https://e2e.com/docs/mobile.md\`
+
+1. Leia o guia de migração acima. Ele mapeia as opções de configuração e os comandos do Maestro que o e2e tem, e lista o que o e2e ainda não tem com o que usar hoje. O guia mobile cobre dispositivos e builds do app.
+2. Os testes do e2e são em TypeScript. Se o projeto não tem \`package.json\`, como em um projeto nativo iOS ou Android, crie o projeto de testes em uma pasta \`e2e/\` ao lado do app.
+3. Se o projeto de testes não tiver configuração do e2e (\`e2e.config.ts\`, \`.mts\`, \`.js\` ou \`.mjs\`), rode \`npx e2e init --yes --engine mobile\` (ou o equivalente em pnpm ou bun) nesse projeto. Ele escreve uma configuração mobile com um alvo para a plataforma desta máquina e um teste de exemplo contra o app Settings, e ainda não instala nada. Reescreva \`tests/example.e2e.ts\` para o seu app ou apague esse arquivo.
+4. Leia a skill do e2e (\`npx e2e guide\` a exibe, \`npx e2e guide <topic>\` exibe um tópico) e siga-a em todos os passos abaixo.
+5. Se você rodou o init, me pergunte qual modelo usar nos passos do agente: uma assinatura do ChatGPT, GitHub Copilot, OpenCode Console ou SuperGrok, uma chave de API ou um modelo local. Configure o modelo com o pacote do provedor dele. Se o modelo exigir login, me passe o comando \`npx e2e login\` e espere até eu confirmar.
+6. Porte o \`appId\` dos fluxos e o \`.maestro/config.yaml\` para a configuração do e2e: um alvo por plataforma com \`mobile({ platform })\`, \`app: { bundleId }\` em cada alvo e as tags como \`{ tags }\` nos testes. Mova senhas e tokens de \`env\` para \`credentials\` ou \`secrets\`.
+7. Instale as dependências, depois rode \`npx e2e doctor\` (e2e 0.23.0 ou mais recente) e corrija o que ele apontar.
+8. Liste os fluxos e me pergunte qual mover primeiro. Sugira um cujos passos \`optional\` e ramificações \`runFlow: { when }\` precisem de atualização com frequência.
+9. Reescreva esse fluxo como um teste \`.e2e.ts\` em \`tests/\` (o e2e roda \`tests/**/*.e2e.ts\` por padrão), com uma chamada com await por comando. Comece o teste com \`app.open()\`, já que nada é iniciado sozinho. Siga as seções “Reescreva os seletores” e “O que é diferente de propósito” do guia: o e2e exige correspondência com a string inteira, falha com várias correspondências e não concede nenhuma permissão que a configuração não nomeie. Confira “O que o e2e ainda não tem” antes de portar um fluxo: para um comando listado ali, use a alternativa de “Use hoje”, ou deixe esse fluxo no Maestro e me diga por quê.
+10. Mantenha a inicialização e as asserções finais determinísticas, com \`app.open()\` e asserções de localizador. Onde uma sequência de toques roteirizados quebra com frequência, proponha um objetivo \`agent.act\` no lugar dela.
+11. Faça o build e instale o app, rode o novo arquivo com \`npx e2e run <file>\` em cada alvo de plataforma e corrija-o até ele passar. Mantenha o fluxo do Maestro até eu confirmar que ele pode ser removido.
+12. Resuma quais fluxos foram movidos, quais ficaram no Maestro e por quê.`;
+
+O e2e substitui os fluxos YAML do Maestro por testes em TypeScript. Cada
+comando vira uma chamada com await, geralmente em um localizador, ou um
+objetivo do agente cobre vários comandos. Os dois runners podem usar o mesmo
+simulador ou emulador enquanto você move um fluxo por vez.
+
+<SetupPrompt>
+
+<Prompt description={migrationPrompt} children={migrationPrompt} actions={["copy", "cursor"]} />
+
+</SetupPrompt>
+
+Para uma migração que se estende por várias sessões, a [skill `migrate-to-e2e`](/coding-agents#migrate-an-existing-suite) registra o que foi movido em um arquivo de progresso e mantém a suíte antiga rodando até você aposentar cada teste.
+
+## Porte a configuração
+
+<Note>Configure um alvo com o [guia mobile](/mobile) e um modelo com o [Início rápido](/quickstart).</Note>
+
+| Maestro | e2e |
+| --- | --- |
+| `appId` no topo de cada fluxo | `app: { bundleId: 'com.example.app' }` no alvo, o app que `app.open()` inicia |
+| um `appId` diferente por fluxo, ou um segundo no meio do fluxo | `device.openApp(id)` no teste, ou uma configuração por app |
+| `--platform`, `--device` | `mobile({ platform: 'ios', device: 'iPhone 17' })`, um alvo por plataforma; uma lista em `device` é um pool. Para uma execução, `e2e run --target ios --device 'iPhone 17'` |
+| `.maestro/config.yaml` `flows`, `'!helper.yaml'` | `tests: ['tests/**/*.e2e.ts', '!tests/helpers/**']` |
+| `tags`, `--include-tags`, `--exclude-tags` | `{ tags: [...] }` em um teste ou grupo; `--tag`, `--exclude-tag` na CLI |
+| `env` e `${VAR}` | constantes do módulo e `params` em um objetivo: `agent.act('sign in as {email}', { params: { email } })` |
+| variáveis `MAESTRO_*` | `process.env` na configuração; senhas e tokens vão em `credentials` ou `secrets`, veja [Autenticação](/authentication) |
+| `--format junit` | `--reporter list,junit` escreve `.e2e/junit.xml` |
+| `--format html` | `htmlReporter()` de `@e2e-dev/html-reporter` escreve `.e2e/report.html` |
+| `--shards`, `--shard-split` | `device: [...]` mais `workers` em uma máquina; `--shard <index/total>` entre máquinas, veja [Sharding](/ci#sharding) |
+| `maestro record` | `npx e2e run --video`, um MP4 do dispositivo por tentativa, ou a gravação do próprio provedor hospedado |
+| `maestro test -c` | `npx e2e run --watch` |
+| `maestro hierarchy` | `await screen.debug()` em um teste exibe a árvore da tela; `screen.tree()` a retorna |
+
+## Reescreva um fluxo
+
+Comece por um fluxo cujos passos `optional` e ramificações
+`runFlow: { when }` precisem de atualização com frequência.
+
+```yaml title="Maestro"
+appId: com.example.app
+---
+- launchApp:
+    clearState: true
+- tapOn: "Get started"
+- tapOn:
+    id: "email"
+- inputText: "ada@example.test"
+- tapOn: "Continue"
+- assertVisible: "Check your inbox"
+- scrollUntilVisible:
+    element: "Resend"
+- assertVisible:
+    id: "resend"
+```
+
+```ts title="e2e"
+import { test } from '@e2e-dev/mobile';
+import { expect } from 'e2e';
+
+test('asks for the email', async ({ app, agent, screen }) => {
+  await app.clearState();
+  await agent.act('get started with the email {email}', { params: { email: 'ada@example.test' } });
+  await expect(screen.getByText('Check your inbox')).toBeVisible();
+  await screen.scrollUntilVisible(screen.getByTestId('resend'));
+  await expect(screen.getByTestId('resend')).toBeVisible();
+});
+```
+
+## Mapeie cada comando
+
+Chamadas em `device` rodam só em um dispositivo, então um teste que faz essas
+chamadas declara `platforms: ['ios', 'android']` e os outros alvos pulam esse
+teste. Para as assinaturas dos métodos, veja [screen](/reference/screen),
+[expect](/reference/expect), [test](/reference/test) e a
+[engine mobile](/reference/mobile).
+
+<AccordionGroup>
+<Accordion title="App e dispositivo">
+
+| Maestro | e2e |
+| --- | --- |
+| `launchApp` | `app.open()`, uma inicialização do zero do app do alvo; nada é iniciado sozinho |
+| `clearState`, `launchApp: { clearState: true }` | `app.clearState()` |
+| `launchApp: { stopApp: false }` | `device.openApp(id)` sem `relaunch` |
+| `launchApp: { arguments }` | `app.launchArguments` no alvo, com as mesmas chaves, ou uma lista de strings para um app iOS que lê `ProcessInfo.processInfo.arguments` (um objeto é escrito no formato de `UserDefaults`: `NO` para `false`, aspas em volta de `a b` ou `-1`); `device.openApp(app, { relaunch: true, launchArguments })` para uma única inicialização |
+| `launchApp: { permissions }`, `setPermissions` | `app.permissions` no alvo, ou `device.openApp(app, { relaunch: true, permissions })` para uma única inicialização; `grant`, `deny`, `reset` para `allow`, `deny`, `unset`. `device.setPermission(name, state)` antes de `app.open()` |
+| `permissions: { all: allow }` | `app.permissions: 'all'` |
+| `stopApp`, `killApp` | `device.closeApp()`, uma parada forçada; `app.restart()` para encerrar o app e iniciá-lo de novo |
+| `clearKeychain`, `openLink`, `setLocation`, `setAirplaneMode`, `setOrientation`, `setClipboard` | os mesmos em `device`, como `device.openLink(url)`. `clearKeychain` é exclusivo do simulador iOS, e `setAirplaneMode(true)` exige Android 11 ou mais recente. Para `travel`, chame `device.setLocation` em um loop |
+| `back`, `pressKey: Home`, `hideKeyboard`, `setDarkMode` | `app.back()`, `device.home()`, `device.dismissKeyboard()`, `device.setAppearance('dark')` |
+| `pressKey: Remote Dpad Up`, `Down`, `Left`, `Right`, `Remote Dpad Center` | `device.pressRemote('up')`, `'down'`, `'left'`, `'right'`, `'select'` |
+| `pressKey: Remote Media Play Pause`, `Remote Media Stop`, `Remote Media Next`, `Remote Media Previous`, `Remote Media Rewind`, `Remote Media Fast Forward`, `Remote Menu` | `device.pressRemote('play-pause')`, `'stop'`, `'next'`, `'previous'`, `'rewind'`, `'fast-forward'`, `'menu'`; as [teclas do controle remoto](/reference/engine#keys) listam as demais |
+
+</Accordion>
+<Accordion title="Toques, entrada e gestos de deslizar">
+
+| Maestro | e2e |
+| --- | --- |
+| `tapOn: "Text"`, `tapOn: { id: x }` | `screen.getByText('Text').tap()`, `screen.getByTestId('x').tap()`, veja [Reescreva os seletores](#rewrite-selectors) |
+| `index: 2`, `containsDescendants`, `childOf` | `.nth(2)`, `.filter({ has: other })`, `parent.getByText('Text')` |
+| seletores específicos de plataforma | `device.locator('role=text label="..."')`, os termos de seletor do agent-device |
+| `tapOn: { point: "x,y" }`, `point: "50%,50%"` | `screen.tapAt({ x, y })`, `screen.tapAt({ x: '50%', y: '50%' })`; dentro de um nó, `.tap({ position: { x, y } })` |
+| `doubleTapOn`, `longPressOn` | `.doubleTap()`, `.longPress({ duration })` |
+| `inputText`, `eraseText`, `pressKey: Enter` depois de um `tapOn` | `.fill('text')`, `.clear()`, `.press('Enter')` no localizador do campo |
+| `inputRandomEmail`, `inputRandomText`, `faker` | `unique()` em volta de um valor nos params de `act`, para que o cache continue reproduzindo o passo; qualquer faker do npm para o resto |
+| `copyTextFrom`, `pasteText` | `await locator.textContent()`, depois `.fill(text)` |
+| `swipe: { direction: UP }`, `scroll` | `screen.swipe({ direction: 'down' })`; o Maestro nomeia a direção do dedo, o e2e a do conteúdo |
+| `swipe: { start, end }`, `scrollUntilVisible` | `screen.swipe({ from, to })` em pixels ou porcentagens, `screen.scrollUntilVisible(locator, { direction })` |
+
+</Accordion>
+<Accordion title="Asserções e fluxos">
+
+| Maestro | e2e |
+| --- | --- |
+| `assertVisible`, `assertNotVisible`, `extendedWaitUntil` | `await expect(locator).toBeVisible({ timeout })`, `.toBeHidden()` |
+| `assertVisible: { enabled, checked, selected, focused }` | `.toBeVisible()`, depois `.toBeEnabled()`, `.toBeChecked()`, `.toBeSelected()` ou `.toBeFocused()` |
+| `assertTrue: ${...}` | `expect(value).toBe(true)`, ou `expect.poll` para um valor que ainda está mudando |
+| `assertScreenshot: { path, thresholdPercentage }` | `await expect(screen).toHaveScreenshot(name, { maxDiffPixelRatio })`, veja [Comparação visual](/visual-testing) |
+| `takeScreenshot`, `startRecording`, `stopRecording` | `app.screenshot('label')`, [`app.startRecording()`, `app.stopRecording()`](/reference/app#startrecording) |
+| `assertWithAI`, `assertNoDefectsWithAI`, `extractTextWithAI` | `agent.assert('...', { vision: true })`, `agent.extract('...', { schema })` |
+| `runFlow: file.yaml`, `onFlowStart`, `onFlowComplete` | uma função ou uma fixture `test.extend`; `beforeEach`, `afterEach` |
+| `runFlow: { when: { visible } }` | `if (await locator.isVisible()) { ... }`, veja [Reescreva os seletores](#rewrite-selectors) |
+| `repeat`, `runScript`, `evalScript`, `${output.x}`, `http.get` | TypeScript no teste: loops, variáveis e a fixture `request`, veja [API](/api-testing) |
+
+</Accordion>
+</AccordionGroup>
+
+## Reescreva os seletores
+
+- O Maestro lê texto e id como expressões regulares que não diferenciam
+  maiúsculas de minúsculas. `getByText` e `getByTestId` correspondem à string inteira e
+  diferenciam maiúsculas de minúsculas. Escreva
+  `getByText(/^mute account$/i)`, ou `{ exact: false }` para um trecho do
+  texto.
+- O Maestro toca na primeira de várias correspondências. O e2e falha com
+  `LOCATOR_AMBIGUOUS`, então adicione `.first()` quando a primeira
+  correspondência for a que você quer.
+- `isVisible()` substitui `optional` e `runFlow: { when }`. Ele lê a tela uma
+  vez e não espera. Ele falha com várias correspondências, então adicione
+  `{ visible: true }` ou `.first()` quando puder existir um gêmeo oculto.
+- `below`, `above`, `leftOf` e `rightOf` não têm equivalente, veja
+  [Ainda não](#not-yet). `filter({ has })` e o encadeamento não encontram nada
+  em uma `View` simples do React Native no iOS, veja [Limitações conhecidas de dispositivos](/mobile#known-device-limitations).
+
+## O que o e2e ainda não tem
+
+“Planejado” está no roadmap, e “Ainda não” fica sem data. “Não planejado” foi
+deixado de fora de propósito.
+
+### Planejado
+
+| Maestro | Use hoje |
+| --- | --- |
+| O padrão de conceder tudo, nomes como `bluetooth` e `storage` | `app.permissions: 'all'`, que no Android concede cada permissão de tempo de execução que o app declara, ou aceite o prompt com `device.alert('accept')` |
+| `inputText` e `pressKey: Enter` sem campo, `eraseText: N`, `pressKey: backspace`, `tab` | `fill` ou `press` no localizador do campo; `fill` com um `inputValue()` encurtado para apagar; toque no próximo campo para o Tab |
+| `addMedia` | Em um simulador iOS, `xcrun simctl addmedia` antes de `app.open()`; o Android não foi verificado. Veja “Fotos para um teste com o seletor de fotos” em [A fixture device](/mobile#the-device-fixture) |
+| `label` em um comando | `-`. A chamada nomeia cada passo |
+| `scrollUntilVisible: { centerElement, visibilityPercentage }` | Sem equivalente exato. Depois que a chamada resolver, leia `boundingBox()` e então `screen.swipe({ direction, momentum: 'slow' })` se o nó estiver fora do centro |
+| Logs do dispositivo e relatórios de crash junto de uma falha | `adb logcat` ou `xcrun simctl spawn <udid> log stream`, coletados em uma fixture |
+| `maestro hierarchy` como comando de terminal | Um teste de uma linha que chama `screen.debug()` |
+| `--device-locale` | `app.launchArguments: { AppleLanguages: ['de'], AppleLocale: 'de_DE' }` no iOS, veja [Rode o app em outro idioma](/mobile#run-the-app-in-another-language); no Android, defina o idioma do dispositivo antes da execução |
+| Maestro Cloud | Sua [CI](/ci) com um [provedor de dispositivos hospedados](/mobile#hosted-devices) |
+| `pressKey: lock`, `power`, `volume up`, `volume down` | `client.command.hardwareButton` em [`unstable_raw`](/reference/mobile#unstable_raw): o botão liga/desliga e o volume no Android, o volume em um iPhone físico |
+| `properties` do JUnit, um caminho JUnit com `--output` | Ids em tags ou no título; copie `.e2e/junit.xml` depois da execução |
+
+### Ainda não
+
+| Maestro | Use hoje |
+| --- | --- |
+| `optional: true` | `if (await locator.isVisible())` ou try/catch; o relatório não mostra aviso |
+| `executionOrder` | Um `describe(..., { serial: true })` que chama cada fluxo como uma função |
+| `retry: { maxRetries, commands }` | Um loop `for` com try/catch; `expect.poll` para um valor, `{ retries }` para o teste inteiro |
+| Morte do processo no Android com `killApp` | `device.home()`, depois `adb shell am kill <package>`, depois `device.openApp(id)` |
+| `assertDarkMode`, `assertLightMode` | Faça a asserção sobre um controle com tema, ou `toHaveScreenshot` |
+| `Remote System Navigation Up`, `Down`, `Remote Button A`, `B` | `-` |
+
+### Não planejado
+
+| Maestro | Use em vez disso |
+| --- | --- |
+| Texto e id como regex, a primeira correspondência vence | Uma `RegExp` e `.first()`, veja [Reescreva os seletores](#rewrite-selectors) |
+| `retryTapIfNoChange` | Faça a asserção do resultado e depois toque de novo no teste. Um segundo toque às cegas pode acionar um controle duas vezes |
+| `waitToSettleTimeoutMs` | Uma asserção com o próprio `timeout` depois da ação; essa asserção é a espera |
+| `toggleAirplaneMode`, `toggleDarkMode` | Defina o estado que você quer: `device.setAirplaneMode(true)`, `device.setAppearance('dark')` |
+| Maestro Studio | Um agente de código conectado a [`npx e2e mcp`](/mcp-server), ou `screen.debug()` com `npx e2e run --watch` ou `--step` |
+| `waitForAnimationToEnd` | `await expect(locator).toBeVisible()` sobre o que aparece no fim da animação |
+| `below`, `above`, `leftOf`, `rightOf` | `getByLabel`, um test id, `filter({ has })` em um contêiner compartilhado ou um objetivo `agent.act` |
+
+## O que é diferente de propósito
+
+- O Maestro concede todas as permissões quando inicia o app. O e2e não
+  concede nenhuma que você não nomeie, então um fluxo portado encontra prompts
+  do sistema que o Maestro nunca mostrou. Defina
+  [`app.permissions: 'all'`](/mobile#launch-arguments-and-permissions), ou
+  nomeie cada uma com `grant`, `deny` e `reset` para `allow`, `deny` e `unset`
+  do Maestro. Em um simulador iOS, `'all'` deixa de fora as notificações, que
+  o simulador se recusa a definir: aceite esse prompt com
+  `device.alert('accept')`.
+- Chamadas por [`device.unstable_raw`](/reference/mobile#unstable_raw) não
+  são passos. Elas ficam fora do relatório, do trace, do cache do agente e da ocultação.
+- Um dispositivo não tem `test.setup` nem `{ session }`, veja
+  [o que muda em relação à web](/mobile#what-differs-from-the-web).
+
+## Próximos passos
+
+<CardGroup cols={2}>
+  <Card title="Mobile" icon="mobile-screen" href="/mobile">
+    Configure seu app e seus dispositivos.
+  </Card>
+  <Card title="Conceitos principais" icon="pen-to-square" href="/core-concepts">
+    Objetivos, asserções e localizadores em vez de seletores roteirizados.
+  </Card>
+</CardGroup>

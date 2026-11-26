@@ -1,0 +1,228 @@
+---
+title: Migrar do Detox
+description: Use o build do seu app e os testIDs que você já tem com screen, expect e objetivos do agente.
+"og:image": "https://e2e.com/docs/images/og/migrate/detox.png?v=1715664ae0"
+"twitter:image": "https://e2e.com/docs/images/og/migrate/detox.png?v=1715664ae0"
+---
+
+import { SetupPrompt } from '../../snippets/setup-prompt-card.jsx';
+
+export const migrationPrompt = `Migre os testes do Detox deste projeto para o e2e, uma spec por vez. Documentação: \`https://e2e.com/docs/migrate/detox.md\` e \`https://e2e.com/docs/mobile.md\`
+
+1. Leia o guia de migração acima. Ele mapeia o \`.detoxrc.js\` e a API do Detox para o e2e, e lista o que o e2e ainda não tem. O guia mobile cobre dispositivos e builds do app.
+2. Se o projeto não tiver uma configuração do e2e (\`e2e.config.ts\`, \`.mts\`, \`.js\` ou \`.mjs\`), rode \`npx e2e init --yes --engine mobile\` (ou o equivalente em pnpm ou bun). Ele escreve uma configuração mobile com um alvo para a plataforma desta máquina e um teste de exemplo contra o app Settings, e ainda não instala nada. Reescreva \`tests/example.e2e.ts\` para o seu app ou apague esse arquivo.
+3. Leia a skill do e2e (\`npx e2e guide\` a exibe, \`npx e2e guide <topic>\` exibe um tópico) e siga-a em todos os passos abaixo.
+4. Se você rodou o init, me pergunte qual modelo usar nos passos do agente: uma assinatura do ChatGPT, GitHub Copilot, OpenCode Console ou SuperGrok, uma chave de API ou um modelo local. Configure o modelo com o pacote do provedor dele. Se o modelo exigir login, me passe o comando \`npx e2e login\` e espere até eu confirmar.
+5. Porte o \`.detoxrc.js\` para a configuração do e2e: um alvo por plataforma com \`mobile({ platform })\`, o \`bundleId\` e o \`appPath\` do app no alvo, e o tipo de dispositivo como \`mobile({ device })\`. O e2e usa o build normal de debug ou de release, sem o framework do Detox.
+6. Instale as dependências, depois rode \`npx e2e doctor\` (e2e 0.23.0 ou mais recente) e corrija o que ele apontar.
+7. Liste as specs do Detox e me pergunte qual mover primeiro. Sugira um fluxo que precise de manutenção frequente.
+8. Confira cada chamada do Detox nessa spec em “O que o e2e ainda não tem”. Use a entrada de “Use hoje” ou “Use em vez disso”, ou deixe a spec no Detox e diga por quê. Depois reescreva a spec como um arquivo \`.e2e.ts\` em \`tests/\` (o e2e roda \`tests/**/*.e2e.ts\` por padrão), não na pasta do Detox, com as tabelas de mapeamento do guia. Comece a spec com \`app.open()\`, já que nada é iniciado sozinho. Restrinja as consultas que correspondem a vários nós.
+9. Mantenha a inicialização e as asserções finais determinísticas, com \`app.open()\` e asserções de localizador. Onde uma sequência de interações roteirizadas quebra com frequência, proponha um objetivo \`agent.act\` no lugar dela.
+10. Faça o build e instale o app, rode o novo arquivo com \`npx e2e run <file>\` em cada alvo de plataforma e corrija-o até ele passar. Mantenha a spec do Detox até eu confirmar que ela pode ser removida.
+11. Resuma quais testes foram movidos, quais ficaram no Detox e por quê.`;
+
+O e2e testa um app React Native em um simulador ou emulador com o seu build
+normal de debug ou de release, sem o framework do Detox no app. Suas props
+`testID` funcionam com `getByTestId` nas duas plataformas.
+
+<SetupPrompt>
+
+<Prompt description={migrationPrompt} children={migrationPrompt} actions={["copy", "cursor"]} />
+
+</SetupPrompt>
+
+Para uma migração que se estende por várias sessões, a [skill `migrate-to-e2e`](/coding-agents#migrate-an-existing-suite) registra o que foi movido em um arquivo de progresso e mantém a suíte antiga rodando até você aposentar cada teste.
+
+## Porte a configuração
+
+<Note>Configure um alvo com o [guia mobile](/mobile) e um modelo com o [Início rápido](/quickstart). Os dois runners podem usar o mesmo simulador enquanto você move uma spec por vez.</Note>
+
+| Detox (`.detoxrc.js`) | e2e |
+| --- | --- |
+| `apps.<name>.binaryPath`, `bundleId` | `app: { appPath, bundleId }` no alvo |
+| `devices.<name>.device.type` | `mobile({ device: 'iPhone 17' })` |
+| `configurations` | `targets`, uma engine por plataforma |
+| `maxWorkers` do Jest | `workers`, um por dispositivo |
+| `apps.<name>.launchArgs` | `app.launchArguments` no alvo. Use um objeto com as mesmas chaves ou uma lista de strings para cada plataforma. No Android, cada chave é um extra tipado separado na intent de inicialização. O Detox coloca todas as chaves como strings em um único extra de bundle `launchArgs`, então mude o código que lê `getIntent().getBundleExtra("launchArgs")`. No iOS, cada chave é um argumento de `UserDefaults`: `false` vira `NO`, e uma string como `a b` ou `-1` ganha aspas. Se o app lê `ProcessInfo.processInfo.arguments`, use o formato de lista. Objetos aninhados não são suportados |
+| `launchApp({ permissions })` | `app.permissions` no alvo: `grant`, `deny`, `reset` para `YES`, `NO`, `unset`. Mais nomes estão [planejados](#planned) |
+
+```ts title="e2e.config.ts"
+import type { E2EConfig } from 'e2e';
+import { mobile } from '@e2e-dev/mobile';
+
+export default {
+  targets: [
+    {
+      name: 'ios',
+      engine: mobile({ platform: 'ios' }),
+      app: {
+        bundleId: 'com.example.app',
+        appPath: 'ios/build/MyApp.app',
+        launchArguments: ['-mockServer', 'http://localhost:9001'],
+      },
+    },
+    {
+      name: 'android',
+      engine: mobile({ platform: 'android' }),
+      app: {
+        bundleId: 'com.example.app',
+        appPath: 'android/app/build/outputs/apk/debug/app-debug.apk',
+        launchArguments: ['--es', 'mockServer', 'http://localhost:9001'],
+      },
+    },
+  ],
+  workers: 1,
+} satisfies E2EConfig;
+```
+
+## Reescreva uma spec
+
+Nada é iniciado sozinho, então o teste do e2e começa com `app.open()`. A
+senha vem das [credenciais configuradas](/authentication).
+
+```js title="Detox"
+describe('login', () => {
+  beforeAll(async () => { await device.launchApp({ newInstance: true }); });
+
+  it('shows the home screen', async () => {
+    await element(by.id('email')).typeText('ada@example.test');
+    await element(by.id('password')).typeText('hunter2');
+    await element(by.text('Sign in')).tap();
+    await waitFor(element(by.id('home'))).toBeVisible().withTimeout(10000);
+    await expect(element(by.text('Welcome, Ada'))).toBeVisible();
+  });
+});
+```
+
+```ts title="e2e"
+import { test } from '@e2e-dev/mobile';
+import { expect, credentials } from 'e2e';
+
+test('shows the home screen', async ({ agent, app, screen }) => {
+  await app.open();
+  const ada = credentials.user('ada');
+  await agent.act('sign in as {username}', { params: { username: ada.username, password: ada.password } });
+  await expect(screen.getByTestId('home')).toBeVisible({ timeout: 10_000 });
+  await expect(screen.getByText('Welcome, Ada')).toBeVisible();
+});
+```
+
+## Mapeie cada chamada do Detox
+
+### Matchers e ações
+
+| Detox | e2e |
+| --- | --- |
+| `by.id('x')`, `by.text('t')`, `by.label('l')` | `screen.getByTestId('x')`, `screen.getByText('t')`, `screen.getByLabel('l')` |
+| `by.id('x').withAncestor(by.id('row'))` | `screen.getByTestId('row').getByTestId('x')` |
+| `.atIndex(n)` | `.nth(n)` |
+| `.tap()`, `.tap({ x, y })`, `.longPress()`, `.multiTap(2)`, `.multiTap(3)` | `.tap()`, `.tap({ position: { x, y } })`, `.longPress()`, `.doubleTap()`, `.tap({ count: 3 })` |
+| `.typeText(t)` | `.pressSequentially(t)` |
+| `.replaceText(t)`, `.clearText()`, `.tapReturnKey()` | `.fill(t)`, `.clear()`, `.press('Enter')` |
+| `.swipe('up', 'fast')` | `.swipe({ direction: 'down', momentum: 'fast' })`. O Detox nomeia a direção do dedo, e o e2e, a do conteúdo |
+| `list.scroll(200, 'down')` | `list.swipe({ direction: 'down' })`, sem deslocamento |
+| `waitFor(el).toBeVisible().whileElement(list).scroll(...)` | `list.scrollUntilVisible(el)`, com `{ direction: 'up' }` quando o Detox rola para cima |
+
+### Expectativas
+
+| Detox | e2e |
+| --- | --- |
+| `waitFor(el).toBeVisible().withTimeout(ms)` | `await expect(el).toBeVisible({ timeout: ms })` |
+| `.toBeVisible()`, `.toHaveText(t)` | Os mesmos |
+| `.not.toBeVisible()` | `.toBeHidden()` |
+| `.toExist()`, `.not.toExist()` | `.toBeAttached()`, `.toBeAttached({ attached: false })` |
+| `.toHaveToggleValue(true)` | `.toBeChecked()` |
+| `.toHaveLabel(l)` | `.toHaveAccessibleName(l)` |
+| `.toHaveValue(v)` | `.toHaveValue(v)` |
+
+### Dispositivo
+
+| Detox | e2e |
+| --- | --- |
+| `device.launchApp({ newInstance: true })` | `app.restart()` |
+| `device.launchApp()` em `beforeAll` | `app.open()` em `beforeAll`, que recebe `device`, `app` e `screen` |
+| `device.launchApp({ newInstance: false })` | `device.openApp(id)` sem `relaunch` |
+| `device.launchApp({ launchArgs, permissions })` | `device.openApp(id, { relaunch: true, launchArguments, permissions })` |
+| `device.resetAppState()` | `app.clearState()` |
+| `device.launchApp({ delete: true })` | `device.installApp(path, { reinstall: true })`, depois `app.open()` |
+| `device.uninstallApp()` | `device.uninstallApp(id)`; sem um id, o app fixado |
+| `device.launchApp({ url })`, `device.openURL({ url })` | `device.openLink(url)` |
+| `device.terminateApp()`, `sendToHome()`, `pressBack()` | `device.closeApp()`, `home()`, `back()` |
+| `device.setLocation(lat, lon)`, `setOrientation('landscape')` | `device.setLocation({ latitude, longitude })`, `setOrientation('landscape-left')` |
+| `device.shake()` | `device.shake()`, em um simulador ou emulador local |
+| `device.setBiometricEnrollment(true)` | `device.enrollBiometrics('faceid', true)` |
+| `device.matchFace()`, `unmatchFace()`, `matchFinger()`, `unmatchFinger()` | `device.setBiometrics('faceid' \| 'touchid', 'match' \| 'nonmatch')` |
+| `device.takeScreenshot()` | `app.screenshot('label')`, ou [`toHaveScreenshot`](/visual-testing) para comparar |
+| `device.getPlatform()` | A fixture `platform` |
+| `:ios:` / `:android:` no nome de um teste | `{ platforms: ['ios'] }` no teste |
+
+## O que o e2e ainda não tem
+
+“Planejado” está no roadmap, e “Ainda não” fica sem data. “Não planejado” foi
+deixado de fora de propósito.
+
+### Planejado
+
+| Detox | Use hoje |
+| --- | --- |
+| `artifacts.plugins.log`, `--record-logs` | `adb logcat` ou `xcrun simctl spawn booted log stream` em um step da CI |
+| `by.id('x').and(by.text('y'))` | `.filter({ hasText })` ou `device.locator('id=x label="y"')` |
+| `system.element(by.system.label('Allow'))` | `device.alert('accept' \| 'dismiss')`, ou `app.permissions` para que nenhum prompt apareça |
+| `.longPressAndDrag()`, deslocamento de `.swipe()` | `.dragTo(target)`, `screen.swipe({ from, to })` |
+| `.scrollTo('bottom')` | `list.scrollUntilVisible(lastRow)`, ou a primeira linha com `{ direction: 'up' }` |
+| `.tapBackspaceKey()` | `.fill(t)` com o texto mais curto |
+| `.setDatePickerDate()`, `.setColumnToValue()`, `.adjustSliderToPosition()` | Um objetivo `agent.act`, ou `screen.swipe({ from, to })` em um slider |
+| `permissions` para `health`, `homekit`, `speech`, `faceid`, `userTracking`; valores `always`, `inuse`, `limited` | Toque no botão do prompt ou use `device.alert('accept')` |
+| `device.sendUserNotification()`, `.pinch()` | `client.apps.push()`, `client.interactions.pinch()` em [`unstable_raw`](/reference/mobile#unstable_raw) |
+| `launchApp({ languageAndLocale })` | No iOS, `app.launchArguments: { AppleLanguages: ['fr'], AppleLocale: 'fr_FR' }`, veja [Rode o app em outro idioma](/mobile#run-the-app-in-another-language) |
+| `globalSetup`, `globalTeardown` do Jest | Inicie as dependências antes da execução |
+| `device.reverseTcpPort()` | Rode `adb reverse` em um step da CI |
+| `.getAttributes()` | `.textContent()`, `.inputValue()`, `.isEnabled()`, `.isVisible()`, `.isChecked()`, `.boundingBox()` |
+| `device.setStatusBar()` | `xcrun simctl status_bar`. `toHaveScreenshot` mantém a barra de status fixa |
+
+### Ainda não
+
+| Detox | Use hoje |
+| --- | --- |
+| `.toBeVisible(50)` e o padrão de 75% | `.toBeVisible()` verifica a flag da plataforma, não a área. Compare `.boundingBox()` |
+| `web.element(by.web.cssSelector('x'))` | O texto e os rótulos de acessibilidade da WebView, ou um objetivo `agent.act` |
+| `device.resetContentAndSettings()` | `app.clearState()`, mais `device.clearKeychain()` no iOS |
+| `.toHaveValue(v)` em um nó Android não editável cujo valor repete o rótulo do nó | `.toHaveText(v)` |
+| `device: { type, os }`, `headless`, `bootArgs` | Crie o dispositivo e faça o boot dele em um step da CI |
+
+### Não planejado
+
+| Detox | Use em vez disso |
+| --- | --- |
+| `device.reloadReactNative()` | `app.restart()`. Recarregar exige o framework do Detox no app |
+| `device.disableSynchronization()`, `enableSynchronization()` | Apague as chamadas. Não há sincronização para desligar |
+| `device.setURLBlacklist()` | Apague a chamada. A atividade de rede nunca bloqueia uma ação |
+| Instalação no init, `behavior.init.reinstallApp`, `--reuse` | `device.installApp()` em uma fixture de worker com `auto: true` |
+| `apps.<name>.build`, `detox build` | Seu build normal, antes de `e2e run` |
+| `.scroll()` por um deslocamento exato | `screen.swipe({ from, to })` |
+| `by.type('RCTImageView')` | `device.locator('role=image')`, ou um `testID` |
+| Reporters do Jest, Allure | O reporter `junit` ou um reporter personalizado |
+
+## O que é diferente de propósito
+
+- O e2e não espera o app ficar ocioso. As ações esperam e as asserções tentam
+  novamente. Para um controle que ainda está surgindo, aumente
+  [`transition`](/reference/mobile#transition); para ações do agente,
+  [`settle`](/reference/mobile#settle).
+- A engine não instala nada por conta própria. Chame `device.installApp()`.
+- [Localizadores](/reference/screen) são estritos. Uma ação sobre várias
+  correspondências falha com `LOCATOR_AMBIGUOUS`. Restrinja com `.filter()`,
+  `.first()` ou `.nth()`.
+- Um dispositivo não tem `test.setup` nem `{ session }`. Veja
+  [o que muda em relação à web](/mobile#what-differs-from-the-web).
+
+## Próximos passos
+
+<CardGroup cols={2}>
+  <Card title="Mobile" icon="mobile-screen" href="/mobile">
+    Configure seu app e seus dispositivos.
+  </Card>
+  <Card title="Referência da engine mobile" icon="book" href="/reference/mobile">
+    Todas as opções, a fixture `device` e o pacote de ferramentas.
+  </Card>
+</CardGroup>
