@@ -294,11 +294,11 @@ export class RunnerOutput {
     const cursor = this.viewBoundaries[stream];
     const redactor = this.redactors[stream];
     const text = chunk === undefined ? redactor.flush(cursor) : redactor.push(chunk, cursor);
-    const prefix = cursor?.prefix ?? 0;
-    if (cursor?.remaining === 0) delete this.viewBoundaries[stream];
-    if (prefix === 0) return this.emit(stream, text, done);
-    const drained = this.toTerminal(stream, text.slice(0, prefix), done);
-    if (prefix < text.length) this.emit(stream, text.slice(prefix));
+    const prefixLength = cursor?.outputPrefixLength ?? 0;
+    if (cursor?.pendingInputLength === 0) delete this.viewBoundaries[stream];
+    if (prefixLength === 0) return this.emit(stream, text, done);
+    const drained = this.toTerminal(stream, text.slice(0, prefixLength), done);
+    if (prefixLength < text.length) this.emit(stream, text.slice(prefixLength));
     return drained;
   }
 
@@ -327,7 +327,7 @@ export class RunnerOutput {
       this.view.end();
     }
     this.view = view;
-    this.viewBoundaries = view === undefined ? {} : { stdout: { prefix: 0 }, stderr: { prefix: 0 } };
+    this.viewBoundaries = view === undefined ? {} : { stdout: { outputPrefixLength: 0 }, stderr: { outputPrefixLength: 0 } };
   }
 
   /**

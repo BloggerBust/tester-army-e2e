@@ -814,14 +814,12 @@ export class SecretLedger {
 
 /**
  * Tracks a boundary between successive writes.
- * Create it with `{ prefix: 0 }` and pass it to subsequent
+ * Create it with `{ outputPrefixLength: 0 }` and pass it to subsequent
  * `push` and `flush` calls until the output reaches the boundary.
  */
 export interface StreamBoundary {
-  /** Length of the returned text before the boundary. */
-  prefix: number;
-  /** Length of the buffered input before the boundary. */
-  remaining?: number;
+  outputPrefixLength: number;
+  pendingInputLength?: number;
 }
 
 /**
@@ -846,17 +844,17 @@ export class StreamRedactor {
    * if provided.
    */
   push(chunk: string | Uint8Array, boundary?: StreamBoundary): string {
-    if (boundary) boundary.prefix = 0;
+    if (boundary) boundary.outputPrefixLength = 0;
     if (chunk.length === 0) return '';
 
     const firstWriteAfterBoundary =
-      boundary !== undefined && boundary.remaining === undefined;
+      boundary !== undefined && boundary.pendingInputLength === undefined;
     const endsPendingSequence =
       typeof chunk === 'string' ||
         (firstWriteAfterBoundary && (chunk[0]! & 0xc0) !== 0x80);
     const decoderTail = endsPendingSequence ? this.decoder.end() : '';
 
-    if (boundary) boundary.remaining ??= this.held.length + decoderTail.length;
+    if (boundary) boundary.pendingInputLength ??= this.held.length + decoderTail.length;
 
     const text =
       this.held + decoderTail +
@@ -885,9 +883,8 @@ export class StreamRedactor {
 
     const splitsCharacterAtBoundary =
       boundary !== undefined &&
-      cut > 0 &&
-      cut === boundary.remaining &&
-      text.codePointAt(cut - 1)! > 0xffff;
+      cut === boundary.pendingInputLength &&
+      splitsCharacter(text, cut);
 
     if (splitsCharacterAtBoundary) {
       const firstHalf = text[cut - 1]!;
@@ -908,17 +905,17 @@ export class StreamRedactor {
   private release(text: string, boundary: StreamBoundary | undefined): string {
     if (!boundary) return this.ledger.redact(text);
 
-    boundary.prefix = 0;
-    boundary.remaining ??= text.length;
+    boundary.outputPrefixLength = 0;
+    boundary.pendingInputLength ??= text.length;
 
-    const boundaryOffset = boundary.remaining;
+    const boundaryOffset = boundary.pendingInputLength;
     if (boundaryOffset === 0) return this.ledger.redact(text);
 
-    boundary.remaining = Math.max(0, boundaryOffset - text.length);
+    boundary.pendingInputLength = Math.max(0, boundaryOffset - text.length);
 
     if (boundaryOffset >= text.length) {
       const redactedText = this.ledger.redact(text);
-      boundary.prefix = redactedText.length;
+      boundary.outputPrefixLength = redactedText.length;
       return redactedText;
     }
 
@@ -926,15 +923,20 @@ export class StreamRedactor {
 
     const splitsCharacterAtBoundary =
       splitOffset === boundaryOffset &&
-      text.codePointAt(boundaryOffset - 1)! > 0xffff;
+      splitsCharacter(text, boundaryOffset);
 
     if (splitsCharacterAtBoundary) {
       splitOffset = this.ledger.safeRedactionBoundary(text, boundaryOffset - 1);
     }
 
     const redactedPrefix = this.ledger.redact(text.slice(0, splitOffset));
-    boundary.prefix = redactedPrefix.length;
+    boundary.outputPrefixLength = redactedPrefix.length;
 
     return redactedPrefix + this.ledger.redact(text.slice(splitOffset));
   }
+}
+
+/** Checks whether the offset falls between the two halves of a character. */
+function splitsCharacter(text: string, offset: number): boolean {
+  return (text.codePointAt(offset - 1) ?? 0) > 0xffff;
 }

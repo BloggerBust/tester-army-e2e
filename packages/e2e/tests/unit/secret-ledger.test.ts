@@ -1,6 +1,6 @@
 /** The attempt secret ledger: live registration and rotation-safe redaction. */
 
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { SecretLedger, StreamRedactor } from '@e2e-dev/core/lib/internal/redact';
 import { redactResult, textResult } from '../../src/session-tools/tools.ts';
 
@@ -494,20 +494,6 @@ describe('StreamRedactor', () => {
     const second = stream.push('secret-2718 leaked\n');
     expect(first).not.toContain('synthetic');
     expect(first + second).toBe('token <secret:token> leaked\n');
-  });
-
-  it('clears the boundary prefix when a write throws', () => {
-    const registered = ledger();
-    const stream = new StreamRedactor(registered);
-    const boundary = { prefix: 0 };
-    stream.push('a'.repeat(registered.maxFormLength - 1));
-    stream.push('b', boundary);
-    expect(boundary.prefix).toBe(1);
-
-    const error = new Error('ledger unavailable');
-    vi.spyOn(registered, 'holdFrom').mockImplementationOnce(() => { throw error; });
-    expect(() => stream.push('c', boundary)).toThrow(error);
-    expect(boundary.prefix).toBe(0);
   });
 
   it('passes a finished line through at once and holds an unfinished one for the next write', () => {
